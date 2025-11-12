@@ -1,0 +1,6 @@
+Champs à saisir:
+Inserer le numéro d'imatriculation dans le champ Matricule dans les tables ContratDetail et DevisDetail
+Insérer numero_carte_brune_physique dans le champ NumCarteVerte
+id_type_vehicule,id_genre_vehicule dans ContratDetail et DevisDetail
+model_vehicule
+

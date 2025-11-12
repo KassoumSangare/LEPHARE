@@ -1,0 +1,55 @@
+Champs de l'objet JSON pour la consommation de l'endpoint api/enregistrementdevisia
+
+    IdIntermediaire
+    IdCompagnie
+    IdProduit
+    IdOffre
+    IdAvenant
+    IdClient
+    IdAssure
+    Flotte
+    Coassurance
+    DateEffet
+    DateExpiration
+    DateEmission
+    IdTarif
+    CapitalDeces
+    CapitalIpp
+    FraisTraitement
+    TauxReduction
+    CodeActivite
+    DateNaissance
+    AdresseGeographique
+    NumeroPoliceConnexe
+    IdDuree
+    IdDevis: est égal à 0 lors de l'enregistrement du premier assuré et différent de 0 pour les assurés suivants
+    IdDevisDetail: est égal à 0 lors de l'enregistrement d'un nouvel assuré et différent de 0 pour la modification d'un assuré déjà enregistré
+    
+  
+  Exemple d'objet JSON
+  
+ {
+ "IdIntermediaire": "1",
+ "IdCompagnie": "1",
+ "IdProduit": 2,
+ "IdOffre": "7",
+ "IdAvenant": 1,
+ "IdClient": 1,
+ "IdAssure": 1,
+ "Flotte": false,
+ "Coassurance": false,
+ "DateEffet": "06-02-2023",
+ "DateExpiration": "05-02-2024",
+ "DateEmission": "06-02-2023",
+ "IdTarif": "77",
+ "CapitalDeces": "25000000",
+ "CapitalIpp": "22000000",
+ "FraisTraitement": "350000",
+ "TauxReduction": "10",
+ "CodeActivite": "02",
+ "DateNaissance": "18-05-1980",
+ "IdDevis":0,
+ "IdDevisDetail":0
+ }
+
+

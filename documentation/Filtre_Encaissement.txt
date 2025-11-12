@@ -1,0 +1,18 @@
+1) Rôle: Rechercher les encaissements d'un client ou d'une police
+
+2) URI: api/encaissementrecherche/
+
+3) Méthode: GET
+
+4) Paramètres de la methode GET:
+referenceclient (optionnel)
+referencecontrat  (optionnel)
+
+5) Règles d'utilisation:
+	a) Le paramètre referencecontrat contient le nom du client
+	b) Le paramètre referencecontrat contient le numéro de police
+	
+6) Exemples d'objet JSON:
+	a) http://localhost:8000/api/encaissementrecherche/?referencecontrat=2001118230044M
+	b) http://localhost:8000/api/encaissementrecherche/?referenceclient=KACOU&referencecontrat=2001118230044M
+	c) http://localhost:8000/api/encaissementrecherche

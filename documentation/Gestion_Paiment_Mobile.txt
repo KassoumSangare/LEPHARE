@@ -1,0 +1,42 @@
+Les endpoints suivants sont relatifs à la gestion des paiements mobiles dans Uranus:
+
+1. api/distripaytransaction
+Rôle: Lister une ou plusieurs transactions.
+Action réalisée: 
+	- methode GET: l'endpoint liste un ou tous les modes de paiement
+	- methode POST: création non autorisée via cet endpoint
+	- methode PUT: mise à jour non autorisée via cet endpoint
+	- methode DELETE: suppression non autorisée via cet endpoint
+
+2. api/initiationpaiementmobile
+Rôle: Initier un paiement mobile.
+Action réalisée:
+	- methode POST: l'endpoint initie un nouveau paiement
+	
+Objet JSON utilisé:
+	- montant (obligatoire): montant de la transaction à initier, doit être un multiple de 5
+	- description (obligatoire) : description de la transaction à initier
+	- idclient (optionnel): identifiant du client qui fait la transaction s'il est connu, sinon positionner à zero
+Objet JSON retourné par l'endpoint:
+	- status_code: statut de la requête HTTP (ex:200)
+	- code: code de l'opération (ex: 201 pour dire que la transaction a été initiée)
+	- payment_url: URL vers lequel le client doit être dirigé afin de terminer la transaction (effectuer le paiement)
+	- transaction_id: identifiant de la transaction, à utiliser à chaque fois que l'on veut vérifier le statut de la transaction
+
+3. api/paiementmobileinfo
+Rôle: Obtenir les informations sur une transaction déjà initiée.
+Action réalisée:
+	- methode GET: l'endpoint retourne les informations relatives à une transaction initiée
+
+Paramètres:
+	- Utiliser l'identifiant de la transaction retourné par l'endpoint api/initiationpaiementmobile
+Objet JSON retourné par l'endpoint:
+	- transaction_id: identifiant de la transaction
+	- status: statut de la transaction
+	- code: code d'erreur
+	- message: message décrivant le code d'erreur
+	- amount: montant effectif payé par le client,
+	- currency: devise utilisée par le client,
+	- payment_method: methode de paiement utilisée lors de la transaction,
+	- operator_id: identifiant de l'opérateur via lequel la transaction a été effectuée,
+	- payment_date": date de réalisation de la transaction

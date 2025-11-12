@@ -1,0 +1,72 @@
+Objet JSON pour l'enregistrement devis:
+
+1) Les champs de l'objet JSON sont les suivants
+    IdIntermediaire
+    IdCompagnie
+    IdProduit
+    IdOffre
+    IdAvenant
+    IdClient
+    IdAssure
+    Flotte
+    Coassurance
+    DateEffet
+    DateExpiration
+    DateEmission
+    IdTarif
+    CodeUsage
+    IdCarrosserie
+    CodeCarburant
+    Puissance
+    NombrePlace
+    Charge
+    ValeurNeuve
+    ValeurVenale
+    ValeurAccessoire
+    TauxReduction 
+    CodeAlarme
+    Bns 
+    NomConducteur
+    AdresseConducteur
+    DateMec
+    NumMoteur
+    NumChassis
+    IdTypeVehicule
+    IdMarque
+    Matricule
+    NumPermisConduire
+    IdGenreVehicule
+    NumCarteBrunePhysique 
+    ModeleVehicule
+    IdDuree (représente la durée du contrat: mensuelle, trimestrielle, semestrielle, annuelle et divers)
+    IdTerme (représente les conditions de renouvellement du contrat: Ferme, Tacite reconduction,etc)
+    IdDevis
+    IdDevisDetail
+    RemorqueAttelee (nouveau champ de saisie, booléen)
+    CodeFormuleSecuriteRoutiere (nouveau champ de saisie, liste déroulante alimentée à partir de l'endpoint api/securiteroutiereparcompagnie/<int:idcompagnie>)
+    IdOptionAssistance (Nouveau champ, ajouté à l'objet JSON le 28/07/2023, champ entier)
+    CarburantAutreMatiere  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+    TransportEleves  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+    TransportEmployes  (Nouveau champ, aajouté à l'objet JSON le 25/05/2023, champ booléen)
+    TansportPassagerSupplementaire  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+    NsiaAutoPlus (Nouveau champ, ajouté à l'objet JSON le 26/08/2024, champ booléen)
+    
+2) Objet JSON retourné par l'endpoint enregistrementdevis:
+	a) Cet objet possède les champs suivants:
+		IdDevis
+		IdDevisDetail
+		NumeroImmatriculation
+	b) Utilisation des données:
+		- IdDevis sert à rattacher tous les véhicules saisis au même devis. Il sert également à finaliser la saisie du devis. Il est généré
+		lors de l'enregistrement du premier véhicule.
+		- IdDevisDetail sert d'identifiant (id) pour chaque élément de la liste des véhicules. Il sert également à mettre à jour un véhicule
+		déjà saisi.
+		- NumeroImmatriculation sert de libellé pour chaque élément de la liste des véhicules
+    
+3) Nouvelles règles d'appel de l'endpoint:
+ 	a) Pour l'enregistrement du premier vehicule, IdDevis et IdDevisDetail sont positionnés à 0 (zéro) ou None.
+ 	b) Pour l'enregistrement des véhicules suivants, IdDevis est égal à la valeur retournée à la suite de l'enregistrement du premier véhicule
+ 	et IdDevisDetail est positionné à 0 (zéro) ou None
+ 	c) Pour la mise à jour d'un véhicule déjà saisi, IdDevis et IdDevisDetail sont positionnés respectivement à l'id du devis et du vehicule en
+ 	cours de saisie
+ 	d) Pour tout enregistrement ou modification de véhicule, positionner id_client et id_assure à zéro (0), et positionner nomconducteur et adresseconducteur à la chaîne de caractère vide (dans le cas des flottes)

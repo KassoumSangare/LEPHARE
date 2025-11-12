@@ -1,0 +1,2757 @@
+from django.db import models
+from django.core.validators import MinLengthValidator
+
+# from djmoney.models.fields import MoneyField
+from django.utils import timezone
+from django.db.models import CheckConstraint, Q, F, Func
+
+
+class OffreAutomobileBoisee(Func):
+    function = "fn_offre_automobile_boisee"
+    output_field = models.BooleanField()
+
+
+class Garantie(models.Model):
+    IdGarantie = models.AutoField(
+        verbose_name="Id Garantie", db_column="idgarantie", primary_key=True
+    )
+    CodeGarantie = models.CharField(
+        db_column="codegarantie", max_length=3, validators=[MinLengthValidator(3)]
+    )
+    LibelleGarantie = models.CharField(db_column="libellegarantie", max_length=60)
+    Active = models.BooleanField(db_column="active")
+    Ordre = models.SmallIntegerField(db_column="ordre")
+    ModeCalcInd = models.CharField(
+        db_column="modecalcind",
+        max_length=1,
+        null=True,
+        blank=True,
+        validators=[MinLengthValidator(1)],
+    )
+    SaisieAuto = models.BooleanField(db_column="saisieauto")
+    SaisieRd = models.BooleanField(db_column="saisierd")
+    SaisieSante = models.BooleanField(db_column="saisiesante")
+    SaisieTransport = models.BooleanField(db_column="saisietransport")
+    SinDelai = models.SmallIntegerField(db_column="sindelai", null=True, blank=True)
+    SinBloquant = models.BooleanField(db_column="sinbloquant", null=True, blank=True)
+
+    def __str__(self):
+        return self.LibelleGarantie
+
+    class Meta:
+        db_table = "stdgarantie"
+
+
+class MenuParent(models.Model):
+    IdMenuParent = models.AutoField(db_column="idmenuparent", primary_key=True)
+    LibelleParent = models.CharField(
+        db_column="libelleparent", max_length=50, blank=False
+    )
+    Actif = models.BooleanField(verbose_name="Actif", db_column="actif", blank=False)
+
+    def __str__(self):
+        return self.LibelleParent
+
+    class Meta:
+        db_table = "stdmenuparent"
+
+
+class Menu(models.Model):
+    IdMenu = models.AutoField(db_column="idmenu", primary_key=True)
+    IdMenuParent = models.ForeignKey(
+        MenuParent, db_column="idmenuparent", on_delete=models.CASCADE
+    )
+    LibelleMenu = models.CharField(
+        verbose_name="Libellé Menu", db_column="libellemenu", max_length=50, blank=False
+    )
+    Actif = models.BooleanField(verbose_name="Actif", db_column="actif", blank=False)
+
+    def __str__(self):
+        return self.LibelleMenu
+
+    class Meta:
+        db_table = "stdmenu"
+
+
+class Utilisateur(models.Model):
+    UserId = models.AutoField(db_column="userid", primary_key=True)
+    Nom = models.CharField(db_column="nom", max_length=60)
+    Prenoms = models.CharField(db_column="prenoms", max_length=60)
+    NomConnexion = models.CharField(db_column="nomconnexion", max_length=60)
+    UserPassword = models.CharField(db_column="userpassword", max_length=255)
+    UserMail = models.EmailField(db_column="usermail", unique=True)
+    UserASACICode = models.CharField(
+        db_column="userasacicode", max_length=50, null=True, blank=True
+    )
+    UserLienPhoto = models.CharField(
+        db_column="userlienphoto", max_length=255, null=True, blank=True
+    )
+    UserSexe = models.CharField(
+        db_column="usersexe",
+        max_length=1,
+        null=True,
+        blank=True,
+        validators=[MinLengthValidator(1)],
+    )
+    UserTelephone = models.CharField(
+        db_column="usertelephone", max_length=20, null=True, blank=True
+    )
+
+    def __str__(self):
+        return self.Prenoms + " " + self.Nom
+
+    class Meta:
+        db_table = "stdutilisateur"
+
+
+class GroupeUtilisateur(models.Model):
+    IdGroupe = models.AutoField(db_column="idgroupe", primary_key=True)
+    LibelleGroupe = models.CharField(db_column="libellegroupe", max_length=60)
+    DateCreation = models.DateTimeField(db_column="datecreation", auto_now_add=True)
+    Active = models.CharField(
+        db_column="active", max_length=1, validators=[MinLengthValidator(1)]
+    )
+    DescriptionGroupe = models.TextField(
+        db_column="descriptiongroupe", max_length=100, null=True, blank=True
+    )
+
+    def __str__(self):
+        return self.LibelleGroupe
+
+    class Meta:
+        db_table = "stdgroupeutilisateur"
+
+
+class Branche(models.Model):
+    IdBranche = models.AutoField(
+        verbose_name="Id Branche", db_column="idbranche", primary_key=True
+    )
+    CodeBranche = models.CharField(
+        verbose_name="Code Branche",
+        db_column="codebranche",
+        max_length=3,
+        validators=[MinLengthValidator(3)],
+    )
+    LibelleBranche = models.CharField(
+        verbose_name="Libellé Branche", db_column="libellebranche", max_length=50
+    )
+
+    def __str__(self):
+        return self.LibelleBranche + " (" + self.CodeBranche + ")"
+
+    class Meta:
+        db_table = "stdbranche"
+
+
+class Risque(models.Model):
+    IdRisque = models.AutoField(
+        verbose_name="Id Risque", db_column="idrisque", primary_key=True
+    )
+    IdBranche = models.ForeignKey(
+        Branche,
+        verbose_name="Id Branche",
+        db_column="idbranche",
+        related_name="risques",
+        related_query_name="risquesavec",
+        on_delete=models.CASCADE,
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé Risque", db_column="libelle", max_length=50, default=" "
+    )
+    Active = models.BooleanField(
+        verbose_name="Actif", db_column="active", default=False
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdrisque"
+
+
+class SousGarantie(models.Model):
+    IdSousGarantie = models.AutoField(db_column="idsousgarantie", primary_key=True)
+    CodeSousGarantie = models.CharField(
+        verbose_name="Code S/Garantie",
+        db_column="codesousgarantie",
+        unique=True,
+        max_length=5,
+        validators=[MinLengthValidator(5)],
+    )
+    IdGarantie = models.ForeignKey(
+        Garantie,
+        verbose_name="Id Garantie",
+        db_column="idgarantie",
+        null=True,
+        blank=True,
+        related_name="sousgaranties",
+        on_delete=models.DO_NOTHING,
+    )
+    LibelleSousGarantie = models.CharField(
+        verbose_name="Libellé S/Garantie",
+        db_column="libellesousgarantie",
+        max_length=100,
+    )
+    Active = models.BooleanField(verbose_name="Active", db_column="active")
+    Ordre = models.SmallIntegerField(verbose_name="Ordre", db_column="ordre")
+    SaisieAuto = models.BooleanField(
+        verbose_name="Saisie en Auto", db_column="saisieauto"
+    )
+    SaisieRd = models.BooleanField(verbose_name="Saisie en RD", db_column="saisierd")
+    SaisieSante = models.BooleanField(
+        verbose_name="Saisie en Santé", db_column="saisiesante"
+    )
+    SaisieTransport = models.BooleanField(
+        verbose_name="Saisie en Transport", db_column="saisietransport"
+    )
+
+    def __str__(self):
+        return self.LibelleSousGarantie
+
+    class Meta:
+        db_table = "stdsousgarantie"
+
+
+class Acte(models.Model):
+    IdActe = models.AutoField(
+        verbose_name="Id Acte", db_column="idacte", primary_key=True
+    )
+    CodeActe = models.CharField(
+        verbose_name="Code Acte", db_column="codeacte", max_length=3
+    )
+    LibelleActe = models.CharField(
+        verbose_name="Libellé Acte", db_column="libelleacte", max_length=60
+    )
+    TypeActe = models.CharField(
+        verbose_name="Type Acte",
+        db_column="typeacte",
+        max_length=1,
+        validators=[MinLengthValidator(1)],
+    )
+    Personnalisable = models.BooleanField(
+        verbose_name="Personnalisable", db_column="personnalisable", max_length=1
+    )
+
+    def __str__(self):
+        return self.LibelleActe + " (" + self.CodeActe + ")"
+
+    class Meta:
+        db_table = "stdacte"
+
+
+class Commission(models.Model):
+    IdCommission = models.AutoField(
+        verbose_name="Id Commission", db_column="idcommission", primary_key=True
+    )
+    CodeNatureIntermediaire = models.SmallIntegerField(
+        verbose_name="Nature Intermediaire", db_column="codenatureintermediaire"
+    )
+    IdGarantie = models.ForeignKey(
+        Garantie,
+        verbose_name="Id Garantie",
+        db_column="idgarantie",
+        on_delete=models.CASCADE,
+    )
+    TauxCommission = models.FloatField(
+        verbose_name="Taux Commission", db_column="tauxcommission"
+    )
+    ValiditeMin = models.DateTimeField(
+        verbose_name="Valide du", db_column="validitemin"
+    )
+    ValiditeMax = models.DateTimeField(
+        verbose_name="Valide jusqu'au", db_column="validitemax"
+    )
+
+    class Meta:
+        db_table = "stdcommission"
+
+
+class Compagnie(models.Model):
+    IdCompagnie = models.AutoField(
+        verbose_name="Id Compagnie", db_column="idcompagnie", primary_key=True
+    )
+    RaisonSociale = models.CharField(
+        verbose_name="Raison Sociale", db_column="raisonsociale", max_length=100
+    )
+    CodeAsaci = models.CharField(
+        verbose_name="Code ASACI",
+        db_column="codeasaci",
+        max_length=10,
+        blank=True,
+        null=True,
+    )
+    Adresse1 = models.CharField(
+        verbose_name="Adresse 1", db_column="adresse1", max_length=100
+    )
+    Adresse2 = models.CharField(
+        verbose_name="Adresse 2", db_column="adresse2", max_length=100
+    )
+    IdVille = models.IntegerField(
+        verbose_name="Id Ville", db_column="idville", blank=True, null=True
+    )
+    Telephone = models.CharField(
+        verbose_name="Numéro de téléphone",
+        db_column="telephone",
+        max_length=20,
+        null=True,
+        blank=True,
+    )
+    Mobile = models.CharField(
+        verbose_name="Numéro mobile",
+        db_column="mobile",
+        max_length=20,
+        null=True,
+        blank=True,
+    )
+    Fax = models.CharField(
+        verbose_name="Numéro de fax",
+        db_column="fax",
+        max_length=20,
+        null=True,
+        blank=True,
+    )
+    RespSinAuto = models.CharField(
+        verbose_name="Responsable Sinistre Auto",
+        db_column="respsinauto",
+        max_length=100,
+        blank=True,
+        null=True,
+    )
+    RespSinRd = models.CharField(
+        verbose_name="Responsable Sinistre RD",
+        db_column="respsinrd",
+        max_length=100,
+        blank=True,
+        null=True,
+    )
+    RespProdAuto = models.CharField(
+        verbose_name="Responsable Production Auto",
+        db_column="respprodauto",
+        max_length=100,
+        blank=True,
+        null=True,
+    )
+    RespProdRd = models.CharField(
+        verbose_name="Responsable Production RD",
+        db_column="respprodrd",
+        max_length=100,
+        blank=True,
+        null=True,
+    )
+    DateMaj = models.DateTimeField(
+        verbose_name="Date de mise à jour",
+        db_column="datemaj",
+        auto_now=True,
+    )
+    Etranger = models.BooleanField(
+        verbose_name="Compagnie Etrangère", db_column="etranger"
+    )
+    codeacces = models.CharField(max_length=20, null=True, db_column="codeacces")
+    Active = models.BooleanField(
+        verbose_name="Active", db_column="active", default=True
+    )
+
+    def __str__(self):
+        if self.CodeAsaci is None:
+            return self.RaisonSociale
+        return self.RaisonSociale + " (" + self.CodeAsaci + ")"
+
+    class Meta:
+        db_table = "stdcompagnie"
+
+
+class GarantieRisque(models.Model):
+    IdGarantie = models.ForeignKey(
+        Garantie,
+        related_name="risques",
+        related_query_name="risquesavec",
+        db_column="idgarantie",
+        on_delete=models.CASCADE,
+    )
+    IdRisque = models.ForeignKey(
+        Risque,
+        related_name="garanties",
+        related_query_name="garantiesavec",
+        db_column="idrisque",
+        on_delete=models.CASCADE,
+    )
+    TauxTaxe = models.FloatField(verbose_name="Taux Taxe", db_column="tauxtaxe")
+    TauxTaxeGroupe = models.FloatField(
+        verbose_name="Taux Taxe Groupe", db_column="tauxtaxegroupe"
+    )
+    ForfaitTaxe = models.DecimalField(
+        verbose_name="Forfait Taxe",
+        db_column="forfaittaxe",
+        max_digits=19,
+        decimal_places=4,
+        null=True,
+    )
+    ValiditeMin = models.DateField(verbose_name="Valide du", db_column="validitemin")
+    ValiditeMax = models.DateField(verbose_name="Valide au", db_column="validitemax")
+
+    class Meta:
+        db_table = "stdgarantierisque"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["IdGarantie", "IdRisque"], name="unique_garantie_risque"
+            ),
+        ]
+
+
+class Categorie(models.Model):
+    IdCategorie = models.AutoField(
+        verbose_name="Id Catégorie", db_column="idcategorie", primary_key=True
+    )
+    CodeCategorie = models.CharField(
+        verbose_name="Code Catégorie",
+        db_column="codecategorie",
+        max_length=3,
+        validators=[MinLengthValidator(3)],
+        unique=True,
+    )
+    LibelleCategorie = models.CharField(
+        verbose_name="Libellé Catégorie", db_column="libellecategorie", max_length=100
+    )
+    code_asaci = models.CharField(
+        max_length=100,
+        db_column="codeasaci",
+        verbose_name="Code Categorie ASACI",
+        null=True,
+        blank=True,
+    )
+
+    def __str__(self):
+        return self.LibelleCategorie + " (" + self.CodeCategorie + ")"
+
+    class Meta:
+        db_table = "stdcategorie"
+
+
+class Tarif(models.Model):
+    IdTarif = models.AutoField(
+        verbose_name="Id Tarif", db_column="idtarif", primary_key=True
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé", db_column="libelle", max_length=100
+    )
+    CodeUsage = models.CharField(
+        verbose_name="Code Usage",
+        db_column="codeusage",
+        max_length=3,
+        null=True,
+        blank=True,
+        validators=[MinLengthValidator(3)],
+    )
+
+    CodeCategorie = models.CharField(
+        verbose_name="Code Categorie",
+        db_column="codecategorie",
+        max_length=3,
+        default="XXX",
+        validators=[MinLengthValidator(3)],
+    )
+    Reference = models.CharField(
+        verbose_name="Référence",
+        db_column="reference",
+        max_length=3,
+        null=True,
+        blank=True,
+        validators=[MinLengthValidator(3)],
+    )
+    ValiditeMin = models.DateField(verbose_name="Valide du", db_column="validitemin")
+    ValiditeMax = models.DateField(verbose_name="Valide au", db_column="validitemax")
+    NatAccessoires = models.SmallIntegerField(
+        verbose_name="Nature Accessoires", db_column="nataccessoires"
+    )
+    IdCategorie = models.ForeignKey(
+        Categorie,
+        related_name="tarifs",
+        related_query_name="tarifsavec",
+        verbose_name="Id Catégorie",
+        db_column="idcategorie",
+        on_delete=models.CASCADE,
+    )
+    code_categorie_asaci = models.CharField(
+        verbose_name="Code Categorie ASACI",
+        max_length=100,
+        db_column="codecategorieasaci",
+        null=True,
+        default="",
+    )
+
+    def __str__(self):
+        return self.Libelle + " (" + self.CodeCategorie + ")"
+
+    class Meta:
+        db_table = "stdtarif"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(ValiditeMax__gte=models.F("ValiditeMin")),
+                name="tarif_validitemax_gte_validitemin",
+            ),
+        ]
+
+
+class TarifDetail(models.Model):
+    IdDetail = models.AutoField(
+        verbose_name="Id Détail", db_column="iddetail", primary_key=True
+    )
+    IdTarif = models.ForeignKey(
+        Tarif,
+        related_name="details",
+        related_query_name="detailsavec",
+        verbose_name="Tarif",
+        db_column="idtarif",
+        on_delete=models.CASCADE,
+    )
+    IdGarantie = models.ForeignKey(
+        SousGarantie,
+        related_name="details",
+        related_query_name="detailsavec",
+        verbose_name="S/Garantie liée",
+        db_column="idgarantie",
+        on_delete=models.CASCADE,
+        null=True,
+    )
+    PuissanceMin = models.SmallIntegerField(
+        default=0, verbose_name="Puissance Minimale", db_column="puissancemin"
+    )
+    PuissanceMax = models.SmallIntegerField(
+        default=30000, verbose_name="Puissance Maximale", db_column="puissancemax"
+    )
+    TonnageMin = models.IntegerField(
+        default=0, verbose_name="Tonnage Minimal", db_column="tonnagemin"
+    )
+    TonnageMax = models.IntegerField(
+        default=9999999, verbose_name="Tonnage Maximal", db_column="tonnagemax"
+    )
+    CapitalMin = models.DecimalField(
+        default=0,
+        verbose_name="Capital Minimal",
+        db_column="capitalmin",
+        max_digits=19,
+        decimal_places=4,
+    )
+    CapitalMax = models.DecimalField(
+        default=9999999,
+        verbose_name="Capital Maximal",
+        db_column="capitalmax",
+        max_digits=19,
+        decimal_places=4,
+    )
+    FranchiseMin = models.DecimalField(
+        default=0,
+        verbose_name="(Franchise Du) - Franchise Minimale",
+        db_column="franchisemin",
+        max_digits=19,
+        decimal_places=4,
+    )
+    FranchiseMax = models.DecimalField(
+        default=9999999,
+        verbose_name="(Franchise Au) - Franchise Maximale",
+        db_column="franchisemax",
+        max_digits=19,
+        decimal_places=4,
+    )
+    FranchiseMinimale = models.DecimalField(
+        default=0,
+        verbose_name="(Franchise Min) - Franchise Minimale",
+        db_column="franchiseminimale",
+        max_digits=19,
+        decimal_places=4,
+    )
+    AgeVehiculeMin = models.SmallIntegerField(
+        default=0, verbose_name="Âge Minimal Véhicule", db_column="agevehiculemin"
+    )
+    AgeVehiculeMax = models.SmallIntegerField(
+        default=30000, verbose_name="Âge Maximal Véhicule", db_column="agevehiculemax"
+    )
+    AgeConducteurMin = models.SmallIntegerField(
+        default=0, verbose_name="Âge Minimal Conducteur", db_column="ageconducteurmin"
+    )
+    AgeConducteurMax = models.SmallIntegerField(
+        default=30000,
+        verbose_name="Âge Maximal Conducteur",
+        db_column="ageconducteurmax",
+    )
+    NombrePlacesMin = models.SmallIntegerField(
+        default=0, verbose_name="Nombre Minimum Places", db_column="nombreplacesmin"
+    )
+    NombrePlacesMax = models.SmallIntegerField(
+        default=30000, verbose_name="Nombre Maximum Places", db_column="nombreplacesmax"
+    )
+    Taux = models.DecimalField(
+        default=0,
+        verbose_name="Taux",
+        db_column="taux",
+        max_digits=19,
+        decimal_places=4,
+    )
+    PrimeMin = models.DecimalField(
+        default=0,
+        verbose_name="Prime Minimum",
+        db_column="primein",
+        max_digits=19,
+        decimal_places=4,
+    )
+    PlacesGrat = models.IntegerField(
+        default=0, verbose_name="Places Gratuites", db_column="placesgrat"
+    )
+    PrimePlace = models.DecimalField(
+        default=0,
+        verbose_name="Prime Place",
+        db_column="primeplace",
+        max_digits=19,
+        decimal_places=4,
+    )
+    PrimeGar = models.DecimalField(
+        default=0,
+        verbose_name="Prime Garantie",
+        db_column="primegar",
+        max_digits=19,
+        decimal_places=4,
+    )
+    Deces = models.DecimalField(
+        default=0,
+        verbose_name="Décès",
+        db_column="deces",
+        max_digits=19,
+        decimal_places=4,
+    )
+    Ipp = models.DecimalField(
+        default=0, verbose_name="IPP", db_column="ipp", max_digits=19, decimal_places=4
+    )
+    FraisMed = models.DecimalField(
+        default=0,
+        verbose_name="Frais Médicaux",
+        db_column="fraismed",
+        max_digits=19,
+        decimal_places=4,
+    )
+    MinProrata = models.DecimalField(
+        default=0,
+        verbose_name="Minimum Prorata",
+        db_column="minprorata",
+        max_digits=19,
+        decimal_places=4,
+    )
+    CodeCarburant = models.IntegerField(
+        verbose_name="Code Carburant", db_column="codecarburant", null=True, blank=True
+    )
+
+    class Meta:
+        db_table = "stdtarifdetail"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(PuissanceMax__gte=models.F("PuissanceMin")),
+                name="detailtarif_puissancemax_gte_puissancemin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(TonnageMax__gte=models.F("TonnageMin")),
+                name="detailtarif_tonnagemax_gte_tonnagemin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(CapitalMax__gte=models.F("CapitalMin")),
+                name="detailtarif_capitalmax_gte_capitalmin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(FranchiseMax__gte=models.F("FranchiseMin")),
+                name="detailtarif_franchisemax_gte_franchisemin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(AgeVehiculeMax__gte=models.F("AgeVehiculeMin")),
+                name="detailtarif_agevehiculemax_gte_agevehiculemin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(AgeConducteurMax__gte=models.F("AgeConducteurMin")),
+                name="detailtarif_ageconducteurmax_gte_ageconducteurmin",
+            ),
+            models.CheckConstraint(
+                check=models.Q(NombrePlacesMax__gte=models.F("NombrePlacesMin")),
+                name="detailtarif_nombreplacesmax_gte_nombreplacesmin",
+            ),
+        ]
+
+
+class Offre(models.Model):
+    IdOffre = models.AutoField(
+        verbose_name="Id Offre",
+        db_column="idoffre",
+        primary_key=True,
+    )
+    LibelleOffre = models.CharField(
+        verbose_name="Libellé Offre",
+        db_column="libelleoffre",
+        max_length=120,
+        blank=True,
+        null=True,
+    )
+    ZoneCouverture = models.ForeignKey(
+        "ZoneCouvertureSante",
+        db_column="idzonecouverture",
+        null=True,
+        on_delete=models.SET_NULL,
+        default=None,
+    )
+    TarifOffre = models.ForeignKey(
+        Tarif, db_column="idtarif", null=True, default=None, on_delete=models.SET_NULL
+    )
+    Payement = models.CharField(db_column="payement", max_length=1, default="A")
+    JPaiement = models.SmallIntegerField(db_column="jpaiement", default=1)
+    Entreprise = models.BooleanField(db_column="entreprise", default=False)
+    Echeance = models.CharField(db_column="echeance", max_length=1, default="L")
+    Renouvelable = models.CharField(
+        db_column="renouvelable", max_length=1, default="L"
+    )  # CHAR(1)
+    MajFract = models.SmallIntegerField(db_column="majfract", default=0)  # Default =0
+    Visibilite = models.CharField(
+        db_column="visibilite", max_length=1, default="T"
+    )  # CHAR(1): T ou P
+    Flotte = models.BooleanField(db_column="flotte", default=False)
+    Anticipation = models.SmallIntegerField(db_column="anticipation", default=26)
+    Differe = models.SmallIntegerField(
+        db_column="differe", default=0
+    )  # 0 pour l'automobile, utilisé en Risques
+    Ppr = models.CharField(db_column="ppr", max_length=1, default="N")  # N en auto
+    Actif = models.BooleanField(db_column="actif", default=True)
+    Gestion = models.BooleanField(db_column="gestion", default=False)
+    ExoneredeTaxes = models.BooleanField(db_column="exoneredetaxes", default=False)
+    ExoneredeAccess = models.BooleanField(db_column="exoneredeaccess", default=False)
+
+    def __str_(self):
+        return self.LibelleOffre
+
+    class Meta:
+        db_table = "stdoffre"
+
+
+class OffreDetail(models.Model):
+    IdOffre = models.IntegerField(db_column="idoffre", primary_key=True)
+    IdTarif = models.IntegerField(
+        db_column="idtarif",
+    )
+    IdCategorie = models.IntegerField(
+        db_column="idcategorie",
+    )
+    LibelleOffre = models.CharField(db_column="libelleoffre", max_length=100)
+    ValiditeMin = models.DateField(
+        db_column="validitemin",
+    )
+    ValiditeMax = models.DateField(
+        db_column="validitemax",
+    )
+    Actif = models.BooleanField(
+        db_column="actif",
+    )
+
+    def __str__(self):
+        return self.LibelleOffre
+
+    class Meta:
+        db_table = "stdoffredetail"
+        unique_together = (("IdOffre", "IdTarif"),)
+
+
+class Profession(models.Model):
+    IdProfession = models.AutoField(
+        verbose_name="Id Profession", db_column="idprofession", primary_key=True
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé", db_column="libelle", max_length=100
+    )
+    CodeProfession = models.CharField(
+        verbose_name="Code Profession",
+        db_column="codeprofession",
+        max_length=20,
+        blank=True,
+        null=True,
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdprofession"
+
+
+class Energie(models.Model):
+    IdEnergie = models.AutoField(
+        verbose_name="Id Energie", db_column="idenergie", primary_key=True
+    )
+    CodeEnergie = models.CharField(
+        verbose_name="Code Energie",
+        db_column="codeenergie",
+        max_length=4,
+        validators=[MinLengthValidator(3)],
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé Energie",
+        db_column="libelle",
+        max_length=15,
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdenergie"
+
+
+class Avenant(models.Model):
+    IdAvenant = models.AutoField(
+        verbose_name="Id AVenant", primary_key=True, db_column="idavenant"
+    )
+    CodeAvenant = models.CharField(
+        max_length=5, verbose_name="Code Avenant", db_column="codeavenant"
+    )
+    LibelleAvenant = models.CharField(
+        max_length=50, verbose_name="Libellé Avenant", db_column="libelleavenant"
+    )
+    TexteMouvement = models.CharField(
+        max_length=50,
+        verbose_name="Texte du mouvement",
+        db_column="textemouvement",
+        null=True,
+        blank=True,
+    )
+    EtatTraitement = models.CharField(
+        max_length=5,
+        verbose_name="Etat Traitement",
+        db_column="etattraitement",
+        null=True,
+        blank=True,
+        validators=[MinLengthValidator(5)],
+    )
+    Active = models.BooleanField(verbose_name="Actif", db_column="active")
+    EditionAttestation = models.BooleanField(
+        verbose_name="Edition Attestation", db_column="editionattestation", null=True
+    )
+
+    def __str__(self):
+        return self.LibelleAvenant + " (" + self.CodeAvenant + ")"
+
+    class Meta:
+        db_table = "stdavenant"
+
+
+class Qualite(models.Model):
+    IdQualite = models.AutoField(
+        verbose_name="Id Qualité", db_column="idqualite", primary_key=True
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé", max_length=100, db_column="libelle"
+    )
+    CodeQualite = models.CharField(
+        max_length=20, verbose_name="Code Qualité", db_column="codequalite"
+    )
+    TypePersonne = models.IntegerField(
+        verbose_name="Type Personne", db_column="typepersonne", default=1
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdqualite"
+        verbose_name = "Qualité"
+        verbose_name_plural = "Qualités"
+
+
+class SecteurActivite(models.Model):
+    IdSecteurActivite = models.AutoField(
+        verbose_name="Id Secteur Activité",
+        db_column="idsecteuractivite",
+        primary_key=True,
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé Secteur Activité", max_length=100, db_column="libelle"
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdsecteuractivite"
+
+
+class Marque(models.Model):
+    IdMarque = models.AutoField(
+        verbose_name="Id Marque", db_column="idmarque", primary_key=True
+    )
+    LibelleMarque = models.CharField(
+        verbose_name="Libellé", max_length=60, db_column="libellemarque"
+    )
+
+    def __str__(self):
+        return self.LibelleMarque
+
+    class Meta:
+        db_table = "stdmarque"
+
+
+class SystemeSecurite(models.Model):
+    IdSystemeSecurite = models.AutoField(
+        verbose_name="Id Système Sécurité",
+        primary_key=True,
+        db_column="idsystemesecurite",
+    )
+    LibelleSystemeSecurite = models.CharField(
+        verbose_name="Libellé", max_length=60, db_column="libellesystemesecurite"
+    )
+    TauxReduction = models.DecimalField(
+        verbose_name="Taux Réduction",
+        db_column="tauxreduction",
+        max_digits=19,
+        decimal_places=4,
+    )
+
+    def __str__(self):
+        return self.LibelleSystemeSecurite
+
+    class Meta:
+        db_table = "stdsystemesecurite"
+        verbose_name = "Système de sécurité"
+        verbose_name_plural = "Systèmes de sécurité"
+
+
+class ModeleVehicule(models.Model):
+    IdModele = models.AutoField(
+        verbose_name="Id Modèle", db_column="idmodele", primary_key=True
+    )
+    IdMarque = models.ForeignKey(
+        Marque, verbose_name="Id Marque", db_column="idmarque", on_delete=models.CASCADE
+    )
+    LibelleModele = models.CharField(
+        verbose_name="Libellé", db_column="libellemodele", max_length=30
+    )
+
+    def __str__(self):
+        return self.LibelleModele
+
+    class Meta:
+        db_table = "stdmodele"
+        verbose_name = "Modèle"
+        verbose_name_plural = "Modèles"
+
+
+class TypeAssure(models.Model):
+    id = models.AutoField(verbose_name="Id type Assuré", primary_key=True)
+    code_type = models.CharField(
+        verbose_name="Code Type Assuré", db_column="codetype", max_length=50
+    )
+    libelle_type = models.CharField(
+        verbose_name="Libellé Type Assuré", db_column="libelletype", max_length=100
+    )
+
+    def __str__(self):
+        return self.libelle_type + " (" + self.code_type + ")"
+
+    class Meta:
+        db_table = "stdtypeassure"
+        verbose_name = "Type d'assuré"
+        verbose_name_plural = "Types d'assuré"
+
+
+class TypeSouscripteur(models.Model):
+    id = models.AutoField(verbose_name="Id type Souscripteur", primary_key=True)
+    code_type = models.CharField(
+        verbose_name="Code Type Souscripteur", db_column="codetype", max_length=20
+    )
+    libelle_type = models.CharField(
+        verbose_name="Libellé Type Souscripteur",
+        db_column="libelletype",
+        max_length=100,
+    )
+
+    def __str__(self):
+        return self.libelle_type + " (" + self.code_type + ")"
+
+    class Meta:
+        db_table = "stdtypesouscripteur"
+        verbose_name = "Type de souscripteur"
+        verbose_name_plural = "Types de souscripteur"
+
+
+class UsageVehiculeAsaci(models.Model):
+    id = models.AutoField(verbose_name="Id Usage ASACI", primary_key=True)
+    code_usage = models.CharField(
+        verbose_name="Code Usage ASACI",
+        db_column="codeusage",
+        max_length=50,
+    )
+    libelle_usage = models.CharField(
+        verbose_name="Libellé", db_column="libelleusage", max_length=100
+    )
+
+    def __str__(self):
+        return self.libelle_usage + " (" + self.code_usage + ")"
+
+    class Meta:
+        db_table = "stdusageasaci"
+        verbose_name = "Usage ASACI"
+        verbose_name_plural = "Usages ASACI"
+
+
+class UsageVehicule(models.Model):
+    IdUsage = models.AutoField(
+        verbose_name="Id Usage", db_column="idusage", primary_key=True
+    )
+    CodeUsage = models.CharField(
+        verbose_name="Code Usage",
+        db_column="codeusage",
+        max_length=3,
+        validators=[MinLengthValidator(3)],
+    )
+    code_usage_asaci = models.CharField(
+        verbose_name="Code Usage ASACI",
+        max_length=50,
+        db_column="codeusageasaci",
+        null=True,
+        blank=True,
+    )
+    LibelleUsage = models.CharField(
+        verbose_name="Libellé", db_column="libelleusage", max_length=100
+    )
+    TauxTimbre = models.DecimalField(
+        verbose_name="Taux de timbre",
+        db_column="tauxtimbre",
+        max_digits=7,
+        decimal_places=4,
+        default=0,
+    )
+    Montant = models.DecimalField(
+        verbose_name="Montant",
+        db_column="montant",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
+    )
+
+    def __str__(self):
+        return self.LibelleUsage
+
+    class Meta:
+        db_table = "stdusage"
+        verbose_name = "Usage"
+        verbose_name_plural = "Usages"
+
+
+class TypeVehicule(models.Model):
+    id = models.AutoField(verbose_name="Id Type Véhicule", primary_key=True)
+    code_type = models.CharField(
+        verbose_name="Code Type Véhicule", max_length=20, db_column="codetype"
+    )
+    libelle_type = models.CharField(
+        verbose_name="Libellé Type", max_length=255, db_column="libelletype"
+    )
+
+    def __str__(self):
+        return self.libelle_type + " (" + self.code_type + ")"
+
+    class Meta:
+        db_table = "stdtypevehicule"
+        verbose_name = "Type de véhicule"
+        verbose_name_plural = "Types de véhicule"
+
+
+class Carrosserie(models.Model):
+    IdCarrosserie = models.AutoField(
+        verbose_name="Id Carrosserie", db_column="idcarrosserie", primary_key=True
+    )
+
+    LibelleCarrosserie = models.CharField(
+        verbose_name="Libellé", max_length=100, db_column="libellecarrosserie"
+    )
+    code_genre = models.CharField(
+        verbose_name="Code ASACI Genre",
+        max_length=50,
+        db_column="codegenre",
+        null=True,
+        blank=True,
+    )
+
+    Usages = models.ManyToManyField(
+        UsageVehicule,
+        related_name="Carrosseries",
+        blank=True,
+    )
+
+    def __str__(self):
+        return self.LibelleCarrosserie
+
+    class Meta:
+        db_table = "stdcarrosserie"
+
+
+class UsageCarrosserie(models.Model):
+    IdUsageCarrosserie = models.AutoField(
+        verbose_name="Id Usage Carrosserie",
+        primary_key=True,
+        db_column="idusagecarrosserie",
+    )
+    IdUsage = models.ForeignKey(
+        UsageVehicule,
+        verbose_name="Usage du véhicule",
+        db_column="idusage",
+        on_delete=models.CASCADE,
+    )
+    IdCarrosserie = models.ForeignKey(
+        Carrosserie,
+        verbose_name="Carrosserie du véhicule",
+        db_column="idcarrosserie",
+        on_delete=models.CASCADE,
+    )
+
+    class Meta:
+        db_table = "stdusagecarrosserie"
+        unique_together = (("IdUsage", "IdCarrosserie"),)
+
+
+class TypeReduction(models.Model):
+    IdTypeReduction = models.AutoField(
+        verbose_name="Id Type Réduction", db_column="idtypereduction", primary_key=True
+    )
+    IdProduit = models.IntegerField(verbose_name="Id Produit", db_column="idproduit")
+    CodeTypeReduction = models.CharField(
+        max_length=2,
+        verbose_name=" Code Type Réduction",
+        db_column="codetypereduction",
+        validators=[MinLengthValidator(2)],
+    )
+    LibelleTypeReduction = models.CharField(
+        max_length=60, verbose_name="Type Réduction", db_column="libelletypereduction"
+    )
+    NombreMinimum = models.IntegerField(
+        verbose_name="Nombre minimum", db_column="nombreminimum"
+    )
+    NombreMaximum = models.IntegerField(
+        verbose_name="Nombre maximum", db_column="nombremaximum"
+    )
+    NbreJourMinimum = models.IntegerField(
+        default=0, verbose_name="Nombre minimum de jours", db_column="nbrejourminimum"
+    )
+    NbreJourMaximum = models.IntegerField(
+        default=0, verbose_name="Nombre maximum de jours", db_column="nbrejourmaximum"
+    )
+    CapitalMinimum = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=0.0,
+        verbose_name="Capital minimum",
+        db_column="capitalminimum",
+    )
+    CapitalMaximum = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=0.0,
+        verbose_name="Capital maximum",
+        db_column="capitalmaximum",
+    )
+    TauxReduction = models.FloatField(
+        default=0.0, verbose_name="Taux de réduction", db_column="tauxreduction"
+    )
+    Forfait = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=0.0,
+        verbose_name="Forfait",
+        db_column="forfait",
+    )
+
+    def __str__(self):
+        return self.LibelleTypeReduction
+
+    class Meta:
+        db_table = "stdtypereduction"
+
+
+class OffreGarantie(models.Model):
+    IdOffreGarantie = models.AutoField(
+        verbose_name="Id Offre Garantie", primary_key=True, db_column="idoffregarantie"
+    )
+    IdOffre = models.ForeignKey(
+        Offre, verbose_name="Offre", db_column="idoffre", on_delete=models.CASCADE
+    )
+    IdSousGarantie = models.ForeignKey(
+        SousGarantie,
+        verbose_name="Sous/Garantie",
+        db_column="idsousgarantie",
+        null=True,
+        on_delete=models.CASCADE,
+    )
+    IdCompagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        default=0,
+        on_delete=models.CASCADE,
+    )
+    TauxFranchise = models.DecimalField(
+        max_digits=5, decimal_places=2, db_column="tauxfranchise", default=0
+    )
+    FranchiseMinimum = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="franchiseminimum", default=0
+    )
+    FranchiseMaximum = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="franchisemaximum", default=0
+    )
+
+    class Meta:
+        db_table = "stdoffregarantie"
+        verbose_name = "Garantie liée à une offre"
+        verbose_name_plural = "Garanties liées à une offre"
+
+
+class GarantieProposee(models.Model):
+    IdGarantie = models.IntegerField()
+    LibelleGarantie = models.CharField(max_length=50)
+    IdSousGarantie = models.IntegerField()
+    LibelleSousGarantie = models.CharField(max_length=30)
+    Acquise = models.BooleanField()
+    Capital = models.DecimalField(max_digits=19, decimal_places=4)
+    NombrePlace = models.SmallIntegerField()
+    PrimeAnnuelle = models.DecimalField(max_digits=19, decimal_places=4)
+    PrimeNette = models.DecimalField(max_digits=19, decimal_places=4)
+    Taxe = models.DecimalField(max_digits=19, decimal_places=4)
+    MontantAccessoire = models.DecimalField(max_digits=19, decimal_places=4)
+    TauxFranchise = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    FranchiseMinimum = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    FranchiseMaximum = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    TexteFranchise = models.CharField(max_length=120, null=True)
+
+    def __str__(self):
+        return (
+            "Garantie: "
+            + self.LibelleGarantie
+            + ", "
+            + "S/Garantie: "
+            + self.LibelleSousGarantie
+        )
+
+    class Meta:
+        managed = False
+
+
+class DemandeGarantie(models.Model):
+    IdOffre = models.IntegerField(null=True)
+    IdTarif = models.IntegerField(null=True)
+    ValNeuve = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    ValVenale = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    ValAccessoire = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    Puissance = models.SmallIntegerField(null=True)
+    CodeCarburant = models.IntegerField(null=True)
+    Tonnage = models.IntegerField(null=True)
+    TauxReduction = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    CodeAlarme = models.IntegerField(null=True)
+    Bns = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+
+    class Meta:
+        managed = False
+
+
+class DemandeGarantieIa(models.Model):
+    IdOffre = models.IntegerField(null=True)
+    CapitalDeces = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    CapitalInfirmite = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    CapitalFraisTraitement = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    CodeActivite = models.CharField(max_length=3, null=True)
+
+    class Meta:
+        managed = False
+
+
+class DemandeGarantieHabitation(models.Model):
+    IdOffre = models.IntegerField(null=True)
+    ValeurCapitalLoyer = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    ValeurCapitalContenu = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    ValeurCapitalObjetPrecieux = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    ValeurCapitalMateriel = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    ValeurDegatBatiment = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    ValeurDegatContenu = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    Gardien = models.BooleanField(null=True)
+    Locataire = models.BooleanField(null=True)
+
+    class Meta:
+        managed = False
+
+
+class DemandeGarantieRC(models.Model):
+    IdOffre = models.IntegerField()
+    CapitalDommageCorporel = models.DecimalField(max_digits=19, decimal_places=4)
+    CapitalDommageMateriel = models.DecimalField(max_digits=19, decimal_places=4)
+    CapitalIntoxicationAlimentaire = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
+    AssiettePrime = models.DecimalField(max_digits=19, decimal_places=4)
+    TauxPrime = models.DecimalField(max_digits=5, decimal_places=2)
+    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2)
+
+    class Meta:
+        managed = False
+
+
+class DemandeGarantieVoyage(models.Model):
+    IdOffre = models.IntegerField(null=True)
+    IdZoneVoyage = models.IntegerField(null=True)
+    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+
+    class Meta:
+        managed = False
+
+
+class GenreVehicule(models.Model):
+    IdGenre = models.AutoField(
+        verbose_name="Id Genre", primary_key=True, db_column="idgenre"
+    )
+    CodeGenre = models.CharField(
+        max_length=50, verbose_name="Code Genre", db_column="codegenre"
+    )
+    LibelleGenre = models.CharField(
+        db_column="libellegenre", max_length=50, verbose_name="Libellé"
+    )
+
+    def __str__(self):
+        return self.LibelleGenre
+
+    class Meta:
+        db_table = "stdgenrevehicule"
+
+
+class Continent(models.Model):
+    id_continent = models.AutoField(
+        verbose_name="Id Continent", db_column="id_continent", primary_key=True
+    )
+    libelle_continent = models.CharField(
+        verbose_name="Nom", db_column="libelle_continent", max_length=50
+    )
+
+    def __str__(self):
+        return self.libelle_continent
+
+    class Meta:
+        db_table = "stdcontinent"
+        verbose_name = "Continent"
+        verbose_name_plural = "Continents"
+
+
+class Pays(models.Model):
+    id_pays = models.AutoField(
+        verbose_name="Id Pays", db_column="id_pays", primary_key=True
+    )
+    libelle_pays = models.CharField(
+        db_column="libelle_pays", verbose_name="Libellé", max_length=50, default=""
+    )
+    nationalite = models.CharField(
+        db_column="nationalite", verbose_name="Nationalité", max_length=60
+    )
+    sin_autorise = models.BooleanField(
+        db_column="sin_autorise", verbose_name="Sinistre Autorisé", default=False
+    )
+    continent = models.ForeignKey(
+        Continent,
+        null=True,
+        related_name="pays",
+        on_delete=models.SET_NULL,
+        db_column="continent_id",
+    )
+    # zone = models.ForeignKey(
+    #     ZoneVoyage,
+    #     null=True,
+    #     related_name="pays",
+    #     on_delete=models.SET_NULL,
+    #     db_column="zone_id",
+    # )
+
+    def __str__(self):
+        return self.libelle_pays
+
+    class Meta:
+        db_table = "stdpays"
+        verbose_name = "Pays"
+        verbose_name_plural = "Pays"
+        ordering = ["libelle_pays"]
+
+
+class PaysZone(models.Model):
+    id_pays = models.BigIntegerField(
+        verbose_name="Id Pays", db_column="id_pays", primary_key=True
+    )
+    libelle_pays = models.CharField(
+        db_column="libelle_pays", verbose_name="Libellé", max_length=50, default=""
+    )
+    nationalite = models.CharField(
+        db_column="nationalite", verbose_name="Nationalité", max_length=60
+    )
+    id_zone = models.IntegerField()
+
+    def __str__(self):
+        return self.libelle_pays
+
+    class Meta:
+        managed = False
+
+
+class ZoneVoyage(models.Model):
+    id_zone = models.AutoField(
+        verbose_name="Id Zone", db_column="id_zone", primary_key=True
+    )
+    libelle_zone = models.CharField(
+        verbose_name="Libellé", db_column="libelle_zone", max_length=50
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="id_compagnie",
+        null=True,
+        blank=True,
+        default=1,
+        on_delete=models.SET_NULL,
+    )
+    pays = models.ManyToManyField(
+        Pays, through="ZoneVoyagePays", related_name="zonesvoyage"
+    )
+
+    def __str__(self):
+        return self.libelle_zone
+
+    class Meta:
+        db_table = "stdzonevoyage"
+        verbose_name = "Zone de destination"
+        verbose_name_plural = "Zones de destination"
+
+
+class ZoneVoyagePays(models.Model):
+    zone_voyage = models.ForeignKey(
+        ZoneVoyage,
+        verbose_name="Zone de voyage",
+        db_column="id_zone",
+        on_delete=models.CASCADE,
+    )
+    pays = models.ForeignKey(
+        Pays,
+        verbose_name="Pays de destination",
+        db_column="id_pays",
+        on_delete=models.CASCADE,
+    )
+
+    def __str__(self):
+        return "{}---{}".format(self.zone_voyage.libelle_zone, self.pays.libelle_pays)
+
+    class Meta:
+        db_table = "stdzonevoyagepays"
+        verbose_name = "Relation Pays - Zone"
+        verbose_name_plural = "Relations Pays - Zone"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["zone_voyage", "pays"], name="zone_voyage_pays_unique"
+            ),
+        ]
+
+
+class ZoneVoyagePrime(models.Model):
+    tarif = models.ForeignKey(
+        Tarif,
+        verbose_name="Tarif",
+        db_column="id_tarif",
+        related_name="primesvoyage",
+        on_delete=models.CASCADE,
+    )
+    zone_voyage = models.ForeignKey(
+        ZoneVoyage,
+        verbose_name="Zone de voyage",
+        db_column="id_zone",
+        related_name="primesvoyage",
+        on_delete=models.CASCADE,
+    )
+    duree_minimum = models.PositiveIntegerField(
+        verbose_name="Durée minimum", db_column="duree_minimum"
+    )
+    duree_maximum = models.PositiveIntegerField(
+        verbose_name="Durée maximum", db_column="duree_maximum"
+    )
+    age_minimum = models.PositiveIntegerField(
+        verbose_name="Âge minimum", db_column="age_minimum"
+    )
+    age_maximum = models.PositiveIntegerField(
+        verbose_name="Âge maximum", db_column="age_maximum"
+    )
+    prime_nette = models.DecimalField(
+        verbose_name="Prime nette",
+        db_column="prime_nette",
+        max_digits=19,
+        decimal_places=4,
+    )
+    accessoire = models.DecimalField(
+        verbose_name="Accessoire",
+        db_column="accessoire",
+        max_digits=19,
+        decimal_places=4,
+    )
+    taxe = models.DecimalField(
+        verbose_name="Taxe", db_column="taxe", max_digits=19, decimal_places=4
+    )
+    prime_ttc = models.DecimalField(
+        verbose_name="Prime TTC", db_column="prime_ttc", max_digits=19, decimal_places=4
+    )
+    prime_nette_ristourne = models.DecimalField(
+        verbose_name="Prime nette (ristourne)",
+        db_column="prime_nette_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+    taxe_ristourne = models.DecimalField(
+        verbose_name="Taxe (ristourne)",
+        db_column="taxe_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+    prime_ttc_ristourne = models.DecimalField(
+        verbose_name="Prime TTC (ristourne)",
+        db_column="prime_ttc_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+
+    class Meta:
+        db_table = "stdzonevoyageprime"
+        verbose_name = "Tranche de prime"
+        verbose_name_plural = "Tranches de prime"
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "tarif",
+                    "zone_voyage",
+                    "duree_minimum",
+                    "duree_maximum",
+                    "age_minimum",
+                    "age_maximum",
+                ],
+                name="zone_voyage_prime_tranche_unique",
+            ),
+            models.CheckConstraint(
+                check=Q(age_minimum__lte=models.F("age_maximum")),
+                name="zone_voyage_prime_check_age",
+            ),
+            models.CheckConstraint(
+                check=Q(duree_minimum__lte=models.F("duree_maximum")),
+                name="zone_voyage_prime_check_duree",
+            ),
+        ]
+
+
+class ZoneVoyagePrimeNsia(models.Model):
+    offre = models.ForeignKey(
+        Offre,
+        verbose_name="Offre",
+        db_column="id_offre",
+        related_name="primesvoyagensia",
+        on_delete=models.CASCADE,
+    )
+    zone_voyage = models.ForeignKey(
+        ZoneVoyage,
+        verbose_name="Zone de voyage",
+        db_column="id_zone",
+        related_name="primesvoyagensia",
+        on_delete=models.CASCADE,
+    )
+    duree_minimum = models.PositiveIntegerField(
+        verbose_name="Durée minimum", db_column="duree_minimum"
+    )
+    duree_maximum = models.PositiveIntegerField(
+        verbose_name="Durée maximum", db_column="duree_maximum"
+    )
+    age_minimum = models.PositiveIntegerField(
+        verbose_name="Âge minimum", db_column="age_minimum"
+    )
+    age_maximum = models.PositiveIntegerField(
+        verbose_name="Âge maximum", db_column="age_maximum"
+    )
+    prime_nette = models.DecimalField(
+        verbose_name="Prime nette",
+        db_column="prime_nette",
+        max_digits=19,
+        decimal_places=4,
+    )
+    accessoire = models.DecimalField(
+        verbose_name="Accessoire",
+        db_column="accessoire",
+        max_digits=19,
+        decimal_places=4,
+    )
+    taxe = models.DecimalField(
+        verbose_name="Taxe", db_column="taxe", max_digits=19, decimal_places=4
+    )
+    prime_ttc = models.DecimalField(
+        verbose_name="Prime TTC", db_column="prime_ttc", max_digits=19, decimal_places=4
+    )
+    prime_nette_ristourne = models.DecimalField(
+        verbose_name="Prime nette (ristourne)",
+        db_column="prime_nette_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+    taxe_ristourne = models.DecimalField(
+        verbose_name="Taxe (ristourne)",
+        db_column="taxe_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+    prime_ttc_ristourne = models.DecimalField(
+        verbose_name="Prime TTC (ristourne)",
+        db_column="prime_ttc_ristourne",
+        max_digits=19,
+        decimal_places=4,
+    )
+
+    class Meta:
+        db_table = "stdzonevoyageprimensia"
+        verbose_name = "Tranche de prime NSIA"
+        verbose_name_plural = "Tranches de prime NSIA"
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "offre",
+                    "zone_voyage",
+                    "duree_minimum",
+                    "duree_maximum",
+                    "age_minimum",
+                    "age_maximum",
+                ],
+                name="zone_voyage_prime_nsia_tranche_unique",
+            ),
+            models.CheckConstraint(
+                check=Q(age_minimum__lte=models.F("age_maximum")),
+                name="zone_voyage_prime_nsia_check_age",
+            ),
+            models.CheckConstraint(
+                check=Q(duree_minimum__lte=models.F("duree_maximum")),
+                name="zone_voyage_prime_nsia_check_duree",
+            ),
+        ]
+
+
+class Region(models.Model):
+    IdRegion = models.AutoField(
+        verbose_name="Id Région", db_column="idregion", primary_key=True
+    )
+    IdPays = models.ForeignKey(
+        Pays,
+        verbose_name="Pays",
+        related_name="Régions",
+        db_column="idpays",
+        on_delete=models.CASCADE,
+    )
+    Libelle = models.CharField(
+        verbose_name="Nom", db_column="libelle", max_length=100, blank=True, null=True
+    )
+    CodeRegion = models.CharField(
+        verbose_name="Code Région",
+        db_column="coderegion",
+        max_length=20,
+        blank=True,
+        null=True,
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdregion"
+
+
+class Ville(models.Model):
+    IdVille = models.AutoField(
+        verbose_name="Id Ville", db_column="idville", primary_key=True
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé", db_column="libelle", max_length=100
+    )
+    IdRegion = models.ForeignKey(
+        Region,
+        verbose_name="Région",
+        db_column="idregion",
+        related_name="Villes",
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL,
+    )
+    CodeFeder = models.CharField(
+        verbose_name="Fédération", db_column="codefeder", max_length=50
+    )
+    CodeVille = models.CharField(
+        verbose_name="Code Ville",
+        db_column="codeville",
+        max_length=20,
+        blank=True,
+        null=True,
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdville"
+
+
+class Commune(models.Model):
+    id = models.AutoField(verbose_name="Id Commune", primary_key=True)
+    code_commune = models.CharField(
+        max_length=20, verbose_name="Code Commune", db_column="codecommune"
+    )
+    nom_commune = models.CharField(
+        max_length=100, verbose_name="Nom Commune", db_column="nomcommune"
+    )
+    ville = models.ForeignKey(
+        Ville,
+        related_name="communes",
+        verbose_name="Ville",
+        db_column="idville",
+        on_delete=models.CASCADE,
+    )
+
+    def __str__(self):
+        return self.nom_commune
+
+    class Meta:
+        db_table = "stdcommune"
+        verbose_name = "Commune"
+        verbose_name_plural = "Communes"
+
+
+class Intermediaire(models.Model):
+    IdIntermediaire = models.AutoField(
+        verbose_name="Id Intermediaire", db_column="idintermediaire", primary_key=True
+    )
+    CodeIntermediaire = models.CharField(
+        verbose_name="Code Intermediaire", db_column="codeintermediaire", max_length=10
+    )
+    LibelleIntermediaire = models.CharField(
+        verbose_name="Libellé", db_column="libelleintermediaire", max_length=50
+    )
+    Adresse = models.CharField(
+        verbose_name="Adresse", db_column="adresse", max_length=50
+    )
+    Telephone = models.CharField(
+        verbose_name="Téléphone", db_column="telephone", max_length=20
+    )
+    Fax = models.CharField(verbose_name="Télécopie", db_column="fax", max_length=20)
+    Mobile = models.CharField(
+        verbose_name="Téléphone Mobile", db_column="mobile", max_length=20
+    )
+    Email = models.EmailField(verbose_name="Adresse Email", db_column="email")
+    IdVille = models.ForeignKey(
+        Ville, verbose_name="Ville", on_delete=models.DO_NOTHING, db_column="idville"
+    )
+    Retard = models.SmallIntegerField(verbose_name="Retard", db_column="retard")
+    Coassurance = models.BooleanField(
+        verbose_name="Coassurance", db_column="coassurance"
+    )
+    CodeAsaci = models.CharField(
+        verbose_name="Code ASACI", db_column="codeasaci", max_length=20
+    )
+    Login = models.CharField(verbose_name="Login", db_column="login", max_length=50)
+    MotDePasse = models.CharField(
+        verbose_name="Mot de passe", db_column="motdepasse", max_length=50
+    )
+    DateDebut = models.DateTimeField(
+        verbose_name="Date Début", db_column="datedebut", blank=True, null=True
+    )
+    TitulaireAgrement = models.CharField(
+        verbose_name="Titulaire Agrément", db_column="titulaireagrement", max_length=50
+    )
+    Responsable = models.CharField(
+        verbose_name="Responsable", db_column="responsable", max_length=50
+    )
+    PoliceRc = models.CharField(
+        verbose_name="Police RC", db_column="policerc", max_length=50
+    )
+    EcheanceRc = models.DateTimeField(
+        verbose_name="Echéance RC", db_column="echeancerc", blank=True, null=True
+    )
+    NumChar = models.SmallIntegerField(
+        verbose_name="NumChar",
+        db_column="numchar",
+    )
+    IdTypeSite = models.IntegerField(
+        verbose_name="Type Site", db_column="idtypesite", blank=True, null=True
+    )
+    ProductionActif = models.BooleanField(
+        verbose_name="Production Actif",
+        db_column="productionactif",
+        blank=True,
+        null=True,
+    )
+    SoldeDepot = models.DecimalField(
+        verbose_name="Solde des dépôts",
+        db_column="soldedepot",
+        max_digits=19,
+        decimal_places=4,
+    )
+    SoldeCommission = models.DecimalField(
+        verbose_name="Solde des commissions",
+        db_column="soldecommission",
+        max_digits=19,
+        decimal_places=4,
+    )
+    serie_devis = models.IntegerField(
+        verbose_name="Serie devis", db_column="seriedevis", null=True, blank=True
+    )
+    serie_contrat = models.IntegerField(
+        verbose_name="Serie contrat", db_column="seriecontrat", null=True, blank=True
+    )
+    numero_rccm = models.CharField(
+        max_length=40,
+        null=True,
+        blank=True,
+        verbose_name="Numéro Registre Commerce",
+        db_column="numerorccm",
+    )
+
+    def __str__(self):
+        return self.LibelleIntermediaire
+
+    class Meta:
+        db_table = "stdintermediaire"
+
+
+class ContinentZonePays(models.Model):
+    id_continent_zone = models.AutoField(
+        verbose_name="Lien continent-zone",
+        db_column="id_continent_zone",
+        primary_key=True,
+    )
+    id_zone = models.ForeignKey(
+        ZoneVoyage, db_column="id_zone", on_delete=models.CASCADE
+    )
+    id_continent = models.ForeignKey(
+        Continent, db_column="id_continent", on_delete=models.CASCADE
+    )
+    id_pays = models.ForeignKey(Pays, db_column="id_pays", on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = "stdcontinentzonepays"
+
+
+class Produit(models.Model):
+    id_produit = models.AutoField(
+        verbose_name="Id Produit", db_column="idproduit", primary_key=True
+    )
+    libelle_produit = models.CharField(
+        verbose_name="Libellé", max_length=60, db_column="libelleproduit"
+    )
+    active = models.BooleanField(verbose_name="Actif", db_column="active")
+
+    avenants = models.ManyToManyField(
+        Avenant,
+        through="AvenantProduit",
+        through_fields=("produit", "avenant"),
+    )
+
+    def __str__(self):
+        return self.libelle_produit
+
+    class Meta:
+        db_table = "stdproduit"
+        verbose_name = "Produit"
+        verbose_name_plural = "Produits"
+
+
+class AvenantProduit(models.Model):
+    produit = models.ForeignKey(
+        Produit,
+        db_column="idproduit",
+        verbose_name="ID Produit",
+        on_delete=models.CASCADE,
+    )
+    avenant = models.ForeignKey(
+        Avenant,
+        db_column="idavenant",
+        verbose_name="ID Avenant",
+        on_delete=models.CASCADE,
+    )
+
+    commentaires = models.CharField(
+        db_column="commentaires",
+        verbose_name="Commentaires",
+        max_length=100,
+        null=True,
+        default="",
+    )
+    flotte = models.BooleanField(db_column="flotte", verbose_name="Flotte")
+    mono = models.BooleanField(db_column="mono", verbose_name="Mono")
+
+    def __str_(self):
+        return "{} ({})".format(self.produit, self.avenant)
+
+    class Meta:
+        db_table = "stdavenantproduit"
+        unique_together = ["avenant", "produit"]
+        verbose_name = "Avenants d'un produit"
+        verbose_name_plural = "Avenants d'un produit"
+
+
+class TauxTaxeGarantieProduit(models.Model):
+    garantie = models.ForeignKey(
+        SousGarantie,
+        verbose_name="Garantie",
+        db_column="idgarantie",
+        default=0,
+        on_delete=models.CASCADE,
+    )
+    produit = models.ForeignKey(
+        Produit,
+        verbose_name="Produit",
+        db_column="idproduit",
+        default=0,
+        on_delete=models.CASCADE,
+    )
+    tauxtaxe = models.DecimalField(max_digits=5, decimal_places=2)
+    tauxtaxegroupe = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    debutvalidite = models.DateField()
+    finvalidite = models.DateField()
+
+    class Meta:
+        db_table = "stdtauxtaxegarantieproduit"
+        unique_together = (("garantie", "produit"),)
+
+
+class Accessoire(models.Model):
+    produit = models.ForeignKey(
+        Produit,
+        verbose_name="Produit",
+        db_column="idproduit",
+        default=0,
+        on_delete=models.CASCADE,
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        default=1,
+        on_delete=models.CASCADE,
+    )
+    primemin = models.DecimalField(max_digits=19, decimal_places=4)
+    primemax = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True, blank=True
+    )
+    accessoires = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True, blank=True
+    )
+    montantforfait = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True, blank=True
+    )
+
+    class Meta:
+        db_table = "stdaccessoire"
+        unique_together = (("produit", "compagnie", "primemin"),)
+
+
+class CommissionProduit(models.Model):
+    id_commission_produit = models.AutoField(
+        verbose_name="Id Taux Commission",
+        db_column="idprodcompacommission",
+        primary_key=True,
+    )
+    produit = models.ForeignKey(
+        Produit,
+        related_name="taux_commission_produit",
+        verbose_name="Produit",
+        db_column="idproduit",
+        on_delete=models.DO_NOTHING,
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        related_name="taux_commission_compagnie",
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        on_delete=models.DO_NOTHING,
+    )
+    taux_commission = models.DecimalField(
+        verbose_name="Taux de commission",
+        max_digits=5,
+        decimal_places=2,
+        db_column="tauxcommission",
+    )
+    forfait = models.DecimalField(
+        verbose_name="Forfait", db_column="forfait", max_digits=19, decimal_places=4
+    )
+    debut_validite = models.DateField(
+        verbose_name="Valide à partir de", db_column="debutvalidite"
+    )
+    fin_validite = models.DateField(
+        verbose_name="Valide jusqu'au", db_column="finvalidite"
+    )
+
+    class Meta:
+        db_table = "stdcommissionproduitcompagnie"
+        verbose_name = "Taux de commission/produit et compagnie"
+        verbose_name_plural = "Taux de commission/produit et compagnie"
+
+
+#################IA#########################################
+class QualiteAyantDroit(models.Model):
+    id_qualite = models.AutoField(
+        verbose_name="Id Qualité", db_column="idqualite", primary_key=True
+    )
+    libelle_qualite_ayant_droit = models.CharField(
+        verbose_name="Libellé", db_column="libellequaliteayantdroit", max_length=60
+    )
+    code_qualite_ayant_droit = models.CharField(
+        verbose_name="Code Qualité",
+        db_column="codequaliteayantdroit",
+        max_length=3,
+        unique=True,
+        validators=[MinLengthValidator(3)],
+        default="000",
+    )
+    rente = models.BooleanField(verbose_name="Rente", default=True)
+
+    def __str__(self):
+        return self.libelle_qualite_ayant_droit
+
+    class Meta:
+        db_table = "stdqualiteayantdroit"
+        verbose_name = "Qualité d'un ayant-droit"
+        verbose_name_plural = "Qualités des ayant-droits"
+
+
+class CategoriePermis(models.Model):
+    id = models.AutoField(verbose_name="ID Catégorie", primary_key=True)
+    libelle = models.CharField(verbose_name="Libelle Catégorie", max_length=20)
+
+    def __str__(self):
+        return self.libelle
+
+    class Meta:
+        db_table = "stdcategoriepermis"
+        verbose_name = "Catégorie de permis de conduire"
+        verbose_name_plural = "Catégories de permis de conduire"
+
+
+class OffreParProduit(models.Model):
+    IdOffre = models.IntegerField()
+    LibelleOffre = models.CharField(max_length=80)
+
+    def __str__(self):
+        return self.LibelleOffre
+
+    class Meta:
+        managed = False
+
+
+class OffreSanteParTarif(models.Model):
+    IdOffre = models.IntegerField()
+    LibelleOffre = models.CharField(max_length=80)
+    IdZoneCouverture = models.IntegerField(null=True)
+
+    def __str__(self):
+        return self.LibelleOffre
+
+    class Meta:
+        managed = False
+
+
+class TarifParProduit(models.Model):
+    IdTarif = models.IntegerField()
+    LibelleTarif = models.CharField(max_length=100)
+    CodeCategorie = models.CharField(max_length=3)
+
+    def __str__(self):
+        return self.LibelleTarif
+
+    class Meta:
+        managed = False
+
+
+class QualiteSouscripteurMrh(models.Model):
+    id = models.AutoField(verbose_name="ID Qualité Souscripteur MRH", primary_key=True)
+    libelle = models.CharField(
+        verbose_name="Libellé Qualité Souscripteur",
+        db_column="libellequalitesouscripteur",
+        max_length=80,
+    )
+
+    def __str__(self):
+        return self.libelle
+
+    class Meta:
+        db_table = "stdqualitesouscripteur"
+        verbose_name = "Qualité du souscripteur"
+        verbose_name_plural = "Qualités du souscripteur"
+
+
+class ProfessionIa(models.Model):
+    id = models.AutoField(verbose_name="ID Profession IA", primary_key=True)
+    code_profession = models.CharField(
+        verbose_name="Profession IA",
+        db_column="codeprofession",
+        max_length=3,
+        unique=True,
+        validators=[MinLengthValidator(3)],
+    )
+    libelle_profession = models.CharField(
+        verbose_name="Libellé Profession IA",
+        db_column="libelleprofession",
+        max_length=150,
+    )
+    code_classe_assure = models.CharField(
+        verbose_name="Classe de l'assuré IA",
+        db_column="codeclasseassure",
+        max_length=2,
+        validators=[MinLengthValidator(2)],
+    )
+    active = models.BooleanField(verbose_name="Active")
+    debut_validite = models.DateField(
+        verbose_name="Valide du", db_column="debutvalidite"
+    )
+    fin_validite = models.DateField(
+        verbose_name="Valide jusqu'au", db_column="finvalidite"
+    )
+
+    def __str__(self):
+        return self.libelle_profession + " (" + self.code_profession + ")"
+
+    class Meta:
+        db_table = "stdprofessionia"
+        verbose_name = "Profession IA"
+        verbose_name_plural = "Professions IA"
+
+
+class Banque(models.Model):
+    idbanque = models.AutoField(
+        primary_key=True, verbose_name="ID Banque", db_column="idbanque"
+    )
+    libelle = models.CharField(
+        max_length=50, verbose_name="Nom de la banque", db_column="libelle"
+    )
+    code_banque = models.CharField(
+        max_length=20,
+        verbose_name="Code de la banque",
+        db_column="code_banque",
+        null=True,
+        blank=True,
+    )
+
+    def __str__(self):
+        return "{} ({})".format(self.libelle, self.idbanque)
+
+    class Meta:
+        db_table = "stdbanque"
+        verbose_name = "Banque"
+        verbose_name_plural = "Banques"
+
+
+class ModeEncaissement(models.Model):
+    idmodeencaissement = models.AutoField(
+        verbose_name="ID Mode Encaissement",
+        primary_key=True,
+        db_column="idmodeencaissement",
+    )
+    libellemodepaiement = models.CharField(
+        max_length=60, verbose_name="Mode de paiement", db_column="libellemodepaiement"
+    )
+    banque = models.BooleanField(
+        verbose_name="Paiement bancaire", db_column="banque", default=False
+    )
+    compensation = models.BooleanField(
+        verbose_name="Compensation",
+        null=True,
+        blank=True,
+        db_column="compensation",
+        default=False,
+    )
+    abregereglement = models.CharField(
+        max_length=3,
+        verbose_name="Abrégé Règlement",
+        db_column="abregereglement",
+        null=True,
+        blank=True,
+    )
+    etatencaissement = models.BooleanField(
+        verbose_name="Etat Encaissement",
+        db_column="etatencaissement",
+        null=True,
+        blank=True,
+    )
+    ordreaffichage = models.CharField(
+        max_length=2, null=True, blank=True, db_column="ordreaffichage"
+    )
+
+    def __str__(self):
+        return "{} ({})".format(self.libellemodepaiement, self.abregereglement)
+
+    class Meta:
+        db_table = "stdmodeencaissement"
+        verbose_name = "Mode d'encaissement"
+        verbose_name_plural = "Modes d'encaissement"
+
+
+class AccessoireCourtierParCompagnie(models.Model):
+    IdAccessoireCourtier = models.AutoField(
+        db_column="idaccessoirecourtier", primary_key=True
+    )
+    IdCompagnie = models.ForeignKey(
+        Compagnie, db_column="idcompagnie", on_delete=models.CASCADE
+    )
+    PrimeMin = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="primemin"
+    )
+    PrimeMax = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="primemax"
+    )
+    Forfait = models.DecimalField(max_digits=19, decimal_places=4, db_column="forfait")
+    Accessoires = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="accessoires", default=0
+    )
+
+    class Meta:
+        db_table = "stdaccessoirecourtierparcompagnie"
+
+
+class CollegeSante(models.Model):
+    idcollege = models.AutoField(
+        db_column="idcollege", verbose_name="ID Collège", primary_key=True
+    )
+    libellecollege = models.CharField(
+        verbose_name="Libellé", db_column="libellecollege", max_length=60
+    )
+
+    def __str__(self):
+        return self.libellecollege
+
+    class Meta:
+        db_table = "stdcollege"
+        verbose_name = "Collège"
+        verbose_name_plural = "Collèges"
+
+
+class OffreCollegeSante(models.Model):
+    idoffrecollege = models.AutoField(
+        db_column="idoffrecollege", verbose_name="ID Offre Collège", primary_key=True
+    )
+    offre = models.ForeignKey(
+        Offre, db_column="idoffre", on_delete=models.CASCADE, verbose_name="Offre"
+    )
+    college = models.ForeignKey(
+        CollegeSante,
+        db_column="idcollege",
+        on_delete=models.CASCADE,
+        verbose_name="Collège",
+    )
+
+    def __str__(self):
+        return self.offre.LibelleOffre + "-" + self.college.libellecollege
+
+    class Meta:
+        db_table = "stdoffrecollege"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["offre", "college"], name="offrecollege_unique_offre_college"
+            )
+        ]
+
+
+class LienJuridiqueSante(models.Model):
+    codelien = models.CharField(
+        verbose_name="Code Lien Juridique", max_length=1, primary_key=True
+    )
+    libellelien = models.CharField(max_length=20)
+
+    def __str__(self):
+        return self.libellelien
+
+    class Meta:
+        db_table = "stdlienjuridique"
+        verbose_name = "Lien Juridique"
+        verbose_name_plural = "Liens Juridiques"
+
+
+class ZoneCouvertureSante(models.Model):
+    idzone = models.AutoField(verbose_name="ID Zone Couverture", primary_key=True)
+    codezone = models.CharField(
+        verbose_name="Code Zone Couverture", max_length=3, unique=True
+    )
+    libellezone = models.CharField(max_length=40, verbose_name="Nom Zone Couverture")
+
+    def __str__(self):
+        return "{} ({})".format(self.libellezone, self.codezone)
+
+    class Meta:
+        db_table = "stdzonecouverturesante"
+        verbose_name = "Zone de couverture"
+        verbose_name_plural = "Zones de couverture"
+
+
+class ChoixSousGarantie:
+    idgarantie = None
+    idsousgarantie = None
+    tauxfranchise = None
+    franchiseminimum = None
+    franchisemaximum = None
+
+    def __init__(
+        self,
+        idgarantie,
+        idsousgarantie,
+        tauxfranchise,
+        franchiseminimum,
+        franchisemaximum,
+    ):
+        self.idgarantie = idgarantie
+        self.idsousgarantie = idsousgarantie
+        self.tauxfranchise = tauxfranchise
+        self.franchiseminimum = franchiseminimum
+        self.franchisemaximum = franchisemaximum
+
+
+class EnregistrementOffreGarantie:
+    idcompagnie = None
+    idproduit = None
+    idofre = None
+    liste_sous_garantie = None
+
+    def __init__(
+        self,
+        idcompagnie,
+        idproduit,
+        idoffre,
+        liste_sous_garantie,
+    ):
+        self.idcompagnie = idcompagnie
+        self.idproduit = idproduit
+        self.idoffre = idoffre
+        self.liste_sous_garantie = liste_sous_garantie
+
+
+class GarantiePourOffre(models.Model):
+    IdGarantie = models.IntegerField()
+    IdSousGarantie = models.IntegerField()
+    CodeSousGarantie = models.CharField(max_length=5)
+    LibelleSousGarantie = models.CharField(max_length=100)
+    TauxFranchise = models.DecimalField(max_digits=5, decimal_places=2)
+    FranchiseMinimum = models.DecimalField(max_digits=19, decimal_places=4)
+    FranchiseMaximum = models.DecimalField(max_digits=19, decimal_places=4)
+    Choix = models.BooleanField()
+
+    def __str__(self):
+        return "{} ({})".format(self.LibelleSousGarantie, self.CodeSousGarantie)
+
+    class Meta:
+        managed = False
+
+
+class ReductionFlotte(models.Model):
+    id_reduction_flotte = models.AutoField(
+        verbose_name="ID Réduction Flotte",
+        db_column="idreductionflotte",
+        primary_key=True,
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        db_column="idcompagnie",
+        verbose_name="Compagnie",
+        on_delete=models.CASCADE,
+        null=True,
+    )
+    produit = models.ForeignKey(
+        Produit, db_column="idproduit", verbose_name="Produit", on_delete=models.CASCADE
+    )
+    nombre_minimum = models.IntegerField(
+        verbose_name="Nombre Minimum", db_column="nombreminimum"
+    )
+    nombre_maximum = models.IntegerField(
+        verbose_name="Nombre Maximum", db_column="nombremaximum"
+    )
+    taux_reduction = models.DecimalField(
+        verbose_name="Taux Réduction",
+        db_column="tauxreduction",
+        max_digits=5,
+        decimal_places=2,
+    )
+    taux_reduction_tarifaire = models.DecimalField(
+        verbose_name="Réduction Tarifaire",
+        db_column="tauxreductiontarifaire",
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+    )
+    taux_reduction_commerciale = models.DecimalField(
+        verbose_name="Réduction Commerciale",
+        db_column="tauxreductioncommerciale",
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+    )
+    debut_validite = models.DateField(
+        verbose_name="Début Validité", db_column="debutvalidite"
+    )
+    fin_validite = models.DateField(
+        verbose_name="Fin Validité", db_column="finvalidite"
+    )
+
+    class Meta:
+        db_table = "stdreductionflotte"
+        constraints = [
+            CheckConstraint(
+                check=Q(nombre_maximum__gte=F("nombre_minimum")),
+                name="reduction_flotte_check_nombre_minimum",
+            ),
+            CheckConstraint(
+                check=Q(fin_validite__gte=F("debut_validite")),
+                name="reduction_flotte_check_debut_validite",
+            ),
+            CheckConstraint(
+                check=Q(taux_reduction__gte=0),
+                name="reduction_flotte_check_tx_red_cima",
+            ),
+            CheckConstraint(
+                check=Q(taux_reduction_tarifaire__gte=0),
+                name="reduction_flotte_check_tx_red_tarifaire",
+            ),
+            CheckConstraint(
+                check=Q(taux_reduction_commerciale__gte=0),
+                name="reduction_flotte_check_tx_red_commerciale",
+            ),
+        ]
+
+
+class FormuleSecuriteRoutiere(models.Model):
+    id_formule = models.AutoField(
+        verbose_name="ID Formule Sécurité Routière",
+        db_column="idformule",
+        primary_key=True,
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        on_delete=models.CASCADE,
+    )
+    libelle_formule = models.CharField(
+        verbose_name="Libellé Formule", db_column="libelleformule", max_length=80
+    )
+    capital_deces = models.DecimalField(
+        verbose_name="Capital Décès",
+        db_column="capitaldeces",
+        max_digits=19,
+        decimal_places=4,
+    )
+    capital_ipp = models.DecimalField(
+        verbose_name="Capital Infirmité Permanente",
+        db_column="capitalipp",
+        max_digits=19,
+        decimal_places=4,
+    )
+    capital_ft = models.DecimalField(
+        verbose_name="Capital Frais Traitement",
+        db_column="capitalft",
+        max_digits=19,
+        decimal_places=4,
+    )
+    nombre_place = models.IntegerField(
+        verbose_name="Nombre de places", db_column="nombreplace", default=0
+    )
+    prime_nette = models.DecimalField(
+        verbose_name="Prime Nette",
+        db_column="primenette",
+        max_digits=19,
+        decimal_places=4,
+    )
+
+    def __str__(self):
+        return "{} - Décès: {}, IPP: {}, FT: {}".format(
+            self.libelle_formule, self.capital_deces, self.capital_ipp, self.capital_ft
+        )
+
+    class Meta:
+        db_table = "stdformulesecuriteroutiere"
+
+
+class FormuleSecuriteRoutiereParCompagnie:
+    idcompagnie = None
+    codeformule = None
+    libellelongformule = None
+
+    def __init__(
+        self,
+        idcompagnie,
+        codeformule,
+        libellelongformule,
+    ):
+        self.idcompagnie = idcompagnie
+        self.codeformule = codeformule
+        self.libellelongformule = libellelongformule
+
+
+class AssistanceAutomobile(models.Model):
+    id_option = models.AutoField(
+        verbose_name="ID Option", db_column="idoption", primary_key=True
+    )
+    id_compagnie = models.ForeignKey(
+        Compagnie,
+        db_column="idcompagnie",
+        verbose_name="ID Compagnie",
+        on_delete=models.CASCADE,
+    )
+    libelle_option = models.CharField(
+        verbose_name="Libellé Option", db_column="libelleoption", max_length=50
+    )
+    prime_nette = models.DecimalField(
+        verbose_name="Prime Nette",
+        db_column="primenette",
+        max_digits=19,
+        decimal_places=4,
+    )
+
+    def __str__(self):
+        return "{} ({})".format(self.libelle_option, self.id_compagnie)
+
+    class Meta:
+        db_table = "stdassistanceautomobile"
+        verbose_name = "Option d'assistance automobile"
+        verbose_name_plural = "Options d'assistance automobile"
+
+
+class DelaiAvisEcheance(models.Model):
+    id_delai_avis_echeance = models.AutoField(
+        verbose_name="ID Délai Avis", db_column="iddelaiavisecheance", primary_key=True
+    )
+    produit = models.ForeignKey(
+        Produit, verbose_name="Produit", db_column="idproduit", on_delete=models.CASCADE
+    )
+    delai_flotte = models.PositiveIntegerField(
+        verbose_name="Délai pour une flotte", db_column="delaiflotte", default=0
+    )
+    delai_mono = models.PositiveIntegerField(
+        verbose_name="Délai pour un contrat mono", db_column="delaimono", default=0
+    )
+    duree_contrat_minimum = models.PositiveIntegerField(
+        verbose_name="Durée Contrat Min", db_column="dureecontratminimum", default=1
+    )
+    duree_contrat_maximum = models.PositiveIntegerField(
+        verbose_name="Durée Contrat Max", db_column="dureecontratmaximum", default=31
+    )
+
+    def __str__(self):
+        return "Délai d'avis d'échéance: {}".format(self.produit.libelle_produit)
+
+    class Meta:
+        db_table = "stddelaiavisecheance"
+        verbose_name = "Délai d'avis d'échéance"
+        verbose_name_plural = "Délais d'avis d'échéance"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["produit", "duree_contrat_minimum"],
+                name="delai_avis_echeance_unique_produit_duree",
+            ),
+            models.CheckConstraint(
+                check=models.Q(
+                    duree_contrat_maximum__gte=models.F("duree_contrat_minimum")
+                ),
+                name="delai_avis_echeance_check_duree_min_max",
+            ),
+        ]
+
+
+class ParametreSite(models.Model):
+    id_parametre_site = models.AutoField(
+        verbose_name="ID Paramètre Site", db_column="idparametresite", primary_key=True
+    )
+    raison_sociale = models.CharField(
+        verbose_name="Raison Sociale", db_column="raisonsociale", max_length=50
+    )
+    indicatif_pays = models.CharField(
+        verbose_name="Indicatif Téléphonique International",
+        db_column="indicatifpays",
+        max_length=3,
+    )
+    longueur_numero_telephone = models.PositiveSmallIntegerField(
+        verbose_name="Longueur N° Téléphone", db_column="longueurnumtel"
+    )
+    prefixe_mobile = models.CharField(
+        verbose_name="Préfixe Mobile", db_column="prefixemobile", max_length=200
+    )
+    longueur_prefixe_mobile = models.PositiveSmallIntegerField(
+        verbose_name="Longueur Préfixe Mobile",
+        db_column="longueurprefixemobile",
+        default=2,
+    )
+    adresse_geographique = models.CharField(
+        verbose_name="Adresse géographique",
+        db_column="adressegeographique",
+        max_length=100,
+        default="",
+    )
+    adresse_postale = models.CharField(
+        verbose_name="Adresse postale",
+        db_column="adressepostale",
+        max_length=50,
+        default="",
+    )
+    telephone_fixe = models.CharField(
+        verbose_name="Numéro Téléphone Fixe",
+        db_column="telephonefixe",
+        max_length=20,
+        default="",
+    )
+    telephone_mobile = models.CharField(
+        verbose_name="Numéro Téléphone Mobile",
+        db_column="telephonemobile",
+        max_length=20,
+        default="",
+    )
+    nom_expediteur_mobile = models.CharField(
+        verbose_name="Nom d'expéditeur mobile",
+        db_column="nomexpediteur",
+        max_length=11,
+        default="",
+    )
+
+    def __str__(self):
+        return self.raison_sociale
+
+    class Meta:
+        db_table = "stdparametresite"
+        verbose_name = "Paramètre Site"
+
+
+class TypeContratSante(models.Model):
+    id_type_contrat = models.AutoField(
+        db_column="idtypecontrat", verbose_name="ID Type Contrat", primary_key=True
+    )
+    libelle = models.CharField(max_length=30, db_column="libelle")
+
+    def __str__(self):
+        return self.libelle
+
+    class Meta:
+        db_table = "stdtypecontratsante"
+        verbose_name = "Type de contrat santé"
+        verbose_name_plural = "Types de contrat santé"
+
+
+class SousGarantieOrdre(models.Model):
+    id = models.AutoField(db_column="id", verbose_name="ID", primary_key=True)
+    sous_garantie = models.ForeignKey(
+        SousGarantie, db_column="idsousgarantie", on_delete=models.CASCADE
+    )
+    compagnie = models.ForeignKey(
+        Compagnie, db_column="idcompagnie", on_delete=models.CASCADE
+    )
+    ordre = models.IntegerField(db_column="ordre")
+    libelle_sous_garantie = models.CharField(
+        verbose_name="Libellé S/Garantie",
+        db_column="libellesousgarantie",
+        max_length=100,
+        default="",
+    )
+
+    class Meta:
+        db_table = "stdsousgarantieordre"
+        verbose_name = "Ordre d'affichage des garanties"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sous_garantie", "compagnie"],
+                name="unique_sousgarantie_compagnie",
+            )
+        ]
+
+
+class EnteteSousGarantie(models.Model):
+    id = models.AutoField(verbose_name="ID", primary_key=True, db_column="identete")
+    code_entete = models.CharField(
+        verbose_name="Code Entête", max_length=5, db_column="codeentete", unique=True
+    )
+    libelle_entete = models.CharField(
+        verbose_name="Libellé Entête", max_length=100, db_column="libelleentete"
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        on_delete=models.CASCADE,
+    )
+
+    def __str__(self):
+        return self.libelle_entete
+
+    class Meta:
+        db_table = "stdentetesousgarantie"
+
+
+class RegroupementSousGarantie(models.Model):
+    entete = models.ForeignKey(
+        EnteteSousGarantie,
+        to_field="code_entete",
+        verbose_name="Code Entête",
+        db_column="codeentete",
+        on_delete=models.CASCADE,
+    )
+    sous_garantie = models.ForeignKey(
+        SousGarantie,
+        verbose_name="Sous-Garantie",
+        db_column="idsousgarantie",
+        on_delete=models.CASCADE,
+    )
+
+    class Meta:
+        db_table = "stdregroupementsousgarantie"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entete", "sous_garantie"],
+                name="regroupementsousgrantie_unique",
+            ),
+        ]
+
+
+class IntermediaireCompagnie(models.Model):
+    id = models.AutoField(verbose_name="ID", primary_key=True)
+    intermediaire = models.ForeignKey(
+        Intermediaire,
+        verbose_name="Intermediaire",
+        db_column="idintermediaire",
+        on_delete=models.CASCADE,
+    )
+    compagnie = models.ForeignKey(
+        Compagnie,
+        verbose_name="Compagnie",
+        db_column="idcompagnie",
+        on_delete=models.CASCADE,
+    )
+    codeintermediaire = models.CharField(
+        max_length=10, verbose_name="Code Intermediaire", db_column="codeintermediaire"
+    )
+    numchar = models.SmallIntegerField(
+        verbose_name="NumChar",
+        db_column="numchar",
+        default=0,
+    )
+    seriedevis = models.IntegerField(
+        verbose_name="Serie devis", db_column="seriedevis", null=True, blank=True
+    )
+    seriecontrat = models.IntegerField(
+        verbose_name="Serie contrat", db_column="seriecontrat", null=True, blank=True
+    )
+
+    class Meta:
+        db_table = "stdintermediairecompagnie"
+        verbose_name = "Relation Intermédiaire Compagnie"
+        verbose_name_plural = "Relations Intermédiaire Compagnie"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["intermediaire", "compagnie"],
+                name="relation_intermediaire_compagnie_unique",
+            ),
+        ]

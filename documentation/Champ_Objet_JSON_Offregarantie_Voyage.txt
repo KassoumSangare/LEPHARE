@@ -1,0 +1,26 @@
+----Liste des champs de l'objet JSON:
+
+IdOffre,
+DureeVoyage,
+IdCompagnie,
+IdTarif,
+IdZoneVoyage,
+TauxReduction,
+DateEffet,
+DateExpiration,
+DateNaissance
+
+----Exemple d'objet JSON:
+
+{
+"IdOffre":8,
+"DureeVoyage":45,
+"IdCompagnie":21,
+"IdTarif":79,
+"IdZoneVoyage":1,
+"TauxReduction":10,
+"DateEffet":"09-02-2023",
+"DateExpiration":"08-03-2023",
+"DateNaissance":"02-05-1973"
+}
+

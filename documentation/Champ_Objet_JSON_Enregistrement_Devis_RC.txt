@@ -1,0 +1,41 @@
+
+JSON enregistrementdevisrc
+
+URL: api/enregistrementdevisrc
+
+Methode: POST
+
+Champs de l'objet JSON:
+    IdIntermediaire
+    IdCompagnie
+    IdProduit
+    IdOffre
+    IdAvenant
+    IdClient
+    IdAssure
+    Flotte
+    Coassurance
+    DateEffet
+    DateExpiration
+    DateEmission
+    IdTarif 
+    AssiettePrime
+    IdDomaineActivite
+    IdActivite
+    Localisation 
+    DateDebut
+    NombreParticipants
+    TauxPrime
+    TauxReduction
+    CapitalDommageCorporel
+    CapitalIntoxicationAlimentaire
+    CapitalDommageMateriel
+    IdDevis
+    IdDuree
+    TelephoneAssure
+    AdresseGeographique
+    NumeroPoliceConnexe
+
+
+
+

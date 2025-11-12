@@ -1,0 +1,67 @@
+Gestion des attestations digitales de l'ASACI
+
+I/Liste des endpoints fournis par le backend
+1) api/asaci/demandeattestationexcel: demande d'édition d'attestation à partir des infos contenues dans un fichier Excel
+2) api/asaci/demandeattestationdb: demande d'édition d'attestation à partir des infos de la base de données
+3) api/asaci/majstatutattestation: actualisation du statut d'une attestation (annulation ou suspension)
+4) api/asaci/verificationstatutdemande: vérification du statut d'une demande (en cours de traitement, terminé, etc.)
+5) api/asaci/obtentioninfo: récupération des liens des attestations après édition.
+
+II/Paramètres des endpoints
+1) Demande d'édition d'attestation par fichier Excel
+	a) URI: api/asaci/demandeattestationexcel
+	b) Méthode: POST
+	c) Paramètres: un objet JSON comportant les champs suivants:
+		- fichier_excel: fichier Excel téléversé par l'utilisateur
+		- code_compagnie: code ASACI de la compagnie qui couvre l'assuré
+		- code_access: code d'accès à l'API de l'ASACI
+	d) Données de retour: une liste d'objets JSON avec les champs suivants:
+		- statut: statut de l'opération (0 en cas de succès)
+		- message: message décrivant le statut de l'opération
+		- numero_immatriculation: numéro d'immatriculation du vehicule pour lequel la demande a été faite
+		- numéro_demande: numéro retourné par l'API de l'ASACI à la suite d'une demande.
+		- numero_attestation: numéro de l'attestation affectée au vehicule
+		- lien_pdf: l'URL d'accès à la version PDF de l'attestation.
+	Ces données retournées par l'endpoint sont un sous-ensemble des données de retour de l'API de l'ASACI. L'intégralité des données de retour est enregistrée dans la base de données.
+	
+2) Demande d'édition d'attestation via la base de données
+	a) URI: api/asaci/demandeattestationdb
+	b) Méthode: POST
+	c) Paramètres: un objet JSON comportant le champ id_contrat
+	d) Données de retour: même strucure que les données de retour de l'endpoint précédent
+	
+3) Actualisation du statut d'une attestation (annulation ou suspension)
+	a) URI: api/asaci/majstatutattestation
+	b) Méthode: POST
+	c) Paramètres: un objet JSON comportant les champs suivants:
+		- code_demandeur: numéro d’identifiant unique de l'utilisateur sur la plateforme de l'ASACI
+		- numero_attestation: liste de numéros d'attestation fournis par la plateforme de l'ASACI à la suite d'une demande d'édition
+		- code_operation: valeur indiquant le nouvel état que doit prendre l'attestation. Les valeurs possibles sont:
+			* 109 pour l'annulation
+			* 120 pour la suspension
+	d) Données de retour: un objet JSON contenant les champs suivants:
+		- statut: code de retour (statut) de l’opération
+		- liste_numero_attestation: liste des numéros d’attestation fournis et ayant subi l’opération souhaitée
+		
+4) Vérification du statut d’une demande d’édition
+	a) URI: api/asaci/verificationstatutdemande
+	b) Méthode: POST
+	c) Paramètres: un objet JSON comportant les champs suivants:
+		- code_demandeur: numéro d’identifiant unique de l'utilisateur sur la plateforme de l'ASACI
+		- reference_demande: Numéro unique de référence de la demande d’édition fourni en retour du service de demande 			
+		  d’édition «numero_demande»
+	d) Données de retour: un objet JSON avec les champs suivants:
+		- statut: code de retour (statut) de l’opération
+		- reference_demande: Numéro de référence de la demande d’édition dont le statut est fourni
+	
+5) Récupération des liens des attestations après édition
+	a) URI: api/asaci/obtentioninfo
+	b) Méthode: POST
+	c) Paramètres: un objet JSON comportant les champs suivants:
+		- code_demandeur: numéro d’identifiant unique de l'utilisateur sur la plateforme de l'ASACI
+		- code_compagnie: code unique identifiant la compagnie sur la plateforme de l'ASACI
+		- numero_demande: numéro unique de la demande d’édition sur la plateforme ASACI
+	d) Données de retour: un objet JSON comportant les champs suivants:
+		- statut: code de retour (statut) de l’opération
+		- numero_demande:code de référence unique d’une demande d’édition
+		- infos: la liste de toutes les attestations éditées sur la plateforme ASA-CI

@@ -1,0 +1,16 @@
+Remarques sur la saisie Auto
+
+Formulaire de saisie Client/Assuré/Conducteur:
+	- Le champ "Nom du souscripteur" existe deux fois sur le formulaire.
+	- Le champ "Nom du conducteur" n'est pas accessible en écriture.
+	- Le champ "Catégorie de permis" devrait être une liste déroulante (alimentée à partir de l'endpoint api/categoriepermis).
+	- Impossible d'enregistrer le devis, probablement à cause du champ "Nom du conducteur" vide.
+	
+Formulaire de saisie de véhicule:
+	- Le séparateur de milliers est une virgule; il serait mieux que ce soit un espace.
+	
+Autres formulaires:
+	- RAS
+	
+Remarque générale:
+	- Les champs de saisie numérique sont accessibles en écriture, ce qui est cool.

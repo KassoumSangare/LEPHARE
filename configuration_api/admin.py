@@ -1,0 +1,95 @@
+from django.contrib import admin
+from .models import (
+    MenuParent,
+    Menu,
+    Garantie,
+    SousGarantie,
+    GarantieRisque,
+    Energie,
+    Categorie,
+    Tarif,
+    TarifDetail,
+    Offre,
+    OffreDetail,
+    Profession,
+    Avenant,
+    Branche,
+    Risque,
+    Acte,
+    Commission,
+    Compagnie,
+    Pays,
+    Region,
+    Ville,
+    Intermediaire,
+    Carrosserie,
+    Qualite,
+    Marque,
+    SystemeSecurite,
+    ModeleVehicule,
+    UsageVehicule,
+    TypeReduction,
+    OffreGarantie,
+    Continent,
+    ZoneVoyage,
+    QualiteAyantDroit,
+    UsageVehiculeAsaci,
+    TypeVehicule,
+    TypeSouscripteur,
+    TypeAssure,
+    Commune,
+    CategoriePermis,
+    Produit,
+    ProfessionIa,
+    Banque,
+    ModeEncaissement,
+    ParametreSite,
+    DelaiAvisEcheance,
+)
+
+
+admin.site.register(Menu)
+admin.site.register(MenuParent)
+admin.site.register(Branche)
+admin.site.register(Risque)
+admin.site.register(Garantie)
+admin.site.register(SousGarantie)
+admin.site.register(Acte)
+admin.site.register(Commission)
+admin.site.register(Compagnie)
+admin.site.register(Pays)
+admin.site.register(Region)
+admin.site.register(Ville)
+admin.site.register(Commune)
+admin.site.register(Intermediaire)
+admin.site.register(GarantieRisque)
+admin.site.register(Categorie)
+admin.site.register(Tarif)
+admin.site.register(TarifDetail)
+admin.site.register(Offre)
+admin.site.register(OffreDetail)
+admin.site.register(Profession)
+admin.site.register(Energie)
+admin.site.register(Avenant)
+admin.site.register(Carrosserie)
+admin.site.register(Qualite)
+admin.site.register(Marque)
+admin.site.register(SystemeSecurite)
+admin.site.register(ModeleVehicule)
+admin.site.register(UsageVehicule)
+admin.site.register(TypeReduction)
+admin.site.register(OffreGarantie)
+admin.site.register(Continent)
+admin.site.register(ZoneVoyage)
+admin.site.register(QualiteAyantDroit)
+admin.site.register(UsageVehiculeAsaci)
+admin.site.register(TypeVehicule)
+admin.site.register(TypeAssure)
+admin.site.register(TypeSouscripteur)
+admin.site.register(CategoriePermis)
+admin.site.register(Produit)
+admin.site.register(ProfessionIa)
+admin.site.register(Banque)
+admin.site.register(ModeEncaissement)
+admin.site.register(ParametreSite)
+admin.site.register(DelaiAvisEcheance)

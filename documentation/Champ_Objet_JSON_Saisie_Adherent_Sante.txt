@@ -1,0 +1,18 @@
+####################################################
+Champs de l'objet JSON pour la saisie des adhérents
+    1) idadherent (positionné par le backend, envoyé au backend la valeur 0 lors de la création de l'adhérent et envoyer la vraie valeur lors d'une mise à jour)
+    2) filiale (saisi, sélectionné dans une liste déroulante)
+    3) nom (saisi)
+    4) prenom (saisi)
+    5) sexe (saisi)
+    6) cni (saisi)
+    7) vip (saisi) 
+    8) adresse (saisi)
+    9) mobile1 (saisi)
+    10) mobile2 (saisi)
+    11) email (saisi)
+    12) devis (poistionné par le backend à l'initialisation de la saisie santé, appeler l'endpoint saisiesante avec la methode GET)
+    13) dateeffet (saisi)
+    14) datedebutconsommation (saisi)
+    15) nombrepathologie
+    16) numerocmu(nouveau champ, saisi, vide par défaut)

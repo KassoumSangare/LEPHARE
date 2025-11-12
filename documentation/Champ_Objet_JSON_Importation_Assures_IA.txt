@@ -1,0 +1,24 @@
+
+JSON api/importationassureia
+Rôle: Permet d'importer une liste d'assurés IA contenus dans un fichier EXcel
+URL: api/importationassureia
+Methode: POST
+
+Champs de l'objet JSON:
+    FichierExcel
+    IdCompagnie
+    IdIntermediaire
+    IdOffre
+    IdAvenant
+    IdClient
+    DateEffet
+    DateExpiration
+    DateEmission
+    IdTarif
+    TauxReduction
+    IdDuree
+    IdDevis
+    NumeroPoliceConnexe (optionnel)
+    NumeroPoliceCompagnie (optionnel)
+
+

@@ -1,0 +1,17 @@
+1)Champs de l'objet JSON pour consommer l'endpoint api/saisieayantdroitia
+
+IdAssure
+IdQualiteAyantDroit
+NomAyantDroit
+PrenomsAyantDroit
+Part
+
+2)Exemple d'objet JSON pour la consommation de l'endpoint api/saisieayantdroitia
+
+{
+"IdAssure":1,
+"IdQualiteAyantDroit":2,
+"NomAyantDroit":"TOURE",
+"PrenomsAyantDroit":"AHMED",
+"Part":25
+}

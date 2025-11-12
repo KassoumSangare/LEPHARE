@@ -1,0 +1,25 @@
+Modifications des endpoints de gestion de connexion des utilisateurs.
+Les endpoints suivants ont été créés ou modifiés:
+
+1. api/users/initiatepasswordchange
+Rôle: Initier le processus de changement de mot de passe pour un utilisateur connecté
+Action réalisée: L'endpoint envoie un code temporaire à l'utilisateur via email. Ce code qui a une durée de validité de 15 minutes permet à l'utilisateur de changer son mot de passe.
+Methode: POST
+Objet JSON: Aucun
+
+2. api/users/changepassword
+Rôle: Permettre à un utilisateur connecté de changer son mot de passe. Cet endpoint nécessite le code temporaire généré par le premier.
+Action réalisée: L'endpoint met à jour le mot de passe de l'utilisateur après vérification de la validité du code temporaire.
+Methode: POST
+Objet JSON
+	- current_password: mot de passe actuel
+	- new_password: nouveau mot de passe
+	- temporary_code: code temporaire envoyé à l'adresse email de l'utilisateur
+
+3. api/users/resetpassword
+Rôle: Réinitialisation du mot de passe d'un utilisateur par l'administrateur. Le nouveau mot de passe est envoyé à l'utilisateur via e-mail. L'administrateur qui a fait l'opération n'en a pas connaissance.
+Action réalisée: Création et envoi via e-amil d'un nouveau mot de passe à l'utilisateur.
+Methode: POST
+Objet JSON:
+	- new_password: nouveau mot de passe à affecter au compte de l'utilisateur
+	- user_email: adresse e-mail de l'utilisateur concerné

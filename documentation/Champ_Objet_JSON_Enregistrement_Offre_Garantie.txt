@@ -1,0 +1,15 @@
+    
+    1) Champs de l'objet JSON pour l'enregistrement des garanties liées à une offre:
+    - idcompagnie (id de la compagnie pour laquelle on rattache les garanties à l'offre)
+    - idproduit (indique l'identifiant du produit concerné)
+    - idoffre (indique l'identifiant de l'offre concernée)
+    - liste_sous_garantie (liste d'objets représentant les sous-garanties de l'offre): cette contient uniquement les garanties choisies
+    
+    2) Champs d'un objet appartenant à la liste des garanties
+    - idgarantie (identifiant de la garantie à laquelle est rattachée la sous-garantie)
+    - idsousgarantie (identifiant de la sous-garantie choisie)
+    - tauxfranchise (taux de franchise à appliquer)
+    - franchiseminimum
+    - franchisemaximum
+
+    

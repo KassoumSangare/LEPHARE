@@ -1,0 +1,19 @@
+1) Rôle: Annuler un contrat
+
+2) URI: api/avenant/annulation
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+date_emission
+date_effet
+id_contrat
+id_avenant
+motif_annulation
+
+5) Règles d'utilisation:
+	a) Le champ id_contrat représente l'identifiant du contrat à annuler
+	b) Le champ id_avenant représentant l'identifiant de l'avenant d'annulation
+	
+6) Exemple d'objet JSON:
+{'id_avenant': 6, 'id_contrat': 12, 'date_effet': '22-07-2023', 'date_emission': '22-07-2023', 'motif_annulation':'Non paiement de primes'}

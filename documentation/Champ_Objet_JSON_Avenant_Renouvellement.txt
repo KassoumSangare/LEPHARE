@@ -1,0 +1,18 @@
+1) Rôle: Renouveler un contrat
+
+2) URI: api/avenant/renouvellement
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+date_emission
+date_effet
+id_contrat
+id_avenant
+
+5) Règles d'utilisation:
+	a) Le champ id_contrat représente l'identifiant du contrat à renouveler
+	b) Le champ id_avenant représentant l'identifiant de l'avenant de renouvellement
+	
+6) Exemple d'objet JSON:
+{'id_avenant': 2, 'id_contrat': 1, 'date_effet': '03-08-2023', 'date_emission': '02-08-2023'}

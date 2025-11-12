@@ -1,0 +1,24 @@
+######################################################################################
+Champs de l'objet JSON pour la saisie des filiales
+    idfiliale (positionné par le backend, envoyer la valeur 0 lors de la création et le vrai id lors de la mise à jour)
+    devis (obtenu par programme lors de l'initialisation de la saisie santé)
+    college (saisi, selectionné dans une liste déroulante, endpoint api/collegesante)
+    offresante (saisi, selectionné dans une liste déroulante, endpoint api/offreparproduit)
+    zonecouverture (saisi, selectionné dans une liste déroulante, endpoint api/zonecouverturesante)
+    date_emission (saisi sur le premier écran)
+    date_effet (saisi sur le premier écran)
+    date_expiration (saisi sur le premier écran)
+    source (non saisi, fixer une valeur par défaut, le backend s'occupera du reste)
+
+Exemple:
+{
+    "idfiliale": 0,
+    "devis" : 1,
+    "college": 1,
+    "offresante":2,
+    "zonecouverture":1,
+    "date_emission": "2023-03-28",
+    "date_effet": "2023-03-28",
+    "date_expiration": "2023-03-28",
+    "source": "1"
+   }

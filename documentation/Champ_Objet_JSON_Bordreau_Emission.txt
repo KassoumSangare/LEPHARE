@@ -1,0 +1,10 @@
+    
+    1) Champs de l'objet JSON pour la liste des émissions sur le bordereau ou le recap des émissions:
+    - date_debut (date de début de la periode d'émission à considérer)
+    - date_fin (date de fin de la periode d'émission à considérer)
+    - type_etat (type de l'état à imprimer: bordereau = 1, recap = 2)
+    
+    2) Methode: POST
+    
+    3) api/bordereaurecapemission
+    

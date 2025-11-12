@@ -1,0 +1,22 @@
+    
+    1) Champs de l'objet JSON pour l'enregistrement des reversements de primes:
+    - compagnie (id de la compagnie à laquelle le reversement de primes est fait)
+    - mode_reversement (indique le mode de paiement: espèces, chèque, virement, etc.)
+    - date_reversement (date à laquelle l'opération de reversement de primes est effectuée)
+    - banque (id de la banque via laquelle l'opération est réalisée)
+    - montant_total (montant total du reversement de primes)
+    - numero_cheque (numéro du chèque émis pour le reversement de primes)
+    - nom_emetteur (nom du signataire du compte bancaire via lequel l'opération est effectuée)
+    - reference_reversement (référence de l'opération)
+    - reference_compensation (référence de la compensation le cas échéant)
+    - liste_encaissement (liste d'objets représentant les encaissements à reverser à la compagnie)
+    
+    2) Champs d'un objet appartenant à la liste des encaissements)
+    - identifiant_encaissement (identifiant de la ligne d'encaissement à reverser)
+    - montant_reversement (montant à reverser à la compagnie pour cette ligne d'encaissement)
+    
+
+
+    
+    reference_compensation = str(input_data["reference_compensation"])
+    liste_encaissement = list(input_data["liste_encaissement"])

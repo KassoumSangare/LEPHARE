@@ -1,0 +1,18 @@
+1) Rôle: Modifier la date de prise d'effet d'un contrat
+
+2) URI: api/avenant/modificationpriseeffet
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+date_emission
+date_effet
+id_contrat
+id_avenant
+
+5) Règles d'utilisation:
+	a) Le champ id_contrat représente l'identifiant du contrat dont la date d'effet doit être modifiée
+	b) Le champ id_avenant représentant l'identifiant de l'avenant de modification de prise d'effet (MPE)
+	
+6) Exemple d'objet JSON:
+{'id_avenant': 4, 'id_contrat': 12, 'date_effet': '22-07-2023', 'date_emission': '22-07-2023'}

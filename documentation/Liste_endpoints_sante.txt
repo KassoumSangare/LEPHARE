@@ -1,0 +1,17 @@
+Liste des endpoints de la saisie Santé
+
+api/adherent 
+api/affilie
+api/filialesante
+api/enregistrementdevissante
+api/saisieadherentsante
+api/saisieaffiliesante
+api/saisiefilialesante
+api/numerosaisiesante
+api/adherentlisteensaisie/<int:iddevis>
+api/adherentensaisie/<int:idadherent>
+api/affilielisteensaisie/<int:iddevis>
+api/affilieensaisie/<int:pk>
+api/filialelisteensaisie/<int:iddevis>
+api/filialeensaisie/<int:pk>
+

@@ -1,0 +1,13 @@
+Gestion du paramétrage dans Uranus.
+Afin de permettre au client de paramétrer l'application, des endpoints de paramétrage ont été créés. Pour compléter ce travail, des formulaires front-end doivent être mis en place.
+
+Les éléments de paramétrage sont nombreux, mais dans un premier temps, il s'agira de traiter les plus urgents parmi eux.
+Ainsi, les éléments suivants devront être finalisés au plus tard le mardi 14 mars 2023 à 18 heures.
+Ce sont:
+- Les garanties (endpoint: api/garantie)
+- Les sous-garanties (endpoint: api/sousgarantie)
+- Les offres (endpoint: api/offre)
+- Les paquets de garanties liées à une offre (endpoint: api/offregarantie)
+- Les taux de taxe (endpoint: api/tauxtaxegarantie)
+- Les marques de véhicules (endpoint: api/marque)
+- Les taux de commission (endpoint: api/commissionproduit)

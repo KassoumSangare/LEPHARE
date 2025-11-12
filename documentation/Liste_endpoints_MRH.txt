@@ -1,0 +1,66 @@
+Emissions MRH
+
+I/ Obtention des garanties d'une offre
+1) URI: api/offregarantiemrh
+2) Méthode: POST
+3) Objet JSON (Input):
+	IdOffre
+        ValeurCapitalLoyer
+        ValeurCapitalContenu
+        ValeurCapitalObjetPrecieux
+        ValeurCapitalMateriel
+        ValeurDegatBatiment
+        ValeurDegatContenu
+        TauxReduction
+        DateEffet
+        DateExpiration
+        Gardien
+        Locataire
+4) Objet JSON (Output):
+Une liste dont chaque élément possède les champs suivants:
+	IdGarantie
+        LibelleGarantie
+        IdSousGarantie
+        LibelleSousGarantie
+        Acquise
+        Capital
+        NombrePlace
+        PrimeAnnuelle
+        PrimeNette
+        Taxe
+        MontantAccessoire
+NB: l'élément dont l'id garantie est égal à zéro représente la ligne des totaux
+    
+    
+II/ Enregistrement Devis MRH
+1) URI: api/enregistrementdevismrh
+2) Méthode: POST
+3) Objet JSON (Input):
+	    IdIntermediaire
+	    IdCompagnie
+	    IdProduit
+	    IdOffre
+	    IdAvenant
+	    IdClient
+	    IdAssure
+	    Flotte
+	    Coassurance
+	    DateEffet
+	    DateExpiration
+	    DateEmission
+	    IdTarif
+	    Gardien
+	    Locataire
+	    TauxReduction
+	    ValeurCapitalLoyer
+	    ValeurCapitalContenu
+	    ValeurCapitalObjetPrecieux
+	    ValeurCapitalMateriel
+	    ValeurDegatBatiment
+	    ValeurDegatContenu
+
+4) Objet JSON (output):
+	    ObjectId
+	    OutputMessage
+
+    

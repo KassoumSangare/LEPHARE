@@ -1,0 +1,16 @@
+1) Rôle: Donner la liste des avenants pour un produit en fonction du type de contrat (individuel ou groupe)
+
+2) URI: api/avenant/avenantparproduit
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+IdProduit
+Flotte
+
+5) Règles d'utilisation:
+	a) Le champ IdProduit représente l'identifiant du produit(Auto, IA, Voyage, etc.)
+	b) Le champ Flotte indique si le contrat est une flotte ou non (booléen)
+	
+6) Exemple d'objet JSON:
+{'IdProduit':3, 'Flotte':true}

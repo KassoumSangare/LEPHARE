@@ -1,0 +1,41 @@
+Got exception:
+        	state  : P0001
+        	message: Got exception:
+        	state  : P0001
+        	message: Cette carte brune est déjà utilisée par le véhicule immatriculé QSQ5A2
+        	detail : 
+        	hint   : 
+        	context: PL/pgSQL function sp_enregistrement_vehicule(integer,integer,integer,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 65 at RAISE
+SQL statement "CALL sp_enregistrement_vehicule(id_compagnie, id_produit, id_offre, date_effet, date_expiration, date_emission, id_tarif, code_usage, id_carroserie, code_carburant,
+										puissance, nombre_place, charge, valeur_neuve, valeur_venale, valeur_accessoire, taux_reduction, code_alarme, bns, nom_conducteur,
+										adresse_conducteur, date_mec, num_moteur, num_chassis, id_type_vehicule, id_marque, numero_immmatriculation, numero_permis_conduire,
+										id_genre_vehicule, numero_carte_brune_physique, modele_vehicule, remorque_attelee, libelle_formule_securite_routiere, carburant_autre_matiere,
+										transport_eleves, transport_employes, transport_passager_supplementaire, id_devis, id_devis_detail, out_message)"
+PL/pgSQL function sp_creation_devis(integer,integer,integer,integer,integer,integer,integer,boolean,boolean,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 77 at CALL
+        	SQLSTATE: P0001 
+        	SQLERRM: Cette carte brune est déjà utilisée par le véhicule immatriculé QSQ5A2
+        	detail : 
+        	hint   : 
+        	context: PL/pgSQL function sp_enregistrement_vehicule(integer,integer,integer,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 153 at RAISE
+SQL statement "CALL sp_enregistrement_vehicule(id_compagnie, id_produit, id_offre, date_effet, date_expiration, date_emission, id_tarif, code_usage, id_carroserie, code_carburant,
+										puissance, nombre_place, charge, valeur_neuve, valeur_venale, valeur_accessoire, taux_reduction, code_alarme, bns, nom_conducteur,
+										adresse_conducteur, date_mec, num_moteur, num_chassis, id_type_vehicule, id_marque, numero_immmatriculation, numero_permis_conduire,
+										id_genre_vehicule, numero_carte_brune_physique, modele_vehicule, remorque_attelee, libelle_formule_securite_routiere, carburant_autre_matiere,
+										transport_eleves, transport_employes, transport_passager_supplementaire, id_devis, id_devis_detail, out_message)"
+PL/pgSQL function sp_creation_devis(integer,integer,integer,integer,integer,integer,integer,boolean,boolean,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 77 at CALL
+        	SQLSTATE: P0001 
+        	SQLERRM: Got exception:
+        	state  : P0001
+        	message: Cette carte brune est déjà utilisée par le véhicule immatriculé QSQ5A2
+        	detail : 
+        	hint   : 
+        	context: PL/pgSQL function sp_enregistrement_vehicule(integer,integer,integer,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 65 at RAISE
+SQL statement "CALL sp_enregistrement_vehicule(id_compagnie, id_produit, id_offre, date_effet, date_expiration, date_emission, id_tarif, code_usage, id_carroserie, code_carburant,
+										puissance, nombre_place, charge, valeur_neuve, valeur_venale, valeur_accessoire, taux_reduction, code_alarme, bns, nom_conducteur,
+										adresse_conducteur, date_mec, num_moteur, num_chassis, id_type_vehicule, id_marque, numero_immmatriculation, numero_permis_conduire,
+										id_genre_vehicule, numero_carte_brune_physique, modele_vehicule, remorque_attelee, libelle_formule_securite_routiere, carburant_autre_matiere,
+										transport_eleves, transport_employes, transport_passager_supplementaire, id_devis, id_devis_detail, out_message)"
+PL/pgSQL function sp_creation_devis(integer,integer,integer,integer,integer,integer,integer,boolean,boolean,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 77 at CALL
+        	SQLSTATE: P0001 
+        	SQLERRM: Cette carte brune est déjà utilisée par le véhicule immatriculé QSQ5A2
+CONTEXT:  PL/pgSQL function sp_creation_devis(integer,integer,integer,integer,integer,integer,integer,boolean,boolean,date,date,date,integer,integer,integer,integer,integer,integer,integer,numeric,numeric,numeric,numeric,integer,numeric,character varying,character varying,date,character varying,character varying,integer,integer,character varying,character varying,integer,character varying,character varying,boolean,character varying,boolean,boolean,boolean,boolean,integer,integer,character varying) line 97 at RAISE

@@ -1,0 +1,34 @@
+Documentation URANUS
+
+Module Production
+
+Endpoint: api/quittanceproposition
+
+Rôle: Fournit les informations relatives à la quittance de proposition.
+
+Methodes: GET
+Paramètre: iddevis 
+
+Nom des champs de l'objet retourné par l'endpoint api/quittanceproposition:
+
+ IdDevis => Entier
+ RaisonSociale => Chaîne de caractères (taille max: 100), représente le nom de la compagnie
+ LibelleIntermediaire => Chaîne de caractères (taille max: 50)
+ IdClient => Entier
+ NumeroDevis => Chaîne de caractères (taille max: 50)
+ NumeroAvenant => Chaîne de caractères (taille max: 50)
+ NomClient => Chaîne de caractères (taille max: 122)
+ AdresseClient => Chaîne de caractères (taille max: 100)
+ DateEffet => Date
+ DateExpiration => Date
+ DateEmission => Date
+ Duree => Entier
+ PrimeNette => Decimal
+ PrimeNetteHorsFga => Decimal
+ Fga => Decimal
+ Accessoire => Decimal
+ AccessoireCompagnie => Decimal
+ AccessoireIntermediaire => Decimal
+ TaxeEnregistrement => Decimal
+ PrimeTtc => Decimal
+ Confirme => Booléen, indique si le devis a été transformé en contrat

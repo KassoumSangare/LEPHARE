@@ -1,0 +1,32 @@
+Obtention des garanties d'une offre en Auto
+
+1) URI: api/offregarantie
+
+2) Méthode: POST
+
+2) Champs de l'objet JSON:
+IdCompagnie,
+IdOffre,
+IdTarif,
+ValNeuve,
+ValVenale,
+ValAccessoire,
+Puissance,
+CodeCarburant,
+Tonnage,
+TauxReduction,
+CodeAlarme,
+DateEffet,
+DateExpiration,
+Bns,
+DateMec,
+RemorqueAttelee (nouveau champ de saisie, booléen),
+CodeFormuleSecuriteRoutiere (nouveau champ de saisie, liste déroulante alimentée par l'endpoint api/securiteroutiereparcompagnie/<int:idcompagnie>),
+IdOptionAssistance (Nouveau champ, ajouté à l'objet JSON le 28/07/2023, champ entier)
+NombrePlace,
+CodeUsage (Champ déja existant, ajouté à l'objet JSON le 25/05/2023, integer)
+CarburantAutreMatiere  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+TransportEleves  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+TransportEmployes  (Nouveau champ, aajouté à l'objet JSON le 25/05/2023, champ booléen)
+TansportPassagerSupplementaire  (Nouveau champ, ajouté à l'objet JSON le 25/05/2023, champ booléen)
+NsiaAutoPlus (Nouveau champ, ajouté à l'objet JSON le 26/08/2024, champ booléen)

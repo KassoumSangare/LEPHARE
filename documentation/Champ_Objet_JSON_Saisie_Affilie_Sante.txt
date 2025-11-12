@@ -1,0 +1,21 @@
+#####################################################################################################
+Champs de l'objet JSON pour la saisie des affiliés
+    idaffilie (positionné par le backend, envoyer la valeur 0 lors de la création et le vrai id lors de la mise à jour)
+    adherent (saisi, selectionné dans une liste déroulante)
+    lien (saisi, selectionné dans une liste déroulante)
+    nom (saisi)
+    prenom (saisi)
+    cni (saisi)
+    datenaissance (saisi)
+    dateeffet (saisi sur le premier écran)
+    certificat (saisi) # Booléen, à demander lorsque l'enfant a 21 ans et plus, également contrôlé dans le backend
+    matricule (saisi)
+    observations (saisi)
+    handicape(saisi) #Booléen
+    sexe (saisi, envoyer M pour masculin et F pour féminin)
+    devis (positionné par le backend, obtenu lors de l'initialisation de la saisie)
+    datedebutconsommation (saisi)
+    surprimeappliquee(saisi)
+    montantsurprime(saisi)
+    nombrepathologie
+    numerocmu(nouveau champ, saisi, vide par défaut)

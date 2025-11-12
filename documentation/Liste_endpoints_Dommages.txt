@@ -1,0 +1,29 @@
+
+II/ Enregistrement Devis Tous Risques Informatiques
+1) URI: api/enregistrementdevistousrisquesinfo
+2) Méthode: POST
+3) Objet JSON (Input):
+	    IdIntermediaire
+	    IdCompagnie
+	    IdProduit
+	    IdAvenant
+	    IdClient
+	    IdAssure
+	    Flotte
+	    Coassurance
+	    DateEffet
+	    DateExpiration
+	    DateEmission
+	    IdTarif
+	    TauxPrime
+	    TauxReduction
+	    CapitalMaterielInformatique
+	    CapitalFraisReconstitution
+	    CapitalFraisSupplementaire
+	    MontantPrime
+	    
+4) Objet JSON (output):
+	    ObjectId
+	    OutputMessage
+
+    

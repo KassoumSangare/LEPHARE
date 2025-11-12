@@ -1,0 +1,23 @@
+    IdIntermediaire
+    IdCompagnie
+    IdProduit
+    IdOffre 
+    IdAvenant
+    IdClient
+    IdAssure
+    Flotte 
+    Coassurance
+    DateEffet
+    DateExpiration
+    DateEmission
+    IdTarif 
+    PrimeFamille
+    PrimeAffilie
+    PrimeGlobale
+    MontantSurprime
+    MontantAccessoireManuel
+    IdDevis
+    TauxReductionCommerciale (nouveau champ)
+    TypeContrat (nouveau champ) => Id du type de contrat (1: contrat particulier, 2: contrat société)
+    GestionnaireSante (nouveau champ)
+

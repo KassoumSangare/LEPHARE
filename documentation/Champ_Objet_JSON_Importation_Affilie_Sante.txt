@@ -1,0 +1,6 @@
+#####################################################################################################
+Champs de l'objet JSON pour l'importation des adhérents et affiliés
+    - fichier_excel: le fichier Excel contenant les adhérents et affiliés à importer
+    - id_devis: identifiant du devis en cours de saisie
+    - date_effet: date d'effet du devis en cours de saisie
+    - id_filiale: identifiant du collège des assurés contenus dans le fichier Excel

@@ -1,0 +1,12 @@
+Endpoint de recherche sur les émissions:
+	URL: api/infodevisrecherche/<slug:champrecherche>
+    	Méthode: GET
+    
+	NB: Créer les champs de recherche suivants:
+		- id_devis
+		- numero_devis
+		- nom_client
+		- date_debut
+		- date_fin
+	   et les concatener avec le caractère souligné (_) pour obtenir le paramètre de la recherche
+	Paramètre: champrecherche (string) décrit ci-dessus

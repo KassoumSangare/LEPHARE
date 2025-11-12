@@ -1,0 +1,17 @@
+
+JSON Offregarantierc
+
+URL: api/offregarantierc
+Methode: GET
+Champs de l'objet JSON
+ IdCompagnie 
+ IdOffre
+ CapitalDommageCorporel 
+ CapitalDommageMateriel
+ CapitalIntoxicationAlimentaire
+ TauxPrime
+ TauxReduction
+ DateEffet
+ DateExpiration
+
+

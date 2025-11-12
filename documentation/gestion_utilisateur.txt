@@ -1,0 +1,2 @@
+1) Un endpoint pour la récupération du mot de passe
+2) Un champ pour la photo de profil (non prioritaire)

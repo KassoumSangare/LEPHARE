@@ -1,0 +1,15 @@
+Deux nouveaux endpoints ont été créés pour tenir compte du nouveau tarif de l'assurance Voyage NSIA.
+
+
+1. api/tarifvoyage
+Rôle: Permettre d'obtenir la liste des tarifs Voyage pour une compagnie donnée
+Action réalisée: L'endpoint renvoie la liste des tarifs Voyage pour la compagnie dont l'identifiant a été passé en paramètre.
+Methode: GET
+Paramètre: idcompagnie, l'identifiant de la compagnie dont on veut obtenir la liste des tarifs Voyage
+
+
+2. api/offrevoyage
+Rôle: Permettre d'obtenir la liste des offres pour un tarif Voyage donné.
+Action réalisée: L'endpoint renvoie la liste des offres Voyage pour le tarif dont l'identifiant a été passé en paramètre.
+Methode: GET
+Paramètre: idtarif, l'identifiant du tarif Voyage dont on veut obtenir la liste des offres

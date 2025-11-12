@@ -1,0 +1,10 @@
+Endpoints pour l'affichage des clients:
+
+1) Affichage de la liste des 100 clients avec des actions récentes
+	URL: api/clientrestreint
+    	Méthode: GET
+    
+2) Recherche de clients par adresse email, téléphone ou nom:
+	URL: api/clientrecherche/<str:champrecherche>
+	Méthode: GET
+	Paramètre: champrecherche (string)

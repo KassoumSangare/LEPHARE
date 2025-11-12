@@ -1,0 +1,13 @@
+IdOffre
+ValeurCapitalLoyer
+ValeurCapitalContenu
+ValeurCapitalObjetPrecieux
+ValeurCapitalMateriel
+ValeurDegatBatiment
+ValeurDegatContenu
+TauxReduction
+DateEffet
+DateExpiration
+Gardien
+Locataire
+

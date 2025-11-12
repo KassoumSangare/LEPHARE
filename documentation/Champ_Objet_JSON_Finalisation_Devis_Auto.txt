@@ -1,0 +1,19 @@
+Objet JSON pour la finalisation du devis auto (Gestion des flottes):
+
+1) Les champs de l'objet JSON sont les suivants:
+    IdDevis
+    IdClient
+    IdAssure
+    Flotte
+    
+2) Objet JSON retourné par l'endpoint finalisationdevisauto:
+	a) Cet objet possède les champs suivants:
+		IdDevis
+		OutputMessage
+	b) Interprétation:
+		- IdDevis indique l'id du devis qui a été finalisé
+		- OutputMessage indique si l'opération a réussi ou non
+    
+3) Règles d'utilisation de l'endpoint:
+ 	a) Consommer l'endpoint après la saisie de tous les vehicules et la saisie du client et de l'assuré
+ 	b) S'assurer que le champ Flotte est positionné à True

@@ -1,0 +1,16 @@
+1) Rôle: Supprimer un affilié au cours d'une saisie de devis en Santé
+
+2) URI: api/annulationsaisieaffilie
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+id_devis
+id_objet
+
+5) Règles d'utilisation:
+	a) Le champ id_devis représente l'identifiant du devis qui contient l'affilié à supprimer
+	b) Le champ id_objet représentant l'identifiant de l'affilié à supprimer
+	
+6) Exemple d'objet JSON:
+{'id_devis':95, 'id_objet':6}

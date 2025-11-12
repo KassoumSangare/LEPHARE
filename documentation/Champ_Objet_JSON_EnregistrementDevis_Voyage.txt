@@ -1,0 +1,37 @@
+1) Rôle: Enregistrer un devis Voyage (créer un nouveau devis ou modifier un devis existant)
+
+2) URI: api/enregistrementdevisvoyage
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+IdIntermediaire
+IdCompagnie
+IdProduit
+IdOffre
+IdAvenant
+IdClient
+IdAssure
+Flotte
+Coassurance
+DateEffet
+DateExpiration
+DateEmission
+IdTarif
+IdPaysDestination
+IdPaysVoyageur
+ReferenceContrat
+NumeroAttestation
+Schengen
+NumeroPasseport
+TauxReduction
+DateNaissance
+IdDevis
+
+5) Règles d'utilisation:
+	a) Le champ IdDevis est égal à zéro à la création du devis. Pour la modification d'un devis, IdDevis prend la valeur de l'identifiant du devis en cours de modification
+	b) Le champ Flotte est égal à False
+	c) Le champ Coassurance est égal à False
+6) Exemple d'objet:
+
+{'IdIntermediaire': 1, 'IdCompagnie': 1, 'IdProduit': 3, 'IdOffre': 8, 'IdAvenant': 1, 'IdClient': 3, 'IdAssure': 2, 'Flotte': False, 'Coassurance': False, 'DateEffet': '10-02-2023', 'DateExpiration': '10-02-2023', 'DateEmission': '10-02-2023', 'IdTarif': 1, 'TauxReduction': 0, 'DateNaissance': '10-02-2023', 'IdPaysDestination':5, 'IdPaysVoyageur':1,'ReferenceContrat': 'REF52063','NumeroAttestation': 'ATT20230101','Schengen': False,'NumeroPasseport':'1452OY','IdDevis': 0}

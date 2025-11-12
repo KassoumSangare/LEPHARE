@@ -1,0 +1,15 @@
+Commentaires sur la saisie des contrats Voyage:
+
+1) Le champ "Nationalité" doit être une liste déroulante (peut être alimentée à partir de l'endpoint api/pays)
+2) Le champ "Durée du voyage" ne doit pas accepter de valeur nulle ou négative
+3) Les paramètres passés à l'API ne sont bons:
+	- date de naissance: ne correspond pas à la valeur saisie par l'utilisateur
+	- durée du voyage: toujours positionnée à 300 quelle que soit la valeur saisie
+	- id zone de voyage: prend la valeur de id pays
+	En somme, il totalement revoir l'appel de l'API.
+	
+4) Formulaire de saisie du client/assuré
+	- La liste déroulante du champ "Assuré" est une liste figée (elle ne vient pas de la base de données)
+	
+5) Confirmation du contrat
+	- Page inexistante

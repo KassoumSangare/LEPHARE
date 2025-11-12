@@ -1,0 +1,18 @@
+1) Rôle: Annuler un encaissement
+
+2) URI: api/annulationencaissement
+
+3) Méthode: POST
+
+4) Champs de l'objet JSON:
+id_encaissement
+date_annulation
+motif_annulation
+
+5) Règles d'utilisation:
+	a) Le champ id_encaissement représente l'identifiant de l'encaissement à annuler
+	b) Le champ date_annulation représente la date à laquelle il a été décidé d'annuler l'encaissement
+	c) Le champ motif_annulation indique le motif d'annulation
+	
+6) Exemple d'objet JSON:
+{'id_encaissement': 2, 'motif_annulation': 'Erreur sur le chèque', 'date_annulation': '03-09-2023'}

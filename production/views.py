@@ -1,0 +1,1825 @@
+from rest_framework import viewsets
+from rest_framework import permissions
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from datetime import datetime
+from django.conf import settings
+from django.db.models import Q, F, Prefetch
+from rest_framework import generics
+from django.shortcuts import get_object_or_404
+
+
+from knox.auth import TokenAuthentication
+from rest_framework.authentication import BasicAuthentication
+from .tasks import send_sms_enregistrement_contrat, send_sms_encaissement_contrat
+from customer.models import Client
+from .serializers import (
+    DevisDetGarantieSerializer,
+    DevisDetailSerializer,
+    DevisSerializer,
+    DevisClientSerializer,
+    TarifEcranSerializer,
+    ContratSerializer,
+    ContratDetailSerializer,
+    EnregistrementDevisAutoSerializer,
+    OperationSurDevisSerializer,
+    DataInsertionSerializer,
+    QuotationInsertionSerializer,
+    ContratDetGarantieSerializer,
+    QuittancePropositionSerializer,
+    QuittanceContratSerializer,
+    CreationAyantDroitIaSerializer,
+    EnregistrementDevisIaSerializer,
+    AyantDroitIaSerializer,
+    EnregistrementDevisVoyageSerializer,
+    ExtendedQuotationInfoSerializer,
+    EnregistrementDevisMrhSerializer,
+    QuittanceSerializer,
+    DetailQuittanceSerializer,
+    EncaissementSerializer,
+    DetailEncaissementSerializer,
+    NumeroSerializer,
+    FinalisationDevisFlotteSerializer,
+    OperationSurDevisDetailSerializer,
+    GarantieContratFlotteSerializer,
+    VehiculeContratSerializer,
+    ContractForPremiumCollectionSerializer,
+    EnregistrementEncaissementSerializer,
+    DemandeContratPourEncaissementSerializer,
+    EncaissementGroupeQuittanceSerializer,
+    ReversementCompagnieSerializer,
+    DetailReversementSerializer,
+    ReversementGroupePrimeSerializer,
+    PremiumCollectionInfoSerializer,
+    PremiumRemittanceInfoSerializer,
+    EnregistrementDevisTRInfoSerializer,
+    EnregistrementDevisGlobaleDeBanqueSerializer,
+    QuotationIaInsertionSerializer,
+    AssureIaInfoSerializer,
+    AssureIaParDevisOuContratSerializer,
+    GarantieSouscriteSerializer,
+    ChangementImmatriculationSerializer,
+    AvenantAnlRenSerializer,
+    InfoVehiculeSerializer,
+    AnnulationEncaissementSerializer,
+    LogRecordSerializer,
+    EnregistrementDevisRCSerializer,
+    ImportationAssureIaSerializer,
+    ImportationTransportSerializer,
+    CertificatTransportSerializer,
+    CorrectionDevisSerializer,
+    PrimeUpdateSerializer,
+    ConsolidationDevisClientSerializer,
+)
+
+from .models import (
+    Devis,
+    DevisDetail,
+    DevisDetGarantie,
+    TarifEcran,
+    Contrat,
+    ContratDetail,
+    ContratDetGarantie,
+    QuittanceFn,
+    AyantDroitIa,
+    Quittance,
+    DetailQuittance,
+    Encaissement,
+    DetailEncaissement,
+    Numero,
+    ContractForPremiumCollection,
+    ReversementCompagnie,
+    DetailReversement,
+    LogRecord,
+    CertificatTransport,
+)
+
+from .exceltopostgresql import export_excel
+
+from .database import (
+    save_quotation,
+    save_quotation_ia,
+    save_quotation_voyage,
+    save_quotation_mrh,
+    save_quotation_tousrisquesinfo,
+    save_contract,
+    get_quotation_info,
+    get_contract_info,
+    enregistrer_ayant_droit,
+    get_extended_quotation_info,
+    quotation_completion,
+    archive_quote,
+    cancel_car_input,
+    get_contract_coverage,
+    get_contract_car_list,
+    get_contract_list_for_pc,
+    save_premium_collection,
+    save_premium_collection_cancellation,
+    get_contract_premium_remittance,
+    save_premium_remittance,
+    get_info_encaissement,
+    get_info_reversement,
+    get_info_vehicule,
+    save_insured_ia,
+    get_assure_ia,
+    save_quotation_globaledebanque,
+    save_quotation_rc,
+    get_liste_assure_ia,
+    get_taux_reduction_flotte,
+    get_garantie_souscrite,
+    save_plate_number,
+    policy_modification,
+    unarchive_quote,
+    get_encaissement_recherche,
+    get_contract_list_for_customer,
+    get_certificat_transport,
+    correction_devis,
+    execute_maj_manuelle_primes,
+    consolider_devis_db,
+)
+from .utils import import_ia_insured
+from django.http.response import JsonResponse
+from rest_framework.parsers import JSONParser
+from rest_framework import status
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
+from configuration_api.models import OffreAutomobileBoisee, Produit
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# Create your views here.
+def stored_procedure_result(
+    request, post_serializer_cls, stored_proc_caller, qry_res_serializer_cls
+):
+    json_data = JSONParser().parse(request)
+    print("JSON de la requête:", json_data)
+    post_serializer = post_serializer_cls(data=json_data)
+    if post_serializer.is_valid():
+        (err, qryset) = stored_proc_caller(json_data)
+        qry_res_serializer = qry_res_serializer_cls(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(qry_res_serializer.data, status=st, safe=False)
+    return JsonResponse(post_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ContractForPremiumCollectionView(generics.ListCreateAPIView):
+    serializer_class = ContractForPremiumCollectionSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+        reference_client = self.request.query_params.get("referenceclient", None)
+        reference_contrat = self.request.query_params.get("referencecontrat", None)
+        if reference_client:
+            reference_client = str(reference_client)
+        if reference_contrat:
+            reference_contrat = str(reference_contrat)
+        (msg, item) = get_contract_list_for_pc(reference_client, reference_contrat)
+        if not msg:
+            return item
+        else:
+            return ContractForPremiumCollection.objects.none()
+
+
+class EncaissementRechercheView(generics.ListCreateAPIView):
+    queryset = Encaissement.objects.filter(~Q(piece_annulee=True)).order_by(
+        "-dateencaissement"
+    )[:1000]
+    serializer_class = EncaissementSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+        reference_client = self.request.query_params.get("referenceclient", None)
+        reference_contrat = self.request.query_params.get("referencecontrat", None)
+        if reference_client or reference_contrat:
+            if reference_client:
+                reference_client = str(reference_client)
+            if reference_contrat:
+                reference_contrat = str(reference_contrat)
+            (msg, item) = get_encaissement_recherche(
+                reference_client, reference_contrat
+            )
+            if not msg:
+                return item
+            else:
+                return Encaissement.objects.none()
+        return super().get_queryset()
+
+
+class DevisViewSet(viewsets.ModelViewSet):
+    queryset = Devis.objects.annotate(
+        offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))
+    ).all()
+    serializer_class = DevisSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class CertificatTransportView(generics.ListCreateAPIView):
+    queryset = CertificatTransport.objects.all().order_by("-date_fin_periode")[:1000]
+    serializer_class = CertificatTransportSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+        start_date = self.request.query_params.get("datedebutperiode", None)
+        end_date = self.request.query_params.get("datefinperiode", None)
+        customer_id = self.request.query_params.get("idclient", None)
+
+        return get_certificat_transport(start_date, end_date, customer_id)
+
+
+class DevisClientView(generics.ListAPIView):
+    queryset = Devis.objects.filter(confirme=True, archive=False)
+    serializer_class = DevisClientSerializer
+
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_queryset(self):
+        id_client = self.request.query_params.get("idclient", None)
+        nom_client = self.request.query_params.get("nomclient", None)
+        id_produit = self.request.query_params.get("idproduit", None)
+        devis_qs = Devis.objects.filter(confirme=False, archive=False)
+        try:
+            if nom_client:
+                clients = Client.objects.filter(
+                    Q(Nom__istartswith=nom_client) | Q(Prenoms__istartswith=nom_client)
+                )
+                if clients:
+                    devis_qs = devis_qs.filter(client__in=clients)
+            if id_client:
+                client = Client.objects.get(pk=id_client)
+                devis_qs = devis_qs.filter(client=client)
+            if id_produit:
+                produit = Produit.objects.get(pk=id_produit)
+                devis_qs = devis_qs.filter(produit=produit)
+        except Client.DoesNotExist as ec:
+            print(ec)
+            devis_qs = devis_qs.filter(iddevis=0)
+        except Produit.DoesNotExist as eq:
+            print(eq)
+            devis_qs = devis_qs.filter(iddevis=0)
+        devis_qs = devis_qs.prefetch_related(
+            Prefetch(
+                "details", queryset=DevisDetail.objects.filter(iddevis__in=devis_qs)
+            )
+        )
+        return devis_qs
+
+
+class ConsolidationDevisView(APIView):
+    """
+    Vue pour consolider plusieurs devis en un seul.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user_id = request.user.id
+        # Validation du format de données
+        serializer = ConsolidationDevisClientSerializer(data=request.data, many=True)
+        if not serializer.is_valid():
+            return Response(
+                {"erreur": "Format de données invalide."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Extraction des IDs de devis
+        devis_ids = [item["iddevis"] for item in serializer.validated_data]
+
+        # Vérification du nombre minimum de devis
+        if len(devis_ids) < 2:
+            return Response(
+                {
+                    "erreur": (
+                        "Au minimum 2 devis sont requis pour la " "consolidation."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Récupération des devis depuis la base de données
+        devis_list = Devis.objects.filter(iddevis__in=devis_ids)
+
+        # Vérification que tous les devis existent
+        if devis_list.count() != len(devis_ids):
+            return Response(
+                {"erreur": "Un ou plusieurs devis n'existent pas."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Vérification que tous les devis sont mono
+        if devis_list.filter(flotte=True).count() > 0:
+            return Response(
+                {"erreur": "Tous les devis doivent être mono."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis sont non confirmés et non archivés
+        if devis_list.filter(Q(archive=True) | Q(confirme=True)).count() > 0:
+            return Response(
+                {
+                    "erreur": "Tous les devis doivent être non confirmés et non archivés."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis appartiennent au même client
+        clients = devis_list.values_list("client", flat=True).distinct()
+        if len(clients) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent appartenir au même client."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis concernent le même produit
+        produits = devis_list.values_list("produit", flat=True).distinct()
+        if len(produits) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent concerner le même produit."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis concernent la compagnie
+        compagnies = devis_list.values_list("compagnie", flat=True).distinct()
+        if len(compagnies) > 1:
+            return Response(
+                {
+                    "erreur": "Tous les devis doivent être produits sur la même compagnie."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis concernent le même intermediaire
+        intermediaires = devis_list.values_list("intermediaire", flat=True).distinct()
+        if len(intermediaires) > 1:
+            return Response(
+                {
+                    "erreur": "Tous les devis doivent être produits pour le même intermédiaire."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis concernent le même assuré
+        assures = devis_list.values_list("assure", flat=True).distinct()
+        if len(assures) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent concerner le même assuré."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Vérification que tous les devis concernent le même avenant
+        avenants = devis_list.values_list("avenant", flat=True).distinct()
+        if len(avenants) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent avoir le même avenant."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        dates_effet = devis_list.values_list("dateeffet", flat=True).distinct()
+        if len(dates_effet) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent avoir la même date d'effet."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        dates_expiration = devis_list.values_list(
+            "dateexpiration", flat=True
+        ).distinct()
+        if len(dates_expiration) > 1:
+            return Response(
+                {"erreur": "Tous les devis doivent avoir la même date d'expiration."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # Appel de la fonction utilitaire pour consolider les devis
+        try:
+            id_devis_consolide = consolider_devis_db(user_id, devis_ids)
+
+            return Response(
+                {
+                    "iddevis": id_devis_consolide,
+                    "message": "Devis consolidés avec succès.",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            return Response(
+                {"erreur": f"Erreur lors de la consolidation: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class DevisDetailViewSet(viewsets.ModelViewSet):
+    queryset = DevisDetail.objects.all()
+    serializer_class = DevisDetailSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class DevisDetGarantieViewSet(viewsets.ModelViewSet):
+    queryset = DevisDetGarantie.objects.filter(~Q(IdGarantie=0))
+    serializer_class = DevisDetGarantieSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class TarifEcranViewSet(viewsets.ModelViewSet):
+    queryset = TarifEcran.objects.all()
+    serializer_class = TarifEcranSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class ContratViewSet(viewsets.ModelViewSet):
+    queryset = Contrat.objects.filter(Q(idcontratannulation=0))
+    serializer_class = ContratSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class ContratRestreintViewSet(viewsets.ModelViewSet):
+    queryset = Contrat.objects.filter(Q(idcontratannulation=0)).order_by(
+        "-dateemission"
+    )[:500]
+    serializer_class = ContratSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class ContratDetailViewSet(viewsets.ModelViewSet):
+    queryset = ContratDetail.objects.all()
+    serializer_class = ContratDetailSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class ContratDetGarantieViewSet(viewsets.ModelViewSet):
+    queryset = ContratDetGarantie.objects.filter(~Q(idgarantie=0))
+    serializer_class = ContratDetGarantieSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class AyantDroitMineneView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, numeropolice):
+        numeropolice = str(numeropolice).strip()
+        assures = Client.objects.filter(Adresse2=numeropolice)
+        idassure = -1
+        if assures:
+            idassure = assures.first().IdClient
+        ayant_droits_queryset = AyantDroitIa.objects.filter(id_assure=idassure)
+        serializer = AyantDroitIaSerializer(ayant_droits_queryset, many=True)
+        # print(serializer.data)
+        return Response(
+            {"Status": "Succès", "ayantdroits": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class AyantDroitIaView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idassure):
+        # if idassure:
+        ayant_droits_queryset = AyantDroitIa.objects.filter(id_assure=idassure)
+        # else:
+        #    ayant_droits_queryset = AyantDroitIa.objects.all()
+        serializer = AyantDroitIaSerializer(ayant_droits_queryset, many=True)
+        # print(serializer.data)
+        return Response(
+            {"Status": "Succès", "ayantdroits": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ImportationAssureIaViewSet(viewsets.ViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def create(self, request):
+        message = {}
+        error_count = 0
+        id_devis = 0
+        errors = []
+        serializer_class = ImportationAssureIaSerializer(data=request.data)
+        if "FichierExcel" not in request.FILES or not serializer_class.is_valid():
+            if "IdDevis" in request.POST:
+                if request.POST["IdDevis"]:
+                    id_devis = int(request.POST["IdDevis"])
+            message["IdDevis"] = id_devis
+            message["messages"] = [
+                "Paramètres non conformes",
+            ]
+            return Response(data=message, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            (error_count, id_devis, errors) = import_ia_insured(
+                request.FILES["FichierExcel"], request.user.id, request.POST
+            )
+            message["IdDevis"] = id_devis
+            if error_count == 0:
+                message["messages"] = [
+                    "Importation des assurés réalisée avec succès.",
+                ]
+                return Response(data=message, status=status.HTTP_202_ACCEPTED)
+            else:
+                message["messages"] = errors
+                return Response(data=message, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LogRecordView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request):
+        msg = request.query_params.get("msg", "")
+        level_name = request.query_params.get("levelname", "")
+        serializer = LogRecordSerializer(LogRecord(msg=msg, level_name=level_name))
+        print(serializer.data)
+        return Response(
+            {"Status": "Succès", "data": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class QuittanceViewSet(viewsets.ModelViewSet):
+    queryset = Quittance.objects.all()
+    serializer_class = QuittanceSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class DetailQuittanceViewSet(viewsets.ModelViewSet):
+    queryset = DetailQuittance.objects.all()
+    serializer_class = DetailQuittanceSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class EncaissementViewSet(viewsets.ModelViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def list(self, request):
+        queryset = (
+            Encaissement.objects.filter(Q(piece_annulee=False))
+            .order_by("-dateencaissement")
+            .values()[:1000]
+        )
+        serializer = EncaissementSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        queryset = Encaissement.objects.filter(Q(piece_annulee=False))
+        encaissement = get_object_or_404(queryset, pk=pk)
+        serializer = EncaissementSerializer(encaissement)
+        return Response(serializer.data)
+
+    def create(self, request):
+        pass
+
+    def update(self, request, pk=None):
+        pass
+
+    def partial_update(self, request, pk=None):
+        pass
+
+    def destroy(self, request, pk=None):
+        pass
+
+
+class DetailEncaissementViewSet(viewsets.ModelViewSet):
+    queryset = DetailEncaissement.objects.all()
+    serializer_class = DetailEncaissementSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class ReversementCompagnieViewSet(viewsets.ModelViewSet):
+    queryset = ReversementCompagnie.objects.all()
+    serializer_class = ReversementCompagnieSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class DetailReversementViewSet(viewsets.ModelViewSet):
+    queryset = DetailReversement.objects.all()
+    serializer_class = DetailReversementSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class NumeroViewSet(viewsets.ModelViewSet):
+    queryset = Numero.objects.all()
+    serializer_class = NumeroSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+# Create a new quotation (Car Insurance)
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation(request):
+    return stored_procedure_result(
+        request,
+        EnregistrementDevisAutoSerializer,
+        save_quotation,
+        QuotationInsertionSerializer,
+    )
+    # enregistrementdevis_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementdevis_data)
+    # enregistrementdevis_serializer = EnregistrementDevisAutoSerializer(
+    #     data=enregistrementdevis_data
+    # )
+    # if enregistrementdevis_serializer.is_valid():
+    #     (err, queryset) = save_quotation(enregistrementdevis_data)
+    #     data_insertion_serializer = QuotationInsertionSerializer(queryset, many=True)
+    #     st = status.HTTP_201_CREATED
+    #     if err:
+    #         st = status.HTTP_400_BAD_REQUEST
+    #     return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    # return JsonResponse(
+    #     enregistrementdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    # )
+
+
+# Finalize a quotation (Car & Personal Accident Insurance)
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def finalize_quotation_flotte(request):
+    finalisationdevis_data = JSONParser().parse(request)
+    ##print("JSON de la requête:", finalisationdevis_data)
+    finalisationdevis_serializer = FinalisationDevisFlotteSerializer(
+        data=finalisationdevis_data
+    )
+    if finalisationdevis_serializer.is_valid():
+        (err, qryset) = quotation_completion(finalisationdevis_data)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        finalisationdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+# Cancel_car_fleet_input
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def quote_archival(request):
+    inputcancelation_data = JSONParser().parse(request)
+    ##print("JSON de la requête:", inputcancelation_data)
+    inputcancelation_serializer = OperationSurDevisSerializer(
+        data=inputcancelation_data
+    )
+    if inputcancelation_serializer.is_valid():
+        (err, qryset) = archive_quote(inputcancelation_data, request.user.id)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        inputcancelation_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+# Unarchive Quote
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def quote_unarchival(request):
+    input_data = JSONParser().parse(request)
+    input_serializer = OperationSurDevisSerializer(data=input_data)
+    if input_serializer.is_valid():
+        (err, qryset) = unarchive_quote(input_data, request.user.id)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+
+    return JsonResponse(input_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# Car input cancelation
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def car_input_cancelation(request):
+    inputcancelation_data = JSONParser().parse(request)
+    ##print("JSON de la requête:", inputcancelation_data)
+    inputcancelation_serializer = OperationSurDevisDetailSerializer(
+        data=inputcancelation_data
+    )
+    if inputcancelation_serializer.is_valid():
+        (err, qryset) = cancel_car_input(inputcancelation_data)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        inputcancelation_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+# Creation a new quotation (Life Insurance)
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_ia(request):
+    enregistrementdevis_ia_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementdevis_ia_data)
+    enregistrementdevis_ia_serializer = EnregistrementDevisIaSerializer(
+        data=enregistrementdevis_ia_data
+    )
+    if enregistrementdevis_ia_serializer.is_valid():
+        (error, queryset) = save_quotation_ia(enregistrementdevis_ia_data)
+        data_insertion_serializer = QuotationIaInsertionSerializer(queryset, many=True)
+        st = status.HTTP_201_CREATED
+        if error:
+            st = status.HTTP_400_BAD_REQUEST
+
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+
+    return JsonResponse(
+        enregistrementdevis_ia_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+#############################################################################
+# Register an Insured (Personal Accident Insurance)
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_insured_ia(request):
+    enregistrementassure_ia_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementassure_ia_data)
+    enregistrement_serializer = EnregistrementDevisIaSerializer(
+        data=enregistrementassure_ia_data
+    )
+    if enregistrement_serializer.is_valid():
+        (err, qryset) = save_insured_ia(enregistrementassure_ia_data)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+#############################################################################
+# Create a new quotation - Travel Insurance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_voyage(request):
+    enregistrementdevis_voyage_data = JSONParser().parse(request)
+    print("JSON de la requête:", enregistrementdevis_voyage_data)
+    enregistrementdevis_voyage_serializer = EnregistrementDevisVoyageSerializer(
+        data=enregistrementdevis_voyage_data
+    )
+    if enregistrementdevis_voyage_serializer.is_valid():
+        (err, queryset) = save_quotation_voyage(enregistrementdevis_voyage_data)
+        data_insertion_serializer = DataInsertionSerializer(queryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementdevis_voyage_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+###########################################################################
+# Create new quotation - House Insurance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_mrh(request):
+    enregistrementdevis_mrh_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementdevis_mrh_data)
+    enregistrementdevis_mrh_serializer = EnregistrementDevisMrhSerializer(
+        data=enregistrementdevis_mrh_data
+    )
+    if enregistrementdevis_mrh_serializer.is_valid():
+        (err, queryset) = save_quotation_mrh(
+            request.user.id, enregistrementdevis_mrh_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(queryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementdevis_mrh_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+###########################################################################
+# Create new quotation - IT Insurance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_tousrisquesinfo(request):
+    enregistrementdevis_tri_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementdevis_tri_data)
+    enregistrementdevis_tri_serializer = EnregistrementDevisTRInfoSerializer(
+        data=enregistrementdevis_tri_data
+    )
+    if enregistrementdevis_tri_serializer.is_valid():
+        (err, queryset) = save_quotation_tousrisquesinfo(
+            request.user.id, enregistrementdevis_tri_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementdevis_tri_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+###########################################################################
+# Create new quotation - RC
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_rc(request):
+    enregistrementdevis_rc_data = JSONParser().parse(request)
+    print("JSON de la requête:", enregistrementdevis_rc_data)
+    enregistrementdevis_rc_serializer = EnregistrementDevisRCSerializer(
+        data=enregistrementdevis_rc_data
+    )
+    if enregistrementdevis_rc_serializer.is_valid():
+        (err, queryset) = save_quotation_rc(
+            request.user.id, enregistrementdevis_rc_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementdevis_rc_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+###########################################################################
+# Bank Risk Insurance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_quotation_globaledebanque(request):
+    enregistrementdevis_gdb_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", enregistrementdevis_gdb_data)
+    enregistrementdevis_gdb_serializer = EnregistrementDevisGlobaleDeBanqueSerializer(
+        data=enregistrementdevis_gdb_data
+    )
+    if enregistrementdevis_gdb_serializer.is_valid():
+        (err, queryset) = save_quotation_globaledebanque(
+            request.user.id, enregistrementdevis_gdb_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementdevis_gdb_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+###########################################################################
+# Creation a new beneficiary IA
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def creer_ayant_droit_ia(request):
+    creationayantdroit_data = JSONParser().parse(request)
+    # #print("JSON de la requête:", creationayantdroit_data)
+    creationayantdroit_serializer = CreationAyantDroitIaSerializer(
+        data=creationayantdroit_data
+    )
+    if creationayantdroit_serializer.is_valid():
+        data_insertion_serializer = DataInsertionSerializer(
+            enregistrer_ayant_droit(creationayantdroit_data), many=True
+        )
+        return JsonResponse(
+            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+        )
+    return JsonResponse(
+        creationayantdroit_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+# Change quotation into contract
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def create_contract(request):
+    confirmationdevis_data = JSONParser().parse(request)
+    # print("JSON de la requête:", confirmationdevis_data)
+    confirmationdevis_serializer = OperationSurDevisSerializer(
+        data=confirmationdevis_data
+    )
+    if confirmationdevis_serializer.is_valid():
+        (err, qryset) = save_contract(confirmationdevis_data)
+        data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        elif not settings.DEBUG and settings.URANUS_IN_PRODUCTION:
+            send_sms_enregistrement_contrat.delay(
+                int(data_insertion_serializer.data[0]["ObjectId"])
+            )
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+
+    return JsonResponse(
+        confirmationdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+class AssureIaParDevisView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        (msg, assures) = get_liste_assure_ia(id=iddevis, statut="DEV")
+        if not msg:
+            serializer = AssureIaParDevisOuContratSerializer(assures, many=True)
+            # print(serializer)
+            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        else:
+            return JsonResponse(
+                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class AssureIaParContratView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        (msg, assures) = get_liste_assure_ia(id=idcontrat, statut="CNT")
+        if not msg:
+            serializer = AssureIaParDevisOuContratSerializer(assures, many=True)
+            # print(serializer.data)
+            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        else:
+            return JsonResponse(
+                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class AssureIaInfoView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        (msg, assureiainfo) = get_assure_ia(iddevis)
+        if not msg:
+            serializer = AssureIaInfoSerializer(assureiainfo, many=True)
+            # print(serializer.data)
+            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        else:
+            return JsonResponse(
+                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class DevisDetailInfoView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        r_status = status.HTTP_200_OK
+        devisdetail = DevisDetail.objects.none()
+        try:
+            devis = Devis.objects.get(pk=iddevis)
+            if devis:
+                devisdetail = DevisDetail.objects.filter(iddevis=devis)
+                if not devisdetail.exists():
+                    r_status = status.HTTP_404_NOT_FOUND
+        except Devis.DoesNotExist as e_not_exists:
+            print(e_not_exists)
+            r_status = status.HTTP_404_NOT_FOUND
+        except Exception as error:
+            print(error)
+            r_status = status.HTTP_400_BAD_REQUEST
+
+        serializer = DevisDetailSerializer(devisdetail, many=True)
+        return JsonResponse(serializer.data, status=r_status, safe=False)
+
+
+class ContratDetailInfoView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        contratdetail = ContratDetail.objects.filter(idcontrat=idcontrat)
+        serializer = ContratDetailSerializer(contratdetail, many=True)
+        # print(serializer.data)
+        return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+
+
+class QuittancePropositionView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        (msg, item) = get_quotation_info(iddevis=iddevis)
+        if not msg:
+            serializer = QuittancePropositionSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+###########################################
+### Quittance Contrat
+class QuittanceContratView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        (msg, item) = get_contract_info(idcontrat=idcontrat)
+        if not msg:
+            serializer = QuittanceContratSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+###########################################
+### Garantie Contrat
+class GarantieContratView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        (msg, item) = get_contract_coverage(idcontrat=idcontrat)
+        if not msg:
+            serializer = GarantieContratFlotteSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+def get_liste_vehicule(id, contrat=True):
+    (msg, item) = get_contract_car_list(id=id, contrat=contrat)
+    if not msg:
+        serializer = VehiculeContratSerializer(item, many=True)
+        # print(serializer.data)
+        return Response(
+            {"status": "succès", "data": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+    else:
+        return Response(
+            {"status": "Echec", "data": msg},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+###########################################
+### Liste Vehicule Contrat
+class ListeVehiculeContratView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        return get_liste_vehicule(id=idcontrat)
+
+
+###########################################
+### Liste Vehicule Devis
+class ListeVehiculeDevisView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        return get_liste_vehicule(id=iddevis, contrat=False)
+
+
+###########################################
+### Liste des quittances à reverser
+class ListeContratReversementView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcompagnie):
+        (msg, item) = get_contract_premium_remittance(idcompagnie=idcompagnie)
+        if not msg:
+            serializer = ContractForPremiumCollectionSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+####################################################################
+# fn_info_encaissement
+#################################################################
+class InfoEncaissementView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddetailencaissement):
+        (msg, item) = get_info_encaissement(detailencaissement=iddetailencaissement)
+        if not msg:
+            serializer = PremiumCollectionInfoSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+# fn_get_info_vehicule
+class InfoVehiculeView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idcontrat):
+        (msg, item) = get_info_vehicule(idcontrat=idcontrat)
+        if not msg:
+            serializer = InfoVehiculeSerializer(item, many=True)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+####################################################################
+# fn_info_reversement
+#################################################################
+class InfoReversementView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idreversement):
+        (msg, item) = get_info_reversement(reversement=idreversement)
+        if not msg:
+            serializer = PremiumRemittanceInfoSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+#########################################################
+class DetailEncaissementListView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idencaissement):
+        try:
+            encaissement = Encaissement.objects.get(pk=idencaissement)
+        except Encaissement.DoesNotExist:
+            return Response(
+                {"status": "Aucune donnée", "data": ""},
+                status=status.HTTP_204_NO_CONTENT,
+            )
+        else:
+            details = DetailEncaissement.objects.filter(encaissement=encaissement)
+            if details.exists():
+                serializer = DetailEncaissementSerializer(details, many=True)
+                # print(serializer.data)
+                return Response(
+                    {"status": "Succès", "data": serializer.data},
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {
+                        "status": "Echec",
+                        "data": "Incohérence: encaissement sans détails.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+#########################################################
+class DetailReversementListView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idreversement):
+        try:
+            reversement = ReversementCompagnie.objects.get(pk=idreversement)
+        except ReversementCompagnie.DoesNotExist:
+            return Response(
+                {"status": "Aucune donnée", "data": ""},
+                status=status.HTTP_204_NO_CONTENT,
+            )
+        else:
+            details = DetailReversement.objects.filter(reversement=reversement)
+            if details.exists():
+                serializer = DetailReversementSerializer(details, many=True)
+                # print(serializer.data)
+                return Response(
+                    {"status": "Succès", "data": serializer.data},
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {
+                        "status": "Echec",
+                        "data": "Incohérence: reversement sans détails.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+# class EncaissementRechercheView(APIView):
+#     permission_classes = [
+#         permissions.IsAuthenticated,
+#     ]
+
+
+#     def get(self, request, champrecherche):
+#         criteria = str(champrecherche).strip()
+# (msg, qryset)
+# if valid_email_address(criteria):
+#     clientrecherche = Client.objects.filter(Q(Email=criteria) & ~Q(IdClient=0))
+# else:
+#     phone_number_part = valid_phone_number(criteria)
+#     if phone_number_part:
+#         clientrecherche = Client.objects.filter(
+#             (
+#                 Q(Mobile__contains=phone_number_part)
+#                 | Q(Telephone__contains=phone_number_part)
+#                 | Q(Fixe__contains=phone_number_part)
+#             )
+#             & ~Q(IdClient=0)
+#         )
+#     else:
+#         clientrecherche = Client.objects.filter(
+#             Q(Nom__contains=criteria) & ~Q(IdClient=0)
+#         )
+# serializer = ClientSerializer(clientrecherche, many=True)
+# print(serializer.data)
+# return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+
+
+class ImportationFichierGUCEViewSet(viewsets.ViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def create(self, request):
+        messages = []
+        serializer_class = ImportationTransportSerializer(data=request.data)
+        if "fichier_excel" not in request.FILES or not serializer_class.is_valid():
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+        else:
+            (error_occured, messages) = export_excel(
+                request.FILES["fichier_excel"],
+                request.user.id,
+                request.POST["debut_periode"],
+                request.POST["fin_periode"],
+            )
+            data_insertion_serializer = DataInsertionSerializer(messages, many=True)
+            if not error_occured:
+                return Response(
+                    data=data_insertion_serializer.data, status=status.HTTP_202_ACCEPTED
+                )
+            else:
+                return Response(
+                    data=data_insertion_serializer.data,
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+class ExtendedQuotationInfoView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, idproduit):
+        (msg, item) = get_extended_quotation_info(0, "", "", None, None, idproduit)
+        if not msg:
+            serializer = ExtendedQuotationInfoSerializer(item, many=True)
+            # print(serializer.data)
+            return Response(
+                {"status": "succès", "data": serializer.data},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class ExtendedQuotationInfoRechercheView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, champrecherche):
+        parameters = str(champrecherche).strip().split("_")
+        (id_devis, numero_devis, nom_client, date_debut, date_fin) = (
+            0,
+            "",
+            "",
+            None,
+            None,
+        )
+        try:
+            if len(parameters) == 5:
+                if parameters[0]:
+                    id_devis = int(parameters[0])
+                if parameters[1]:
+                    numero_devis = str(parameters[1])
+                if parameters[2]:
+                    nom_client = str(parameters[2])
+                if parameters[3]:  # "%d-%m-%Y"
+                    date_debut = datetime.strptime(
+                        str(parameters[3]), "%Y-%m-%d"
+                    ).date()
+                if parameters[4]:
+                    date_fin = datetime.strptime(str(parameters[4]), "%Y-%m-%d").date()
+        except Exception as error:
+            return Response(
+                {"status": "Echec", "data": str(error).split(":")[0]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        else:
+            (msg, item) = get_extended_quotation_info(
+                id_devis, numero_devis, nom_client, date_debut, date_fin
+            )
+            if not msg:
+                serializer = ExtendedQuotationInfoSerializer(item, many=True)
+                # print(serializer.data)
+                return Response(
+                    {"status": "succès", "data": serializer.data},
+                    status=status.HTTP_200_OK,
+                )
+            else:
+                return Response(
+                    {"status": "Echec", "data": msg},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+
+class ReductionFlotteDevisView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, iddevis):
+        taux_reduction_flotte = get_taux_reduction_flotte(iddevis)
+        (statut_msg, statut_code) = (
+            ("Succès", status.HTTP_200_OK)
+            if taux_reduction_flotte >= 0
+            else ("Echec", status.HTTP_400_BAD_REQUEST)
+        )
+        return Response(
+            {"Status": statut_msg, "TauxReduction": str(taux_reduction_flotte)},
+            status=statut_code,
+        )
+
+
+class GarantieSouscriteView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get_garantie(self, id_entite, type_entite):
+        msg, garanties = get_garantie_souscrite(id_entite, type_entite)
+        if not msg:
+            serializer = GarantieSouscriteSerializer(garanties, many=True)
+            return Response(
+                {"Status": "Succès", "Data": serializer.data}, status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class GarantieSouscriteContratView(GarantieSouscriteView):
+    def get(self, request, idcontrat):
+        return self.get_garantie(idcontrat, "CNT")
+
+
+class GarantieSouscriteDevisView(GarantieSouscriteView):
+    def get(self, request, iddevis):
+        return self.get_garantie(iddevis, "DEV")
+
+
+# Save Premium collection
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def collect_premium(request):
+    enregistrementencaissement_data = JSONParser().parse(request)
+    print("JSON de la requête:", enregistrementencaissement_data)
+    enregistrementencaissement_serializer = EncaissementGroupeQuittanceSerializer(
+        data=enregistrementencaissement_data
+    )
+    if enregistrementencaissement_serializer.is_valid():
+        (err, qryset) = save_premium_collection(
+            request.user.id, enregistrementencaissement_data
+        )
+
+        data_insertion_serializer = DataInsertionSerializer(
+            qryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        elif not settings.DEBUG and settings.URANUS_IN_PRODUCTION:
+            send_sms_encaissement_contrat.delay(
+                int(data_insertion_serializer.data[0]["ObjectId"])
+            )
+
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        enregistrementencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+# Cancel Premium collection
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def cancel_premium_collection(request):
+    annulationencaissement_data = JSONParser().parse(request)
+    # print("JSON de la requête:", enregistrementencaissement_data)
+    annulationencaissement_serializer = AnnulationEncaissementSerializer(
+        data=annulationencaissement_data
+    )
+    if annulationencaissement_serializer.is_valid():
+        (err, qryset) = save_premium_collection_cancellation(
+            request.user.id, annulationencaissement_data
+        )
+
+        data_insertion_serializer = QuotationInsertionSerializer(
+            qryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        annulationencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+##################################################################################
+# Save Premium Remittance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def remit_premium(request):
+    enregistrement_data = JSONParser().parse(request)
+    # print("JSON de la requête:", enregistrement_data)
+    enregistrementencaissement_serializer = ReversementGroupePrimeSerializer(
+        data=enregistrement_data
+    )
+    if enregistrementencaissement_serializer.is_valid():
+        data_insertion_serializer = DataInsertionSerializer(
+            save_premium_remittance(request.user.id, enregistrement_data),
+            many=True,
+        )
+        return JsonResponse(
+            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+        )
+    return JsonResponse(
+        enregistrementencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+##################################################################################
+# Change Plate Number
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def change_plate_number(request):
+    chgplatenumber_data = JSONParser().parse(request)
+    # print("JSON de la requête:", chgplatenumber_data)
+    chgplatenumber_serializer = ChangementImmatriculationSerializer(
+        data=chgplatenumber_data
+    )
+    if chgplatenumber_serializer.is_valid():
+        (err, qryset) = save_plate_number(request.user.id, chgplatenumber_data)
+        data_insertion_serializer = DataInsertionSerializer(
+            qryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        chgplatenumber_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+##################################################################################
+# Cancel Policy, Renew Policy or Change Effective Date
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def modify_policy(request):
+    cancelpolicy_data = JSONParser().parse(request)
+    print("JSON de la requête:", cancelpolicy_data)
+    cancelpolicy_serializer = AvenantAnlRenSerializer(data=cancelpolicy_data)
+    if cancelpolicy_serializer.is_valid():
+        (err, qryset) = policy_modification(request.user.id, cancelpolicy_data)
+        data_insertion_serializer = DataInsertionSerializer(
+            qryset,
+            many=True,
+        )
+        st = status.HTTP_201_CREATED
+        if err:
+            st = status.HTTP_400_BAD_REQUEST
+        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+    return JsonResponse(
+        cancelpolicy_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+##################################################################################
+# Renew Policy
+# @api_view(["POST"])
+# @authentication_classes([TokenAuthentication, BasicAuthentication])
+# @permission_classes([permissions.IsAuthenticated])
+# def renew_policy(request):
+#     renewpolicy_data = JSONParser().parse(request)
+#     #print("JSON de la requête:", renewpolicy_data)
+#     renewpolicy_serializer = AvenantAnlRenSerializer(data=renewpolicy_data)
+#     if renewpolicy_serializer.is_valid():
+#         (err, qryset) = policy_cancellation_or_renewal(
+#             request.user.id, renewpolicy_data
+#         )
+#         data_insertion_serializer = DataInsertionSerializer(
+#             qryset,
+#             many=True,
+#         )
+#         st = status.HTTP_201_CREATED
+#         if err:
+#             st = status.HTTP_400_BAD_REQUEST
+#         return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+#     return JsonResponse(
+#         renewpolicy_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+#     )
+class ListeContratClientView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, *args, **kwargs):
+        idproduit = request.query_params.get("idproduit")
+        idclient = request.query_params.get("idclient")
+        nomclient = request.query_params.get("nomclient")
+        telephoneclient = request.query_params.get("telephoneclient")
+        numeropolice = request.query_params.get("numeropolice")
+        if idproduit is None:
+            idproduit = 0
+        if idclient is None:
+            idclient = 0
+
+        (msg, item) = get_contract_list_for_customer(
+            nom_client=nomclient,
+            telephone_client=telephoneclient,
+            numero_police=numeropolice,
+            id_produit=idproduit,
+            id_client=idclient,
+        )
+        if not msg:
+            serializer = ContractForPremiumCollectionSerializer(item, many=True)
+            # print(serializer.data)
+            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+#################################################################################
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def get_contracts_for_pc(request):
+    contratdemande_data = JSONParser().parse(request)
+    contratdemande_serializer = DemandeContratPourEncaissementSerializer(
+        data=contratdemande_data
+    )
+    if contratdemande_serializer.is_valid():
+        referenceclient = str(contratdemande_data["referenceclient"])
+        referencecontrat = str(contratdemande_data["referencecontrat"])
+        (msg, item) = get_contract_list_for_pc(referenceclient, referencecontrat)
+        if not msg:
+            serializer = ContractForPremiumCollectionSerializer(item, many=True)
+            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        else:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    return JsonResponse(
+        contratdemande_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+class CorrectionDevisViewSet(viewsets.ViewSet):
+    """
+    API endpoint pour corriger les devis.
+    """
+
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def create(self, request):
+        """
+        Traite la requête POST pour corriger un devis déjà existant.
+        """
+        serializer = CorrectionDevisSerializer(data=request.data)
+        if serializer.is_valid():
+            result = correction_devis(serializer.validated_data)
+            if result["success"]:
+                return Response(
+                    {"message": "Devis corrigé avec succès."},
+                    status=status.HTTP_201_CREATED,
+                )
+            else:
+                return Response(
+                    {"error": result["message"]},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PrimeUpdateAPIView(APIView):
+    """
+    Endpoint to manually update prime values by calling the PL/pgSQL stored procedure.
+    """
+
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(self, request, *args, **kwargs):
+        serializer = PrimeUpdateSerializer(data=request.data)
+
+        if serializer.is_valid():
+            # Extract validated data
+            validated_data = serializer.validated_data
+
+            p_numero_devis = validated_data["numero_devis"]
+            p_prime_annuelle = validated_data["prime_annuelle"]
+            p_prime_nette = validated_data["prime_nette"]
+            p_accessoire = validated_data["accessoire"]
+            p_taxe = validated_data["taxe"]
+            p_fga = validated_data["fga"]
+            p_cedeao = validated_data["cedeao"]
+            p_prime_ttc = validated_data["prime_ttc"]
+
+            try:
+                # Call the utility function to execute the stored procedure
+                execute_maj_manuelle_primes(
+                    p_numero_devis,
+                    p_prime_annuelle,
+                    p_prime_nette,
+                    p_accessoire,
+                    p_taxe,
+                    p_fga,
+                    p_cedeao,
+                    p_prime_ttc,
+                )
+
+                return Response(
+                    {
+                        "message": "Mise à jour des primes effectuée avec succès.",
+                        "numero_devis": p_numero_devis,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            except Exception as e:
+                # Handle database or execution errors
+                return Response(
+                    {"message": "Error executing stored procedure.", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
