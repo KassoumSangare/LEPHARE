@@ -260,6 +260,9 @@ class Devis(models.Model):
     fga = models.DecimalField(
         db_column="fga", max_digits=19, decimal_places=4, default=0
     )
+    cedeao = models.DecimalField(
+        db_column="cedeao", max_digits=19, decimal_places=4, default=0
+    )
     primettc = models.DecimalField(max_digits=19, decimal_places=4, default=0)
     idoperateur = models.IntegerField(blank=True, null=True)
     bonus_malus = models.DecimalField(max_digits=19, decimal_places=4, default=0)
@@ -771,6 +774,9 @@ class Contrat(models.Model):
     )  # Field name made lowercase.
     fga = models.DecimalField(
         db_column="fga", max_digits=19, decimal_places=4, default=0
+    )
+    cedeao = models.DecimalField(
+        db_column="cedeao", max_digits=19, decimal_places=4, default=0
     )
     primettc = models.DecimalField(
         db_column="primettc", max_digits=19, decimal_places=4, default=0

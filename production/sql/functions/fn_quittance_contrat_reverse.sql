@@ -25,12 +25,24 @@ DECLARE
 	
 BEGIN
 
-	
-	SELECT SUM(CASE WHEN DD.idgarantie = 1 THEN ROUND(DD.primenette * 0.02, 0) ELSE 0 END), SUM(CASE WHEN DD.idgarantie = 3 THEN DD.primenette ELSE 0 END)
-	INTO montant_fga, montant_cedeao
+	SELECT SUM(CASE WHEN DD.idgarantie = 3 THEN DD.primenette ELSE 0 END)
+	INTO montant_cedeao
 	FROM stdcontratdetgarantie AS DD
 	INNER JOIN StdContratDetail AS SD ON(SD.IdContratDetail=DD.idcontratdetail)
-	WHERE SD.IdContrat=id_contrat and DD.idgarantie IN (1,3);	
+	WHERE SD.IdContrat=id_contrat and DD.idgarantie = 3;
+
+	IF EXISTS (SELECT 1 FROM public.stdcontrat AS SD WHERE SD.idcontrat = id_contrat AND NOT SD.primeimposee ) THEN
+		SELECT SUM(CASE WHEN DD.idgarantie = 1 THEN ROUND(DD.primenette * 0.02, 0) ELSE 0 END)
+		INTO montant_fga
+		FROM stdcontratdetgarantie AS DD
+		INNER JOIN StdContratDetail AS SD ON(SD.IdContratDetail=DD.idcontratdetail)
+		WHERE SD.IdContrat=id_contrat and DD.idgarantie = 1;
+	ELSE
+		SELECT SD.fga
+		INTO montant_fga
+		FROM public.stdcontrat AS SD
+		WHERE SD.idcontrat = id_contrat;
+	END IF; 
 	
 	montant_fga := COALESCE(montant_fga, 0.0);
 	montant_cedeao := COALESCE(montant_cedeao, 0.0);
@@ -90,3 +102,4 @@ $BODY$;
 
 ALTER FUNCTION public.fn_quittance_contrat(integer)
     OWNER TO uranususer;
+

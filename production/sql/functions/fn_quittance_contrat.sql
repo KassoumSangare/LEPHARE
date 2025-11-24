@@ -25,12 +25,24 @@ DECLARE
 	
 BEGIN
 
-	
-	SELECT SUM(CASE WHEN DD.idgarantie = 1 THEN ROUND(DD.primenette * 0.02, 0) ELSE 0 END), SUM(CASE WHEN DD.idgarantie = 3 THEN DD.primenette ELSE 0 END)
-	INTO montant_fga, montant_cedeao
+	SELECT SUM(CASE WHEN DD.idgarantie = 3 THEN DD.primenette ELSE 0 END)
+	INTO montant_cedeao
 	FROM stdcontratdetgarantie AS DD
 	INNER JOIN StdContratDetail AS SD ON(SD.IdContratDetail=DD.idcontratdetail)
-	WHERE SD.IdContrat=id_contrat and DD.idgarantie IN (1,3);	
+	WHERE SD.IdContrat=id_contrat and DD.idgarantie = 3;
+
+	IF EXISTS (SELECT 1 FROM public.stdcontrat AS SD WHERE SD.idcontrat = id_contrat AND NOT SD.primeimposee ) THEN
+		SELECT SUM(CASE WHEN DD.idgarantie = 1 THEN ROUND(DD.primenette * 0.02, 0) ELSE 0 END)
+		INTO montant_fga
+		FROM stdcontratdetgarantie AS DD
+		INNER JOIN StdContratDetail AS SD ON(SD.IdContratDetail=DD.idcontratdetail)
+		WHERE SD.IdContrat=id_contrat and DD.idgarantie = 1;
+	ELSE
+		SELECT SD.fga
+		INTO montant_fga
+		FROM public.stdcontrat AS SD
+		WHERE SD.idcontrat = id_contrat;
+	END IF; 
 	
 	montant_fga := COALESCE(montant_fga, 0.0);
 	montant_cedeao := COALESCE(montant_cedeao, 0.0);
@@ -71,7 +83,7 @@ BEGIN
 					SD.PrimeNette, (SD.PrimeNette-montant_fga) AS primenettehorsfga, montant_fga AS fga,
 					SD.Accessoire, SD.AccessoireCompagnie, SD.AccessoireIntermediaire, SD.Taxe AS taxeenregistrement, SD.PrimeTtc, True AS confirme, SP.libelleproduit,
 					libelle_categorie AS libellecategorie, SD.CommissionIntermediaire, SD.CommissionGestionnaire, SD.CommissionAperiteur, Cl.titre_client, Cl.profession_client, Cl.type_assure,
-					Cl.type_souscripteur, Cl.Telephone AS telephone_client, Cl.Mobile AS mobile_client, Cl.Adresse2 AS adresse_geographique, Cl.Email AS email_client, montant_cedeao AS cedeao,
+					Cl.type_souscripteur, Cl.Telephone AS telephone_client, Cl.Mobile AS mobile_client, Cl.Adresse2 AS adresse_geographique, Cl.Email AS email_client, CASE WHEN id_produit = 1 AND montant_cedeao = 0 THEN SD.cedeao ELSE montant_cedeao END AS cedeao,
 					libelle_mouvement AS libellemouvement, (TRIM((Ass.Nom || ' ' || COALESCE(Ass.Prenoms, ''))))::character varying AS nomassure, Ass.Adresse1 AS adresseassure,
 					COALESCE(SQ.numeroquittance, '') AS numeroquittance, (CASE WHEN SD.IdProduit = 1 AND SD.Flotte THEN 'FLOTTE AUTOMOBILE' ELSE libelle_offre END)::character varying AS offre, libelle_bareme AS libellebareme, SD.IdDevis, CASE WHEN SD.IdProduit=5 THEN code_categorie ELSE '' END AS codecategorie,
 					SD.PrimeTTC - (SD.PrimeNette + SD.Accessoire + SD.Taxe) AS fraisgestion, COALESCE(SD.NumeroPoliceConnexe, '') AS numeropoliceconnexe, TRIM(SC.CodeIntermediaire)::character varying AS codeintermediaire,
@@ -90,3 +102,4 @@ $BODY$;
 
 ALTER FUNCTION public.fn_quittance_contrat(integer)
     OWNER TO uranususer;
+
