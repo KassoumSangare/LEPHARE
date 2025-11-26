@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS fn_get_code_genre_vehicule(INTEGER);

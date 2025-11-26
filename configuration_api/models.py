@@ -1316,7 +1316,7 @@ class GenreVehicule(models.Model):
         verbose_name="Id Genre", primary_key=True, db_column="idgenre"
     )
     CodeGenre = models.CharField(
-        max_length=50, verbose_name="Code Genre", db_column="codegenre"
+        max_length=50, verbose_name="Code Genre", db_column="codegenre", unique=True,
     )
     LibelleGenre = models.CharField(
         db_column="libellegenre", max_length=50, verbose_name="Libellé"
@@ -2755,3 +2755,15 @@ class IntermediaireCompagnie(models.Model):
                 name="relation_intermediaire_compagnie_unique",
             ),
         ]
+
+class DepreciationVehicule(models.Model):
+    iddepreciation = models.AutoField(db_column="iddepreciation", verbose_name="ID Dépréciation", primary_key=True)
+    taux = models.DecimalField(max_digits=4, decimal_places=2, db_column="taux", verbose_name="Taux de dépréciation")
+    genre_vehicule = models.ForeignKey(GenreVehicule, db_column="codegenrevehicule", to_field="CodeGenre", verbose_name="Genre du véhicule", on_delete=models.CASCADE)
+    mois = models.SmallIntegerField(verbose_name="Nombre de mois", db_column="mois")
+    
+    class Meta:
+        db_table = "stddepreciationvehicule"
+        verbose_name = "Taux de dépréciation des véhicules"
+        verbose_name_plural= "Taux de dépréciation des véhicules"
+        constraints = [models.UniqueConstraint(fields = ["genre_vehicule", "mois"], name="depreciation_vehicule_mois_genre_unique"),]

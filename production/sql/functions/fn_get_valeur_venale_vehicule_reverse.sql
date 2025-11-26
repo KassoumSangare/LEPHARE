@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.fn_get_valeur_venale_vehicule(VARCHAR, NUMERIC(19, 4), DATE, DATE);
