@@ -184,7 +184,7 @@ def import_ia_insured(filename, user_id, request_post_data):
         if request_data_list is None or len(request_data_list) == 0:
             error_count += 1
             errors.append("Le fichier Excel ne contient pas de données valides")
-            return (error_count, id_devis, errors)
+            return (error_count, id_devis_initial, errors)
 
         insertion_data = copy.deepcopy(request_post_data)
         insertion_data["IdProduit"] = 2
