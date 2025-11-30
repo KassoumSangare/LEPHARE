@@ -711,6 +711,8 @@ class DetailEncaissementShortSerializer(serializers.ModelSerializer):
 
 class EncaissementSerializer(serializers.ModelSerializer):
     details = DetailEncaissementShortSerializer(many=True, read_only=True)
+    modepaiement = serializers.CharField(source='modepaiement.libellemodepaiement', read_only=True)
+    banque = serializers.CharField(source='banque.libelle', read_only=True)
 
     class Meta:
         model = Encaissement
@@ -735,8 +737,6 @@ class EncaissementSerializer(serializers.ModelSerializer):
             "nomtireurcheque",
             "details",
         )
-        depth = 1
-
 
 class DetailEncaissementSerializer(serializers.ModelSerializer):
     class Meta:

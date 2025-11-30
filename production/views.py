@@ -590,15 +590,14 @@ class EncaissementViewSet(viewsets.ModelViewSet):
 
     def list(self, request):
         queryset = (
-            Encaissement.objects.filter(Q(piece_annulee=False))
-            .order_by("-dateencaissement")
-            .values()[:1000]
+            Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+            .order_by("-dateencaissement")[:1000]
         )
         serializer = EncaissementSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        queryset = Encaissement.objects.filter(Q(piece_annulee=False))
+        queryset = Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
         encaissement = get_object_or_404(queryset, pk=pk)
         serializer = EncaissementSerializer(encaissement)
         return Response(serializer.data)
