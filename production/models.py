@@ -1,13 +1,13 @@
 from django.db import models
 import uuid
+from django.contrib.auth import get_user_model
+from django.core.validators import MinValueValidator
+from decimal import Decimal
 
-# from auditlog.registry import auditlog
 from django.db.models import CheckConstraint, Q, F, UniqueConstraint
-from django.core.validators import MinLengthValidator
-from djmoney.models.fields import MoneyField
 from django.contrib.postgres.fields import ArrayField
+from django.db.models import JSONField  # Django >= 3.1
 from configuration_api.models import (
-    Branche,
     Banque,
     ModeEncaissement,
     QualiteAyantDroit,
@@ -25,13 +25,13 @@ from configuration_api.models import (
     SystemeSecurite,
     Garantie,
     FormuleSecuriteRoutiere,
-    ZoneVoyage,
     Pays,
     AssistanceAutomobile,
     TypeContratSante,
 )
 from customer.models import Client
 from account.models import UranusUser
+
 
 OPERATION_ARCHIVAGE = (("ARCHI", "ARCHIVAGE"), ("DESAR", "DESARCHIVAGE"))
 
@@ -3100,3 +3100,65 @@ class ImportationCertificatDevis(models.Model):
 
     class Meta:
         db_table = "stdimportationcertificatdevis"
+
+
+class Maison(models.Model):
+    """
+    Maison référence - Les caractéristiques ACTUELLES de la maison.
+    Cette table contient toujours l'état le plus récent.
+    """
+    USAGE_CHOICES = [
+        ('proprietaire_occupant_total', 'Propriétaire occupant total'),
+        ('proprietaire_occupant_partiel', 'Propriétaire occupant partiel'),
+        ('proprietaire_non_occupant_meuble', 'Propriétaire non occupant - Location meublée'),
+        ('proprietaire_non_occupant', 'Propriétaire non occupant'),
+        ('locataire_meuble', 'Locataire en meublé'),
+        ('locataire_partiel', 'Locataire partiel'),
+        ('logement_fonction', 'Logement de fonction'),
+        ('locataire', 'Locataire'),
+    ]
+    
+    numero_maison = models.CharField(max_length=50, unique=True, editable=False)
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='maisons')
+    
+    # Informations de la maison
+    adresse = models.TextField()
+    code_postal = models.CharField(max_length=10)
+    ville = models.CharField(max_length=100)
+    
+    # Caractéristiques actuelles
+    usage_habitation = models.CharField(max_length=50, choices=USAGE_CHOICES)
+    valeur_maison = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))]
+    )
+    cout_location_mensuel = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0,
+        validators=[MinValueValidator(Decimal('0'))]
+    )
+    surface_m2 = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2, 
+        null=True, 
+        blank=True
+    )
+    nombre_pieces = models.IntegerField(null=True, blank=True)
+    annee_construction = models.IntegerField(null=True, blank=True)
+    
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'maison'
+        ordering = ['-date_creation']
+    
+    def __str__(self):
+        return f"{self.numero_maison} - {self.adresse}"
+    
+    def save(self, *args, **kwargs):
+        if not self.numero_maison:
+            self.numero_maison = f"MAS-{uuid.uuid4().hex[:8].upper()}"
+        super().save(*args, **kwargs)

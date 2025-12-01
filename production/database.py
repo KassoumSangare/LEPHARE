@@ -6,6 +6,7 @@ from itertools import chain
 from datetime import datetime
 from decimal import Decimal
 import json
+from core.date_parser import parse_date_string
 from django.db import transaction
 from django.db.utils import DatabaseError
 from .models import (
@@ -2632,22 +2633,22 @@ def save_plate_number(user_id, input_data):
 #####################################################################
 # Save policy cancellation or renewal or change effective date
 def policy_modification(user_id, input_data):
+    
     sql_output = None
     error_occured = False
     date_emission = None
-    if "date_emission" in input_data:
-        if input_data["date_emission"]:
-            date_emission = datetime.strptime(
-                input_data["date_emission"], "%d-%m-%Y"
-            ).date()
+    if "date_emission" in input_data and input_data["date_emission"]:
+        date_emission = parse_date_string(input_data["date_emission"])
+        if date_emission:
+            date_emission = date_emission.date()
 
     date_effet = None
-    if "date_effet" in input_data:
-        if input_data["date_effet"]:
-            date_emission = datetime.strptime(
-                input_data["date_effet"], "%d-%m-%Y"
-            ).date()
-
+    if "date_effet" in input_data and input_data["date_effet"]:
+        date_effet = parse_date_string(input_data["date_effet"])
+        if date_effet:
+            date_effet = date_effet.date()
+            
+    print("Date effet", date_effet)
     id_contrat = int(input_data["id_contrat"])
     id_avenant = int(input_data["id_avenant"])
     motif_annulation = ""

@@ -209,7 +209,7 @@ BEGIN
 					IF id_produit = 1 THEN --Production Automobile
 						--Déprécier le véhicule en utilisant le table de dépréciation
 						UPDATE public.stddevisdetail
-						SET valeurvenale = public.fn_get_valeur_venale_vehicule(public.fn_get_code_genre_vehicule(idgenrevehicule), valeurneuve, datemec, date_effet)
+						SET valeurvenale = public.fn_get_valeur_venale_vehicule(public.fn_get_code_genre_vehicule(idgenrevehicule), valeurneuve, datemec::date, date_effet::date)
 						WHERE iddevisdetail = id_devis_detail;
 						
 						INSERT INTO StdComplementDevisDetailAuto(bns, carburantautrematiere, transporteleves, transportemployes, transportpassagersupplementaire, iddevisdetail, idformulesecuriteroutiere, idoptionassistance)
@@ -285,4 +285,3 @@ END;
 $BODY$;
 ALTER PROCEDURE public.sp_avenant_creation_devis_initial(integer, integer, integer, date, date, date, character varying, integer, character varying)
     OWNER TO uranususer;
-
