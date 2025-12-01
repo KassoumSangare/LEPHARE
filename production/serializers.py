@@ -694,6 +694,7 @@ class DetailEncaissementShortSerializer(serializers.ModelSerializer):
     prenomsclient = serializers.CharField(source='numeroquittance.client.Prenoms', read_only=True)
     telephoneclient = serializers.CharField(source='numeroquittance.client.Telephone', read_only=True)
     mobileclient = serializers.CharField(source='numeroquittance.client.Mobile', read_only=True)
+    primettc = serializers.DecimalField(source="numeroquittance.primettc", read_only=True)
     class Meta:
         model = DetailEncaissement
         fields = (
@@ -702,6 +703,7 @@ class DetailEncaissementShortSerializer(serializers.ModelSerializer):
             "indiceacompte",
             "soldeinitial",
             "montant_encaissement",
+            "primettc",
             "nomclient",
             "prenomsclient",
             "telephoneclient",
