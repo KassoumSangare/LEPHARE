@@ -2215,6 +2215,14 @@ class AvenantAnlRenSerializer(serializers.Serializer):
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         default=None,
     )
+    
+    date_expiration = serializers.DateField(
+        required=False,
+        allow_null=True,
+        format="%Y-%m-%d",
+        input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
+        default=None,
+    )
     id_contrat = serializers.IntegerField()
     id_avenant = serializers.IntegerField()
     motif_annulation = serializers.CharField(

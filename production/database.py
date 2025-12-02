@@ -2648,7 +2648,12 @@ def policy_modification(user_id, input_data):
         if date_effet:
             date_effet = date_effet.date()
             
-    print("Date effet", date_effet)
+    date_expiration = None
+    if "date_expiration" in input_data and input_data["date_expiration"]:
+        date_expiration = parse_date_string(input_data["date_expiration"])
+        if date_expiration:
+            date_expiration = date_expiration.date()
+            
     id_contrat = int(input_data["id_contrat"])
     id_avenant = int(input_data["id_avenant"])
     motif_annulation = ""
@@ -2662,13 +2667,14 @@ def policy_modification(user_id, input_data):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_avenant_initiation(%s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_avenant_initiation(%s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     user_id,
                     id_contrat,
                     id_avenant,
                     date_emission,
                     date_effet,
+                    date_expiration,
                     motif_annulation,
                     id_devis,
                     output_message,

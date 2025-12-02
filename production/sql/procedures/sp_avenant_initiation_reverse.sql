@@ -8,7 +8,6 @@ CREATE OR REPLACE PROCEDURE public.sp_avenant_initiation(
 	IN id_avenant integer,
 	IN date_emission date,
 	IN date_effet date,
-	IN date_expiration date,
 	IN motif_annulation character varying,
 	INOUT id_devis integer,
 	INOUT out_message character varying)
@@ -76,7 +75,7 @@ BEGIN
 		IF code_avenant = 'ANL' THEN
 			CALL sp_avenant_annulation(user_id, id_contrat, id_avenant, date_emission, date_effet, motif_annulation, id_devis, out_message);
 		ELSIF code_avenant = 'REN' THEN
-			CALL sp_avenant_renouvellement(user_id, id_contrat, id_avenant, date_emission, date_effet, date_expiration, id_devis, out_message);
+			CALL sp_avenant_renouvellement(user_id, id_contrat, id_avenant, date_emission, date_effet, id_devis, out_message);
 		ELSIF code_avenant = 'MPE' THEN
 			CALL sp_avenant_modification_effet(user_id, id_contrat, id_avenant, date_emission, date_effet, id_devis, out_message);
         ELSIF code_avenant = 'RET' THEN
@@ -126,6 +125,6 @@ BEGIN
 
 END; 
 $BODY$;
-ALTER PROCEDURE public.sp_avenant_initiation(integer, integer, integer, date, date, date, character varying, integer, character varying)
+ALTER PROCEDURE public.sp_avenant_initiation(integer, integer, integer, date, date, character varying, integer, character varying)
     OWNER TO uranususer;
 

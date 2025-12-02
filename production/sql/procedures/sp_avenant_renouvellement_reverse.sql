@@ -1,6 +1,6 @@
 -- PROCEDURE: public.sp_avenant_renouvellement(integer, integer, integer, date, date, integer, character varying)
 
--- DROP PROCEDURE IF EXISTS public.sp_avenant_renouvellement(integer, integer, integer, date, date, integer, character varying);
+DROP PROCEDURE IF EXISTS public.sp_avenant_renouvellement;
 
 CREATE OR REPLACE PROCEDURE public.sp_avenant_renouvellement(
 	IN user_id integer,
@@ -60,18 +60,13 @@ BEGIN
 		END IF;
 
 		date_emission := COALESCE(date_emission, CURRENT_DATE);
-		IF date_effet IS NULL OR date_expiration IS NULL THEN
+		IF date_effet IS NULL THEN
 			SELECT NPC.date_effet, NPC.date_expiration
-			INTO date_effet_probable, date_expiration
+			INTO date_effet, date_expiration
 			FROM public.fn_get_nouvelle_periode_couverture(id_duree_avenant_ancien, date_effet_avenant_ancien, date_expiration_avenant_ancien) AS NPC;
-		END IF;
-
-		date_effet := COALESCE(date_effet, date_effet_probable);
-		IF date_effet < date_effet_probable THEN
-			out_message := 'La date d''effet choisie est antérieure à l''expiration du présent contrat.';
-			RAISE EXCEPTION '%', out_message;
-		END IF; 
-			
+		ELSIF date_expiration IS NULL THEN
+			date_expiration := public.fn_get_date_expiration(date_effet, id_duree_avenant_ancien);
+		END IF;	
 		
 		IF date_effet <= date_expiration_avenant_ancien THEN
 			out_message := 'La date d''expiration doit être postérieure à celle du contrat à renouveler.';
