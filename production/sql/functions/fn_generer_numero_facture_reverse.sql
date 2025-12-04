@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS fn_generer_numero_facture;

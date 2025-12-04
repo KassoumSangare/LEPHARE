@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS set_numero_facture_before_insert;

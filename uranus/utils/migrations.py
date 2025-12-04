@@ -137,6 +137,97 @@ def load_sql_with_reverse(migration_file, sql_filename):
     return forward_sql, reverse_sql
 
 
+def load_sql_version(migration_file, sql_path, version):
+    """
+    Load a specific version of a SQL file
+    
+    Args:
+        migration_file: __file__ from migration
+        sql_path: Path like 'functions/calculate_discount'
+        version: Version number (1, 2, 3, etc.) or 'latest'
+    
+    Returns:
+        str: SQL content
+    
+    Example:
+        # Load v2
+        sql = load_sql_version(__file__, 'functions/calculate_discount', 2)
+        
+        # Load latest
+        sql = load_sql_version(__file__, 'functions/calculate_discount', 'latest')
+    """
+    migration_dir = Path(migration_file).parent
+    app_dir = migration_dir.parent
+    sql_base = app_dir / 'sql' / sql_path
+    
+    if version == 'latest':
+        # Try to find the highest version number
+        if sql_base.is_dir():
+            version_files = list(sql_base.glob('v*.sql'))
+            if version_files:
+                # Extract version numbers and get max
+                versions = []
+                for f in version_files:
+                    try:
+                        v = int(f.stem[1:])  # v1.sql -> 1
+                        versions.append(v)
+                    except ValueError:
+                        continue
+                if versions:
+                    version = max(versions)
+        else:
+            # Single file, not versioned
+            sql_path = f"{sql_path}.sql"
+            sql_file = app_dir / 'sql' / sql_path
+            if sql_file.exists():
+                with open(sql_file, 'r', encoding='utf-8') as f:
+                    return f.read().strip()
+            raise FileNotFoundError(f"SQL file not found: {sql_file}")
+    
+    # Load specific version
+    sql_file = sql_base / f"v{version}.sql"
+    
+    if not sql_file.exists():
+        raise FileNotFoundError(
+            f"SQL version not found: {sql_file}\n"
+            f"Expected: {app_dir}/sql/{sql_path}/v{version}.sql"
+        )
+    
+    with open(sql_file, 'r', encoding='utf-8') as f:
+        return f.read().strip()
+
+
+def load_sql_upgrade(migration_file, sql_path, from_version, to_version):
+    """
+    Load SQL for upgrade and downgrade
+    
+    Args:
+        migration_file: __file__ from migration
+        sql_path: Path like 'functions/calculate_discount'
+        from_version: Previous version number
+        to_version: New version number
+    
+    Returns:
+        tuple: (forward_sql, reverse_sql)
+    
+    Example:
+        forward, reverse = load_sql_upgrade(
+            __file__,
+            'functions/calculate_discount',
+            from_version=1,
+            to_version=2
+        )
+        
+        operations = [
+            migrations.RunSQL(sql=forward, reverse_sql=reverse),
+        ]
+    """
+    forward_sql = load_sql_version(migration_file, sql_path, to_version)
+    reverse_sql = load_sql_version(migration_file, sql_path, from_version)
+    
+    return forward_sql, reverse_sql
+
+
 def function_exists(function_name, schema="public"):
     """
     Check if a PostgreSQL function exists

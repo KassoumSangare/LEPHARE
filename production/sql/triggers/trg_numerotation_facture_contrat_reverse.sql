@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS trg_numerotation_facture_contrat;

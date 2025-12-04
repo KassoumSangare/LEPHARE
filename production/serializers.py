@@ -1824,6 +1824,7 @@ class QuittancePropositionSerializer(serializers.ModelSerializer):
             "CodeIntermediaire",
             "DateNaissanceClient",
             "DateNaissanceAssure",
+            "NumeroFacture",
         )
 
 
@@ -1878,6 +1879,7 @@ class QuittanceContratSerializer(serializers.ModelSerializer):
             "CodeIntermediaire",
             "DateNaissanceClient",
             "DateNaissanceAssure",
+            "NumeroFacture",
         )
 
 

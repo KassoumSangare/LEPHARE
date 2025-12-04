@@ -323,6 +323,7 @@ class Devis(models.Model):
     date_consolidation = models.DateTimeField(
         null=True, blank=True, db_column="dateconsolidation"
     )
+    numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
 
     def __str__(self):
         return self.numerodevis
@@ -825,6 +826,7 @@ class Contrat(models.Model):
     prime_imposee = models.BooleanField(
         default=False, blank=True, null=True, db_column="primeimposee"
     )
+    numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
 
     class Meta:
         db_table = "stdcontrat"
@@ -1144,9 +1146,10 @@ class QuittanceFn(models.Model):
     CodeCategorie = models.CharField(max_length=3, default="")
     FraisGestion = models.DecimalField(max_digits=19, decimal_places=4)
     NumeroPoliceConnexe = models.CharField(max_length=50, default="")
-    CodeIntermediaire = models.CharField(max_length=10, default="0")
+    CodeIntermediaire = models.CharField(max_length=10, default="0000")
     DateNaissanceClient = models.DateField()
     DateNaissanceAssure = models.DateField()
+    NumeroFacture = models.CharField(max_length=20, default="")
 
     def __str__(self):
         if self.NumeroDevis:
@@ -3162,3 +3165,43 @@ class Maison(models.Model):
         if not self.numero_maison:
             self.numero_maison = f"MAS-{uuid.uuid4().hex[:8].upper()}"
         super().save(*args, **kwargs)
+
+
+class SequenceFacture(models.Model):
+    """
+    Modèle représentant la séquence des numéros de facture de devis et de contrat pour un mois et une année donnés.
+    Utilisé pour générer le numéro séquentiel unique et réinitialisé mensuellement.
+    """
+    
+    annee = models.IntegerField(
+        help_text="Année pour la séquence (e.g., 2025)"
+    )
+    mois = models.IntegerField(
+        help_text="Mois pour la séquence (1 à 12)"
+    )
+    dernier_numero_devis = models.IntegerField(db_column="derniernumerodevis",
+        default=0,
+        help_text="Le dernier numéro séquentiel attribué aux factures proforma pour ce mois et cette année."
+    )
+    
+    dernier_numero_contrat = models.IntegerField(db_column="derniernumerocontrat",
+        default=0,
+        help_text="Le dernier numéro séquentiel attribué aux factures de contrat pour ce mois et cette année."
+    )
+
+    class Meta:
+        # 1. Clé Primaire Composite et Index Unique
+        # Ceci crée la contrainte UNIQUE sur (annee, mois), 
+        # agissant comme la clé primaire pour notre séquence : PRIMARY KEY (annee, mois)
+        unique_together = ('annee', 'mois',)
+        
+        # 2. Nom de la table PostgreSQL
+        # Nous spécifions le nom de la table pour qu'il corresponde exactement 
+        # à 'sequence_devis_mensuelle' si vous le souhaitez.
+        db_table = 'stdsequencefacture'
+        
+        verbose_name = "Séquence de factures mensuelle"
+        verbose_name_plural = "Séquences de factures mensuelles"
+        
+    def __str__(self):
+        return f"Séquence {self.annee}/{self.mois}: Dernier numéro proforma {self.dernier_numero_devis}, dernier numéro facture {self.dernier_numero_contrat}"

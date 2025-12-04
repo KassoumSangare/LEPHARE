@@ -1463,6 +1463,7 @@ def get_quotation_info(iddevis):
                     CodeIntermediaire=row[43],
                     DateNaissanceClient=row[44],
                     DateNaissanceAssure=row[45],
+                    NumeroFacture=row[46],
                 )
                 quittance_proposition_list.append(qp)
                 # print(qp)
@@ -1704,6 +1705,7 @@ def get_contract_info(idcontrat):
                     CodeIntermediaire=row[45],
                     DateNaissanceClient=row[46],
                     DateNaissanceAssure=row[47],
+                    NumeroFacture=row[48],
                 )
                 quittance_contrat_list.append(quittance)
                 # print(quittance)
