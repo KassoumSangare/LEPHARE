@@ -83,7 +83,7 @@ router.register(r"quittance", QuittanceViewSet)
 router.register(r"detailquittance", DetailQuittanceViewSet)
 router.register(r"encaissement", EncaissementViewSet, basename="encaissement")
 router.register(r"detailencaissement", DetailEncaissementViewSet)
-router.register(r"reversement", ReversementCompagnieViewSet)
+router.register(r"reversement", ReversementCompagnieViewSet, basename="reversement")
 router.register(r"detailreversement", DetailReversementViewSet)
 router.register(r"numero", NumeroViewSet)
 router.register(

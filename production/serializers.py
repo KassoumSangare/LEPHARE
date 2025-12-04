@@ -748,12 +748,20 @@ class DetailEncaissementSerializer(serializers.ModelSerializer):
 
 
 class DetailReversementShortSerializer(serializers.ModelSerializer):
+    nomclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Nom', read_only=True)
+    prenomsclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Prenoms', read_only=True)
+    telephoneclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Telephone', read_only=True)
+    mobileclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Mobile', read_only=True)
     class Meta:
         model = DetailReversement
         fields = (
             "id_detail_reversement",
             "solde_initial",
             "montant_reverse",
+            "nomclient",
+            "prenomsclient",
+            "telephoneclient",
+            "mobileclient",
         )
 
 
@@ -784,7 +792,6 @@ class ReversementCompagnieSerializer(serializers.ModelSerializer):
             "nom_tireur_cheque",
             "details",
         )
-        depth = 1
 
 
 class DetailReversementSerializer(serializers.ModelSerializer):

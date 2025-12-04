@@ -623,12 +623,37 @@ class DetailEncaissementViewSet(viewsets.ModelViewSet):
     ]
 
 
-class ReversementCompagnieViewSet(viewsets.ModelViewSet):
-    queryset = ReversementCompagnie.objects.all()
-    serializer_class = ReversementCompagnieSerializer
+class ReversementCompagnieViewSet(viewsets.ModelViewSet):    
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+    def list(self, request):
+        queryset = (
+            ReversementCompagnie.objects.select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+            .order_by("-date_reversement")[:1000]
+        )
+        serializer = ReversementCompagnieSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        queryset = ReversementCompagnie.objects.select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+        reversement = get_object_or_404(queryset, pk=pk)
+        serializer = ReversementCompagnieSerializer(reversement)
+        return Response(serializer.data)
+
+    def create(self, request):
+        pass
+
+    def update(self, request, pk=None):
+        pass
+
+    def partial_update(self, request, pk=None):
+        pass
+
+    def destroy(self, request, pk=None):
+        pass
+
 
 
 class DetailReversementViewSet(viewsets.ModelViewSet):
