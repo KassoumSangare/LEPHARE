@@ -47,6 +47,8 @@ from .views import (
     PrimeUpdateAPIView,
     DevisClientView,
     ConsolidationDevisView,
+    ContractListView,
+    ReversementCompagnieNonValideListView,
 )
 from .views import (
     create_contract,
@@ -366,4 +368,7 @@ urlpatterns = [
         name="avenant_retrait",
     ),
     path("majrecapprimes/", PrimeUpdateAPIView.as_view(), name="maj_recap_primes"),
+    path("listecontratperiode/", ContractListView.as_view(), name="liste_contrat_periode"),
+    path("listereversementnonvalide/", ReversementCompagnieNonValideListView.as_view(), name="liste_reversement_non_valide"),
+    
 ]

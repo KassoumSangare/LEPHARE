@@ -2,11 +2,14 @@ from rest_framework import viewsets
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from datetime import datetime
+from datetime import datetime, date
 from django.conf import settings
 from django.db.models import Q, F, Prefetch
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
+from django.db.models import Value
+from django.db.models.functions import Coalesce
+from core.date_parser import parse_date_string
 
 
 from knox.auth import TokenAuthentication
@@ -624,7 +627,64 @@ class DetailEncaissementViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+class ContractListView(APIView):
+    def get(self, request, format=None):
+        # Get query params
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
 
+        # Default: current year if not provided
+        current_year = date.today().year
+        if not start_date_str or not end_date_str:
+            start_date = date(current_year, 1, 1)
+            end_date = date(current_year, 12, 31)
+        else:
+            start_date = parse_date_string(start_date_str)
+            end_date = parse_date_string(end_date_str)
+            if not start_date or not end_date:
+                return Response(
+                    {"error": "Format de date invalide"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Validate range
+            if end_date < start_date:
+                return Response(
+                    {"erreur": "La date de fin doit être postérieure à la date de début."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        contracts = (
+            Contrat.objects
+            .filter(
+                    dateemission__range=(start_date, end_date),)
+            .filter(Q(idcontratannulation__isnull=True) | Q(idcontratannulation=0))
+            .select_related("idclient", "iddevis")
+            .annotate(client=F("idclient__Nom"),numerodevis=F("iddevis__numerodevis"))
+            .values(
+                "client",
+                "idcontrat",
+                "numerodevis",
+                "numeropolice",
+                "dateemission",
+                "dateeffet",
+                "dateexpiration",
+                "primenette",
+                "accessoire",
+                "taxe",
+                "primettc",
+            )
+        )
+
+        return Response(list(contracts))
+
+
+class ReversementCompagnieNonValideListView(APIView):
+    def get(self, request, format=None):
+        reversements_non_valides = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")[:1000]
+        serializer = ReversementCompagnieSerializer(reversements_non_valides, many=True)
+        return Response(serializer.data) 
+    
 class ReversementCompagnieViewSet(viewsets.ModelViewSet):    
     permission_classes = [
         permissions.IsAuthenticated,

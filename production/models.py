@@ -670,21 +670,21 @@ class Contrat(models.Model):
     idcontrat = models.AutoField(
         db_column="idcontrat", primary_key=True
     )  # Field name made lowercase.
-    iddevis = models.IntegerField(db_column="iddevis")  # Field name made lowercase.
-    idcompagnie = models.IntegerField(
-        db_column="idcompagnie", blank=True, null=True
+    iddevis = models.ForeignKey(Devis, db_column="iddevis", on_delete=models.CASCADE)  # Field name made lowercase.
+    idcompagnie = models.ForeignKey(Compagnie,
+        db_column="idcompagnie", blank=True, null=True, on_delete=models.CASCADE,
     )  # Field name made lowercase.
-    idintermediaire = models.IntegerField(
-        db_column="idintermediaire"
+    idintermediaire = models.ForeignKey(Intermediaire,
+        db_column="idintermediaire", on_delete=models.CASCADE,
     )  # Field name made lowercase.
-    idproduit = models.IntegerField(db_column="idproduit")  # Field name made lowercase.
-    idclient = models.IntegerField(
-        db_column="idclient", default=0
+    idproduit = models.ForeignKey(Produit, db_column="idproduit", on_delete=models.CASCADE)  # Field name made lowercase.
+    idclient = models.ForeignKey(Client,
+        db_column="idclient", on_delete=models.CASCADE
     )  # Field name made lowercase.
     idassure = models.IntegerField(
         db_column="idassure", default=0
     )  # Field name made lowercase.
-    idavenant = models.IntegerField(db_column="idavenant")  # Field name made lowercase.
+    idavenant = models.ForeignKey(Avenant, db_column="idavenant", on_delete=models.CASCADE)  # Field name made lowercase.
     flotte = models.BooleanField(db_column="flotte")  # Field name made lowercase.
     coassurance = models.BooleanField(
         db_column="coassurance"
