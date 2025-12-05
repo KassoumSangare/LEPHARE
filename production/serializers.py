@@ -8,6 +8,7 @@ from configuration_api.models import (
     Tarif,
     TypeVehicule,
 )
+from configuration_api.models import Banque, ModeEncaissement, Compagnie
 from core.serializers import EnregistrementDevisBaseSerializer
 from core.serializers import DynamicFieldsSerializer
 from core.validators import ErrorMessage, validate_contrat_validity_period
@@ -765,9 +766,30 @@ class DetailReversementShortSerializer(serializers.ModelSerializer):
             "mobileclient",
         )
 
+class CompagnieShortSerializer(serializers.ModelSerializer):
+    # idcompagnie = serializers.IntegerField(source="Idcompagnie")
+    # raisonsociale = serializers.CharField(source="RaisonSociale")
+    class Meta:
+        model = Compagnie
+        fields = ["IdCompagnie", "RaisonSociale"]
+        
+class BanqueShortSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Banque
+        fields = ["idbanque", "libelle"]
+        
+class ModeReversementShortSerializer(serializers.ModelSerializer):
+    idmodereversement = serializers.IntegerField(source="idmodeencaissement")
+    libellemodereversement = serializers.CharField(source="libellemodepaiement")
+    class Meta:
+        model = ModeEncaissement
+        fields = ["idmodereversement", "libellemodereversement"]
 
 class ReversementCompagnieSerializer(serializers.ModelSerializer):
     details = DetailReversementShortSerializer(many=True, read_only=True)
+    compagnie = CompagnieShortSerializer()
+    mode_reversement = ModeReversementShortSerializer()
+    banque = BanqueShortSerializer()
 
     class Meta:
         model = ReversementCompagnie

@@ -692,14 +692,14 @@ class ReversementCompagnieViewSet(viewsets.ModelViewSet):
 
     def list(self, request):
         queryset = (
-            ReversementCompagnie.objects.select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+            ReversementCompagnie.objects.filter(Q(valide=True)).select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
             .order_by("-date_reversement")[:1000]
         )
         serializer = ReversementCompagnieSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        queryset = ReversementCompagnie.objects.select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+        queryset = ReversementCompagnie.objects.filter(Q(valide=True)).select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
         reversement = get_object_or_404(queryset, pk=pk)
         serializer = ReversementCompagnieSerializer(reversement)
         return Response(serializer.data)
