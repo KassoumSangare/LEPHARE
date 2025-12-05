@@ -67,6 +67,7 @@ from .views import (
     cancel_premium_collection,
     get_contracts_for_pc,
     remit_premium,
+    validate_premium_remittance,
     create_insured_ia,
     change_plate_number,
     modify_policy,
@@ -287,6 +288,11 @@ urlpatterns = [
         r"enregistrementreversement",
         remit_premium,
         name="enregistrement_reversement",
+    ),
+    path(
+        r"validationreversement",
+        validate_premium_remittance,
+        name="validation_reversement",
     ),
     path(
         r"infoencaissement/<int:iddetailencaissement>",

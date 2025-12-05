@@ -122,6 +122,7 @@ from .database import (
     save_premium_collection_cancellation,
     get_contract_premium_remittance,
     save_premium_remittance,
+    premium_remittance_validation,
     get_info_encaissement,
     get_info_reversement,
     get_info_vehicule,
@@ -1705,6 +1706,30 @@ def remit_premium(request):
         validated_data = reversement_serializer.validated_data
         data_insertion_serializer = DataInsertionSerializer(
             save_premium_remittance(request.user.id, validated_data),
+            many=True,
+        )
+        return JsonResponse(
+            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+        )
+    return JsonResponse(
+        reversement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
+
+
+##################################################################################
+# Save Premium Remittance
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def validate_premium_remittance(request):
+    enregistrement_data = JSONParser().parse(request)
+    reversement_serializer = ReversementGroupePrimeValidateSerializer(
+        data=enregistrement_data
+    )
+    if reversement_serializer.is_valid():
+        validated_data = reversement_serializer.validated_data
+        data_insertion_serializer = DataInsertionSerializer(
+            premium_remittance_validation(request.user.id, validated_data),
             many=True,
         )
         return JsonResponse(

@@ -69,6 +69,10 @@ BEGIN
         id_banque := NULL;
     END IF;
 
+    IF EXISTS (SELECT 1 FROM public.stdreversementcompagnie WHERE idreversement = id_reversement AND valide = True) THEN
+        RAISE EXCEPTION USING MESSAGE = 'Reversement déja validé.';
+    END IF;
+
     -- Mise à jour du reversement
     UPDATE StdReversementCompagnie
     SET NumeroCheque = numero_cheque, CompteCompensation = reference_compensation, NomTireurCheque = nom_emetteur,
@@ -77,7 +81,7 @@ BEGIN
     WHERE IdReversement = id_reversement;
 	
     IF id_reversement <> 0 THEN
-        out_message := 'Reversement enregistré avec succès.';
+        out_message := 'Reversement validé avec succès.';
     END IF;
 
 EXCEPTION

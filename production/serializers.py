@@ -2118,6 +2118,7 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
         return instance
 
 class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
+    id_reversement = serializers.IntegerField(required=False, allow_null=True)
     compagnie = serializers.IntegerField(required=True)
     mode_reversement = serializers.IntegerField(required=False, allow_null=True)
     date_reversement = serializers.DateField(
@@ -2161,8 +2162,17 @@ class ReversementGroupePrimeValidateSerializer(ReversementGroupePrimeSerializer)
     compagnie = None
     montant_total = None
     liste_encaissement = None
+    id_reversement = serializers.IntegerField(required=True)
+    mode_reversement = serializers.IntegerField(required=True)
+    date_reversement = serializers.DateField(
+        required=True,
+        format="%Y-%m-%d",
+        input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
+    )
+    reference_reversement = serializers.CharField(required=True)
     class Meta:
         fields = [
+        "id_reversement",
         "mode_reversement",
         "date_reversement",
         "banque",

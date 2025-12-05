@@ -2769,6 +2769,52 @@ def save_premium_remittance(user_id, input_data):
 
     return list(chain(queryset_vide, data_insertion_result_list))
 
+##########################################################################
+# Save Premium Remittance
+def premium_remittance_validation(user_id, input_data):
+    id_reversement = input_data["id_reversement"]
+    mode_reversement = input_data["mode_reversement"]
+    date_reversement = input_data["date_reversement"]
+    reference_reversement = input_data["reference_reversement"]
+    banque = input_data.get("banque", 1)
+    numero_cheque = input_data.get("numero_cheque", "")
+    nom_emetteur = input_data.get("nom_emetteur", "")
+    reference_compensation = input_data.get("reference_compensation", "")
+    output_message = ""
+    data_insertion_result_list = []
+    queryset_vide = DataInsertionResult.objects.none()
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "CALL public.sp_validation_reversement(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                (
+                    user_id,
+                    id_reversement,
+                    mode_reversement,
+                    date_reversement,
+                    banque,
+                    numero_cheque,
+                    nom_emetteur,
+                    reference_reversement,
+                    reference_compensation,
+                    output_message,
+                ),
+            )
+            connection.commit()
+            row = cursor.fetchone()
+            sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=row[0])
+            data_insertion_result_list.append(sql_output)
+    except Exception as error:
+        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=str(error))
+        data_insertion_result_list.append(sql_output)
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+    return list(chain(queryset_vide, data_insertion_result_list))
+
 
 #################################################################################
 # get_extended_quotation_info  -- ExtendedDevisInfo
