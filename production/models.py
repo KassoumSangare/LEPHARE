@@ -792,7 +792,7 @@ class Contrat(models.Model):
         db_column="assure", max_length=255, blank=True, null=True
     )  # Field name made lowercase.
     idcontratannulation = models.IntegerField(
-        db_column="idcontratannulation"
+        db_column="idcontratannulation", null=True, blank=True,
     )  # Field name made lowercase.
     motifannulation = models.CharField(
         db_column="motifannulation", max_length=255, blank=True, null=True
