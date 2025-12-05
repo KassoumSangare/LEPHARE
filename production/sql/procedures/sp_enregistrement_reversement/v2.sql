@@ -1,6 +1,6 @@
 -- PROCEDURE: public.sp_enregistrement_reversement(integer, integer, integer[], numeric[], integer, date, integer, numeric, character varying, character varying, character varying, character varying, integer, character varying)
 
--- DROP PROCEDURE IF EXISTS public.sp_enregistrement_reversement(integer, integer, integer[], numeric[], integer, date, integer, numeric, character varying, character varying, character varying, character varying, integer, character varying);
+DROP PROCEDURE IF EXISTS public.sp_enregistrement_reversement;
 
 CREATE OR REPLACE PROCEDURE public.sp_enregistrement_reversement(
     IN id_utilisateur integer,
@@ -115,6 +115,9 @@ BEGIN
          ON SQ.IdIntermediaire = SI.IdIntermediaire AND SI.IdCompagnie = id_compagnie
     ORDER BY SQ.DateEmission
     LIMIT 1;
+	IF code_intermediaire IS NULL OR code_intermediaire = '0' THEN
+		RAISE EXCEPTION USING MESSAGE = 'Incohérence de données ou erreur de paramétrage: code intermédiaire inexistant!';
+    END IF;
 
     -- Génération du numéro
     CALL sp_generation_numero_reversement(code_intermediaire, date_reversement, numero_reversement);
