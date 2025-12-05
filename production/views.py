@@ -1728,12 +1728,15 @@ def validate_premium_remittance(request):
     )
     if reversement_serializer.is_valid():
         validated_data = reversement_serializer.validated_data
-        data_insertion_serializer = DataInsertionSerializer(
-            premium_remittance_validation(request.user.id, validated_data),
+        error, queryset = premium_remittance_validation(request.user.id, validated_data)
+        data_insertion_serializer = DataInsertionSerializer(queryset,
             many=True,
         )
+        resp_status = status.HTTP_201_CREATED
+        if error:
+            resp_status = status.HTTP_400_BAD_REQUEST
         return JsonResponse(
-            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            data_insertion_serializer.data, status=resp_status, safe=False
         )
     return JsonResponse(
         reversement_serializer.errors, status=status.HTTP_400_BAD_REQUEST

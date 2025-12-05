@@ -2783,7 +2783,7 @@ def premium_remittance_validation(user_id, input_data):
     output_message = ""
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
-
+    error_occured = False
     try:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -2806,14 +2806,16 @@ def premium_remittance_validation(user_id, input_data):
             sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=row[0])
             data_insertion_result_list.append(sql_output)
     except Exception as error:
-        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=str(error))
+        error_message = str(error).split('\n')[0]
+        error_occured = True
+        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=error_message)
         data_insertion_result_list.append(sql_output)
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-    return list(chain(queryset_vide, data_insertion_result_list))
+    return error_occured, list(chain(queryset_vide, data_insertion_result_list))
 
 
 #################################################################################
