@@ -2714,51 +2714,35 @@ def policy_modification(user_id, input_data):
 ##########################################################################
 # Save Premium Remittance
 def save_premium_remittance(user_id, input_data):
-    sql_output = None
-    mode_reversement = int(input_data["mode_reversement"])
-    banque = 1
-    if "banque" in input_data:
-        if input_data["banque"]:
-            banque = int(input_data["banque"])
-    montant_total = Decimal(input_data["montant_total"])
-    numero_cheque = ""
-    if "numero_cheque" in input_data:
-        if input_data["numero_cheque"]:
-            numero_cheque = str(input_data["numero_cheque"])
 
-    reference_reversement = ""
-    if "reference_reversement" in input_data:
-        if input_data["reference_reversement"]:
-            reference_reversement = str(input_data["reference_reversement"])
+    compagnie = input_data["compagnie"]
+    mode_reversement = input_data.get("mode_reversement")
+    banque = input_data.get("banque", 1)
+    montant_total = input_data["montant_total"]
+    numero_cheque = input_data.get("numero_cheque", "")
+    nom_emetteur = input_data.get("nom_emetteur", "")
+    reference_reversement = input_data.get("reference_reversement", "")
+    reference_compensation = input_data.get("reference_compensation", "")
+    date_reversement = input_data.get("date_reversement")
 
-    reference_compensation = ""
-    if "reference_compensation" in input_data:
-        if input_data["reference_compensation"]:
-            reference_compensation = str(input_data["reference_compensation"])
-
-    nom_emetteur = str(input_data["nom_emetteur"])
-    compagnie = int(input_data["compagnie"])
-    date_reversement = datetime.strptime(
-        input_data["date_reversement"], "%d-%m-%Y"
-    ).date()
-    liste_encaissement = list(input_data["liste_encaissement"])
-    liste_enc = ";".join(
-        [str(d["identifiant_encaissement"]) for d in liste_encaissement]
-    )
-    liste_mont = ";".join([str(d["montant_reversement"]) for d in liste_encaissement])
+    # Ici, on garde les listes telles quelles
+    liste_enc = [d["identifiant_encaissement"] for d in input_data["liste_encaissement"]]
+    liste_mont = [Decimal(d["montant_reversement"]) for d in input_data["liste_encaissement"]]
 
     id_reversement = 0
     output_message = ""
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
+
     try:
-        # status = 0
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL sp_enregistrement_reversement(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     user_id,
                     compagnie,
+                    liste_enc,
+                    liste_mont,
                     mode_reversement,
                     date_reversement,
                     banque,
@@ -2767,26 +2751,16 @@ def save_premium_remittance(user_id, input_data):
                     nom_emetteur,
                     reference_reversement,
                     reference_compensation,
-                    liste_enc,
-                    liste_mont,
                     id_reversement,
                     output_message,
                 ),
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(
-                ObjectId=row[0],
-                OutputMessage=row[1],
-            )
+            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
             data_insertion_result_list.append(sql_output)
     except Exception as error:
-        # status = 1
-        print(error)
-        sql_output = DataInsertionResult(
-            ObjectId=id_reversement,
-            OutputMessage=str(error),
-        )
+        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=str(error))
         data_insertion_result_list.append(sql_output)
     finally:
         if connection:

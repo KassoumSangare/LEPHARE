@@ -1563,6 +1563,12 @@ class DetailEncaissement(models.Model):
         db_table = "stddetailencaissement"
         verbose_name = "Ligne d'encaissement"
         verbose_name_plural = "Lignes d'encaissement"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(montant_encaissement__gte=F('montantreglement')),
+                name='enc_montant_encaissement_gte_montantreglement',
+            )
+        ]
 
 
 class ReversementCompagnie(models.Model):
@@ -1579,7 +1585,7 @@ class ReversementCompagnie(models.Model):
         max_length=16, db_column="numeroreversement", verbose_name="Numéro Reversement"
     )
     date_reversement = models.DateField(
-        db_column="datereversement", verbose_name="Date de reversement"
+        db_column="datereversement", verbose_name="Date de reversement", null=True, blank=True
     )
     montant_reversement = models.DecimalField(
         max_digits=19,
@@ -1606,6 +1612,7 @@ class ReversementCompagnie(models.Model):
         verbose_name="Mode de reversement",
         db_column="idmodereversement",
         on_delete=models.DO_NOTHING,
+        null=True, blank=True,
     )
     banque = models.ForeignKey(
         Banque, blank=True, null=True, db_column="idbanque", on_delete=models.SET_NULL
@@ -1622,6 +1629,7 @@ class ReversementCompagnie(models.Model):
         null=True,
         db_column="idutilisateur",
         on_delete=models.SET_NULL,
+        related_name="enregistrements_reversement",
     )
     date_saisie = models.DateTimeField(db_column="datesaisie")
     piece_annulee = models.BooleanField(db_column="pieceannulee")
@@ -1637,7 +1645,16 @@ class ReversementCompagnie(models.Model):
     date_saisie_annulation = models.DateTimeField(
         blank=True, null=True, db_column="datesaisieannulation"
     )
-    nom_tireur_cheque = models.CharField(max_length=50, db_column="nomtireurcheque")
+    nom_tireur_cheque = models.CharField(max_length=50, db_column="nomtireurcheque", null=True, blank=True)
+    
+    valide = models.BooleanField(db_column="valide", default=False)
+    date_validation = models.DateTimeField(db_column="datevalidation", null=True, blank=True)
+    utilisateur_validation = models.ForeignKey(UranusUser,
+        blank=True,
+        null=True,
+        db_column="idutilisateurvalidation",
+        on_delete=models.SET_NULL,
+        related_name="validations_reversement",)
 
     def __str__(self):
         return "Reversement n° {} ({}) du {}".format(

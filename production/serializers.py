@@ -9,6 +9,7 @@ from configuration_api.models import (
     TypeVehicule,
 )
 from core.serializers import EnregistrementDevisBaseSerializer
+from core.serializers import DynamicFieldsSerializer
 from core.validators import ErrorMessage, validate_contrat_validity_period
 from customer.models import Client
 
@@ -2094,29 +2095,21 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
         )
         return instance
 
-
-class ReversementGroupePrimeSerializer(serializers.Serializer):
+class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
     compagnie = serializers.IntegerField(required=True)
-    mode_reversement = serializers.IntegerField(required=True)
+    mode_reversement = serializers.IntegerField(required=False, allow_null=True)
     date_reversement = serializers.DateField(
-        required=True,
+        required=False,
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
+        allow_null=True,
     )
     banque = serializers.IntegerField(required=False, default=1, allow_null=True)
-    montant_total = serializers.DecimalField(
-        required=True, max_digits=19, decimal_places=4
-    )
-    numero_cheque = serializers.CharField(
-        max_length=20, required=False, default="", allow_null=True
-    )
-    nom_emetteur = serializers.CharField(required=True, max_length=50)
-    reference_reversement = serializers.CharField(
-        max_length=40, required=False, default="", allow_null=True
-    )
-    reference_compensation = serializers.CharField(
-        max_length=10, required=False, default="", allow_null=True
-    )
+    montant_total = serializers.DecimalField(required=True, max_digits=19, decimal_places=4)
+    numero_cheque = serializers.CharField(max_length=20, required=False, default="", allow_null=True)
+    nom_emetteur = serializers.CharField(required=False, max_length=50, default="", allow_null=True)
+    reference_reversement = serializers.CharField(max_length=40, required=False, default="", allow_null=True)
+    reference_compensation = serializers.CharField(max_length=10, required=False, default="", allow_null=True)
     liste_encaissement = serializers.ListField(
         required=True,
         child=ReversementPrimeSerializer(),
@@ -2125,50 +2118,37 @@ class ReversementGroupePrimeSerializer(serializers.Serializer):
     )
 
     def to_internal_value(self, data):
-        if "numero_cheque" in data:
-            if data["numero_cheque"] == "":
-                data["numero_cheque"] = None
-        if "reference_reversement" in data:
-            if data["reference_reversement"] == "":
-                data["reference_reversement"] = None
-        if "reference_compensation" in data:
-            if data["reference_compensation"] == "":
-                data["reference_compensation"] = None
-
+        for field in ["numero_cheque", "reference_reversement", "reference_compensation"]:
+            if field in data and data[field] == "":
+                data[field] = None
         return super().to_internal_value(data)
 
     def create(self, validated_data):
         return ReversementGroupePrime(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.compagnie = validated_data.get("compagnie", instance.compagnie)
-        instance.mode_reversement = validated_data.get(
-            "mode_reversement", instance.mode_reversement
-        )
-        instance.date_reversement = validated_data.get(
-            "date_reversement", instance.date_reversement
-        )
-        instance.banque = validated_data.get("banque", instance.banque)
-        instance.montant_total = validated_data.get(
-            "montant_total", instance.montant_total
-        )
-        instance.numero_cheque = validated_data.get(
-            "numero_cheque", instance.numero_cheque
-        )
-        instance.nom_emetteur = validated_data.get(
-            "nom_emetteur", instance.nom_emetteur
-        )
-        instance.reference_reversement = validated_data.get(
-            "reference_reversement", instance.reference_reversement
-        )
-        instance.reference_compensation = validated_data.get(
-            "reference_compensation", instance.reference_compensation
-        )
-        instance.liste_encaissement = validated_data.get(
-            "liste_encaissement", instance.liste_encaissement
-        )
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
         return instance
 
+class ReversementGroupePrimeInsertSerializer(ReversementGroupePrimeSerializer):
+    class Meta:
+        fields = ['compagnie', 'montant_total', 'liste_encaissement']
+
+class ReversementGroupePrimeValidateSerializer(ReversementGroupePrimeSerializer):
+    compagnie = None
+    montant_total = None
+    liste_encaissement = None
+    class Meta:
+        fields = [
+        "mode_reversement",
+        "date_reversement",
+        "banque",
+        "numero_cheque",
+        "nom_emetteur",
+        "reference_reversement",
+        "reference_compensation",
+        ]
 
 class ChangementImmatriculationSerializer(serializers.Serializer):
     date_emission = serializers.DateField(

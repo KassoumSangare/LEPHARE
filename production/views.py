@@ -50,6 +50,8 @@ from .serializers import (
     ReversementCompagnieSerializer,
     DetailReversementSerializer,
     ReversementGroupePrimeSerializer,
+    ReversementGroupePrimeValidateSerializer,
+    ReversementGroupePrimeInsertSerializer,
     PremiumCollectionInfoSerializer,
     PremiumRemittanceInfoSerializer,
     EnregistrementDevisTRInfoSerializer,
@@ -1614,19 +1616,20 @@ def cancel_premium_collection(request):
 def remit_premium(request):
     enregistrement_data = JSONParser().parse(request)
     # print("JSON de la requête:", enregistrement_data)
-    enregistrementencaissement_serializer = ReversementGroupePrimeSerializer(
+    reversement_serializer = ReversementGroupePrimeInsertSerializer(
         data=enregistrement_data
     )
-    if enregistrementencaissement_serializer.is_valid():
+    if reversement_serializer.is_valid():
+        validated_data = reversement_serializer.validated_data
         data_insertion_serializer = DataInsertionSerializer(
-            save_premium_remittance(request.user.id, enregistrement_data),
+            save_premium_remittance(request.user.id, validated_data),
             many=True,
         )
         return JsonResponse(
             data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
         )
     return JsonResponse(
-        enregistrementencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        reversement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
 
 
