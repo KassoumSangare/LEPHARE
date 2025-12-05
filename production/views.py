@@ -679,11 +679,33 @@ class ContractListView(APIView):
         return Response(list(contracts))
 
 
-class ReversementCompagnieNonValideListView(APIView):
-    def get(self, request, format=None):
-        reversements_non_valides = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")[:1000]
-        serializer = ReversementCompagnieSerializer(reversements_non_valides, many=True)
-        return Response(serializer.data) 
+class ReversementCompagnieNonValideViewSet(viewsets.ModelViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+    def list(self, request):
+        queryset = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")[:1000]
+        serializer = ReversementCompagnieSerializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    def retrieve(self, request, pk=None):
+        queryset = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")
+        reversement = get_object_or_404(queryset, pk=pk)
+        serializer = ReversementCompagnieSerializer(reversement)
+        return Response(serializer.data)
+    
+    def create(self, request):
+        pass
+
+    def update(self, request, pk=None):
+        pass
+
+    def partial_update(self, request, pk=None):
+        pass
+
+    def destroy(self, request, pk=None):
+        pass
+        
     
 class ReversementCompagnieViewSet(viewsets.ModelViewSet):    
     permission_classes = [

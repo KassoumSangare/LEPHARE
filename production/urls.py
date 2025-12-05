@@ -48,7 +48,7 @@ from .views import (
     DevisClientView,
     ConsolidationDevisView,
     ContractListView,
-    ReversementCompagnieNonValideListView,
+    ReversementCompagnieNonValideViewSet,
 )
 from .views import (
     create_contract,
@@ -86,6 +86,7 @@ router.register(r"detailquittance", DetailQuittanceViewSet)
 router.register(r"encaissement", EncaissementViewSet, basename="encaissement")
 router.register(r"detailencaissement", DetailEncaissementViewSet)
 router.register(r"reversement", ReversementCompagnieViewSet, basename="reversement")
+router.register(r"reversementnonvalide", ReversementCompagnieNonValideViewSet, basename="reversement_non_valide")
 router.register(r"detailreversement", DetailReversementViewSet)
 router.register(r"numero", NumeroViewSet)
 router.register(
@@ -369,6 +370,5 @@ urlpatterns = [
     ),
     path("majrecapprimes/", PrimeUpdateAPIView.as_view(), name="maj_recap_primes"),
     path("listecontratperiode/", ContractListView.as_view(), name="liste_contrat_periode"),
-    path("listereversementnonvalide/", ReversementCompagnieNonValideListView.as_view(), name="liste_reversement_non_valide"),
     
 ]
