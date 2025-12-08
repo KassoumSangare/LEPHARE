@@ -64,7 +64,7 @@ from .views import (
     quote_archival,
     car_input_cancelation,
     collect_premium,
-    cancel_premium_collection,
+    #cancel_premium_collection,
     get_contracts_for_pc,
     remit_premium,
     validate_premium_remittance,
@@ -274,11 +274,11 @@ urlpatterns = [
         collect_premium,
         name="enregistrement_encaissement",
     ),
-    path(
-        r"annulationencaissement",
-        cancel_premium_collection,
-        name="annulation_encaissement",
-    ),
+    # path(
+    #     r"annulationencaissement",
+    #     cancel_premium_collection,
+    #     name="annulation_encaissement",
+    # ),
     path(
         r"listecontratclient/",
         ListeContratClientView.as_view(),

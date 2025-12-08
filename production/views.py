@@ -7,9 +7,8 @@ from django.conf import settings
 from django.db.models import Q, F, Prefetch
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
-from django.db.models import Value
-from django.db.models.functions import Coalesce
 from core.date_parser import parse_date_string
+from typing import cast
 
 
 from knox.auth import TokenAuthentication
@@ -98,6 +97,18 @@ from .models import (
     LogRecord,
     CertificatTransport,
 )
+
+
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
+from django.db import transaction
+from django.utils import timezone
+
+from autorisations.serializers import AnnulerAvecJetonSerializer
+from autorisations.models import JetonAutorisation
+from autorisations.models import DemandeAutorisation, TypeOperation
+from autorisations.tasks import envoyer_notification_nouvelle_demande
+from django.contrib.contenttypes.models import ContentType
 
 from .exceltopostgresql import export_excel
 
@@ -593,17 +604,21 @@ class EncaissementViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+    
+    def get_queryset(self):
+        if self.action in ['list', 'retrieve', 'annuler']:
+            return Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False)).order_by("-dateencaissement")
+        
+        else:
+            return Encaissement.objects.none()
 
     def list(self, request):
-        queryset = (
-            Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
-            .order_by("-dateencaissement")[:1000]
-        )
+        queryset = self.get_queryset()[:1000]
         serializer = EncaissementSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        queryset = Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+        queryset = self.get_queryset()
         encaissement = get_object_or_404(queryset, pk=pk)
         serializer = EncaissementSerializer(encaissement)
         return Response(serializer.data)
@@ -619,6 +634,112 @@ class EncaissementViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None):
         pass
+    
+        
+    @action(detail=True, methods=['post'])
+    def annuler(self, request, pk=None):
+        """
+        🆕 Endpoint pour annuler un encaissement avec un jeton d'autorisation
+        
+        POST /api/encaissement/{id}/annuler/
+        Body: {
+            "jeton": "ABC12345"
+        }
+        """
+        encaissement = cast(Encaissement, self.get_object())
+        
+        # Vérifier que l'encaissement n'est pas déjà annulé
+        if encaissement.piece_annulee:
+            return Response({
+                'error': 'Cet encaissement est déjà annulé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validation avec le serializer d'autorisation
+        serializer = AnnulerAvecJetonSerializer(
+            data=request.data,
+            context={'request': request, 'objet': encaissement}
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        # Récupérer le jeton validé
+        jeton_obj = cast(JetonAutorisation, serializer.validated_data['jeton_obj'])
+        
+        # Transaction atomique pour garantir la cohérence
+        try:
+            with transaction.atomic():
+                # Utiliser le jeton
+                jeton_obj.utiliser(
+                    ip_address=self.get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                )
+                
+                # Annuler l'encaissement
+                cancellation_data = {"id_encaissement":encaissement.idencaissement, "date_annulation":timezone.now().date(), "motif_annulation":jeton_obj.demande.motif}
+                (err, qryset) = save_premium_collection_cancellation(request.user.id, cancellation_data)
+                data_insertion_serializer = DataInsertionSerializer(qryset, many=True,)
+                st = status.HTTP_201_CREATED
+                if err:
+                    transaction.set_rollback(True) 
+                    st = status.HTTP_400_BAD_REQUEST
+                return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        except Exception as error:
+            return JsonResponse({"ObjectId":encaissement.idencaissement, "OutputMessage":str(error).split("\n")[0]}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @staticmethod
+    def get_client_ip(request):
+        """Récupère l'adresse IP du client"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+    
+    @action(detail=True, methods=['post'])
+    def demander_annulation(self, request, pk=None):
+        """
+        🆕 Raccourci pour créer directement une demande d'annulation
+        
+        POST /api/encaissement/{id}/demander_annulation/
+        Body: {
+            "motif": "Erreur de saisie du montant"
+        }
+        """
+        
+        encaissement = cast(Encaissement, self.get_object())
+        
+        if encaissement.piece_annulee:
+            return Response({
+                'erreur': 'Cet encaissement est déjà annulé'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        motif = request.data.get('motif')
+        if not motif or len(motif) < 10:
+            return Response({
+                'erreur': 'Le motif doit contenir au moins 10 caractères'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Créer la demande
+        content_type = ContentType.objects.get_for_model(Encaissement)
+        demande = DemandeAutorisation.objects.create(
+            demandeur=request.user,
+            type_operation=TypeOperation.ANNULATION_ENCAISSEMENT,
+            objet=f"Annulation encaissement {encaissement.numeropiece}",
+            motif=motif,
+            content_type=content_type,
+            object_id=encaissement.idencaissement,
+            metadata={
+                'reference': encaissement.numeropiece,
+                'montant': str(encaissement.montantencaissement),
+            }
+        )
+        
+        envoyer_notification_nouvelle_demande.delay(demande.id)
+        
+        return Response({
+            'message': 'Demande d\'annulation créée avec succès',
+            'demande_id': demande.id
+        }, status=status.HTTP_201_CREATED)
 
 
 class DetailEncaissementViewSet(viewsets.ModelViewSet):
@@ -1663,32 +1784,32 @@ def collect_premium(request):
 
 
 # Cancel Premium collection
-@api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
-@permission_classes([permissions.IsAuthenticated])
-def cancel_premium_collection(request):
-    annulationencaissement_data = JSONParser().parse(request)
-    # print("JSON de la requête:", enregistrementencaissement_data)
-    annulationencaissement_serializer = AnnulationEncaissementSerializer(
-        data=annulationencaissement_data
-    )
-    if annulationencaissement_serializer.is_valid():
-        (err, qryset) = save_premium_collection_cancellation(
-            request.user.id, annulationencaissement_data
-        )
+# @api_view(["POST"])
+# @authentication_classes([TokenAuthentication, BasicAuthentication])
+# @permission_classes([permissions.IsAuthenticated])
+# def cancel_premium_collection(request):
+#     annulationencaissement_data = JSONParser().parse(request)
+#     # print("JSON de la requête:", enregistrementencaissement_data)
+#     annulationencaissement_serializer = AnnulationEncaissementSerializer(
+#         data=annulationencaissement_data
+#     )
+#     if annulationencaissement_serializer.is_valid():
+#         (err, qryset) = save_premium_collection_cancellation(
+#             request.user.id, annulationencaissement_data
+#         )
 
-        data_insertion_serializer = QuotationInsertionSerializer(
-            qryset,
-            many=True,
-        )
-        st = status.HTTP_201_CREATED
-        if err:
-            st = status.HTTP_400_BAD_REQUEST
+#         data_insertion_serializer = QuotationInsertionSerializer(
+#             qryset,
+#             many=True,
+#         )
+#         st = status.HTTP_201_CREATED
+#         if err:
+#             st = status.HTTP_400_BAD_REQUEST
 
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
-    return JsonResponse(
-        annulationencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
-    )
+#         return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+#     return JsonResponse(
+#         annulationencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+#     )
 
 
 ##################################################################################

@@ -54,21 +54,14 @@ SMTP_PORT = uranus_backend_config.get("SMTP_PORT")
 SENDER_EMAIL = uranus_backend_config.get("SENDER_EMAIL")
 SENDER_EMAIL_PASSWORD = uranus_backend_config.get("SENDER_EMAIL_PASSWORD")
 
-# Google email API settings
-GOOGLE_ACCOUNTS_BASE_URL = uranus_backend_config.get("GOOGLE_ACCOUNTS_BASE_URL")
-REDIRECT_URI = uranus_backend_config.get("REDIRECT_URI")
-GOOGLE_CLIENT_ID = uranus_backend_config.get("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = uranus_backend_config.get("GOOGLE_CLIENT_SECRET")
-GOOGLE_REFRESH_TOKEN = uranus_backend_config.get("GOOGLE_REFRESH_TOKEN")
-
 # Send emails with Django infrastructure
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" #Mis en commentaire, le temps de tester backends.console.EmailBackend
 EMAIL_HOST = uranus_backend_config.get("SMTP_HOST")
 EMAIL_PORT = uranus_backend_config.get("SMTP_PORT")
 EMAIL_HOST_USER = uranus_backend_config.get("SENDER_EMAIL")
 EMAIL_HOST_PASSWORD = uranus_backend_config.get("SENDER_EMAIL_PASSWORD")
 EMAIL_USE_SSL = True
-DEFAULT_FROM_EMAIL = uranus_backend_config.get("SENDER_EMAIL")
+DEFAULT_FROM_EMAIL = uranus_backend_config.get("SENDER_EMAIL") #Mis en commentaire, le temps de tester noreply@uranus.com'
 
 # Demande d'attestation automobile en ligne
 # Les huit paramètres ci-dessous permettent de communiquer avec la plateforme de l'ASACI
@@ -119,6 +112,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "rest_framework",
+    "django_filters",
     "configuration_api.apps.ConfigurationApiConfig",
     "customer.apps.CustomerConfig",
     "account.apps.AccountConfig",
@@ -138,6 +132,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "django_celery_results",
     "django_api_admin",
+    "autorisations",
 ]
 
 REST_FRAMEWORK = {
@@ -149,6 +144,13 @@ REST_FRAMEWORK = {
     #    "rest_framework.permissions.IsAuthenticated",
     # ],
     # "DEFAULT_MODEL_SERIALIZER_CLASS": "drf_toolbox.serializers.ModelSerializer",
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ],
 }
 
 
@@ -205,16 +207,16 @@ ROOT_URLCONF = "uranus.urls"
 
 TEMPLATES = [
     {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.debug",
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates'],
+        'APP_DIRS': True,
+        'OPTIONS': {
+                    'context_processors': [
+                        'django.template.context_processors.debug',
+                        'django.template.context_processors.request',
+                        'django.contrib.auth.context_processors.auth',
+                        'django.contrib.messages.context_processors.messages',
+                    ],
         },
     },
 ]
@@ -271,21 +273,47 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.1/howto/static-files/
 
-STATIC_URL = "static/"
-STATIC_ROOT = os.path.join(BASE_DIR, "static/")
+# STATIC_URL = "static/"
+# STATIC_ROOT = os.path.join(BASE_DIR, "static/")
 
-MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
-MEDIA_URL = "/media/"
+# MEDIA_ROOT = os.path.join(BASE_DIR, "media/")
+# MEDIA_URL = "/media/"
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
-# Celery settings
-CELERY_BROKER_URL = uranus_backend_config.get("CELERY_BROKER_URL", "amqp://localhost")
-CELERY_TIME = uranus_backend_config.get("CELERY_TIMEZONE", "Africa/Abidjan")
-CELERY_BEAT_SCHEDULER = uranus_backend_config.get(
-    "CELERY_BEAT_SCHEDULER", "django_celery_beat.schedulers:DatabaseScheduler"
-)
-CELERY_RESULT_BACKEND = uranus_backend_config.get("CELERY_RESULT_BACKEND", "django-db")
-CELERY_CACHE_BACKEND = uranus_backend_config.get("CELERY_CACHE_BACKEND", "django-cache")
-CELERY_RESULT_EXTENDED = uranus_backend_config.get("CELERY_RESULT_EXTENDED", False)
+# # Celery settings
+# CELERY_BROKER_URL = uranus_backend_config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
+# CELERY_TIME = uranus_backend_config.get("CELERY_TIMEZONE", "Africa/Abidjan")
+# CELERY_BEAT_SCHEDULER = uranus_backend_config.get(
+#     "CELERY_BEAT_SCHEDULER", "django_celery_beat.schedulers:DatabaseScheduler"
+# )
+# CELERY_RESULT_BACKEND = uranus_backend_config.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+# CELERY_CACHE_BACKEND = uranus_backend_config.get("CELERY_CACHE_BACKEND", "django-cache")
+# CELERY_RESULT_EXTENDED = uranus_backend_config.get("CELERY_RESULT_EXTENDED", False)
+
+#################################################################################
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE # Utilise le même timezone que Django
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+FRONTEND_URL="http://localhost:3000/"
+
+# Tâches périodiques (Celery Beat)
+CELERY_BEAT_SCHEDULE = {
+    'nettoyer-jetons-expires-quotidien': {
+        'task': 'autorisations.tasks.nettoyer_jetons_expires',
+        'schedule': 86400.0, # Toutes les 24 heures
+    },
+}
+
+###################################################################################
+
 
 # AROLITEC SMS gateway client settings
 AROLITEC_SMS_USER_ACCOUNT = uranus_backend_config.get("AROLITEC_SMS_USER_ACCOUNT", None)

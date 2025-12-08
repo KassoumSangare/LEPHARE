@@ -1,0 +1,1 @@
+DROP TRIGGER IF enc_montant_encaissement_gte_montantreglement;

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background-color: #dc3545; color: white; padding: 20px; text-align: center; }
+        .reason-box { background: white; border: 2px solid #dc3545; padding: 20px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>❌ Demande rejetée</h1>
+        </div>
+        <div style="padding: 20px;">
+            <p>Bonjour {{ demandeur.get_full_name|default:demandeur.username }},</p>
+            <p>Votre demande a été rejetée.</p>
+            
+            <div class="reason-box">
+                <h4 style="color: #dc3545;">Motif du rejet :</h4>
+                <p>{{ motif_rejet }}</p>
+            </div>
+            
+            <p><strong>Rejeté par :</strong> {{ approbateur.get_full_name|default:approbateur.username }}</p>
+        </div>
+    </div>
+</body>
+</html>

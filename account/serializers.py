@@ -15,14 +15,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "is_admin", "name", "profile")
 
 
-# class UserSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = UranusUser
-#         fields = ("id", "email", "is_admin")
-
-
 class ProfileSerializer(serializers.ModelSerializer):
-    # url_utilisateur = serializers.HyperlinkedIdentityField(view_name="user-detail")
+    
     utilisateur = serializers.ReadOnlyField(source="utilisateur.id")
     id = serializers.IntegerField(source="pk", read_only=True)
     email = serializers.CharField(source="utilisateur.email")

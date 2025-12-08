@@ -90,6 +90,15 @@ class UranusUser(AbstractBaseUser):
         "Est-il un membre du personnel?"
         # Réponse la plus simple: Oui, toujours
         return self.is_admin
+    
+    def get_full_name(self):
+        if self.name:
+            return self.name.strip().title()
+        return ""
+    
+    @property
+    def username(self):
+        return self.email
 
     class Meta:
         verbose_name = "Utilisateur"

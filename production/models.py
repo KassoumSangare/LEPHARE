@@ -32,6 +32,7 @@ from configuration_api.models import (
 from customer.models import Client
 from account.models import UranusUser
 
+User = get_user_model()
 
 OPERATION_ARCHIVAGE = (("ARCHI", "ARCHIVAGE"), ("DESAR", "DESARCHIVAGE"))
 
@@ -1405,8 +1406,13 @@ class Encaissement(models.Model):
     compte_compensation = models.CharField(
         max_length=10, blank=True, null=True, db_column="compte_compensation"
     )
-    idutilisateur = models.IntegerField(
-        blank=True, null=True, db_column="idutilisateur"
+    utilisateur = models.ForeignKey(
+        User, 
+        on_delete=models.PROTECT, 
+        related_name='encaissements',
+        null=True,
+        blank=True,
+        db_column="idutilisateur",
     )
     datesaisie = models.DateTimeField(db_column="datesaisie")
     piece_annulee = models.BooleanField(db_column="piece_annulee")
@@ -1431,6 +1437,8 @@ class Encaissement(models.Model):
         editable=False,
         null=True,
     )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return "Encaissement n° {} ({}) du {}".format(
@@ -1441,6 +1449,12 @@ class Encaissement(models.Model):
         db_table = "stdencaissement"
         verbose_name = "Encaissement"
         verbose_name_plural = "Encaissements"
+        indexes = [
+            models.Index(fields=['numeropiece']),
+            models.Index(fields=['piece_annulee', 'dateencaissement']),
+            models.Index(fields=['utilisateur', 'dateencaissement']),
+        ]
+        ordering = ['-dateencaissement']
 
 
 class DetailEncaissement(models.Model):
@@ -1563,12 +1577,6 @@ class DetailEncaissement(models.Model):
         db_table = "stddetailencaissement"
         verbose_name = "Ligne d'encaissement"
         verbose_name_plural = "Lignes d'encaissement"
-        constraints = [
-            models.CheckConstraint(
-                check=Q(montant_encaissement__gte=F('montantreglement')),
-                name='enc_montant_encaissement_gte_montantreglement',
-            )
-        ]
 
 
 class ReversementCompagnie(models.Model):

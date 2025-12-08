@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .header { background-color: #2196F3; color: white; padding: 20px; text-align: center; }
+        .code-box { background: white; border: 3px dashed #2196F3; padding: 30px; text-align: center; margin: 20px 0; }
+        .code { font-size: 32px; font-weight: bold; color: #2196F3; letter-spacing: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ Autorisation accordée</h1>
+        </div>
+        <div style="padding: 20px;">
+            <p>Bonjour {{ demandeur.get_full_name|default:demandeur.username }},</p>
+            <p>Votre demande a été approuvée. Voici votre code :</p>
+            
+            <div class="code-box">
+                <div class="code">{{ code }}</div>
+                <p style="margin: 10px 0 0; font-size: 12px; color: #999;">Code à usage unique</p>
+            </div>
+            
+            <p style="color: #dc3545;"><strong>⏰ Expire le {{ date_expiration|date:"d/m/Y à H:i" }}</strong></p>
+        </div>
+    </div>
+</body>
+</html>

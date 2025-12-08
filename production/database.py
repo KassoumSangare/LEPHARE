@@ -2508,9 +2508,7 @@ def save_premium_collection_cancellation(user_id, input_data):
     sql_output = None
     error_occured = False
     id_encaissement = int(input_data["id_encaissement"])
-    date_annulation = datetime.strptime(
-        input_data["date_annulation"], "%d-%m-%Y"
-    ).date()
+    date_annulation = input_data["date_annulation"]
     motif_annulation = str(input_data["motif_annulation"])
     id_nouvel_encaissement = 0
     output_message = ""
@@ -2529,29 +2527,14 @@ def save_premium_collection_cancellation(user_id, input_data):
                     output_message,
                 ),
             )
-            connection.commit()
             row = cursor.fetchone()
             sql_output = DataInsertionResult(
                 ObjectId=row[0],
                 OutputMessage=row[1],
             )
             data_insertion_result_list.append(sql_output)
-    except Exception as error:
-        error_occured = True
-        print(error)
-        msg = str(error)
-        if msg.find("\n") > 0:
-            msg = msg.split("\n")[0]
-
-        sql_output = DataInsertionResult(
-            ObjectId=id_nouvel_encaissement,
-            OutputMessage=msg,
-        )
-        data_insertion_result_list.append(sql_output)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
+    except Exception:
+        raise
 
     return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
 

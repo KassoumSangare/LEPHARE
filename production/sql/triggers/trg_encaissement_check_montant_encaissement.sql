@@ -1,0 +1,4 @@
+CREATE TRIGGER enc_montant_encaissement_gte_montantreglement
+BEFORE INSERT OR UPDATE ON public.stddetailencaissement
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_encaissement_check_montant_encaissement();
