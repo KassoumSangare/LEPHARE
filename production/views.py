@@ -651,7 +651,7 @@ class EncaissementViewSet(viewsets.ModelViewSet):
         # Vérifier que l'encaissement n'est pas déjà annulé
         if encaissement.piece_annulee:
             return Response({
-                'error': 'Cet encaissement est déjà annulé'
+                'erreur': 'Cet encaissement est déjà annulé'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Validation avec le serializer d'autorisation
@@ -1633,17 +1633,36 @@ class ImportationFichierGUCEViewSet(viewsets.ViewSet):
 
 
 class ExtendedQuotationInfoView(APIView):
-    permission_classes = [
-        permissions.IsAuthenticated,
-    ]
-
+    permission_classes = [permissions.IsAuthenticated]
+    
     def get(self, request, idproduit):
-        (msg, item) = get_extended_quotation_info(0, "", "", None, None, idproduit)
+        # Récupération des paramètres de pagination de l'URL
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+        
+        # Calcul de l'offset
+        limit = page_size
+        offset = (page - 1) * page_size
+        
+        (msg, devis_list, total_count) = get_extended_quotation_info(
+            0, "", "", None, None, idproduit, limit=limit, offset=offset
+        )
+        
         if not msg:
-            serializer = ExtendedQuotationInfoSerializer(item, many=True)
-            # print(serializer.data)
+            serializer = ExtendedQuotationInfoSerializer(devis_list, many=True)
+            
+            # Réponse structurée avec données et méta-pagination
             return Response(
-                {"status": "succès", "data": serializer.data},
+                {
+                    "status": "succès", 
+                    "data": serializer.data,
+                    "pagination": {
+                        "total_items": total_count,
+                        "page_size": limit,
+                        "current_page": page,
+                        "total_pages": (total_count + limit - 1) // limit
+                    }
+                },
                 status=status.HTTP_200_OK,
             )
         else:
@@ -1651,7 +1670,6 @@ class ExtendedQuotationInfoView(APIView):
                 {"status": "Echec", "data": msg},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
 
 class ExtendedQuotationInfoRechercheView(APIView):
     permission_classes = [

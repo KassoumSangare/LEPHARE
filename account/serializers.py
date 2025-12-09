@@ -20,6 +20,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     utilisateur = serializers.ReadOnlyField(source="utilisateur.id")
     id = serializers.IntegerField(source="pk", read_only=True)
     email = serializers.CharField(source="utilisateur.email")
+    is_admin = serializers.BooleanField(source="utilisateur.is_admin")
 
     class Meta:
         model = Profile
@@ -30,6 +31,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "utilisateur",
             "code_demandeur",
             "code_acces",
+            "is_admin",
         )
 
     def update(self, instance, validated_data):

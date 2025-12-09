@@ -2326,95 +2326,51 @@ def get_info_reversement(reversement):
 #################################################################################""
 # get_extended_quotation_info  -- ExtendedDevisInfo
 def get_extended_quotation_info(
-    iddevis, numerodevis, nomclient, datedebut, datefin, idproduit
+    iddevis, numerodevis, nomclient, datedebut, datefin, idproduit, limit=50, offset=0
 ):
+    """
+    Exécute la procédure stockée fn_get_devis avec pagination (LIMIT/OFFSET) 
+    et mappe les résultats sur le modèle ExtendedDevisInfo en utilisant raw().
+    """
     msg = ""
-    res = ExtendedDevisInfo.objects.none()
-    devis_list = []
+    
+    # Paramètres de la PS, dans l'ordre exact : 6 filtres + 2 de pagination
+    params = [
+        iddevis if iddevis != 0 else None,
+        numerodevis.strip(),
+        nomclient.strip(),
+        datedebut,
+        datefin,
+        idproduit,
+        limit,  # Paramètre 7 : LIMIT
+        offset, # Paramètre 8 : OFFSET
+    ]
+    
+    # La requête SQL brute pour appeler la procédure stockée
+    sql_query = """
+        SELECT *
+        FROM fn_get_devis(%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
     try:
-        with connection.cursor() as cursor:
-            cursor.callproc(
-                "fn_get_devis",
-                [
-                    iddevis,
-                    numerodevis,
-                    nomclient,
-                    datedebut,
-                    datefin,
-                    idproduit,
-                ],
-            )
+        # Utilisation de raw() pour l'exécution et le mapping automatique
+        queryset = ExtendedDevisInfo.objects.raw(sql_query, params)
+        
+        # Le RawQuerySet est itéré lors de la sérialisation, mais nous avons besoin du 
+        # comptage total qui se trouve dans la première ligne.
+        results = list(queryset) # Évalue le QuerySet (seulement la page, max 50 éléments)
+        
+        # Récupération du comptage total à partir de la première ligne
+        total_count = results[0].total_rows if results else 0
+        
+        # Le RawQuerySet n'a pas la colonne 'total_rows' en tant que champ du modèle.
+        # Pour une solution cohérente, nous renvoyons les données et le total.
+        return ("", results, total_count)
 
-            result = cursor.fetchall()
-            for row in result:
-                qp = ExtendedDevisInfo(
-                    iddevis=row[0],
-                    id_produit=row[1],
-                    flotte=row[2],
-                    coassurance=row[3],
-                    numerodevis=row[4],
-                    referenceagent=row[5],
-                    renouvelable=row[6],
-                    echeance=row[7],
-                    periode=row[8],
-                    numeroavenant=row[9],
-                    dateeffet=row[10],
-                    heuredebut=row[11],
-                    dateexpiration=row[12],
-                    confirme=row[13],
-                    dateemission=row[14],
-                    transfere=row[15],
-                    nbreche=row[16],
-                    anticipation=row[17],
-                    observation=row[18],
-                    idoldhist=row[19],
-                    oldnumerodevis=row[20],
-                    auteur=row[21],
-                    primeannuelle=row[22],
-                    primenette=row[23],
-                    accessoire=row[24],
-                    taxe=row[25],
-                    primettc=row[26],
-                    idoperateur=row[27],
-                    bonus_malus=row[28],
-                    idenergie=row[29],
-                    idhisto=row[30],
-                    accessoirecompagnie=row[31],
-                    accessoiregestionnaire=row[32],
-                    accessoireintermediaire=row[33],
-                    commissionaperiteur=row[34],
-                    commissiongestionnaire=row[35],
-                    commissionintermediaire=row[36],
-                    nomassure=row[37],
-                    libelle_aperiteur=row[38],
-                    libelle_avenant=row[39],
-                    nomclient=row[40],
-                    adressepostaleclient=row[41],
-                    adressegeoclient=row[42],
-                    emailclient=row[43],
-                    telephoneclient=row[44],
-                    libelle_compagnie=row[45],
-                    libelle_intermediaire=row[46],
-                    libelle_offre=row[47],
-                    libelle_produit=row[48],
-                    libelle_categorie=row[49],
-                    id_contrat=row[50],
-                )
-                devis_list.append(qp)
-                # print(qp)
     except Exception as error:
-        print(error)
+        print(f"Erreur SQL/ORM: {error}")
         msg = str(error)
-    else:
-        if len(devis_list) > 0:
-            res = list(chain(res, devis_list))
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
-
-    return (msg, res)
-
+        return (msg, [], 0)
 
 #####################################################################
 # Save premium collection

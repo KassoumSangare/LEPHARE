@@ -302,7 +302,7 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE # Utilise le même timezone que Django
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-FRONTEND_URL="http://localhost:3000/"
+FRONTEND_URL="http://localhost:3000"
 
 # Tâches périodiques (Celery Beat)
 CELERY_BEAT_SCHEDULE = {
