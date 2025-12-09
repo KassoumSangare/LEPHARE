@@ -66,7 +66,7 @@ BEGIN
             SDev.accessoire, SDev.taxe, SDev.primettc, SDev.idoperateur, SDev.bonus_malus, SDev.idenergie, SDev.idhisto,
             SDev.accessoirecompagnie, SDev.AccessoireGestionnaire AS accessoiregestionnaire, SDev.AccessoireIntermediaire AS accessoireintermediaire,
             SDev.CommissionAperiteur AS commissionaperiteur, SDev.CommissionGestionnaire AS commissiongestionnaire,
-            SDev.CommissionIntermediaire AS commissionintermediaire, nomassure, SAper.RaisonSociale AS libelle_aperiteur,
+            SDev.CommissionIntermediaire AS commissionintermediaire, SDev.nomassure, SAper.RaisonSociale AS libelle_aperiteur,
             SAven.LibelleAvenant AS libelle_avenant, TRIM(SCli.Nom) || ' ' || TRIM(COALESCE(SCli.Prenoms,'')) AS nomclient,
             COALESCE(SCli.Adresse1,'') AS adressepostaleclient, COALESCE(SCli.Adresse2,'') AS adressegeoclient,
             COALESCE(SCli.Email,'') AS emailclient, COALESCE(SCli.Telephone,'') AS telephoneclient,                                                                        
