@@ -2328,13 +2328,17 @@ def get_info_reversement(reversement):
 def get_extended_quotation_info(
     iddevis, numerodevis, nomclient, datedebut, datefin, idproduit, limit=50, offset=0
 ):
-    """
-    Exécute la procédure stockée fn_get_devis avec pagination (LIMIT/OFFSET) 
-    et mappe les résultats sur le modèle ExtendedDevisInfo en utilisant raw().
-    """
     msg = ""
+    results = []
+    total_count = 0
     
-    # Paramètres de la PS, dans l'ordre exact : 6 filtres + 2 de pagination
+    # 1. Requête SQL d'appel à la fonction (8 paramètres)
+    sql_query = """
+        SELECT *
+        FROM fn_get_devis(%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    # 2. Paramètres dans l'ordre exact
     params = [
         iddevis if iddevis != 0 else None,
         numerodevis.strip(),
@@ -2342,36 +2346,40 @@ def get_extended_quotation_info(
         datedebut,
         datefin,
         idproduit,
-        limit,  # Paramètre 7 : LIMIT
-        offset, # Paramètre 8 : OFFSET
+        limit,
+        offset,
     ]
-    
-    # La requête SQL brute pour appeler la procédure stockée
-    sql_query = """
-        SELECT *
-        FROM fn_get_devis(%s, %s, %s, %s, %s, %s, %s, %s)
-    """
 
     try:
-        # Utilisation de raw() pour l'exécution et le mapping automatique
-        queryset = ExtendedDevisInfo.objects.raw(sql_query, params)
-        
-        # Le RawQuerySet est itéré lors de la sérialisation, mais nous avons besoin du 
-        # comptage total qui se trouve dans la première ligne.
-        results = list(queryset) # Évalue le QuerySet (seulement la page, max 50 éléments)
-        
-        # Récupération du comptage total à partir de la première ligne
-        total_count = results[0].total_rows if results else 0
-        
-        # Le RawQuerySet n'a pas la colonne 'total_rows' en tant que champ du modèle.
-        # Pour une solution cohérente, nous renvoyons les données et le total.
-        return ("", results, total_count)
+        with connection.cursor() as cursor:
+            # Exécuter la procédure stockée
+            cursor.execute(sql_query, params)
+            
+            # Récupérer les noms de colonnes pour les utiliser comme clés de dictionnaire
+            columns = [col[0] for col in cursor.description]
+            
+            # Récupérer toutes les lignes (seulement 50 grâce au LIMIT de la PS)
+            rows = cursor.fetchall()
 
+            if rows:
+                # 1. Récupération du total (doit être fait avant de mapper)
+                total_count = rows[0][-1]
+                
+                # 2. OPTIMISATION : Utilisation de la Compréhension de Liste pour le mapping
+                results = [
+                    dict(zip(columns, row))
+                    for row in rows
+                ]
+            else:
+                results = []
+            
     except Exception as error:
-        print(f"Erreur SQL/ORM: {error}")
+        print(f"Erreur SQL/DB Connection: {error}")
         msg = str(error)
-        return (msg, [], 0)
-
+        # Retourne des valeurs sûres en cas d'échec
+        return (msg, [], 0) 
+        
+    return ("", results, total_count)
 #####################################################################
 # Save premium collection
 def save_premium_collection(user_id, input_data):
