@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
-from datetime import timedelta
+from django.shortcuts import get_object_or_404
 
 from .models import (
     DemandeAutorisation, 
@@ -19,7 +19,7 @@ class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les informations utilisateur"""
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'name']
+        fields = ['id', 'username', 'email', 'name', 'is_admin']
         read_only_fields = fields
 
 
@@ -333,16 +333,86 @@ class JetonAutorisationSerializer(serializers.ModelSerializer):
 
 class PermissionSerializer(serializers.ModelSerializer):
     """Serializer pour les permissions"""
-    utilisateur = UserSerializer(read_only=True)
+    
+    utilisateur = UserSerializer(read_only=True) 
+    
     type_operation_display = serializers.CharField(
         source='get_type_operation_display',
         read_only=True
     )
     
     class Meta:
+        #
         model = Permission
         fields = [
             'id', 'utilisateur', 'type_operation',
             'type_operation_display', 'actif', 'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+
+    def to_internal_value(self, data):
+        """
+        Intercepte les données entrantes (POST/PUT).
+        Si l'ID utilisateur est fourni, le résout en instance User pour la validation et l'enregistrement.
+        """
+        # 1. Traitement initial par DRF. À ce stade, 'utilisateur' est ignoré car il est 'read_only=True'.
+        internal_value = super().to_internal_value(data)
+        
+        # 2. Récupérer l'ID utilisateur brut de l'entrée (ex: 123)
+        utilisateur_id = data.get('utilisateur')
+        
+        # 3. Si un ID est fourni, tenter de le valider et de le convertir en objet
+        if utilisateur_id is not None:
+            try:
+                # S'assurer que la valeur est un entier valide
+                if not isinstance(utilisateur_id, int) and not str(utilisateur_id).isdigit():
+                    raise ValueError("L'ID utilisateur doit être un entier.")
+
+                # Tenter de trouver l'instance utilisateur
+                user_instance = get_object_or_404(User, pk=utilisateur_id)
+                
+                # 4. Injecter l'instance User dans les données validées, 
+                #    ce qui permet à .save() de fonctionner correctement.
+                internal_value['utilisateur'] = user_instance
+                
+            except (ValueError, User.DoesNotExist):
+                # Lever une erreur de validation claire si l'ID est incorrect
+                raise serializers.ValidationError({
+                    'utilisateur': "L'ID utilisateur fourni est invalide ou n'existe pas."
+                })
+        
+        # 5. Retourner les données validées avec l'instance utilisateur
+        return internal_value
+    
+    def validate(self, data):
+        """
+        Vérifie l'unicité de la combinaison (utilisateur, type_operation)
+        lors de la création d'une nouvelle permission.
+        """
+        # 1. Vérifiez si les champs critiques sont présents dans les données validées
+        #    Si to_internal_value n'a pas réussi à injecter 'utilisateur', 
+        #    ce champ ne sera pas dans 'data' et la validation du champ échouera plus tard,
+        #    mais nous devons nous assurer qu'il est là pour cette vérification.
+        utilisateur = data.get('utilisateur')
+        type_operation = data.get('type_operation')
+        
+        if not utilisateur or not type_operation:
+            # Laissez la validation normale des champs requis gérer cela
+            return data
+
+        # 2. Vérifiez si une permission existe déjà avec cette combinaison
+        exists = self.Meta.model.objects.filter(
+            utilisateur=utilisateur,
+            type_operation=type_operation
+        ).exists()
+
+        if exists:
+            # 3. Lever une erreur de validation qui sera renvoyée en HTTP 400
+            raise serializers.ValidationError({
+                'erreur': [
+                f"L'utilisateur {utilisateur.username} possède déjà la permission pour l'opération '{type_operation}'."
+                ]
+            }
+            )
+
+        return data

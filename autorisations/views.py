@@ -7,6 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django_filters.rest_framework import DjangoFilterBackend
 from typing import cast
+from django.contrib.auth import get_user_model
 
 from .models import (
     DemandeAutorisation,
@@ -21,7 +22,8 @@ from .serializers import (
     ApprouverDemandeSerializer,
     RejeterDemandeSerializer,
     JetonAutorisationSerializer,
-    PermissionSerializer
+    PermissionSerializer,
+    UserSerializer,
 )
 from .permissions import (
     EstApprobateur,
@@ -34,6 +36,7 @@ from .tasks import (
     envoyer_notification_rejet
 )
 
+User = get_user_model()
 
 class DemandeAutorisationViewSet(viewsets.ModelViewSet):
     """
@@ -576,7 +579,6 @@ class PermissionViewSet(viewsets.ModelViewSet):
         
         if type_op:
             approbateurs = PermissionModel.obtenir_approbateurs(type_op)
-            from .serializers import UserSerializer
             serializer = UserSerializer(approbateurs, many=True)
             return Response({
                 'type_operation': type_op,
@@ -608,3 +610,16 @@ class PermissionViewSet(viewsets.ModelViewSet):
                 }
             
             return Response(resultats)
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminUser])
+    def utilisateurs(self, request):
+        """
+        Liste les utilisateurs actifs
+        
+        GET /api/autorisations/permissions/utilisateurs/
+        Query params: ?type_operation=ANNUL_ENC
+        """
+        users = User.objects.filter(is_active=True)
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+          
