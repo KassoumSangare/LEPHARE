@@ -4,16 +4,16 @@ DECLARE
 	v_nouveau_numero VARCHAR(20);
 	v_devis_rec RECORD;
 	v_contrat_rec RECORD;
-	v_date_debut date;
-	v_date_fin date;
+	v_annee_debut DOUBLE PRECISION;
+	v_annee_fin DOUBLE PRECISION;
 BEGIN
-	v_date_debut := EXTRACT(YEAR FROM CURRENT_DATE) - 5;
-	v_date_fin := v_date_debut + 10;
+	v_annee_debut := EXTRACT(YEAR FROM CURRENT_DATE) - 5;
+	v_annee_fin := v_annee_debut + 10;
 	FOR v_devis_rec IN (SELECT iddevis, idcompagnie, idintermediaire, dateemission
 						 FROM public.stddevis
 						 WHERE NOT archive
 						 		AND TRIM(COALESCE(numerofacture, '')) = ''
-						 		AND DATE_PART('year', dateeffet) BETWEEN v_date_debut AND v_date_fin
+						 		AND DATE_PART('year', dateeffet::DATE) BETWEEN v_annee_debut AND v_annee_fin
 						 ORDER BY dateemission)
 	LOOP
 		SELECT public.fn_generer_numero_facture(false, v_devis_rec.idcompagnie, v_devis_rec.idintermediaire, v_devis_rec.dateemission::DATE) INTO v_nouveau_numero;
@@ -25,7 +25,7 @@ BEGIN
 	FOR v_contrat_rec IN (SELECT idcontrat, idcompagnie, idintermediaire, dateemission
 						 FROM public.stdcontrat
 						 WHERE TRIM(COALESCE(numerofacture, '')) = ''
-						 		AND DATE_PART('year', dateeffet) BETWEEN v_date_debut AND v_date_fin
+						 		AND DATE_PART('year', dateeffet::DATE) BETWEEN v_annee_debut AND v_annee_fin
 						 ORDER BY dateemission)
 	LOOP
 		SELECT public.fn_generer_numero_facture(true, v_contrat_rec.idcompagnie, v_contrat_rec.idintermediaire, v_contrat_rec.dateemission::DATE) INTO v_nouveau_numero;
