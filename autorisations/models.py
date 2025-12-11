@@ -15,7 +15,7 @@ import string
 User = get_user_model()
 
 class TypeOperation(models.TextChoices):
-    """Types d'opérations nécessitant autorisation"""
+    """Types d'opérations nécessitant une autorisation"""
     ANNULATION_ENCAISSEMENT = 'ANNUL_ENC', 'Annulation Encaissement'
     ANNULATION_REVERSEMENT = 'ANNUL_REV', 'Annulation Reversement'
     ANNULATION_CONTRAT = 'ANNUL_CNT', 'Annulation Contrat'
@@ -29,13 +29,12 @@ class StatutDemande(models.TextChoices):
     REJETEE = 'REJECTED', 'Rejetée'
     EXPIREE = 'EXPIRED', 'Expirée'
     UTILISEE = 'USED', 'Utilisée'
-    ANNULEE = 'CANCELLED', 'Annulée'  # 🆕 Demande annulée par le demandeur
+    ANNULEE = 'CANCELLED', 'Annulée'  # Demande annulée par le demandeur
 
 
 class DemandeAutorisation(models.Model):
     """
     Modèle générique pour toute demande d'autorisation
-    VERSION ROBUSTE avec gestion des doublons
     """
     # Identification
     demandeur = models.ForeignKey(
@@ -125,11 +124,13 @@ class DemandeAutorisation(models.Model):
     
     class Meta:
         indexes = [
+            models.Index(fields=['date_demande']),
+            models.Index(fields=['date_traitement']),
             models.Index(fields=['statut', 'date_demande']),
             models.Index(fields=['demandeur', 'statut']),
             models.Index(fields=['type_operation', 'statut']),
             models.Index(fields=['content_type', 'object_id', 'statut']),
-            # 🆕 Index pour détecter les doublons
+            # Index pour détecter les doublons
             models.Index(fields=['type_operation', 'content_type', 'object_id', 'statut']),
         ]
         ordering = ['-date_demande']

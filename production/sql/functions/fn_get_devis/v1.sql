@@ -1,6 +1,6 @@
 -- FUNCTION: public.fn_get_devis(integer, character varying, character varying, date, date, integer)
 
-DROP FUNCTION IF EXISTS public.fn_get_devis(integer, character varying, character varying, date, date, integer);
+DROP FUNCTION IF EXISTS public.fn_get_devis;
 
 CREATE OR REPLACE FUNCTION public.fn_get_devis(
 	id_devis integer,
@@ -72,6 +72,6 @@ BEGIN
 END;
 $BODY$;
 
-ALTER FUNCTION public.fn_get_devis(integer, character varying, character varying, date, date, integer)
+ALTER FUNCTION public.fn_get_devis
     OWNER TO uranususer;
 

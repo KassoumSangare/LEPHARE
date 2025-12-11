@@ -30,6 +30,8 @@ from .permissions import (
     EstDemandeur,
     PeutCreerDemande
 )
+from core.date_parser import parse_date_string
+from .filters import DemandeAutorisationFilter
 from .tasks import (
     envoyer_notification_nouvelle_demande,
     envoyer_jeton_autorisation,
@@ -60,6 +62,7 @@ class DemandeAutorisationViewSet(viewsets.ModelViewSet):
     queryset = DemandeAutorisation.objects.all()
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = DemandeAutorisationFilter
     filterset_fields = ['statut', 'type_operation', 'demandeur', 'approbateur']
     search_fields = ['objet', 'motif', 'demandeur__username', 'demandeur__email']
     ordering_fields = ['date_demande', 'date_traitement', 'created_at']
@@ -69,7 +72,7 @@ class DemandeAutorisationViewSet(viewsets.ModelViewSet):
         """Retourne le serializer approprié selon l'action"""
         if self.action == 'create':
             return DemandeAutorisationCreateSerializer
-        elif self.action in ['list', 'mes_demandes', 'en_attente', 'approuvees', 'rejetees', 'utilisees']:
+        elif self.action in ['list', 'mes_demandes', 'en_attente', 'approuvees', 'rejetees', 'utilisees', 'par_periode', 'aujourdhui', 'cette_semaine', 'ce_mois']:
             return DemandeAutorisationListSerializer
         return DemandeAutorisationDetailSerializer
     
@@ -390,6 +393,206 @@ class DemandeAutorisationViewSet(viewsets.ModelViewSet):
             'demande': DemandeAutorisationDetailSerializer(demande).data
         }, status=status.HTTP_200_OK)
 
+    
+    @action(detail=False, methods=['get'])
+    def par_periode(self, request):
+        """
+        Retourne les demandes dans une plage de dates spécifique
+        
+        GET /api/autorisations/demandes/par_periode/
+        Query params: 
+        - date_debut: Date de début (YYYY-MM-DD)
+        - date_fin: Date de fin (YYYY-MM-DD) (optionnel, défaut: aujourd'hui)
+        - champ_date: 'date_demande' ou 'date_traitement' (optionnel, défaut: 'date_demande')
+        """
+        date_debut_str = request.query_params.get('date_debut')
+        date_fin_str = request.query_params.get('date_fin', timezone.now().date().isoformat())
+        champ_date = request.query_params.get('champ_date', 'date_demande')  # 'date_demande' ou 'date_traitement'
+        
+        # Validation des paramètres
+        if not date_debut_str:
+            return Response(
+                {'erreur': 'Le paramètre "date_debut" est requis (format: YYYY-MM-DD)'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        
+        date_debut = parse_date_string(date_debut_str)
+        date_fin = parse_date_string(date_fin_str)
+        if date_debut is None or date_fin is None:
+            return Response(
+                {'erreur': 'Format de date invalide. Utilisez le format YYYY-MM-DD'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        date_debut = date_debut.date()
+        date_fin = date_fin.date()
+        
+        # Vérifier que la date de début est antérieure à la date de fin
+        if date_debut > date_fin:
+            return Response(
+                {'erreur': 'La date de début doit être antérieure ou égale à la date de fin'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Vérifier que le champ_date est valide
+        if champ_date not in ['date_demande', 'date_traitement']:
+            return Response(
+                {'erreur': 'Le champ_date doit être "date_demande" ou "date_traitement"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Filtrer les demandes
+        queryset = self.get_queryset()
+        
+        # Construire le filtre dynamiquement
+        filter_kwargs = {
+            f'{champ_date}__date__gte': date_debut,
+            f'{champ_date}__date__lte': date_fin
+        }
+        
+        demandes = queryset.filter(**filter_kwargs).order_by(f'-{champ_date}')
+        
+        # Appliquer les filtres supplémentaires si présents
+        statut = request.query_params.get('statut')
+        if statut:
+            demandes = demandes.filter(statut=statut)
+        
+        type_op = request.query_params.get('type_operation')
+        if type_op:
+            demandes = demandes.filter(type_operation=type_op)
+        
+        # Pagination
+        page = self.paginate_queryset(demandes)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(demandes, many=True)
+        
+        return Response({
+            'date_debut': date_debut_str,
+            'date_fin': date_fin_str,
+            'champ_date': champ_date,
+            'total': demandes.count(),
+            'resultats': serializer.data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def aujourdhui(self, request):
+        """
+        Retourne les demandes créées aujourd'hui
+        
+        GET /api/autorisations/demandes/aujourdhui/
+        Query params: statut, type_operation
+        """
+        aujourdhui = timezone.now().date()
+        
+        queryset = self.get_queryset().filter(date_demande__date=aujourdhui)
+        
+        # Appliquer les filtres supplémentaires si présents
+        statut = request.query_params.get('statut')
+        if statut:
+            queryset = queryset.filter(statut=statut)
+        
+        type_op = request.query_params.get('type_operation')
+        if type_op:
+            queryset = queryset.filter(type_operation=type_op)
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'date': aujourdhui.isoformat(),
+            'total': queryset.count(),
+            'resultats': serializer.data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def cette_semaine(self, request):
+        """
+        Retourne les demandes de la semaine en cours
+        
+        GET /api/autorisations/demandes/cette_semaine/
+        """
+        aujourdhui = timezone.now().date()
+        debut_semaine = aujourdhui - timedelta(days=aujourdhui.weekday())
+        fin_semaine = debut_semaine + timedelta(days=6)
+        
+        queryset = self.get_queryset().filter(
+            date_demande__date__gte=debut_semaine,
+            date_demande__date__lte=fin_semaine
+        )
+        
+        # Appliquer les filtres supplémentaires si présents
+        statut = request.query_params.get('statut')
+        if statut:
+            queryset = queryset.filter(statut=statut)
+        
+        type_op = request.query_params.get('type_operation')
+        if type_op:
+            queryset = queryset.filter(type_operation=type_op)
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'debut_semaine': debut_semaine.isoformat(),
+            'fin_semaine': fin_semaine.isoformat(),
+            'total': queryset.count(),
+            'resultats': serializer.data
+        })
+    
+    @action(detail=False, methods=['get'])
+    def ce_mois(self, request):
+        """
+        Retourne les demandes du mois en cours
+        
+        GET /api/autorisations/demandes/ce_mois/
+        """
+        aujourdhui = timezone.now().date()
+        debut_mois = aujourdhui.replace(day=1)
+        
+        # Calculer le dernier jour du mois
+        if aujourdhui.month == 12:
+            fin_mois = aujourdhui.replace(year=aujourdhui.year + 1, month=1, day=1) - timedelta(days=1)
+        else:
+            fin_mois = aujourdhui.replace(month=aujourdhui.month + 1, day=1) - timedelta(days=1)
+        
+        queryset = self.get_queryset().filter(
+            date_demande__date__gte=debut_mois,
+            date_demande__date__lte=fin_mois
+        )
+        
+        # Appliquer les filtres supplémentaires si présents
+        statut = request.query_params.get('statut')
+        if statut:
+            queryset = queryset.filter(statut=statut)
+        
+        type_op = request.query_params.get('type_operation')
+        if type_op:
+            queryset = queryset.filter(type_operation=type_op)
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        
+        return Response({
+            'debut_mois': debut_mois.isoformat(),
+            'fin_mois': fin_mois.isoformat(),
+            'total': queryset.count(),
+            'resultats': serializer.data
+        })
 
 class JetonAutorisationViewSet(viewsets.ReadOnlyModelViewSet):
     """
