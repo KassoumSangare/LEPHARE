@@ -439,7 +439,7 @@ class ContratSerializer(serializers.ModelSerializer):
             if hasattr(obj, "iddevis"):
                 devis = Devis.objects.annotate(
                     offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))
-                ).get(pk=obj.iddevis)
+                ).get(pk=obj.iddevis.pk)
                 if devis and hasattr(devis, "offreboisee"):
                     return devis.offreboisee
             return False
@@ -451,12 +451,10 @@ class ContratSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         try:
             if instance.idclient:
-                client = Client.objects.get(pk=instance.idclient)
-                if client:
-                    representation["datenaissanceclient"] = client.DateNaissance
-                    representation["numeroidentificationclient"] = client.CniPat
+                representation["datenaissanceclient"] = instance.idclient.DateNaissance
+                representation["numeroidentificationclient"] = instance.idclient.CniPat
             if instance.idassure:
-                assure = Client.objects.get(pk=instance.idassure)
+                assure = Client.objects.get(pk=instance)
                 if assure:
                     representation["datenaissanceassure"] = assure.DateNaissance
                     representation["numeroidentificationassure"] = assure.CniPat
@@ -479,11 +477,11 @@ class ContratDetailSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         representation["codecategorie"] = ""
         contrat = Contrat.objects.get(pk=instance.idcontrat)
-        if contrat.idproduit == 5:
+        if contrat.idproduit.id_produit == 5:
             tarif = Tarif.objects.get(pk=instance.idtarif)
             if tarif:
                 representation["codecategorie"] = tarif.CodeCategorie
-        if contrat.idproduit == 1:
+        if contrat.idproduit.id_produit == 1:
             complementinfo = ComplementContratDetailAuto.objects.filter(
                 contrat_detail=instance
             )
