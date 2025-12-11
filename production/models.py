@@ -1445,7 +1445,31 @@ class Encaissement(models.Model):
         return "Encaissement n° {} ({}) du {}".format(
             self.numeropiece, self.idencaissement, self.dateencaissement
         )
+        
+    @property   
+    def demande_annulation(self):
+        """
+        Retourne la demande d'annulation associée à l'instance
+        """
+        from django.contrib.contenttypes.models import ContentType
+        from autorisations.models import DemandeAutorisation
+        
+        content_type = ContentType.objects.get_for_model(self.__class__)
+        return DemandeAutorisation.objects.filter(
+            content_type=content_type,
+            object_id=self.idencaissement,
+        ).first()
 
+    @property
+    def demande_annulation_en_cours(self):
+        """
+        Indique si l'encaissement a une demande d'annulation en cours
+        """
+        from autorisations.models import StatutDemande
+        demande = self.demande_annulation
+        return demande.statut in  [StatutDemande.APPROUVEE, StatutDemande.EN_ATTENTE] if demande else None
+        
+    
     class Meta:
         db_table = "stdencaissement"
         verbose_name = "Encaissement"
@@ -1456,6 +1480,7 @@ class Encaissement(models.Model):
             models.Index(fields=['utilisateur', 'dateencaissement']),
         ]
         ordering = ['-dateencaissement']
+    
 
 
 class DetailEncaissement(models.Model):
@@ -3170,308 +3195,308 @@ class SequenceFacture(models.Model):
     def __str__(self):
         return f"Séquence {self.annee}/{self.mois}: Dernier numéro proforma {self.dernier_numero_devis}, dernier numéro facture {self.dernier_numero_contrat}"
     
-class Maison(models.Model):
-    """
-    Maison référence - Les caractéristiques ACTUELLES de la maison.
-    Cette table contient toujours l'état le plus récent.
-    """
-    USAGE_CHOICES = [
-        ('proprietaire_occupant_total', 'Propriétaire occupant total'),
-        ('proprietaire_occupant_partiel', 'Propriétaire occupant partiel'),
-        ('proprietaire_non_occupant_meuble', 'Propriétaire non occupant - Location meublée'),
-        ('proprietaire_non_occupant', 'Propriétaire non occupant'),
-        ('locataire_meuble', 'Locataire en meublé'),
-        ('locataire_partiel', 'Locataire partiel'),
-        ('logement_fonction', 'Logement de fonction'),
-        ('locataire', 'Locataire'),
-    ]
+# class Maison(models.Model):
+#     """
+#     Maison référence - Les caractéristiques ACTUELLES de la maison.
+#     Cette table contient toujours l'état le plus récent.
+#     """
+#     USAGE_CHOICES = [
+#         ('proprietaire_occupant_total', 'Propriétaire occupant total'),
+#         ('proprietaire_occupant_partiel', 'Propriétaire occupant partiel'),
+#         ('proprietaire_non_occupant_meuble', 'Propriétaire non occupant - Location meublée'),
+#         ('proprietaire_non_occupant', 'Propriétaire non occupant'),
+#         ('locataire_meuble', 'Locataire en meublé'),
+#         ('locataire_partiel', 'Locataire partiel'),
+#         ('logement_fonction', 'Logement de fonction'),
+#         ('locataire', 'Locataire'),
+#     ]
     
-    id_maison = models.AutoField(primary_key=True, db_column="idmaison")
-    numero_maison = models.CharField(max_length=50, unique=True, editable=False, db_column="numeromaison")
-    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='maisons', db_column="idclient")
+#     id_maison = models.AutoField(primary_key=True, db_column="idmaison")
+#     numero_maison = models.CharField(max_length=50, unique=True, editable=False, db_column="numeromaison")
+#     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='maisons', db_column="idclient")
     
-    # Informations de la maison
-    adresse = models.TextField(db_column="adresse"),
-    ville = models.CharField(max_length=100, db_column="ville", null=True, blank=True)
+#     # Informations de la maison
+#     adresse = models.TextField(db_column="adresse"),
+#     ville = models.CharField(max_length=100, db_column="ville", null=True, blank=True)
     
-    # Caractéristiques actuelles
-    usage_habitation = models.CharField(max_length=50, choices=USAGE_CHOICES, db_column="usagehabitation")
-    valeur_maison = models.DecimalField(
-        max_digits=19, 
-        decimal_places=4,
-        validators=[MinValueValidator(Decimal('0.01'))], db_column="valeurmaison"
-    )
-    cout_location_mensuel = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0,
-        validators=[MinValueValidator(Decimal('0'))], db_column="coutlocationmensuel"
-    )
-    surface_m2 = models.DecimalField(
-        max_digits=8, 
-        decimal_places=2, 
-        null=True, 
-        blank=True, db_column="surfacem2"
-    )
-    nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-    annee_construction = models.IntegerField(null=True, blank=True, db_column="anneeconstruction")
+#     # Caractéristiques actuelles
+#     usage_habitation = models.CharField(max_length=50, choices=USAGE_CHOICES, db_column="usagehabitation")
+#     valeur_maison = models.DecimalField(
+#         max_digits=19, 
+#         decimal_places=4,
+#         validators=[MinValueValidator(Decimal('0.01'))], db_column="valeurmaison"
+#     )
+#     cout_location_mensuel = models.DecimalField(
+#         max_digits=10, 
+#         decimal_places=2, 
+#         default=0,
+#         validators=[MinValueValidator(Decimal('0'))], db_column="coutlocationmensuel"
+#     )
+#     surface_m2 = models.DecimalField(
+#         max_digits=8, 
+#         decimal_places=2, 
+#         null=True, 
+#         blank=True, db_column="surfacem2"
+#     )
+#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
+#     annee_construction = models.IntegerField(null=True, blank=True, db_column="anneeconstruction")
     
-    date_creation = models.DateTimeField(auto_now_add=True)
-    date_modification = models.DateTimeField(auto_now=True)
+#     date_creation = models.DateTimeField(auto_now_add=True)
+#     date_modification = models.DateTimeField(auto_now=True)
     
-    class Meta:
-        db_table = 'stdmaison'
-        ordering = ['-date_creation']
+#     class Meta:
+#         db_table = 'stdmaison'
+#         ordering = ['-date_creation']
     
-    def __str__(self):
-        return f"{self.numero_maison} - {self.adresse}"
+#     def __str__(self):
+#         return f"{self.numero_maison} - {self.adresse}"
     
-    def save(self, *args, **kwargs):
-    # Seulement générer si c'est la première fois
-        if not self.numero_maison:
-            max_retries = 5
-            for attempt in range(max_retries):
-                # 1. Générer une nouvelle valeur aléatoire
-                self.numero_maison = f"MAS-{uuid.uuid4().hex[:8].upper()}"
-                try:
-                    # 2. Tenter de sauvegarder (la base de données vérifie l'unicité)
-                    return super().save(*args, **kwargs)
-                except IntegrityError:
-                    # 3. Collision détectée par la DB. Recommencer.
-                    if attempt == max_retries - 1:
-                        # Si toutes les tentatives ont échoué (extrêmement improbable)
-                        raise 
+#     def save(self, *args, **kwargs):
+#     # Seulement générer si c'est la première fois
+#         if not self.numero_maison:
+#             max_retries = 5
+#             for attempt in range(max_retries):
+#                 # 1. Générer une nouvelle valeur aléatoire
+#                 self.numero_maison = f"MAS-{uuid.uuid4().hex[:8].upper()}"
+#                 try:
+#                     # 2. Tenter de sauvegarder (la base de données vérifie l'unicité)
+#                     return super().save(*args, **kwargs)
+#                 except IntegrityError:
+#                     # 3. Collision détectée par la DB. Recommencer.
+#                     if attempt == max_retries - 1:
+#                         # Si toutes les tentatives ont échoué (extrêmement improbable)
+#                         raise 
     
-        # Pour les mises à jour (numero_maison existe) ou si le code sort de la boucle avec succès
-        super().save(*args, **kwargs)
+#         # Pour les mises à jour (numero_maison existe) ou si le code sort de la boucle avec succès
+#         super().save(*args, **kwargs)
         
-class MaisonDevis(models.Model):
-    """
-    Snapshot des caractéristiques d'une maison AU MOMENT du devis.
-    Cette table capture l'état historique pour le devis.
-    """
-    id_maison_devis = models.AutoField(db_column="idmaisondevis", primary_key=True)
-    devis = models.ForeignKey(Devis, on_delete=models.CASCADE, related_name='maisons_devis', db_column="iddevis")
-    maison = models.ForeignKey(
-        Maison, 
-        on_delete=models.PROTECT, 
-        related_name='devis_historique',
-        help_text="Référence à la maison (les caractéristiques peuvent avoir changé depuis)", db_column="idmaison"
-    )
+# class MaisonDevis(models.Model):
+#     """
+#     Snapshot des caractéristiques d'une maison AU MOMENT du devis.
+#     Cette table capture l'état historique pour le devis.
+#     """
+#     id_maison_devis = models.AutoField(db_column="idmaisondevis", primary_key=True)
+#     devis = models.ForeignKey(Devis, on_delete=models.CASCADE, related_name='maisons_devis', db_column="iddevis")
+#     maison = models.ForeignKey(
+#         Maison, 
+#         on_delete=models.PROTECT, 
+#         related_name='devis_historique',
+#         help_text="Référence à la maison (les caractéristiques peuvent avoir changé depuis)", db_column="idmaison"
+#     )
     
-    # SNAPSHOT des caractéristiques au moment du devis
-    # On duplique les champs car ils peuvent changer dans Maison
-    usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
-    valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
-    cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
-    surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
-    nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-    options = models.JSONField(default=dict, help_text="Options choisies pour cette maison", db_column="options")
+#     # SNAPSHOT des caractéristiques au moment du devis
+#     # On duplique les champs car ils peuvent changer dans Maison
+#     usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
+#     valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
+#     cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
+#     surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
+#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
+#     options = models.JSONField(default=dict, help_text="Options choisies pour cette maison", db_column="options")
     
-    # Résultat du calcul
-    prime_annuelle = models.DecimalField(
-        max_digits=19, 
-        decimal_places=4, 
-        null=True, 
-        blank=True, db_column="primeannuelle"
-    )
-    prime_mensuelle = models.DecimalField(
-        max_digits=19, 
-        decimal_places=4, 
-        null=True, 
-        blank=True, db_column="primemensuelle"
-    )
-    detail_garanties = models.JSONField(
-        null=True, 
-        blank=True,
-        help_text="Détail de toutes les garanties calculées", db_column="detailgaranties"
-    )
+#     # Résultat du calcul
+#     prime_annuelle = models.DecimalField(
+#         max_digits=19, 
+#         decimal_places=4, 
+#         null=True, 
+#         blank=True, db_column="primeannuelle"
+#     )
+#     prime_mensuelle = models.DecimalField(
+#         max_digits=19, 
+#         decimal_places=4, 
+#         null=True, 
+#         blank=True, db_column="primemensuelle"
+#     )
+#     detail_garanties = models.JSONField(
+#         null=True, 
+#         blank=True,
+#         help_text="Détail de toutes les garanties calculées", db_column="detailgaranties"
+#     )
     
-    date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+#     date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
     
-    class Meta:
-        db_table = 'stdmaisondevis'
-        unique_together = [['devis', 'maison']]
-        ordering = ['devis', 'id_maison_devis']
+#     class Meta:
+#         db_table = 'stdmaisondevis'
+#         unique_together = [['devis', 'maison']]
+#         ordering = ['devis', 'id_maison_devis']
     
-    def __str__(self):
-        return f"{self.devis.numerodevis} - {self.maison.numero_maison}"
+#     def __str__(self):
+#         return f"{self.devis.numerodevis} - {self.maison.numero_maison}"
     
-    def save(self, *args, **kwargs):
-        # Si pas de snapshot, on copie depuis la maison actuelle
-        if not self.pk and not self.usage_habitation:
-            self.copier_depuis_maison()
-        super().save(*args, **kwargs)
+#     def save(self, *args, **kwargs):
+#         # Si pas de snapshot, on copie depuis la maison actuelle
+#         if not self.pk and not self.usage_habitation:
+#             self.copier_depuis_maison()
+#         super().save(*args, **kwargs)
     
-    def copier_depuis_maison(self):
-        """Copie les caractéristiques actuelles de la maison"""
-        self.usage_habitation = self.maison.usage_habitation
-        self.valeur_maison = self.maison.valeur_maison
-        self.cout_location_mensuel = self.maison.cout_location_mensuel
-        self.surface_m2 = self.maison.surface_m2
-        self.nombre_pieces = self.maison.nombre_pieces
+#     def copier_depuis_maison(self):
+#         """Copie les caractéristiques actuelles de la maison"""
+#         self.usage_habitation = self.maison.usage_habitation
+#         self.valeur_maison = self.maison.valeur_maison
+#         self.cout_location_mensuel = self.maison.cout_location_mensuel
+#         self.surface_m2 = self.maison.surface_m2
+#         self.nombre_pieces = self.maison.nombre_pieces
     
-    def calculer_prime(self):
-        """Appelle la fonction PL/pgSQL pour calculer la prime"""
-        from django.db import connection
+#     def calculer_prime(self):
+#         """Appelle la fonction PL/pgSQL pour calculer la prime"""
+#         from django.db import connection
         
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT calculer_prime_totale_mrh(
-                    %s::VARCHAR,
-                    %s::NUMERIC,
-                    %s::NUMERIC,
-                    %s::NUMERIC,
-                    %s::INTEGER,
-                    %s::JSONB
-                )
-            """, [
-                self.usage_habitation,
-                self.valeur_maison,
-                self.cout_location_mensuel,
-                self.surface_m2,
-                self.nombre_pieces,
-                self.options if self.options else {}
-            ])
+#         with connection.cursor() as cursor:
+#             cursor.execute("""
+#                 SELECT calculer_prime_totale_mrh(
+#                     %s::VARCHAR,
+#                     %s::NUMERIC,
+#                     %s::NUMERIC,
+#                     %s::NUMERIC,
+#                     %s::INTEGER,
+#                     %s::JSONB
+#                 )
+#             """, [
+#                 self.usage_habitation,
+#                 self.valeur_maison,
+#                 self.cout_location_mensuel,
+#                 self.surface_m2,
+#                 self.nombre_pieces,
+#                 self.options if self.options else {}
+#             ])
             
-            result = cursor.fetchone()[0]
+#             result = cursor.fetchone()[0]
             
-            self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
-            self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
-            self.detail_garanties = result['garanties']
+#             self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
+#             self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
+#             self.detail_garanties = result['garanties']
             
-            self.save(update_fields=[
-                'prime_annuelle', 
-                'prime_mensuelle', 
-                'detail_garanties'
-            ])
+#             self.save(update_fields=[
+#                 'prime_annuelle', 
+#                 'prime_mensuelle', 
+#                 'detail_garanties'
+#             ])
             
-            return result
+#             return result
 
 
-class MaisonContrat(models.Model):
-    """
-    Snapshot des caractéristiques d'une maison pour UN CONTRAT donné.
-    À chaque renouvellement/avenant, on peut créer une nouvelle ligne
-    si les caractéristiques ont changé.
-    """
-    id_maison_contrat = models.AutoField(primary_key=True, db_column="idmaisoncontrat")
-    contrat = models.ForeignKey(
-        Contrat, 
-        on_delete=models.CASCADE, 
-        related_name='maisons_contrat', db_column="idcontrat"
-    )
-    maison = models.ForeignKey(
-        Maison, 
-        on_delete=models.PROTECT, 
-        related_name='contrats_historique',
-        db_column= "idmaison"
-    )
+# class MaisonContrat(models.Model):
+#     """
+#     Snapshot des caractéristiques d'une maison pour UN CONTRAT donné.
+#     À chaque renouvellement/avenant, on peut créer une nouvelle ligne
+#     si les caractéristiques ont changé.
+#     """
+#     id_maison_contrat = models.AutoField(primary_key=True, db_column="idmaisoncontrat")
+#     contrat = models.ForeignKey(
+#         Contrat, 
+#         on_delete=models.CASCADE, 
+#         related_name='maisons_contrat', db_column="idcontrat"
+#     )
+#     maison = models.ForeignKey(
+#         Maison, 
+#         on_delete=models.PROTECT, 
+#         related_name='contrats_historique',
+#         db_column= "idmaison"
+#     )
     
-    # SNAPSHOT des caractéristiques au moment du contrat
-    usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
-    valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
-    cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
-    surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
-    nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-    options = models.JSONField(default=dict, db_column="options")
+#     # SNAPSHOT des caractéristiques au moment du contrat
+#     usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
+#     valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
+#     cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
+#     surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
+#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
+#     options = models.JSONField(default=dict, db_column="options")
     
-    # Prime calculée pour ce contrat
-    prime_annuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primeannuelle")
-    prime_mensuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primemensuelle")
-    detail_garanties = models.JSONField(null=True, blank=True, db_column="detailgaranties")
+#     # Prime calculée pour ce contrat
+#     prime_annuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primeannuelle")
+#     prime_mensuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primemensuelle")
+#     detail_garanties = models.JSONField(null=True, blank=True, db_column="detailgaranties")
     
-    # Période de validité de ces caractéristiques
-    date_debut_validite = models.DateField(auto_now_add=True, db_column="datedebutvalidite")
-    date_fin_validite = models.DateField(null=True, blank=True, db_column="datefinvalidite")
-    est_actif = models.BooleanField(default=True, db_column="estactif")
+#     # Période de validité de ces caractéristiques
+#     date_debut_validite = models.DateField(auto_now_add=True, db_column="datedebutvalidite")
+#     date_fin_validite = models.DateField(null=True, blank=True, db_column="datefinvalidite")
+#     est_actif = models.BooleanField(default=True, db_column="estactif")
     
-    date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+#     date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
     
-    class Meta:
-        db_table = 'stdmaisoncontrat'
-        ordering = ['contrat', '-date_debut_validite']
-        indexes = [
-            models.Index(fields=['contrat', 'maison', 'est_actif']),
-        ]
+#     class Meta:
+#         db_table = 'stdmaisoncontrat'
+#         ordering = ['contrat', '-date_debut_validite']
+#         indexes = [
+#             models.Index(fields=['contrat', 'maison', 'est_actif']),
+#         ]
     
-    def __str__(self):
-        return f"{self.contrat.numeropolice} ({self.contrat.idcontrat}) - {self.maison.numero_maison}"
+#     def __str__(self):
+#         return f"{self.contrat.numeropolice} ({self.contrat.idcontrat}) - {self.maison.numero_maison}"
     
-    def creer_avenant_modification(self, nouvelles_caracteristiques):
-        """
-        Crée un avenant pour modifier les caractéristiques de cette maison.
-        Désactive l'ancien enregistrement et crée un nouveau.
-        """
-        from datetime import datetime
-        from django.db import transaction
+#     def creer_avenant_modification(self, nouvelles_caracteristiques):
+#         """
+#         Crée un avenant pour modifier les caractéristiques de cette maison.
+#         Désactive l'ancien enregistrement et crée un nouveau.
+#         """
+#         from datetime import datetime
+#         from django.db import transaction
         
-        with transaction.atomic():
-            # Clôturer l'ancienne version
-            self.est_actif = False
-            self.date_fin_validite = datetime.now().date()
-            self.save(update_fields=['est_actif', 'date_fin_validite'])
+#         with transaction.atomic():
+#             # Clôturer l'ancienne version
+#             self.est_actif = False
+#             self.date_fin_validite = datetime.now().date()
+#             self.save(update_fields=['est_actif', 'date_fin_validite'])
             
-            # Créer la nouvelle version
-            nouvelle_maison_contrat = MaisonContrat.objects.create(
-                contrat=self.contrat,
-                maison=self.maison,
-                usage_habitation=nouvelles_caracteristiques.get(
-                    'usage_habitation', 
-                    self.usage_habitation
-                ),
-                valeur_maison=nouvelles_caracteristiques.get(
-                    'valeur_maison', 
-                    self.valeur_maison
-                ),
-                cout_location_mensuel=nouvelles_caracteristiques.get(
-                    'cout_location_mensuel', 
-                    self.cout_location_mensuel
-                ),
-                surface_m2=nouvelles_caracteristiques.get('surface_m2', self.surface_m2),
-                nombre_pieces=nouvelles_caracteristiques.get('nombre_pieces', self.nombre_pieces),
-                options=nouvelles_caracteristiques.get('options', self.options),
-                est_actif=True
-            )
+#             # Créer la nouvelle version
+#             nouvelle_maison_contrat = MaisonContrat.objects.create(
+#                 contrat=self.contrat,
+#                 maison=self.maison,
+#                 usage_habitation=nouvelles_caracteristiques.get(
+#                     'usage_habitation', 
+#                     self.usage_habitation
+#                 ),
+#                 valeur_maison=nouvelles_caracteristiques.get(
+#                     'valeur_maison', 
+#                     self.valeur_maison
+#                 ),
+#                 cout_location_mensuel=nouvelles_caracteristiques.get(
+#                     'cout_location_mensuel', 
+#                     self.cout_location_mensuel
+#                 ),
+#                 surface_m2=nouvelles_caracteristiques.get('surface_m2', self.surface_m2),
+#                 nombre_pieces=nouvelles_caracteristiques.get('nombre_pieces', self.nombre_pieces),
+#                 options=nouvelles_caracteristiques.get('options', self.options),
+#                 est_actif=True
+#             )
             
-            # Recalculer la prime avec les nouvelles caractéristiques
-            nouvelle_maison_contrat.recalculer_prime()
+#             # Recalculer la prime avec les nouvelles caractéristiques
+#             nouvelle_maison_contrat.recalculer_prime()
             
-            return nouvelle_maison_contrat
+#             return nouvelle_maison_contrat
     
-    def recalculer_prime(self):
-        """Recalcule la prime avec les caractéristiques actuelles"""
-        from django.db import connection
+#     def recalculer_prime(self):
+#         """Recalcule la prime avec les caractéristiques actuelles"""
+#         from django.db import connection
         
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT calculer_prime_totale_mrh(
-                    %s::VARCHAR,
-                    %s::NUMERIC,
-                    %s::NUMERIC,
-                    %s::NUMERIC,
-                    %s::INTEGER,
-                    %s::JSONB
-                )
-            """, [
-                self.usage_habitation,
-                self.valeur_maison,
-                self.cout_location_mensuel,
-                self.surface_m2,
-                self.nombre_pieces,
-                self.options if self.options else {}
-            ])
+#         with connection.cursor() as cursor:
+#             cursor.execute("""
+#                 SELECT calculer_prime_totale_mrh(
+#                     %s::VARCHAR,
+#                     %s::NUMERIC,
+#                     %s::NUMERIC,
+#                     %s::NUMERIC,
+#                     %s::INTEGER,
+#                     %s::JSONB
+#                 )
+#             """, [
+#                 self.usage_habitation,
+#                 self.valeur_maison,
+#                 self.cout_location_mensuel,
+#                 self.surface_m2,
+#                 self.nombre_pieces,
+#                 self.options if self.options else {}
+#             ])
             
-            result = cursor.fetchone()[0]
+#             result = cursor.fetchone()[0]
             
-            self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
-            self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
-            self.detail_garanties = result['garanties']
+#             self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
+#             self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
+#             self.detail_garanties = result['garanties']
             
-            self.save(update_fields=[
-                'prime_annuelle', 
-                'prime_mensuelle', 
-                'detail_garanties'
-            ])
+#             self.save(update_fields=[
+#                 'prime_annuelle', 
+#                 'prime_mensuelle', 
+#                 'detail_garanties'
+#             ])
             
-            return result
+#             return result

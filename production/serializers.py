@@ -716,6 +716,10 @@ class EncaissementSerializer(serializers.ModelSerializer):
     modepaiement = serializers.CharField(source='modepaiement.libellemodepaiement', read_only=True)
     banque = serializers.CharField(source='banque.libelle', read_only=True)
     idutilisateur = serializers.IntegerField(source='utilisateur', read_only=True)
+    demande_annulation_en_cours = serializers.BooleanField(
+        read_only=True
+    )
+    statut_demande_annulation = serializers.SerializerMethodField()
 
     class Meta:
         model = Encaissement
@@ -739,7 +743,12 @@ class EncaissementSerializer(serializers.ModelSerializer):
             "datesaisieannulation",
             "nomtireurcheque",
             "details",
+            'demande_annulation_en_cours',
+            'statut_demande_annulation',
         )
+    def get_statut_demande_annulation(self, obj):
+        demande = obj.demande_annulation
+        return demande.statut if demande else None
 
 class DetailEncaissementSerializer(serializers.ModelSerializer):
     class Meta:

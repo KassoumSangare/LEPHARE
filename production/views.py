@@ -613,7 +613,24 @@ class EncaissementViewSet(viewsets.ModelViewSet):
             return Encaissement.objects.none()
 
     def list(self, request):
-        queryset = self.get_queryset()[:1000]
+        queryset = self.get_queryset().only("idencaissement",
+            "numeropiece",
+            "dateencaissement",
+            "montantencaissement",
+            "montantenattente",
+            "montantdeduit",
+            "modepaiement",
+            "banque",
+            "numerocheque",
+            "compte_compensation",
+            "datesaisie",
+            "piece_annulee",
+            "dateannulation",
+            "nomannulation",
+            "motifannulation",
+            "datesaisieannulation",
+            "nomtireurcheque",
+            "details")[:1000]
         serializer = EncaissementSerializer(queryset, many=True)
         return Response(serializer.data)
 
