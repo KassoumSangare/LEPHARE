@@ -1,6 +1,7 @@
 from typing import cast
 from django.db import connection
 from django.db import connections
+from uranus.settings import MAX_LIMIT_FOR_SEARCH
 import re
 from itertools import chain
 from datetime import datetime
@@ -2326,28 +2327,36 @@ def get_info_reversement(reversement):
 #################################################################################""
 # get_extended_quotation_info  -- ExtendedDevisInfo
 def get_extended_quotation_info(
-    iddevis, numerodevis, nomclient, datedebut, datefin, idproduit, limit=50, offset=0
+    iddevis, numeropolice, nomclient, datedebut, datefin, idproduit, limit=50, offset=0
 ):
     msg = ""
     results = []
     total_count = 0
     
-    # 1. Requête SQL d'appel à la fonction (8 paramètres)
+    
     sql_query = """
         SELECT *
         FROM fn_get_devis(%s, %s, %s, %s, %s, %s, %s, %s)
     """
-
-    # 2. Paramètres dans l'ordre exact
+    is_client_search = bool(nomclient.strip())
+    
+    current_limit = limit
+    current_offset = offset
+    
+    if is_client_search:
+        # Si l'utilisateur recherche par nom, annuler la pagination.
+        # Nous voulons tous les résultats pour CE client.
+        current_limit = MAX_LIMIT_FOR_SEARCH 
+        current_offset = 0
     params = [
         iddevis if iddevis != 0 else None,
-        numerodevis.strip(),
+        numeropolice.strip(),
         nomclient.strip(),
         datedebut,
         datefin,
         idproduit,
-        limit,
-        offset,
+        current_limit,
+        current_offset,
     ]
 
     try:

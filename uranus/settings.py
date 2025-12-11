@@ -369,6 +369,7 @@ DISTRIPAY_DEFAULT_LANGUAGE = uranus_backend_config.get("DISTRIPAY_ENABLED", "fr"
 DISTRIPAY_DEFAULT_CHANNEL = uranus_backend_config.get("DISTRIPAY_ENABLED", "ALL")
 
 URANUS_IN_PRODUCTION = int(uranus_backend_config.get("URANUS_IN_PRODUCTION", 0))
+MAX_LIMIT_FOR_SEARCH = int(uranus_backend_config.get("MAX_LIMIT_FOR_SEARCH", 1000))
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.1/ref/settings/#default-auto-field
 

@@ -1639,13 +1639,15 @@ class ExtendedQuotationInfoView(APIView):
         # Récupération des paramètres de pagination de l'URL
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 50))
+        nom_client = request.query_params.get('nom_client', '')
+        numero_police = request.query_params.get('numero_police', '')
         
         # Calcul de l'offset
         limit = page_size
         offset = (page - 1) * page_size
         
         (msg, devis_list, total_count) = get_extended_quotation_info(
-            0, "", "", None, None, idproduit, limit=limit, offset=offset
+            0, numero_police, nom_client, None, None, idproduit, limit=limit, offset=offset
         )
         
         if not msg:
