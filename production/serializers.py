@@ -715,7 +715,7 @@ class EncaissementSerializer(serializers.ModelSerializer):
     details = DetailEncaissementShortSerializer(many=True, read_only=True)
     modepaiement = serializers.CharField(source='modepaiement.libellemodepaiement', read_only=True)
     banque = serializers.CharField(source='banque.libelle', read_only=True)
-    idutilisateur = serializers.IntegerField(source='utilisateur', read_only=True)
+    idutilisateur = serializers.IntegerField(source='utilisateur.id', read_only=True)
     demande_annulation_en_cours = serializers.BooleanField(
         read_only=True
     )
