@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from typing import Any, cast
+from decimal import Decimal
 
 from configuration_api.models import (
     GenreVehicule,
@@ -7,6 +8,7 @@ from configuration_api.models import (
     OffreAutomobileBoisee,
     Tarif,
     TypeVehicule,
+    SousGarantieMRH,
 )
 from configuration_api.models import Banque, ModeEncaissement, Compagnie
 from core.serializers import EnregistrementDevisBaseSerializer
@@ -61,6 +63,18 @@ from .models import (
     InfoVehicule,
 )
 from django.db.models import F
+
+
+# Import des modèles MRH
+from configuration_api.models import (
+    UsageHabitation,
+    SousGarantieUsage,
+    ParametresCalcul,
+    Option,
+    OptionUsage,
+)
+
+
 
 
 def get_libelle_option(id_detail, entite="CNT"):
@@ -2548,3 +2562,1015 @@ class PrimeUpdateSerializer(serializers.Serializer):
     prime_ttc = serializers.DecimalField(
         max_digits=19, decimal_places=4, allow_null=True
     )
+
+
+"""
+Serializers Django REST Framework pour le module MRH
+(Multi-Risques Habitation) - NSIA
+
+Organisation :
+1. Serializers pour les requêtes de calcul
+2. Serializers pour les réponses
+3. Serializers pour l'enregistrement dans les modèles legacy
+"""
+
+
+# ============================================================================
+# SECTION 1 : SERIALIZERS POUR LES REQUÊTES DE CALCUL
+# ============================================================================
+
+class OptionSelectionSerializer(serializers.Serializer):
+    """Serializer pour la sélection d'une option"""
+    
+    code_option = serializers.CharField(
+        max_length=50,
+        help_text="Code de l'option (ex: zone_industrielle, presence_gardien)"
+    )
+    
+    def validate_code_option(self, value):
+        """Valide que l'option existe"""
+        if not Option.objects.filter(code=value, actif=True).exists():
+            raise serializers.ValidationError(f"L'option '{value}' n'existe pas ou est inactive.")
+        return value
+
+
+class SousGarantieOptionnelleSelectionSerializer(serializers.Serializer):
+    """Serializer pour la sélection d'une sous-garantie optionnelle"""
+    
+    code_sous_garantie = serializers.CharField(
+        max_length=50,
+        help_text="Code de la sous-garantie optionnelle (ex: RC_MEMBRE, LOISIRS)"
+    )
+    
+    def validate_code_sous_garantie(self, value):
+        """Valide que la sous-garantie optionnelle existe"""
+        if not SousGarantieMRH.objects.filter(code=value, type='OPTIONNELLE', actif=True).exists():
+            raise serializers.ValidationError(
+                f"La sous-garantie optionnelle '{value}' n'existe pas ou est inactive."
+            )
+        return value
+
+
+class MaisonCalculRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la requête de calcul d'une maison.
+    Contient tous les paramètres nécessaires au calcul de la prime.
+    """
+    
+    # Identifiant de l'usage
+    code_usage = serializers.CharField(
+        max_length=50,
+        help_text="Code de l'usage habitation (ex: proprietaire_occupant_total)"
+    )
+    
+    # Paramètres de calcul (optionnels selon l'usage)
+    valeur_batiment = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Valeur du bâtiment en FCFA"
+    )
+    
+    valeur_contenu = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Valeur du contenu/mobilier en FCFA"
+    )
+    
+    loyer_mensuel = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Loyer mensuel en FCFA"
+    )
+    
+    capital_rvt = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Capital RVT (Recours des Voisins et Tiers) en FCFA"
+    )
+    
+    # Options sélectionnées
+    options = OptionSelectionSerializer(
+        many=True,
+        required=False,
+        default=list,
+        help_text="Liste des options sélectionnées"
+    )
+    
+    # Sous-Garanties optionnelles sélectionnées
+    sous_garanties_optionnelles = SousGarantieOptionnelleSelectionSerializer(
+        many=True,
+        required=False,
+        default=list,
+        help_text="Liste des sous-garanties optionnelles sélectionnées"
+    )
+    
+    # Informations supplémentaires (pour enregistrement dans DevisDetail)
+    adresse = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_blank=True,
+        help_text="Adresse de la maison"
+    )
+    
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Description supplémentaire"
+    )
+    
+    def validate_code_usage(self, value):
+        """Valide que l'usage existe"""
+        if not UsageHabitation.objects.filter(code=value, actif=True).exists():
+            raise serializers.ValidationError(f"L'usage '{value}' n'existe pas ou est inactif.")
+        return value
+    
+    def validate(self, data):
+        """
+        Validation globale : vérifie que les paramètres requis sont fournis
+        selon l'usage sélectionné.
+        """
+        code_usage = data.get('code_usage')
+        
+        try:
+            usage = UsageHabitation.objects.get(code=code_usage, actif=True)
+            params = usage.parametres
+        except (UsageHabitation.DoesNotExist, ParametresCalcul.DoesNotExist):
+            raise serializers.ValidationError(
+                f"Paramètres de calcul non trouvés pour l'usage '{code_usage}'."
+            )
+        
+        # Vérification des paramètres requis
+        errors = {}
+        
+        if params.param_valeur_batiment_requis and not data.get('valeur_batiment'):
+            errors['valeur_batiment'] = "La valeur du bâtiment est requise pour cet usage."
+        
+        if params.param_valeur_contenu_requis and not data.get('valeur_contenu'):
+            errors['valeur_contenu'] = "La valeur du contenu est requise pour cet usage."
+        
+        if params.param_loyer_requis and not data.get('loyer_mensuel'):
+            errors['loyer_mensuel'] = "Le loyer mensuel est requis pour cet usage."
+        
+        if params.param_capital_rvt_requis and not data.get('capital_rvt'):
+            errors['capital_rvt'] = "Le capital RVT est requis pour cet usage."
+        
+        if errors:
+            raise serializers.ValidationError(errors)
+        
+        # Vérification que les options sont applicables à cet usage
+        options = data.get('options', [])
+        for opt in options:
+            code_option = opt['code_option']
+            if not OptionUsage.objects.filter(
+                option__code=code_option,
+                usage__code=code_usage,
+                actif=True
+            ).exists():
+                raise serializers.ValidationError({
+                    'options': f"L'option '{code_option}' n'est pas applicable à l'usage '{code_usage}'."
+                })
+        
+        # Vérification que les garanties optionnelles sont disponibles pour cet usage
+        sous_garanties_opt = data.get('sous_garanties_optionnelles', [])
+        for gar in sous_garanties_opt:
+            code_sous_garantie = gar['code_sous_garantie']
+            if not SousGarantieUsage.objects.filter(
+                sous_garantie__code=code_sous_garantie,
+                usage__code=code_usage,
+                obligatoire=False,
+                actif=True
+            ).exists():
+                raise serializers.ValidationError({
+                    'sous_garanties_optionnelles': f"La garantie '{code_sous_garantie}' n'est pas disponible pour l'usage '{code_usage}'."
+                })
+        
+        return data
+
+
+class DevisMRHCreateRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la création d'un devis MRH vide.
+    Contient les informations de base du devis.
+    """
+    
+    # Relations obligatoires (ForeignKeys)
+    idintermediaire = serializers.IntegerField(
+        required=True,
+        help_text="ID de l'intermédiaire"
+    )
+    
+    idcompagnie = serializers.IntegerField(
+        required=True,
+        help_text="ID de la compagnie"
+    )
+    
+    idproduit = serializers.IntegerField(
+        required=True,
+        help_text="ID du produit MRH"
+    )
+    
+    idtarif = serializers.IntegerField(
+        required=True,
+        help_text="ID du tarif MRH choisi"
+    )
+    
+    idoffre = serializers.IntegerField(
+        required=True,
+        help_text="ID de l'offre"
+    )
+    
+    idclient = serializers.IntegerField(
+        required=True,
+        help_text="ID du client (souscripteur)"
+    )
+    
+    idassure = serializers.IntegerField(
+        required=False,
+        help_text="ID de l'assuré (si différent du client)"
+    )
+    
+    # Dates
+    dateeffet = serializers.DateTimeField(
+        required=True,
+        help_text="Date d'effet du contrat"
+    )
+    
+    dateexpiration = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Date d'expiration (calculée automatiquement si non fournie)"
+    )
+    
+    # Durée et périodicité
+    idduree = serializers.IntegerField(
+        required=False,
+        default=1,
+        help_text="ID de la durée (1=12 mois par défaut)"
+    )
+    
+    idterme = serializers.IntegerField(
+        required=False,
+        default=1,
+        help_text="ID du terme de paiement"
+    )
+    
+    periode = serializers.CharField(
+        max_length=1,
+        required=False,
+        default='A',
+        help_text="Période de facturation (A=Annuelle, S=Semestrielle, etc.)"
+    )
+    
+    # Informations complémentaires
+    referenceagent = serializers.CharField(
+        max_length=50,
+        required=False,
+        default='',
+        allow_blank=True,
+        help_text="Référence de l'agent"
+    )
+    
+    observation = serializers.CharField(
+        max_length=50,
+        required=False,
+        default='',
+        allow_blank=True,
+        help_text="Observations sur le devis"
+    )
+    
+    # Booléens
+    flotte = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Flotte (toujours False pour MRH)"
+    )
+    
+    coassurance = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Coassurance"
+    )
+    
+    renouvelable = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Contrat renouvelable"
+    )
+    
+    confirme = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Devis confirmé"
+    )
+    
+    # Mode imposé
+    prime_imposee = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Prime imposée (mode imposé)"
+    )
+    
+    def validate(self, data):
+        """Validation globale"""
+        # Si dateexpiration n'est pas fournie, elle sera calculée selon la durée
+        if 'dateexpiration' not in data or data['dateexpiration'] is None:
+            # La date d'expiration sera calculée côté service/view
+            pass
+        else:
+            # Vérifier que dateexpiration >= dateeffet
+            if data['dateexpiration'] < data['dateeffet']:
+                raise serializers.ValidationError({
+                    'dateexpiration': "La date d'expiration doit être >= à la date d'effet"
+                })
+        
+        return data
+
+
+class MaisonAjoutRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour ajouter une maison à un devis existant.
+    Combine les données de calcul avec l'ID du devis.
+    """
+    
+    maison = MaisonCalculRequestSerializer(
+        help_text="Données de la maison à ajouter"
+    )
+
+
+# ============================================================================
+# SECTION 2 : SERIALIZERS POUR LES RÉPONSES
+# ============================================================================
+
+class SousGarantieCalculeeSerializer(serializers.Serializer):
+    """Serializer pour une garantie calculée (dans la réponse)"""
+    
+    code_sous_garantie = serializers.CharField()
+    libelle_sous_garantie = serializers.CharField()
+    code_sous_garantie_std = serializers.CharField(allow_null=True)
+    id_sous_garantie_std = serializers.IntegerField(allow_null=True)
+    type_garantie = serializers.ChoiceField(choices=['OBLIGATOIRE', 'OPTIONNELLE'])
+    prime_nette = serializers.DecimalField(max_digits=12, decimal_places=2)
+    taux_taxe = serializers.DecimalField(max_digits=5, decimal_places=2)
+    taxe = serializers.DecimalField(max_digits=12, decimal_places=2)
+    prime_ttc = serializers.DecimalField(max_digits=12, decimal_places=2)
+    taux_repartition = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        allow_null=True,
+        help_text="Taux de répartition (pour garanties obligatoires uniquement)"
+    )
+
+
+class OptionAppliqueeSerializer(serializers.Serializer):
+    """Serializer pour une option appliquée (dans la réponse)"""
+    
+    code_option = serializers.CharField()
+    libelle_option = serializers.CharField()
+    type_option = serializers.CharField()
+    type_ajustement = serializers.CharField()
+    sous_garantie_cible = serializers.CharField()
+    sous_garantie_cible_libelle = serializers.CharField()
+    montant_ajustement = serializers.DecimalField(max_digits=12, decimal_places=2)
+    signe = serializers.CharField()
+
+
+class MaisonCalculeeSerializer(serializers.Serializer):
+    """Serializer pour le résultat du calcul d'une maison"""
+    
+    # Identifiant temporaire (avant enregistrement)
+    maison_id = serializers.CharField(required=False, allow_null=True)
+    
+    # Informations de base
+    code_usage = serializers.CharField()
+    libelle_usage = serializers.CharField()
+    
+    # Paramètres utilisés
+    parametres = serializers.DictField(
+        help_text="Paramètres utilisés pour le calcul (valeur_batiment, valeur_contenu, etc.)"
+    )
+    
+    # Résultats du calcul
+    prime_base = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    
+    # Détails
+    sous_garanties = SousGarantieCalculeeSerializer(many=True)
+    options_appliquees = OptionAppliqueeSerializer(many=True, required=False)
+    
+    # Informations supplémentaires
+    adresse = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+
+
+class DevisMRHCalculeResponseSerializer(serializers.Serializer):
+    """Serializer pour la réponse complète du calcul d'un devis"""
+    
+    devis_id = serializers.IntegerField(help_text="ID du devis")
+    statut = serializers.CharField(help_text="Statut du calcul (success, error)")
+    message = serializers.CharField(required=False)
+    
+    # Totaux du devis
+    prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    accessoires = serializers.DecimalField(max_digits=19, decimal_places=4, default=Decimal('0'))
+    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    
+    # Détails par maison
+    maisons = MaisonCalculeeSerializer(many=True)
+    
+    # Métadonnées
+    nombre_maisons = serializers.IntegerField()
+    date_calcul = serializers.DateTimeField()
+
+
+class DevisMRHResponseSerializer(serializers.Serializer):
+    """Serializer pour la réponse de création d'un devis"""
+    
+    devis_id = serializers.IntegerField()
+    numero_devis = serializers.CharField(required=False)
+    statut = serializers.CharField()
+    message = serializers.CharField()
+    date_creation = serializers.DateTimeField()
+
+
+class MaisonAjouteeResponseSerializer(serializers.Serializer):
+    """Serializer pour la réponse d'ajout d'une maison"""
+    
+    devis_id = serializers.IntegerField()
+    maison_id = serializers.IntegerField()
+    statut = serializers.CharField()
+    message = serializers.CharField()
+    calcul = MaisonCalculeeSerializer(required=False)
+
+
+# ============================================================================
+# SECTION 3 : SERIALIZERS POUR LES MODÈLES LEGACY (ENREGISTREMENT)
+# ============================================================================
+
+class DevisDetailCreateSerializer(serializers.Serializer):
+    """
+    Serializer pour créer un DevisDetail.
+    Adapté au modèle legacy automobile - utilisé pour stocker une maison MRH.
+    
+    Note: Le modèle DevisDetail a été conçu pour l'automobile, donc certains champs
+    ne sont pas pertinents pour MRH mais doivent être remplis avec des valeurs par défaut.
+    """
+    
+    # Relation avec Devis
+    iddevis = serializers.IntegerField(
+        help_text="ID du devis parent"
+    )
+    
+    # Champs obligatoires (avec valeurs par défaut pour MRH)
+    idoffre = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID de l'offre (peut être NULL pour MRH)"
+    )
+    
+    idtarif = serializers.IntegerField(
+        required=False,
+        default=0,
+        help_text="ID du tarif (0 par défaut pour MRH)"
+    )
+    
+    vehicule = serializers.IntegerField(
+        required=False,
+        default=0,
+        help_text="ID véhicule (0 pour MRH - champ legacy)"
+    )
+    
+    # Montants calculés pour MRH
+    primenette = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime nette de la maison"
+    )
+    
+    taxeenregistrement = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Taxe totale de la maison"
+    )
+    
+    primeannuelle = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime TTC de la maison (primenette + taxeenregistrement)"
+    )
+    
+    # Champs utilisables pour stocker des infos MRH
+    observation = serializers.CharField(
+        max_length=50,
+        required=False,
+        default='',
+        allow_blank=True,
+        help_text="Observations - peut contenir l'usage MRH ou l'adresse (tronquée)"
+    )
+    
+    # Champs avec valeurs par défaut pour compatibilité
+    nombreplace = serializers.IntegerField(
+        required=False,
+        default=0,
+        help_text="Nombre de places (0 pour MRH)"
+    )
+    
+    chargeutile = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Charge utile (0 pour MRH)"
+    )
+    
+    valeurneuve = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Valeur neuve (peut stocker valeur_batiment pour MRH)"
+    )
+    
+    valeurvenale = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Valeur vénale (peut stocker valeur_contenu pour MRH)"
+    )
+    
+    valeuraccessoire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Valeur accessoire (0 pour MRH)"
+    )
+    
+    fga = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="FGA (0 pour MRH)"
+    )
+    
+    # Booléens
+    remorque = serializers.BooleanField(
+        required=False,
+        default=False
+    )
+    
+    extincteur = serializers.BooleanField(
+        required=False,
+        default=False
+    )
+    
+    provisoire = serializers.BooleanField(
+        required=False,
+        default=False
+    )
+    
+    carteverte = serializers.BooleanField(
+        required=False,
+        default=False
+    )
+    
+    # Champs texte avec valeurs par défaut
+    matricule = serializers.CharField(
+        max_length=50,
+        required=False,
+        default='MRH',
+        help_text="Matricule (MRH par défaut)"
+    )
+    
+    typeimmat = serializers.CharField(
+        max_length=1,
+        required=False,
+        default='M'
+    )
+    
+    attestation = serializers.CharField(
+        max_length=50,
+        required=False,
+        default=''
+    )
+    
+    def validate(self, data):
+        """Validation et calcul de primeannuelle si nécessaire"""
+        # Assurer que primeannuelle = primenette + taxeenregistrement
+        if 'primenette' in data and 'taxeenregistrement' in data:
+            data['primeannuelle'] = data['primenette'] + data['taxeenregistrement']
+        
+        return data
+
+
+class DevisMRHDetGarantieCreateSerializer(serializers.Serializer):
+    """
+    Serializer pour créer un DevisDetGarantie.
+    Enregistre les garanties MRH avec leurs primes.
+    """
+    
+    # Relations
+    IdDevisDet = serializers.IntegerField(
+        help_text="ID du DevisDetail (maison) parent"
+    )
+    
+    IdGarantie = serializers.IntegerField(
+        help_text="ID de la garantie dans stdgarantie (obtenu via GarantieMRH.get_id_garantie_std())"
+    )
+    
+    # Statut
+    Acquise = serializers.BooleanField(
+        default=True,
+        help_text="Garantie acquise (toujours True pour garanties obligatoires)"
+    )
+    
+    # Capital et franchise (pour MRH, peuvent être NULL)
+    Capital = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Capital assuré pour cette garantie (optionnel pour MRH)"
+    )
+    
+    Franchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Franchise applicable (optionnel pour MRH)"
+    )
+    
+    TexteFranchise = serializers.CharField(
+        max_length=120,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Description de la franchise"
+    )
+    
+    Formule = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Formule (non utilisé pour MRH)"
+    )
+    
+    # Montants calculés (champs principaux)
+    PrimeNette = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime nette de la garantie"
+    )
+    
+    taxe = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Taxe sur la garantie"
+    )
+    
+    primeannuelle = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime TTC de la garantie (PrimeNette + taxe)"
+    )
+    
+    # Champs old_ (pour historique - valeurs par défaut)
+    old_acquise = serializers.CharField(
+        max_length=1,
+        required=False,
+        default='0'
+    )
+    
+    old_capital = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True
+    )
+    
+    old_franchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True
+    )
+    
+    old_formule = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+    
+    old_places = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+    
+    old_primenette = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0
+    )
+    
+    # Champs spécifiques (non utilisés pour MRH - valeurs par défaut)
+    deces = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True
+    )
+    
+    ipp = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True
+    )
+    
+    fraismed = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True
+    )
+    
+    hosp = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True
+    )
+    
+    minfranchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0
+    )
+    
+    maxfranchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0
+    )
+    
+    def validate(self, data):
+        """Validation et calcul de primeannuelle si nécessaire"""
+        # Assurer que primeannuelle = PrimeNette + taxe
+        if 'PrimeNette' in data and 'taxe' in data:
+            data['primeannuelle'] = data['PrimeNette'] + data['taxe']
+        
+        return data
+
+
+# ============================================================================
+# SERIALIZERS UTILITAIRES
+# ============================================================================
+
+class DevisUpdateTotauxSerializer(serializers.Serializer):
+    """
+    Serializer pour mettre à jour les totaux d'un devis après calcul.
+    Utilisé pour mettre à jour le modèle Devis avec les montants consolidés.
+    """
+    
+    primenette = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime nette totale (somme de toutes les maisons)"
+    )
+    
+    taxe = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Taxe totale (somme de toutes les maisons)"
+    )
+    
+    accessoire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Accessoires (frais de dossier, etc.)"
+    )
+    
+    primeannuelle = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime annuelle (primenette + taxe + accessoire avant FGA et CEDEAO)"
+    )
+    
+    fga = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="FGA (Fonds de Garantie Automobile - 0 pour MRH)"
+    )
+    
+    cedeao = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Taxe CEDEAO - 0 pour MRH)"
+    )
+    
+    primettc = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        help_text="Prime TTC finale (primenette + taxe + accessoire)"
+    )
+
+
+class AccessoiresConfigSerializer(serializers.Serializer):
+    """
+    Serializer pour configurer les accessoires (frais de dossier, etc.)
+    Ces montants peuvent être ajoutés au devis.
+    """
+    
+    accessoire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        default=0,
+        help_text="Montant total des accessoires"
+    )
+    
+    accessoirecompagnie = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Part compagnie des accessoires"
+    )
+    
+    accessoireintermediaire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Part intermédiaire des accessoires"
+    )
+    
+    accessoiregestionnaire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        help_text="Part gestionnaire des accessoires"
+    )
+    
+    def validate(self, data):
+        """Vérifier que la somme des parts = accessoire total"""
+        total = data.get('accessoire', 0)
+        somme_parts = (
+            data.get('accessoirecompagnie', 0) +
+            data.get('accessoireintermediaire', 0) +
+            data.get('accessoiregestionnaire', 0)
+        )
+        
+        if total > 0 and abs(total - somme_parts) > 0.01:  # Tolérance de 0.01
+            raise serializers.ValidationError(
+                "La somme des parts d'accessoires doit être égale au montant total des accessoires"
+            )
+        
+        return data
+
+
+class UsageInfoDetailSerializer(serializers.Serializer):
+    """
+    Serializer pour obtenir les informations détaillées d'un usage.
+    Utile pour l'endpoint GET /usages/{code}/
+    """
+    from configuration_api.serializers import SousGarantieMRHSerializer, OptionSerializer
+    code = serializers.CharField()
+    libelle = serializers.CharField()
+    description = serializers.CharField()
+    formule = serializers.CharField()
+    
+    parametres_requis = serializers.DictField()
+    coefficients = serializers.DictField()
+    
+    sous_garanties_obligatoires = SousGarantieMRHSerializer(many=True)
+    sous_garanties_optionnelles = SousGarantieMRHSerializer(many=True)
+    options_disponibles = OptionSerializer(many=True)
+
+
+class StatutDevisSerializer(serializers.Serializer):
+    """Serializer pour mettre à jour le statut d'un devis"""
+    
+    statut = serializers.ChoiceField(
+        choices=[
+            ('ACTIF', 'Actif'),
+            ('CONFIRME', 'Confirmé'),
+            ('ANNULE', 'Annulé'),
+            ('EXPIRE', 'Expiré'),
+        ],
+        help_text="Nouveau statut du devis"
+    )
+    
+    motifannulation = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        help_text="Motif d'annulation (requis si statut=ANNULE)"
+    )
+    
+    def validate(self, data):
+        """Vérifier que le motif est fourni pour une annulation"""
+        if data.get('statut') == 'ANNULE' and not data.get('motifannulation'):
+            raise serializers.ValidationError({
+                'motifannulation': "Le motif d'annulation est requis pour annuler un devis"
+            })
+        return data
+
+
+class ErrorSerializer(serializers.Serializer):
+    """Serializer standard pour les erreurs"""
+    
+    erreur = serializers.CharField()
+    details = serializers.DictField(required=False)
+    code = serializers.CharField(required=False)
+
+
+class MaisonStorageDataSerializer(serializers.Serializer):
+    """
+    Serializer pour stocker les données MRH d'une maison en JSON.
+    Ces données peuvent être stockées dans un champ JSON de DevisDetail ou dans une table séparée.
+    """
+    
+    code_usage = serializers.CharField()
+    libelle_usage = serializers.CharField()
+    
+    # Paramètres de calcul utilisés
+    valeur_batiment = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+    
+    valeur_contenu = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+    
+    loyer_mensuel = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+    
+    capital_rvt = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+    
+    # Options et garanties optionnelles sélectionnées
+    options_selectionnees = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+    
+    sous_garanties_optionnelles_selectionnees = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+    
+    # Informations supplémentaires
+    adresse = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+
+
+# ============================================================================
+# VALIDATION HELPERS
+# ============================================================================
+
+def validate_decimal_positive(value: Decimal, field_name: str) -> Decimal:
+    """Helper pour valider qu'un Decimal est positif"""
+    if value is not None and value <= 0:
+        raise serializers.ValidationError(
+            {field_name: f"{field_name} doit être strictement positif."}
+        )
+    return value

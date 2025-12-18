@@ -110,6 +110,45 @@ from autorisations.models import DemandeAutorisation, TypeOperation
 from autorisations.tasks import envoyer_notification_nouvelle_demande
 from django.contrib.contenttypes.models import ContentType
 
+
+from decimal import Decimal
+from typing import Dict, List
+
+# Import du service de calcul de prime MRH
+from .mrh_calcul_service import MRHCalculService
+
+# Import des modèles MRH
+from configuration_api.models import (
+    UsageHabitation,
+    SousGarantieMRH,
+    ParametresCalcul,
+    Option,
+    SousGarantieForfait,
+)
+
+from configuration_api.serializers import (
+    # Serializers lecture
+    UsageHabitationSerializer,
+    SousGarantieMRHSerializer,
+    OptionSerializer,
+    SousGarantieForfaitSerializer,
+    ParametresCalculSerializer,
+)
+# Import des serializers
+from .serializers import (
+    # Serializers requêtes
+    MaisonCalculRequestSerializer,
+    DevisMRHCreateRequestSerializer,
+    MaisonAjoutRequestSerializer,
+    
+    # Serializers réponses
+    DevisMRHResponseSerializer,
+    MaisonCalculeeSerializer,
+    DevisMRHCalculeResponseSerializer,
+    MaisonAjouteeResponseSerializer,
+    ErrorSerializer,
+)
+
 from .exceltopostgresql import export_excel
 
 from .database import (
@@ -2101,3 +2140,651 @@ class PrimeUpdateAPIView(APIView):
                 )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# ============================================================================
+# SECTION 1 : ENDPOINTS DE RÉFÉRENCE (LECTURE SEULE)
+# ============================================================================
+
+class UsageHabitationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet pour lister les usages habitation disponibles.
+    
+    GET /api/mrh/usages/
+    GET /api/mrh/usages/{code}/
+    """
+    queryset = UsageHabitation.objects.filter(actif=True).order_by('libelle')
+    serializer_class = UsageHabitationSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'code'
+    
+    @action(detail=True, methods=['get'])
+    def parametres(self, request, code=None):
+        """
+        Retourne les paramètres de calcul pour un usage spécifique.
+        
+        GET /api/mrh/usages/{code}/parametres/
+        """
+        usage = cast(UsageHabitation, self.get_object())
+        
+        try:
+            parametres = usage.parametres
+            serializer = ParametresCalculSerializer(parametres)
+            return Response(serializer.data)
+        except ParametresCalcul.DoesNotExist:
+            return Response(
+                {'erreur': f'Paramètres de calcul non trouvés pour {code}'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=True, methods=['get'])
+    def garanties(self, request, code=None):
+        """
+        Retourne les sous-garanties (obligatoires et optionnelles) pour un usage.
+        
+        GET /api/mrh/usages/{code}/garanties/
+        """
+        usage = cast(UsageHabitation, self.get_object())
+        
+        # Garanties obligatoires
+        sous_garanties_oblig = usage.sous_garanties_liees.filter(
+            obligatoire=True,
+            actif=True
+        ).select_related('sous_garantie').order_by('ordre_affichage')
+        
+        # Garanties optionnelles
+        sous_garanties_opt = usage.sous_garanties_liees.filter(
+            obligatoire=False,
+            actif=True
+        ).select_related('sous_garantie').order_by('ordre_affichage')
+        
+        return Response({
+            'obligatoires': [
+                {
+                    'code': gu.sous_garantie.code,
+                    'libelle': gu.sous_garantie.libelle,
+                    'taux_repartition': gu.taux_repartition,
+                }
+                for gu in sous_garanties_oblig
+            ],
+            'optionnelles': [
+                {
+                    'code': gu.sous_garantie.code,
+                    'libelle': gu.sous_garantie.libelle,
+                }
+                for gu in sous_garanties_opt
+            ]
+        })
+    
+    @action(detail=True, methods=['get'])
+    def options(self, request, code=None):
+        """
+        Retourne les options applicables à un usage.
+        
+        GET /api/mrh/usages/{code}/options/
+        """
+        usage = self.get_object()
+        
+        options = Option.objects.filter(
+            usages_applicables__usage=usage,
+            usages_applicables__actif=True,
+            actif=True
+        ).distinct().order_by('type_option', 'libelle')
+        
+        serializer = OptionSerializer(options, many=True)
+        return Response(serializer.data)
+
+
+class SousGarantieMRHViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet pour lister les sous-garanties MRH.
+    
+    GET /api/mrh/sous-garanties/
+    GET /api/mrh/sous-garanties/{code}/
+    """
+    queryset = SousGarantieMRH.objects.filter(actif=True).order_by('type', 'libelle')
+    serializer_class = SousGarantieMRHSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'code'
+
+
+class SousGarantieForfaitViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet pour lister les garanties optionnelles à forfait.
+    
+    GET /api/mrh/sous-garanties-forfait/
+    """
+    queryset = SousGarantieForfait.objects.filter(actif=True).select_related('sous_garantie')
+    serializer_class = SousGarantieForfaitSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class OptionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet pour lister les options disponibles.
+    
+    GET /api/mrh/options/
+    GET /api/mrh/options/{code}/
+    """
+    queryset = Option.objects.filter(actif=True).order_by('type_option', 'libelle')
+    serializer_class = OptionSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'code'
+
+
+# ============================================================================
+# SECTION 2 : ENDPOINT DE CALCUL (SANS ENREGISTREMENT)
+# ============================================================================
+
+class CalculMaisonView(APIView):
+    """
+    Calcule la prime d'une maison SANS l'enregistrer.
+    Utile pour des simulations ou devis rapides.
+    
+    POST /api/mrh/calcul/maison/
+    
+    Body:
+    {
+        "code_usage": "proprietaire_occupant_total",
+        "valeur_batiment": 50000000,
+        "valeur_contenu": 10000000,
+        "options": ["presence_gardien"],
+        "sous_garanties_optionnelles": ["RC_MEMBRE"]
+    }
+    
+    Response:
+    {
+        "code_usage": "proprietaire_occupant_total",
+        "libelle_usage": "Propriétaire Occupant Total",
+        "prime_base": 152000.00,
+        "prime_nette_totale": 153680.00,
+        "taxe_totale": 27869.60,
+        "prime_ttc_totale": 181549.60,
+        "sous_garanties": [...],
+        "options_appliquees": [...]
+    }
+    """
+    permission_classes = [IsAuthenticated]
+                                    
+    def post(self, request):
+        # Valider les données d'entrée
+        serializer = MaisonCalculRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = serializer.validated_data
+        service = MRHCalculService()
+        
+        try:
+            # Calculer la prime
+            resultat = service.calculer_maison(
+                code_usage=data['code_usage'],
+                valeur_batiment=data.get('valeur_batiment'),
+                valeur_contenu=data.get('valeur_contenu'),
+                loyer_mensuel=data.get('loyer_mensuel'),
+                capital_rvt=data.get('capital_rvt'),
+                options=[opt['code_option'] for opt in data.get('options', [])],
+                sous_garanties_optionnelles=[
+                    gar['code_sous_garantie'] for gar in data.get('sous_garanties_optionnelles', [])
+                ],
+                adresse=data.get('adresse'),
+                description=data.get('description'),
+            )
+            
+            # Sérialiser la réponse
+            response_serializer = MaisonCalculeeSerializer(resultat)
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+# ============================================================================
+# SECTION 3 : ENDPOINTS DE GESTION DE DEVIS
+# ============================================================================
+
+class DevisMRHViewSet(viewsets.ViewSet):
+    """
+    ViewSet pour la gestion des devis MRH.
+    
+    POST /api/mrh/devis/ - Créer un devis vide
+    GET /api/mrh/devis/{id}/ - Récupérer un devis
+    GET /api/mrh/devis/ - Lister les devis
+    DELETE /api/mrh/devis/{id}/ - Supprimer un devis
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def create(self, request):
+        """
+        Crée un nouveau devis MRH vide.
+        
+        POST /api/mrh/devis/
+        
+        Body:
+        {
+            "idintermediaire": 1,
+            "idcompagnie": 1,
+            "idproduit": 4,
+            "idtarif": 81
+            "idoffre": 10,
+            "idclient": 123,
+            "dateeffet": "2024-01-01T00:00:00Z",
+            "observation": "Devis MRH Villa Cocody"
+        }
+        """
+        serializer = DevisMRHCreateRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = serializer.validated_data
+        service = MRHCalculService()
+        
+        try:
+            # Créer le devis
+            id_devis = service.creer_devis(
+                idintermediaire=data['idintermediaire'],
+                idcompagnie=data['idcompagnie'],
+                idproduit=data['idproduit'],
+                idtarif=data['idtarif'],
+                idoffre=data['idoffre'],
+                idclient=data['idclient'],
+                dateeffet=data['dateeffet'],
+                **{k: v for k, v in data.items() if k not in [
+                    'idintermediaire', 'idcompagnie', 'idproduit', 
+                    'idoffre', 'idclient', 'dateeffet'
+                ]}
+            )
+            
+            # Retourner la réponse
+            from .models import Devis  # Import local
+            devis = Devis.objects.get(iddevis=id_devis)
+            
+            response_data = {
+                'devis_id': id_devis,
+                'numero_devis': devis.numerodevis or '',
+                'statut': 'success',
+                'message': 'Devis créé avec succès',
+                'date_creation': devis.dateemission,
+            }
+            
+            response_serializer = DevisMRHResponseSerializer(response_data)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def retrieve(self, request, pk=None):
+        """
+        Récupère les détails d'un devis avec toutes ses maisons.
+        
+        GET /api/mrh/devis/{id}/
+        """
+        from .models import Devis, DevisDetail  # Import local
+        
+        try:
+            devis = Devis.objects.get(iddevis=pk)
+            maisons = DevisDetail.objects.filter(iddevis_id=pk)
+            
+            # Construire la réponse
+            response_data = {
+                'devis_id': devis.iddevis,
+                'numero_devis': devis.numerodevis,
+                'statut': 'success',
+                'message': 'Devis récupéré avec succès',
+                'prime_nette_totale': devis.primenette,
+                'taxe_totale': devis.taxe,
+                'accessoires': devis.accessoire,
+                'prime_ttc_totale': devis.primettc,
+                'maisons': [
+                    {
+                        'maison_id': str(m.iddevisdetail),
+                        'code_usage': m.observation[:30] if m.observation else '',  # Approximatif
+                        'libelle_usage': m.observation[:30] if m.observation else '',
+                        'parametres': {
+                            'valeur_batiment': m.valeurneuve,
+                            'valeur_contenu': m.valeurvenale,
+                        },
+                        'prime_nette_totale': m.primenette,
+                        'taxe_totale': m.taxeenregistrement,
+                        'prime_ttc_totale': m.primeannuelle,
+                        'garanties': [],  # Peut être enrichi si besoin
+                        'options_appliquees': [],
+                        'adresse': m.observation[33:] if len(m.observation or '') > 33 else '',
+                    }
+                    for m in maisons
+                ],
+                'nombre_maisons': maisons.count(),
+                'date_calcul': devis.dateemission,
+            }
+            
+            serializer = DevisMRHCalculeResponseSerializer(response_data)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except Devis.DoesNotExist:
+            return Response(
+                {'error': f'Devis {pk} non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def list(self, request):
+        """
+        Liste les devis (avec filtres optionnels).
+        
+        GET /api/mrh/devis/?client={id}&statut={statut}
+        """
+        from .models import Devis  # Import local
+        
+        queryset = Devis.objects.all().order_by('-dateemission')
+        
+        # Filtres optionnels
+        client_id = request.query_params.get('client', None)
+        if client_id:
+            queryset = queryset.filter(client_id=client_id)
+        
+        statut = request.query_params.get('statut', None)
+        if statut:
+            queryset = queryset.filter(statut=statut)
+        
+        # Pagination simple
+        page_size = int(request.query_params.get('page_size', 20))
+        page = int(request.query_params.get('page', 1))
+        start = (page - 1) * page_size
+        end = start + page_size
+        
+        devis_list = queryset[start:end]
+        
+        data = [
+            {
+                'devis_id': d.iddevis,
+                'numero_devis': d.numerodevis,
+                'client': d.client_id,
+                'date_effet': d.dateeffet,
+                'prime_ttc': d.primettc,
+                'statut': d.statut,
+            }
+            for d in devis_list
+        ]
+        
+        return Response({
+            'count': queryset.count(),
+            'page': page,
+            'page_size': page_size,
+            'results': data
+        }, status=status.HTTP_200_OK)
+    
+    def destroy(self, request, pk=None):
+        """
+        Supprime un devis (et toutes ses maisons en cascade).
+        
+        DELETE /api/mrh/devis/{id}/
+        """
+        from .models import Devis  # Import local
+        
+        try:
+            devis = Devis.objects.get(iddevis=pk)
+            
+            # Vérifier que le devis n'est pas confirmé
+            if devis.confirme:
+                return Response(
+                    {'error': 'Impossible de supprimer un devis confirmé'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            devis.delete()
+            
+            return Response(
+                {'message': f'Devis {pk} supprimé avec succès'},
+                status=status.HTTP_204_NO_CONTENT
+            )
+        
+        except Devis.DoesNotExist:
+            return Response(
+                {'error': f'Devis {pk} non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+# ============================================================================
+# SECTION 4 : ENDPOINTS DE GESTION DE MAISONS
+# ============================================================================
+
+class MaisonViewSet(viewsets.ViewSet):
+    """
+    ViewSet pour la gestion des maisons dans un devis.
+    
+    POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
+    DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/ - Supprimer une maison
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def create(self, request, devis_id=None):
+        """
+        Ajoute une maison à un devis existant.
+        Calcule la prime et enregistre dans la base.
+        Met à jour automatiquement les totaux du devis.
+        
+        POST /api/mrh/devis/{devis_id}/maisons/
+        
+        Body:
+        {
+            "maison": {
+                "code_usage": "proprietaire_occupant_total",
+                "valeur_batiment": 50000000,
+                "valeur_contenu": 10000000,
+                "options": ["presence_gardien"],
+                "sous_garanties_optionnelles": ["RC_MEMBRE"],
+                "adresse": "Cocody, Angré"
+            }
+        }
+        """
+        from .models import Devis
+        
+        # Vérifier que le devis existe
+        try:
+            devis = Devis.objects.get(iddevis=devis_id)
+        except Devis.DoesNotExist:
+            return Response(
+                {'error': f'Devis {devis_id} non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Valider les données
+        serializer = MaisonAjoutRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        data = serializer.validated_data['maison']
+        service = MRHCalculService()
+        
+        try:
+            # Calculer et enregistrer la maison
+            resultat = service.calculer_et_enregistrer_maison(
+                id_devis=devis_id,
+                id_produit=devis.produit_id,
+                id_compagnie=devis.compagnie_id,
+                code_usage=data['code_usage'],
+                valeur_batiment=data.get('valeur_batiment'),
+                valeur_contenu=data.get('valeur_contenu'),
+                loyer_mensuel=data.get('loyer_mensuel'),
+                capital_rvt=data.get('capital_rvt'),
+                options=[opt['code_option'] for opt in data.get('options', [])],
+                garanties_optionnelles=[
+                    gar['code_garantie'] for gar in data.get('garanties_optionnelles', [])
+                ],
+                adresse=data.get('adresse'),
+                description=data.get('description'),
+            )
+            
+            # Construire la réponse
+            response_data = {
+                'devis_id': devis_id,
+                'maison_id': resultat['id_maison'],
+                'statut': 'success',
+                'message': 'Maison ajoutée avec succès',
+                'calcul': resultat['calcul'],
+            }
+            
+            response_serializer = MaisonAjouteeResponseSerializer(response_data)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    def destroy(self, request, devis_id=None, pk=None):
+        """
+        Supprime une maison d'un devis.
+        Met à jour automatiquement les totaux du devis.
+        
+        DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/
+        """
+        from .models import Devis, DevisDetail  # Import local
+        
+        try:
+            # Vérifier que le devis existe
+            devis = Devis.objects.get(iddevis=devis_id)
+            
+            # Vérifier que la maison existe et appartient bien au devis
+            maison = DevisDetail.objects.get(
+                iddevisdetail=pk,
+                iddevis_id=devis_id
+            )
+            
+            # Supprimer la maison (les garanties seront supprimées en cascade)
+            maison.delete()
+            
+            # Mettre à jour les totaux du devis
+            service = MRHCalculService()
+            totaux = service.mettre_a_jour_totaux_devis(
+                id_devis=devis_id,
+                id_produit=devis.produit_id,
+                id_compagnie=devis.compagnie_id,
+                inclure_accessoires=True
+            )
+            
+            return Response(
+                {
+                    'message': f'Maison {pk} supprimée avec succès',
+                    'totaux_devis': totaux
+                },
+                status=status.HTTP_200_OK
+            )
+        
+        except Devis.DoesNotExist:
+            return Response(
+                {'error': f'Devis {devis_id} non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except DevisDetail.DoesNotExist:
+            return Response(
+                {'error': f'Maison {pk} non trouvée dans le devis {devis_id}'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# SECTION 5 : ENDPOINTS UTILITAIRES
+# ============================================================================
+
+class ValidateParametersView(APIView):
+    """
+    Valide les paramètres pour un usage donné sans faire de calcul.
+    Utile pour validation côté frontend.
+    
+    POST /api/mrh/validate-parameters/
+    
+    Body:
+    {
+        "code_usage": "proprietaire_occupant_total",
+        "valeur_batiment": 50000000,
+        "valeur_contenu": 10000000
+    }
+    
+    Response:
+    {
+        "valid": true,
+        "errors": {}
+    }
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        serializer = MaisonCalculRequestSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            return Response({
+                'valid': True,
+                'errors': {}
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'valid': False,
+                'errors': serializer.errors
+            }, status=status.HTTP_200_OK)
+
+
+class RecalculerDevisView(APIView):
+    """
+    Recalcule les totaux d'un devis (utile après modification manuelle).
+    
+    POST /api/mrh/devis/{devis_id}/recalculer/
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, devis_id):
+        from .models import Devis  # Import local
+        
+        try:
+            devis = Devis.objects.get(iddevis=devis_id)
+            
+            service = MRHCalculService()
+            totaux = service.mettre_a_jour_totaux_devis(
+                id_devis=devis_id,
+                id_produit=devis.produit_id,
+                id_compagnie=devis.compagnie_id,
+                inclure_accessoires=True
+            )
+            
+            return Response({
+                'message': 'Devis recalculé avec succès',
+                'totaux': totaux
+            }, status=status.HTTP_200_OK)
+        
+        except Devis.DoesNotExist:
+            return Response(
+                {'error': f'Devis {devis_id} non trouvé'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

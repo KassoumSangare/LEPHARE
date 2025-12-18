@@ -8,6 +8,10 @@ from django_celery_beat.models import (
     PeriodicTask,
 )
 
+
+from decimal import Decimal
+from typing import Dict, List, Optional
+
 from core.validators import validate_contrat_validity_period, ErrorMessage
 from core.serializers import EnregistrementDevisBaseSerializer
 
@@ -1405,3 +1409,132 @@ class TypeContratSanteSerializer(serializers.ModelSerializer):
     class Meta:
         model = TypeContratSante
         fields = "__all__"
+
+
+
+# ============================================================================
+# SERIALIZERS POUR LES MODÈLES MRH DE BASE (LECTURE)
+# ============================================================================
+
+class UsageHabitationSerializer(serializers.ModelSerializer):
+    """Serializer pour les usages habitation (lecture seule)"""
+    
+    nombre_sous_garanties_obligatoires = serializers.SerializerMethodField()
+    nombre_sous_garanties_optionnelles = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UsageHabitation
+        fields = [
+            'code',
+            'libelle',
+            'description',
+            'actif',
+            'nombre_sous_garanties_obligatoires',
+            'nombre_sous_garanties_optionnelles',
+        ]
+        read_only_fields = fields
+    
+    def get_nombre_sous_garanties_obligatoires(self, obj):
+        """Compte les sous-garanties obligatoires pour cet usage"""
+        return obj.sous_garanties_liees.filter(obligatoire=True, actif=True).count()
+    
+    def get_nombre_sous_garanties_optionnelles(self, obj):
+        """Compte les sous-garanties optionnelles pour cet usage"""
+        return obj.sous_garanties_liees.filter(obligatoire=False, actif=True).count()
+
+
+class SousGarantieMRHSerializer(serializers.ModelSerializer):
+    """Serializer pour les sous-garanties MRH (lecture seule)"""
+    
+    code_sous_garantie_std = serializers.SerializerMethodField()
+    id_sous_garantie_std = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = SousGarantieMRH
+        fields = [
+            'code',
+            'libelle',
+            'type',
+            'description',
+            'code_sous_garantie_std',
+            'id_sous_garantie_std',
+            'actif',
+        ]
+        read_only_fields = fields
+    
+    def get_code_sous_garantie_std(self, obj):
+        """Retourne le code de la garantie standard"""
+        return obj.get_code_sous_garantie_std()
+    
+    def get_id_sous_garantie_std(self, obj):
+        """Retourne l'ID de la garantie standard"""
+        return obj.get_id_sous_garantie_std()
+
+
+class SousGarantieForfaitSerializer(serializers.ModelSerializer):
+    """Serializer pour les sous-garanties à forfait"""
+    
+    sous_garantie_code = serializers.CharField(source='sous_garantie.code', read_only=True)
+    sous_garantie_libelle = serializers.CharField(source='sous_garantie.libelle', read_only=True)
+    
+    class Meta:
+        model = SousGarantieForfait
+        fields = [
+            'sous_garantie_code',
+            'sous_garantie_libelle',
+            'prime_nette',
+            'description',
+        ]
+        read_only_fields = fields
+
+
+class OptionSerializer(serializers.ModelSerializer):
+    """Serializer pour les options (lecture seule)"""
+    
+    sous_garantie_cible_libelle = serializers.CharField(
+        source='sous_garantie_cible.libelle',
+        read_only=True,
+        allow_null=True
+    )
+    
+    class Meta:
+        model = Option
+        fields = [
+            'code',
+            'libelle',
+            'description',
+            'type_option',
+            'type_ajustement',
+            'sous_garantie_cible',
+            'sous_garantie_cible_libelle',
+            'taux_ajustement',
+            'montant_forfait',
+            'signe_ajustement',
+        ]
+        read_only_fields = fields
+
+
+class ParametresCalculSerializer(serializers.ModelSerializer):
+    """Serializer pour les paramètres de calcul (lecture seule)"""
+    
+    usage_libelle = serializers.CharField(source='usage.libelle', read_only=True)
+    
+    class Meta:
+        model = ParametresCalcul
+        fields = [
+            'usage',
+            'usage_libelle',
+            'coeff_valeur_batiment',
+            'coeff_valeur_contenu',
+            'coeff_loyer',
+            'coeff_capital_rvt',
+            'coeff_reduction',
+            'forfait_fixe',
+            'param_valeur_batiment_requis',
+            'param_valeur_contenu_requis',
+            'param_loyer_requis',
+            'param_capital_rvt_requis',
+            'formule_texte',
+        ]
+        read_only_fields = fields
+

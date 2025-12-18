@@ -1,9 +1,10 @@
 from django.db import models
 from django.core.validators import MinLengthValidator
-
-# from djmoney.models.fields import MoneyField
-from django.utils import timezone
 from django.db.models import CheckConstraint, Q, F, Func
+
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
+from decimal import Decimal
 
 
 class OffreAutomobileBoisee(Func):
@@ -428,6 +429,7 @@ class Categorie(models.Model):
 
 
 class Tarif(models.Model):
+    CATEGORY_MRH = '320'
     IdTarif = models.AutoField(
         verbose_name="Id Tarif", db_column="idtarif", primary_key=True
     )
@@ -478,6 +480,9 @@ class Tarif(models.Model):
         null=True,
         default="",
     )
+    @classmethod
+    def is_mrh(cls, tarif_id):
+        return cls.objects.filter(pk=tarif_id, CodeCategorie=cls.CATEGORY_MRH).exists()
 
     def __str__(self):
         return self.Libelle + " (" + self.CodeCategorie + ")"
@@ -2767,3 +2772,607 @@ class DepreciationVehicule(models.Model):
         verbose_name = "Taux de dépréciation des véhicules"
         verbose_name_plural= "Taux de dépréciation des véhicules"
         constraints = [models.UniqueConstraint(fields = ["genre_vehicule", "mois"], name="depreciation_vehicule_mois_genre_unique"),]
+        
+        
+
+# ============================================================================
+# IMPORT DU MODÈLE EXISTANT
+# ============================================================================
+# Importez votre modèle Garantie existant
+# from votre_app.models import Garantie as GarantieExistante
+
+
+# ============================================================================
+# MODÈLE 1 : USAGE HABITATION
+# ============================================================================
+class UsageHabitation(models.Model):
+    """
+    Les 8 types d'usage habitation pour MRH.
+    """
+    code = models.CharField(
+        max_length=50,
+        primary_key=True,
+        verbose_name="Code usage"
+    )
+    libelle = models.CharField(
+        max_length=200,
+        verbose_name="Libellé"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Description"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+    date_modification = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Date de modification"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_usage_habitation'
+        verbose_name = "Usage habitation"
+        verbose_name_plural = "Usages habitation"
+        ordering = ['libelle']
+
+    def __str__(self):
+        return f"{self.libelle} ({self.code})"
+
+
+# ============================================================================
+# MODÈLE 2 : GARANTIE MRH (Spécifique au produit MRH)
+# ============================================================================
+class SousGarantieMRH(models.Model):
+    """
+    Sous-Garanties spécifiques au produit MRH (19 garanties).
+    Ce modèle est lié au modèle SousGarantie existant via garantie_generale.
+    """
+    TYPE_CHOICES = [
+        ('OBLIGATOIRE', 'Obligatoire'),
+        ('OPTIONNELLE', 'Optionnelle'),
+    ]
+
+    code = models.CharField(
+        max_length=50,
+        primary_key=True,
+        verbose_name="Code sous-garantie MRH",
+        help_text="Code spécifique MRH (ex: INCENDIE, DEGAT_EAUX, etc.)"
+    )
+    libelle = models.CharField(
+        max_length=200,
+        verbose_name="Libellé"
+    )
+    type = models.CharField(
+        max_length=20,
+        choices=TYPE_CHOICES,
+        verbose_name="Type"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Description"
+    )
+    
+    # LIEN AVEC LE MODÈLE SOUS-GARANTIE EXISTANT
+    sous_garantie_std = models.ForeignKey(
+        SousGarantie,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        db_column='idsousgarantie',
+        related_name='config_mrh',
+        verbose_name="Sous-Garantie générale liée",
+        help_text="Lien avec la table stdsousgarantie existante"
+    )
+    
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+    date_modification = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Date de modification"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_sous_garantie'
+        verbose_name = "Sous-Garantie MRH"
+        verbose_name_plural = "Sous-Garanties MRH"
+        ordering = ['type', 'libelle']
+
+    def __str__(self):
+        return f"{self.libelle} ({self.type})"
+    
+    def get_code_sous_garantie_std(self):
+        """Retourne le CodeGarantie du modèle stdgarantie si lié"""
+        if self.sous_garantie_std:
+            return self.sous_garantie_std.CodeSousGarantie
+        return None
+    
+    def get_id_sous_garantie_std(self):
+        """Retourne l'IdGarantie du modèle stdgarantie si lié"""
+        if self.sous_garantie_std:
+            return self.sous_garantie_std.IdSousGarantie
+        return None
+
+
+
+# ============================================================================
+# MODÈLE 3 : GARANTIE ↔ USAGE (Mapping avec taux de répartition)
+# ============================================================================
+class SousGarantieUsage(models.Model):
+    """
+    Mapping entre garanties MRH et usages avec taux de répartition.
+    """
+    usage = models.ForeignKey(
+        UsageHabitation,
+        on_delete=models.CASCADE,
+        related_name='sous_garanties_liees',
+        verbose_name="Usage"
+    )
+    sous_garantie = models.ForeignKey(
+        SousGarantieMRH,  # ← Utilise GarantieMRH
+        on_delete=models.CASCADE,
+        related_name='usages_lies',
+        verbose_name="Sous-Garantie MRH"
+    )
+    obligatoire = models.BooleanField(
+        default=True,
+        verbose_name="Obligatoire"
+    )
+    taux_repartition = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        verbose_name="Taux de répartition (%)",
+        help_text="Pourcentage de répartition de la prime de base"
+    )
+    ordre_affichage = models.IntegerField(
+        blank=True,
+        null=True,
+        verbose_name="Ordre d'affichage"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_sous_garantie_usage'
+        verbose_name = "Sous-Garantie par usage"
+        verbose_name_plural = "Sous-Garanties par usage"
+        unique_together = [['usage', 'sous_garantie']]
+        ordering = ['usage', 'ordre_affichage']
+        indexes = [
+            models.Index(fields=['usage']),
+            models.Index(fields=['sous_garantie']),
+        ]
+
+    def __str__(self):
+        return f"{self.sous_garantie.libelle} - {self.usage.libelle}"
+
+    def clean(self):
+        if self.obligatoire and self.taux_repartition is None:
+            raise ValidationError({
+                'taux_repartition': 'Le taux de répartition est requis pour une garantie obligatoire.'
+            })
+
+
+# ============================================================================
+# MODÈLE 4 : PARAMÈTRES DE CALCUL
+# ============================================================================
+class ParametresCalcul(models.Model):
+    """
+    Paramètres de calcul des primes par usage.
+    """
+    usage = models.OneToOneField(
+        UsageHabitation,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name='parametres',
+        verbose_name="Usage"
+    )
+
+    # Coefficients de base (en ‰)
+    coeff_valeur_batiment = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Coefficient valeur bâtiment (‰)"
+    )
+    coeff_valeur_contenu = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Coefficient valeur contenu (‰)"
+    )
+    coeff_loyer = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Coefficient loyer (‰)"
+    )
+    coeff_capital_rvt = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Coefficient capital RVT (‰)"
+    )
+    coeff_reduction = models.DecimalField(
+        max_digits=5,
+        decimal_places=4,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('1'))],
+        verbose_name="Coefficient de réduction"
+    )
+    forfait_fixe = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('0'),
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Forfait fixe (FCFA)"
+    )
+
+    # Paramètres requis
+    param_valeur_batiment_requis = models.BooleanField(
+        default=False,
+        verbose_name="Valeur bâtiment requise"
+    )
+    param_valeur_contenu_requis = models.BooleanField(
+        default=False,
+        verbose_name="Valeur contenu requise"
+    )
+    param_loyer_requis = models.BooleanField(
+        default=False,
+        verbose_name="Loyer requis"
+    )
+    param_capital_rvt_requis = models.BooleanField(
+        default=False,
+        verbose_name="Capital RVT requis"
+    )
+
+    formule_texte = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Formule (texte)"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+    date_modification = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Date de modification"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_parametres_calcul'
+        verbose_name = "Paramètres de calcul"
+        verbose_name_plural = "Paramètres de calcul"
+
+    def __str__(self):
+        return f"Paramètres - {self.usage.libelle}"
+
+
+# ============================================================================
+# MODÈLE 5 : OPTION
+# ============================================================================
+class Option(models.Model):
+    """
+    Options générales et spécifiques pour ajustements de primes.
+    """
+    TYPE_OPTION_CHOICES = [
+        ('GENERALE', 'Générale'),
+        ('SPECIFIQUE', 'Spécifique'),
+    ]
+    TYPE_AJUSTEMENT_CHOICES = [
+        ('TYPE1', 'TYPE 1 - Taux sur prime de base'),
+        ('TYPE2', 'TYPE 2 - Taux sur prime garantie'),
+        ('FORFAIT', 'FORFAIT - Montant fixe'),
+    ]
+    SIGNE_CHOICES = [
+        ('+', 'Majoration'),
+        ('-', 'Réduction'),
+    ]
+
+    code = models.CharField(
+        max_length=50,
+        primary_key=True,
+        verbose_name="Code option"
+    )
+    libelle = models.CharField(
+        max_length=200,
+        verbose_name="Libellé"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Description"
+    )
+    type_option = models.CharField(
+        max_length=20,
+        choices=TYPE_OPTION_CHOICES,
+        verbose_name="Type d'option"
+    )
+    type_ajustement = models.CharField(
+        max_length=20,
+        choices=TYPE_AJUSTEMENT_CHOICES,
+        verbose_name="Type d'ajustement"
+    )
+    sous_garantie_cible = models.ForeignKey(
+        SousGarantieMRH,  # ← Utilise GarantieMRH
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name='options_liees',
+        verbose_name="Sous-Garantie cible"
+    )
+    taux_ajustement = models.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Taux d'ajustement"
+    )
+    montant_forfait = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Montant forfait (FCFA)"
+    )
+    signe_ajustement = models.CharField(
+        max_length=1,
+        choices=SIGNE_CHOICES,
+        blank=True,
+        null=True,
+        verbose_name="Signe ajustement"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+    date_modification = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Date de modification"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_option'
+        verbose_name = "Option"
+        verbose_name_plural = "Options"
+        ordering = ['type_option', 'libelle']
+        indexes = [
+            models.Index(fields=['sous_garantie_cible']),
+        ]
+
+    def __str__(self):
+        return f"{self.libelle} ({self.type_option})"
+
+    def clean(self):
+        if self.type_ajustement in ['TYPE1', 'TYPE2']:
+            if self.taux_ajustement is None:
+                raise ValidationError({
+                    'taux_ajustement': f'Le taux d\'ajustement est requis pour {self.type_ajustement}.'
+                })
+        elif self.type_ajustement == 'FORFAIT':
+            if self.montant_forfait is None:
+                raise ValidationError({
+                    'montant_forfait': 'Le montant forfait est requis pour TYPE FORFAIT.'
+                })
+
+
+# ============================================================================
+# MODÈLE 6 : OPTION ↔ USAGE
+# ============================================================================
+class OptionUsage(models.Model):
+    """
+    Applicabilité des options par usage.
+    """
+    option = models.ForeignKey(
+        Option,
+        on_delete=models.CASCADE,
+        related_name='usages_applicables',
+        verbose_name="Option"
+    )
+    usage = models.ForeignKey(
+        UsageHabitation,
+        on_delete=models.CASCADE,
+        related_name='options_applicables',
+        verbose_name="Usage"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_option_usage'
+        verbose_name = "Option par usage"
+        verbose_name_plural = "Options par usage"
+        unique_together = [['option', 'usage']]
+        ordering = ['usage', 'option']
+        indexes = [
+            models.Index(fields=['usage']),
+            models.Index(fields=['option']),
+        ]
+
+    def __str__(self):
+        return f"{self.option.libelle} - {self.usage.libelle}"
+
+
+# ============================================================================
+# MODÈLE 7 : CLÉ DE RÉPARTITION
+# ============================================================================
+class CleRepartition(models.Model):
+    """
+    Clés de répartition pour le mode imposé.
+    """
+    TYPE_REPARTITION_CHOICES = [
+        ('FIXE', 'Montant fixe'),
+        ('POURCENTAGE', 'Pourcentage'),
+    ]
+
+    usage = models.ForeignKey(
+        UsageHabitation,
+        on_delete=models.CASCADE,
+        related_name='cles_repartition',
+        verbose_name="Usage"
+    )
+    sous_garantie = models.ForeignKey(
+        SousGarantieMRH,  
+        on_delete=models.CASCADE,
+        related_name='cles_repartition',
+        verbose_name="Garantie"
+    )
+    type_repartition = models.CharField(
+        max_length=20,
+        choices=TYPE_REPARTITION_CHOICES,
+        verbose_name="Type de répartition"
+    )
+    montant_fixe = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Montant fixe (FCFA)"
+    )
+    taux_pourcentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        verbose_name="Taux pourcentage (%)"
+    )
+    groupe = models.IntegerField(
+        verbose_name="Groupe",
+        help_text="1 = montants fixes, 2 = pourcentages"
+    )
+    ordre_calcul = models.IntegerField(
+        blank=True,
+        null=True,
+        verbose_name="Ordre de calcul"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_cle_repartition'
+        verbose_name = "Clé de répartition"
+        verbose_name_plural = "Clés de répartition"
+        unique_together = [['usage', 'sous_garantie']]
+        ordering = ['usage', 'groupe', 'ordre_calcul']
+        indexes = [
+            models.Index(fields=['usage']),
+        ]
+
+    def __str__(self):
+        return f"{self.sous_garantie.libelle} - {self.usage.libelle} (Groupe {self.groupe})"
+
+    def clean(self):
+        if self.type_repartition == 'FIXE':
+            if self.montant_fixe is None:
+                raise ValidationError({
+                    'montant_fixe': 'Le montant fixe est requis pour type FIXE.'
+                })
+        elif self.type_repartition == 'POURCENTAGE':
+            if self.taux_pourcentage is None:
+                raise ValidationError({
+                    'taux_pourcentage': 'Le taux pourcentage est requis pour type POURCENTAGE.'
+                })
+
+
+# ============================================================================
+# MODÈLE 8 : SOUS-GARANTIE OPTIONNELLE À FORFAIT
+# ============================================================================
+class SousGarantieForfait(models.Model):
+    """
+    Garanties optionnelles avec prime nette forfaitaire.
+    """
+    sous_garantie = models.OneToOneField(
+        SousGarantieMRH, 
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name='forfait',
+        verbose_name="Garantie"
+    )
+    prime_nette = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0'))],
+        verbose_name="Prime nette (FCFA)"
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Description"
+    )
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif"
+    )
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date de création"
+    )
+    date_modification = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Date de modification"
+    )
+
+    class Meta:
+        db_table = 'stdmrh_sous_garantie_forfait'
+        verbose_name = "Sous-Garantie forfait"
+        verbose_name_plural = "Sous-Garanties forfait"
+
+    def __str__(self):
+        return f"{self.sous_garantie.libelle} - {self.prime_nette} FCFA"
+

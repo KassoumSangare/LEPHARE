@@ -74,7 +74,20 @@ from .views import (
     quote_unarchival,
 )
 
+from .views import UsageHabitationViewSet, SousGarantieMRHViewSet, OptionViewSet, DevisMRHViewSet, SousGarantieForfaitViewSet, CalculMaisonView, MaisonViewSet, ValidateParametersView, RecalculerDevisView
+
+# Créer le router pour les ViewSets
 router = routers.DefaultRouter()
+
+# Enregistrer les ViewSets de référence (lecture seule)
+router.register(r'mrh/usages', UsageHabitationViewSet, basename='usage')
+router.register(r'mrh/garanties', SousGarantieMRHViewSet, basename='garantie')
+router.register(r'mrh/garanties-forfait', SousGarantieForfaitViewSet, basename='garantie-forfait')
+router.register(r'mrh/options', OptionViewSet, basename='option')
+# Enregistrer les ViewSets de gestion (avec actions personnalisées)
+router.register(r'mrh/devis', DevisMRHViewSet, basename='devis-mrh')
+
+
 router.register(r"devis", DevisViewSet)
 # router.register(r"devisdetail", DevisDetailViewSet)
 router.register(r"devisdetgarantie", DevisDetGarantieViewSet)
@@ -377,4 +390,194 @@ urlpatterns = [
     path("majrecapprimes/", PrimeUpdateAPIView.as_view(), name="maj_recap_primes"),
     path("listecontratperiode/", ContractListView.as_view(), name="liste_contrat_periode"),
     
+    # ========================================================================
+    # SECTION 1 : ENDPOINTS DE RÉFÉRENCE (complément aux ViewSets)
+    # ========================================================================
+    # Les routes suivantes sont automatiquement générées par le router :
+    # GET /api/mrh/usages/ - Liste des usages
+    # GET /api/mrh/usages/{code}/ - Détail d'un usage
+    # GET /api/mrh/usages/{code}/parametres/ - Paramètres de calcul
+    # GET /api/mrh/usages/{code}/garanties/ - Garanties pour un usage
+    # GET /api/mrh/usages/{code}/options/ - Options pour un usage
+    #
+    # GET /api/mrh/garanties/ - Liste des garanties
+    # GET /api/mrh/garanties/{code}/ - Détail d'une garantie
+    #
+    # GET /api/mrh/garanties-forfait/ - Garanties à forfait
+    #
+    # GET /api/mrh/options/ - Liste des options
+    # GET /api/mrh/options/{code}/ - Détail d'une option
+    
+    # ========================================================================
+    # SECTION 2 : ENDPOINT DE CALCUL (SANS ENREGISTREMENT)
+    # ========================================================================
+    path(
+        'mrh/calcul/maison/',
+        CalculMaisonView.as_view(),
+        name='calcul-maison'
+    ),
+    # POST /api/mrh/calcul/maison/ - Calculer prime sans enregistrer
+    
+    # ========================================================================
+    # SECTION 3 : ENDPOINTS DE GESTION DE DEVIS
+    # ========================================================================
+    # Les routes suivantes sont automatiquement générées par le router :
+    # POST /api/mrh/devis/ - Créer un devis vide
+    # GET /api/mrh/devis/ - Lister les devis
+    # GET /api/mrh/devis/{id}/ - Récupérer un devis
+    # DELETE /api/mrh/devis/{id}/ - Supprimer un devis
+    
+    # ========================================================================
+    # SECTION 4 : ENDPOINTS DE GESTION DE MAISONS
+    # ========================================================================
+    path(
+        'mrh/devis/<int:devis_id>/maisons/',
+        MaisonViewSet.as_view({'post': 'create'}),
+        name='devis-maison-create'
+    ),
+    # POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:pk>/',
+        MaisonViewSet.as_view({'delete': 'destroy'}),
+        name='devis-maison-delete'
+    ),
+    # DELETE /api/mrh/devis/{devis_id}/maisons/{pk}/ - Supprimer une maison
+    
+    # ========================================================================
+    # SECTION 5 : ENDPOINTS UTILITAIRES
+    # ========================================================================
+    path(
+        'mrh/validate-parameters/',
+        ValidateParametersView.as_view(),
+        name='validate-parameters'
+    ),
+    # POST /api/mrh/validate-parameters/ - Valider paramètres
+    
+    path(
+        'mrh/devis/<int:devis_id>/recalculer/',
+        RecalculerDevisView.as_view(),
+        name='devis-recalculer'
+    ),
+    # POST /api/mrh/devis/{devis_id}/recalculer/ - Recalculer totaux
+    
 ]
+
+
+
+"""
+Configuration des URLs pour l'API MRH
+Multi-Risques Habitation - NSIA
+
+Organisation des routes :
+/api/mrh/usages/ - Usages habitation (référence)
+/api/mrh/garanties/ - Garanties MRH (référence)
+/api/mrh/options/ - Options disponibles (référence)
+/api/mrh/calcul/ - Calcul de prime sans enregistrement
+/api/mrh/devis/ - Gestion des devis
+/api/mrh/devis/{id}/maisons/ - Gestion des maisons dans un devis
+"""
+
+"""
+RÉSUMÉ DES ROUTES DISPONIBLES
+==============================
+
+RÉFÉRENCE (Lecture seule)
+--------------------------
+GET    /api/mrh/usages/                          Liste des usages habitation
+GET    /api/mrh/usages/{code}/                   Détail d'un usage
+GET    /api/mrh/usages/{code}/parametres/        Paramètres de calcul
+GET    /api/mrh/usages/{code}/garanties/         Sous-Garanties (obligatoires + optionnelles)
+GET    /api/mrh/usages/{code}/options/           Options applicables
+
+GET    /api/mrh/garanties/                       Liste des garanties MRH
+GET    /api/mrh/garanties/{code}/                Détail d'une garantie
+
+GET    /api/mrh/garanties-forfait/               Garanties optionnelles à forfait
+
+GET    /api/mrh/options/                         Liste des options
+GET    /api/mrh/options/{code}/                  Détail d'une option
+
+CALCUL (Sans enregistrement)
+-----------------------------
+POST   /api/mrh/calcul/maison/                   Calculer prime d'une maison
+
+DEVIS (Gestion)
+---------------
+POST   /api/mrh/devis/                           Créer un devis vide
+GET    /api/mrh/devis/                           Lister les devis
+GET    /api/mrh/devis/{id}/                      Récupérer un devis
+DELETE /api/mrh/devis/{id}/                      Supprimer un devis
+
+MAISONS (Gestion)
+-----------------
+POST   /api/mrh/devis/{id}/maisons/              Ajouter une maison au devis
+DELETE /api/mrh/devis/{id}/maisons/{maison_id}/  Supprimer une maison
+
+UTILITAIRES
+-----------
+POST   /api/mrh/validate-parameters/             Valider paramètres sans calculer
+POST   /api/mrh/devis/{id}/recalculer/           Recalculer les totaux du devis
+
+
+EXEMPLES D'UTILISATION
+======================
+
+1. Calculer une prime (sans enregistrer)
+   POST /api/mrh/calcul/maison/
+   {
+       "code_usage": "proprietaire_occupant_total",
+       "valeur_batiment": 50000000,
+       "valeur_contenu": 10000000,
+       "options": [{"code_option": "presence_gardien"}],
+       "sous_garanties_optionnelles": [{"code_garantie": "RC_MEMBRE"}]
+   }
+
+2. Créer un devis complet
+   a) POST /api/mrh/devis/
+      {
+          "idintermediaire": 1,
+          "idcompagnie": 2,
+          "idproduit": 5,
+          "idoffre": 10,
+          "idclient": 123,
+          "dateeffet": "2024-01-01T00:00:00Z"
+      }
+      → Retourne: {"devis_id": 456}
+   
+   b) POST /api/mrh/devis/456/maisons/
+      {
+          "maison": {
+              "code_usage": "proprietaire_occupant_total",
+              "valeur_batiment": 50000000,
+              "valeur_contenu": 10000000,
+              "options": [{"code_option": "presence_gardien"}],
+              "sous_garanties_optionnelles": [{"code_sous_garantie": "RC_MEMBRE"}]
+          }
+      }
+      → Calcule et enregistre la maison, met à jour les totaux
+
+3. Consulter les usages disponibles
+   GET /api/mrh/usages/
+   → Retourne la liste de tous les usages
+
+4. Voir les détails d'un usage
+   GET /api/mrh/usages/proprietaire_occupant_total/
+   → Retourne les infos de l'usage
+
+5. Voir les garanties d'un usage
+   GET /api/mrh/usages/proprietaire_occupant_total/garanties/
+   → Retourne garanties obligatoires et optionnelles
+
+6. Voir les options applicables à un usage
+   GET /api/mrh/usages/proprietaire_occupant_total/options/
+   → Retourne toutes les options applicables
+
+7. Récupérer un devis complet
+   GET /api/mrh/devis/456/
+   → Retourne le devis avec toutes ses maisons et totaux
+
+8. Supprimer une maison d'un devis
+   DELETE /api/mrh/devis/456/maisons/789/
+   → Supprime la maison et recalcule les totaux
+"""

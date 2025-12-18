@@ -33,6 +33,10 @@ from .models import (
 from .iautils import unpack_ia_quotation_post_data, convert_to_date
 
 from customer.models import Client
+import logging
+
+# Configuration du logging pour tracer les erreurs en production
+logger = logging.getLogger(__name__)
 
 DEVIS_NON_CONFIRME = 0
 DEVIS_CONFIRME = 1
@@ -2950,3 +2954,53 @@ def consolider_devis_db(user_id, devis_ids):
     except Exception as e:
         print(e)
         raise Exception(f"Erreur lors de l'appel à la procédure stockée: {str(e)}")
+
+
+def obtenir_nouveau_numero_devis(id_intermediaire: int, id_compagnie: int, code_categorie: str) -> str:
+    """
+    Appelle la procédure stockée PostgreSQL et retourne le numéro de devis.
+    Lève une exception explicite en cas d'échec.
+    """
+    # Initialisation des variables de retour
+    numero_devis_genere: str = ""
+    message_retour: str = ""
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "CALL public.sp_generer_numero_devis(%s, %s, %s, %s, %s)",
+                [id_intermediaire, id_compagnie, code_categorie, numero_devis_genere, message_retour]
+            )
+            
+            # On récupère les valeurs mises à jour par le CALL
+            resultat = cursor.fetchone()
+            
+            if resultat:
+                numero_devis_genere, message_retour = resultat
+                
+                # Vérification de la logique métier (si out_message contient 'ERREUR')
+                message_retour = message_retour.strip()
+                if len(message_retour):
+                    raise ValueError(f"Erreur SQL : {message_retour}")
+                
+                return numero_devis_genere
+            else:
+                raise DatabaseError("La procédure n'a retourné aucun résultat.")
+
+    except (DatabaseError, ValueError) as e:
+        logger.error(f"Échec de génération du numéro de devis: {e}")
+        # On relève l'exception pour que la couche supérieure décide quoi faire
+        raise
+    
+def obtenir_code_categorie(id_tarif:int)  -> str:
+    from configuration_api.models import Tarif
+    code_categorie = ""
+
+    try:
+        tarif= Tarif.objects.get(pk=id_tarif)
+        code_categorie = tarif.CodeCategorie
+    except Exception as error:
+        if code_categorie == "":
+             logger.error(f"Échec de récupération du code catégorie: {error}")
+    
+    return code_categorie
