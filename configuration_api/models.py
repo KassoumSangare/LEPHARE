@@ -2789,11 +2789,16 @@ class UsageHabitation(models.Model):
     """
     Les 8 types d'usage habitation pour MRH.
     """
+    QUALITE_ASSURE_CHOICES = [
+        ('PROPRIETAIRE', 'Propriétaire'),
+        ('LOCATAIRE', 'Locataire'),
+    ]
     code = models.CharField(
         max_length=50,
         primary_key=True,
         verbose_name="Code usage"
     )
+    qualite_assure = models.CharField(max_length=20, choices=QUALITE_ASSURE_CHOICES, verbose_name="Qualité Assuré")
     libelle = models.CharField(
         max_length=200,
         verbose_name="Libellé"

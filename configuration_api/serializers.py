@@ -1427,6 +1427,7 @@ class UsageHabitationSerializer(serializers.ModelSerializer):
         fields = [
             'code',
             'libelle',
+            'qualite_assure',
             'description',
             'actif',
             'nombre_sous_garanties_obligatoires',
