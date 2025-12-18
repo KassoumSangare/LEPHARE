@@ -538,7 +538,8 @@ EXEMPLES D'UTILISATION
       {
           "idintermediaire": 1,
           "idcompagnie": 2,
-          "idproduit": 5,
+          "idproduit": 4,
+          "idtarif":81,
           "idoffre": 10,
           "idclient": 123,
           "dateeffet": "2024-01-01T00:00:00Z"

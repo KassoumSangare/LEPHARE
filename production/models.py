@@ -43,6 +43,7 @@ class ContractForPremiumCollection(models.Model):
     IdClient = models.IntegerField()
     LibelleCategorie = models.CharField(max_length=100)
     NumeroPolice = models.CharField(max_length=16)
+    NumeroPoliceInterne = models.CharField(max_length=16)
     NumeroAvenant = models.CharField(max_length=50)
     NumeroQuittance = models.CharField(max_length=16)
     IdDetailEncaissement = models.IntegerField(null=True)
