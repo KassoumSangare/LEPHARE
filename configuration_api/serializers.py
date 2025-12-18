@@ -1421,7 +1421,7 @@ class UsageHabitationSerializer(serializers.ModelSerializer):
     
     nombre_sous_garanties_obligatoires = serializers.SerializerMethodField()
     nombre_sous_garanties_optionnelles = serializers.SerializerMethodField()
-    
+    libelle_offre = serializers.SerializerMethodField()
     class Meta:
         model = UsageHabitation
         fields = [
@@ -1429,6 +1429,8 @@ class UsageHabitationSerializer(serializers.ModelSerializer):
             'libelle',
             'qualite_assure',
             'description',
+            'offre',
+            'libelle_offre',
             'actif',
             'nombre_sous_garanties_obligatoires',
             'nombre_sous_garanties_optionnelles',
@@ -1442,6 +1444,10 @@ class UsageHabitationSerializer(serializers.ModelSerializer):
     def get_nombre_sous_garanties_optionnelles(self, obj):
         """Compte les sous-garanties optionnelles pour cet usage"""
         return obj.sous_garanties_liees.filter(obligatoire=False, actif=True).count()
+    
+    def get_libelle_offre(self, obj):
+        if obj.offre:
+            return obj.offre.LibelleOffre
 
 
 class SousGarantieMRHSerializer(serializers.ModelSerializer):

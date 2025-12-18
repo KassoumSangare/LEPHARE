@@ -192,6 +192,7 @@ from .database import (
     correction_devis,
     execute_maj_manuelle_primes,
     consolider_devis_db,
+    offre_mrh_compatible,
 )
 from .utils import import_ia_insured
 from django.http.response import JsonResponse
@@ -2400,7 +2401,7 @@ class DevisMRHViewSet(viewsets.ViewSet):
                 idclient=data['idclient'],
                 dateeffet=data['dateeffet'],
                 **{k: v for k, v in data.items() if k not in [
-                    'idintermediaire', 'idcompagnie', 'idproduit', 
+                    'idintermediaire', 'idcompagnie', 'idproduit', 'idtarif',
                     'idoffre', 'idclient', 'dateeffet'
                 ]}
             )
@@ -2587,6 +2588,8 @@ class MaisonViewSet(viewsets.ViewSet):
         {
             "maison": {
                 "code_usage": "proprietaire_occupant_total",
+                "id_tarif":81,
+                "id_offre": 10,
                 "valeur_batiment": 50000000,
                 "valeur_contenu": 10000000,
                 "options": ["presence_gardien"],
@@ -2602,7 +2605,7 @@ class MaisonViewSet(viewsets.ViewSet):
             devis = Devis.objects.get(iddevis=devis_id)
         except Devis.DoesNotExist:
             return Response(
-                {'error': f'Devis {devis_id} non trouvé'},
+                {'erreur': f'Devis {devis_id} non trouvé'},
                 status=status.HTTP_404_NOT_FOUND
             )
         
@@ -2617,12 +2620,20 @@ class MaisonViewSet(viewsets.ViewSet):
         data = serializer.validated_data['maison']
         service = MRHCalculService()
         
+        if not offre_mrh_compatible(data["id_offre"], data["code_usage"]):
+            return Response(
+                {'erreur': "Offre incompatible avec l'usage"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+         
         try:
             # Calculer et enregistrer la maison
             resultat = service.calculer_et_enregistrer_maison(
                 id_devis=devis_id,
                 id_produit=devis.produit_id,
                 id_compagnie=devis.compagnie_id,
+                id_tarif=data.get('id_tarif'),
+                id_offre=data.get('id_offre'),
                 code_usage=data['code_usage'],
                 valeur_batiment=data.get('valeur_batiment'),
                 valeur_contenu=data.get('valeur_contenu'),

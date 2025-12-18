@@ -814,7 +814,7 @@ class MRHCalculService:
             try:
                 idduree = kwargs.get('idduree', 4) #idduree = 4 ==> Durée annuelle
                 jours = kwargs.get('nombrejours', 0)
-                dateexpiration =calculer_date_expiration(date_effet=dateeffet, id_duree=idduree, nombre_jours=jours)
+                dateexpiration = calculer_date_expiration(date_effet=dateeffet, id_duree=idduree, nombre_jours=jours)
                 codecategorie = obtenir_code_categorie(idtarif)
                 numerodevis = obtenir_nouveau_numero_devis(id_intermediaire=idintermediaire, id_compagnie=idcompagnie,code_categorie=codecategorie)
             except Exception as error:
@@ -828,6 +828,7 @@ class MRHCalculService:
             offre_id=idoffre,
             client_id=idclient,
             assure_id=kwargs.get('idassure', idclient),
+            numerodevis=numerodevis,
             
             # Dates
             dateeffet=dateeffet,
@@ -862,7 +863,6 @@ class MRHCalculService:
             # Autres champs
             avenant_id=kwargs.get('idavenant', 1),
             aperiteur_id=kwargs.get('idaperiteur', idintermediaire),
-            numerodevis='',  # Sera généré automatiquement par trigger ou signal
             numeroavenant='',
             echeance='',
             nbreche=1,
@@ -897,6 +897,8 @@ class MRHCalculService:
         id_devis: int,
         id_produit: int,
         id_compagnie: int,
+        id_tarif: int,
+        id_offre: int,
         code_usage: str,
         valeur_batiment: Optional[Decimal] = None,
         valeur_contenu: Optional[Decimal] = None,
@@ -914,6 +916,8 @@ class MRHCalculService:
             id_devis: ID du devis parent
             id_produit: ID du produit MRH
             id_compagnie: ID de la compagnie
+            id_tarif: ID du tarif 
+            id_offre: ID de l'offre commerciale
             code_usage: Code de l'usage habitation
             valeur_batiment, valeur_contenu, etc.: Paramètres de calcul
             options: Liste des codes d'options
@@ -945,6 +949,8 @@ class MRHCalculService:
         # 2. Enregistrer dans DevisDetail et DevisDetGarantie
         id_maison = self.enregistrer_maison_dans_devis(
             id_devis=id_devis,
+            id_tarif = id_tarif,
+            id_offre = id_offre,
             resultat_calcul=resultat_calcul
         )
         

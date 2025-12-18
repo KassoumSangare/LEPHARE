@@ -2812,6 +2812,18 @@ class UsageHabitation(models.Model):
         default=True,
         verbose_name="Actif"
     )
+    
+    offre = models.ForeignKey(
+        Offre,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        db_column='idoffre',
+        related_name='usage_habitation_mrh',
+        verbose_name="Offre MRH liée",
+        help_text="Lien avec la table stdoffre existante"
+    )
+    
     date_creation = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Date de création"
@@ -2829,6 +2841,19 @@ class UsageHabitation(models.Model):
 
     def __str__(self):
         return f"{self.libelle} ({self.code})"
+    
+    
+    def get_id_offre(self):
+        """Retourne l'ID du modèle stdoffre si lié"""
+        if self.offre:
+            return self.offre.IdOffre
+        return None
+    
+    def get_libelle_offre(self):
+        """Retourne le libellé du modèle stdoffre si lié"""
+        if self.offre:
+            return self.offre.LibelleOffre
+        return None
 
 
 # ============================================================================

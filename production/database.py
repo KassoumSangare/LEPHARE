@@ -3005,3 +3005,15 @@ def obtenir_code_categorie(id_tarif:int)  -> str:
              logger.error(f"Échec de récupération du code catégorie: {error}")
     
     return code_categorie
+
+def offre_mrh_compatible(id_offre:int, code_usage_mrh:str) -> bool:
+    from configuration_api.models import UsageHabitation
+    offre_compatible = False
+    try:
+        usage_mrh = UsageHabitation.objects.get(code=code_usage_mrh)
+        if usage_mrh and usage_mrh.offre:
+            offre_compatible = (usage_mrh.offre.pk == id_offre)
+    except UsageHabitation.DoesNotExist:
+        pass
+    return offre_compatible
+    

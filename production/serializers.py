@@ -2622,6 +2622,9 @@ class MaisonCalculRequestSerializer(serializers.Serializer):
         max_length=50,
         help_text="Code de l'usage habitation (ex: proprietaire_occupant_total)"
     )
+    id_tarif = serializers.IntegerField(help_text="ID du tarif")
+    
+    id_offre = serializers.IntegerField(help_text="ID de l'offre")
     
     # Paramètres de calcul (optionnels selon l'usage)
     valeur_batiment = serializers.DecimalField(
@@ -2776,7 +2779,11 @@ class DevisMRHCreateRequestSerializer(serializers.Serializer):
         required=True,
         help_text="ID du produit MRH"
     )
-    
+    idavenant = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID de l'avenant"
+    )
     idtarif = serializers.IntegerField(
         required=True,
         help_text="ID du tarif MRH choisi"
@@ -2803,6 +2810,11 @@ class DevisMRHCreateRequestSerializer(serializers.Serializer):
         help_text="Date d'effet du contrat"
     )
     
+    dateemission = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Date d'émission (positionnée automatiquement si non fournie)"
+    )
     dateexpiration = serializers.DateTimeField(
         required=False,
         allow_null=True,
