@@ -2973,7 +2973,7 @@ class MaisonCalculeeSerializer(serializers.Serializer):
     prime_annuelle = serializers.DecimalField(max_digits=19, decimal_places=4)
     prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
     taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
-    #prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
+    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
     
     # Détails
     sous_garanties = SousGarantieCalculeeSerializer(many=True)

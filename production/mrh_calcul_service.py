@@ -598,6 +598,7 @@ class MRHCalculService:
             },
             'prime_base': prime_base,
             'prime_nette_totale': prime_nette_totale,
+            'prime_annuelle':  prime_nette_totale,
             'taxe_totale': taxe_totale,
             'prime_ttc_totale': prime_ttc_totale,
             'sous_garanties': sous_garanties,
