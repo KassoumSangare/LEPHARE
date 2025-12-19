@@ -2479,8 +2479,8 @@ class DevisMRHViewSet(viewsets.ViewSet):
                         },
                         'prime_nette_totale': m.primenette,
                         'taxe_totale': m.taxeenregistrement,
-                        'prime_ttc_totale': m.primeannuelle,
-                        'garanties': [],  # Peut être enrichi si besoin
+                        'prime_annuelle': m.primeannuelle,
+                        'sous_garanties': [],  # Peut être enrichi si besoin
                         'options_appliquees': [],
                         'adresse': m.observation[33:] if len(m.observation or '') > 33 else '',
                     }
@@ -2489,6 +2489,7 @@ class DevisMRHViewSet(viewsets.ViewSet):
                 'nombre_maisons': maisons.count(),
                 'date_calcul': devis.dateemission,
             }
+            
             
             serializer = DevisMRHCalculeResponseSerializer(response_data)
             return Response(serializer.data, status=status.HTTP_200_OK)

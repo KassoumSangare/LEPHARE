@@ -2970,10 +2970,10 @@ class MaisonCalculeeSerializer(serializers.Serializer):
     )
     
     # Résultats du calcul
-    prime_base = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_annuelle = serializers.DecimalField(max_digits=19, decimal_places=4)
     prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
     taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
-    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    #prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
     
     # Détails
     sous_garanties = SousGarantieCalculeeSerializer(many=True)
@@ -2995,7 +2995,7 @@ class DevisMRHCalculeResponseSerializer(serializers.Serializer):
     prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
     taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
     accessoires = serializers.DecimalField(max_digits=19, decimal_places=4, default=Decimal('0'))
-    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
     
     # Détails par maison
     maisons = MaisonCalculeeSerializer(many=True)
