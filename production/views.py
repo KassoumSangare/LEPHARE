@@ -2659,8 +2659,8 @@ class MaisonViewSet(viewsets.ViewSet):
                 loyer_mensuel=data.get('loyer_mensuel'),
                 capital_rvt=data.get('capital_rvt'),
                 options=[opt['code_option'] for opt in data.get('options', [])],
-                garanties_optionnelles=[
-                    gar['code_garantie'] for gar in data.get('garanties_optionnelles', [])
+                sous_garanties_optionnelles=[
+                    gar['code_sous_garantie'] for gar in data.get('sous_garanties_optionnelles', [])
                 ],
                 adresse=data.get('adresse'),
                 description=data.get('description'),

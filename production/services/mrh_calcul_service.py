@@ -28,7 +28,7 @@ from configuration_api.models import (
     OptionUsage,
     SousGarantieForfait,
 )
-
+from production.services.recapitulatif_primes_mrh import RecapitulatifPrimesMRH
 # TODO: Ajuster les imports selon votre structure
 # from votre_app.models import (
 #     Devis, DevisDetail, DevisDetGarantie,
@@ -36,10 +36,9 @@ from configuration_api.models import (
 # )
 
 from datetime import date
-from typing import Union
 from dateutil.relativedelta import relativedelta
 
-from .database import obtenir_nouveau_numero_devis, obtenir_code_categorie
+from ...production.database import obtenir_nouveau_numero_devis, obtenir_code_categorie
 
 def calculer_date_expiration(
     date_effet: date, 
@@ -628,7 +627,7 @@ class MRHCalculService:
         Returns:
             ID du DevisDetail créé
         """
-        from .models import DevisDetail, DevisDetGarantie
+        from ..models import DevisDetail, DevisDetGarantie
         
         # 1. Créer le DevisDetail (maison)
         devis_detail = DevisDetail.objects.create(
@@ -686,7 +685,7 @@ class MRHCalculService:
                 Formule=None,
                 
                 # Champs old_ pour historique
-                old_acquise='1' if sous_garantie['type_garantie'] == 'OBLIGATOIRE' else '0',
+                old_acquise='1' if sous_garantie['type'] == 'OBLIGATOIRE' else '0',
                 old_capital=0,
                 old_franchise=0,
                 old_formule=None,
@@ -724,7 +723,7 @@ class MRHCalculService:
         Returns:
             Dict contenant les montants calculés
         """
-        from .models import Devis, DevisDetail  # Import local
+        from ..models import Devis, DevisDetail  # Import local
         
         # 1. Récupérer toutes les maisons du devis
         maisons = DevisDetail.objects.filter(iddevis_id=id_devis)
@@ -806,7 +805,7 @@ class MRHCalculService:
         Returns:
             ID du devis créé
         """
-        from .models import Devis 
+        from ..models import Devis 
         
         # Calculer dateexpiration si non fournie (1 an par défaut)
         dateexpiration = kwargs.get('dateexpiration')
@@ -968,6 +967,157 @@ class MRHCalculService:
             'calcul': resultat_calcul,
             'totaux_devis': totaux_devis,
         }
+    
+        # ========================================================================
+    # SECTION 9 : RÉCAPITULATIF DES COMPOSANTES DE PRIMES
+    # ========================================================================
+    
+    @transaction.atomic
+    def creer_et_sauvegarder_recapitulatif(
+        self,
+        id_devis: int,
+        sauvegarder_en_base: bool = True
+    ) -> RecapitulatifPrimesMRH:
+        """
+        Crée un récapitulatif complet des composantes de calcul du devis
+        et le sauvegarde optionnellement en base de données.
+        
+        Cette méthode doit être appelée APRÈS avoir ajouté toutes les maisons au devis.
+        
+        Args:
+            id_devis: ID du devis
+            sauvegarder_en_base: Si True, sauvegarde dans stdmrh_recap_prime
+        
+        Returns:
+            Instance de RecapitulatifPrimesMRH avec toutes les données
+        
+        Exemple:
+            service = MRHCalculService()
+            
+            # Créer le devis et ajouter des maisons...
+            
+            # Créer le récapitulatif
+            recap = service.creer_et_sauvegarder_recapitulatif(id_devis=456)
+            
+            # Obtenir le JSON
+            json_recap = recap.to_json()
+            
+            # Obtenir le résumé textuel
+            texte = recap.generer_resume_textuel()
+            print(texte)
+        """
+        from ..models import Devis, DevisDetail
+        
+        # Récupérer le devis
+        devis = Devis.objects.select_related(
+            'client', 'compagnie', 'intermediaire', 'produit'
+        ).get(iddevis=id_devis)
+        
+        # Initialiser le récapitulatif
+        recap = RecapitulatifPrimesMRH()
+        
+        # Ajouter les informations du devis
+        recap.creer_recap_devis(
+            id_devis=devis.iddevis,
+            numero_devis=devis.numerodevis or '',
+            client_info={
+                'id': devis.client_id,
+                'nom': getattr(devis.client, 'nom', 'N/A'),
+                'prenom': getattr(devis.client, 'prenom', ''),
+            },
+            date_effet=devis.dateeffet,
+            date_expiration=devis.dateexpiration,
+            compagnie_id=devis.compagnie_id,
+            compagnie_nom=getattr(devis.compagnie, 'nom', 'N/A'),
+            intermediaire_id=devis.intermediaire_id,
+            intermediaire_nom=getattr(devis.intermediaire, 'nom', 'N/A'),
+            produit_id=devis.produit_id,
+            produit_nom=getattr(devis.produit, 'nom', 'MRH'),
+            reference_agent=devis.referenceagent or '',
+            observation=devis.observation or '',
+        )
+        
+        # Récupérer et ajouter les maisons
+        maisons = DevisDetail.objects.filter(iddevis_id=id_devis).order_by('iddevisdetail')
+        
+        for idx, maison in enumerate(maisons, 1):
+            # Récupérer les garanties de cette maison
+            from ..models import DevisDetGarantie
+            garanties_db = DevisDetGarantie.objects.filter(
+                IdDevisDet=maison.iddevisdetail
+            ).select_related('IdGarantie')
+            
+            # Formater les garanties
+            garanties = []
+            for gar_db in garanties_db:
+                garantie_std = gar_db.IdGarantie
+                
+                # Calculer le taux de taxe
+                if gar_db.PrimeNette and gar_db.PrimeNette != 0:
+                    taux_taxe = (gar_db.taxe / gar_db.PrimeNette) * Decimal('100')
+                else:
+                    taux_taxe = Decimal('0')
+                
+                garanties.append({
+                    'code_garantie': garantie_std.codegarantie if garantie_std else 'N/A',
+                    'libelle': garantie_std.libelle if garantie_std else 'N/A',
+                    'type': 'OBLIGATOIRE' if gar_db.Acquise else 'OPTIONNELLE',
+                    'prime_nette': gar_db.PrimeNette,
+                    'taux_repartition': None,  # Non stocké dans DevisDetGarantie
+                    'taux_taxe': taux_taxe,
+                    'taxe': gar_db.taxe,
+                    'prime_ttc': gar_db.primeannuelle,
+                    'code_garantie_std': garantie_std.codegarantie if garantie_std else None,
+                    'id_garantie_std': garantie_std.idgarantie if garantie_std else None,
+                })
+            
+            # Créer un résultat de calcul pour cette maison
+            resultat_calcul = {
+                'code_usage': 'N/A',  # Non stocké explicitement
+                'libelle_usage': maison.observation[:30] if maison.observation else 'N/A',
+                'adresse': maison.observation[33:] if len(maison.observation or '') > 33 else '',
+                'description': '',
+                'parametres': {
+                    'valeur_batiment': maison.valeurneuve,
+                    'valeur_contenu': maison.valeurvenale,
+                    'loyer_mensuel': None,
+                    'capital_rvt': None,
+                },
+                'prime_base': maison.primenette,  # Approximatif
+                'prime_nette_totale': maison.primenette,
+                'taxe_totale': maison.taxeenregistrement,
+                'prime_ttc_totale': maison.primeannuelle,
+                'garanties': garanties,
+                'options_appliquees': [],  # Non stocké dans les tables legacy
+            }
+            
+            recap.ajouter_maison(
+                id_maison=maison.iddevisdetail,
+                resultat_calcul=resultat_calcul,
+                ordre=idx
+            )
+        
+        # Ajouter les accessoires
+        # Calculer la taxe accessoire (taxe totale - somme des taxes garanties)
+        taxe_garanties = sum(m.taxeenregistrement for m in maisons)
+        taxe_accessoire = devis.taxe - taxe_garanties if devis.taxe else Decimal('0')
+        
+        recap.ajouter_accessoires(
+            prime_nette_totale=devis.primenette or Decimal('0'),
+            accessoire=devis.accessoire or Decimal('0'),
+            taxe_accessoire=taxe_accessoire,
+            palier_info=None  # Pourrait être enrichi en récupérant de stdaccessoire
+        )
+        
+        # Calculer les totaux
+        recap.calculer_totaux()
+        
+        # Sauvegarder en base si demandé
+        if sauvegarder_en_base:
+            recap.sauvegarder_en_base(id_devis=id_devis)
+        
+        return recap
+    
     
     # ========================================================================
     # UTILITAIRES
