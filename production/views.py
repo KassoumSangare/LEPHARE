@@ -2219,6 +2219,25 @@ class UsageHabitationViewSet(viewsets.ReadOnlyModelViewSet):
         })
     
     @action(detail=True, methods=['get'])
+    def offres(self, request, code=None):
+        """
+        Retourne les offres pour un usage.
+        
+        GET /api/mrh/usages/{code}/offres/
+        """
+        usage = cast(UsageHabitation, self.get_object())
+        
+        offre_mrh_liee = usage.offre
+        return Response({
+
+                    'id_offre': offre_mrh_liee.IdOffre if offre_mrh_liee else "",
+                    'libelle_offre': offre_mrh_liee.LibelleOffre if offre_mrh_liee else "",
+
+        }, status = status.HTTP_200_OK)
+    
+    
+    
+    @action(detail=True, methods=['get'])
     def options(self, request, code=None):
         """
         Retourne les options applicables à un usage.
