@@ -2891,14 +2891,14 @@ class DevisMRHCreateRequestSerializer(serializers.Serializer):
         
     )
     
-    numero_police_compagnie = serializers.CharField(
+    numeropolicecompagnie = serializers.CharField(
         max_length=60,
         required=False,
         default="",
         allow_blank=True,
         help_text="Numéro de police affecté par la compagnie"
     )
-    numero_telephone_assure = serializers.CharField(
+    numerotelephoneassure = serializers.CharField(
         max_length=20,
         required=False,
         default="",

@@ -832,18 +832,20 @@ class MRHCalculService:
         
         # Calculer dateexpiration si non fournie (1 an par défaut)
         dateexpiration = kwargs.get('dateexpiration')
+        idduree = kwargs.get('idduree', 4) #idduree = 4 ==> Durée annuelle
+        jours = kwargs.get('nombrejours', 0)
+        
         if not dateexpiration:
             try:
-                idduree = kwargs.get('idduree', 4) #idduree = 4 ==> Durée annuelle
-                jours = kwargs.get('nombrejours', 0)
                 dateexpiration = calculer_date_expiration(date_effet=dateeffet, id_duree=idduree, nombre_jours=jours)
-                codecategorie = obtenir_code_categorie(idtarif)
-                numerodevis = obtenir_nouveau_numero_devis(id_intermediaire=idintermediaire, id_compagnie=idcompagnie,code_categorie=codecategorie)
             except Exception as error:
                 raise error
+            
+        codecategorie = obtenir_code_categorie(idtarif)
+        numerodevis = obtenir_nouveau_numero_devis(id_intermediaire=idintermediaire, id_compagnie=idcompagnie,code_categorie=codecategorie)
                 # Créer le devis
         dateemission = datetime.now() if not kwargs.get("dateemission") else kwargs.get("dateemission")
-        numero_police_compagnie = kwargs.get('numero_police_compagnie', '')
+        numero_police_compagnie = kwargs.get('numeropolicecompagnie', '')
         devis = Devis.objects.create(
             intermediaire_id=idintermediaire,
             compagnie_id=idcompagnie,

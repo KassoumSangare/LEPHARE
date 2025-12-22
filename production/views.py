@@ -2500,7 +2500,7 @@ class DevisMRHViewSet(viewsets.ViewSet):
         from customer.models import Client
         idassure = request.data.get("idassure", 0)
         idclient = request.data.get("idclient", 0)
-        numero_telephone_assure = request.data.get("numero_telephone_assure", "")
+        numero_telephone_assure = request.data.get("numerotelephoneassure", "")
         
         # Pass update_data instead of request.data
         try:

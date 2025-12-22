@@ -490,6 +490,42 @@ class QualiteViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+class TermeViewSet(viewsets.ViewSet):
+    def list(self, request):
+        data = [
+            {
+                "IdTerme": 1,
+                "Libelle": "Tacite reconduction",
+            },
+            {
+               "IdTerme": 2,
+                "Libelle": "Ferme",
+            },
+            {
+               "IdTerme": 3,
+               "Libelle": "Autre",
+            }
+        ]
+
+        # 3. Return the list directly
+        return Response(data)
+
+    def retrieve(self, request, pk=None):
+        data = {1: {
+                "IdTerme": 1,
+                "Libelle": "Tacite reconduction",
+            }, 2:{
+               "IdTerme": 2,
+                "Libelle": "Ferme",
+            },
+            3:{
+               "IdTerme": 3,
+               "Libelle": "Autre",
+            }}
+        return Response (data.get(pk, {}))
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
 
 
 class SecteurActiviteViewSet(viewsets.ModelViewSet):
