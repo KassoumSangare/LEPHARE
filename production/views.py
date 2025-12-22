@@ -2299,6 +2299,49 @@ class OptionViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # ============================================================================
+# MISE A JOUR DU DEVIS
+# ============================================================================
+class MiseAJourDevis (APIView):
+    @action(detail=True, methods=['post'])
+    def garanties(self, request, pk=None):
+        """
+        Met à jour un devis avec les informations.
+        
+        GET /api/mrh/devis//garanties/
+        """
+        usage = cast(UsageHabitation, self.get_object())
+        
+        # Garanties obligatoires
+        sous_garanties_oblig = usage.sous_garanties_liees.filter(
+            obligatoire=True,
+            actif=True
+        ).select_related('sous_garantie').order_by('ordre_affichage')
+        
+        # Garanties optionnelles
+        sous_garanties_opt = usage.sous_garanties_liees.filter(
+            obligatoire=False,
+            actif=True
+        ).select_related('sous_garantie').order_by('ordre_affichage')
+        
+        return Response({
+            'obligatoires': [
+                {
+                    'code': gu.sous_garantie.code,
+                    'libelle': gu.sous_garantie.libelle,
+                    'taux_repartition': gu.taux_repartition,
+                }
+                for gu in sous_garanties_oblig
+            ],
+            'optionnelles': [
+                {
+                    'code': gu.sous_garantie.code,
+                    'libelle': gu.sous_garantie.libelle,
+                }
+                for gu in sous_garanties_opt
+            ]
+        })
+
+# ============================================================================
 # SECTION 2 : ENDPOINT DE CALCUL (SANS ENREGISTREMENT)
 # ============================================================================
 
@@ -2381,6 +2424,7 @@ class DevisMRHViewSet(viewsets.ViewSet):
     
     POST /api/mrh/devis/ - Créer un devis vide
     GET /api/mrh/devis/{id}/ - Récupérer un devis
+    PATCH /api/mrh/devis/{id}/finalisation
     GET /api/mrh/devis/ - Lister les devis
     DELETE /api/mrh/devis/{id}/ - Supprimer un devis
     """
@@ -2450,6 +2494,30 @@ class DevisMRHViewSet(viewsets.ViewSet):
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+    def partial_update(self, request, pk=None):
+        mrh_devis = get_object_or_404(Devis, pk=pk)
+        from customer.models import Client
+        idassure = request.data.get("idassure", 0)
+        idclient = request.data.get("idclient", 0)
+        numero_telephone_assure = request.data.get("numero_telephone_assure", "")
+        
+        # Pass update_data instead of request.data
+        try:
+            with transaction.atomic():
+                if idclient:
+                    mrh_devis.client_id = idclient
+                if idassure:
+                    mrh_devis.assure_id = idassure
+                mrh_devis.save()
+                if numero_telephone_assure and idassure:
+                        assure = Client.objects.filter(IdClient=idassure).first()
+                        assure.Mobile = numero_telephone_assure
+                        assure.save()
+                
+                return Response({"message":"Devis enregistré avec succès"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"erreur":str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     def retrieve(self, request, pk=None):
         """

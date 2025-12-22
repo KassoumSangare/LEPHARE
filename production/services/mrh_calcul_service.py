@@ -634,12 +634,25 @@ class MRHCalculService:
         Returns:
             ID du DevisDetail créé
         """
-        from ..models import DevisDetail, DevisDetGarantie
+        from ..models import Devis, DevisDetail, DevisDetGarantie
+        from configuration_api.models import Offre
         
         # 1. Calculer la prime annuelle de la maison (avant options)
         prime_annuelle_maison = sum(g.get('prime_avant_options', g['prime_nette']) for g in resultat_calcul['sous_garanties'])
         
         # 2. Créer le DevisDetail (maison)
+        nombre_maisons = DevisDetail.objects.filter(iddevis_id=id_devis).count()
+        try:
+            if nombre_maisons == 0:  #Première maison dans le devis
+                devis = Devis.objects.get(pk=id_devis)
+                if devis:
+                    devis.offre = Offre.objects.get(pk=id_offre)
+                    devis.save()
+        except Devis.DoesNotExist:
+            raise ValidationError({"erreur": f"Devis ID {id_devis} inexistant"})
+        except Offre.DoesNotExist:
+            raise ValidationError({"erreur": f"Offre ID {id_devis} inexistante"})
+        
         devis_detail = DevisDetail.objects.create(
             iddevis_id=id_devis,
             idoffre=id_offre,  # NULL pour MRH
@@ -830,6 +843,7 @@ class MRHCalculService:
                 raise error
                 # Créer le devis
         dateemission = datetime.now() if not kwargs.get("dateemission") else kwargs.get("dateemission")
+        numero_police_compagnie = kwargs.get('numero_police_compagnie', '')
         devis = Devis.objects.create(
             intermediaire_id=idintermediaire,
             compagnie_id=idcompagnie,
@@ -838,7 +852,7 @@ class MRHCalculService:
             client_id=idclient,
             assure_id=kwargs.get('idassure', idclient),
             numerodevis=numerodevis,
-            
+            numero_police_compagnie=numero_police_compagnie,
             # Dates
             dateeffet=dateeffet,
             dateexpiration=dateexpiration,

@@ -2888,8 +2888,24 @@ class DevisMRHCreateRequestSerializer(serializers.Serializer):
         required=False,
         default=False,
         help_text="Prime imposée (mode imposé)"
+        
     )
     
+    numero_police_compagnie = serializers.CharField(
+        max_length=60,
+        required=False,
+        default="",
+        allow_blank=True,
+        help_text="Numéro de police affecté par la compagnie"
+    )
+    numero_telephone_assure = serializers.CharField(
+        max_length=20,
+        required=False,
+        default="",
+        allow_blank=True,
+        help_text="Numéro de téléphone de l'assuré"
+    )
+        
     def validate(self, data):
         """Validation globale"""
         # Si dateexpiration n'est pas fournie, elle sera calculée selon la durée
