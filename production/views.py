@@ -2483,7 +2483,7 @@ class DevisMRHViewSet(viewsets.ViewSet):
                             'valeur_contenu': m.valeurvenale,
                         },
                         'prime_nette_totale': m.primenette,
-                        'prime_annuelle': m.primeannuelle,
+                        'prime_annuelle_totale': m.primeannuelle,
                         'taxe_totale': m.taxeenregistrement,
                         'prime_ttc_totale': m.primenette + m.taxeenregistrement,
                         'sous_garanties': [],  # Peut être enrichi si besoin

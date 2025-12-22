@@ -587,6 +587,7 @@ class MRHCalculService:
         
         # 5. Calculer les totaux
         prime_nette_totale = sum(g['prime_nette'] for g in sous_garanties)
+        prime_annuelle_totale = sum(g.get('prime_avant_options', g['prime_nette']) for g in sous_garanties)
         taxe_totale = sum(g['taxe'] for g in sous_garanties)
         prime_ttc_totale = prime_nette_totale + taxe_totale
         
@@ -601,6 +602,7 @@ class MRHCalculService:
                 'capital_rvt': capital_rvt,
             },
             'prime_base': prime_base,
+            'prime_annuelle_totale': prime_annuelle_totale,
             'prime_nette_totale': prime_nette_totale,
             'taxe_totale': taxe_totale,
             'prime_ttc_totale': prime_ttc_totale,
@@ -635,7 +637,7 @@ class MRHCalculService:
         from ..models import DevisDetail, DevisDetGarantie
         
         # 1. Calculer la prime annuelle de la maison (avant options)
-        prime_annuelle_maison = sum(g.get('prime_avant_options', g['prime_nette']) for g in resultat_calcul['garanties'])
+        prime_annuelle_maison = sum(g.get('prime_avant_options', g['prime_nette']) for g in resultat_calcul['sous_garanties'])
         
         # 2. Créer le DevisDetail (maison)
         devis_detail = DevisDetail.objects.create(
@@ -693,7 +695,7 @@ class MRHCalculService:
                 Formule=None,
                 
                 # Champs old_ pour historique
-                old_acquise='1' if sous_garantie['type'] == 'OBLIGATOIRE' else '0',
+                old_acquise='1' if sous_garantie['type_garantie'] == 'OBLIGATOIRE' else '0',
                 old_capital=0,
                 old_franchise=0,
                 old_formule=None,
