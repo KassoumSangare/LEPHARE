@@ -3586,3 +3586,236 @@ def validate_decimal_positive(value: Decimal, field_name: str) -> Decimal:
             {field_name: f"{field_name} doit être strictement positif."}
         )
     return value
+
+
+"""
+Serializers pour le résumé financier des devis MRH
+===================================================
+"""
+class GarantieAcquiseSerializer(serializers.Serializer):
+    """
+    Serializer pour une garantie acquise avec ses montants.
+    """
+    id_sous_garantie = serializers.IntegerField(
+        help_text="ID de la garantie dans stdgarantie"
+    )
+    code_sous_garantie = serializers.CharField(
+        max_length=50,
+        help_text="Code de la garantie"
+    )
+    libelle_sous_garantie = serializers.CharField(
+        max_length=200,
+        help_text="Libellé de la garantie"
+    )
+    prime_nette = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime nette de la garantie (en FCFA)"
+    )
+    taxe = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Taxe sur la garantie (en FCFA)"
+    )
+    prime_ttc = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime TTC de la garantie (en FCFA)"
+    )
+
+
+class PalierAccessoireSerializer(serializers.Serializer):
+    """
+    Serializer pour les informations du palier d'accessoire.
+    """
+    id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="ID du palier dans stdaccessoire"
+    )
+    primemin = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Prime minimum du palier"
+    )
+    primemax = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Prime maximum du palier"
+    )
+    accessoires = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Montant accessoire du palier"
+    )
+    montantforfait = serializers.FloatField(
+        required=False,
+        allow_null=True,
+        help_text="Montant forfait du palier"
+    )
+
+
+class AccessoireDetailsSerializer(serializers.Serializer):
+    """
+    Serializer pour les détails de l'accessoire.
+    """
+    accessoire = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Montant de l'accessoire HT (en FCFA)"
+    )
+    taxe_accessoire = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Taxe sur l'accessoire 14.5% (en FCFA)"
+    )
+    accessoire_ttc = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Accessoire TTC (en FCFA)"
+    )
+    palier = PalierAccessoireSerializer(
+        required=False,
+        allow_null=True,
+        help_text="Informations sur le palier appliqué"
+    )
+
+
+class StatistiquesDevisSerializer(serializers.Serializer):
+    """
+    Serializer pour les statistiques du devis.
+    """
+    nombre_maisons = serializers.IntegerField(
+        help_text="Nombre de maisons assurées dans le devis"
+    )
+    nombre_sous_garanties_total = serializers.IntegerField(
+        help_text="Nombre total de garanties (acquises + non acquises)"
+    )
+    nombre_sous_garanties_acquises = serializers.IntegerField(
+        help_text="Nombre de garanties acquises"
+    )
+
+
+class ResumeFinancierDevisSerializer(serializers.Serializer):
+    """
+    Serializer pour le résumé financier complet d'un devis MRH.
+    
+    Ce serializer retourne tous les montants financiers d'un devis :
+    - Prime nette totale (après options)
+    - Prime annuelle (avant options) 
+    - Accessoires
+    - Taxes (garanties + accessoire)
+    - Prime TTC
+    - Liste des garanties acquises
+    """
+    
+    # Identifiants
+    id_devis = serializers.IntegerField(
+        help_text="ID du devis"
+    )
+    numero_devis = serializers.CharField(
+        max_length=100,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Numéro du devis"
+    )
+    
+    # Montants principaux (en FCFA)
+    prime_nette_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text=(
+            "Prime nette totale APRÈS application des options. "
+            "C'est la somme des primes nettes de toutes les garanties "
+            "de toutes les maisons après options."
+        )
+    )
+    
+    prime_annuelle = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text=(
+            "Prime annuelle AVANT application des options. "
+            "NOTE : Actuellement identique à prime_nette_totale car les options "
+            "ne sont pas stockées séparément."
+        )
+    )
+    
+    accessoire = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text=(
+            "Montant de l'accessoire calculé selon les paliers définis "
+            "dans stdaccessoire (en FCFA)"
+        )
+    )
+    
+    taxe_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text=(
+            "Taxe totale = taxe_garanties + taxe_accessoire (en FCFA)"
+        )
+    )
+    
+    prime_ttc = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text=(
+            "Prime TTC = prime_nette_totale + taxe_totale + accessoire (en FCFA)"
+        )
+    )
+    
+    # Détails des taxes
+    taxe_sous_garanties = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Somme des taxes sur toutes les garanties (en FCFA)"
+    )
+    
+    taxe_accessoire = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Taxe sur l'accessoire 14.5% (en FCFA)"
+    )
+    
+    # Détails accessoire
+    accessoire_details = AccessoireDetailsSerializer(
+        help_text="Détails complets de l'accessoire avec palier"
+    )
+    
+    # Statistiques
+    statistiques = StatistiquesDevisSerializer(
+        help_text="Statistiques sur le devis"
+    )
+    
+    # Liste des garanties acquises
+    sous_garanties_acquises = GarantieAcquiseSerializer(
+        many=True,
+        help_text="Liste de toutes les garanties acquises du devis"
+    )
+    
+    # Note explicative
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Note explicative sur les calculs"
+    )
+    
+    class Meta:
+        # Ordre d'affichage des champs
+        fields = [
+            'id_devis',
+            'numero_devis',
+            'prime_nette_totale',
+            'prime_annuelle',
+            'accessoire',
+            'taxe_totale',
+            'prime_ttc',
+            'taxe_sous_garanties',
+            'taxe_accessoire',
+            'accessoire_details',
+            'statistiques',
+            'sous_garanties_acquises',
+            'note',
+        ]

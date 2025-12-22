@@ -49,6 +49,7 @@ from .views import (
     ConsolidationDevisView,
     ContractListView,
     ReversementCompagnieNonValideViewSet,
+    ResumeFinancierDevisView,
 )
 from .views import (
     create_contract,
@@ -460,6 +461,12 @@ urlpatterns = [
         name='devis-recalculer'
     ),
     # POST /api/mrh/devis/{devis_id}/recalculer/ - Recalculer totaux
+    
+     path(
+        'mrh/devis/<int:devis_id>/resume-financier/',
+        ResumeFinancierDevisView.as_view(),
+        name='devis-resume-financier'
+    ),
     
 ]
 

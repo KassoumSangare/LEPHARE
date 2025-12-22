@@ -38,7 +38,7 @@ from production.services.recapitulatif_primes_mrh import RecapitulatifPrimesMRH
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
-from ...production.database import obtenir_nouveau_numero_devis, obtenir_code_categorie
+from ..database import obtenir_nouveau_numero_devis, obtenir_code_categorie
 
 def calculer_date_expiration(
     date_effet: date, 
@@ -304,6 +304,10 @@ class MRHCalculService:
             return sous_garanties, []
         
         options_appliquees = []
+        
+        for sous_garantie in sous_garanties:
+            sous_garantie['prime_avant_options'] = sous_garantie['prime_nette']  # Copie avant modification
+
         sous_garanties_map = {g['code_sous_garantie']: g for g in sous_garanties}
         
         # Récupérer les options
@@ -446,6 +450,7 @@ class MRHCalculService:
                 'libelle_sous_garantie': sous_gar_opt.libelle,
                 'type_garantie': 'OPTIONNELLE',
                 'prime_nette': prime_nette,
+                'prime_avant_options': prime_nette,
                 'taux_repartition': None,
                 'taux_taxe': taux_taxe * 100,
                 'taxe': taxe,
@@ -629,7 +634,10 @@ class MRHCalculService:
         """
         from ..models import DevisDetail, DevisDetGarantie
         
-        # 1. Créer le DevisDetail (maison)
+        # 1. Calculer la prime annuelle de la maison (avant options)
+        prime_annuelle_maison = sum(g.get('prime_avant_options', g['prime_nette']) for g in resultat_calcul['garanties'])
+        
+        # 2. Créer le DevisDetail (maison)
         devis_detail = DevisDetail.objects.create(
             iddevis_id=id_devis,
             idoffre=id_offre,  # NULL pour MRH
@@ -639,7 +647,7 @@ class MRHCalculService:
             # Montants calculés
             primenette=resultat_calcul['prime_nette_totale'],
             taxeenregistrement=resultat_calcul['taxe_totale'],
-            primeannuelle=resultat_calcul['prime_ttc_totale'],
+             primeannuelle=prime_annuelle_maison,  
             
             # Champs utilisables pour stocker des infos MRH
             observation=self._formater_observation(resultat_calcul),
@@ -676,7 +684,7 @@ class MRHCalculService:
                 # Montants
                 PrimeNette=sous_garantie['prime_nette'],
                 taxe=sous_garantie['taxe'],
-                primeannuelle=sous_garantie['prime_ttc'],
+                primeannuelle=sous_garantie.get('prime_avant_options', sous_garantie['prime_nette']),
                 
                 # Champs optionnels (NULL pour MRH)
                 Capital=None,

@@ -111,11 +111,16 @@ from autorisations.tasks import envoyer_notification_nouvelle_demande
 from django.contrib.contenttypes.models import ContentType
 
 
-from decimal import Decimal
-from typing import Dict, List
-
 # Import du service de calcul de prime MRH
-from .mrh_calcul_service import MRHCalculService
+from .services.mrh_calcul_service import MRHCalculService
+
+
+
+# Import du module de calcul du résumé financier
+from .services.resume_financier_devis import obtenir_resume_financier_devis
+
+# Import du serializer
+from .serializers import ResumeFinancierDevisSerializer
 
 # Import des modèles MRH
 from configuration_api.models import (
@@ -2812,11 +2817,97 @@ class RecalculerDevisView(APIView):
         
         except Devis.DoesNotExist:
             return Response(
-                {'error': f'Devis {devis_id} non trouvé'},
+                {'erreur': f'Devis {devis_id} non trouvé'},
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
             return Response(
-                {'error': str(e)},
+                {'erreur': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+"""
+Vue pour l'endpoint de résumé financier des devis MRH
+======================================================
+"""
+
+class ResumeFinancierDevisView(APIView):
+    """
+    Endpoint pour obtenir le résumé financier complet d'un devis MRH.
+    
+    GET /api/mrh/devis/{devis_id}/resume-financier/
+    
+    Retourne :
+    - Prime nette totale (après options)
+    - Prime annuelle (avant options)
+    - Accessoires
+    - Taxe totale (garanties + accessoire)
+    - Prime TTC
+    - Liste des garanties acquises avec prime nette et taxe
+    
+    Permissions :
+    - Utilisateur authentifié
+    
+    Exemples d'utilisation :
+    
+    curl http://localhost:8000/api/mrh/devis/456/resume-financier/
+    
+    Réponse :
+    {
+        "id_devis": 456,
+        "numero_devis": "DEV-MRH-2024-00456",
+        "prime_nette_totale": 153680.00,
+        "prime_annuelle": 153680.00,
+        "accessoire": 5000.00,
+        "taxe_totale": 28594.60,
+        "prime_ttc": 187274.60,
+        "taxe_sous_garanties": 27869.60,
+        "taxe_accessoire": 725.00,
+        "accessoire_details": {...},
+        "statistiques": {...},
+        "sous_garanties_acquises": [...]
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, devis_id):
+        """
+        Récupère le résumé financier complet du devis.
+        
+        Args:
+            request: Requête HTTP
+            devis_id: ID du devis
+        
+        Returns:
+            Response avec le résumé financier complet
+        """
+        try:
+            # Calculer le résumé financier
+            resume = obtenir_resume_financier_devis(devis_id)
+            
+            # Sérialiser la réponse
+            serializer = ResumeFinancierDevisSerializer(resume)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except ValueError as e:
+            # Devis non trouvé
+            return Response(
+                {
+                    'erreur': str(e),
+                    'code': 'DEVIS_INTROUVABLE'
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        except Exception as e:
+            # Erreur interne
+            return Response(
+                {
+                    'erreur': f"Erreur lors du calcul du résumé financier : {str(e)}",
+                    'code': 'ERREUR_INTERNE'
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
