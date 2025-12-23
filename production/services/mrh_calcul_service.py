@@ -843,9 +843,9 @@ class MRHCalculService:
             
         codecategorie = obtenir_code_categorie(idtarif)
         numerodevis = obtenir_nouveau_numero_devis(id_intermediaire=idintermediaire, id_compagnie=idcompagnie,code_categorie=codecategorie)
-                # Créer le devis
         dateemission = datetime.now() if not kwargs.get("dateemission") else kwargs.get("dateemission")
         numero_police_compagnie = kwargs.get('numeropolicecompagnie', '')
+        # Créer le devis
         devis = Devis.objects.create(
             intermediaire_id=idintermediaire,
             compagnie_id=idcompagnie,
