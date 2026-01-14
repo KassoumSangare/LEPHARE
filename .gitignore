@@ -7,6 +7,9 @@ media/
 node_modules/
 bundles/
 
+# Dev packages
+requirements-dev.txt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
