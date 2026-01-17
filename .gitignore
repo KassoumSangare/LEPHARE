@@ -9,7 +9,7 @@ bundles/
 
 # Dev packages
 requirements-dev.txt
-
+requirements/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
