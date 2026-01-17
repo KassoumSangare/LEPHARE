@@ -2,6 +2,7 @@
 backup-dbs/
 media/
 *.sqlite3
+test_*.db
 
 # Javascript
 node_modules/
@@ -67,6 +68,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.pytest_cache
 
 # Translations
 *.mo
@@ -147,3 +149,7 @@ dmypy.json
 
 # Other
 .DS_Store
+
+# Test media files
+test_media/
+test_static/
