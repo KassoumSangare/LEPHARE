@@ -17,7 +17,9 @@ urlpatterns = [
     path("api/", include("sante.urls")),
     path("api/", include("reporting.urls")),
     path("api/", include("payment.urls")),
-   path('api/autorisations/', include('autorisations.urls')),
+    path('api/autorisations/', include('autorisations.urls')),
+    # ✨ API Commissions
+    path('api/commissions/', include('commissions.urls')),
 ]
 
 if settings.DEBUG:

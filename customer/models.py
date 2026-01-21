@@ -86,7 +86,10 @@ class Client(models.Model):
         db_column="numerocompte", max_length=20, default="XXXXXXX"
     )
     Solde = models.DecimalField(
-        db_column="solde", max_digits=19, decimal_places=4, null=True
+        db_column="solde", max_digits=19, decimal_places=4, null=True, default=0.0
+    )
+    Avoir = models.DecimalField(
+        db_column="avoir", max_digits=19, decimal_places=4, null=True, default=0.0
     )
     idtypeclient = models.ForeignKey(
         TypeSouscripteur,

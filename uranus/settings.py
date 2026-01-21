@@ -122,6 +122,7 @@ INSTALLED_APPS = [
     "knox",
     "drf_toolbox",
     "asaci",
+    "commissions",
     "sante",
     "django_rest_passwordreset",
     "reporting",
@@ -379,3 +380,18 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_PROFILE_MODULE = "account.UranusUser"
 
 AUTH_USER_MODEL = "account.UranusUser"
+
+# Configuration du cache (Redis)
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'uranus_commissions',
+    }
+}
+
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"

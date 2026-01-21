@@ -801,8 +801,8 @@ class Contrat(models.Model):
     motifannulation = models.CharField(
         db_column="motifannulation", max_length=255, blank=True, null=True
     )
-    idquittance = models.ForeignKey(
-        "Quittance", db_column="idquittance", null=True, on_delete=models.SET_NULL
+    idquittance = models.OneToOneField(
+        "Quittance", db_column="idquittance", null=True, on_delete=models.SET_NULL, related_name="contrat",
     )
     idduree = models.IntegerField(default=1, blank=True, null=True)
     idterme = models.IntegerField(default=1, blank=True, null=True)
@@ -831,6 +831,7 @@ class Contrat(models.Model):
         default=False, blank=True, null=True, db_column="primeimposee"
     )
     numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
+    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True)
 
     class Meta:
         db_table = "stdcontrat"
@@ -1339,6 +1340,7 @@ class Quittance(models.Model):
     )
     exoneredetaxes = models.BooleanField(db_column="exoneredetaxes")
     exoneredeaccess = models.BooleanField(db_column="exoneredeaccess")
+    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True)
 
     def __str__(self):
         return "Quittance n° {} de la police {}".format(self.quittance, self.police)
@@ -1348,7 +1350,12 @@ class Quittance(models.Model):
         verbose_name = "Quittance"
         verbose_name_plural = "Quittances"
 
-
+    # @property
+    # def contrat(self):
+    #     cnt = Contrat.objects.filter(idquittance=self, numeropolice=self.police)
+    #     if cnt:
+    #         cnt = cnt.first()
+    #     return cnt
 class DetailQuittance(models.Model):
     iddetquittance = models.AutoField(primary_key=True, db_column="iddetquittance")
     quittance = models.ForeignKey(Quittance, models.CASCADE, db_column="idquittance")
