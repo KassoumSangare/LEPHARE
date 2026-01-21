@@ -424,6 +424,9 @@ class DevisDetail(models.Model):
     iddevis = models.ForeignKey(
         Devis, related_name="details", db_column="iddevis", on_delete=models.CASCADE
     )
+    iddevisorigine = models.ForeignKey(
+        Devis, related_name="details_origine", db_column="iddevisorigine", null=True, on_delete=models.SET_NULL
+    )
     idoffre = models.IntegerField(null=True, blank=True)
     idtarif = models.IntegerField()
     vehicule = models.IntegerField()
