@@ -2459,6 +2459,8 @@ def save_premium_collection(user_id, input_data):
                 ObjectId=row[0],
                 OutputMessage=row[1],
             )
+            if row[0] == 0:
+                error_occured = True
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occured = True

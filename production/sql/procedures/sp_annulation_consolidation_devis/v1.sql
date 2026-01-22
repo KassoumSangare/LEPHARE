@@ -18,8 +18,8 @@ BEGIN
     -- 2. Restore Detail Lines
     UPDATE public.stddevisdetail
     SET 
-        iddevis = iddevis_origine,
-        iddevis_origine = NULL
+        iddevis = iddevisorigine,
+        iddevisorigine = NULL
     WHERE iddevis = p_devis_principal_id 
     AND iddevis_origine IS NOT NULL;
 
@@ -27,7 +27,7 @@ BEGIN
     -- We use a cursor/loop to ensure each restored quote gets its totals updated
     FOR v_source_record IN 
         UPDATE public.stddevis
-        SET statut = 'ACTIF',
+        SET statut = 'ACTIVE',
             archive = false,
             iddevisconsolide = NULL,
             dateconsolidation = NULL
@@ -46,7 +46,7 @@ BEGIN
 
     -- 4. Reset and Recalculate Principal Quote
     UPDATE public.stddevis
-    SET statut = 'ACTIF',
+    SET statut = 'ACTIVE',
         flotte = false,
         datemodification = CURRENT_TIMESTAMP
     WHERE iddevis = p_devis_principal_id;
