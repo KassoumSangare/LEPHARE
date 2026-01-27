@@ -2967,8 +2967,12 @@ def obtenir_nouveau_numero_devis(id_intermediaire: int, id_compagnie: int, code_
     # Initialisation des variables de retour
     numero_devis_genere: str = ""
     message_retour: str = ""
+    code_categorie = code_categorie.strip() if code_categorie else code_categorie
 
     try:
+        if not code_categorie:
+            raise DatabaseError("Categorie non indiquée!")
+        
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL public.sp_generer_numero_devis(%s, %s, %s, %s, %s)",

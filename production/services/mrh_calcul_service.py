@@ -799,53 +799,63 @@ class MRHCalculService:
             'cedeao': cedeao,
             'primettc': primettc,
         }
-    
+        
+
     @transaction.atomic
     def creer_devis(
-        self,
-        idintermediaire: int,
-        idcompagnie: int,
-        idproduit: int,
-        idtarif:int,
-        idoffre: int,
-        idclient: int,
-        dateeffet: date,
-        **kwargs
-    ) -> int:
+    self,
+    idintermediaire: int,
+    idcompagnie: int,
+    idproduit: int,
+    idtarif: int,
+    idoffre: int,
+    idclient: int,
+    dateeffet: date,
+    **kwargs
+) -> int:
         """
-        Crée un nouveau devis MRH vide.
-        
-        Args:
-            idintermediaire: ID de l'intermédiaire
-            idcompagnie: ID de la compagnie
-            idproduit: ID du produit MRH
-            idtarif: ID du tarif
-            idoffre: ID de l'offre
-            idclient: ID du client
-            dateeffet: Date d'effet du contrat
-            **kwargs: Autres champs optionnels (dateexpiration, idassure, etc.)
-        
-        Returns:
-            ID du devis créé
-        """
-        from ..models import Devis 
-        
-        # Calculer dateexpiration si non fournie (1 an par défaut)
-        dateexpiration = kwargs.get('dateexpiration')
-        idduree = kwargs.get('idduree', 4) #idduree = 4 ==> Durée annuelle
-        jours = kwargs.get('nombrejours', 0)
-        
-        if not dateexpiration:
-            try:
-                dateexpiration = calculer_date_expiration(date_effet=dateeffet, id_duree=idduree, nombre_jours=jours)
-            except Exception as error:
-                raise error
+            Crée un nouveau devis MRH vide.
             
+            Args:
+                idintermediaire: ID de l'intermédiaire
+                idcompagnie: ID de la compagnie
+                idproduit: ID du produit MRH
+                idtarif: ID du tarif
+                idoffre: ID de l'offre
+                idclient: ID du client
+                dateeffet: Date d'effet du contrat
+                **kwargs: Autres champs optionnels (dateexpiration, idassure, etc.)
+            
+            Returns:
+                ID du devis créé
+        """
+        from ..models import Devis
+
+        # Calculer dateexpiration si non fournie
+        dateexpiration = kwargs.get('dateexpiration')
+        idduree = kwargs.get('idduree', 4)  # durée annuelle par défaut
+        jours = kwargs.get('nombrejours', 0)
+
+        if not dateexpiration:
+            # ⚠️ Si calculer_date_expiration lève une exception, rollback automatique
+            dateexpiration = calculer_date_expiration(
+                date_effet=dateeffet,
+                id_duree=idduree,
+                nombre_jours=jours
+            )
+
+        # ⚠️ obtenir_nouveau_numero_devis modifie la base et peut lever une exception
         codecategorie = obtenir_code_categorie(idtarif)
-        numerodevis = obtenir_nouveau_numero_devis(id_intermediaire=idintermediaire, id_compagnie=idcompagnie,code_categorie=codecategorie)
-        dateemission = datetime.now() if not kwargs.get("dateemission") else kwargs.get("dateemission")
+        numerodevis = obtenir_nouveau_numero_devis(
+            id_intermediaire=idintermediaire,
+            id_compagnie=idcompagnie,
+            code_categorie=codecategorie
+        )
+
+        dateemission = kwargs.get("dateemission", datetime.now())
         numero_police_compagnie = kwargs.get('numeropolicecompagnie', '')
-        # Créer le devis
+
+        # ⚠️ Devis.objects.create peut lever une exception
         devis = Devis.objects.create(
             intermediaire_id=idintermediaire,
             compagnie_id=idcompagnie,
@@ -855,28 +865,19 @@ class MRHCalculService:
             assure_id=kwargs.get('idassure', idclient),
             numerodevis=numerodevis,
             numero_police_compagnie=numero_police_compagnie,
-            # Dates
             dateeffet=dateeffet,
             dateexpiration=dateexpiration,
             dateemission=dateemission,
-            
-            # Configuration
             flotte=kwargs.get('flotte', False),
             coassurance=kwargs.get('coassurance', False),
             renouvelable=kwargs.get('renouvelable', True),
             confirme=kwargs.get('confirme', False),
             prime_imposee=kwargs.get('prime_imposee', False),
-            
-            # Durée et périodicité
-            idduree=kwargs.get('idduree', 4),
+            idduree=idduree,
             idterme=kwargs.get('idterme', 1),
             periode=kwargs.get('periode', 'A'),
-            
-            # Informations
             referenceagent=kwargs.get('referenceagent', ''),
             observation=kwargs.get('observation', ''),
-            
-            # Montants (initialisés à 0, seront mis à jour lors de l'ajout de maisons)
             primenette=0,
             taxe=0,
             accessoire=0,
@@ -884,8 +885,6 @@ class MRHCalculService:
             fga=0,
             cedeao=0,
             primettc=0,
-            
-            # Autres champs
             avenant_id=kwargs.get('idavenant', 1),
             aperiteur_id=kwargs.get('idaperiteur', idintermediaire),
             numeroavenant='',
@@ -893,9 +892,10 @@ class MRHCalculService:
             nbreche=1,
             statut='ACTIF',
         )
-        
+
         return devis.iddevis
-    
+
+        
     def _formater_observation(self, resultat_calcul: Dict) -> str:
         """
         Formate l'observation pour DevisDetail (max 50 caractères).

@@ -189,10 +189,23 @@ BEGIN
     WHERE SQ.NumeroQuittance = TDE.NumeroQuittance;
 
     -- 7. INSERTION DÉTAILS
-    INSERT INTO StdDetailEncaissement(idencaissement, numeroquittance, soldeinitial, montant_encaissement, indiceacompte)
-    SELECT id_encaissement, TDE.NumeroQuittance, (SQ.PrimeTTC - (COALESCE(SQ.Mt_Encaisse,0) - TDE.MontantEncaissement)), TDE.MontantEncaissement, 1
-    FROM temp_data_encaissement TDE
-    INNER JOIN StdQuittance SQ ON TDE.NumeroQuittance = SQ.NumeroQuittance;
+	INSERT INTO StdDetailEncaissement(indiceacompte, soldeinitial, montantreglement, montantecart, ecart, code_ecart,
+											 montant_encaissement, dedcommission_intermediaire, dedcommission_gestionnaire,
+											 dedcommission_coassurance, dedaccessoireintermediaire, dedaccessoiregestionnaire,
+											 dedtaxecommission, idencaissement, numeroquittance, comintermediaire, comgestionnaire,
+									  comconseiller, comcoassurance, accintermediaire, accgestionnaire)
+	SELECT (COALESCE(SDE.AncIndiceAcompte, 0) + 1) AS Indice, (SQ.PrimeTTC - COALESCE(SQ.Mt_Encaisse,0)) AS Solde, 0 AS MontantRegle,
+		   (SQ.PrimeTTC - COALESCE(SQ.Mt_Encaisse,0) - TDE.MontantEncaissement) AS MontantEcart,
+		   CASE WHEN (SQ.PrimeTTC - COALESCE(SQ.Mt_Encaisse,0) - TDE.MontantEncaissement) >= 5.0 THEN True ELSE False END, 'E' AS CodeEcart,
+		   TDE.MontantEncaissement, False, False, False, False, False, False, id_encaissement, TDE.NumeroQuittance,
+		   COALESCE(SC.commissionintermediaire,0) AS comintermediaire, COALESCE(SC.commissiongestionnaire, 0) AS comgestionnaire, 0 AS comconseiller,
+		   COALESCE(SC.commissionaperiteur, 0) AS comcoassurance, SC.accessoireintermediaire AS accintermediaire, SC.accessoiregestionnaire AS accgestionnaire
+	FROM temp_data_encaissement AS TDE
+	INNER JOIN StdQuittance AS SQ ON (TDE.NumeroQuittance = SQ.NumeroQuittance)
+	LEFT JOIN (SELECT MAX(IndiceAcompte) AS AncIndiceAcompte, NumeroQuittance
+			   FROM StdDetailEncaissement
+			   GROUP BY NumeroQuittance) AS SDE ON (TDE.NumeroQuittance = SDE.NumeroQuittance)
+	INNER JOIN StdContrat AS SC ON (SQ.IdQuittance = SC.IdQuittance);
 
     out_message := 'Encaissement enregistré avec succès.';
 
