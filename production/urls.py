@@ -50,6 +50,9 @@ from .views import (
     ContractListView,
     ReversementCompagnieNonValideViewSet,
     ResumeFinancierDevisView,
+    CheckChequeStatusView, 
+    ChequeListView, 
+    ChequeDetailOperationsView,
 )
 from .views import (
     create_contract,
@@ -467,6 +470,15 @@ urlpatterns = [
         ResumeFinancierDevisView.as_view(),
         name='devis-resume-financier'
     ),
+     
+     # Endpoint de vérification d'existence (Autocomplete)
+    path('cheques/statut/', CheckChequeStatusView.as_view(), name='cheque-statut'),
+    
+    # Endpoint 1 : Liste filtrée des chèques
+    path('cheques/', ChequeListView.as_view(), name='cheque-liste'),
+    
+    # Endpoint 2 : Détails et opérations d'un chèque
+    path('cheques/<int:cheque_id>/operations/', ChequeDetailOperationsView.as_view(), name='cheque-operations'),
     
 ]
 

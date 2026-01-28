@@ -3,9 +3,12 @@ from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator
 from decimal import Decimal
 from django.db import IntegrityError
+
+from django.db.models import F, Q
+from django.core.validators import MinValueValidator
 import uuid
 
-from django.db.models import CheckConstraint, Q, F, UniqueConstraint
+from django.db.models import CheckConstraint, UniqueConstraint
 from django.contrib.postgres.fields import ArrayField
 from django.db.models import JSONField  # Django >= 3.1
 from configuration_api.models import (
@@ -3512,3 +3515,41 @@ class SequenceFacture(models.Model):
 #             ])
             
 #             return result
+
+class Cheque(models.Model):
+    id_cheque = models.AutoField(primary_key=True, db_column="idcheque")
+    numero_cheque = models.CharField(max_length=50, db_column="numerocheque")
+    banque = models.ForeignKey(Banque, on_delete=models.PROTECT, db_column="idbanque")
+    montant_initial = models.DecimalField(max_digits=19, decimal_places=4, db_column="montantinitial")
+    solde_disponible = models.DecimalField(max_digits=19, decimal_places=4, db_column="soldedisponible")
+    date_saisie = models.DateTimeField(auto_now_add=True, db_column="datesaisie")
+
+    class Meta:
+        db_table = "stdcheque"
+        unique_together = ('numero_cheque', 'banque')
+        constraints = [
+            # Contrainte : Montant initial >= Solde disponible et les deux doivent être >= 0
+            CheckConstraint(
+                check=Q(montant_initial__gte=F('solde_disponible')) & Q(solde_disponible__gte=0),
+                name='check_solde_coherence'
+            ),
+            CheckConstraint(
+                check=Q(montant_initial__gt=0),
+                name='check_montant_initial_positif'
+            )
+        ]
+
+    def __str__(self):
+        return f"Chèque {self.numero_cheque} ({self.banque})"
+
+class ChequeOperation(models.Model):
+    id_operation = models.AutoField(primary_key=True, db_column="idoperation")
+    cheque = models.ForeignKey(Cheque, on_delete=models.CASCADE, related_name='operations', db_column="idcheque")
+    id_encaissement = models.IntegerField(db_column="idencaissement") # Retourné par la procédure sp_enregistrement_encaissement
+    utilisateur = models.ForeignKey(User, on_delete=models.PROTECT, db_column="idutilisateur")
+    montant_operation = models.DecimalField(max_digits=19, decimal_places=4, db_column="montantoperation")
+    date_operation = models.DateField(db_column="dateoperation")
+    date_saisie = models.DateTimeField(auto_now_add=True, db_column="datesaisie")
+    
+    class Meta:
+        db_table = "stdchequeoperation"

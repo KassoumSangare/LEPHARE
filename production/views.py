@@ -9,7 +9,7 @@ from rest_framework import generics
 from django.shortcuts import get_object_or_404
 from core.date_parser import parse_date_string
 from typing import cast
-
+from django_filters import rest_framework as filters
 
 from knox.auth import TokenAuthentication
 from rest_framework.authentication import BasicAuthentication
@@ -96,6 +96,8 @@ from .models import (
     DetailReversement,
     LogRecord,
     CertificatTransport,
+    Cheque,
+    ChequeOperation,
 )
 
 
@@ -152,8 +154,12 @@ from .serializers import (
     DevisMRHCalculeResponseSerializer,
     MaisonAjouteeResponseSerializer,
     ErrorSerializer,
+    EncaissementResponseSerializer,
+    ChequeSerializer,
+    ChequeOperationSerializer,
 )
 
+from core.services import ServiceError
 from .exceltopostgresql import export_excel
 
 from .database import (
@@ -1825,28 +1831,23 @@ def collect_premium(request):
     enregistrementencaissement_serializer = EncaissementGroupeQuittanceSerializer(
         data=enregistrementencaissement_data
     )
-    if enregistrementencaissement_serializer.is_valid():
-        (err, qryset) = save_premium_collection(
-            request.user.id, enregistrementencaissement_data
-        )
-
-        data_insertion_serializer = DataInsertionSerializer(
-            qryset,
-            many=True,
-        )
-        st = status.HTTP_201_CREATED
-        if err:
-            st = status.HTTP_400_BAD_REQUEST
-        elif not settings.DEBUG and settings.URANUS_IN_PRODUCTION:
-            send_sms_encaissement_contrat.delay(
-                int(data_insertion_serializer.data[0]["ObjectId"])
+    enregistrementencaissement_serializer.is_valid(raise_exception=True)
+    try:
+        
+        result_data = save_premium_collection(request.user, enregistrementencaissement_data)
+        # 3. Réponse de succès utilisant notre structure définie
+        output_serializer = EncaissementResponseSerializer(result_data)
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+    except ServiceError as e:
+            # Erreur renvoyée par la procédure SQL (id=0)
+            return Response({"error": str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+            # Erreur système inattendue
+            return Response(
+                {"error": "Une erreur technique est survenue.", "details": str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
-    return JsonResponse(
-        enregistrementencaissement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
-    )
-
 
 # Cancel Premium collection
 # @api_view(["POST"])
@@ -2979,3 +2980,60 @@ class ResumeFinancierDevisView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class ChequeFilter(filters.FilterSet):
+    # Filtre pour les chèques non épuisés (solde > 0)
+    non_epuise = filters.BooleanFilter(method='filter_non_epuise')
+    # Filtre par plage de dates
+    date_min = filters.DateFilter(field_name="date_saisie", lookup_expr='gte')
+    date_max = filters.DateFilter(field_name="date_saisie", lookup_expr='lte')
+
+    class Meta:
+        model = Cheque
+        fields = ['banque', 'numero_cheque']
+
+    def filter_non_epuise(self, queryset, name, value):
+        if value:
+            return queryset.filter(solde_disponible__gt=0)
+        return queryset
+
+
+class CheckChequeStatusView(APIView):
+    def get(self, request):
+        numero = request.query_params.get('numero_cheque')
+        banque_id = request.query_params.get('banque')
+        
+        cheque = Cheque.objects.filter(numero_cheque=numero, banque_id=banque_id).first()
+        
+        if cheque:
+            return Response({
+                "existe": True,
+                "montant_initial": cheque.montant_initial,
+                "solde_disponible": cheque.solde_disponible
+            })
+        return Response({"existe": False})
+    
+
+class ChequeListView(generics.ListAPIView):
+    queryset = Cheque.objects.all().order_by('-date_saisie')
+    serializer_class = ChequeSerializer
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = ChequeFilter
+
+class ChequeDetailOperationsView(APIView):
+    def get(self, request, cheque_id):
+        # On récupère le chèque
+        cheque = get_object_or_404(Cheque, id_cheque=cheque_id)
+        
+        # On récupère toutes les opérations liées
+        operations = cheque.operations.all().order_by('-date_saisie')
+        
+        # Sérialisation
+        cheque_data = ChequeSerializer(cheque).data
+        operations_data = ChequeOperationSerializer(operations, many=True).data
+        
+        return Response({
+            "chèque": cheque_data,
+            "historique_operations": operations_data
+        })

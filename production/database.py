@@ -10,6 +10,7 @@ import json
 from core.date_parser import parse_date_string
 from django.db import transaction
 from django.db.utils import DatabaseError
+from rest_framework.exceptions import ValidationError, APIException
 from .models import (
     DataInsertionResult,
     QuittanceFn,
@@ -29,6 +30,8 @@ from .models import (
     Contrat,
     ContratEcheance,
     CertificatTransport,
+    Cheque,
+    ChequeOperation,
 )
 from .iautils import unpack_ia_quotation_post_data, convert_to_date
 
@@ -41,7 +44,6 @@ logger = logging.getLogger(__name__)
 DEVIS_NON_CONFIRME = 0
 DEVIS_CONFIRME = 1
 DEVIS_INEXISTANT = 2
-
 
 def get_devis(iddevis):
     if iddevis == 0:
@@ -2396,9 +2398,7 @@ def get_extended_quotation_info(
     return ("", results, total_count)
 #####################################################################
 # Save premium collection
-def save_premium_collection(user_id, input_data):
-    sql_output = None
-    error_occured = False
+def save_premium_collection(user, input_data):
     mode_encaissement = int(input_data["mode_encaissement"])
     banque = 1
     if "banque" in input_data:
@@ -2409,8 +2409,13 @@ def save_premium_collection(user_id, input_data):
     numero_cheque = ""
     if "numero_cheque" in input_data:
         if input_data["numero_cheque"]:
-            numero_cheque = str(input_data["numero_cheque"])
-
+            numero_cheque = str(input_data["numero_cheque"]).strip()
+    utilisation_cheque = banque != 1 and numero_cheque != ''
+    if utilisation_cheque:
+        montant_initial_cheque = None
+        if "montant_initial_cheque" in input_data:
+            if input_data["montant_initial_cheque"]:
+                montant_initial_cheque = Decimal(input_data["montant_initial_cheque"])
     reference_encaissement = ""
     if "reference_encaissement" in input_data:
         if input_data["reference_encaissement"]:
@@ -2428,17 +2433,39 @@ def save_premium_collection(user_id, input_data):
     liste_quittance = list(input_data["liste_quittance"])
     liste_q = ";".join([d["numero_quittance"] for d in liste_quittance])
     liste_m = ";".join([str(d["montant_encaissement"]) for d in liste_quittance])
-
+    
     id_encaissement = 0
     output_message = ""
-    data_insertion_result_list = []
-    queryset_vide = DataInsertionResult.objects.none()
-    try:
+    
+    with transaction.atomic():
+        # 1. Tentative de récupération ou création du chèque
+        # On verrouille la ligne pour éviter les accès concurrents (select_for_update)
+        if utilisation_cheque:
+            cheque = Cheque.objects.select_for_update().filter(
+                    numero_cheque=numero_cheque, banque_id=banque
+                ).first()
+
+            if not cheque:
+                # Premier usage : le montant_initial est obligatoire
+                m_initial = montant_initial_cheque
+                if not m_initial or float(m_initial) <= 0: 
+                    raise ValidationError("Le montant initial est requis pour le premier usage de ce chèque.")
+                    
+                cheque = Cheque.objects.create(
+                        numero_cheque=numero_cheque,
+                        banque_id=banque,
+                        montant_initial=m_initial,
+                        solde_disponible=m_initial
+                    )
+                
+            # 2. Vérification de la suffisance du solde
+            if cheque.solde_disponible < montant_total:
+                raise ValidationError(f"Solde du chèque insuffisant. Restant: {cheque.solde_disponible}")
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL sp_enregistrement_encaissement(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
-                    user_id,
+                    user.id,
                     mode_encaissement,
                     date_encaissement,
                     banque,
@@ -2453,33 +2480,34 @@ def save_premium_collection(user_id, input_data):
                     output_message,
                 ),
             )
-            connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(
-                ObjectId=row[0],
-                OutputMessage=row[1],
+        if row:
+            id_enc_genere = row[0]
+            msg_retour = row[1]
+        
+        if id_enc_genere == 0:
+            raise ServiceError(detail=msg_retour)
+            
+        # 4. Mise à jour du chèque et enregistrement de l'opération
+        if utilisation_cheque:
+            cheque.solde_disponible -= montant_total
+            cheque.save()
+            
+            ChequeOperation.objects.create(
+                cheque=cheque,
+                id_encaissement=id_encaissement,
+                utilisateur=user,
+                montant_operation=montant_total,
+                date_operation=date_encaissement
             )
-            if row[0] == 0:
-                error_occured = True
-            data_insertion_result_list.append(sql_output)
-    except Exception as error:
-        error_occured = True
-        print(error)
-        msg = str(error)
-        if msg.find("\n") > 0:
-            msg = msg.split("\n")[0]
-
-        sql_output = DataInsertionResult(
-            ObjectId=id_encaissement,
-            OutputMessage=msg,
-        )
-        data_insertion_result_list.append(sql_output)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
-
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    
+    res_dict = {
+                "id_encaissement": id_enc_genere,
+                "message": msg_retour,
+            }
+    if utilisation_cheque:
+        res_dict["solde_restant_cheque"] = cheque.solde_disponible
+    return res_dict
 
 
 #####################################################################

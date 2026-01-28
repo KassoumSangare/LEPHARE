@@ -62,6 +62,8 @@ from .models import (
     GarantieSouscrite,
     InfoVehicule,
 )
+
+from .models import Cheque, ChequeOperation
 from django.db.models import F
 
 
@@ -73,8 +75,6 @@ from configuration_api.models import (
     Option,
     OptionUsage,
 )
-
-
 
 
 def get_libelle_option(id_detail, entite="CNT"):
@@ -2078,6 +2078,9 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
     montant_total = serializers.DecimalField(
         required=True, max_digits=19, decimal_places=4
     )
+    montant_initial_cheque = serializers.DecimalField(
+        required=False, max_digits=19, decimal_places=4, allow_null=True, default=0
+    )
     numero_cheque = serializers.CharField(
         max_length=20, required=False, default="", allow_null=True
     )
@@ -2122,6 +2125,9 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
         instance.montant_total = validated_data.get(
             "montant_total", instance.montant_total
         )
+        instance.montant_initial_cheque = validated_data.get(
+            "montant_initial_cheque", instance.montant_initial_cheque
+        )
         instance.numero_cheque = validated_data.get(
             "numero_cheque", instance.numero_cheque
         )
@@ -2138,6 +2144,11 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
             "liste_quittance", instance.liste_quittance
         )
         return instance
+    
+class EncaissementResponseSerializer(serializers.Serializer):
+    id_encaissement = serializers.IntegerField()
+    message = serializers.CharField()
+    solde_restant_cheque = serializers.DecimalField(max_digits=19, decimal_places=4, required=False)
 
 class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
     id_reversement = serializers.IntegerField(required=False, allow_null=True)
@@ -3835,3 +3846,18 @@ class ResumeFinancierDevisSerializer(serializers.Serializer):
             'sous_garanties_acquises',
             'note',
         ]
+
+
+class ChequeOperationSerializer(serializers.ModelSerializer):
+    nom_utilisateur = serializers.ReadOnlyField(source='utilisateur.email')
+
+    class Meta:
+        model = ChequeOperation
+        fields = ['id_operation', 'id_encaissement', 'nom_utilisateur', 'montant_operation', 'date_operation', 'date_saisie']
+
+class ChequeSerializer(serializers.ModelSerializer):
+    banque_nom = serializers.ReadOnlyField(source='banque.libelle')
+
+    class Meta:
+        model = Cheque
+        fields = ['id_cheque', 'numero_cheque', 'banque', 'banque_nom', 'montant_initial', 'solde_disponible', 'date_saisie']
