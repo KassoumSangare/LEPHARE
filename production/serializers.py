@@ -3856,8 +3856,8 @@ class ChequeOperationSerializer(serializers.ModelSerializer):
         fields = ['id_operation', 'id_encaissement', 'nom_utilisateur', 'montant_operation', 'date_operation', 'date_saisie']
 
 class ChequeSerializer(serializers.ModelSerializer):
-    banque_nom = serializers.ReadOnlyField(source='banque.libelle')
+    nom_banque = serializers.ReadOnlyField(source='banque.libelle')
 
     class Meta:
         model = Cheque
-        fields = ['id_cheque', 'numero_cheque', 'banque', 'banque_nom', 'montant_initial', 'solde_disponible', 'date_saisie']
+        fields = ['id_cheque', 'numero_cheque', 'banque', 'nom_banque', 'montant_initial', 'solde_disponible', 'date_saisie']

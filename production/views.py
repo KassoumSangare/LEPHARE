@@ -1840,12 +1840,12 @@ def collect_premium(request):
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     except ServiceError as e:
             # Erreur renvoyée par la procédure SQL (id=0)
-            return Response({"error": str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"erreur": str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
             
     except Exception as e:
             # Erreur système inattendue
             return Response(
-                {"error": "Une erreur technique est survenue.", "details": str(e)}, 
+                {"erreur": "Une erreur technique est survenue.", "details": str(e)}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -3022,9 +3022,9 @@ class ChequeListView(generics.ListAPIView):
     filterset_class = ChequeFilter
 
 class ChequeDetailOperationsView(APIView):
-    def get(self, request, cheque_id):
+    def get(self, request, id_cheque):
         # On récupère le chèque
-        cheque = get_object_or_404(Cheque, id_cheque=cheque_id)
+        cheque = get_object_or_404(Cheque, id_cheque=id_cheque)
         
         # On récupère toutes les opérations liées
         operations = cheque.operations.all().order_by('-date_saisie')

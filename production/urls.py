@@ -478,7 +478,7 @@ urlpatterns = [
     path('cheques/', ChequeListView.as_view(), name='cheque-liste'),
     
     # Endpoint 2 : Détails et opérations d'un chèque
-    path('cheques/<int:cheque_id>/operations/', ChequeDetailOperationsView.as_view(), name='cheque-operations'),
+    path('cheques/<int:id_cheque>/operations/', ChequeDetailOperationsView.as_view(), name='cheque-operations'),
     
 ]
 

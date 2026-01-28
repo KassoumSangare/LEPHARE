@@ -36,6 +36,7 @@ from .models import (
 from .iautils import unpack_ia_quotation_post_data, convert_to_date
 
 from customer.models import Client
+from core.services import ServiceError
 import logging
 
 # Configuration du logging pour tracer les erreurs en production
@@ -2495,7 +2496,7 @@ def save_premium_collection(user, input_data):
             
             ChequeOperation.objects.create(
                 cheque=cheque,
-                id_encaissement=id_encaissement,
+                id_encaissement=id_enc_genere,
                 utilisateur=user,
                 montant_operation=montant_total,
                 date_operation=date_encaissement
