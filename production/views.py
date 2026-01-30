@@ -2992,12 +2992,13 @@ class ChequeFilter(filters.FilterSet):
 
     class Meta:
         model = Cheque
-        fields = ['banque', 'numero_cheque']
+        fields = ['banque', 'numero_cheque', 'non_epuise', 'date_min', 'date_max']
 
     def filter_non_epuise(self, queryset, name, value):
-        if value:
+        if value: # true → non épuisés
             return queryset.filter(solde_disponible__gt=0)
-        return queryset
+        else: # false → épuisés 
+            return queryset.filter(solde_disponible=0)
 
 
 class CheckChequeStatusView(APIView):
