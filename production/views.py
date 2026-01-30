@@ -318,10 +318,11 @@ class DevisClientView(generics.ListAPIView):
     ]
 
     def get_queryset(self):
+        from django.db.models import Count
         id_client = self.request.query_params.get("idclient", None)
         nom_client = self.request.query_params.get("nomclient", None)
         id_produit = self.request.query_params.get("idproduit", None)
-        devis_qs = Devis.objects.filter(confirme=False, archive=False)
+        devis_qs = Devis.objects.annotate(nombre_objets= Count("details")).filter(confirme=False, archive=False, flotte=False, nombre_objets=1)
         try:
             if nom_client:
                 clients = Client.objects.filter(
