@@ -161,4 +161,5 @@ urlpatterns = [
         get_liste_avenant,
         name="avenant_par_produit",
     ),
+    path('esttarifiagroupe/<int:idtarif>/', IATarifGroupeView.as_view(), name='est-tarif-ia-groupe'),
 ]

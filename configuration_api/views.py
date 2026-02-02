@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from django.db.models import Q, Subquery, OuterRef
 from django.conf import settings
 from rest_framework.response import Response
+from django.db import connection
 
 from .serializers import *
 from .models import *
@@ -1188,3 +1189,14 @@ class TypeContratSanteViewSet(SettingsModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+class IATarifGroupeView(APIView):
+    def get(self, request, idtarif):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT fn_tarif_ia_groupe(%s)", [idtarif])
+            
+            row = cursor.fetchone()
+            return_value = row[0] if row else None
+
+        # 4. Return to API client
+        return Response({"est_tarif_ia_groupe": return_value})
