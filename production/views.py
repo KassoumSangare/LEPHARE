@@ -592,9 +592,7 @@ class ImportationAssureIaViewSet(viewsets.ViewSet):
 
     def create(self, request):
         message = {}
-        error_count = 0
         id_devis = 0
-        errors = []
         serializer_class = ImportationAssureIaSerializer(data=request.data)
         if "FichierExcel" not in request.FILES or not serializer_class.is_valid():
             if "IdDevis" in request.POST:
@@ -606,17 +604,19 @@ class ImportationAssureIaViewSet(viewsets.ViewSet):
             ]
             return Response(data=message, status=status.HTTP_400_BAD_REQUEST)
         else:
-            (error_count, id_devis, errors) = import_ia_insured(
+            (error_ocurred, id_devis) = import_ia_insured(
                 request.FILES["FichierExcel"], request.user.id, request.POST
             )
             message["IdDevis"] = id_devis
-            if error_count == 0:
+            if not error_ocurred:
                 message["messages"] = [
                     "Importation des assurés réalisée avec succès.",
                 ]
                 return Response(data=message, status=status.HTTP_202_ACCEPTED)
             else:
-                message["messages"] = errors
+                message["messages"] =  [
+                    "Echec de l'importation des assurés.",
+                ]
                 return Response(data=message, status=status.HTTP_400_BAD_REQUEST)
 
 

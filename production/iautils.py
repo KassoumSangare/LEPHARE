@@ -1,30 +1,45 @@
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
+from typing import Union
 
+def convert_to_date(value: Union[str, datetime, date]) -> date:
+    if value is None:
+        raise ValueError("La valeur ne peut pas être None")
 
-def convert_to_date(date_string):
-    if isinstance(date_string, datetime):
-        return date_string.date()
-    date_string = date_string[:10]
-    try:
-        # Try to parse the date string using the '/' separator format
-        return datetime.strptime(date_string, "%d/%m/%Y").date()
-    except ValueError:
-        try:
-            # Try to parse the date string using the '-' separator format
-            return datetime.strptime(date_string, "%d-%m-%Y").date()
-        except ValueError:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+
+    if isinstance(value, datetime):
+        return value.date()
+
+    if isinstance(value, str):
+        value = value.strip()
+
+        formats = [
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%Y/%m/%d",
+
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+
+            "%d-%m-%Y %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+
+            "%d/%m/%Y %H:%M",
+            "%d/%m/%Y %H:%M:%S",
+        ]
+
+        for fmt in formats:
             try:
-                return datetime.strptime(date_string, "%Y-%m-%d").date()
+                return datetime.strptime(value, fmt).date()
             except ValueError:
-                try:
-                    return datetime.strptime(date_string, "%Y/%m/%d").date()
-                except ValueError:
-                    # If neither format matches, raise an error
-                    raise ValueError(
-                        "Invalid date format. Date string must be in 'dd/mm/yyyy' or 'dd-mm-yyyy' or 'yyyy/mm/dd' or 'yyyy-mm-dd' format."
-                    )
+                pass
 
+        raise ValueError(f"Format de date invalide: '{value}'")
+
+    raise TypeError(f"Type non supporté: {type(value)}")
 
 def unpack_ia_quotation_post_data(post_data):
     IdIntermediaire = int(post_data["IdIntermediaire"])
