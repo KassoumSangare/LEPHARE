@@ -1,11 +1,8 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator
 from decimal import Decimal
-from django.db import IntegrityError
 
 from django.db.models import F, Q
-from django.core.validators import MinValueValidator
 import uuid
 
 from django.db.models import CheckConstraint, UniqueConstraint
@@ -308,9 +305,20 @@ class Devis(models.Model):
         null=True,
         db_column="numeropolicecompagnie",
     )
+    # Nouveaux champs pour l'imposition de prime
     prime_imposee = models.BooleanField(
-        default=False, blank=True, null=True, db_column="primeimposee"
+        default=False, blank=True, null=True, db_column="primeimposee",
+        verbose_name="Prime imposée",
+        help_text="Indique si la prime globale du devis est imposée (non recalculable)"
     )
+    
+    prime_imposee_date = models.DateTimeField(
+        null=True,
+        blank=True, db_column="primeimposeedate",
+        verbose_name="Date imposition prime",
+        help_text="Date et heure de l'imposition de la prime"
+    )
+
     statut = models.CharField(max_length=50, default="ACTIF", db_column="statut")
     date_creation = models.DateTimeField(
         auto_now_add=True, null=True, blank=True, db_column="datecreation"
@@ -344,6 +352,16 @@ class Devis(models.Model):
                 name="devis_date_expiration_plus_grande_date_effet",
             ),
         ]
+        indexes = [
+            models.Index(fields=['prime_imposee'], name='idx_devis_prime_imposee'),
+        ]
+    @property
+    def prime_imposee_montant(self):
+        '''
+        Retourne le montant de la prime imposée.
+        C'est simplement primenette quand prime_imposee=True.
+        '''
+        return self.primenette if self.prime_imposee else None
 
 
 class HistoriqueConsolidation(models.Model):
@@ -536,13 +554,38 @@ class DevisDetail(models.Model):
         null=True,
         default=0.0,
     )
+    prime_imposee = models.BooleanField(
+        db_column="primeimposee",
+        default=False,
+        verbose_name="Prime imposée",
+        help_text="Indique si la prime de cette maison est imposée (non recalculable)"
+    )
+    
+    prime_imposee_date = models.DateTimeField(
+        db_column="primeimposeedate",
+        null=True,
+        blank=True,
+        verbose_name="Date imposition prime",
+        help_text="Date et heure de l'imposition de la prime"
+    )
+
 
     class Meta:
         db_table = "stddevisdetail"
         verbose_name = "Détail de devis"
         verbose_name_plural = "Détails de devis"
-
-
+        indexes = [
+            models.Index(fields=['prime_imposee'], name='idx_dd_prime_imposee'),
+        ]
+        
+    @property
+    def prime_imposee_montant(self):
+        '''
+        Retourne le montant de la prime imposée.
+        C'est simplement primenette quand prime_imposee=True.
+        '''
+        return self.primenette if self.prime_imposee else None
+    
 class DevisDetGarantie(models.Model):
     IdDevisDetGarantie = models.AutoField(
         primary_key=True, db_column="iddevisdetgarantie"
@@ -3553,3 +3596,181 @@ class ChequeOperation(models.Model):
     
     class Meta:
         db_table = "stdchequeoperation"
+        
+        
+
+# ============================================================================
+# NOUVEAU MODÈLE : Table d'historique des impositions
+# ============================================================================
+
+class ImpositionPrime(models.Model):
+    """
+    Historique des impositions de prime MRH.
+    
+    Cette table conserve la traçabilité complète de toutes les impositions
+    de prime (qui, quand, pourquoi) au niveau maison ou devis.
+    """
+    
+    # Choix pour le type d'imposition
+    TYPE_DEVIS = 'DEVIS'
+    TYPE_MAISON = 'MAISON'
+    TYPE_IMPOSITION_CHOICES = [
+        (TYPE_DEVIS, 'Devis (global)'),
+        (TYPE_MAISON, 'Maison (individuelle)'),
+    ]
+    
+    # Type et cible
+    type_imposition = models.CharField(
+        max_length=20,
+        choices=TYPE_IMPOSITION_CHOICES,
+        verbose_name="Type d'imposition",
+        help_text="DEVIS pour imposition globale, MAISON pour imposition individuelle"
+    )
+    
+    id_cible = models.IntegerField(
+        verbose_name="ID de la cible",
+        help_text="ID du devis (si DEVIS) ou ID du DevisDetail (si MAISON)"
+    )
+    
+    # Montants (toujours prime NETTE)
+    montant_impose = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        verbose_name="Montant imposé",
+        help_text="Montant de la prime NETTE imposée (en FCFA)"
+    )
+    
+    ancien_montant_nette = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="Ancien montant prime nette",
+        help_text="Prime nette avant l'imposition"
+    )
+    
+    ancien_montant_ttc = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        verbose_name="Ancien montant prime TTC",
+        help_text="Prime TTC avant l'imposition"
+    )
+    
+    # Traçabilité de la création
+    user_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name="ID utilisateur",
+        help_text="ID de l'utilisateur qui a imposé la prime"
+    )
+    
+    user_nom = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        verbose_name="Nom utilisateur",
+        help_text="Nom complet de l'utilisateur"
+    )
+    
+    date_imposition = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date d'imposition",
+        help_text="Date et heure de l'imposition"
+    )
+    
+    motif = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Motif",
+        help_text="Raison de l'imposition (ex: négociation commerciale)"
+    )
+    
+    # État de l'imposition
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Actif",
+        help_text="TRUE si l'imposition est active, FALSE si levée"
+    )
+    
+    # Traçabilité de la levée
+    date_levee = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Date de levée",
+        help_text="Date et heure où l'imposition a été levée"
+    )
+    
+    levee_par_user_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Levée par user ID",
+        help_text="ID de l'utilisateur qui a levé l'imposition"
+    )
+    
+    levee_par_user_nom = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        verbose_name="Levée par user nom",
+        help_text="Nom de l'utilisateur qui a levé l'imposition"
+    )
+    
+    motif_levee = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Motif de levée",
+        help_text="Raison de la levée de l'imposition"
+    )
+    
+    class Meta:
+        db_table = 'stdmrh_imposition_prime'
+        verbose_name = "Imposition de prime MRH"
+        verbose_name_plural = "Impositions de prime MRH"
+        ordering = ['-date_imposition']
+        indexes = [
+            models.Index(fields=['type_imposition', 'id_cible'], name='idx_impo_type_cible'),
+            models.Index(fields=['actif'], name='idx_impo_actif'),
+            models.Index(fields=['-date_imposition'], name='idx_impo_date'),
+        ]
+    
+    def __str__(self):
+        status = "Active" if self.actif else "Levée"
+        return f"{self.type_imposition} {self.id_cible} - {self.montant_impose:,.2f} FCFA ({status})"
+    
+    @property
+    def est_active(self):
+        """Retourne True si l'imposition est active."""
+        return self.actif
+    
+    @property
+    def duree_jours(self):
+        """Retourne la durée de l'imposition en jours."""
+        from django.utils import timezone
+        if self.actif:
+            fin = timezone.now()
+        else:
+            fin = self.date_levee or timezone.now()
+        
+        delta = fin - self.date_imposition
+        return delta.days
+    
+    def lever_imposition(self, user_id=None, user_nom=None, motif=None):
+        """
+        Lève l'imposition.
+        
+        Args:
+            user_id: ID de l'utilisateur qui lève
+            user_nom: Nom de l'utilisateur
+            motif: Raison de la levée
+        """
+        from django.utils import timezone
+        
+        self.actif = False
+        self.date_levee = timezone.now()
+        self.levee_par_user_id = user_id
+        self.levee_par_user_nom = user_nom or 'Système'
+        self.motif_levee = motif
+        self.save()
+
