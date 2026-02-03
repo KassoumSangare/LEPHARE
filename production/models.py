@@ -1307,10 +1307,10 @@ class AyantDroitIa(models.Model):
         on_delete=models.DO_NOTHING,
     )
     nom_ayant_droit = models.CharField(
-        verbose_name="Nom", db_column="nomayantdroit", max_length=50
+        verbose_name="Nom", db_column="nomayantdroit", max_length=80
     )
     prenoms_ayant_droit = models.CharField(
-        verbose_name="Prénoms", db_column="prenomsayantdroit", max_length=60
+        verbose_name="Prénoms", db_column="prenomsayantdroit", max_length=80
     )
     part = models.DecimalField(
         verbose_name="Part", db_column="part", max_digits=5, decimal_places=2

@@ -76,8 +76,8 @@ class Adherent(models.Model):
         null=True,
         on_delete=models.SET_NULL,
     )
-    nom = models.CharField(max_length=50)
-    prenom = models.CharField(max_length=50)
+    nom = models.CharField(max_length=80)
+    prenom = models.CharField(max_length=80)
     sexe = models.CharField(max_length=1)
     numerocni = models.CharField(max_length=50, db_column="cni", null=True, blank=True)
     fichier_piece = models.FileField(
@@ -150,8 +150,8 @@ class Affilie(models.Model):
         on_delete=models.CASCADE,
     )
     lien = models.CharField(max_length=1)  # Lien juridique
-    nom = models.CharField(max_length=50)
-    prenom = models.CharField(max_length=50)
+    nom = models.CharField(max_length=80)
+    prenom = models.CharField(max_length=80)
     numerocni = models.CharField(max_length=50, db_column="cni", null=True, blank=True)
     fichier_piece = models.FileField(
         upload_to="uploads/affilies", db_column="fichierpiece", null=True, blank=True
@@ -231,8 +231,8 @@ class AffilieFn(models.Model):
     iddevis = models.IntegerField()
     idaffilie = models.IntegerField()
     idadherent = models.IntegerField()
-    nom = models.CharField(max_length=50)
-    prenom = models.CharField(max_length=50)
+    nom = models.CharField(max_length=80)
+    prenom = models.CharField(max_length=80)
     lien = models.CharField(max_length=1)  # Lien juridique
     lienparente = models.CharField(max_length=10)
     datenaissance = models.DateField()
@@ -334,8 +334,8 @@ class SaisieDevisSanteEnCours(models.Model):
 
 class Person(models.Model):
     id_personne = models.AutoField(db_column="idpersonne", primary_key=True)
-    nom = models.CharField(db_column="nom", max_length=60)
-    prenoms = models.CharField(db_column="prenoms", max_length=60, null=True, blank=True)
+    nom = models.CharField(db_column="nom", max_length=80)
+    prenoms = models.CharField(db_column="prenoms", max_length=80, null=True, blank=True)
     piece = models.FileField(db_column="piece", upload_to="uploads/personnes", null=True, blank=True)
 
     def __str__(self):

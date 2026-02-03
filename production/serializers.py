@@ -868,14 +868,14 @@ class CreationAyantDroitIaSerializer(serializers.Serializer):
         }
     )
     NomAyantDroit = serializers.CharField(
-        max_length=50,
+        max_length=80,
         error_messages={
             "null": "Le nom de l'ayant-droit doit être renseigné.",
             "blank": "Le nom de l'ayant-droit doit être renseigné.",
         },
     )
     PrenomsAyantDroit = serializers.CharField(
-        max_length=60,
+        max_length=80,
         error_messages={
             "null": "Les prénoms de l'ayant-droit doivent être renseignés.",
             "blank": "Les prénoms de l'ayant-droit doivent être renseignés.",
