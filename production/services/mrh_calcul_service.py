@@ -1367,7 +1367,7 @@ class MRHCalculService:
         """
         from production.models import DevisDetail
         from django.db import connection
-        
+        from django.utils import timezone
         # 1. Récupérer la maison
         try:
             maison = DevisDetail.objects.select_related('iddevis').get(
@@ -1394,8 +1394,8 @@ class MRHCalculService:
                 INSERT INTO stdmrh_imposition_prime (
                     type_imposition, id_cible, 
                     montant_impose, ancien_montant_nette, ancien_montant_ttc,
-                    user_id, user_nom, motif, actif
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                    user_id, user_nom, motif, date_imposition, actif
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                 RETURNING id
             """, [
                 'MAISON',
@@ -1405,7 +1405,8 @@ class MRHCalculService:
                 ancien_montant_ttc,
                 user_id,
                 user_nom or 'Système',
-                motif
+                motif,
+                timezone.now()
             ])
             
             imposition_id = cursor.fetchone()[0]
@@ -1479,6 +1480,7 @@ class MRHCalculService:
         """
         from production.models import Devis, DevisDetail
         from django.db import connection
+        from django.utils import timezone
         
         # 1. Récupérer le devis
         try:
@@ -1501,8 +1503,8 @@ class MRHCalculService:
                 INSERT INTO stdmrh_imposition_prime (
                     type_imposition, id_cible, 
                     montant_impose, ancien_montant_nette, ancien_montant_ttc,
-                    user_id, user_nom, motif, actif
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                    user_id, user_nom, motif, date_imposition, actif
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
                 RETURNING id
             """, [
                 'DEVIS',
@@ -1512,7 +1514,8 @@ class MRHCalculService:
                 ancien_montant_ttc,
                 user_id,
                 user_nom or 'Système',
-                motif
+                motif,
+                timezone.now()
             ])
             
             imposition_id = cursor.fetchone()[0]
