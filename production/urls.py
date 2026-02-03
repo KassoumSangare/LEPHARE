@@ -501,11 +501,11 @@ urlpatterns = [
     # Impose la prime d'une maison
     
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/lever-imposition-prime/',
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposition-prime/',
         LeverImpositionView.as_view(),
         name='mrh-lever-imposition-maison'
     ),
-    # DELETE /api/mrh/devis/123/maisons/456/lever-imposition-prime/
+    # DELETE /api/mrh/devis/123/maisons/456/imposition-prime/
     # Lève l'imposition d'une maison
     
     # ========================================================================
@@ -521,11 +521,11 @@ urlpatterns = [
     # Impose la prime globale du devis
     
     path(
-        'mrh/devis/<int:devis_id>/lever-imposition-prime/',
+        'mrh/devis/<int:devis_id>/imposition-prime/',
         LeverImpositionView.as_view(),
         name='mrh-lever-imposition-devis'
     ),
-    # DELETE /api/mrh/devis/123/imposer-prime/
+    # DELETE /api/mrh/devis/123/imposition-prime/
     # Lève l'imposition du devis
     
     # ========================================================================
