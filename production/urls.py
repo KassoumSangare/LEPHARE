@@ -2,15 +2,14 @@ from django.urls import include, path
 
 from rest_framework import routers
 
-from .views import DevisViewSet, DevisDetailViewSet, DevisDetGarantieViewSet
-from .views import TarifEcranViewSet, ContratViewSet, ContratDetailViewSet
+from .views import DevisViewSet, DevisDetGarantieViewSet
+from .views import TarifEcranViewSet, ContratViewSet
 from .views import (
     ContratDetGarantieViewSet,
     QuittancePropositionView,
     QuittanceContratView,
     AyantDroitIaView,
     AyantDroitMineneView,
-    LogRecordView,
     ExtendedQuotationInfoView,
     QuittanceViewSet,
     DetailQuittanceViewSet,
@@ -20,7 +19,6 @@ from .views import (
     GarantieContratView,
     ListeVehiculeContratView,
     ListeVehiculeDevisView,
-    ContractForPremiumCollectionView,
     ReversementCompagnieViewSet,
     DetailReversementViewSet,
     ListeContratReversementView,
@@ -81,7 +79,6 @@ from .views import (
 from .views import UsageHabitationViewSet, SousGarantieMRHViewSet, OptionViewSet, DevisMRHViewSet, SousGarantieForfaitViewSet, CalculMaisonView, MaisonViewSet, ValidateParametersView, RecalculerDevisView
 
 from .views import (
-    ModifierMaisonView,
     ImposerPrimeMaisonView,
     ImposerPrimeDevisView,
     LeverImpositionView,
