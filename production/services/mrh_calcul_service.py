@@ -1292,12 +1292,12 @@ class MRHCalculService:
         
         # 10. Recréer les garanties
         for sous_garantie in resultat_calcul['sous_garanties']:
-            if not sous_garantie['id_garantie_std']:
+            if not sous_garantie['id_sous_garantie_std']:
                 continue
             
             DevisDetGarantie.objects.create(
                 IdDevisDet=id_maison,
-                IdGarantie_id=sous_garantie['id_garantie_std'],
+                IdGarantie_id=sous_garantie['id_sous_garantie_std'],
                 Acquise=True,
                 PrimeNette=sous_garantie['prime_nette'],
                 primeannuelle=sous_garantie.get('prime_avant_options', sous_garantie['prime_nette']),
@@ -1306,7 +1306,7 @@ class MRHCalculService:
                 Franchise=None,
                 TexteFranchise=None,
                 Formule=None,
-                old_acquise='1' if sous_garantie['type'] == 'OBLIGATOIRE' else '0',
+                old_acquise='1' if sous_garantie['type_garantie'] == 'OBLIGATOIRE' else '0',
                 old_capital=0,
                 old_franchise=0,
                 old_formule=None,
