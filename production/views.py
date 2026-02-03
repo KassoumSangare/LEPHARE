@@ -11,6 +11,11 @@ from core.date_parser import parse_date_string
 from typing import cast
 from django_filters import rest_framework as filters
 
+
+
+from rest_framework import status
+
+
 from knox.auth import TokenAuthentication
 from rest_framework.authentication import BasicAuthentication
 from .tasks import send_sms_enregistrement_contrat, send_sms_encaissement_contrat
@@ -76,6 +81,16 @@ from .serializers import (
     ConsolidationDevisClientSerializer,
 )
 
+# Imports des serializers
+from .serializers import (
+    MaisonModificationRequestSerializer,
+    MaisonModificationResponseSerializer,
+    ImpositionPrimeMaisonRequestSerializer,
+    ImpositionPrimeDevisRequestSerializer,
+    LeveeImpositionRequestSerializer,
+    ImpositionPrimeResponseSerializer,
+)
+
 from .models import (
     Devis,
     DevisDetail,
@@ -97,7 +112,7 @@ from .models import (
     LogRecord,
     CertificatTransport,
     Cheque,
-    ChequeOperation,
+    ImpositionPrime,
 )
 
 
@@ -153,7 +168,6 @@ from .serializers import (
     MaisonCalculeeSerializer,
     DevisMRHCalculeResponseSerializer,
     MaisonAjouteeResponseSerializer,
-    ErrorSerializer,
     EncaissementResponseSerializer,
     ChequeSerializer,
     ChequeOperationSerializer,
@@ -208,7 +222,6 @@ from .database import (
 from .utils import import_ia_insured
 from django.http.response import JsonResponse
 from rest_framework.parsers import JSONParser
-from rest_framework import status
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
@@ -1623,38 +1636,6 @@ class DetailReversementListView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-
-# class EncaissementRechercheView(APIView):
-#     permission_classes = [
-#         permissions.IsAuthenticated,
-#     ]
-
-
-#     def get(self, request, champrecherche):
-#         criteria = str(champrecherche).strip()
-# (msg, qryset)
-# if valid_email_address(criteria):
-#     clientrecherche = Client.objects.filter(Q(Email=criteria) & ~Q(IdClient=0))
-# else:
-#     phone_number_part = valid_phone_number(criteria)
-#     if phone_number_part:
-#         clientrecherche = Client.objects.filter(
-#             (
-#                 Q(Mobile__contains=phone_number_part)
-#                 | Q(Telephone__contains=phone_number_part)
-#                 | Q(Fixe__contains=phone_number_part)
-#             )
-#             & ~Q(IdClient=0)
-#         )
-#     else:
-#         clientrecherche = Client.objects.filter(
-#             Q(Nom__contains=criteria) & ~Q(IdClient=0)
-#         )
-# serializer = ClientSerializer(clientrecherche, many=True)
-# print(serializer.data)
-# return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
-
-
 class ImportationFichierGUCEViewSet(viewsets.ViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
@@ -3038,4 +3019,612 @@ class ChequeDetailOperationsView(APIView):
         return Response({
             "chèque": cheque_data,
             "historique_operations": operations_data
+        })
+        
+
+"""
+Vues API pour modification de maison et imposition de prime MRH
+================================================================
+
+Ces vues exposent les endpoints REST pour :
+1. Modifier une maison existante
+2. Imposer la prime d'une maison
+3. Imposer la prime d'un devis
+4. Lever une imposition
+5. Consulter l'historique des impositions
+"""
+
+# ============================================================================
+# VUE 1 : MODIFIER UNE MAISON
+# ============================================================================
+
+class ModifierMaisonView(APIView):
+    """
+    Modifier une maison existante dans un devis MRH.
+    
+    PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/
+    
+    Permet de modifier les caractéristiques d'une maison :
+    - Valeurs (bâtiment, contenu, loyer, RVT)
+    - Options (gardien, zone industrielle, etc.)
+    - Garanties optionnelles
+    - Adresse
+    
+    Règles :
+    - Si prime maison imposée : erreur (sauf force_recalcul=True)
+    - Si prime devis imposée : erreur (sauf force_recalcul=True)
+    - Si force_recalcul=True : lève l'imposition automatiquement
+    
+    Request body :
+    {
+        "code_usage": "proprietaire_occupant_total",  // optionnel
+        "valeur_batiment": 60000000,  // optionnel
+        "valeur_contenu": 12000000,  // optionnel
+        "options": ["presence_gardien"],  // optionnel
+        "sous_garanties_optionnelles": ["RC_MEMBRE"],  // optionnel
+        "force_recalcul": false  // optionnel, défaut false
+    }
+    
+    Response 200 (succès) :
+    {
+        "success": true,
+        "id_maison": 456,
+        "message": "Maison modifiée avec succès",
+        "calcul": { ... },
+        "totaux_devis": { ... },
+        "imposition_levee": false
+    }
+    
+    Response 400 (prime imposée) :
+    {
+        "success": false,
+        "erreur": "PRIME_MAISON_IMPOSEE",
+        "message": "La prime de cette maison est imposée à 150 000,00 FCFA...",
+        "prime_imposee": true,
+        "montant_impose": 150000.00
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def put(self, request, devis_id, maison_id):
+        """Modifie une maison existante."""
+        
+        # Validation des données
+        serializer = MaisonModificationRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Vérifier que la maison appartient au devis
+        maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
+        if maison.iddevis_id != devis_id:
+            return Response(
+                {
+                    'erreur': 'MAISON_NOT_IN_DEVIS',
+                    'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Appeler le service
+        service = MRHCalculService()
+        
+        try:
+            resultat = service.modifier_maison(
+                id_maison=maison_id,
+                **serializer.validated_data
+            )
+            
+            # Si échec (prime imposée)
+            if not resultat.get('success', False):
+                return Response(
+                    resultat,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Succès
+            return Response(resultat, status=status.HTTP_200_OK)
+        
+        except ValueError as e:
+            return Response(
+                {
+                    'erreur': 'VALIDATION_ERROR',
+                    'message': str(e)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        except Exception as e:
+            return Response(
+                {
+                    'erreur': 'INTERNAL_ERROR',
+                    'message': f'Erreur lors de la modification : {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# VUE 2 : IMPOSER LA PRIME D'UNE MAISON
+# ============================================================================
+
+class ImposerPrimeMaisonView(APIView):
+    """
+    Imposer la prime NETTE d'une maison.
+    
+    POST /api/mrh/devis/{devis_id}/maisons/{maison_id}/imposer-prime/
+    
+    Fixe manuellement la prime nette d'une maison.
+    La taxe sera recalculée automatiquement.
+    
+    Request body :
+    {
+        "montant_impose": 150000.00,  // Prime NETTE en FCFA
+        "motif": "Négociation commerciale - remise de 10 000 FCFA"  // optionnel
+    }
+    
+    Response 200 :
+    {
+        "success": true,
+        "id_maison": 456,
+        "imposition_id": 12,
+        "montant_impose": 150000.00,
+        "ancien_montant_nette": 160000.00,
+        "ancien_montant_ttc": 189200.00,
+        "nouvelle_taxe": 27375.00,
+        "message": "Prime maison imposée à 150 000,00 FCFA (prime nette)",
+        "totaux_devis": { ... }
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, devis_id, maison_id):
+        """Impose la prime d'une maison."""
+        
+        # Validation
+        serializer = ImpositionPrimeMaisonRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Vérifier que la maison appartient au devis
+        maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
+        if maison.iddevis_id != devis_id:
+            return Response(
+                {
+                    'erreur': 'MAISON_NOT_IN_DEVIS',
+                    'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Appeler le service
+        service = MRHCalculService()
+        
+        try:
+            resultat = service.imposer_prime_maison(
+                id_maison=maison_id,
+                montant_impose=serializer.validated_data['montant_impose'],
+                user_id=request.user.id if hasattr(request.user, 'id') else None,
+                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
+                motif=serializer.validated_data.get('motif')
+            )
+            
+            if not resultat.get('success', False):
+                return Response(
+                    resultat,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            return Response(resultat, status=status.HTTP_201_CREATED)
+        
+        except ValueError as e:
+            return Response(
+                {
+                    'erreur': 'VALIDATION_ERROR',
+                    'message': str(e)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        except Exception as e:
+            return Response(
+                {
+                    'erreur': 'INTERNAL_ERROR',
+                    'message': f'Erreur lors de l\'imposition : {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# VUE 3 : IMPOSER LA PRIME D'UN DEVIS
+# ============================================================================
+
+class ImposerPrimeDevisView(APIView):
+    """
+    Imposer la prime NETTE globale d'un devis.
+    
+    POST /api/mrh/devis/{devis_id}/imposer-prime/
+    
+    Fixe manuellement la prime nette totale du devis.
+    - La prime est répartie proportionnellement sur les maisons
+    - La taxe et les accessoires sont recalculés
+    - Bloque toute modification des maisons
+    
+    Request body :
+    {
+        "montant_impose": 400000.00,  // Prime NETTE totale en FCFA
+        "motif": "Négociation commerciale - accord client"  // optionnel
+    }
+    
+    Response 201 :
+    {
+        "success": true,
+        "id_devis": 123,
+        "imposition_id": 15,
+        "montant_impose": 400000.00,
+        "ancien_montant_nette": 450000.00,
+        "ancien_montant_ttc": 532500.00,
+        "nouveau_detail": {
+            "primenette": 400000.00,
+            "taxe": 73000.00,
+            "accessoire": 5000.00,
+            "primettc": 478000.00
+        },
+        "message": "Prime devis imposée à 400 000,00 FCFA (prime nette)",
+        "note": "La taxe et les accessoires sont calculés sur cette prime imposée"
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, devis_id):
+        """Impose la prime globale d'un devis."""
+        
+        # Validation
+        serializer = ImpositionPrimeDevisRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Vérifier que le devis existe
+        devis = get_object_or_404(Devis, iddevis=devis_id)
+        
+        # Appeler le service
+        service = MRHCalculService()
+        
+        try:
+            resultat = service.imposer_prime_devis(
+                id_devis=devis_id,
+                montant_impose=serializer.validated_data['montant_impose'],
+                user_id=request.user.id if hasattr(request.user, 'id') else None,
+                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
+                motif=serializer.validated_data.get('motif')
+            )
+            
+            if not resultat.get('success', False):
+                return Response(
+                    resultat,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            return Response(resultat, status=status.HTTP_201_CREATED)
+        
+        except ValueError as e:
+            return Response(
+                {
+                    'erreur': 'VALIDATION_ERROR',
+                    'message': str(e)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        except Exception as e:
+            return Response(
+                {
+                    'erreur': 'INTERNAL_ERROR',
+                    'message': f'Erreur lors de l\'imposition : {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# VUE 4 : LEVER UNE IMPOSITION
+# ============================================================================
+
+class LeverImpositionView(APIView):
+    """
+    Lever une imposition de prime (maison ou devis).
+    
+    DELETE /api/mrh/devis/{devis_id}/imposer-prime/  (devis)
+    DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/imposer-prime/  (maison)
+    
+    Désactive l'imposition et autorise à nouveau les modifications.
+    
+    Request body (optionnel) :
+    {
+        "motif": "Erreur de saisie corrigée"
+    }
+    
+    Response 200 :
+    {
+        "success": true,
+        "type_imposition": "DEVIS",
+        "id_cible": 123,
+        "message": "Imposition levée pour DEVIS 123"
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def delete(self, request, devis_id, maison_id=None):
+        """Lève une imposition."""
+        
+        # Validation
+        serializer = LeveeImpositionRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Déterminer le type et l'ID
+        if maison_id:
+            # Lever imposition maison
+            type_imposition = 'MAISON'
+            id_cible = maison_id
+            
+            # Vérifier que la maison existe et appartient au devis
+            maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
+            if maison.iddevis_id != devis_id:
+                return Response(
+                    {
+                        'erreur': 'MAISON_NOT_IN_DEVIS',
+                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            # Lever imposition devis
+            type_imposition = 'DEVIS'
+            id_cible = devis_id
+            
+            # Vérifier que le devis existe
+            get_object_or_404(Devis, iddevis=devis_id)
+        
+        # Appeler le service
+        service = MRHCalculService()
+        
+        try:
+            resultat = service.lever_imposition(
+                type_imposition=type_imposition,
+                id_cible=id_cible,
+                user_id=request.user.id if hasattr(request.user, 'id') else None,
+                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
+                motif_levee=serializer.validated_data.get('motif')
+            )
+            
+            return Response(resultat, status=status.HTTP_200_OK)
+        
+        except ValueError as e:
+            return Response(
+                {
+                    'erreur': 'VALIDATION_ERROR',
+                    'message': str(e)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        except Exception as e:
+            return Response(
+                {
+                    'erreur': 'INTERNAL_ERROR',
+                    'message': f'Erreur lors de la levée : {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# ============================================================================
+# VUE 5 : HISTORIQUE DES IMPOSITIONS
+# ============================================================================
+
+class HistoriqueImpositionsView(APIView):
+    """
+    Consulter l'historique des impositions d'une entité.
+    
+    GET /api/mrh/devis/{devis_id}/impositions/  (historique devis)
+    GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/impositions/  (historique maison)
+    
+    Retourne toutes les impositions (actives et levées) avec détails.
+    
+    Response 200 :
+    {
+        "type_imposition": "DEVIS",
+        "id_cible": 123,
+        "impositions": [
+            {
+                "id": 15,
+                "montant_impose": 400000.00,
+                "ancien_montant_nette": 450000.00,
+                "user_nom": "John DOE",
+                "date_imposition": "2024-12-18T10:30:00Z",
+                "motif": "Négociation commerciale",
+                "actif": true,
+                "duree_jours": 5
+            },
+            ...
+        ],
+        "total": 3,
+        "actives": 1,
+        "levees": 2
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, devis_id, maison_id=None):
+        """Récupère l'historique des impositions."""
+        
+        # Déterminer le type et l'ID
+        if maison_id:
+            type_imposition = 'MAISON'
+            id_cible = maison_id
+            
+            # Vérifier existence
+            maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
+            if maison.iddevis_id != devis_id:
+                return Response(
+                    {
+                        'erreur': 'MAISON_NOT_IN_DEVIS',
+                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            type_imposition = 'DEVIS'
+            id_cible = devis_id
+            get_object_or_404(Devis, iddevis=devis_id)
+        
+        # Récupérer l'historique
+        impositions = ImpositionPrime.objects.filter(
+            type_imposition=type_imposition,
+            id_cible=id_cible
+        ).order_by('-date_imposition')
+        
+        # Formater les données
+        data_impositions = []
+        for imp in impositions:
+            data_impositions.append({
+                'id': imp.id,
+                'montant_impose': float(imp.montant_impose),
+                'ancien_montant_nette': float(imp.ancien_montant_nette) if imp.ancien_montant_nette else None,
+                'ancien_montant_ttc': float(imp.ancien_montant_ttc) if imp.ancien_montant_ttc else None,
+                'user_nom': imp.user_nom,
+                'date_imposition': imp.date_imposition.isoformat(),
+                'motif': imp.motif,
+                'actif': imp.actif,
+                'date_levee': imp.date_levee.isoformat() if imp.date_levee else None,
+                'levee_par_user_nom': imp.levee_par_user_nom,
+                'motif_levee': imp.motif_levee,
+                'duree_jours': imp.duree_jours,
+            })
+        
+        # Statistiques
+        total = impositions.count()
+        actives = impositions.filter(actif=True).count()
+        levees = impositions.filter(actif=False).count()
+        
+        return Response({
+            'type_imposition': type_imposition,
+            'id_cible': id_cible,
+            'impositions': data_impositions,
+            'statistiques': {
+                'total': total,
+                'actives': actives,
+                'levees': levees
+            }
+        }, status=status.HTTP_200_OK)
+
+
+# ============================================================================
+# VUE 6 : STATUT D'IMPOSITION
+# ============================================================================
+
+class StatutImpositionView(APIView):
+    """
+    Vérifier le statut d'imposition d'une entité.
+    
+    GET /api/mrh/devis/{devis_id}/statut-imposition/  (statut devis)
+    GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/statut-imposition/  (statut maison)
+    
+    Retourne si l'entité a une prime imposée et les détails.
+    
+    Response 200 :
+    {
+        "imposee": true,
+        "type_imposition": "DEVIS",
+        "id_cible": 123,
+        "montant_impose": 400000.00,
+        "user_nom": "John DOE",
+        "date_imposition": "2024-12-18T10:30:00Z",
+        "motif": "Négociation commerciale",
+        "duree_jours": 5,
+        "peut_modifier": false,
+        "message": "Prime imposée à 400 000,00 FCFA le 18/12/2024 par John DOE"
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, devis_id, maison_id=None):
+        """Vérifie le statut d'imposition."""
+        
+        # Déterminer le type et l'ID
+        if maison_id:
+            type_imposition = 'MAISON'
+            id_cible = maison_id
+            
+            # Récupérer la maison
+            maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
+            if maison.iddevis_id != devis_id:
+                return Response(
+                    {'erreur': 'MAISON_NOT_IN_DEVIS'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            imposee = maison.prime_imposee
+            montant = maison.primenette if imposee else None
+        else:
+            type_imposition = 'DEVIS'
+            id_cible = devis_id
+            
+            # Récupérer le devis
+            devis = get_object_or_404(Devis, iddevis=devis_id)
+            imposee = devis.prime_imposee
+            montant = devis.primenette if imposee else None
+        
+        # Si imposée, récupérer les détails
+        if imposee:
+            imposition = ImpositionPrime.objects.filter(
+                type_imposition=type_imposition,
+                id_cible=id_cible,
+                actif=True
+            ).first()
+            
+            if imposition:
+                return Response({
+                    'imposee': True,
+                    'type_imposition': type_imposition,
+                    'id_cible': id_cible,
+                    'montant_impose': float(montant),
+                    'user_nom': imposition.user_nom,
+                    'date_imposition': imposition.date_imposition.isoformat(),
+                    'motif': imposition.motif,
+                    'duree_jours': imposition.duree_jours,
+                    'peut_modifier': False,
+                    'message': (
+                        f"Prime imposée à {montant:,.2f} FCFA "
+                        f"le {imposition.date_imposition.strftime('%d/%m/%Y')} "
+                        f"par {imposition.user_nom}"
+                    )
+                })
+        
+        # Pas d'imposition
+        return Response({
+            'imposee': False,
+            'type_imposition': type_imposition,
+            'id_cible': id_cible,
+            'peut_modifier': True,
+            'message': 'Aucune imposition active'
         })

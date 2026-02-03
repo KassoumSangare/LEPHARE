@@ -14,7 +14,7 @@ Ce service gère :
 
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 from django.db import transaction
 from django.core.exceptions import ValidationError
 
@@ -29,11 +29,6 @@ from configuration_api.models import (
     SousGarantieForfait,
 )
 from production.services.recapitulatif_primes_mrh import RecapitulatifPrimesMRH
-# TODO: Ajuster les imports selon votre structure
-# from votre_app.models import (
-#     Devis, DevisDetail, DevisDetGarantie,
-#     Accessoire, Produit, Compagnie
-# )
 
 from datetime import date
 from dateutil.relativedelta import relativedelta
@@ -91,7 +86,7 @@ class MRHCalculService:
             valeur_batiment=50000000,
             valeur_contenu=10000000,
             options=['presence_gardien'],
-            garanties_optionnelles=['RC_MEMBRE']
+            sous_garanties_optionnelles=['RC_MEMBRE']
         )
     """
     
@@ -622,6 +617,7 @@ class MRHCalculService:
         id_devis: int,
         id_tarif: int,
         id_offre: int,
+        prime_imposee: bool,
         resultat_calcul: Dict
     ) -> int:
         """
@@ -683,6 +679,7 @@ class MRHCalculService:
             matricule='MRH',
             typeimmat='M',
             attestation='',
+            prime_imposee = prime_imposee,
         )
         
         # 2. Créer les DevisDetGarantie pour chaque garantie
@@ -976,6 +973,7 @@ class MRHCalculService:
             id_devis=id_devis,
             id_tarif = id_tarif,
             id_offre = id_offre,
+            prime_imposee = False,
             resultat_calcul=resultat_calcul
         )
         
@@ -1152,3 +1150,521 @@ class MRHCalculService:
     def _arrondir(self, montant: Decimal) -> Decimal:
         """Arrondit un montant à 2 décimales"""
         return montant.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        
+    
+    """
+    Méthodes additionnelles pour mrh_calcul_service.py
+    ====================================================
+    Fonctionnalités :
+    1. Modifier une maison existante
+    2. Imposer la prime d'une maison
+    3. Imposer la prime d'un devis
+    4. Lever une imposition
+    5. Vérifications et utilitaires
+    """
+    @transaction.atomic
+    def modifier_maison(
+        self,
+        id_maison: int,
+        code_usage: Optional[str] = None,
+        valeur_batiment: Optional[Decimal] = None,
+        valeur_contenu: Optional[Decimal] = None,
+        loyer_mensuel: Optional[Decimal] = None,
+        capital_rvt: Optional[Decimal] = None,
+        options: Optional[List[str]] = None,
+        sous_garanties_optionnelles: Optional[List[str]] = None,
+        adresse: Optional[str] = None,
+        description: Optional[str] = None,
+        force_recalcul: bool = False,
+    ) -> Dict:
+        """
+        Modifie une maison existante dans un devis.
+        
+        Règles :
+        - Si prime maison imposée : erreur (sauf force_recalcul=True)
+        - Si prime devis imposée : erreur (sauf force_recalcul=True)
+        - Si force_recalcul=True : lève l'imposition et recalcule
+        
+        Args:
+            id_maison: ID du DevisDetail
+            code_usage: Nouveau code usage (optionnel)
+            valeur_batiment: Nouvelle valeur bâtiment (optionnel)
+            valeur_contenu: Nouvelle valeur contenu (optionnel)
+            loyer_mensuel: Nouveau loyer (optionnel)
+            capital_rvt: Nouveau capital RVT (optionnel)
+            options: Nouvelles options (optionnel)
+            sous_garanties_optionnelles: Nouvelles sous-garanties optionnelles (optionnel)
+            adresse: Nouvelle adresse (optionnel)
+            description: Nouvelle description (optionnel)
+            force_recalcul: Force le recalcul même si prime imposée
+        
+        Returns:
+            Dict avec le résultat de la modification
+        """
+        from production.models import DevisDetail, DevisDetGarantie
+        
+        # 1. Récupérer la maison
+        try:
+            maison = DevisDetail.objects.select_related('iddevis').get(
+                iddevisdetail=id_maison
+            )
+        except DevisDetail.DoesNotExist:
+            raise ValueError(f"Maison {id_maison} non trouvée")
+        
+        id_devis = maison.iddevis.pk
+        devis = maison.iddevis
+        
+        # 2. Vérifier si prime maison imposée
+        if maison.prime_imposee and not force_recalcul:
+            return {
+                'success': False,
+                'erreur': 'PRIME_MAISON_IMPOSEE',
+                'message': (
+                    f"La prime de cette maison est imposée à "
+                    f"{maison.primenette:,.2f} FCFA. "
+                    f"Utilisez force_recalcul=True pour modifier quand même."
+                ),
+                'prime_imposee': True,
+                'montant_impose': float(maison.primenette),
+                'date_imposition': maison.prime_imposee_date.isoformat() if maison.prime_imposee_date else None,
+            }
+        
+        # 3. Vérifier si prime du devis imposée
+        if devis.prime_imposee and not force_recalcul:
+            return {
+                'success': False,
+                'erreur': 'PRIME_DEVIS_IMPOSEE',
+                'message': (
+                    f"La prime du devis est imposée à "
+                    f"{devis.primenette:,.2f} FCFA. "
+                    f"Impossible de modifier les maisons sans lever l'imposition."
+                ),
+                'prime_imposee': True,
+                'montant_impose': float(devis.primenette),
+                'date_imposition': devis.prime_imposee_date.isoformat() if devis.prime_imposee_date else None,
+            }
+        
+        # 4. Si force_recalcul=True et imposée, lever l'imposition maison
+        if force_recalcul and maison.prime_imposee:
+            self._lever_imposition_interne('MAISON', id_maison)
+        
+        # 5. Récupérer les valeurs actuelles si non fournies
+        if code_usage is None:
+            # Extraire de l'observation
+            code_usage = self._extraire_code_usage_depuis_offre(maison.idoffre)
+        
+        if valeur_batiment is None:
+            valeur_batiment = maison.valeurneuve or Decimal('0')
+        
+        if valeur_contenu is None:
+            valeur_contenu = maison.valeurvenale or Decimal('0')
+        
+        # 6. Recalculer la maison
+        resultat_calcul = self.calculer_maison(
+            code_usage=code_usage,
+            valeur_batiment=valeur_batiment,
+            valeur_contenu=valeur_contenu,
+            loyer_mensuel=loyer_mensuel,
+            capital_rvt=capital_rvt,
+            options=options or [],
+            sous_garanties_optionnelles=sous_garanties_optionnelles or [],
+            adresse=adresse or maison.observation,
+            description=description,
+        )
+        
+        # 7. Supprimer les anciennes garanties
+        DevisDetGarantie.objects.filter(IdDevisDet=id_maison).delete()
+        
+        # 8. Calculer la prime annuelle de la maison (avant options)
+        prime_annuelle_maison = sum(
+            g.get('prime_avant_options', g['prime_nette']) 
+            for g in resultat_calcul['sous_garanties']
+        )
+        
+        # 9. Mettre à jour DevisDetail
+        maison.primenette = resultat_calcul['prime_nette_totale']
+        maison.primeannuelle = prime_annuelle_maison
+        maison.taxeenregistrement = resultat_calcul['taxe_totale']
+        maison.observation = self._formater_observation(resultat_calcul)
+        maison.valeurneuve = valeur_batiment
+        maison.valeurvenale = valeur_contenu
+        maison.save()
+        
+        # 10. Recréer les garanties
+        for sous_garantie in resultat_calcul['sous_garanties']:
+            if not sous_garantie['id_garantie_std']:
+                continue
+            
+            DevisDetGarantie.objects.create(
+                IdDevisDet=id_maison,
+                IdGarantie_id=sous_garantie['id_garantie_std'],
+                Acquise=True,
+                PrimeNette=sous_garantie['prime_nette'],
+                primeannuelle=sous_garantie.get('prime_avant_options', sous_garantie['prime_nette']),
+                taxe=sous_garantie['taxe'],
+                Capital=None,
+                Franchise=None,
+                TexteFranchise=None,
+                Formule=None,
+                old_acquise='1' if sous_garantie['type'] == 'OBLIGATOIRE' else '0',
+                old_capital=0,
+                old_franchise=0,
+                old_formule=None,
+                old_places=None,
+                old_primenette=0,
+                deces=None,
+                ipp=None,
+                fraismed=None,
+                hosp=None,
+                minfranchise=0,
+                maxfranchise=0,
+            )
+        
+        # 11. Mettre à jour les totaux du devis
+        totaux_devis = self.mettre_a_jour_totaux_devis(
+            id_devis=id_devis,
+            id_produit=devis.produit.pk,
+            id_compagnie=devis.compagnie.pk,
+            inclure_accessoires=True
+        )
+        
+        return {
+            'success': True,
+            'id_maison': id_maison,
+            'calcul': resultat_calcul,
+            'totaux_devis': totaux_devis,
+            'message': 'Maison modifiée avec succès',
+            'imposition_levee': force_recalcul and maison.prime_imposee,
+        }
+    
+    # ========================================================================
+    # SECTION 11 : IMPOSITION DE PRIME
+    # ========================================================================
+    
+    @transaction.atomic
+    def imposer_prime_maison(
+        self,
+        id_maison: int,
+        montant_impose: Decimal,
+        user_id: Optional[int] = None,
+        user_nom: Optional[str] = None,
+        motif: Optional[str] = None,
+    ) -> Dict:
+        """
+        Impose une prime NETTE pour une maison spécifique.
+        
+        La taxe sera recalculée sur cette prime imposée.
+        
+        Args:
+            id_maison: ID du DevisDetail
+            montant_impose: Montant de la prime NETTE à imposer
+            user_id: ID de l'utilisateur qui impose
+            user_nom: Nom de l'utilisateur
+            motif: Raison de l'imposition
+        
+        Returns:
+            Dict avec le résultat
+        """
+        from production.models import DevisDetail
+        from django.db import connection
+        
+        # 1. Récupérer la maison
+        try:
+            maison = DevisDetail.objects.select_related('iddevis').get(
+                iddevisdetail=id_maison
+            )
+        except DevisDetail.DoesNotExist:
+            raise ValueError(f"Maison {id_maison} non trouvée")
+        
+        # 2. Vérifier que la prime imposée est différente
+        if maison.prime_imposee and maison.primenette == montant_impose:
+            return {
+                'success': False,
+                'erreur': 'DEJA_IMPOSEE',
+                'message': f'La prime est déjà imposée à {montant_impose:,.2f} FCFA',
+            }
+        
+        # 3. Sauvegarder les anciens montants
+        ancien_montant_nette = maison.primenette
+        ancien_montant_ttc = maison.primenette + maison.taxeenregistrement
+        
+        # 4. Enregistrer dans l'historique
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO stdmrh_imposition_prime (
+                    type_imposition, id_cible, 
+                    montant_impose, ancien_montant_nette, ancien_montant_ttc,
+                    user_id, user_nom, motif, actif
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id
+            """, [
+                'MAISON',
+                id_maison,
+                montant_impose,
+                ancien_montant_nette,
+                ancien_montant_ttc,
+                user_id,
+                user_nom or 'Système',
+                motif
+            ])
+            
+            imposition_id = cursor.fetchone()[0]
+        
+        # 5. Calculer la nouvelle taxe (garder le ratio actuel)
+        if ancien_montant_nette and ancien_montant_nette != 0:
+            ratio_taxe = maison.taxeenregistrement / ancien_montant_nette
+        else:
+            ratio_taxe = Decimal('0.185')  # Ratio moyen 18,5%
+        
+        nouvelle_taxe = self._arrondir(montant_impose * ratio_taxe)
+        
+        # 6. Mettre à jour la maison
+        maison.prime_imposee = True
+        maison.primenette = montant_impose
+        maison.prime_imposee_date = datetime.now()
+        maison.taxeenregistrement = nouvelle_taxe
+        maison.save()
+        
+        # 7. Mettre à jour les totaux du devis
+        devis = maison.iddevis
+        totaux_devis = self.mettre_a_jour_totaux_devis(
+            id_devis=devis.iddevis,
+            id_produit=devis.produit.pk,
+            id_compagnie=devis.compagnie.pk,
+            inclure_accessoires=True
+        )
+        
+        return {
+            'success': True,
+            'id_maison': id_maison,
+            'imposition_id': imposition_id,
+            'montant_impose': float(montant_impose),
+            'ancien_montant_nette': float(ancien_montant_nette),
+            'ancien_montant_ttc': float(ancien_montant_ttc),
+            'nouvelle_taxe': float(nouvelle_taxe),
+            'totaux_devis': totaux_devis,
+            'message': f'Prime maison imposée à {montant_impose:,.2f} FCFA (prime nette)',
+        }
+    
+    @transaction.atomic
+    def imposer_prime_devis(
+        self,
+        id_devis: int,
+        montant_impose: Decimal,
+        user_id: Optional[int] = None,
+        user_nom: Optional[str] = None,
+        motif: Optional[str] = None,
+    ) -> Dict:
+        """
+        Impose une prime NETTE globale pour le devis.
+        
+        La taxe et les accessoires seront recalculés sur cette prime.
+        Les montants des maisons sont ajustés proportionnellement.
+        
+        Règles:
+        - montant_impose = Prime NETTE uniquement
+        - Taxe calculée selon les ratios actuels
+        - Accessoires calculés selon les paliers
+        - Prime TTC = Prime nette imposée + Taxe + Accessoires
+        
+        Args:
+            id_devis: ID du devis
+            montant_impose: Montant de la prime NETTE à imposer
+            user_id: ID de l'utilisateur
+            user_nom: Nom de l'utilisateur
+            motif: Raison de l'imposition
+        
+        Returns:
+            Dict avec le résultat
+        """
+        from production.models import Devis, DevisDetail
+        from django.db import connection
+        
+        # 1. Récupérer le devis
+        try:
+            devis = Devis.objects.get(iddevis=id_devis)
+        except Devis.DoesNotExist:
+            raise ValueError(f"Devis {id_devis} non trouvé")
+        
+        # 2. Vérifier qu'il y a des maisons
+        maisons = DevisDetail.objects.filter(iddevis_id=id_devis)
+        if not maisons.exists():
+            raise ValueError("Le devis ne contient aucune maison")
+        
+        # 3. Sauvegarder les anciens montants
+        ancien_montant_nette = devis.primenette or Decimal('0')
+        ancien_montant_ttc = devis.primettc or Decimal('0')
+        
+        # 4. Enregistrer dans l'historique
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO stdmrh_imposition_prime (
+                    type_imposition, id_cible, 
+                    montant_impose, ancien_montant_nette, ancien_montant_ttc,
+                    user_id, user_nom, motif, actif
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id
+            """, [
+                'DEVIS',
+                id_devis,
+                montant_impose,
+                ancien_montant_nette,
+                ancien_montant_ttc,
+                user_id,
+                user_nom or 'Système',
+                motif
+            ])
+            
+            imposition_id = cursor.fetchone()[0]
+        
+        # 5. Répartir la prime imposée sur les maisons (garder les ratios)
+        total_prime_actuel = sum(m.primenette for m in maisons)
+        
+        if total_prime_actuel and total_prime_actuel != 0:
+            # Répartir proportionnellement
+            for maison in maisons:
+                ratio_maison = maison.primenette / total_prime_actuel
+                nouvelle_prime_maison = self._arrondir(montant_impose * ratio_maison)
+                
+                # Recalculer la taxe de la maison (garder ratio)
+                if maison.primenette and maison.primenette != 0:
+                    ratio_taxe_maison = maison.taxeenregistrement / maison.primenette
+                else:
+                    ratio_taxe_maison = Decimal('0.185')
+                
+                nouvelle_taxe_maison = self._arrondir(nouvelle_prime_maison * ratio_taxe_maison)
+                
+                # Mettre à jour la maison
+                maison.primenette = nouvelle_prime_maison
+                maison.taxeenregistrement = nouvelle_taxe_maison
+                maison.save()
+        else:
+            # Répartition égale si pas de prime actuelle
+            prime_par_maison = self._arrondir(montant_impose / len(maisons))
+            for maison in maisons:
+                maison.primenette = prime_par_maison
+                maison.taxeenregistrement = self._arrondir(prime_par_maison * Decimal('0.185'))
+                maison.save()
+        
+        # 6. Recalculer les totaux du devis
+        # (utilise les nouvelles valeurs des maisons)
+        self.mettre_a_jour_totaux_devis(
+            id_devis=id_devis,
+            id_produit=devis.produit.pk,
+            id_compagnie=devis.compagnie.pk,
+            inclure_accessoires=True
+        )
+        
+        # 7. Forcer la prime nette imposée (au cas où il y aurait un écart d'arrondi)
+        devis.primenette = montant_impose
+        devis.prime_imposee = True
+        devis.prime_imposee_date = datetime.now()
+        devis.save()
+        
+        return {
+            'success': True,
+            'id_devis': id_devis,
+            'imposition_id': imposition_id,
+            'montant_impose': float(montant_impose),
+            'ancien_montant_nette': float(ancien_montant_nette),
+            'ancien_montant_ttc': float(ancien_montant_ttc),
+            'nouveau_detail': {
+                'primenette': float(devis.primenette),
+                'taxe': float(devis.taxe),
+                'accessoire': float(devis.accessoire),
+                'primettc': float(devis.primettc),
+            },
+            'message': f'Prime devis imposée à {montant_impose:,.2f} FCFA (prime nette)',
+            'note': 'La taxe et les accessoires sont calculés sur cette prime imposée',
+        }
+    
+    @transaction.atomic
+    def lever_imposition(
+        self,
+        type_imposition: str,
+        id_cible: int,
+        user_id: Optional[int] = None,
+        user_nom: Optional[str] = None,
+        motif_levee: Optional[str] = None,
+    ) -> Dict:
+        """
+        Lève une imposition de prime.
+        
+        Args:
+            type_imposition: 'DEVIS' ou 'MAISON'
+            id_cible: ID du devis ou de la maison
+            user_id: ID de l'utilisateur qui lève
+            user_nom: Nom de l'utilisateur
+            motif_levee: Raison de la levée
+        
+        Returns:
+            Dict avec le résultat
+        """
+        return self._lever_imposition_interne(
+            type_imposition, id_cible, user_id, user_nom, motif_levee
+        )
+    
+    # ========================================================================
+    # SECTION 12 : MÉTHODES UTILITAIRES PRIVÉES
+    # ========================================================================
+    
+    def _lever_imposition_interne(
+        self,
+        type_imposition: str,
+        id_cible: int,
+        user_id: Optional[int] = None,
+        user_nom: Optional[str] = None,
+        motif_levee: Optional[str] = None,
+    ) -> Dict:
+        """Méthode interne pour lever une imposition."""
+        from production.models import Devis, DevisDetail
+        from django.db import connection
+        
+        # 1. Désactiver dans l'historique
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE stdmrh_imposition_prime
+                SET actif = FALSE,
+                    date_levee = CURRENT_TIMESTAMP,
+                    levee_par_user_id = %s,
+                    levee_par_user_nom = %s,
+                    motif_levee = %s
+                WHERE type_imposition = %s 
+                  AND id_cible = %s 
+                  AND actif = TRUE
+            """, [user_id, user_nom or 'Système', motif_levee, type_imposition, id_cible])
+        
+        # 2. Mettre à jour l'entité
+        if type_imposition == 'DEVIS':
+            devis = Devis.objects.get(iddevis=id_cible)
+            devis.prime_imposee = False
+            devis.prime_imposee_date = None
+            devis.save()
+        else:  # MAISON
+            maison = DevisDetail.objects.get(iddevisdetail=id_cible)
+            maison.prime_imposee = False
+            maison.prime_imposee_date = None
+            maison.save()
+        
+        return {
+            'success': True,
+            'type_imposition': type_imposition,
+            'id_cible': id_cible,
+            'message': f'Imposition levée pour {type_imposition} {id_cible}',
+        }
+    
+    def _extraire_code_usage_depuis_offre(self, id_offre: int) -> str:
+        """Extrait le code usage depuis le champ observation."""
+        from configuration_api.models import Offre, UsageHabitation
+        if not id_offre:
+            raise ValueError("Impossible d'extraire le code usage : offre non définie")
+        
+        try:
+            offre = Offre.objects.get(pk=id_offre)
+            usage = UsageHabitation.objects.filter(offre=offre).first()
+            if usage:
+                return usage.code
+            else:
+                raise ValueError("Impossible de trouver le code usage : mauvais paramétrage")
+        except Offre.DoesNotExist as e:
+            raise ValueError(f"Impossible d'extraire le code usage :{str(e)}")

@@ -3861,3 +3861,164 @@ class ChequeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cheque
         fields = ['id_cheque', 'numero_cheque', 'banque', 'nom_banque', 'montant_initial', 'solde_disponible', 'date_saisie']
+        
+        
+"""
+Serializers pour modification de maison et imposition de prime
+===============================================================
+"""
+class MaisonModificationRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la requête de modification d'une maison.
+    """
+    code_usage = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_null=True,
+        help_text="Code de l'usage habitation"
+    )
+    
+    valeur_batiment = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Valeur du bâtiment en FCFA"
+    )
+    
+    valeur_contenu = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Valeur du contenu en FCFA"
+    )
+    
+    loyer_mensuel = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Loyer mensuel en FCFA"
+    )
+    
+    capital_rvt = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Capital RVT en FCFA"
+    )
+    
+    options = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        allow_null=True,
+        help_text="Liste des codes d'options"
+    )
+    
+    sous_garanties_optionnelles = serializers.ListField(
+        child=serializers.CharField(max_length=100),
+        required=False,
+        allow_null=True,
+        help_text="Liste des codes de sous_garanties optionnelles"
+    )
+    
+    adresse = serializers.CharField(
+        max_length=500,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Adresse de la maison"
+    )
+    
+    description = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        help_text="Description supplémentaire"
+    )
+    
+    force_recalcul = serializers.BooleanField(
+        default=False,
+        required=False,
+        help_text="Forcer le recalcul même si prime imposée"
+    )
+
+
+class ImpositionPrimeMaisonRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la requête d'imposition de prime maison.
+    """
+    montant_impose = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        min_value=Decimal('0.01'),
+        help_text="Montant de la prime NETTE à imposer (en FCFA)"
+    )
+    
+    motif = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        help_text="Raison de l'imposition de la prime"
+    )
+
+
+class ImpositionPrimeDevisRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la requête d'imposition de prime devis.
+    """
+    montant_impose = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        min_value=Decimal('0.01'),
+        help_text="Montant de la prime NETTE à imposer pour le devis complet (en FCFA)"
+    )
+    
+    motif = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        help_text="Raison de l'imposition (ex: négociation commerciale)"
+    )
+
+
+class LeveeImpositionRequestSerializer(serializers.Serializer):
+    """
+    Serializer pour la requête de levée d'imposition.
+    """
+    motif = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        help_text="Raison de la levée de l'imposition"
+    )
+
+
+class ImpositionPrimeResponseSerializer(serializers.Serializer):
+    """
+    Serializer pour la réponse d'imposition de prime.
+    """
+    success = serializers.BooleanField()
+    id_maison = serializers.IntegerField(required=False)
+    id_devis = serializers.IntegerField(required=False)
+    imposition_id = serializers.IntegerField(required=False)
+    montant_impose = serializers.FloatField()
+    ancien_montant_nette = serializers.FloatField()
+    ancien_montant_ttc = serializers.FloatField()
+    message = serializers.CharField()
+
+
+class MaisonModificationResponseSerializer(serializers.Serializer):
+    """
+    Serializer pour la réponse de modification de maison.
+    """
+    success = serializers.BooleanField()
+    id_maison = serializers.IntegerField(required=False)
+    message = serializers.CharField()
+    erreur = serializers.CharField(required=False)
+    prime_imposee = serializers.BooleanField(required=False)
+    montant_impose = serializers.FloatField(required=False)
+    imposition_levee = serializers.BooleanField(required=False)

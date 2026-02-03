@@ -80,6 +80,14 @@ from .views import (
 
 from .views import UsageHabitationViewSet, SousGarantieMRHViewSet, OptionViewSet, DevisMRHViewSet, SousGarantieForfaitViewSet, CalculMaisonView, MaisonViewSet, ValidateParametersView, RecalculerDevisView
 
+from .views import (
+    ModifierMaisonView,
+    ImposerPrimeMaisonView,
+    ImposerPrimeDevisView,
+    LeverImpositionView,
+    HistoriqueImpositionsView,
+    StatutImpositionView,
+)
 # Créer le router pour les ViewSets
 router = routers.DefaultRouter()
 
@@ -471,7 +479,95 @@ urlpatterns = [
         name='devis-resume-financier'
     ),
      
-     # Endpoint de vérification d'existence (Autocomplete)
+     # ========================================================================
+    # MODIFICATION DE MAISON
+    # ========================================================================
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/',
+        ModifierMaisonView.as_view(),
+        name='mrh-modifier-maison'
+    ),
+    # PUT /api/mrh/devis/123/maisons/456/
+    # Modifie une maison existante
+    
+    # ========================================================================
+    # IMPOSITION DE PRIME MAISON
+    # ========================================================================
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposer-prime/',
+        ImposerPrimeMaisonView.as_view(),
+        name='mrh-imposer-prime-maison'
+    ),
+    # POST /api/mrh/devis/123/maisons/456/imposer-prime/
+    # Impose la prime d'une maison
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposer-prime/',
+        LeverImpositionView.as_view(),
+        name='mrh-lever-imposition-maison'
+    ),
+    # DELETE /api/mrh/devis/123/maisons/456/imposer-prime/
+    # Lève l'imposition d'une maison
+    
+    # ========================================================================
+    # IMPOSITION DE PRIME DEVIS
+    # ========================================================================
+    
+    path(
+        'mrh/devis/<int:devis_id>/imposer-prime/',
+        ImposerPrimeDevisView.as_view(),
+        name='mrh-imposer-prime-devis'
+    ),
+    # POST /api/mrh/devis/123/imposer-prime/
+    # Impose la prime globale du devis
+    
+    path(
+        'mrh/devis/<int:devis_id>/imposer-prime/',
+        LeverImpositionView.as_view(),
+        name='mrh-lever-imposition-devis'
+    ),
+    # DELETE /api/mrh/devis/123/imposer-prime/
+    # Lève l'imposition du devis
+    
+    # ========================================================================
+    # HISTORIQUE ET STATUT
+    # ========================================================================
+    
+    path(
+        'mrh/devis/<int:devis_id>/impositions/',
+        HistoriqueImpositionsView.as_view(),
+        name='mrh-historique-impositions-devis'
+    ),
+    # GET /api/mrh/devis/123/impositions/
+    # Historique des impositions du devis
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/impositions/',
+        HistoriqueImpositionsView.as_view(),
+        name='mrh-historique-impositions-maison'
+    ),
+    # GET /api/mrh/devis/123/maisons/456/impositions/
+    # Historique des impositions de la maison
+    
+    path(
+        'mrh/devis/<int:devis_id>/statut-imposition/',
+        StatutImpositionView.as_view(),
+        name='mrh-statut-imposition-devis'
+    ),
+    # GET /api/mrh/devis/123/statut-imposition/
+    # Statut d'imposition du devis
+    
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/statut-imposition/',
+        StatutImpositionView.as_view(),
+        name='mrh-statut-imposition-maison'
+    ),
+    # GET /api/mrh/devis/123/maisons/456/statut-imposition/
+    # Statut d'imposition de la maison
+     
+    # Endpoint de vérification d'existence (Autocomplete)
     path('cheques/statut/', CheckChequeStatusView.as_view(), name='cheque-statut'),
     
     # Endpoint 1 : Liste filtrée des chèques
