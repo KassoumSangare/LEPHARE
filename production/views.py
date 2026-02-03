@@ -2650,6 +2650,7 @@ class MaisonViewSet(viewsets.ViewSet):
     
     POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
     DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/ - Supprimer une maison
+    PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/ - Modifier une maison
     """
     permission_classes = [IsAuthenticated]
     
@@ -2740,6 +2741,97 @@ class MaisonViewSet(viewsets.ViewSet):
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    
+    def update(self, request, devis_id=None, pk=None):
+        """
+        Modifier une maison existante dans un devis MRH.
+        
+        PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/
+        
+        Permet de modifier les caractéristiques d'une maison :
+        - Valeurs (bâtiment, contenu, loyer, RVT)
+        - Options (gardien, zone industrielle, etc.)
+        - Garanties optionnelles
+        - Adresse
+        
+        Règles :
+        - Si prime maison imposée : erreur (sauf force_recalcul=True)
+        - Si prime devis imposée : erreur (sauf force_recalcul=True)
+        - Si force_recalcul=True : lève l'imposition automatiquement
+        
+        Request body :
+        {
+            "code_usage": "proprietaire_occupant_total",  // optionnel
+            "valeur_batiment": 60000000,  // optionnel
+            "valeur_contenu": 12000000,  // optionnel
+            "options": ["presence_gardien"],  // optionnel
+            "sous_garanties_optionnelles": ["RC_MEMBRE"],  // optionnel
+            "force_recalcul": false  // optionnel, défaut false
+        }
+        
+        Response 200 (succès) :
+        {
+            "success": true,
+            "id_maison": 456,
+            "message": "Maison modifiée avec succès",
+            "calcul": { ... },
+            "totaux_devis": { ... },
+            "imposition_levee": false
+        }
+        
+        Response 400 (prime imposée) :
+        {
+            "success": false,
+            "erreur": "PRIME_MAISON_IMPOSEE",
+            "message": "La prime de cette maison est imposée à 150 000,00 FCFA...",
+            "prime_imposee": true,
+            "montant_impose": 150000.00
+        }
+        """
+
+        # Validation des données
+        serializer = MaisonModificationRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Vérifier que la maison appartient au devis
+        maison = get_object_or_404(DevisDetail, iddevisdetail=pk)
+        if maison.iddevis_id != int(devis_id):
+            return Response(
+                {
+                    'erreur': 'MAISON_NOT_IN_DEVIS',
+                    'message': f'La maison {pk} n\'appartient pas au devis {devis_id}'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Appeler le service métier
+        service = MRHCalculService()
+        try:
+            resultat = service.modifier_maison(
+                id_maison=pk,
+                **serializer.validated_data
+            )
+
+            # Si échec (prime imposée)
+            if not resultat.get('success', False):
+                return Response(resultat, status=status.HTTP_400_BAD_REQUEST)
+
+            # Succès
+            return Response(resultat, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            return Response(
+                {'erreur': 'VALIDATION_ERROR', 'message': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception as e:
+            return Response(
+                {'erreur': 'INTERNAL_ERROR', 'message': f'Erreur lors de la modification : {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
     def destroy(self, request, devis_id=None, pk=None):
@@ -3027,128 +3119,15 @@ Vues API pour modification de maison et imposition de prime MRH
 ================================================================
 
 Ces vues exposent les endpoints REST pour :
-1. Modifier une maison existante
-2. Imposer la prime d'une maison
-3. Imposer la prime d'un devis
-4. Lever une imposition
-5. Consulter l'historique des impositions
+1. Imposer la prime d'une maison
+2. Imposer la prime d'un devis
+3. Lever une imposition
+4. Consulter l'historique des impositions
 """
 
-# ============================================================================
-# VUE 1 : MODIFIER UNE MAISON
-# ============================================================================
-
-class ModifierMaisonView(APIView):
-    """
-    Modifier une maison existante dans un devis MRH.
-    
-    PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/
-    
-    Permet de modifier les caractéristiques d'une maison :
-    - Valeurs (bâtiment, contenu, loyer, RVT)
-    - Options (gardien, zone industrielle, etc.)
-    - Garanties optionnelles
-    - Adresse
-    
-    Règles :
-    - Si prime maison imposée : erreur (sauf force_recalcul=True)
-    - Si prime devis imposée : erreur (sauf force_recalcul=True)
-    - Si force_recalcul=True : lève l'imposition automatiquement
-    
-    Request body :
-    {
-        "code_usage": "proprietaire_occupant_total",  // optionnel
-        "valeur_batiment": 60000000,  // optionnel
-        "valeur_contenu": 12000000,  // optionnel
-        "options": ["presence_gardien"],  // optionnel
-        "sous_garanties_optionnelles": ["RC_MEMBRE"],  // optionnel
-        "force_recalcul": false  // optionnel, défaut false
-    }
-    
-    Response 200 (succès) :
-    {
-        "success": true,
-        "id_maison": 456,
-        "message": "Maison modifiée avec succès",
-        "calcul": { ... },
-        "totaux_devis": { ... },
-        "imposition_levee": false
-    }
-    
-    Response 400 (prime imposée) :
-    {
-        "success": false,
-        "erreur": "PRIME_MAISON_IMPOSEE",
-        "message": "La prime de cette maison est imposée à 150 000,00 FCFA...",
-        "prime_imposee": true,
-        "montant_impose": 150000.00
-    }
-    """
-    
-    permission_classes = [IsAuthenticated]
-    
-    def put(self, request, devis_id, maison_id):
-        """Modifie une maison existante."""
-        
-        # Validation des données
-        serializer = MaisonModificationRequestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Vérifier que la maison appartient au devis
-        maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
-        if maison.iddevis_id != devis_id:
-            return Response(
-                {
-                    'erreur': 'MAISON_NOT_IN_DEVIS',
-                    'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Appeler le service
-        service = MRHCalculService()
-        
-        try:
-            resultat = service.modifier_maison(
-                id_maison=maison_id,
-                **serializer.validated_data
-            )
-            
-            # Si échec (prime imposée)
-            if not resultat.get('success', False):
-                return Response(
-                    resultat,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Succès
-            return Response(resultat, status=status.HTTP_200_OK)
-        
-        except ValueError as e:
-            return Response(
-                {
-                    'erreur': 'VALIDATION_ERROR',
-                    'message': str(e)
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        except Exception as e:
-            return Response(
-                {
-                    'erreur': 'INTERNAL_ERROR',
-                    'message': f'Erreur lors de la modification : {str(e)}'
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
 
 # ============================================================================
-# VUE 2 : IMPOSER LA PRIME D'UNE MAISON
+# VUE 1 : IMPOSER LA PRIME D'UNE MAISON
 # ============================================================================
 
 class ImposerPrimeMaisonView(APIView):
@@ -3244,7 +3223,7 @@ class ImposerPrimeMaisonView(APIView):
 
 
 # ============================================================================
-# VUE 3 : IMPOSER LA PRIME D'UN DEVIS
+# VUE 2 : IMPOSER LA PRIME D'UN DEVIS
 # ============================================================================
 
 class ImposerPrimeDevisView(APIView):
@@ -3339,7 +3318,7 @@ class ImposerPrimeDevisView(APIView):
 
 
 # ============================================================================
-# VUE 4 : LEVER UNE IMPOSITION
+# VUE 3 : LEVER UNE IMPOSITION
 # ============================================================================
 
 class LeverImpositionView(APIView):
@@ -3436,7 +3415,7 @@ class LeverImpositionView(APIView):
 
 
 # ============================================================================
-# VUE 5 : HISTORIQUE DES IMPOSITIONS
+# VUE 4 : HISTORIQUE DES IMPOSITIONS
 # ============================================================================
 
 class HistoriqueImpositionsView(APIView):

@@ -449,12 +449,12 @@ urlpatterns = [
     ),
     # POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
     
-    path(
-        'mrh/devis/<int:devis_id>/maisons/<int:pk>/',
-        MaisonViewSet.as_view({'delete': 'destroy'}),
-        name='devis-maison-delete'
+    path( 'mrh/devis/<int:devis_id>/maisons/<int:pk>/',
+         MaisonViewSet.as_view({'put': 'update', 'delete': 'destroy'}),
+         name='devis-maison'
     ),
     # DELETE /api/mrh/devis/{devis_id}/maisons/{pk}/ - Supprimer une maison
+    # PUT /api/mrh/devis/{devis_id}/maisons/{pk}/ - Modifier une maison
     
     # ========================================================================
     # SECTION 5 : ENDPOINTS UTILITAIRES
@@ -483,11 +483,11 @@ urlpatterns = [
     # MODIFICATION DE MAISON
     # ========================================================================
     
-    path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/',
-        ModifierMaisonView.as_view(),
-        name='mrh-modifier-maison'
-    ),
+    # path(
+    #     'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/',
+    #     ModifierMaisonView.as_view(),
+    #     name='mrh-modifier-maison'
+    # ),
     # PUT /api/mrh/devis/123/maisons/456/
     # Modifie une maison existante
     
@@ -504,11 +504,11 @@ urlpatterns = [
     # Impose la prime d'une maison
     
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposer-prime/',
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/lever-imposition-prime/',
         LeverImpositionView.as_view(),
         name='mrh-lever-imposition-maison'
     ),
-    # DELETE /api/mrh/devis/123/maisons/456/imposer-prime/
+    # DELETE /api/mrh/devis/123/maisons/456/lever-imposition-prime/
     # Lève l'imposition d'une maison
     
     # ========================================================================
@@ -524,7 +524,7 @@ urlpatterns = [
     # Impose la prime globale du devis
     
     path(
-        'mrh/devis/<int:devis_id>/imposer-prime/',
+        'mrh/devis/<int:devis_id>/lever-imposition-prime/',
         LeverImpositionView.as_view(),
         name='mrh-lever-imposition-devis'
     ),
