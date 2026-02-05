@@ -12,6 +12,10 @@ from typing import cast
 from django_filters import rest_framework as filters
 import json
 from decimal import Decimal
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from .anti_doublons.importateur import importer_assures_anti_doublons
+from .anti_doublons.rapport import ConfigurationImport
 
 
 
@@ -601,6 +605,44 @@ class AyantDroitIaView(APIView):
         )
 
 
+def import_assures_view(request):
+    if request.method == 'POST':
+        fichier = request.FILES['FichierExcel']
+        
+        # Sauvegarder temporairement
+        temp_path = f"/tmp/{fichier.name}"
+        with open(temp_path, 'wb+') as f:
+            for chunk in fichier.chunks():
+                f.write(chunk)
+        
+        # Configuration
+        config = ConfigurationImport()
+        
+        # Import avec anti-doublons
+        erreur, id_devis, rapport = importer_assures_anti_doublons(
+            filepath=temp_path,
+            user_id=request.user.id,
+            request_post_data=request.POST.dict(),
+            config=config
+        )
+        
+        # Nettoyer
+        import os
+        os.remove(temp_path)
+        
+        # Messages
+        if not erreur:
+            messages.success(
+                request,
+                f"✓ Import réussi! {len(rapport.assures_nouveaux)} créés, "
+                f"{len(rapport.assures_ignores)} ignorés"
+            )
+        else:
+            messages.error(request, f"✗ Erreur: {rapport.details_erreur}")
+        
+        return redirect('import_resultat')
+    
+    return render(request, 'import_form.html')
 class ImportationAssureIaViewSet(viewsets.ViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
@@ -3801,8 +3843,9 @@ class DetailMaisonView(APIView):
             cursor.execute("""
                 SELECT 
                     dg.idgarantie,
-                    g.codesousgarantie,
-                    g.libellesousgarantie,
+                    g.code,
+                    g.libelle,
+					g.type,
                     dg.acquise,
                     dg.primenette,
                     dg.primeannuelle,
@@ -3813,13 +3856,13 @@ class DetailMaisonView(APIView):
                         ELSE 0.145
                     END as taux_taxe
                 FROM stddevisdetgarantie dg
-                JOIN stdsousgarantie g ON dg.idgarantie = g.idsousgarantie
+                JOIN stdmrh_sous_garantie g ON dg.idgarantie = g.idsousgarantie
                 WHERE dg.iddevisdet = %s
-                ORDER BY g.libellesousgarantie
+                ORDER BY g.libelle
             """, [maison.iddevisdetail])
             
             for row in cursor.fetchall():
-                id_garantie, code, libelle, acquise, prime_nette, prime_annuelle, taxe, taux_taxe = row
+                id_garantie, code, libelle, type_garantie, acquise, prime_nette, prime_annuelle, taxe, taux_taxe = row
                 
                 prime_nette = Decimal(str(prime_nette)) if prime_nette else Decimal('0')
                 prime_annuelle = Decimal(str(prime_annuelle)) if prime_annuelle else Decimal('0')
@@ -3829,7 +3872,7 @@ class DetailMaisonView(APIView):
                 # Déterminer le type (obligatoire ou optionnelle)
                 # On considère qu'une garantie avec prime_annuelle = prime_nette est obligatoire
                 # et qu'une garantie forfaitaire (sans répartition) est optionnelle
-                type_garantie = self._determiner_type_garantie(code, prime_annuelle, prime_nette)
+                #type_garantie = tyself._determiner_type_garantie(code, prime_annuelle, prime_nette)
                 
                 sous_garanties.append({
                     'id_sous_garantie': id_garantie,
