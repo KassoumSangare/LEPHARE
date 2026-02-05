@@ -1,12 +1,10 @@
 import json
 from openpyxl import load_workbook
-import re
 from collections import OrderedDict
 import requests
 from django.db import transaction
 from django.db import connection
 from django.db.models import Q
-from itertools import chain
 from uranus.settings import (
     ASACI_ACCESS_CODE,
     ASACI_INTERMEDIARY_CODE,
@@ -19,10 +17,9 @@ from uranus.settings import (
 from .models import (
     RetourDemAttestation,
     DetailRetourDemAttestation,
-    DemandeAttestation,
-    ItemDemandeAttestation,
 )
 from production.models import ContratDetail
+from core.utils import round_float_value, check_date_format
 from datetime import datetime, date
 from urllib.parse import urljoin
 
@@ -856,19 +853,6 @@ def get_param_data(compagnie, acces):
     data["bureau"] = "OREOLE ASSURANCES"
 
     return data
-
-
-def check_date_format(date):
-    regex = re.compile("[0-9]{4}\-[0-9]{2}\-[0-9]{2}")
-    return re.match(regex, date)
-
-
-def round_float_value(string):
-    string = string.strip()
-    if string.isdigit():
-        return string
-    elif string.replace(".", "", 1).isdigit():
-        return str(round(float(string)))
 
 
 def get_request_data_openpyxl(filename, index=0, insurer=""):

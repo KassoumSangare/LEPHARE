@@ -1,45 +1,6 @@
-from datetime import datetime, date
 from decimal import Decimal
-from typing import Union
+from core.utils import convert_to_date
 
-def convert_to_date(value: Union[str, datetime, date]) -> date:
-    if value is None:
-        raise ValueError("La valeur ne peut pas être None")
-
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-
-    if isinstance(value, datetime):
-        return value.date()
-
-    if isinstance(value, str):
-        value = value.strip()
-
-        formats = [
-            "%Y-%m-%d",
-            "%d/%m/%Y",
-            "%d-%m-%Y",
-            "%Y/%m/%d",
-
-            "%Y-%m-%d %H:%M",
-            "%Y-%m-%d %H:%M:%S",
-
-            "%d-%m-%Y %H:%M",
-            "%d-%m-%Y %H:%M:%S",
-
-            "%d/%m/%Y %H:%M",
-            "%d/%m/%Y %H:%M:%S",
-        ]
-
-        for fmt in formats:
-            try:
-                return datetime.strptime(value, fmt).date()
-            except ValueError:
-                pass
-
-        raise ValueError(f"Format de date invalide: '{value}'")
-
-    raise TypeError(f"Type non supporté: {type(value)}")
 
 def unpack_ia_quotation_post_data(post_data):
     IdIntermediaire = int(post_data["IdIntermediaire"])

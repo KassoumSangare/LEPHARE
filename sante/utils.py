@@ -1,8 +1,6 @@
 from django.db import connection
-from django.db.models import Q
 import os
 from django.conf import settings
-from django.core.files import File
 from openpyxl import load_workbook
 import re
 from collections import OrderedDict
@@ -15,7 +13,6 @@ from .models import (
     AffilieSanteInsertionResult,
     FilialeSanteInsertionResult,
     SaisieDevisSanteEnCours,
-    FilialeSante,
     Adherent,
     Affilie,
     AffilieFn,
@@ -25,8 +22,7 @@ from .serializers import (
     AdherentSanteInsertionSerializer,
     AffilieSanteInsertionSerializer,
 )
-from account.models import UranusUser
-
+from core.utils import convert_to_date
 importation_col_list = [
     "Nom",
     "Prenom",
@@ -44,40 +40,6 @@ importation_col_list = [
     "LibelleAffections",
     "Matricule",
 ]
-
-
-def check_date_format(date):
-    regex = re.compile("[0-9]{4}\-[0-9]{2}\-[0-9]{2}")
-    return re.match(regex, date)
-
-
-def convert_to_date(date_string):
-    try:
-        # Try to parse the date string using the '/' separator format
-        return datetime.strptime(date_string, "%d/%m/%Y").date()
-    except ValueError:
-        try:
-            # Try to parse the date string using the '-' separator format
-            return datetime.strptime(date_string, "%d-%m-%Y").date()
-        except ValueError:
-            try:
-                return datetime.strptime(date_string, "%Y-%m-%d").date()
-            except ValueError:
-                try:
-                    return datetime.strptime(date_string, "%Y/%m/%d").date()
-                except ValueError:
-                    # If neither format matches, raise an error
-                    raise ValueError(
-                        "Invalid date format. Date string must be in 'dd/mm/yyyy' or 'dd-mm-yyyy' or 'yyyy/mm/dd' or 'yyyy-mm-dd' format."
-                    )
-
-
-def round_float_value(string):
-    string = string.strip()
-    if string.isdigit():
-        return string
-    elif string.replace(".", "", 1).isdigit():
-        return str(round(float(string)))
 
 
 def remove_unwanted_keys(data):
@@ -132,39 +94,7 @@ def load_people_data_from_excel(filename, index=0):
         d["dateeffet"] = d["dateeffet"][:10]
         d["dateentree"] = d["dateentree"][:10]
 
-        # d["DateNaissance"] = convert_to_date(str(d["DateNaissance"]))
-        # d["DateDebutConso"] = convert_to_date(str(d["DateDebutConso"]))
-        # d["DateAdhesion"] = convert_to_date(str(d["DateAdhesion"]))
-
-        # f_format = "%d/%m/%Y"
-        # iso_format = "%Y-%m-%d"
-
-        # if not check_date_format(d["DateNaissance"]):
-        #     d["DateNaissance"] = str(
-        #         datetime.strptime(str(d["DateNaissance"]), f_format).date()
-        #     )
-        # else:
-        #     d["DateNaissance"] = str(
-        #         datetime.strptime(str(["DateNaissance"]), iso_format).date()
-        #     )
-
-        # if not check_date_format(d["DateDebutConso"]):
-        #     d["DateDebutConso"] = str(
-        #         datetime.strptime(str(d["DateDebutConso"]), f_format).date()
-        #     )
-        # else:
-        #     d["DateDebutConso"] = str(
-        #         datetime.strptime(str(d["DateDebutConso"]), iso_format).date()
-        #     )
-
-        # if not check_date_format(d["DateAdhesion"]):
-        #     d["DateAdhesion"] = str(
-        #         datetime.strptime(str(d["DateAdhesion"]), f_format).date()
-        #     )
-        # else:
-        #     d["DateAdhesion"] = str(
-        #         datetime.strptime(str(d["DateAdhesion"]), iso_format).date()
-        #     )
+        
 
         dict_list.append(d)
     return dict_list

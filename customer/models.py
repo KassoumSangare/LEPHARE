@@ -106,6 +106,25 @@ class Client(models.Model):
         null=True,
         on_delete=models.SET_NULL,
     )
+    cle_unique = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Clé unique",
+        help_text="Identifiant unique pour détecter les doublons"
+    )
+    
+    numero_assure = models.CharField(
+        max_length=50,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Numéro d'assuré",
+        help_text="Numéro unique généré automatiquement. Format: ASS-YYYYMM-NNNN"
+    )
 
     def __str__(self):
         if self.Prenoms:
@@ -114,3 +133,7 @@ class Client(models.Model):
 
     class Meta:
         db_table = "stdclient"
+        indexes = [
+            models.Index(fields=['cle_unique'], name='idx_client_cle_unique'),
+            models.Index(fields=['numero_assure'], name='idx_client_numero_assure'),
+        ]
