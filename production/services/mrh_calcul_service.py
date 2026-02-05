@@ -637,7 +637,7 @@ class MRHCalculService:
         """
         from ..models import Devis, DevisDetail, DevisDetGarantie
         from configuration_api.models import Offre
-        import json
+    
         
         # 0. Générer matricule
         matricule = self._generer_matricule_maison()
@@ -1316,6 +1316,9 @@ class MRHCalculService:
         if code_usage is None:
             # Extraire de l'observation
             code_usage = self._extraire_code_usage_depuis_offre(maison.idoffre)
+            id_offre = maison.idoffre
+        else:
+            id_offre = self._obtenir_offre_depuis_code_usage(code_usage)
         
         if valeur_batiment is None:
             valeur_batiment = maison.valeurneuve or Decimal('0')
@@ -1352,6 +1355,12 @@ class MRHCalculService:
         maison.observation = self._formater_observation(resultat_calcul)
         maison.valeurneuve = valeur_batiment
         maison.valeurvenale = valeur_contenu
+        maison.modelevehicule = code_usage
+        maison.adressecnd = adresse
+        maison.conducteur = json.dumps(resultat_calcul['options_appliquees'], cls=DjangoJSONEncoder) if resultat_calcul['options_appliquees'] else '[]'
+        maison.chargeutile = loyer_mensuel
+        maison.valeuraccessoire = capital_rvt
+        maison.idoffre = id_offre
         maison.save()
         
         # 10. Recréer les garanties
@@ -1719,6 +1728,16 @@ class MRHCalculService:
             'id_cible': id_cible,
             'message': f'Imposition levée pour {type_imposition} {id_cible}',
         }
+        
+    def _obtenir_offre_depuis_code_usage(self, code_usage:str) -> int:
+        from configuration_api.models import UsageHabitation
+        if not code_usage:
+            raise ValueError("Impossible d'obtenir l'offre: code usage non défini")
+        usage = UsageHabitation.objects.filter(code=code_usage).first()
+        if usage and usage.offre:
+            return usage.offre.pk
+        raise ValueError("Impossible d'obtenir l'offre: code usage non défini ou mal paramétré")
+            
     
     def _extraire_code_usage_depuis_offre(self, id_offre: int) -> str:
         """Extrait le code usage depuis le champ observation."""
