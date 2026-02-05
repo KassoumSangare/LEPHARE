@@ -4022,3 +4022,281 @@ class MaisonModificationResponseSerializer(serializers.Serializer):
     prime_imposee = serializers.BooleanField(required=False)
     montant_impose = serializers.FloatField(required=False)
     imposition_levee = serializers.BooleanField(required=False)
+    
+    
+"""
+Serializer pour les détails complets d'une maison MRH
+======================================================
+"""
+class GarantieDetailSerializer(serializers.Serializer):
+    """Détail d'une garantie de la maison."""
+    
+    id_sous_garantie = serializers.IntegerField(
+        help_text="ID dans stdgarantie"
+    )
+    code_sous_garantie = serializers.CharField(
+        help_text="Code de la garantie"
+    )
+    libelle = serializers.CharField(
+        help_text="Libellé de la garantie"
+    )
+    type = serializers.CharField(
+        help_text="OBLIGATOIRE ou OPTIONNELLE"
+    )
+    acquise = serializers.BooleanField(
+        help_text="Si la garantie est acquise"
+    )
+    prime_nette = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime nette après options (FCFA)"
+    )
+    prime_annuelle = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime avant options (FCFA)"
+    )
+    taux_taxe = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=3,
+        help_text="Taux de taxe (0.145 ou 0.25)"
+    )
+    taxe = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Montant de la taxe (FCFA)"
+    )
+    prime_ttc = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime TTC (prime nette + taxe)"
+    )
+
+
+class ParametresCalculMaisonSerializer(serializers.Serializer):
+    """Paramètres utilisés pour le calcul de la maison."""
+    
+    code_usage = serializers.CharField(
+        help_text="Code de l'usage habitation"
+    )
+    libelle_usage = serializers.CharField(
+        help_text="Libellé de l'usage"
+    )
+    valeur_batiment = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Valeur du bâtiment (FCFA)"
+    )
+    valeur_contenu = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Valeur du contenu (FCFA)"
+    )
+    loyer_mensuel = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Loyer mensuel si applicable (FCFA)"
+    )
+    capital_rvt = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Capital RVT si applicable (FCFA)"
+    )
+
+
+class OptionAppliqueeSerializer(serializers.Serializer):
+    """Option appliquée sur la maison."""
+    
+    code_option = serializers.CharField(
+        help_text="Code de l'option"
+    )
+    libelle = serializers.CharField(
+        help_text="Libellé de l'option"
+    )
+    signe = serializers.CharField(
+        help_text="Signe de l'option (+ ou -)"
+    )
+    pourcentage = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Pourcentage d'ajustement"
+    )
+    impact_financier = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Impact financier estimé (FCFA)"
+    )
+
+
+class ImpositionInfoSerializer(serializers.Serializer):
+    """Informations sur l'imposition de la maison."""
+    
+    imposee = serializers.BooleanField(
+        help_text="Si la prime est imposée"
+    )
+    montant_impose = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Montant de la prime imposée (FCFA)"
+    )
+    date_imposition = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Date de l'imposition"
+    )
+    user_nom = serializers.CharField(
+        required=False,
+        allow_null=True,
+        help_text="Utilisateur ayant imposé"
+    )
+    motif = serializers.CharField(
+        required=False,
+        allow_null=True,
+        help_text="Motif de l'imposition"
+    )
+    duree_jours = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Durée de l'imposition en jours"
+    )
+
+
+class TotauxMaisonSerializer(serializers.Serializer):
+    """Totaux financiers de la maison."""
+    
+    prime_nette_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Somme des primes nettes après options (FCFA)"
+    )
+    prime_annuelle_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Somme des primes annuelles avant options (FCFA)"
+    )
+    taxe_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Somme des taxes (FCFA)"
+    )
+    prime_ttc_totale = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Prime TTC totale (FCFA)"
+    )
+    economie_options = serializers.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        help_text="Économie réalisée via les options (FCFA)"
+    )
+
+
+class DetailMaisonSerializer(serializers.Serializer):
+    """
+    Serializer pour les détails complets d'une maison MRH.
+    
+    Contient toutes les informations de la maison :
+    - Identifiants
+    - Paramètres de calcul
+    - Garanties détaillées
+    - Options appliquées
+    - Totaux financiers
+    - Statut d'imposition
+    """
+    
+    # Identifiants
+    id_maison = serializers.IntegerField(
+        help_text="ID de la maison (DevisDetail)"
+    )
+    id_devis = serializers.IntegerField(
+        help_text="ID du devis parent"
+    )
+    numero_devis = serializers.CharField(
+        required=False,
+        allow_null=True,
+        help_text="Numéro du devis"
+    )
+    
+    # Informations générales
+    adresse = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Adresse de la maison"
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Description supplémentaire"
+    )
+    
+    # Paramètres de calcul
+    parametres = ParametresCalculMaisonSerializer(
+        help_text="Paramètres utilisés pour le calcul"
+    )
+    
+    # Options appliquées
+    options = OptionAppliqueeSerializer(
+        many=True,
+        help_text="Liste des options appliquées"
+    )
+    
+    # Garanties
+    sous_garanties = GarantieDetailSerializer(
+        many=True,
+        help_text="Liste de toutes les garanties"
+    )
+    
+    # Statistiques garanties
+    nombre_sous_garanties_obligatoires = serializers.IntegerField(
+        help_text="Nombre de garanties obligatoires"
+    )
+    nombre_sous_garanties_optionnelles = serializers.IntegerField(
+        help_text="Nombre de garanties optionnelles"
+    )
+    nombre_sous_garanties_total = serializers.IntegerField(
+        help_text="Nombre total de garanties"
+    )
+    
+    # Totaux financiers
+    totaux = TotauxMaisonSerializer(
+        help_text="Totaux financiers de la maison"
+    )
+    
+    # Statut d'imposition
+    imposition = ImpositionInfoSerializer(
+        help_text="Informations sur l'imposition"
+    )
+    
+    # Dates
+    date_creation = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Date de création de la maison"
+    )
+    date_modification = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text="Date de dernière modification"
+    )
+    
+    # Métadonnées
+    peut_etre_modifiee = serializers.BooleanField(
+        help_text="Si la maison peut être modifiée (pas imposée)"
+    )
+    
+    #Matricule généré automatiquement
+    matricule = serializers.CharField(
+        required=False,
+        allow_null=True,
+        help_text="Matricule unique (ex: MRH-2024-00456)"
+    )

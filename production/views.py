@@ -10,6 +10,8 @@ from django.shortcuts import get_object_or_404
 from core.date_parser import parse_date_string
 from typing import cast
 from django_filters import rest_framework as filters
+import json
+from decimal import Decimal
 
 
 
@@ -89,6 +91,8 @@ from .serializers import (
     ImpositionPrimeDevisRequestSerializer,
     LeveeImpositionRequestSerializer,
     ImpositionPrimeResponseSerializer,
+    DetailMaisonSerializer,
+    
 )
 
 from .models import (
@@ -99,7 +103,6 @@ from .models import (
     Contrat,
     ContratDetail,
     ContratDetGarantie,
-    QuittanceFn,
     AyantDroitIa,
     Quittance,
     DetailQuittance,
@@ -219,7 +222,7 @@ from .database import (
     consolider_devis_db,
     offre_mrh_compatible,
 )
-from .utils import import_ia_insured
+from .import_assures import import_ia_insured
 from django.http.response import JsonResponse
 from rest_framework.parsers import JSONParser
 from rest_framework.decorators import (
@@ -3607,3 +3610,423 @@ class StatutImpositionView(APIView):
             'peut_modifier': True,
             'message': 'Aucune imposition active'
         })
+        
+
+"""
+Vue pour consulter les détails complets d'une maison MRH
+=========================================================
+"""
+class DetailMaisonView(APIView):
+    """
+    Consulter les détails complets d'une maison MRH.
+    
+    GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/details/
+    
+    Retourne toutes les informations sur une maison :
+    - Paramètres de calcul (usage, valeurs, loyer, etc.)
+    - Liste complète des garanties avec leurs montants
+    - Options appliquées
+    - Totaux financiers détaillés
+    - Statut d'imposition
+    - Métadonnées
+    
+    Response 200 :
+    {
+        "id_maison": 456,
+        "id_devis": 123,
+        "numero_devis": "DEV-MRH-2024-00123",
+        "adresse": "Cocody - Riviera Golf",
+        "parametres": {
+            "code_usage": "proprietaire_occupant_total",
+            "libelle_usage": "Propriétaire occupant - Total",
+            "valeur_batiment": 50000000.00,
+            "valeur_contenu": 10000000.00,
+            "loyer_mensuel": null,
+            "capital_rvt": null
+        },
+        "options": [
+            {
+                "code_option": "presence_gardien",
+                "libelle": "Présence d'un gardien",
+                "signe": "-",
+                "pourcentage": 10.00,
+                "impact_financier": -15368.00
+            }
+        ],
+        "sous_garanties": [
+            {
+                "id_garantie": 101,
+                "code_garantie": "INC001",
+                "libelle": "Incendie",
+                "type": "OBLIGATOIRE",
+                "acquise": true,
+                "prime_nette": 38000.00,
+                "prime_annuelle": 40000.00,
+                "taux_taxe": 0.250,
+                "taxe": 9500.00,
+                "prime_ttc": 47500.00
+            },
+            ...
+        ],
+        "nombre_garanties_obligatoires": 7,
+        "nombre_garanties_optionnelles": 2,
+        "nombre_garanties_total": 9,
+        "totaux": {
+            "prime_nette_totale": 153680.00,
+            "prime_annuelle_totale": 165000.00,
+            "taxe_totale": 27869.60,
+            "prime_ttc_totale": 181549.60,
+            "economie_options": 11320.00
+        },
+        "imposition": {
+            "imposee": false,
+            "montant_impose": null,
+            "date_imposition": null,
+            "user_nom": null,
+            "motif": null,
+            "duree_jours": null
+        },
+        "date_creation": "2024-12-18T10:30:00Z",
+        "date_modification": "2024-12-18T11:45:00Z",
+        "peut_etre_modifiee": true
+    }
+    """
+    
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, devis_id, maison_id):
+        """Récupère les détails complets d'une maison."""
+        
+        try:
+            # Récupérer la maison
+            maison = get_object_or_404(
+                DevisDetail.objects.select_related('iddevis'),
+                iddevisdetail=maison_id
+            )
+            
+            # Vérifier que la maison appartient au devis
+            if maison.iddevis_id != devis_id:
+                return Response(
+                    {
+                        'error': 'MAISON_NOT_IN_DEVIS',
+                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Construire les données complètes
+            details = self._construire_details(maison)
+            
+            # Sérialiser
+            serializer = DetailMaisonSerializer(details)
+            
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response(
+                {
+                    'error': 'INTERNAL_ERROR',
+                    'message': f'Erreur lors de la récupération des détails : {str(e)}'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    def _construire_details(self, maison):
+        """Construit le dictionnaire complet des détails de la maison."""
+        
+        # 1. Récupérer les garanties
+        sous_garanties = self._get_garanties(maison)
+        
+        # 2. Extraire les paramètres depuis les nouvelles colonnes
+        parametres = self._extraire_parametres(maison)
+        
+        # 3. Extraire les options depuis JSON
+        options = self._extraire_options(maison)
+        
+        # 4. Calculer les totaux
+        totaux = self._calculer_totaux(maison, sous_garanties)
+        
+        # 5. Récupérer les infos d'imposition
+        imposition = self._get_imposition_info(maison)
+        
+        # 6. Statistiques garanties
+        sous_garanties_obligatoires = [g for g in sous_garanties if g['type'] == 'OBLIGATOIRE']
+        sous_garanties_optionnelles = [g for g in sous_garanties if g['type'] == 'OPTIONNELLE']
+        
+        return {
+            # Identifiants
+            'id_maison': maison.iddevisdetail,
+            'id_devis': maison.iddevis_id,
+            'numero_devis': maison.iddevis.numerodevis if maison.iddevis else None,
+            'matricule': maison.matricule or None,
+            
+            # Informations générales
+            'adresse': maison.adressecnd or '', 
+            'description': maison.observation,
+            
+            # Paramètres
+            'parametres': parametres,
+            
+            # Options
+            'options': options,
+            
+            # Garanties
+            'sous_garanties': sous_garanties,
+            'nombre_sous_garanties_obligatoires': len(sous_garanties_obligatoires),
+            'nombre_sous_garanties_optionnelles': len(sous_garanties_optionnelles),
+            'nombre_sous_garanties_total': len(sous_garanties),
+            
+            # Totaux
+            'totaux': totaux,
+            
+            # Imposition
+            'imposition': imposition,
+            
+            # Dates (non disponibles pour l'instant)
+            'date_creation': None,
+            'date_modification': None,
+            
+            # Métadonnées
+            'peut_etre_modifiee': not maison.prime_imposee,
+        }
+    
+    def _get_garanties(self, maison):
+        """Récupère toutes les garanties de la maison avec leurs détails."""
+        
+        from django.db import connection
+        
+        sous_garanties = []
+        
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    dg.idgarantie,
+                    g.codesousgarantie,
+                    g.libellesousgarantie,
+                    dg.acquise,
+                    dg.primenette,
+                    dg.primeannuelle,
+                    dg.taxe,
+                    CASE 
+                        WHEN dg.taxe > 0 AND dg.primenette > 0 
+                        THEN dg.taxe / dg.primenette
+                        ELSE 0.145
+                    END as taux_taxe
+                FROM stddevisdetgarantie dg
+                JOIN stdsousgarantie g ON dg.idgarantie = g.idsousgarantie
+                WHERE dg.iddevisdet = %s
+                ORDER BY g.libellesousgarantie
+            """, [maison.iddevisdetail])
+            
+            for row in cursor.fetchall():
+                id_garantie, code, libelle, acquise, prime_nette, prime_annuelle, taxe, taux_taxe = row
+                
+                prime_nette = Decimal(str(prime_nette)) if prime_nette else Decimal('0')
+                prime_annuelle = Decimal(str(prime_annuelle)) if prime_annuelle else Decimal('0')
+                taxe = Decimal(str(taxe)) if taxe else Decimal('0')
+                taux_taxe = Decimal(str(taux_taxe)) if taux_taxe else Decimal('0.145')
+                
+                # Déterminer le type (obligatoire ou optionnelle)
+                # On considère qu'une garantie avec prime_annuelle = prime_nette est obligatoire
+                # et qu'une garantie forfaitaire (sans répartition) est optionnelle
+                type_garantie = self._determiner_type_garantie(code, prime_annuelle, prime_nette)
+                
+                sous_garanties.append({
+                    'id_sous_garantie': id_garantie,
+                    'code_sous_garantie': code,
+                    'libelle': libelle,
+                    'type': type_garantie,
+                    'acquise': bool(acquise),
+                    'prime_nette': float(prime_nette),
+                    'prime_annuelle': float(prime_annuelle),
+                    'taux_taxe': float(taux_taxe),
+                    'taxe': float(taxe),
+                    'prime_ttc': float(prime_nette + taxe),
+                })
+        
+        return sous_garanties
+    
+    def _determiner_type_garantie(self, code_garantie, prime_annuelle, prime_nette):
+        """Détermine si une garantie est obligatoire ou optionnelle."""
+        
+        # Les garanties optionnelles à forfait sont facilement identifiables
+        codes_optionnels = ['RC_MEMBRE', 'BRIS_GLACE', 'VOL_AGGRAVE']
+        
+        if any(opt in code_garantie.upper() for opt in codes_optionnels):
+            return 'OPTIONNELLE'
+        
+        return 'OBLIGATOIRE'
+    
+    def _extraire_parametres(self, maison):
+        """Extrait les paramètres de calcul depuis la maison."""
+        
+        code_usage = maison.modelevehicule or 'proprietaire_occupant_total'
+        
+        loyer_mensuel = Decimal(maison.chargeutile) if maison.chargeutile and maison.chargeutile > 0 else None
+        capital_rvt = Decimal(maison.valeuraccessoire) if maison.valeuraccessoire and maison.valeuraccessoire > 0 else None
+        
+        return {
+            'code_usage': code_usage,
+            'libelle_usage': self._get_libelle_usage(code_usage),
+            'valeur_batiment': Decimal(maison.valeurneuve or 0),
+            'valeur_contenu': Decimal(maison.valeurvenale or 0),
+            'loyer_mensuel': loyer_mensuel,
+            'capital_rvt': capital_rvt,
+        }
+
+
+    
+    def _extraire_code_usage(self, observation):
+        """Extrait le code usage depuis l'observation."""
+        
+        # Liste des codes usage possibles
+        from configuration_api.models import UsageHabitation
+        codes_usage = list(UsageHabitation.objects.values_list("code", flat=True))
+        
+        observation_lower = observation.lower()
+        
+        for code in codes_usage:
+            if code in observation_lower:
+                return code
+        
+        # Par défaut
+        return 'proprietaire_occupant_total'
+    
+    def _get_libelle_usage(self, code_usage):
+        """Retourne le libellé de l'usage."""
+        
+        libelles = {
+            'proprietaire_occupant_total': 'Propriétaire occupant - Total',
+            'proprietaire_occupant_rez': 'Propriétaire occupant - Rez-de-chaussée',
+            'proprietaire_bailleur': 'Propriétaire bailleur',
+            'proprietaire_non_occupant': 'Propriétaire non occupant',
+            'locataire': 'Locataire',
+            'locataire_saisonnier': 'Locataire saisonnier',
+            'locaux_commerciaux': 'Locaux commerciaux',
+            'batiment_usage_mixte': 'Bâtiment à usage mixte',
+        }
+        
+        return libelles.get(code_usage, code_usage)
+    
+    def _extraire_options(self, maison):
+        """Extrait les options appliquées depuis le JSON."""
+        
+        if not maison.conducteur or maison.conducteur.strip() in ['', '[]', 'null']:
+            return []
+        
+        try:
+            codes_options = json.loads(maison.conducteur)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # Si le JSON est invalide, retourner liste vide
+            return []
+        
+        if not codes_options or not isinstance(codes_options, list):
+            return []
+        
+        # Récupérer les détails des options depuis stdmrhoption
+        from django.db import connection
+        
+        options = []
+        
+        if codes_options:
+            codes = [opt['code_option'] for opt in codes_options]
+            placeholders = ','.join(['%s'] * len(codes_options))
+            
+            with connection.cursor() as cursor:
+                cursor.execute(f"""
+                    SELECT code AS code_option, libelle, signe_ajustement AS signe, taux_ajustement AS pourcentage
+                    FROM stdmrh_option
+                    WHERE code IN ({placeholders})
+                    ORDER BY libelle
+                """, codes)
+                
+                for row in cursor.fetchall():
+                    code, libelle, signe, pourcentage = row
+                    
+                    # Calculer l'impact financier estimé si possible
+                    impact = None
+                    if pourcentage and maison.primeannuelle:
+                        base = float(maison.primeannuelle)
+                        pct = float(pourcentage) / 100
+                        if signe == '-':
+                            impact = -1 * base * pct
+                        else:
+                            impact = base * pct
+                    
+                    options.append({
+                        'code_option': code,
+                        'libelle': libelle,
+                        'signe': signe,
+                        'pourcentage': float(pourcentage) if pourcentage else None,
+                        'impact_financier': impact,
+                    })
+        
+        return options
+    
+    def _extraire_adresse(self, observation):
+        """Extrait l'adresse depuis l'observation."""
+        
+        if not observation:
+            return ""
+        
+        # L'adresse est généralement au début de l'observation
+        # Format possible : "Adresse - usage - autres infos"
+        parts = observation.split(' - ')
+        if parts:
+            return parts[0].strip()
+        
+        return observation[:100]  # Premiers 100 caractères
+    
+    def _calculer_totaux(self, maison, garanties):
+        """Calcule les totaux financiers."""
+        
+        prime_nette_totale = sum(g['prime_nette'] for g in garanties)
+        prime_annuelle_totale = sum(g['prime_annuelle'] for g in garanties)
+        taxe_totale = sum(g['taxe'] for g in garanties)
+        
+        return {
+            'prime_nette_totale': prime_nette_totale,
+            'prime_annuelle_totale': prime_annuelle_totale,
+            'taxe_totale': taxe_totale,
+            'prime_ttc_totale': prime_nette_totale + taxe_totale,
+            'economie_options': prime_annuelle_totale - prime_nette_totale,
+        }
+    
+    def _get_imposition_info(self, maison):
+        """Récupère les informations d'imposition."""
+        
+        if not maison.prime_imposee:
+            return {
+                'imposee': False,
+                'montant_impose': None,
+                'date_imposition': None,
+                'user_nom': None,
+                'motif': None,
+                'duree_jours': None,
+            }
+        
+        # Récupérer l'imposition active
+        imposition = ImpositionPrime.objects.filter(
+            type_imposition='MAISON',
+            id_cible=maison.iddevisdetail,
+            actif=True
+        ).first()
+        
+        if imposition:
+            return {
+                'imposee': True,
+                'montant_impose': float(maison.primenette),
+                'date_imposition': imposition.date_imposition,
+                'user_nom': imposition.user_nom,
+                'motif': imposition.motif,
+                'duree_jours': imposition.duree_jours,
+            }
+        
+        return {
+            'imposee': True,
+            'montant_impose': float(maison.primenette),
+            'date_imposition': maison.prime_imposee_date,
+            'user_nom': None,
+            'motif': None,
+            'duree_jours': None,
+        }

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.db.models import F, Q
 import uuid
+from django.utils import timezone
 
 from django.db.models import CheckConstraint, UniqueConstraint
 from django.contrib.postgres.fields import ArrayField
@@ -468,7 +469,7 @@ class DevisDetail(models.Model):
     matrem2 = models.CharField(max_length=50, default="")
     extincteur = models.BooleanField(default=False)
     idprofession = models.IntegerField(blank=True, null=True)
-    conducteur = models.CharField(max_length=255, blank=True, null=True)
+    conducteur = models.TextField(max_length=2048, blank=True, null=True)
     adressecnd = models.CharField(max_length=50, null=True, blank=True, default="")
     villecnd = models.IntegerField(blank=True, null=True)
     sexe = models.CharField(max_length=1, default="M")
@@ -954,8 +955,8 @@ class ContratDetail(models.Model):
     idprofession = models.IntegerField(
         db_column="idprofession", blank=True, null=True
     )  # Field name made lowercase.
-    conducteur = models.CharField(
-        db_column="conducteur", max_length=255, blank=True, null=True
+    conducteur = models.TextField(
+        db_column="conducteur", max_length=2048, blank=True, null=True
     )  # Field name made lowercase.
     assure = models.CharField(
         db_column="assure", max_length=255, blank=True, null=True
@@ -3253,312 +3254,6 @@ class SequenceFacture(models.Model):
     def __str__(self):
         return f"Séquence {self.annee}/{self.mois}: Dernier numéro proforma {self.dernier_numero_devis}, dernier numéro facture {self.dernier_numero_contrat}"
     
-# class Maison(models.Model):
-#     """
-#     Maison référence - Les caractéristiques ACTUELLES de la maison.
-#     Cette table contient toujours l'état le plus récent.
-#     """
-#     USAGE_CHOICES = [
-#         ('proprietaire_occupant_total', 'Propriétaire occupant total'),
-#         ('proprietaire_occupant_partiel', 'Propriétaire occupant partiel'),
-#         ('proprietaire_non_occupant_meuble', 'Propriétaire non occupant - Location meublée'),
-#         ('proprietaire_non_occupant', 'Propriétaire non occupant'),
-#         ('locataire_meuble', 'Locataire en meublé'),
-#         ('locataire_partiel', 'Locataire partiel'),
-#         ('logement_fonction', 'Logement de fonction'),
-#         ('locataire', 'Locataire'),
-#     ]
-    
-#     id_maison = models.AutoField(primary_key=True, db_column="idmaison")
-#     numero_maison = models.CharField(max_length=50, unique=True, editable=False, db_column="numeromaison")
-#     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='maisons', db_column="idclient")
-    
-#     # Informations de la maison
-#     adresse = models.TextField(db_column="adresse"),
-#     ville = models.CharField(max_length=100, db_column="ville", null=True, blank=True)
-    
-#     # Caractéristiques actuelles
-#     usage_habitation = models.CharField(max_length=50, choices=USAGE_CHOICES, db_column="usagehabitation")
-#     valeur_maison = models.DecimalField(
-#         max_digits=19, 
-#         decimal_places=4,
-#         validators=[MinValueValidator(Decimal('0.01'))], db_column="valeurmaison"
-#     )
-#     cout_location_mensuel = models.DecimalField(
-#         max_digits=10, 
-#         decimal_places=2, 
-#         default=0,
-#         validators=[MinValueValidator(Decimal('0'))], db_column="coutlocationmensuel"
-#     )
-#     surface_m2 = models.DecimalField(
-#         max_digits=8, 
-#         decimal_places=2, 
-#         null=True, 
-#         blank=True, db_column="surfacem2"
-#     )
-#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-#     annee_construction = models.IntegerField(null=True, blank=True, db_column="anneeconstruction")
-    
-#     date_creation = models.DateTimeField(auto_now_add=True)
-#     date_modification = models.DateTimeField(auto_now=True)
-    
-#     class Meta:
-#         db_table = 'stdmaison'
-#         ordering = ['-date_creation']
-    
-#     def __str__(self):
-#         return f"{self.numero_maison} - {self.adresse}"
-    
-#     def save(self, *args, **kwargs):
-#     # Seulement générer si c'est la première fois
-#         if not self.numero_maison:
-#             max_retries = 5
-#             for attempt in range(max_retries):
-#                 # 1. Générer une nouvelle valeur aléatoire
-#                 self.numero_maison = f"MAS-{uuid.uuid4().hex[:8].upper()}"
-#                 try:
-#                     # 2. Tenter de sauvegarder (la base de données vérifie l'unicité)
-#                     return super().save(*args, **kwargs)
-#                 except IntegrityError:
-#                     # 3. Collision détectée par la DB. Recommencer.
-#                     if attempt == max_retries - 1:
-#                         # Si toutes les tentatives ont échoué (extrêmement improbable)
-#                         raise 
-    
-#         # Pour les mises à jour (numero_maison existe) ou si le code sort de la boucle avec succès
-#         super().save(*args, **kwargs)
-        
-# class MaisonDevis(models.Model):
-#     """
-#     Snapshot des caractéristiques d'une maison AU MOMENT du devis.
-#     Cette table capture l'état historique pour le devis.
-#     """
-#     id_maison_devis = models.AutoField(db_column="idmaisondevis", primary_key=True)
-#     devis = models.ForeignKey(Devis, on_delete=models.CASCADE, related_name='maisons_devis', db_column="iddevis")
-#     maison = models.ForeignKey(
-#         Maison, 
-#         on_delete=models.PROTECT, 
-#         related_name='devis_historique',
-#         help_text="Référence à la maison (les caractéristiques peuvent avoir changé depuis)", db_column="idmaison"
-#     )
-    
-#     # SNAPSHOT des caractéristiques au moment du devis
-#     # On duplique les champs car ils peuvent changer dans Maison
-#     usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
-#     valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
-#     cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
-#     surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
-#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-#     options = models.JSONField(default=dict, help_text="Options choisies pour cette maison", db_column="options")
-    
-#     # Résultat du calcul
-#     prime_annuelle = models.DecimalField(
-#         max_digits=19, 
-#         decimal_places=4, 
-#         null=True, 
-#         blank=True, db_column="primeannuelle"
-#     )
-#     prime_mensuelle = models.DecimalField(
-#         max_digits=19, 
-#         decimal_places=4, 
-#         null=True, 
-#         blank=True, db_column="primemensuelle"
-#     )
-#     detail_garanties = models.JSONField(
-#         null=True, 
-#         blank=True,
-#         help_text="Détail de toutes les garanties calculées", db_column="detailgaranties"
-#     )
-    
-#     date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
-    
-#     class Meta:
-#         db_table = 'stdmaisondevis'
-#         unique_together = [['devis', 'maison']]
-#         ordering = ['devis', 'id_maison_devis']
-    
-#     def __str__(self):
-#         return f"{self.devis.numerodevis} - {self.maison.numero_maison}"
-    
-#     def save(self, *args, **kwargs):
-#         # Si pas de snapshot, on copie depuis la maison actuelle
-#         if not self.pk and not self.usage_habitation:
-#             self.copier_depuis_maison()
-#         super().save(*args, **kwargs)
-    
-#     def copier_depuis_maison(self):
-#         """Copie les caractéristiques actuelles de la maison"""
-#         self.usage_habitation = self.maison.usage_habitation
-#         self.valeur_maison = self.maison.valeur_maison
-#         self.cout_location_mensuel = self.maison.cout_location_mensuel
-#         self.surface_m2 = self.maison.surface_m2
-#         self.nombre_pieces = self.maison.nombre_pieces
-    
-#     def calculer_prime(self):
-#         """Appelle la fonction PL/pgSQL pour calculer la prime"""
-#         from django.db import connection
-        
-#         with connection.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT calculer_prime_totale_mrh(
-#                     %s::VARCHAR,
-#                     %s::NUMERIC,
-#                     %s::NUMERIC,
-#                     %s::NUMERIC,
-#                     %s::INTEGER,
-#                     %s::JSONB
-#                 )
-#             """, [
-#                 self.usage_habitation,
-#                 self.valeur_maison,
-#                 self.cout_location_mensuel,
-#                 self.surface_m2,
-#                 self.nombre_pieces,
-#                 self.options if self.options else {}
-#             ])
-            
-#             result = cursor.fetchone()[0]
-            
-#             self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
-#             self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
-#             self.detail_garanties = result['garanties']
-            
-#             self.save(update_fields=[
-#                 'prime_annuelle', 
-#                 'prime_mensuelle', 
-#                 'detail_garanties'
-#             ])
-            
-#             return result
-
-
-# class MaisonContrat(models.Model):
-#     """
-#     Snapshot des caractéristiques d'une maison pour UN CONTRAT donné.
-#     À chaque renouvellement/avenant, on peut créer une nouvelle ligne
-#     si les caractéristiques ont changé.
-#     """
-#     id_maison_contrat = models.AutoField(primary_key=True, db_column="idmaisoncontrat")
-#     contrat = models.ForeignKey(
-#         Contrat, 
-#         on_delete=models.CASCADE, 
-#         related_name='maisons_contrat', db_column="idcontrat"
-#     )
-#     maison = models.ForeignKey(
-#         Maison, 
-#         on_delete=models.PROTECT, 
-#         related_name='contrats_historique',
-#         db_column= "idmaison"
-#     )
-    
-#     # SNAPSHOT des caractéristiques au moment du contrat
-#     usage_habitation = models.CharField(max_length=50, db_column="usagehabitation")
-#     valeur_maison = models.DecimalField(max_digits=19, decimal_places=4, db_column="valeurmaison")
-#     cout_location_mensuel = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column="coutlocationmensuel")
-#     surface_m2 = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True, db_column="surfacem2")
-#     nombre_pieces = models.IntegerField(null=True, blank=True, db_column="nombrepieces")
-#     options = models.JSONField(default=dict, db_column="options")
-    
-#     # Prime calculée pour ce contrat
-#     prime_annuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primeannuelle")
-#     prime_mensuelle = models.DecimalField(null=True, blank=True, max_digits=19, decimal_places=4, db_column="primemensuelle")
-#     detail_garanties = models.JSONField(null=True, blank=True, db_column="detailgaranties")
-    
-#     # Période de validité de ces caractéristiques
-#     date_debut_validite = models.DateField(auto_now_add=True, db_column="datedebutvalidite")
-#     date_fin_validite = models.DateField(null=True, blank=True, db_column="datefinvalidite")
-#     est_actif = models.BooleanField(default=True, db_column="estactif")
-    
-#     date_creation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
-    
-#     class Meta:
-#         db_table = 'stdmaisoncontrat'
-#         ordering = ['contrat', '-date_debut_validite']
-#         indexes = [
-#             models.Index(fields=['contrat', 'maison', 'est_actif']),
-#         ]
-    
-#     def __str__(self):
-#         return f"{self.contrat.numeropolice} ({self.contrat.idcontrat}) - {self.maison.numero_maison}"
-    
-#     def creer_avenant_modification(self, nouvelles_caracteristiques):
-#         """
-#         Crée un avenant pour modifier les caractéristiques de cette maison.
-#         Désactive l'ancien enregistrement et crée un nouveau.
-#         """
-#         from datetime import datetime
-#         from django.db import transaction
-        
-#         with transaction.atomic():
-#             # Clôturer l'ancienne version
-#             self.est_actif = False
-#             self.date_fin_validite = datetime.now().date()
-#             self.save(update_fields=['est_actif', 'date_fin_validite'])
-            
-#             # Créer la nouvelle version
-#             nouvelle_maison_contrat = MaisonContrat.objects.create(
-#                 contrat=self.contrat,
-#                 maison=self.maison,
-#                 usage_habitation=nouvelles_caracteristiques.get(
-#                     'usage_habitation', 
-#                     self.usage_habitation
-#                 ),
-#                 valeur_maison=nouvelles_caracteristiques.get(
-#                     'valeur_maison', 
-#                     self.valeur_maison
-#                 ),
-#                 cout_location_mensuel=nouvelles_caracteristiques.get(
-#                     'cout_location_mensuel', 
-#                     self.cout_location_mensuel
-#                 ),
-#                 surface_m2=nouvelles_caracteristiques.get('surface_m2', self.surface_m2),
-#                 nombre_pieces=nouvelles_caracteristiques.get('nombre_pieces', self.nombre_pieces),
-#                 options=nouvelles_caracteristiques.get('options', self.options),
-#                 est_actif=True
-#             )
-            
-#             # Recalculer la prime avec les nouvelles caractéristiques
-#             nouvelle_maison_contrat.recalculer_prime()
-            
-#             return nouvelle_maison_contrat
-    
-#     def recalculer_prime(self):
-#         """Recalcule la prime avec les caractéristiques actuelles"""
-#         from django.db import connection
-        
-#         with connection.cursor() as cursor:
-#             cursor.execute("""
-#                 SELECT calculer_prime_totale_mrh(
-#                     %s::VARCHAR,
-#                     %s::NUMERIC,
-#                     %s::NUMERIC,
-#                     %s::NUMERIC,
-#                     %s::INTEGER,
-#                     %s::JSONB
-#                 )
-#             """, [
-#                 self.usage_habitation,
-#                 self.valeur_maison,
-#                 self.cout_location_mensuel,
-#                 self.surface_m2,
-#                 self.nombre_pieces,
-#                 self.options if self.options else {}
-#             ])
-            
-#             result = cursor.fetchone()[0]
-            
-#             self.prime_annuelle = Decimal(str(result['prime_totale_annuelle']))
-#             self.prime_mensuelle = Decimal(str(result['prime_totale_mensuelle']))
-#             self.detail_garanties = result['garanties']
-            
-#             self.save(update_fields=[
-#                 'prime_annuelle', 
-#                 'prime_mensuelle', 
-#                 'detail_garanties'
-#             ])
-            
-#             return result
-
 class Cheque(models.Model):
     id_cheque = models.AutoField(primary_key=True, db_column="idcheque")
     numero_cheque = models.CharField(max_length=50, db_column="numerocheque")
@@ -3774,3 +3469,214 @@ class ImpositionPrime(models.Model):
         self.motif_levee = motif
         self.save()
 
+
+
+class ImportsHistorique(models.Model):
+    """
+    Historique de tous les imports de fichiers Excel d'assurés.
+    
+    Permet de:
+    - Détecter les réimportations de fichiers identiques
+    - Tracer toutes les opérations d'import
+    - Analyser les statistiques d'import
+    - Déboguer les problèmes d'import
+    """
+    
+    # ─── Identification du fichier ───
+    hash_fichier = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        verbose_name="Hash du fichier",
+        help_text="Hash SHA256 du fichier pour détecter les doublons"
+    )
+    
+    nom_fichier = models.CharField(
+        max_length=255,
+        verbose_name="Nom du fichier"
+    )
+    
+    taille_fichier = models.BigIntegerField(
+        verbose_name="Taille du fichier",
+        help_text="Taille en octets"
+    )
+    
+    # ─── Métadonnées de l'import ───
+    date_import = models.DateTimeField(
+        default=timezone.now,
+        db_index=True,
+        verbose_name="Date d'import"
+    )
+    
+    user_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="ID Utilisateur",
+        help_text="ID de l'utilisateur ayant effectué l'import"
+    )
+    
+    mode_import = models.CharField(
+        max_length=50,
+        default='creer_seulement',
+        verbose_name="Mode d'import",
+        help_text="creer_seulement, mettre_a_jour, erreur_si_doublon, ignorer_silencieux"
+    )
+    
+    # ─── Statistiques ───
+    nb_assures_total = models.IntegerField(
+        default=0,
+        verbose_name="Nombre total d'assurés",
+        help_text="Nombre total de lignes dans le fichier"
+    )
+    
+    nb_assures_nouveaux = models.IntegerField(
+        default=0,
+        verbose_name="Assurés créés"
+    )
+    
+    nb_assures_ignores = models.IntegerField(
+        default=0,
+        verbose_name="Assurés ignorés",
+        help_text="Assurés ignorés car déjà existants"
+    )
+    
+    nb_assures_mis_a_jour = models.IntegerField(
+        default=0,
+        verbose_name="Assurés mis à jour"
+    )
+    
+    nb_erreurs = models.IntegerField(
+        default=0,
+        verbose_name="Nombre d'erreurs"
+    )
+    
+    # ─── Résultat ───
+    STATUT_CHOICES = [
+        ('REUSSI', 'Réussi'),
+        ('ECHOUE', 'Échoué'),
+        ('PARTIEL', 'Partiel'),
+        ('REFUSE', 'Refusé'),
+    ]
+    
+    statut = models.CharField(
+        max_length=20,
+        choices=STATUT_CHOICES,
+        db_index=True,
+        verbose_name="Statut"
+    )
+    
+    details_erreur = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Détails de l'erreur"
+    )
+    
+    id_devis = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name="ID Devis",
+        help_text="ID du devis créé lors de l'import"
+    )
+    
+    # ─── Audit ───
+    duree_secondes = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Durée (secondes)"
+    )
+    
+    details_json = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Détails JSON",
+        help_text="Détails complets de l'import en JSON"
+    )
+    
+    class Meta:
+        db_table = 'stdimports_historique'
+        verbose_name = "Import d'assurés"
+        verbose_name_plural = "Historique des imports"
+        ordering = ['-date_import']
+        indexes = [
+            models.Index(fields=['hash_fichier'], name='idx_imports_hash'),
+            models.Index(fields=['-date_import'], name='idx_imports_date'),
+            models.Index(fields=['user_id'], name='idx_imports_user'),
+            models.Index(fields=['statut'], name='idx_imports_statut'),
+        ]
+    
+    def __str__(self):
+        return f"{self.nom_fichier} - {self.date_import.strftime('%d/%m/%Y %H:%M')} - {self.statut}"
+    
+    def __repr__(self):
+        return (
+            f"<ImportsHistorique(id={self.id}, "
+            f"fichier='{self.nom_fichier}', "
+            f"statut='{self.statut}', "
+            f"nouveaux={self.nb_assures_nouveaux})>"
+        )
+    
+    @property
+    def taux_reussite(self):
+        """Calcule le taux de réussite de l'import"""
+        if self.nb_assures_total == 0:
+            return 0
+        
+        traites = self.nb_assures_nouveaux + self.nb_assures_mis_a_jour
+        return (traites / self.nb_assures_total) * 100
+    
+    @property
+    def hash_court(self):
+        """Retourne les 8 premiers caractères du hash"""
+        return self.hash_fichier[:8] if self.hash_fichier else ""
+    
+    @classmethod
+    def rechercher_par_hash(cls, hash_fichier):
+        """Recherche un import par son hash de fichier"""
+        return cls.objects.filter(hash_fichier=hash_fichier).order_by('-date_import')
+    
+    @classmethod
+    def imports_recents(cls, nb_jours=7):
+        """Retourne les imports des N derniers jours"""
+        from datetime import timedelta
+        date_limite = timezone.now() - timedelta(days=nb_jours)
+        return cls.objects.filter(date_import__gte=date_limite)
+    
+    @classmethod
+    def statistiques_globales(cls):
+        """Retourne des statistiques globales sur tous les imports"""
+        from django.db.models import Sum, Avg, Count, Q
+        
+        stats = cls.objects.aggregate(
+            total_imports=Count('id'),
+            total_assures_crees=Sum('nb_assures_nouveaux'),
+            total_assures_ignores=Sum('nb_assures_ignores'),
+            total_erreurs=Sum('nb_erreurs'),
+            duree_moyenne=Avg('duree_secondes'),
+            nb_reussis=Count('id', filter=Q(statut='REUSSI')),
+            nb_echecs=Count('id', filter=Q(statut='ECHOUE')),
+            nb_refuses=Count('id', filter=Q(statut='REFUSE'))
+        )
+        
+        return stats
+    
+    def generer_resume_texte(self):
+        """Génère un résumé textuel de l'import"""
+        return f"""
+            Import: {self.nom_fichier}
+            Date: {self.date_import.strftime('%d/%m/%Y à %H:%M')}
+            Statut: {self.get_statut_display()}
+            Mode: {self.mode_import}
+
+            Statistiques:
+                - Total assurés: {self.nb_assures_total}
+                - Nouveaux: {self.nb_assures_nouveaux}
+                - Ignorés: {self.nb_assures_ignores}
+                - Mis à jour: {self.nb_assures_mis_a_jour}
+                - Erreurs: {self.nb_erreurs}
+
+            Taux de réussite: {self.taux_reussite:.1f}%
+            Durée: {self.duree_secondes}s
+        """

@@ -35,6 +35,10 @@ from dateutil.relativedelta import relativedelta
 
 from ..database import obtenir_nouveau_numero_devis, obtenir_code_categorie
 
+import json
+from django.core.serializers.json import DjangoJSONEncoder
+
+
 def calculer_date_expiration(
     date_effet: date, 
     id_duree: int, 
@@ -618,7 +622,8 @@ class MRHCalculService:
         id_tarif: int,
         id_offre: int,
         prime_imposee: bool,
-        resultat_calcul: Dict
+        resultat_calcul: Dict,
+        
     ) -> int:
         """
         Enregistre une maison calculée dans DevisDetail et DevisDetGarantie.
@@ -632,6 +637,10 @@ class MRHCalculService:
         """
         from ..models import Devis, DevisDetail, DevisDetGarantie
         from configuration_api.models import Offre
+        import json
+        
+        # 0. Générer matricule
+        matricule = self._generer_matricule_maison()
         
         # 1. Calculer la prime annuelle de la maison (avant options)
         prime_annuelle_maison = sum(g.get('prime_avant_options', g['prime_nette']) for g in resultat_calcul['sous_garanties'])
@@ -651,14 +660,14 @@ class MRHCalculService:
         
         devis_detail = DevisDetail.objects.create(
             iddevis_id=id_devis,
-            idoffre=id_offre,  # NULL pour MRH
+            idoffre=id_offre,  
             idtarif=id_tarif,
             vehicule=0,  # 0 pour MRH (legacy auto)
             
             # Montants calculés
             primenette=resultat_calcul['prime_nette_totale'],
             taxeenregistrement=resultat_calcul['taxe_totale'],
-             primeannuelle=prime_annuelle_maison,  
+            primeannuelle=prime_annuelle_maison,  
             
             # Champs utilisables pour stocker des infos MRH
             observation=self._formater_observation(resultat_calcul),
@@ -666,17 +675,21 @@ class MRHCalculService:
             # Valeurs stockées dans champs legacy
             valeurneuve=resultat_calcul['parametres'].get('valeur_batiment') or 0,
             valeurvenale=resultat_calcul['parametres'].get('valeur_contenu') or 0,
+            modelevehicule=resultat_calcul['code_usage'],
+            adressecnd=resultat_calcul['adresse'] or '',
+            conducteur=json.dumps(resultat_calcul['options_appliquees'], cls=DjangoJSONEncoder) if resultat_calcul['options_appliquees'] else '[]',
+            chargeutile=resultat_calcul['parametres'].get('loyer_mensuel') or 0,
+            valeuraccessoire=resultat_calcul['parametres'].get('capital_rvt') or 0,
+            matricule=matricule,
             
             # Valeurs par défaut pour compatibilité
             nombreplace=0,
-            chargeutile=0,
-            valeuraccessoire=0,
+
             fga=0,
             remorque=False,
             extincteur=False,
             provisoire=False,
             carteverte=False,
-            matricule='MRH',
             typeimmat='M',
             attestation='',
             prime_imposee = prime_imposee,
@@ -721,7 +734,13 @@ class MRHCalculService:
                 maxfranchise=0,
             )
         
-        return devis_detail.iddevisdetail
+        return {
+        'id_maison': devis_detail.iddevisdetail,
+        'matricule': matricule,
+        'prime_nette': resultat_calcul['prime_nette_totale'],
+        'prime_annuelle': prime_annuelle_maison,
+        'taxe': resultat_calcul['taxe_totale'],
+    }
     
     @transaction.atomic
     def mettre_a_jour_totaux_devis(
@@ -969,7 +988,7 @@ class MRHCalculService:
         )
         
         # 2. Enregistrer dans DevisDetail et DevisDetGarantie
-        id_maison = self.enregistrer_maison_dans_devis(
+        donnees_maison = self.enregistrer_maison_dans_devis(
             id_devis=id_devis,
             id_tarif = id_tarif,
             id_offre = id_offre,
@@ -987,7 +1006,7 @@ class MRHCalculService:
         
         # 4. Retourner le résultat complet
         return {
-            'id_maison': id_maison,
+            'id_maison': donnees_maison['id_maison'],
             'calcul': resultat_calcul,
             'totaux_devis': totaux_devis,
         }
@@ -1151,6 +1170,51 @@ class MRHCalculService:
         """Arrondit un montant à 2 décimales"""
         return montant.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         
+    
+    def _generer_matricule_maison(self) -> str:
+        """
+        Génère un matricule unique pour une maison MRH.
+        
+        Format : MRH-YYYY-NNNNN
+        - MRH : Préfixe produit
+        - YYYY : Année courante
+        - NNNNN : Numéro séquentiel sur 5 chiffres
+        
+        Exemples :
+        - MRH-2024-00001
+        - MRH-2024-00456
+        - MRH-2025-00001
+        
+        Le compteur repart à 1 chaque année.
+        
+        Returns:
+            str: Matricule unique
+        """
+        from datetime import datetime
+        from django.db import connection
+        
+        # Année courante
+        annee = datetime.now().year
+        
+        # Compter les maisons MRH créées cette année
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM stddevisdetail dd
+                JOIN stddevis d ON dd.iddevis = d.iddevis
+                WHERE d.idproduit = 4  -- Produit MRH
+                AND EXTRACT(YEAR FROM d.dateemission) = %s
+            """, [annee])
+            
+            count = cursor.fetchone()[0] or 0
+        
+        # Numéro séquentiel (incrémenté)
+        numero = count + 1
+        
+        # Générer le matricule avec padding sur 5 chiffres
+        matricule = f"MRH-{annee}-{numero:05d}"
+        
+        return matricule
     
     """
     Méthodes additionnelles pour mrh_calcul_service.py

@@ -84,6 +84,7 @@ from .views import (
     LeverImpositionView,
     HistoriqueImpositionsView,
     StatutImpositionView,
+    DetailMaisonView,
 )
 # Créer le router pour les ViewSets
 router = routers.DefaultRouter()
@@ -475,18 +476,6 @@ urlpatterns = [
         ResumeFinancierDevisView.as_view(),
         name='devis-resume-financier'
     ),
-     
-    # ========================================================================
-    # MODIFICATION DE MAISON
-    # ========================================================================
-    
-    # path(
-    #     'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/',
-    #     ModifierMaisonView.as_view(),
-    #     name='mrh-modifier-maison'
-    # ),
-    # PUT /api/mrh/devis/123/maisons/456/
-    # Modifie une maison existante
     
     # ========================================================================
     # IMPOSITION DE PRIME MAISON
@@ -563,6 +552,18 @@ urlpatterns = [
     ),
     # GET /api/mrh/devis/123/maisons/456/statut-imposition/
     # Statut d'imposition de la maison
+    
+    # ====================================================================
+    # CONSULTATION MAISON
+    # ====================================================================
+    
+    # Détail complet d'une maison (NOUVEAU)
+    path(
+        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/details/',
+        DetailMaisonView.as_view(),
+        name='mrh-detail-maison'
+    ),
+    # GET /api/mrh/devis/123/maisons/456/details/
      
     # Endpoint de vérification d'existence (Autocomplete)
     path('cheques/statut/', CheckChequeStatusView.as_view(), name='cheque-statut'),
