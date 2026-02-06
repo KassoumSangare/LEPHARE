@@ -289,9 +289,9 @@ def determiner_offre(capital_deces, prime_ttc) -> int:
     Returns:
         int: L'ID de l'offre (0 si aucune correspondance)
     
-    Note:
-        Les règles métier doivent être adaptées selon votre contexte.
-        Considérez l'utilisation d'une table de configuration en base de données.
+    TODO:
+        
+        Je dois penser à l'utilisation d'une table de configuration en base de données.
     """
     if capital_deces is None or prime_ttc is None:
         return 0
@@ -302,8 +302,6 @@ def determiner_offre(capital_deces, prime_ttc) -> int:
         logger.warning(f"Impossible de déterminer l'offre: capital={capital_deces}, prime={prime_ttc}")
         return 0
 
-    # Règles métier (à adapter selon votre contexte)
-    # TODO: Envisager de stocker ces règles en base de données
     if cap == Decimal("4000000") and prime == Decimal("17000"):
         return OFFRE_CGA_4K
     elif cap == Decimal("2000000") and prime == Decimal("6000"):
@@ -315,7 +313,7 @@ def determiner_offre(capital_deces, prime_ttc) -> int:
 def traiter_ayants_droit(chaine):
     """
     Traite une chaîne contenant des ayants-droits séparés par '/'.
-    Retourne une liste de dictionnaires avec 'nom', 'prenoms' et 'part'.
+    Retourne une liste de dictionnaires avec 'Nom', 'Prenoms' et 'Part'.
     """
     chaine = nettoyer_chaine(chaine)
     # 1. Découper la chaîne en liste
@@ -330,7 +328,7 @@ def traiter_ayants_droit(chaine):
         morceaux = ayant.split()
         nom = morceaux[0]
         prenoms = " ".join(morceaux[1:]) if len(morceaux) > 1 else ""
-        resultats.append({"nom": nom, "prenoms": prenoms})
+        resultats.append({"Nom": nom, "Prenoms": prenoms})
 
     # 4. Répartition équitable des parts
     n = len(resultats)
@@ -350,7 +348,7 @@ def traiter_ayants_droit(chaine):
 
     # 5. Ajouter la part dans chaque dictionnaire
     for i, ayant in enumerate(resultats):
-        ayant["part"] = parts[i]
+        ayant["Part"] = parts[i]
 
     return resultats
 
@@ -623,67 +621,104 @@ def extraire_assures(filepath: str) -> List[Dict]:
         raise ValidationError(f"Erreur lors de la lecture du fichier Excel: {str(e)}")
 
 
-# =====================================================================
-# ENREGISTREMENT EN BASE DE DONNÉES
-# =====================================================================
+"""
+FICHIER: production/import_assures_ameliore.py
+VERSION AMÉLIORÉE de insert_new_assure
 
-def insert_new_assure(donnee_assure: Dict):
+CORRECTIONS APPLIQUÉES:
+1. Accepte cle_unique et numero_assure en paramètre
+2. Les passe à Client.objects.create()
+3. Empêche le trigger de régénérer la clé
+"""
+
+def insert_new_assure(donnee_assure):
     """
     Crée un nouvel assuré dans la base de données.
     
+    ✅ AMÉLIORATION : Accepte maintenant cle_unique et numero_assure
+    pour éviter que le trigger PostgreSQL ne régénère ces valeurs.
+    
     Args:
         donnee_assure: Dictionnaire contenant les données de l'assuré
+                       Peut inclure 'cle_unique' et 'numero_assure'
     
     Returns:
         Client: L'objet Client créé
-    
-    Raises:
-        ValidationError: Si le sexe est invalide
     """
     from customer.models import Client
-    from configuration_api.models import TypeAssure  # Import local pour éviter les dépendances circulaires
+    from configuration_api.models import TypeAssure
     
     typeassure = TypeAssure.objects.get(pk=1)
+    numerocompte = "NUMERO-COMPTE"
+    creecie = "V"
+    datenaissance = donnee_assure.get("DateNaissance")
+    lieunaissance = donnee_assure.get("LieuNaissance", "")
+    statut = "V"
+    numerocni = donnee_assure.get("NumeroCNI", "")
+    particulier = "V"
+    email = donnee_assure.get("Email", "")
+    idprofession = 12
     
-    # Conversion du sexe
+    # Gestion du sexe
     sexe = donnee_assure.get("Sexe", "")
     if sexe == "M":
         idqualite = SEXE_MASCULIN
     elif sexe == "F":
         idqualite = SEXE_FEMININ
-    elif not sexe:
-        # Si pas de sexe fourni (Modèle 2), utiliser une valeur par défaut
-        logger.warning(f"Sexe non fourni pour {donnee_assure['Nom']} - valeur par défaut utilisée")
-        idqualite = SEXE_MASCULIN
     else:
-        raise ValidationError(f"Sexe invalide: {sexe}")
+        # Valeur par défaut si sexe non spécifié
+        idqualite = SEXE_MASCULIN
     
-    assure = Client.objects.create(
-        Nom=donnee_assure["Nom"],
-        Prenoms=donnee_assure.get("Prenoms", ""),
-        Vip="V",
-        Adresse1=donnee_assure.get("AdressePostale", ""),
-        Adresse2=donnee_assure.get("AdresseGeographique", ""),
-        Telephone=donnee_assure.get("NumeroTelephone", ""),
-        Mobile=donnee_assure.get("NumeroMobile", ""),
-        IdQualite=idqualite,
-        IdProfession=12,  # TODO: Rendre paramétrable
-        Email=donnee_assure.get("Email", ""),
-        Particulier="V",
-        CniPat=donnee_assure.get("NumeroCNI", ""),
-        Statut="V",
-        DateNaissance=donnee_assure.get("DateNaissance"),
-        LieuNaissance=donnee_assure.get("LieuNaissance", ""),
-        CreeCie="V",
-        NumeroCompte="NUMERO-COMPTE",  # TODO: Générer un vrai numéro
-        idtypeassure=typeassure,
-        Fonction=donnee_assure.get("Fonction", "")
-    )
+    telephone = donnee_assure.get("NumeroTelephone", "")
+    mobile = donnee_assure.get("NumeroMobile", "")
+    adresse1 = donnee_assure.get("AdressePostale", "")
+    adresse2 = donnee_assure.get("AdresseGeographique", "")
+    vip = "V"
+    fonction = donnee_assure.get("Fonction", "")
+    prenoms = donnee_assure.get("Prenoms", "")
+    nom = donnee_assure.get("Nom")
     
-    logger.info(f"Assuré créé: {assure.Nom} {assure.Prenoms} (ID: {assure.IdClient})")
+    # ✅ AMÉLIORATION : Récupérer cle_unique et numero_assure
+    cle_unique = donnee_assure.get("cle_unique")
+    numero_assure = donnee_assure.get("numero_assure")
+    
+    # Préparer les données de création
+    creation_data = {
+        'Nom': nom,
+        'Prenoms': prenoms,
+        'Vip': vip,
+        'Adresse1': adresse1,
+        'Adresse2': adresse2,
+        'Telephone': telephone,
+        'Mobile': mobile,
+        'IdQualite': idqualite,
+        'IdProfession': idprofession,
+        'Email': email,
+        'Particulier': particulier,
+        'CniPat': numerocni,
+        'Statut': statut,
+        'DateNaissance': datenaissance,
+        'LieuNaissance': lieunaissance,
+        'CreeCie': creecie,
+        'NumeroCompte': numerocompte,
+        'idtypeassure': typeassure,
+        'Fonction': fonction
+    }
+    
+    # ✅ AMÉLIORATION : Ajouter cle_unique si fournie
+    # Cela empêche le trigger de la régénérer
+    if cle_unique:
+        creation_data['cle_unique'] = cle_unique
+    
+    # ✅ AMÉLIORATION : Ajouter NumeroAssure si fourni
+    # (utilisé en cas d'homonymie)
+    if numero_assure:
+        creation_data['numero_assure'] = numero_assure
+    
+    # Créer l'assuré
+    assure = Client.objects.create(**creation_data)
     
     return assure
-
 
 def get_entete_devis(request_post_data: dict, flotte: bool = True) -> dict:
     """

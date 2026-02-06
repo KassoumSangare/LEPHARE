@@ -79,7 +79,7 @@ def generer_numero_assure_auto() -> str:
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT COUNT(*) 
-            FROM clients 
+            FROM stdclient 
             WHERE cle_unique LIKE %s
         """, (f"NA-{prefixe}%",))
         

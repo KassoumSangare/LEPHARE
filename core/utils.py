@@ -30,9 +30,9 @@ def convert_to_date(value: Union[str, datetime, date]) -> date:
         value = value.strip()
 
         formats = [
-            "%Y-%m-%d",
             "%d/%m/%Y",
             "%d-%m-%Y",
+            "%Y-%m-%d",
             "%Y/%m/%d",
 
             "%Y-%m-%d %H:%M",

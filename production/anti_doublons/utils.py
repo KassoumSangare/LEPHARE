@@ -1,5 +1,5 @@
 """
-FICHIER: votre_app/anti_doublons/utils.py
+FICHIER: production/anti_doublons/utils.py
 RÔLE: Fonctions utilitaires de normalisation et validation
 
 Fonctions pour nettoyer et normaliser les données.
@@ -47,18 +47,59 @@ def normaliser_cni(cni: str) -> str:
 
 
 def normaliser_telephone(telephone: str) -> str:
-    """Normalise un numéro de téléphone"""
+    """
+    Normalise un numéro de téléphone ivoirien pour comparaison.
+    
+    En Côte d'Ivoire :
+    - Numéros locaux : 10 chiffres
+    - Avec indicatif international : 225 + 10 chiffres = 13 chiffres
+    
+    Args:
+        telephone: Numéro de téléphone
+    
+    Returns:
+        str: Téléphone normalisé (chiffres uniquement) ou chaîne vide si invalide
+    
+    Examples:
+        >>> normaliser_telephone("+225 01 02 03 04 05")
+        '22501020304005'  # 13 chiffres
+        >>> normaliser_telephone("01 02 03 04 05")
+        '0102030405'  # 10 chiffres
+    """
     if not telephone:
         return ""
     
+    # Supprimer tous les caractères non numériques
     tel_clean = re.sub(r'\D', '', str(telephone))
     
-    if tel_clean.startswith("225") and len(tel_clean) >= 10:
+    if not tel_clean:
+        return ""
+    
+    # Si commence par 225 (indicatif Côte d'Ivoire)
+    if tel_clean.startswith("225"):
+        # Format attendu : 225 + 10 chiffres = 13 chiffres total
+        if len(tel_clean) == 13:
+            return tel_clean
+        elif len(tel_clean) > 13:
+            # Trop long, garder seulement les 13 premiers
+            return tel_clean[:13]
+        else:
+            # Trop court (moins de 13), invalide
+            return ""
+    
+    # Numéro local sans indicatif
+    # Format attendu : 10 chiffres
+    elif len(tel_clean) == 10:
         return tel_clean
+    
+    # Autres formats (tolérance pour numéros partiels)
     elif len(tel_clean) >= 8:
         return tel_clean
+    
     else:
+        # Moins de 8 chiffres, considéré comme invalide
         return ""
+
 
 
 # =====================================================================

@@ -118,7 +118,12 @@ class RapportImport:
 
 
 def enregistrer_historique_import(rapport: RapportImport) -> int:
-    """Enregistre le rapport dans la base de données"""
+    """
+    Enregistre le rapport dans la base de données.
+    
+    Utilise update_or_create pour gérer les cas de réimportation
+    où le hash existe déjà.
+    """
     from ..models import ImportsHistorique
     
     details_json = {
@@ -144,23 +149,26 @@ def enregistrer_historique_import(rapport: RapportImport) -> int:
         "avertissements": rapport.avertissements
     }
     
-    historique = ImportsHistorique.objects.create(
+    # Utiliser update_or_create au lieu de create pour gérer les réimportations
+    historique, created = ImportsHistorique.objects.update_or_create(
         hash_fichier=rapport.hash_fichier,
-        nom_fichier=rapport.nom_fichier,
-        taille_fichier=rapport.taille_fichier,
-        date_import=rapport.date_import,
-        user_id=rapport.user_id,
-        mode_import=rapport.mode_import.value,
-        nb_assures_total=rapport.total_lignes,
-        nb_assures_nouveaux=len(rapport.assures_nouveaux),
-        nb_assures_ignores=len(rapport.assures_ignores),
-        nb_assures_mis_a_jour=len(rapport.assures_mis_a_jour),
-        nb_erreurs=len(rapport.erreurs),
-        statut=rapport.statut.value,
-        details_erreur=rapport.details_erreur,
-        id_devis=rapport.id_devis,
-        duree_secondes=rapport.duree_secondes,
-        details_json=details_json
+        defaults={
+            'nom_fichier': rapport.nom_fichier,
+            'taille_fichier': rapport.taille_fichier,
+            'date_import': rapport.date_import,
+            'user_id': rapport.user_id,
+            'mode_import': rapport.mode_import.value,
+            'nb_assures_total': rapport.total_lignes,
+            'nb_assures_nouveaux': len(rapport.assures_nouveaux),
+            'nb_assures_ignores': len(rapport.assures_ignores),
+            'nb_assures_mis_a_jour': len(rapport.assures_mis_a_jour),
+            'nb_erreurs': len(rapport.erreurs),
+            'statut': rapport.statut.value,
+            'details_erreur': rapport.details_erreur,
+            'id_devis': rapport.id_devis,
+            'duree_secondes': rapport.duree_secondes,
+            'details_json': details_json
+        }
     )
     
     return historique.id

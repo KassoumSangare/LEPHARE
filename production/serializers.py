@@ -61,6 +61,7 @@ from .models import (
     AssureIaParDevisOuContrat,
     GarantieSouscrite,
     InfoVehicule,
+    ImportsHistorique,
 )
 
 from .models import Cheque, ChequeOperation
@@ -559,6 +560,49 @@ class AyantDroitIaSerializer(serializers.ModelSerializer):
             "part",
         )
 
+# class ImportAssuresSerializer(serializers.Serializer):
+#     """
+#     Serializer pour l'upload de fichier Excel d'assurés.
+#     """
+#     fichier_excel = serializers.FileField(
+#         required=True,
+#         help_text="Fichier Excel (.xlsx ou .xls) contenant les assurés à importer"
+#     )
+    
+#     mode_import = serializers.ChoiceField(
+#         choices=[
+#             ('creer_seulement', 'Créer seulement (ignorer les doublons)'),
+#             ('mettre_a_jour', 'Mettre à jour les existants'),
+#             ('erreur_si_doublon', 'Erreur si doublon détecté'),
+#         ],
+#         default='creer_seulement',
+#         required=False,
+#         help_text="Mode de gestion des doublons"
+#     )
+    
+#     autoriser_reimport = serializers.BooleanField(
+#         default=False,
+#         required=False,
+#         help_text="Autoriser la réimportation du même fichier"
+#     )
+    
+#     def validate_fichier_excel(self, value):
+#         """
+#         Valide que le fichier est bien un Excel.
+#         """
+#         # Vérifier l'extension
+#         if not value.name.endswith(('.xlsx', '.xls')):
+#             raise serializers.ValidationError(
+#                 "Le fichier doit être au format Excel (.xlsx ou .xls)"
+#             )
+        
+#         # Vérifier la taille (max 10 Mo)
+#         if value.size > 10 * 1024 * 1024:
+#             raise serializers.ValidationError(
+#                 "Le fichier est trop volumineux (maximum 10 Mo)"
+#             )
+        
+#         return value
 
 class ImportationAssureIaSerializer(serializers.Serializer):
     FichierExcel = serializers.FileField(
@@ -568,7 +612,10 @@ class ImportationAssureIaSerializer(serializers.Serializer):
             "null": "Le choix du fichier Excel est obligatoire",
             "blank": "Le choix du fichier Excel est obligatoire",
         },
+        required=True,
+        help_text="Fichier Excel (.xlsx ou .xls) contenant les assurés à importer"
     )
+    
     IdCompagnie = serializers.IntegerField(
         error_messages={
             "null": "La compagnie doit être renseignée.",
@@ -669,11 +716,128 @@ class ImportationAssureIaSerializer(serializers.Serializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
+        
+    ModeImport = serializers.ChoiceField(
+        choices=[
+            ('creer_seulement', 'Créer seulement (ignorer les doublons)'),
+            ('mettre_a_jour', 'Mettre à jour les existants'),
+            ('erreur_si_doublon', 'Erreur si doublon détecté'),
+        ],
+        default='creer_seulement',
+        required=False,
+        help_text="Mode de gestion des doublons"
+    )
+    
+    AutoriserReimport = serializers.BooleanField(
+        default=False,
+        required=False,
+        help_text="Autoriser la réimportation du même fichier"
+    )
+    
+    def validate_FichierExcel(self, value):
+        """
+        Valide que le fichier est bien un Excel.
+        """
+        # Vérifier l'extension
+        if not value.name.endswith(('.xlsx', '.xls')):
+            raise serializers.ValidationError(
+                "Le fichier doit être au format Excel (.xlsx ou .xls)"
+            )
+        
+        # Vérifier la taille (max 10 Mo)
+        if value.size > 10 * 1024 * 1024:
+            raise serializers.ValidationError(
+                "Le fichier est trop volumineux (maximum 10 Mo)"
+            )
+        
+        return value
+
 
     def validate(self, data):
         validate_contrat_validity_period(data)
         return data
 
+class ImportResultatSerializer(serializers.Serializer):
+    """
+    Serializer pour le résultat d'un import.
+    """
+    success = serializers.BooleanField(
+        help_text="True si l'import a réussi"
+    )
+    
+    statut = serializers.CharField(
+        help_text="REUSSI, ECHOUE, PARTIEL, ou REFUSE"
+    )
+    
+    message = serializers.CharField(
+        help_text="Message descriptif du résultat"
+    )
+    
+    statistiques = serializers.DictField(
+        help_text="Statistiques détaillées de l'import"
+    )
+    
+    id_devis = serializers.IntegerField(
+        allow_null=True,
+        help_text="ID du devis créé (si applicable)"
+    )
+    
+    hash_fichier = serializers.CharField(
+        help_text="Hash SHA256 du fichier importé"
+    )
+    
+    details = serializers.DictField(
+        required=False,
+        help_text="Détails additionnels (nouveaux, ignorés, erreurs)"
+    )
+
+
+class ImportsHistoriqueSerializer(serializers.ModelSerializer):
+    """
+    Serializer pour l'historique des imports.
+    """
+    taux_reussite = serializers.SerializerMethodField()
+    hash_court = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = ImportsHistorique
+        fields = [
+            'id',
+            'hash_fichier',
+            'hash_court',
+            'nom_fichier',
+            'taille_fichier',
+            'date_import',
+            'user_id',
+            'mode_import',
+            'nb_assures_total',
+            'nb_assures_nouveaux',
+            'nb_assures_ignores',
+            'nb_assures_mis_a_jour',
+            'nb_erreurs',
+            'statut',
+            'taux_reussite',
+            'details_erreur',
+            'id_devis',
+            'duree_secondes',
+        ]
+        read_only_fields = ['id', 'date_import']
+    
+    def get_taux_reussite(self, obj):
+        """Calcule le taux de réussite"""
+        return obj.taux_reussite
+    
+    def get_hash_court(self, obj):
+        """Retourne un hash court"""
+        return obj.hash_court
+
+
+class ImportsHistoriqueDetailSerializer(ImportsHistoriqueSerializer):
+    """
+    Serializer détaillé avec le JSON complet.
+    """
+    class Meta(ImportsHistoriqueSerializer.Meta):
+        fields = ImportsHistoriqueSerializer.Meta.fields + ['details_json']
 
 class ContratDetGarantieSerializer(serializers.ModelSerializer):
     class Meta:

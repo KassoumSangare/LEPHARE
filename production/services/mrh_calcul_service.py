@@ -1314,7 +1314,6 @@ class MRHCalculService:
         
         # 5. Récupérer les valeurs actuelles si non fournies
         if code_usage is None:
-            # Extraire de l'observation
             code_usage = self._extraire_code_usage_depuis_offre(maison.idoffre)
             id_offre = maison.idoffre
         else:
@@ -1335,7 +1334,7 @@ class MRHCalculService:
             capital_rvt=capital_rvt,
             options=options or [],
             sous_garanties_optionnelles=sous_garanties_optionnelles or [],
-            adresse=adresse or maison.observation,
+            adresse=adresse or maison.adressecnd,
             description=description,
         )
         

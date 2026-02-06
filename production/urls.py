@@ -52,6 +52,7 @@ from .views import (
     ChequeListView, 
     ChequeDetailOperationsView,
 )
+from .importation_views import ImportAssuresAPIView, VerifierFichierAPIView, ImportsHistoriqueListAPIView, ImportsHistoriqueDetailAPIView, StatistiquesImportsAPIView
 from .views import (
     create_contract,
     create_quotation,
@@ -113,11 +114,11 @@ router.register(r"reversement", ReversementCompagnieViewSet, basename="reverseme
 router.register(r"reversementnonvalide", ReversementCompagnieNonValideViewSet, basename="reversement_non_valide")
 router.register(r"detailreversement", DetailReversementViewSet)
 router.register(r"numero", NumeroViewSet)
-router.register(
-    r"importationassureia",
-    ImportationAssureIaViewSet,
-    basename="importationassureia",
-)
+# router.register(
+#     r"importationassureia",
+#     ImportationAssureIaViewSet,
+#     basename="importationassureia",
+# )
 
 router.register(
     r"importationfichierguce",
@@ -573,6 +574,40 @@ urlpatterns = [
     
     # Endpoint 2 : Détails et opérations d'un chèque
     path('cheques/<int:id_cheque>/operations/', ChequeDetailOperationsView.as_view(), name='cheque-operations'),
+    
+    # ─── Import d'Assurés ───
+    path(
+        'importationassureia/',
+        ImportAssuresAPIView.as_view(),
+        name='import_assures'
+    ),
+    
+    # ─── Vérifier un Fichier ───
+    path(
+        'verifier-fichier/',
+        VerifierFichierAPIView.as_view(),
+        name='verifier_fichier'
+    ),
+    
+    # ─── Historique des Imports ───
+    path(
+        'imports-historique/',
+        ImportsHistoriqueListAPIView.as_view(),
+        name='imports_historique_list'
+    ),
+    
+    path(
+        'imports-historique/<int:pk>/',
+        ImportsHistoriqueDetailAPIView.as_view(),
+        name='imports_historique_detail'
+    ),
+    
+    # ─── Statistiques ───
+    path(
+        'imports-statistiques/',
+        StatistiquesImportsAPIView.as_view(),
+        name='imports_statistiques'
+    ),
     
 ]
 
