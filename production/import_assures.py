@@ -35,6 +35,15 @@ SEXE_FEMININ = 2
 # Codes des offres IA CGA
 OFFRE_CGA_4K = 156  # CGA - CAPITAL: 4M FCFA
 OFFRE_CGA_2K = 154  # CGA - CAPITAL: 2M FCFA
+OFFRE_CI_EN_100K = 166
+OFFRE_CI_EN_75K = 165
+OFFRE_CI_EN_50K = 170
+OFFRE_CI_EN_30K = 162
+OFFRE_CI_EN_25K = 168
+OFFRE_CI_EN_15K = 169
+OFFRE_CI_EN_10K = 167
+OFFRE_CI_EN_5K = 163
+
 
 importation_col_list = [
     "Nom",
@@ -54,21 +63,6 @@ importation_col_list = [
     "CapitalInfirmite",
     "CapitalTraitement",
 ]
-
-
-# Configuration du logger
-logger = logging.getLogger(__name__)
-
-# Constantes
-DATE_FORMAT = "%d/%m/%Y"  # Format de date attendu
-QUALITE_AYANT_DROIT_INCONNUE = 0
-SEXE_MASCULIN = 1  # À adapter selon votre base de données
-SEXE_FEMININ = 2   # À adapter selon votre base de données
-
-# Codes des offres (à documenter selon votre métier)
-OFFRE_CGA_4K = 156  # CGA - CAPITAL: 4M FCFA
-OFFRE_CGA_2K = 154  # CGA - CAPITAL: 2M FCFA
-
 
 class ValidationError(Exception):
     """Exception levée lors d'une erreur de validation des données."""
@@ -278,7 +272,7 @@ def get_col_value(row: pd.Series, aliases: List[str]):
     return None
 
 
-def determiner_offre(capital_deces, prime_ttc) -> int:
+def determiner_offre(capital_deces, prime_ttc=0, categorie="") -> int:
     """
     Détermine l'ID de l'offre en fonction du Capital Décès et de la Prime TTC.
     
@@ -293,7 +287,10 @@ def determiner_offre(capital_deces, prime_ttc) -> int:
         
         Je dois penser à l'utilisation d'une table de configuration en base de données.
     """
-    if capital_deces is None or prime_ttc is None:
+    if categorie:
+        categorie = categorie.strip()
+        
+    if capital_deces is None or (prime_ttc is None and categorie is None):
         return 0
     try:
         cap = Decimal(str(capital_deces).replace(",", "."))
@@ -301,14 +298,34 @@ def determiner_offre(capital_deces, prime_ttc) -> int:
     except (InvalidOperation, TypeError, ValueError):
         logger.warning(f"Impossible de déterminer l'offre: capital={capital_deces}, prime={prime_ttc}")
         return 0
-
-    if cap == Decimal("4000000") and prime == Decimal("17000"):
-        return OFFRE_CGA_4K
-    elif cap == Decimal("2000000") and prime == Decimal("6000"):
-        return OFFRE_CGA_2K
-    else:
-        logger.info(f"Aucune offre correspondante pour capital={cap}, prime={prime}")
-        return 0
+    if categorie is None or categorie == "":  
+        if cap == Decimal("4000000") and prime == Decimal("17000"):
+            return OFFRE_CGA_4K
+        elif cap == Decimal("2000000") and prime == Decimal("6000"):
+            return OFFRE_CGA_2K
+        else:
+            logger.info(f"Aucune offre correspondante pour capital={cap}, prime={prime}")
+            return 0
+    else: #CI ENERGIES
+        if cap == Decimal(100000000):
+            return OFFRE_CI_EN_100K
+        elif cap == Decimal(75000000):
+            return OFFRE_CI_EN_75K
+        elif cap == Decimal(50000000):
+            return OFFRE_CI_EN_50K
+        elif cap == Decimal(30000000):
+            return OFFRE_CI_EN_30K
+        elif cap == Decimal(25000000):
+            return OFFRE_CI_EN_25K
+        elif cap == Decimal(15000000):
+            return OFFRE_CI_EN_15K
+        elif cap == Decimal(10000000):
+            return OFFRE_CI_EN_10K
+        elif cap == Decimal(5000000):
+            return OFFRE_CI_EN_5K
+        else:
+            logger.info(f"Aucune offre correspondante pour capital={cap}, prime={prime}")
+            return 0
 
 def traiter_ayants_droit(chaine):
     """
@@ -368,7 +385,7 @@ def est_ligne_blanche(row: pd.Series) -> bool:
         bool: True si la ligne est vide
     """
     # Récupération des valeurs de nom selon le modèle de fichier
-    nom = str(get_col_value(row, ["Nom", "NOMS ET PRENOMS"]) or "").strip().lower()
+    nom = str(get_col_value(row, ["Nom", "NOMS ET PRENOMS", "Nom et prénoms"]) or "").strip().lower()
     prenoms = str(row.get("Prenoms", "")).strip().lower()
     
     valeurs_vides = {"", "na", "n/a", "n-a", "nan"}
@@ -552,6 +569,71 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
     return assures
 
 
+def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
+    """
+    Extrait les assurés du fichier Excel de type Modèle .
+    
+    Modèle 2: Une ligne par assuré avec indication du matricule et de la catégorie
+    
+    Args:
+        df: Le DataFrame pandas
+    
+    Returns:
+        List[Dict]: Liste des assurés avec leurs bénéficiaires
+    
+    Raises:
+        ValidationError: Si les données sont invalides
+    """
+    assures = []
+    numero_ligne = 2  # Ligne 1 = en-tête
+    
+    for _, row in df.iterrows():
+        try:
+            nom_complet = nettoyer_chaine(row.get("Nom et prénoms", ""))
+            
+            if not nom_complet:
+                raise ValidationError("Le nom est obligatoire pour un assuré")
+            
+            # Tentative de séparation nom/prénoms (au cas où)
+            parties = nom_complet.split(maxsplit=1)
+            nom = parties[0] if len(parties) > 0 else nom_complet
+            prenoms = parties[1] if len(parties) > 1 else ""
+            
+            assure = {
+                "NumeroLigne": numero_ligne,
+                "Nom": nom,
+                "Prenoms": prenoms,
+                "NumeroCNI": "",
+                "DateNaissance": valider_date(row.get("Date de naissance"), "Date de naissance"),
+                "LieuNaissance": "",
+                "Sexe": "",  # Non disponible dans ce modèle
+                "NumeroTelephone": "",
+                "NumeroMobile": "",
+                "AdressePostale": "",
+                "AdresseGeographique": "",
+                "Email": "",
+                "Fonction": nettoyer_chaine(row.get("Fonction", "")),
+                "CapitalDeces": valider_monetaire(row.get("Capitaux Décès"), "Capitaux Décès"),
+                "CapitalInfirmite": valider_monetaire(row.get("Capitaux IPT"), "Capitaux IPT"),
+                "CapitalTraitement": Decimal("0.00"),
+                "PrimeHT": Decimal("0.00"), #Pas d'indication de prime dans ce modèle
+                "PrimeTTC": Decimal("0.00"),
+                "Offre": row.get("Offre", 0),
+                "Beneficiaires": []
+            }
+            
+            # Pas de bénéficiares dans ce modèles
+            
+            assures.append(assure)
+        
+        except ValidationError as e:
+            raise ValidationError(f"Ligne {numero_ligne}: {str(e)}")
+        
+        numero_ligne += 1
+    
+    return assures
+
+
 def extraire_assures(filepath: str) -> List[Dict]:
     """
     Lit le fichier Excel, détecte le format, et extrait les assurés.
@@ -591,7 +673,8 @@ def extraire_assures(filepath: str) -> List[Dict]:
             df["Offre"] = df.apply(
                 lambda row: determiner_offre(
                     get_col_value(row, ["CapitalDeces", "CAPITAL DECES"]),
-                    get_col_value(row, ["Prime TTC", "PRIMES TTC"])
+                    get_col_value(row, ["Prime TTC", "PRIMES TTC"]),
+                    get_col_value(row, ["Catégorie"]) if "Catégorie" in df.columns else None
                 ),
                 axis=1
             )
@@ -603,6 +686,10 @@ def extraire_assures(filepath: str) -> List[Dict]:
         elif "NOMS ET PRENOMS" in df.columns and "BENEFICIAIRES" in df.columns:
             logger.info("Format détecté: Modèle 2 (NOMS ET PRENOMS / BENEFICIAIRES)")
             assures = extraire_modele_2(df)
+        elif "Matricule" in df.columns and "Nom et prénoms" in df.columns and "Catégorie" in df.columns:
+            logger.info("Format détecté: Modèle 3 (Matricule / Nom et prénoms / Catégorie)")
+            assures = extraire_modele_3(df)
+            
         else:
             raise ValidationError(
                 f"Format de fichier non reconnu. Colonnes trouvées: {list(df.columns)}"

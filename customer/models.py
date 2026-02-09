@@ -91,7 +91,7 @@ class Client(models.Model):
     Avoir = models.DecimalField(
         db_column="avoir", max_digits=19, decimal_places=4, null=True, default=0.0
     )
-    Fonction = models.CharField(max_length=80, null=True, blank=True, default="")
+    Fonction = models.CharField(max_length=255, null=True, blank=True, default="")
     idtypeclient = models.ForeignKey(
         TypeSouscripteur,
         verbose_name="Type Souscripteur",
