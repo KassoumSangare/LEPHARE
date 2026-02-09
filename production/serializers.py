@@ -1822,6 +1822,11 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
+    PrimeNette = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
+    Accessoire = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
+    Taxe = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
+    PrimeTTC = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
+    
 
     def to_internal_value(self, data):
         if "TelephoneAssure" in data:

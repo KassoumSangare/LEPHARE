@@ -742,7 +742,34 @@ def save_quotation_rc(user_id, input_data):
             if input_data["NumeroPoliceCompagnie"]
             else ""
         )
-
+    PrimeNette = 0.0
+    if "PrimeNette" in input_data:
+        PrimeNette = (
+            Decimal(input_data["PrimeNette"])
+            if input_data["PrimeNette"]
+            else 0.0
+        )
+    Accessoire  = 0.0
+    if "Accessoire" in input_data:
+        Accessoire = (
+            Decimal(input_data["Accessoire"])
+            if input_data["Accessoire"]
+            else 0.0
+        )
+    Taxe = 0.0
+    if "Taxe" in input_data:
+        Taxe = (
+            Decimal(input_data["Taxe"])
+            if input_data["Taxe"]
+            else 0.0
+        )
+    PrimeTTC = 0.0
+    if "PrimeTTC" in input_data:
+        PrimeTTC = (
+            Decimal(input_data["PrimeTTC"])
+            if input_data["PrimeTTC"]
+            else 0.0
+        )
     OutputMessage = ""
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
@@ -758,7 +785,7 @@ def save_quotation_rc(user_id, input_data):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     IdIntermediaire,
                     IdCompagnie,
@@ -790,6 +817,10 @@ def save_quotation_rc(user_id, input_data):
                     NumeroPoliceConnexe,
                     NumeroPoliceCompagnie,
                     user_id,
+                    PrimeNette,
+                    Accessoire,
+                    Taxe,
+                    PrimeTTC,
                     IdDevis,
                     OutputMessage,
                 ),
