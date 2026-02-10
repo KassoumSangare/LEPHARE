@@ -307,21 +307,21 @@ def determiner_offre(capital_deces, prime_ttc=0, categorie="") -> int:
             logger.info(f"Aucune offre correspondante pour capital={cap}, prime={prime}")
             return 0
     else: #CI ENERGIES
-        if cap == Decimal(100000000):
+        if cap == Decimal("100000000"):
             return OFFRE_CI_EN_100K
-        elif cap == Decimal(75000000):
+        elif cap == Decimal("75000000"):
             return OFFRE_CI_EN_75K
-        elif cap == Decimal(50000000):
+        elif cap == Decimal("50000000"):
             return OFFRE_CI_EN_50K
-        elif cap == Decimal(30000000):
+        elif cap == Decimal("30000000"):
             return OFFRE_CI_EN_30K
-        elif cap == Decimal(25000000):
+        elif cap == Decimal("25000000"):
             return OFFRE_CI_EN_25K
-        elif cap == Decimal(15000000):
+        elif cap == Decimal("15000000"):
             return OFFRE_CI_EN_15K
-        elif cap == Decimal(10000000):
+        elif cap == Decimal("10000000"):
             return OFFRE_CI_EN_10K
-        elif cap == Decimal(5000000):
+        elif cap == Decimal("5000000"):
             return OFFRE_CI_EN_5K
         else:
             logger.info(f"Aucune offre correspondante pour capital={cap}, prime={prime}")
@@ -668,11 +668,14 @@ def extraire_assures(filepath: str) -> List[Dict]:
         if df.empty:
             raise ValidationError("Le fichier ne contient aucune donnée valide")
         
+        if "Catégorie" in df.columns: # Remplacer les NaN par une chaîne vide 
+            df["Catégorie"] = df["Catégorie"].fillna("")
+        
         # Création de la colonne 'Offre' (si elle n'existe pas)
         if "Offre" not in df.columns:
             df["Offre"] = df.apply(
                 lambda row: determiner_offre(
-                    get_col_value(row, ["CapitalDeces", "CAPITAL DECES"]),
+                    get_col_value(row, ["CapitalDeces", "CAPITAL DECES", "Capitaux Décès"]),
                     get_col_value(row, ["Prime TTC", "PRIMES TTC"]),
                     get_col_value(row, ["Catégorie"]) if "Catégorie" in df.columns else None
                 ),
