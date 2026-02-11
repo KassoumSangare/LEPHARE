@@ -668,7 +668,8 @@ def extraire_assures(filepath: str) -> List[Dict]:
         if df.empty:
             raise ValidationError("Le fichier ne contient aucune donnée valide")
         
-        if "Catégorie" in df.columns: # Remplacer les NaN par une chaîne vide 
+        # Remplacer les NaN par une chaîne vide 
+        if "Catégorie" in df.columns:
             df["Catégorie"] = df["Catégorie"].fillna("")
         
         # Création de la colonne 'Offre' (si elle n'existe pas)
