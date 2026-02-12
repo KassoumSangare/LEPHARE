@@ -571,7 +571,7 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
 
 def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
     """
-    Extrait les assurés du fichier Excel de type Modèle .
+    Extrait les assurés du fichier Excel de type Modèle 3.
     
     Modèle 2: Une ligne par assuré avec indication du matricule et de la catégorie
     
@@ -579,7 +579,7 @@ def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
         df: Le DataFrame pandas
     
     Returns:
-        List[Dict]: Liste des assurés avec leurs bénéficiaires
+        List[Dict]: Liste des assurés sans leurs bénéficiaires
     
     Raises:
         ValidationError: Si les données sont invalides
@@ -674,14 +674,25 @@ def extraire_assures(filepath: str) -> List[Dict]:
         
         # Création de la colonne 'Offre' (si elle n'existe pas)
         if "Offre" not in df.columns:
-            df["Offre"] = df.apply(
+            if "Catégorie" in df.columns:
+                df["Offre"] = df.apply(
                 lambda row: determiner_offre(
                     get_col_value(row, ["CapitalDeces", "CAPITAL DECES", "Capitaux Décès"]),
-                    get_col_value(row, ["Prime TTC", "PRIMES TTC"]),
-                    get_col_value(row, ["Catégorie"]) if "Catégorie" in df.columns else None
+                    0, # Prime TTC non indiquée dans le fichier Excel mais connu dans le paramétrage de l'application
+                    get_col_value(row, ["Catégorie"])
                 ),
                 axis=1
             )
+            else:
+                df["Offre"] = df.apply(
+                lambda row: determiner_offre(
+                    get_col_value(row, ["CapitalDeces", "CAPITAL DECES", "Capitaux Décès"]),
+                    get_col_value(row, ["Prime TTC", "PRIMES TTC"]),
+                    None
+                ),
+                axis=1
+            )
+                
         
         # Détection du format de fichier
         if "Qualite" in df.columns:
@@ -711,16 +722,6 @@ def extraire_assures(filepath: str) -> List[Dict]:
         logger.error(f"Erreur lors de l'extraction: {str(e)}", exc_info=True)
         raise ValidationError(f"Erreur lors de la lecture du fichier Excel: {str(e)}")
 
-
-"""
-FICHIER: production/import_assures_ameliore.py
-VERSION AMÉLIORÉE de insert_new_assure
-
-CORRECTIONS APPLIQUÉES:
-1. Accepte cle_unique et numero_assure en paramètre
-2. Les passe à Client.objects.create()
-3. Empêche le trigger de régénérer la clé
-"""
 
 def insert_new_assure(donnee_assure):
     """
