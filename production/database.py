@@ -126,7 +126,6 @@ def get_contract_info_for_sms(id_contrat):
     return contrat_info
 
 
-#
 def save_contract(input_data):
     sql_output = None
     error_occured = False
@@ -138,32 +137,28 @@ def save_contract(input_data):
     queryset_vide = DataInsertionResult.objects.none()
 
     try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "CALL sp_confirmation_devis(%s, %s, %s);",
-                (
-                    IdDevis,
-                    IdContrat,
-                    OutputMessage,
-                ),
-            )
-            connection.commit()
-            row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
-            data_insertion_result_list.append(sql_output)
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "CALL sp_confirmation_devis(%s, %s, %s);",
+                    (IdDevis, IdContrat, OutputMessage),
+                )
+                row = cursor.fetchone()
+                if row:
+                    IdContrat = int(row[0])
+                    contrat = Contrat.objects.get(pk=IdContrat)
+                    devis = Devis.objects.get(pk=IdDevis)
+                    contrat.piece_jointe = devis.piece_jointe
+                    contrat.save()
+
+                    sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+                    data_insertion_result_list.append(sql_output)
+
     except Exception as error:
         error_occured = True
-        print(error)
-        err_msg = str(error)
-        if err_msg.find("\n") > 0:
-            err_msg = err_msg.split("\n")[0]
-
+        err_msg = str(error).split("\n")[0]
         sql_output = DataInsertionResult(ObjectId=0, OutputMessage=err_msg)
         data_insertion_result_list.append(sql_output)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
 
     return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
 

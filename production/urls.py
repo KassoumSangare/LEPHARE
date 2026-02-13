@@ -51,6 +51,7 @@ from .views import (
     CheckChequeStatusView, 
     ChequeListView, 
     ChequeDetailOperationsView,
+    PieceJointeViewSet,
 )
 from .importation_views import ImportAssuresAPIView, VerifierFichierAPIView, ImportsHistoriqueListAPIView, ImportsHistoriqueDetailAPIView, StatistiquesImportsAPIView
 from .views import (
@@ -98,13 +99,11 @@ router.register(r'mrh/options', OptionViewSet, basename='option')
 # Enregistrer les ViewSets de gestion (avec actions personnalisées)
 router.register(r'mrh/devis', DevisMRHViewSet, basename='devis-mrh')
 
-
-router.register(r"devis", DevisViewSet)
-# router.register(r"devisdetail", DevisDetailViewSet)
+router.register(r"devis", DevisViewSet, basename='devis')
 router.register(r"devisdetgarantie", DevisDetGarantieViewSet)
 router.register(r"tarifecran", TarifEcranViewSet)
 router.register(r"contrat", ContratViewSet)
-# router.register(r"contratdetail", ContratDetailViewSet)
+router.register(r'pieces-jointes', PieceJointeViewSet, basename='piecejointe')
 router.register(r"contratdetgarantie", ContratDetGarantieViewSet)
 router.register(r"quittance", QuittanceViewSet)
 router.register(r"detailquittance", DetailQuittanceViewSet)
@@ -114,11 +113,6 @@ router.register(r"reversement", ReversementCompagnieViewSet, basename="reverseme
 router.register(r"reversementnonvalide", ReversementCompagnieNonValideViewSet, basename="reversement_non_valide")
 router.register(r"detailreversement", DetailReversementViewSet)
 router.register(r"numero", NumeroViewSet)
-# router.register(
-#     r"importationassureia",
-#     ImportationAssureIaViewSet,
-#     basename="importationassureia",
-# )
 
 router.register(
     r"importationfichierguce",
@@ -288,21 +282,11 @@ urlpatterns = [
         AyantDroitMineneView.as_view(),
         name="ayant_droit_minene",
     ),
-    # path(
-    #     r"pythonlogrecord",
-    #     LogRecordView.as_view(),
-    #     name="python_log_record",
-    # ),
     path(
         r"enregistrementencaissement",
         collect_premium,
         name="enregistrement_encaissement",
     ),
-    # path(
-    #     r"annulationencaissement",
-    #     cancel_premium_collection,
-    #     name="annulation_encaissement",
-    # ),
     path(
         r"listecontratclient/",
         ListeContratClientView.as_view(),
@@ -610,7 +594,6 @@ urlpatterns = [
     ),
     
 ]
-
 
 
 """

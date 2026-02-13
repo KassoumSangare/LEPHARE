@@ -100,3 +100,7 @@ vine==5.1.0
 wcwidth==0.2.6
 xlrd==2.0.1
 yagmail==0.15.293
+# Gestion des fichiers et images
+Pillow==10.2.0
+# Pour la documentation API (optionnel)
+drf-yasg==1.21.7

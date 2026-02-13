@@ -9,6 +9,11 @@ from django.utils import timezone
 from django.db.models import CheckConstraint, UniqueConstraint
 from django.contrib.postgres.fields import ArrayField
 from django.db.models import JSONField  # Django >= 3.1
+from django.core.validators import FileExtensionValidator
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+import os
+
 from configuration_api.models import (
     Banque,
     ModeEncaissement,
@@ -38,6 +43,39 @@ User = get_user_model()
 
 OPERATION_ARCHIVAGE = (("ARCHI", "ARCHIVAGE"), ("DESAR", "DESARCHIVAGE"))
 
+
+class PieceJointe(models.Model):
+    """
+    Modèle pour stocker les pièces jointes (images ou PDFs).
+    Une pièce peut être liée à un devis et/ou un contrat.
+    """
+    fichier = models.FileField(
+        upload_to='pieces_jointes/%Y/%m/%d/',
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=['pdf', 'jpg', 'jpeg', 'png']
+            )
+        ],
+        help_text="Fichier PDF ou image (JPG, PNG)"
+    )
+    nom_original = models.CharField(max_length=255)
+    type_fichier = models.CharField(max_length=50)
+    taille = models.IntegerField(help_text="Taille en octets")
+    date_upload = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'pieces_jointes'
+        verbose_name = 'Pièce jointe'
+        verbose_name_plural = 'Pièces jointes'
+    
+    def __str__(self):
+        return f"{self.nom_original} - {self.date_upload.strftime('%Y-%m-%d')}"
+    
+    def delete(self, *args, **kwargs):
+        """Supprimer le fichier physique lors de la suppression du modèle"""
+        if self.fichier and os.path.isfile(self.fichier.path):
+            os.remove(self.fichier.path)
+        super().delete(*args, **kwargs)
 
 class ContractForPremiumCollection(models.Model):
     IdContrat = models.IntegerField()
@@ -339,6 +377,15 @@ class Devis(models.Model):
         null=True, blank=True, db_column="dateconsolidation"
     )
     numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
+    
+    # Relation avec la pièce jointe
+    piece_jointe = models.ForeignKey(
+        PieceJointe,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='devis'
+    )
 
     def __str__(self):
         return self.numerodevis
@@ -882,6 +929,15 @@ class Contrat(models.Model):
     )
     numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
     taux_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    # Relation avec la pièce jointe (partagée avec le devis)
+    piece_jointe = models.ForeignKey(
+        PieceJointe,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='contrats'
+    )
+
 
     class Meta:
         db_table = "stdcontrat"

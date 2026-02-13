@@ -62,6 +62,7 @@ from .models import (
     GarantieSouscrite,
     InfoVehicule,
     ImportsHistorique,
+    PieceJointe,
 )
 
 from .models import Cheque, ChequeOperation
@@ -397,13 +398,45 @@ class CertificatTransportSerializer(serializers.ModelSerializer):
         model = CertificatTransport
         fields = "__all__"
 
+   
+class PieceJointeSerializer(serializers.ModelSerializer):
+    """Serializer pour les pièces jointes"""
+    url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PieceJointe
+        fields = ['id', 'fichier', 'url', 'nom_original', 'type_fichier', 'taille', 'date_upload']
+        read_only_fields = ['id', 'nom_original', 'type_fichier', 'taille', 'date_upload']
+    
+    def get_url(self, obj):
+        """Retourner l'URL complète du fichier"""
+        request = self.context.get('request')
+        if obj.fichier and request:
+            return request.build_absolute_uri(obj.fichier.url)
+        return None
+    
+    def create(self, validated_data):
+        """Créer une pièce jointe avec métadonnées extraites du fichier"""
+        fichier = validated_data.get('fichier')
+        if fichier:
+            validated_data['nom_original'] = fichier.name
+            validated_data['type_fichier'] = fichier.content_type
+            validated_data['taille'] = fichier.size
+        return super().create(validated_data)
 
 class DevisSerializer(serializers.ModelSerializer):
     offreboisee = serializers.SerializerMethodField()
+    piece_jointe_info = PieceJointeSerializer(source='piece_jointe', read_only=True)
 
     class Meta:
         model = Devis
-        fields = "__all__"
+        fields = '__all__'
+        read_only_fields = [
+            'date_creation',
+            'date_modification',
+            'prime_imposee_montant',
+            'piece_jointe_info',
+        ]
         depth = 1
 
     def get_offreboisee(self, obj):
@@ -443,11 +476,17 @@ class TarifEcranSerializer(serializers.ModelSerializer):
 
 class ContratSerializer(serializers.ModelSerializer):
     offreboisee = serializers.SerializerMethodField()
+    piece_jointe_info = PieceJointeSerializer(source='piece_jointe', read_only=True)
 
     class Meta:
         model = Contrat
         fields = "__all__"
         depth = 1
+        read_only_fields = ['idcontrat', 'piece_jointe_info']
+        extra_kwargs = {
+            'piece_jointe': {'write_only': True}
+        }
+
 
     def get_offreboisee(self, obj):
         try:
@@ -1469,18 +1508,29 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
+    PrimeNette = serializers.DecimalField(max_digits=19,
+        decimal_places=4,required=False, default=0, allow_null=True)
+    Accessoire = serializers.DecimalField(max_digits=19,
+        decimal_places=4,required=False, default=0, allow_null=True)
+    Taxe = serializers.DecimalField(max_digits=19,
+        decimal_places=4,required=False, default=0, allow_null=True)
+    PrimeTTC = serializers.DecimalField(max_digits=19,
+        decimal_places=4,required=False, default=0, allow_null=True)
 
     def to_internal_value(self, data):
 
         if "AdresseGeographique" in data:
             if data["AdresseGeographique"] == "":
                 data["AdresseGeographique"] = None
+                
         if "NumeroPoliceConnexe" in data:
             if data["NumeroPoliceConnexe"] == "":
                 data["NumeroPoliceConnexe"] = None
+                
         if "NumeroPoliceCompagnie" in data:
             if data["NumeroPoliceCompagnie"] == "":
                 data["NumeroPoliceCompagnie"] = None
+                            
         return super().to_internal_value(data)
 
 
@@ -4469,3 +4519,29 @@ class DetailMaisonSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Matricule unique (ex: MRH-2024-00456)"
     )
+    
+    
+class PieceJointeSerializer(serializers.ModelSerializer):
+    """Serializer pour les pièces jointes"""
+    url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PieceJointe
+        fields = ['id', 'fichier', 'url', 'nom_original', 'type_fichier', 'taille', 'date_upload']
+        read_only_fields = ['id', 'nom_original', 'type_fichier', 'taille', 'date_upload']
+    
+    def get_url(self, obj):
+        """Retourner l'URL complète du fichier"""
+        request = self.context.get('request')
+        if obj.fichier and request:
+            return request.build_absolute_uri(obj.fichier.url)
+        return None
+    
+    def create(self, validated_data):
+        """Créer une pièce jointe avec métadonnées extraites du fichier"""
+        fichier = validated_data.get('fichier')
+        if fichier:
+            validated_data['nom_original'] = fichier.name
+            validated_data['type_fichier'] = fichier.content_type
+            validated_data['taille'] = fichier.size
+        return super().create(validated_data)

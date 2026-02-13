@@ -16,6 +16,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from .anti_doublons.importateur import importer_assures_anti_doublons
 from .anti_doublons.rapport import ConfigurationImport
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 
 
@@ -96,6 +97,7 @@ from .serializers import (
     LeveeImpositionRequestSerializer,
     ImpositionPrimeResponseSerializer,
     DetailMaisonSerializer,
+    PieceJointeSerializer,
     
 )
 
@@ -120,6 +122,7 @@ from .models import (
     CertificatTransport,
     Cheque,
     ImpositionPrime,
+    PieceJointe,
 )
 
 
@@ -304,14 +307,65 @@ class EncaissementRechercheView(generics.ListCreateAPIView):
         return super().get_queryset()
 
 
+class PieceJointeViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet pour gérer les pièces jointes
+    """
+    queryset = PieceJointe.objects.all()
+    serializer_class = PieceJointeSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def perform_destroy(self, instance):
+        """Supprimer la pièce jointe et le fichier associé"""
+        instance.delete()
+
+
 class DevisViewSet(viewsets.ModelViewSet):
-    queryset = Devis.objects.annotate(
-        offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))
-    ).all()
+    queryset = (Devis.objects .prefetch_related('piece_jointe').annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))) .all())
     serializer_class = DevisSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def attacher_piece_jointe(self, request, pk=None):
+        """
+        Attacher une pièce jointe à un devis
+        
+        Body (multipart/form-data):
+        - fichier: Le fichier à joindre (PDF, JPG, PNG)
+        """
+        devis = self.get_object()
+        
+        if 'fichier' not in request.FILES:
+            return Response(
+                {'erreur': 'Aucun fichier fourni'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Créer la pièce jointe
+        piece_serializer = PieceJointeSerializer(
+            data={'fichier': request.FILES['fichier']},
+            context={'request': request}
+        )
+        
+        if piece_serializer.is_valid():
+            piece_jointe = piece_serializer.save()
+            
+            # Attacher au devis
+            devis.piece_jointe = piece_jointe
+            devis.save()
+            
+            # Retourner le devis mis à jour
+            devis_serializer = DevisSerializer(devis, context={'request': request})
+            return Response(devis_serializer.data, status=status.HTTP_200_OK)
+        
+        return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
 
 class CertificatTransportView(generics.ListCreateAPIView):
@@ -536,11 +590,48 @@ class TarifEcranViewSet(viewsets.ModelViewSet):
 
 
 class ContratViewSet(viewsets.ModelViewSet):
-    queryset = Contrat.objects.filter(Q(idcontratannulation=0))
+    queryset = Contrat.objects.prefetch_related('piece_jointe').filter(Q(idcontratannulation=0))
     serializer_class = ContratSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    
+    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def attacher_piece_jointe(self, request, pk=None):
+        """
+        Attacher une pièce jointe à un contrat
+        
+        Body (multipart/form-data):
+        - fichier: Le fichier à joindre (PDF, JPG, PNG)
+        """
+        contrat = self.get_object()
+        
+        if 'fichier' not in request.FILES:
+            return Response(
+                {'error': 'Aucun fichier fourni'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Créer la pièce jointe
+        piece_serializer = PieceJointeSerializer(
+            data={'fichier': request.FILES['fichier']},
+            context={'request': request}
+        )
+        
+        if piece_serializer.is_valid():
+            piece_jointe = piece_serializer.save()
+            
+            # Attacher au contrat
+            contrat.piece_jointe = piece_jointe
+            contrat.save()
+            
+            # Retourner le contrat mis à jour
+            contrat_serializer = ContratSerializer(contrat, context={'request': request})
+            return Response(contrat_serializer.data, status=status.HTTP_200_OK)
+        
+        return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class ContratRestreintViewSet(viewsets.ModelViewSet):
