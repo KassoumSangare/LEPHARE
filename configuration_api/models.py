@@ -877,7 +877,36 @@ class SecteurActivite(models.Model):
 
     class Meta:
         db_table = "stdsecteuractivite"
+        
+class DomaineActiviteRC(models.Model):
+    id_domaine_activite = models.AutoField(
+        verbose_name="Id Domaine Activité RC",
+        db_column="iddomaineactivite",
+        primary_key=True,
+    )
+    libelle = models.CharField(
+        verbose_name="Libellé Domaine Activité RC",
+        max_length=100,
+        db_column="libelle"
+    )
 
+    def save(self, *args, **kwargs):
+        if self.libelle:
+            self.libelle = " ".join(self.libelle.split()).upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.libelle
+    class Meta:
+        db_table = "stddomaineactivite"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(
+                    libelle__regex=r'^[A-Z]+(?: [A-Z]+)*$'
+                ),
+                name="chk_libelle_format"
+            )
+        ]
 
 class Marque(models.Model):
     IdMarque = models.AutoField(

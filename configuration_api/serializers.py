@@ -1545,3 +1545,8 @@ class ParametresCalculSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+class DomaineActiviteRCSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DomaineActiviteRC
+        fields = ["id_domaine_activite", "libelle"]
+        read_only_fields = ["id_domaine_activite"]

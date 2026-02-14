@@ -71,6 +71,14 @@ class GarantieViewSet(viewsets.ModelViewSet):
     ]
 
 
+
+class DomaineActiviteRCViewSet(viewsets.ModelViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+    queryset = DomaineActiviteRC.objects.all()
+    serializer_class = DomaineActiviteRCSerializer
+
 class MenuViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
@@ -1200,3 +1208,4 @@ class IATarifGroupeView(APIView):
 
         # 4. Return to API client
         return Response({"est_tarif_ia_groupe": return_value})
+    
