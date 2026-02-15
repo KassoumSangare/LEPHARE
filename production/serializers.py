@@ -1797,6 +1797,23 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
 
 
 ############################## Enregistrement Devis RC #####################################################
+class GarantieCapitauxSerializer(serializers.Serializer):
+    """
+    Sérialiseur pour la liste des garanties dont les capitaux ont été indiqués.
+    """
+
+    id_garantie = serializers.IntegerField()
+    acquise = serializers.BooleanField()
+    capital = serializers.DecimalField(max_digits=19, decimal_places=4)
+    montant_franchise = serializers.DecimalField(required=False, max_digits=19, decimal_places=4)
+    taux_franchise = serializers.DecimalField(required=False, max_digits=5, decimal_places=2)
+    franchise_minimum = serializers.DecimalField(required=False, 
+        max_digits=19,
+        decimal_places=4,
+    )
+    franchise_maximum = serializers.DecimalField(required=False, max_digits=19, decimal_places=4)
+
+
 class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     AssiettePrime = serializers.DecimalField(
         max_digits=19, decimal_places=4, required=False, allow_null=True, default=0
@@ -1876,6 +1893,7 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     Accessoire = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
     Taxe = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
     PrimeTTC = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
+    ListeGarantie = GarantieCapitauxSerializer(many=True, allow_null=True, required=False)
     
 
     def to_internal_value(self, data):
@@ -2619,6 +2637,7 @@ class GarantieSerializer(serializers.Serializer):
     capital_ft = serializers.DecimalField(max_digits=19, decimal_places=4)
     reduction_commerciale = serializers.DecimalField(max_digits=5, decimal_places=2)
     reduction_bns = serializers.DecimalField(max_digits=5, decimal_places=2)
+    
 
 
 # I have modified this on Novembre 5th, 2025

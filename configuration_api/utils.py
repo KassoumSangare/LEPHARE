@@ -541,6 +541,10 @@ def get_garantie_offre_rc(request_data):
     if "IdCompagnie" in request_data:
         if request_data["IdCompagnie"]:
             IdCompagnie = int(request_data["IdCompagnie"])
+    IdDevis = 0
+    if "IdDevis" in request_data:
+        if request_data["IdDevis"]:
+            IdDevis = int(request_data["IdDevis"])   
     IdOffre = int(request_data["IdOffre"])
     CapitalDommageCorporel = Decimal(request_data["CapitalDommageCorporel"])
     CapitalDommageMateriel = Decimal(request_data["CapitalDommageMateriel"])
@@ -558,7 +562,6 @@ def get_garantie_offre_rc(request_data):
     res = GarantieProposee.objects.none()
     garantie_proposee_list = []
     try:
-        status = 0
         with connection.cursor() as cursor:
             cursor.callproc(
                 "fn_garantie_offre_rc",
@@ -573,6 +576,7 @@ def get_garantie_offre_rc(request_data):
                     TauxReduction,
                     DateEffet,
                     DateExpiration,
+                    IdDevis,
                 ],
             )
 

@@ -1329,7 +1329,7 @@ def create_quotation_rc(request):
     )
     if enregistrementdevis_rc_serializer.is_valid():
         (err, queryset) = save_quotation_rc(
-            request.user.id, enregistrementdevis_rc_data
+            request.user.id, enregistrementdevis_rc_serializer.validated_data
         )
         data_insertion_serializer = DataInsertionSerializer(
             queryset,

@@ -650,193 +650,102 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
 
 
 # Save Quotation - RC
-def save_quotation_rc(user_id, input_data):
+def save_quotation_rc(user_id: int, input_data: dict):
     sql_output = None
     error_occurred = False
-    IdIntermediaire = int(input_data["IdIntermediaire"])
-    IdCompagnie = int(input_data["IdCompagnie"])
-    IdProduit = int(input_data["IdProduit"])
-    IdOffre = int(input_data["IdOffre"])
-    IdAvenant = int(input_data["IdAvenant"])
-    IdClient = int(input_data["IdClient"])
-    IdAssure = int(input_data["IdAssure"])
-    Flotte = bool(input_data["Flotte"])
-    Coassurance = bool(input_data["Coassurance"])
-    DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
-    DateDebut = None
-    if "DateDebut" in input_data:
-        if input_data["DateDebut"]:
-            DateDebut = datetime.strptime(input_data["DateDebut"], "%d-%m-%Y").date()
 
-    IdDomaineActivite = 0
-    if "IdDomaineActivite" in input_data:
-        if input_data["IdDomaineActivite"]:
-            IdDomaineActivite = int(input_data["IdDomaineActivite"])
+    # Utilitaires pour récupérer les champs avec valeur par défaut
+    def get_int(key, default=0):
+        return int(input_data.get(key, default)) if input_data.get(key) else default
 
-    IdActivite = 0
-    if "IdActivite" in input_data:
-        if input_data["IdActivite"]:
-            IdActivite = int(input_data["IdActivite"])
+    def get_str(key, default=""):
+        return str(input_data.get(key, default)) if input_data.get(key) else default
 
-    Localisation = ""
-    if "Localisation" in input_data:
-        if input_data["Localisation"]:
-            IdActivite = str(input_data["Localisation"])
+    def get_decimal(key, default=Decimal(0)):
+        return Decimal(input_data.get(key, default)) if input_data.get(key) else default
 
-    IdTarif = int(input_data["IdTarif"])
-    TauxPrime = Decimal(input_data["TauxPrime"])
+    def get_date(key):
+        val = input_data.get(key)
+        return datetime.strptime(val, "%d-%m-%Y").date() if val else None
 
-    TauxReduction = Decimal(input_data["TauxReduction"])
-    CapitalDommageCorporel = Decimal(input_data["CapitalDommageCorporel"])
-    CapitalIntoxicationAlimentaire = Decimal(
-        input_data["CapitalIntoxicationAlimentaire"]
-    )
-    CapitalDommageMateriel = Decimal(input_data["CapitalDommageMateriel"])
+    # Préparation des paramètres
+    IdIntermediaire = get_int("IdIntermediaire")
+    IdCompagnie = get_int("IdCompagnie")
+    IdProduit = get_int("IdProduit")
+    IdOffre = get_int("IdOffre")
+    IdAvenant = get_int("IdAvenant")
+    IdClient = get_int("IdClient")
+    IdAssure = get_int("IdAssure")
+    Flotte = bool(input_data.get("Flotte", False))
+    Coassurance = bool(input_data.get("Coassurance", False))
+    DateEffet = get_date("DateEffet")
+    DateExpiration = get_date("DateExpiration")
+    DateEmission = get_date("DateEmission")
+    DateDebut = get_date("DateDebut")
+    IdDomaineActivite = get_int("IdDomaineActivite")
+    IdActivite = get_int("IdActivite")
+    Localisation = get_str("Localisation")
+    IdTarif = get_int("IdTarif")
+    TauxPrime = get_decimal("TauxPrime")
+    TauxReduction = get_decimal("TauxReduction")
+    CapitalDommageCorporel = get_decimal("CapitalDommageCorporel")
+    CapitalIntoxicationAlimentaire = get_decimal("CapitalIntoxicationAlimentaire")
+    CapitalDommageMateriel = get_decimal("CapitalDommageMateriel")
+    AssiettePrime = get_decimal("AssiettePrime")
+    NombreParticipants = get_decimal("NombreParticipants")
+    IdDuree = get_int("IdDuree", 1)
+    TelephoneAssure = get_str("TelephoneAssure")
+    AdresseGeographique = get_str("AdresseGeographique")
+    NumeroPoliceConnexe = get_str("NumeroPoliceConnexe")
+    IdDevis = get_int("IdDevis")
+    NumeroPoliceCompagnie = get_str("NumeroPoliceCompagnie")
+    PrimeNette = get_decimal("PrimeNette")
+    Accessoire = get_decimal("Accessoire")
+    Taxe = get_decimal("Taxe")
+    PrimeTTC = get_decimal("PrimeTTC")
+    liste_garantie = json.dumps(input_data.get("ListeGarantie", []), default=str)
 
-    AssiettePrime = 0
-    if "AssiettePrime" in input_data:
-        if input_data["AssiettePrime"]:
-            AssiettePrime = Decimal(input_data["AssiettePrime"])
-
-    NombreParticipants = 0
-    if "NombreParticipants" in input_data:
-        if input_data["NombreParticipants"]:
-            NombreParticipants = Decimal(input_data["NombreParticipants"])
-    IdDuree = 1
-    if "IdDuree" in input_data:
-        if input_data["IdDuree"]:
-            IdDuree = int(input_data["IdDuree"])
-
-    TelephoneAssure = ""
-    if "TelephoneAssure" in input_data:
-        TelephoneAssure = (
-            str(input_data["TelephoneAssure"]) if input_data["TelephoneAssure"] else ""
-        )
-    AdresseGeographique = ""
-    if "AdresseGeographique" in input_data:
-        AdresseGeographique = (
-            str(input_data["AdresseGeographique"])
-            if input_data["AdresseGeographique"]
-            else ""
-        )
-    NumeroPoliceConnexe = ""
-    if "NumeroPoliceConnexe" in input_data:
-        if input_data["NumeroPoliceConnexe"]:
-            NumeroPoliceConnexe = str(input_data["NumeroPoliceConnexe"])
-    IdDevis = 0
-    if "IdDevis" in input_data:
-        if input_data["IdDevis"]:
-            IdDevis = int(input_data["IdDevis"])
-
-    NumeroPoliceCompagnie = ""
-    if "NumeroPoliceCompagnie" in input_data:
-        NumeroPoliceCompagnie = (
-            str(input_data["NumeroPoliceCompagnie"])
-            if input_data["NumeroPoliceCompagnie"]
-            else ""
-        )
-    PrimeNette = 0.0
-    if "PrimeNette" in input_data:
-        PrimeNette = (
-            Decimal(input_data["PrimeNette"])
-            if input_data["PrimeNette"]
-            else 0.0
-        )
-    Accessoire  = 0.0
-    if "Accessoire" in input_data:
-        Accessoire = (
-            Decimal(input_data["Accessoire"])
-            if input_data["Accessoire"]
-            else 0.0
-        )
-    Taxe = 0.0
-    if "Taxe" in input_data:
-        Taxe = (
-            Decimal(input_data["Taxe"])
-            if input_data["Taxe"]
-            else 0.0
-        )
-    PrimeTTC = 0.0
-    if "PrimeTTC" in input_data:
-        PrimeTTC = (
-            Decimal(input_data["PrimeTTC"])
-            if input_data["PrimeTTC"]
-            else 0.0
-        )
     OutputMessage = ""
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
+
     msg = check_quote(IdDevis)
     if msg:
         data_insertion_result_list.append(
             DataInsertionResult(ObjectId=IdDevis, OutputMessage=msg)
         )
-        return (
-            True,
-            list(chain(queryset_vide, data_insertion_result_list)),
-        )
+        return True, list(chain(queryset_vide, data_insertion_result_list))
+
     try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
-                (
-                    IdIntermediaire,
-                    IdCompagnie,
-                    IdProduit,
-                    IdOffre,
-                    IdAvenant,
-                    IdClient,
-                    IdAssure,
-                    Flotte,
-                    Coassurance,
-                    DateEffet,
-                    DateExpiration,
-                    DateEmission,
-                    IdTarif,
-                    AssiettePrime,
-                    IdDomaineActivite,
-                    IdActivite,
-                    Localisation,
-                    DateDebut,
-                    NombreParticipants,
-                    TauxPrime,
-                    TauxReduction,
-                    CapitalDommageCorporel,
-                    CapitalIntoxicationAlimentaire,
-                    CapitalDommageMateriel,
-                    IdDuree,
-                    TelephoneAssure,
-                    AdresseGeographique,
-                    NumeroPoliceConnexe,
-                    NumeroPoliceCompagnie,
-                    user_id,
-                    PrimeNette,
-                    Accessoire,
-                    Taxe,
-                    PrimeTTC,
-                    IdDevis,
-                    OutputMessage,
-                ),
-            )
-            connection.commit()
-            row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
-            data_insertion_result_list.append(sql_output)
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    (
+                        IdIntermediaire, IdCompagnie, IdProduit, IdOffre, IdAvenant,
+                        IdClient, IdAssure, Flotte, Coassurance, DateEffet,
+                        DateExpiration, DateEmission, IdTarif, AssiettePrime,
+                        IdDomaineActivite, IdActivite, Localisation, DateDebut,
+                        NombreParticipants, TauxPrime, TauxReduction,
+                        CapitalDommageCorporel, CapitalIntoxicationAlimentaire,
+                        CapitalDommageMateriel, IdDuree, TelephoneAssure,
+                        AdresseGeographique, NumeroPoliceConnexe,
+                        NumeroPoliceCompagnie, user_id, PrimeNette, Accessoire,
+                        Taxe, PrimeTTC, liste_garantie, IdDevis, OutputMessage,
+                    ),
+                )
+                row = cursor.fetchone()
+                if row:
+                    sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+                    data_insertion_result_list.append(sql_output)
+
     except Exception as error:
         error_occurred = True
-        print(error)
-        msg = str(error)
-        if msg.find("\n"):
-            msg = msg.split("\n")[0]
+        msg = str(error).split("\n")[0]
         sql_output = DataInsertionResult(ObjectId=IdDevis, OutputMessage=msg)
         data_insertion_result_list.append(sql_output)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+
+    return error_occurred, list(chain(queryset_vide, data_insertion_result_list))
 
 
 ################################################################################

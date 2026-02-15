@@ -773,6 +773,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
         },
     )
     IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
+    IdDevis = serializers.IntegerField(required=False, default=0, allow_null=True)
 
     def validate(self, data):
         validate_contrat_validity_period(data)
@@ -782,6 +783,9 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
         if "IdCompagnie" in data:
             if not data["IdCompagnie"]:
                 data["IdCompagnie"] = 1
+        if "IdDevis" in data:
+            if not data["IdDevis"]:
+                data["IdDevis"] = 0
         return super().to_internal_value(data)
 
     class Meta:
@@ -797,6 +801,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
             "TauxPrime",
             "DateEffet",
             "DateExpiration",
+            "IdDevis",
         ]
 
 
