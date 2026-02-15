@@ -705,7 +705,7 @@ class DevisDetGarantie(models.Model):
 
     class Meta:
         db_table = "stddevisdetgarantie"
-        unique_together = (("IdDevisDetGarantie", "IdDevisDet", "IdGarantie"),)
+        unique_together = (("IdDevisDet", "IdGarantie"),)
         verbose_name = "Garantie d'un devis"
         verbose_name_plural = "Garanties d'un devis"
 
