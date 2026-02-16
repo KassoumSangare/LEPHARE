@@ -683,7 +683,7 @@ def save_quotation_rc(user_id: int, input_data: dict):
     DateEmission = get_date("DateEmission")
     DateDebut = get_date("DateDebut")
     IdDomaineActivite = get_int("IdDomaineActivite")
-    IdActivite = get_int("IdActivite")
+    Activite = get_str("Activite")
     Localisation = get_str("Localisation")
     IdTarif = get_int("IdTarif")
     TauxPrime = get_decimal("TauxPrime")
@@ -725,7 +725,7 @@ def save_quotation_rc(user_id: int, input_data: dict):
                         IdIntermediaire, IdCompagnie, IdProduit, IdOffre, IdAvenant,
                         IdClient, IdAssure, Flotte, Coassurance, DateEffet,
                         DateExpiration, DateEmission, IdTarif, AssiettePrime,
-                        IdDomaineActivite, IdActivite, Localisation, DateDebut,
+                        IdDomaineActivite, Activite, Localisation, DateDebut,
                         NombreParticipants, TauxPrime, TauxReduction,
                         CapitalDommageCorporel, CapitalIntoxicationAlimentaire,
                         CapitalDommageMateriel, IdDuree, TelephoneAssure,

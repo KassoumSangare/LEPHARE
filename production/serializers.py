@@ -1821,7 +1821,7 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     IdDomaineActivite = serializers.IntegerField(
         required=False, allow_null=True, default=0
     )
-    IdActivite = serializers.IntegerField(required=False, allow_null=True, default=0)
+    Activite = serializers.CharField(max_length=100, required=False, allow_null=True, default="")
     Localisation = serializers.CharField(
         max_length=60, required=False, allow_null=True, default=""
     )
@@ -1912,9 +1912,9 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
         if "IdDomaineActivite" in data:
             if not data["IdDomaineActivite"]:
                 data["IdDomaineActivite"] = 0
-        if "IdActivite" in data:
-            if not data["IdActivite"]:
-                data["IdActivite"] = 0
+        if "Activite" in data:
+            if not data["Activite"]:
+                data["Activite"] = ""
         if "Localisation" in data:
             if not data["Localisation"]:
                 data["Localisation"] = ""
