@@ -1772,6 +1772,7 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
             field_type="decimal",
             gender_number="ms",
         ),
+        required=False, default=0, allow_null=True
     )
     MontantPrime = serializers.DecimalField(
         max_digits=19,
@@ -1799,6 +1800,11 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
         if "IdDuree" in data:
             if not data["IdDuree"]:
                 data["IdDuree"] = 1
+        
+        if "CapitalCautionnement" in data:
+            if not data["CapitalCautionnement"]:
+                data["CapitalCautionnement"] = 0      
+                
         if "NumeroPoliceCompagnie" in data:
             if data["NumeroPoliceCompagnie"] == "":
                 data["NumeroPoliceCompagnie"] = None
