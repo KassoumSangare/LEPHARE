@@ -1,5 +1,13 @@
 from rest_framework import serializers
-from .models import *
+from .models import (DemandeGarantieVoyage, SousGarantie,Garantie, MenuParent, Menu, Utilisateur, GroupeUtilisateur, GarantieRisque, Categorie, Tarif, TarifDetail, Branche,
+                     Risque, Energie, Avenant, Compagnie, Offre, OffreGarantie, OffreDetail, Carrosserie, TypeVehicule, QualiteSouscripteurMrh, TypeSouscripteur, TypeAssure,
+                     Profession, GenreVehicule, Acte, CommissionProduit, TauxTaxeGarantieProduit, Accessoire, Pays, PaysZone, Continent, ZoneVoyage, Region, Ville, Commune,
+                     Intermediaire, Qualite, SecteurActivite, QualiteAyantDroit, Marque, SystemeSecurite, ZoneCouvertureSante, Produit, OffreParProduit, OffreSanteParTarif,
+                     TarifParProduit, ModeleVehicule, ProfessionIa, UsageVehicule, TypeReduction, Banque, ModeEncaissement, GarantieProposee, DemandeGarantieHabitation,
+                     DemandeGarantieRC, DemandeGarantieIa, DemandeGarantie, CategoriePermis, AccessoireCourtierParCompagnie, CollegeSante, OffreCollegeSante, LienJuridiqueSante,
+                     ChoixSousGarantie, EnregistrementOffreGarantie, GarantiePourOffre, ReductionFlotte, FormuleSecuriteRoutiere, FormuleSecuriteRoutiereParCompagnie,
+                     AssistanceAutomobile, DelaiAvisEcheance, ParametreSite, TypeContratSante, UsageHabitation, SousGarantieMRH, SousGarantieForfait, Option, ParametresCalcul,
+                     DomaineActiviteRC, Commission,)
 from django_celery_beat.models import (
     SolarSchedule,
     IntervalSchedule,
@@ -8,13 +16,7 @@ from django_celery_beat.models import (
     PeriodicTask,
 )
 
-
-from decimal import Decimal
-from typing import Dict, List, Optional
-
 from core.validators import validate_contrat_validity_period, ErrorMessage
-from core.serializers import EnregistrementDevisBaseSerializer
-
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
     """
@@ -201,13 +203,6 @@ class TypeAssureSerializer(serializers.ModelSerializer):
         model = TypeAssure
         fields = "__all__"
 
-
-class QualiteSouscripteurMrhSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = QualiteSouscripteurMrh
-        fields = "__all__"
-
-
 class ProfessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profession
@@ -372,13 +367,6 @@ class OffreSanteParTarifSerializer(serializers.ModelSerializer):
             "LibelleOffre",
             "IdZoneCouverture",
         ]
-
-
-class PaysZoneSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PaysZone
-        fields = "__all__"
-
 
 class TarifParProduitSerializer(serializers.ModelSerializer):
     class Meta:

@@ -563,6 +563,11 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     CapitalMaterielInformatique = Decimal(input_data["CapitalMaterielInformatique"])
     CapitalFraisReconstitution = Decimal(input_data["CapitalFraisReconstitution"])
     CapitalFraisSupplementaire = Decimal(input_data["CapitalFraisSupplementaire"])
+    
+    CapitalCautionnement = 0
+    if "CapitalCautionnement" in input_data and input_data["CapitalCautionnement"]:
+        CapitalCautionnement = Decimal(input_data["CapitalCautionnement"])
+        
     MontantPrime = Decimal(input_data["MontantPrime"])
     IdDuree = 1
     if "IdDuree" in input_data:
@@ -602,7 +607,7 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     IdIntermediaire,
                     IdCompagnie,
@@ -621,6 +626,7 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
                     CapitalMaterielInformatique,
                     CapitalFraisReconstitution,
                     CapitalFraisSupplementaire,
+                    CapitalCautionnement,
                     MontantPrime,
                     IdDuree,
                     TelephoneAssure,

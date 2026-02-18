@@ -346,6 +346,7 @@ class DevisDetailSerializer(serializers.ModelSerializer):
         elif devis.produit.id_produit == 7:  # Multirisque Professionnelle
             pass
         elif devis.produit.id_produit == 8:  # Responsabilité Civile
+            
             complementinfo = ComplementDevisDetailRC.objects.filter(
                 devis_detail=instance
             )
@@ -1759,6 +1760,15 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
             field_name="Le capital frais supplémentaires",
+            field_type="decimal",
+            gender_number="ms",
+        ),
+    )
+    CapitalCautionnement = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        error_messages=ErrorMessage.generate_error_messages(
+            field_name="Le montant de cautionnement",
             field_type="decimal",
             gender_number="ms",
         ),
