@@ -163,4 +163,5 @@ urlpatterns = [
         name="avenant_par_produit",
     ),
     path('esttarifiagroupe/<int:idtarif>/', IATarifGroupeView.as_view(), name='est-tarif-ia-groupe'),
+    path('esttarifiapersonnalise/<int:idtarif>/', IATarifPersonnaliseView.as_view(), name='est-tarif-ia-personnalise'),
 ]
