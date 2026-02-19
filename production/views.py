@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from datetime import datetime, date
 from django.conf import settings
 from django.db.models import Q, F, Prefetch
+from django.http import FileResponse, Http404
 from rest_framework import generics
 from django.shortcuts import get_object_or_404
 from core.date_parser import parse_date_string
@@ -366,7 +367,35 @@ class DevisViewSet(viewsets.ModelViewSet):
         
         return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    @action(detail=True, methods=["get"])
+    def telecharger_piece_jointe(self, request, pk=None):
+        devis = cast(Devis, self.get_object())
+        if not devis.piece_jointe or not devis.piece_jointe.fichier:
+            raise Http404("Pas de pièce jointe")
 
+        return FileResponse(
+            open(devis.piece_jointe.fichier.path, "rb"),
+            as_attachment=True,
+            filename=devis.piece_jointe.fichier.name
+        )
+
+        
+    #@action(detail=True, methods=["get"], url_path="piece-jointe")
+    @action(detail=True, methods=["get"])
+    def obtenir_url_piece_jointe(self, request, pk=None):
+        try:
+            devis = cast(Devis, self.get_object())
+            if not devis.piece_jointe or not devis.piece_jointe.fichier:
+                raise Http404("Pas de pièce jointe pour ce devis")
+
+            # Retourner uniquement l’URL sécurisée
+            return Response({
+                "id": devis.piece_jointe.pk,
+                "nom_fichier": devis.piece_jointe.fichier.name,
+                "url": devis.piece_jointe.fichier.url
+            })
+        except Devis.DoesNotExist:
+            raise Http404("Devis introuvable")
 
 class CertificatTransportView(generics.ListCreateAPIView):
     queryset = CertificatTransport.objects.all().order_by("-date_fin_periode")[:1000]
@@ -632,6 +661,34 @@ class ContratViewSet(viewsets.ModelViewSet):
         
         return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=["get"])
+    def telecharger_piece_jointe(self, request, pk=None):
+        contrat = cast(Contrat, self.get_object())
+        if not contrat.piece_jointe or not contrat.piece_jointe.fichier:
+            raise Http404("Pas de pièce jointe")
+
+        return FileResponse(
+            open(contrat.piece_jointe.fichier.path, "rb"),
+            as_attachment=True,
+            filename=contrat.piece_jointe.fichier.name
+        )
+
+        
+    @action(detail=True, methods=["get"])
+    def obtenir_url_piece_jointe(self, request, pk=None):
+        try:
+            contrat = cast(Contrat, self.get_object())
+            if not contrat.piece_jointe or not contrat.piece_jointe.fichier:
+                raise Http404("Pas de pièce jointe pour ce devis")
+
+            # Retourner uniquement l’URL sécurisée
+            return Response({
+                "id": contrat.piece_jointe.pk,
+                "nom_fichier": contrat.piece_jointe.fichier.name,
+                "url": contrat.piece_jointe.fichier.url
+            })
+        except Devis.DoesNotExist:
+            raise Http404("Devis introuvable")
 
 
 class ContratRestreintViewSet(viewsets.ModelViewSet):

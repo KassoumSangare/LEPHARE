@@ -1209,3 +1209,14 @@ class IATarifGroupeView(APIView):
         # 4. Return to API client
         return Response({"est_tarif_ia_groupe": return_value})
     
+class IATarifPersonnaliseView(APIView):
+    def get(self, request, idtarif):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT fn_tarif_ia_personnalise(%s)", [idtarif])
+            
+            row = cursor.fetchone()
+            return_value = row[0] if row else None
+
+        # 4. Return to API client
+        return Response({"est_tarif_ia_personnalise": return_value})
+    
