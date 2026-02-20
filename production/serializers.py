@@ -484,10 +484,6 @@ class ContratSerializer(serializers.ModelSerializer):
         fields = "__all__"
         depth = 1
         read_only_fields = ['idcontrat', 'piece_jointe_info']
-        extra_kwargs = {
-            'piece_jointe': {'write_only': True}
-        }
-
 
     def get_offreboisee(self, obj):
         try:
