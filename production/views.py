@@ -326,6 +326,24 @@ class PieceJointeViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+
+class DevisViewSet(ModelViewSet):
+    queryset = Devis.objects.all()
+    serializer_class = DevisSerializer
+
+    @action(detail=True, methods=["get"], url_path="garanties")
+    def get_garanties(self, request, pk=None):
+        """
+        Retourne toutes les garanties d'un devis donné, sans duplication.
+        """
+        devis = self.get_object()
+
+        # >>> À TOI d'implémenter la logique métier ici <<<
+        garanties = ...  # Queryset ou liste de garanties uniques
+
+        serializer = GarantieSerializer(garanties, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 class DevisViewSet(ListModelMixin,
                      RetrieveModelMixin,
                      GenericViewSet):
@@ -335,6 +353,17 @@ class DevisViewSet(ListModelMixin,
         permissions.IsAuthenticated,
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+    
+    @action(detail=True, methods=["get"], url_path="garanties")
+    def get_garanties(self, request, pk=None):
+        """
+        Retourne toutes les garanties d'un devis donné, sans duplication.
+        """
+        devis = cast(Devis, self.get_object())
+        garanties = DevisDetGarantie.objects.filter(IdDevisDet__iddevis=devis).distinct('IdGarantie')
+        serializer = DevisDetGarantieSerializer(garanties, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def attacher_piece_jointe(self, request, pk=None):

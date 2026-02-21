@@ -39,6 +39,21 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
                 self.fields.pop(field_name)
 
 
+class PrimeCalculationInputSerializer(serializers.Serializer):
+    id_produit = serializers.IntegerField(required=True)
+    id_compagnie = serializers.IntegerField(required=True)
+    prime_nette = serializers.DecimalField(max_digits=19, decimal_places=4, required=True)
+    date_effet = serializers.DateField(
+        format="%Y-%m-%d",
+        input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
+    )
+
+class PrimeCalculationOutputSerializer(serializers.Serializer):
+    taux_taxe = serializers.DecimalField(max_digits=5, decimal_places=2)
+    accessoire = serializers.DecimalField(max_digits=19, decimal_places=4)
+    montant_taxe = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_ttc = serializers.DecimalField(max_digits=19, decimal_places=4)
+
 class SousGarantieSerializer(DynamicFieldsModelSerializer):
     class Meta:
         model = SousGarantie

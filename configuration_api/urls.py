@@ -1,17 +1,20 @@
 from django.urls import include, path
 
 from rest_framework import routers
-
-# from rest_framework_simplejwt.views import (
-#        TokenObtainPairView,
-#        TokenRefreshView,
-#        )
-
-from .views import *
-
-# from rest_framework_simplejwt import views as jwt_views
-
-# app_name = 'users'
+from  .views import (MenuViewSet, MenuParentViewSet, GarantieViewSet, UtilisateurViewSet, GroupeUtilisateurViewSet, SousGarantieViewSet, GarantieRisqueViewSet,
+                     CategorieViewSet, TarifViewSet, TarifDetailViewSet, BrancheViewSet, RisqueViewSet, EnergieViewSet, CompagnieViewSet, QualiteViewSet,
+                     TermeViewSet, SecteurActiviteViewSet, DomaineActiviteRCViewSet, CarrosserieViewSet, ProduitViewSet, AvenantViewSet, CommissionProduitViewSet,
+                     IntermediaireViewSet, OffreViewSet, OffreDetailViewSet, OffreGarantieViewSet, MarqueViewSet, SystemeSecuriteViewSet, ModeleVehiculeViewSet,
+                     UsageVehiculeViewSet, TypeReductionViewSet, CommuneViewSet, VilleViewSet, PaysViewSet, RegionViewSet, ContinentViewSet, ZoneVoyageViewSet,
+                     GenreVehiculeViewSet, TypeVehiculeViewSet, TypeAssureViewSet, TypeSouscripteurViewSet, ProfessionViewSet, ProfessionIaViewSet, QualiteAyantDroitViewSet,
+                     CategoriePermisViewSet, QualiteSouscripteurMrhViewSet, BanqueViewSet, ModeEncaissementViewSet, AccessoireViewSet, TauxTaxeGarantieProduitViewSet,
+                     AccessoireCourtierParCompagnieViewSet, CollegeSanteViewSet, OffreCollegeSanteViewSet, LienJuridiqueSanteViewSet, ZoneCouvertureSanteViewSet,
+                     ReductionFlotteViewSet, FormuleSecuriteRoutiereViewSet, ParametreSiteViewSet, DelaiAvisEcheanceViewSet, SolarScheduleViewSet, IntervalScheduleViewSet,
+                     ClockedScheduleViewSet, CrontabScheduleViewSet, PeriodicTaskViewSet, TypeContratSanteViewSet, get_garantie, get_garantie_ia, get_garantie_voyage,
+                     get_garantie_mrh, get_garantie_rc, create_offre_garantie, TarifParProduitView, OffreParProduitView, TarifVoyageView, OffreVoyageView, OffreSanteParTarifView,
+                     CollegeSanteParOffreView, get_garantie_par_produit, ZoneCouvertureOffreView, FormuleSecuriteRoutiereView, AssistanceAutomobileView, PaysZoneView,
+                     get_liste_avenant, IATarifGroupeView, IATarifPersonnaliseView, PrimeCalculationView,
+                     )
 
 router = routers.DefaultRouter()
 router.register(r"menu", MenuViewSet)
@@ -100,8 +103,6 @@ urlpatterns = [
         create_offre_garantie,
         name="enregistrement_offre_garantie",
     ),
-    # path(r'users/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    # path(r'users/token-refresh/', jwt_views.TokenRefreshView.as_view(), name='token_refresh'),
     path(
         r"tarifparproduit/<int:idproduit>",
         TarifParProduitView.as_view(),
@@ -162,6 +163,7 @@ urlpatterns = [
         get_liste_avenant,
         name="avenant_par_produit",
     ),
-    path('esttarifiagroupe/<int:idtarif>/', IATarifGroupeView.as_view(), name='est-tarif-ia-groupe'),
-    path('esttarifiapersonnalise/<int:idtarif>/', IATarifPersonnaliseView.as_view(), name='est-tarif-ia-personnalise'),
+    path(r'esttarifiagroupe/<int:idtarif>/', IATarifGroupeView.as_view(), name='est-tarif-ia-groupe'),
+    path(r'esttarifiapersonnalise/<int:idtarif>/', IATarifPersonnaliseView.as_view(), name='est-tarif-ia-personnalise'),
+    path(r"calculprime/", PrimeCalculationView.as_view(), name="calcul-prime"),
 ]

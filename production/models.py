@@ -638,7 +638,7 @@ class DevisDetGarantie(models.Model):
     IdDevisDetGarantie = models.AutoField(
         primary_key=True, db_column="iddevisdetgarantie"
     )
-    IdDevisDet = models.IntegerField(db_column="iddevisdet")
+    IdDevisDet = models.ForeignKey(DevisDetail, db_column="iddevisdet", related_name="garanties", on_delete=models.CASCADE)
     IdGarantie = models.ForeignKey(
         SousGarantie,
         db_column="idgarantie",

@@ -42,6 +42,12 @@ from rest_framework.decorators import (
     permission_classes,
 )
 
+from .serializers import (
+    PrimeCalculationInputSerializer,
+    PrimeCalculationOutputSerializer
+)
+
+
 
 class SettingsModelViewSet(viewsets.ModelViewSet):
     permission_classes_by_action = {
@@ -61,7 +67,63 @@ class SettingsModelViewSet(viewsets.ModelViewSet):
         ),
         "search": (permissions.IsAuthenticated,),
     }
+class PrimeCalculationView(APIView):
+    """
+    Vue permettant de calculer :
+    - le taux de taxe applicable selon le produit
+    - le coût de police basé sur la prime nette
+    - le montant de la taxe
+    """
 
+    def post(self, request, *args, **kwargs):
+        from decimal import Decimal, ROUND_HALF_UP
+        input_serializer = PrimeCalculationInputSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+
+        id_compagnie = input_serializer.validated_data["id_compagnie"]
+        id_produit = input_serializer.validated_data["id_produit"]
+        prime_nette = input_serializer.validated_data["prime_nette"]
+        date_effet = input_serializer.validated_data["date_effet"]
+        id_offre = input_serializer.validated_data["id_offre"]
+
+        # 2. Taux de taxe
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.fn_get_taux_taxe(%s, %s, %s, %s)",
+                [id_compagnie, id_produit, id_offre, date_effet]
+            )
+            row = cursor.fetchone()
+            taux_taxe = row[0] if row is not None else Decimal("0")
+
+        # 3. Accessoires
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT accessoire_compagnie, accessoire_intermediaire "
+                "FROM public.fn_get_accessoire(%s, %s, %s, %s, %s)",
+                [prime_nette, id_produit, id_offre, id_compagnie, date_effet]
+            )
+            row = cursor.fetchone()
+
+            accessoire_compagnie = row[0] if row else Decimal("0")
+            accessoire_intermediaire = row[1] if row else Decimal("0")
+
+            cout_police = accessoire_compagnie + accessoire_intermediaire
+
+        # 4. Taxe
+        base_taxe = (prime_nette + cout_police) * taux_taxe / Decimal("100")  # Arrondi à l’unité (0 décimale), comme round(..., 0) mais en Decimal 
+        montant_taxe = base_taxe.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+        prime_totale = prime_nette + cout_police + montant_taxe
+
+        output_data = {
+            "taux_taxe": taux_taxe,
+            "accessoire": cout_police,
+            "montant_taxe": montant_taxe,
+            "prime_totale": prime_totale,
+        }
+
+        output_serializer = PrimeCalculationOutputSerializer(output_data)
+        return Response(output_serializer.data, status=status.HTTP_200_OK)
 
 class GarantieViewSet(viewsets.ModelViewSet):
     queryset = Garantie.objects.filter(~Q(IdGarantie=0))
