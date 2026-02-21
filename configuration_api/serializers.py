@@ -878,6 +878,8 @@ class DemandeGarantieIaSerializer(serializers.ModelSerializer):
         },
     )
     IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
+    PrimeNette = serializers.DecimalField(required=False, default=0, allow_null=True, max_digits=19, decimal_places=4)
+    Accessoire = serializers.DecimalField(required=False, default=0, allow_null=True, max_digits=19, decimal_places=4)
 
     def validate(self, data):
         validate_contrat_validity_period(data)
@@ -887,6 +889,12 @@ class DemandeGarantieIaSerializer(serializers.ModelSerializer):
         if "IdCompagnie" in data:
             if not data["IdCompagnie"]:
                 data["IdCompagnie"] = 1
+        if "PrimeNette" in data:
+            if not data["PrimeNette"]:
+                data["PrimeNette"] = 0
+        if "Accessoire" in data:
+            if not data["Accessoire"]:
+                data["Accessoire"] = 0
         return super().to_internal_value(data)
 
     class Meta:
@@ -902,6 +910,8 @@ class DemandeGarantieIaSerializer(serializers.ModelSerializer):
             "DateExpiration",
             "CodeActivite",
             "DateNaissance",
+            "PrimeNette",
+            "Accessoire",
         ]
 
 

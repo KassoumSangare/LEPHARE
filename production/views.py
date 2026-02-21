@@ -18,6 +18,8 @@ from django.contrib import messages
 from .anti_doublons.importateur import importer_assures_anti_doublons
 from .anti_doublons.rapport import ConfigurationImport
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.viewsets import GenericViewSet
+from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
 
 
 
@@ -324,7 +326,9 @@ class PieceJointeViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
-class DevisViewSet(viewsets.ModelViewSet):
+class DevisViewSet(ListModelMixin,
+                     RetrieveModelMixin,
+                     GenericViewSet):
     queryset = (Devis.objects .prefetch_related('piece_jointe').annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))) .all())
     serializer_class = DevisSerializer
     permission_classes = [
@@ -618,7 +622,9 @@ class TarifEcranViewSet(viewsets.ModelViewSet):
     ]
 
 
-class ContratViewSet(viewsets.ModelViewSet):
+class ContratViewSet(ListModelMixin,
+                     RetrieveModelMixin,
+                     GenericViewSet):
     queryset = Contrat.objects.prefetch_related('piece_jointe').filter(Q(idcontratannulation=0))
     serializer_class = ContratSerializer
     permission_classes = [

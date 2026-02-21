@@ -447,6 +447,7 @@ def extraire_modele_1(df: pd.DataFrame) -> List[Dict]:
                     "Offre": row.get("Offre", 0),
                     "Fonction": nettoyer_chaine(row.get("Fonction", "")),
                     "PrimeHT": Decimal("0.00"),
+                    "Accessoire": Decimal("0.00"),
                     "PrimeTTC": Decimal("0.00"),
                     "Beneficiaires": []
                 }
@@ -546,8 +547,9 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
                 "CapitalDeces": valider_monetaire(row.get("CAPITAL DECES"), "CAPITAL DECES"),
                 "CapitalInfirmite": valider_monetaire(row.get("IPT"), "IPT"),
                 "CapitalTraitement": Decimal("0.00"),
-                "PrimeHT": valider_monetaire(row.get("PRIME HT"), "PRIME HT"),
-                "PrimeTTC": valider_monetaire(row.get("PRIMES TTC"), "PRIMES TTC"),
+                "PrimeHT": Decimal("0.00"), #valider_monetaire(row.get("PRIME HT"), "PRIME HT"),
+                "Accessoire": Decimal("0.00"),
+                "PrimeTTC": Decimal("0.00"), #valider_monetaire(row.get("PRIMES TTC"), "PRIMES TTC"),
                 "Offre": row.get("Offre", 0),
                 "Beneficiaires": []
             }
@@ -617,6 +619,7 @@ def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
                 "CapitalInfirmite": valider_monetaire(row.get("Capitaux IPT"), "Capitaux IPT"),
                 "CapitalTraitement": Decimal("0.00"),
                 "PrimeHT": Decimal("0.00"), #Pas d'indication de prime dans ce modèle
+                "Accessoire": Decimal("0.00"), 
                 "PrimeTTC": Decimal("0.00"),
                 "Offre": row.get("Offre", 0),
                 "Beneficiaires": []
@@ -857,6 +860,8 @@ def enregistrer_devis_ia(entete_devis: dict, assure: dict, id_assure: int) -> in
         donnee_devis["FraisTraitement"] = assure["CapitalTraitement"]
         donnee_devis["DateNaissance"] = assure["DateNaissance"]
         donnee_devis["AdresseGeographique"] = assure.get("AdresseGeographique", "")
+        donnee_devis["PrimeNette"] = assure.get("PrimeHT", 0)
+        donnee_devis["Accessoire"] = assure.get("Accessoire", 0)
         
         if assure["Offre"] != 0:
             donnee_devis["IdOffre"] = assure["Offre"]
@@ -865,7 +870,7 @@ def enregistrer_devis_ia(entete_devis: dict, assure: dict, id_assure: int) -> in
         
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_creation_devis_ia(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_creation_devis_ia(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 save_quotation_arg,
             )
             row = cursor.fetchone()

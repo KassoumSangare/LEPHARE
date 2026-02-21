@@ -46,6 +46,16 @@ def unpack_ia_quotation_post_data(post_data):
     if "NumeroPoliceCompagnie" in post_data:
         if post_data["NumeroPoliceCompagnie"]:
             NumeroPoliceCompagnie = str(post_data["NumeroPoliceCompagnie"])
+            
+    PrimeNette = 0
+    if "PrimeNette" in post_data:
+        if post_data["PrimeNette"]:
+            NumeroPoliceCompagnie = Decimal(post_data["PrimeNette"])
+    Accessoire = 0
+    if "Accessoire" in post_data:
+        if post_data["Accessoire"]:
+            NumeroPoliceCompagnie = Decimal(post_data["Accessoire"])
+    
     return (
         IdIntermediaire,
         IdCompagnie,
@@ -71,6 +81,8 @@ def unpack_ia_quotation_post_data(post_data):
         NumeroPoliceConnexe,
         NumeroPoliceCompagnie,
         IdDuree,
+        PrimeNette,
+        Accessoire,
         IdDevis,
         IdDevisDetail,
         "",

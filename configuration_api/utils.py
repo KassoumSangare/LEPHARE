@@ -219,6 +219,15 @@ def get_garantie_offre_ia(request_data):
     ).date()
     DateNaissance = datetime.strptime(request_data["DateNaissance"], "%d-%m-%Y").date()
     CodeActivite = request_data["CodeActivite"]
+    PrimeNette = 0
+    if "PrimeNette" in request_data:
+        if request_data["PrimeNette"]:
+            PrimeNette = Decimal(request_data["PrimeNette"])
+    Accessoire = 0
+    if "Accessoire" in request_data:
+        if request_data["Accessoire"]:
+            Accessoire = Decimal(request_data["Accessoire"])   
+    CapitalFraisTraitement = Decimal(request_data["CapitalFraisTraitement"])
     try:
         status = 0
         with connection.cursor() as cursor:
@@ -235,6 +244,8 @@ def get_garantie_offre_ia(request_data):
                     DateExpiration,
                     CodeActivite,
                     DateNaissance,
+                    PrimeNette,
+                    Accessoire,
                 ],
             )
 
