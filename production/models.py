@@ -1,43 +1,46 @@
-from django.db import models
-from django.contrib.auth import get_user_model
+import os
+import uuid
 from decimal import Decimal
 
-from django.db.models import F, Q
-import uuid
-from django.utils import timezone
-
-from django.db.models import CheckConstraint, UniqueConstraint
+from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
-from django.db.models import JSONField  # Django >= 3.1
 from django.core.validators import FileExtensionValidator
+from django.db import models
+from django.db.models import (
+    CheckConstraint,
+    F,
+    JSONField,  # Django >= 3.1
+    Q,
+    UniqueConstraint,
+)
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-import os
+from django.utils import timezone
 
+from account.models import UranusUser
 from configuration_api.models import (
-    Banque,
-    ModeEncaissement,
-    QualiteAyantDroit,
-    Intermediaire,
-    Compagnie,
-    Produit,
-    Offre,
-    Avenant,
-    GenreVehicule,
-    TypeVehicule,
-    SousGarantie,
-    Energie,
-    UsageVehicule,
-    Marque,
-    SystemeSecurite,
-    Garantie,
-    FormuleSecuriteRoutiere,
-    Pays,
     AssistanceAutomobile,
+    Avenant,
+    Banque,
+    Compagnie,
+    Energie,
+    FormuleSecuriteRoutiere,
+    Garantie,
+    GenreVehicule,
+    Intermediaire,
+    Marque,
+    ModeEncaissement,
+    Offre,
+    Pays,
+    Produit,
+    QualiteAyantDroit,
+    SousGarantie,
+    SystemeSecurite,
     TypeContratSante,
+    TypeVehicule,
+    UsageVehicule,
 )
 from customer.models import Client
-from account.models import UranusUser
 
 User = get_user_model()
 
@@ -49,33 +52,35 @@ class PieceJointe(models.Model):
     Modèle pour stocker les pièces jointes (images ou PDFs).
     Une pièce peut être liée à un devis et/ou un contrat.
     """
+
     fichier = models.FileField(
-        upload_to='pieces_jointes/%Y/%m/%d/',
+        upload_to="pieces_jointes/%Y/%m/%d/",
         validators=[
             FileExtensionValidator(
-                allowed_extensions=['pdf', 'jpg', 'jpeg', 'png']
+                allowed_extensions=["pdf", "jpg", "jpeg", "png"]
             )
         ],
-        help_text="Fichier PDF ou image (JPG, PNG)"
+        help_text="Fichier PDF ou image (JPG, PNG)",
     )
     nom_original = models.CharField(max_length=255)
     type_fichier = models.CharField(max_length=50)
     taille = models.IntegerField(help_text="Taille en octets")
     date_upload = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
-        db_table = 'pieces_jointes'
-        verbose_name = 'Pièce jointe'
-        verbose_name_plural = 'Pièces jointes'
-    
+        db_table = "pieces_jointes"
+        verbose_name = "Pièce jointe"
+        verbose_name_plural = "Pièces jointes"
+
     def __str__(self):
         return f"{self.nom_original} - {self.date_upload.strftime('%Y-%m-%d')}"
-    
+
     def delete(self, *args, **kwargs):
         """Supprimer le fichier physique lors de la suppression du modèle"""
         if self.fichier and os.path.isfile(self.fichier.path):
             os.remove(self.fichier.path)
         super().delete(*args, **kwargs)
+
 
 class ContractForPremiumCollection(models.Model):
     IdContrat = models.IntegerField()
@@ -97,15 +102,21 @@ class ContractForPremiumCollection(models.Model):
     Accessoire = models.DecimalField(max_digits=19, decimal_places=4)
     PrimeTTC = models.DecimalField(max_digits=19, decimal_places=4)
     MontantEncaisse = models.DecimalField(max_digits=19, decimal_places=4)
-    MontantReverse = models.DecimalField(max_digits=19, decimal_places=4, null=True)
-    MontantAReverser = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    MontantReverse = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    MontantAReverser = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     Solde = models.DecimalField(max_digits=19, decimal_places=4, null=True)
     Flotte = models.BooleanField(null=True)
     LibelleAvenant = models.CharField(max_length=50, null=True)
     Confirme = models.BooleanField(null=True, default=True)
 
     def __str__(self):
-        return "Police n° {} du client {}.".format(self.NumeroPolice, self.NomClient)
+        return "Police n° {} du client {}.".format(
+            self.NumeroPolice, self.NomClient
+        )
 
     class Meta:
         managed = False
@@ -154,7 +165,9 @@ class PremiumRemittanceInfo(models.Model):
     PrimeHT = models.DecimalField(max_digits=19, decimal_places=4)
     PrimeTTC = models.DecimalField(max_digits=19, decimal_places=4)
     MontantEncaissement = models.DecimalField(max_digits=19, decimal_places=4)
-    AccessoireIntermediaire = models.DecimalField(max_digits=19, decimal_places=4)
+    AccessoireIntermediaire = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     TauxCommission = models.DecimalField(max_digits=5, decimal_places=2)
     Commission = models.DecimalField(max_digits=19, decimal_places=4)
     FraisGestion = models.DecimalField(max_digits=19, decimal_places=4)
@@ -277,26 +290,47 @@ class Devis(models.Model):
     idoldhist = models.IntegerField(default=0)
     oldnumerodevis = models.CharField(max_length=50, default="")
     auteur = models.BooleanField(default=False)
-    primeannuelle = models.DecimalField(max_digits=19, decimal_places=4, default=0)
-    primenette = models.DecimalField(max_digits=19, decimal_places=4, default=0)
-    accessoire = models.DecimalField(max_digits=19, decimal_places=4, default=0)
+    primeannuelle = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
+    primenette = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
+    accessoire = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
     accessoirecompagnie = models.DecimalField(
         max_digits=19, decimal_places=4, default=0
     )
     accessoireintermediaire = models.DecimalField(
-        db_column="accessoireintermediaire", max_digits=19, decimal_places=4, default=0
+        db_column="accessoireintermediaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     accessoiregestionnaire = models.DecimalField(
-        db_column="accessoiregestionnaire", max_digits=19, decimal_places=4, default=0
+        db_column="accessoiregestionnaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissionintermediaire = models.DecimalField(
-        db_column="commissionintermediaire", max_digits=19, decimal_places=4, default=0
+        db_column="commissionintermediaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissiongestionnaire = models.DecimalField(
-        db_column="commissiongestionnaire", max_digits=19, decimal_places=4, default=0
+        db_column="commissiongestionnaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissionaperiteur = models.DecimalField(
-        db_column="commissionaperiteur", max_digits=19, decimal_places=4, default=0
+        db_column="commissionaperiteur",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     taxe = models.DecimalField(max_digits=19, decimal_places=4, default=0)
     fga = models.DecimalField(
@@ -307,7 +341,9 @@ class Devis(models.Model):
     )
     primettc = models.DecimalField(max_digits=19, decimal_places=4, default=0)
     idoperateur = models.IntegerField(blank=True, null=True)
-    bonus_malus = models.DecimalField(max_digits=19, decimal_places=4, default=0)
+    bonus_malus = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
     idenergie = models.SmallIntegerField(blank=True, null=True)
     nomassure = models.CharField(max_length=255, blank=True, null=True)
     idhisto = models.IntegerField(default=0)
@@ -346,19 +382,25 @@ class Devis(models.Model):
     )
     # Nouveaux champs pour l'imposition de prime
     prime_imposee = models.BooleanField(
-        default=False, blank=True, null=True, db_column="primeimposee",
-        verbose_name="Prime imposée",
-        help_text="Indique si la prime globale du devis est imposée (non recalculable)"
-    )
-    
-    prime_imposee_date = models.DateTimeField(
+        default=False,
+        blank=True,
         null=True,
-        blank=True, db_column="primeimposeedate",
-        verbose_name="Date imposition prime",
-        help_text="Date et heure de l'imposition de la prime"
+        db_column="primeimposee",
+        verbose_name="Prime imposée",
+        help_text="Indique si la prime globale du devis est imposée (non recalculable)",
     )
 
-    statut = models.CharField(max_length=50, default="ACTIF", db_column="statut")
+    prime_imposee_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_column="primeimposeedate",
+        verbose_name="Date imposition prime",
+        help_text="Date et heure de l'imposition de la prime",
+    )
+
+    statut = models.CharField(
+        max_length=50, default="ACTIF", db_column="statut"
+    )
     date_creation = models.DateTimeField(
         auto_now_add=True, null=True, blank=True, db_column="datecreation"
     )
@@ -376,15 +418,21 @@ class Devis(models.Model):
     date_consolidation = models.DateTimeField(
         null=True, blank=True, db_column="dateconsolidation"
     )
-    numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
-    
+    numero_facture = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        unique=True,
+        db_column="numerofacture",
+    )
+
     # Relation avec la pièce jointe
     piece_jointe = models.ForeignKey(
         PieceJointe,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='devis'
+        related_name="devis",
     )
 
     def __str__(self):
@@ -401,19 +449,24 @@ class Devis(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=['prime_imposee'], name='idx_devis_prime_imposee'),
+            models.Index(
+                fields=["prime_imposee"], name="idx_devis_prime_imposee"
+            ),
         ]
+
     @property
     def prime_imposee_montant(self):
-        '''
+        """
         Retourne le montant de la prime imposée.
         C'est simplement primenette quand prime_imposee=True.
-        '''
+        """
         return self.primenette if self.prime_imposee else None
 
 
 class HistoriqueConsolidation(models.Model):
-    id = models.AutoField(primary_key=True, db_column="idhistoriqueconsolidation")
+    id = models.AutoField(
+        primary_key=True, db_column="idhistoriqueconsolidation"
+    )
     devis_consolide = models.ForeignKey(
         Devis,
         on_delete=models.CASCADE,
@@ -442,7 +495,9 @@ class HistoriqueConsolidation(models.Model):
 
 class ArchivageDevis(models.Model):
     id_archivage = models.AutoField(db_column="idarchivage", primary_key=True)
-    devis = models.ForeignKey(Devis, db_column="iddevis", on_delete=models.DO_NOTHING)
+    devis = models.ForeignKey(
+        Devis, db_column="iddevis", on_delete=models.DO_NOTHING
+    )
     type_operation = models.CharField(
         db_column="typeoperation", max_length=5, choices=OPERATION_ARCHIVAGE
     )
@@ -452,7 +507,9 @@ class ArchivageDevis(models.Model):
     )
 
     def __str__(self):
-        operation = "Archivage" if self.type_operation == "ARCHI" else "Désarchivage"
+        operation = (
+            "Archivage" if self.type_operation == "ARCHI" else "Désarchivage"
+        )
         return "{} du devis n° {} le {}".format(
             operation, self.devis, self.date_archivage
         )
@@ -491,17 +548,27 @@ class ExtendedDevisInfo(Devis, models.Model):
 class DevisDetail(models.Model):
     iddevisdetail = models.AutoField(primary_key=True)
     iddevis = models.ForeignKey(
-        Devis, related_name="details", db_column="iddevis", on_delete=models.CASCADE
+        Devis,
+        related_name="details",
+        db_column="iddevis",
+        on_delete=models.CASCADE,
     )
     iddevisorigine = models.ForeignKey(
-        Devis, related_name="details_origine", db_column="iddevisorigine", null=True, on_delete=models.SET_NULL
+        Devis,
+        related_name="details_origine",
+        db_column="iddevisorigine",
+        null=True,
+        on_delete=models.SET_NULL,
     )
     idoffre = models.IntegerField(null=True, blank=True)
     idtarif = models.IntegerField()
     vehicule = models.IntegerField()
     codeusage = models.CharField(max_length=3, blank=True, null=True)
     idusage = models.ForeignKey(
-        UsageVehicule, db_column="idusage", null=True, on_delete=models.SET_NULL
+        UsageVehicule,
+        db_column="idusage",
+        null=True,
+        on_delete=models.SET_NULL,
     )
     reference = models.CharField(max_length=3, blank=True, null=True)
     idcarrosserie = models.IntegerField(blank=True, null=True)
@@ -517,7 +584,9 @@ class DevisDetail(models.Model):
     extincteur = models.BooleanField(default=False)
     idprofession = models.IntegerField(blank=True, null=True)
     conducteur = models.TextField(max_length=2048, blank=True, null=True)
-    adressecnd = models.CharField(max_length=50, null=True, blank=True, default="")
+    adressecnd = models.CharField(
+        max_length=50, null=True, blank=True, default=""
+    )
     villecnd = models.IntegerField(blank=True, null=True)
     sexe = models.CharField(max_length=1, default="M")
     datemec = models.DateTimeField(blank=True, null=True)
@@ -549,7 +618,11 @@ class DevisDetail(models.Model):
         default="",
     )
     idmarque = models.ForeignKey(
-        Marque, db_column="idmarque", null=True, default=0, on_delete=models.SET_NULL
+        Marque,
+        db_column="idmarque",
+        null=True,
+        default=0,
+        on_delete=models.SET_NULL,
     )
     matricule = models.CharField(max_length=50, default="")
     typeimmat = models.CharField(max_length=1, default="M")
@@ -570,20 +643,32 @@ class DevisDetail(models.Model):
     oldmatricule = models.CharField(max_length=50, default="")
     carteverte = models.BooleanField(default=False)
     numcarteverte = models.CharField(max_length=50, default="")
-    #auteur = models.CharField(max_length=1, default="M")
+    # auteur = models.CharField(max_length=1, default="M")
     auteur = models.BooleanField(default=False)
-    primeannuelle = models.DecimalField(max_digits=19, decimal_places=4, default=0)
-    primenette = models.DecimalField(max_digits=19, decimal_places=4, default=0)
-    mt_delegation = models.DecimalField(max_digits=19, decimal_places=4, default=0)
+    primeannuelle = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
+    primenette = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
+    mt_delegation = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
     essence = models.ForeignKey(
-        Energie, db_column="essence", null=True, default=0, on_delete=models.CASCADE
+        Energie,
+        db_column="essence",
+        null=True,
+        default=0,
+        on_delete=models.CASCADE,
     )
     attestationprov = models.CharField(max_length=50, blank=True, null=True)
     pc_control = models.BooleanField(default=False)
     cg_control = models.BooleanField(default=False)
     numpccnd = models.CharField(max_length=50, default="")
     pctype = models.CharField(max_length=50, default="000000000000")
-    taxeenregistrement = models.DecimalField(max_digits=19, decimal_places=4, default=0)
+    taxeenregistrement = models.DecimalField(
+        max_digits=19, decimal_places=4, default=0
+    )
     fga = models.DecimalField(
         db_column="fga", max_digits=19, decimal_places=4, default=0
     )
@@ -606,39 +691,46 @@ class DevisDetail(models.Model):
         db_column="primeimposee",
         default=False,
         verbose_name="Prime imposée",
-        help_text="Indique si la prime de cette maison est imposée (non recalculable)"
+        help_text="Indique si la prime de cette maison est imposée (non recalculable)",
     )
-    
+
     prime_imposee_date = models.DateTimeField(
         db_column="primeimposeedate",
         null=True,
         blank=True,
         verbose_name="Date imposition prime",
-        help_text="Date et heure de l'imposition de la prime"
+        help_text="Date et heure de l'imposition de la prime",
     )
-
 
     class Meta:
         db_table = "stddevisdetail"
         verbose_name = "Détail de devis"
         verbose_name_plural = "Détails de devis"
         indexes = [
-            models.Index(fields=['prime_imposee'], name='idx_dd_prime_imposee'),
+            models.Index(
+                fields=["prime_imposee"], name="idx_dd_prime_imposee"
+            ),
         ]
-        
+
     @property
     def prime_imposee_montant(self):
-        '''
+        """
         Retourne le montant de la prime imposée.
         C'est simplement primenette quand prime_imposee=True.
-        '''
+        """
         return self.primenette if self.prime_imposee else None
-    
+
+
 class DevisDetGarantie(models.Model):
     IdDevisDetGarantie = models.AutoField(
         primary_key=True, db_column="iddevisdetgarantie"
     )
-    IdDevisDet = models.ForeignKey(DevisDetail, db_column="iddevisdet", related_name="garanties", on_delete=models.CASCADE)
+    IdDevisDet = models.ForeignKey(
+        DevisDetail,
+        db_column="iddevisdet",
+        related_name="garanties",
+        on_delete=models.CASCADE,
+    )
     IdGarantie = models.ForeignKey(
         SousGarantie,
         db_column="idgarantie",
@@ -648,10 +740,18 @@ class DevisDetGarantie(models.Model):
     )
     Acquise = models.BooleanField(db_column="acquise")
     Capital = models.DecimalField(
-        db_column="capital", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="capital",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     Franchise = models.DecimalField(
-        db_column="franchise", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="franchise",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     TexteFranchise = models.CharField(
         db_column="textefranchise", max_length=120, null=True, blank=True
@@ -662,7 +762,11 @@ class DevisDetGarantie(models.Model):
     )
     old_acquise = models.CharField(max_length=1, db_column="old_acquise")
     old_capital = models.DecimalField(
-        db_column="old_capital", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="old_capital",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     old_franchise = models.DecimalField(
         db_column="old_franchise",
@@ -674,21 +778,35 @@ class DevisDetGarantie(models.Model):
     old_formule = models.SmallIntegerField(
         db_column="old_formule", blank=True, null=True
     )
-    old_places = models.SmallIntegerField(db_column="old_places", blank=True, null=True)
+    old_places = models.SmallIntegerField(
+        db_column="old_places", blank=True, null=True
+    )
     old_primenette = models.DecimalField(
         db_column="old_primenette", max_digits=19, decimal_places=4
     )
     deces = models.DecimalField(
-        db_column="deces", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="deces",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     ipp = models.DecimalField(
         db_column="ipp", max_digits=19, decimal_places=4, blank=True, null=True
     )
     fraismed = models.DecimalField(
-        db_column="fraismed", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="fraismed",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     hosp = models.DecimalField(
-        db_column="hosp", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="hosp",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     minfranchise = models.DecimalField(
         db_column="minfranchise", max_digits=19, decimal_places=4
@@ -771,22 +889,36 @@ class Contrat(models.Model):
     idcontrat = models.AutoField(
         db_column="idcontrat", primary_key=True
     )  # Field name made lowercase.
-    iddevis = models.ForeignKey(Devis, db_column="iddevis", on_delete=models.CASCADE)  # Field name made lowercase.
-    idcompagnie = models.ForeignKey(Compagnie,
-        db_column="idcompagnie", blank=True, null=True, on_delete=models.CASCADE,
+    iddevis = models.ForeignKey(
+        Devis, db_column="iddevis", on_delete=models.CASCADE
     )  # Field name made lowercase.
-    idintermediaire = models.ForeignKey(Intermediaire,
-        db_column="idintermediaire", on_delete=models.CASCADE,
+    idcompagnie = models.ForeignKey(
+        Compagnie,
+        db_column="idcompagnie",
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE,
     )  # Field name made lowercase.
-    idproduit = models.ForeignKey(Produit, db_column="idproduit", on_delete=models.CASCADE)  # Field name made lowercase.
-    idclient = models.ForeignKey(Client,
-        db_column="idclient", on_delete=models.CASCADE
+    idintermediaire = models.ForeignKey(
+        Intermediaire,
+        db_column="idintermediaire",
+        on_delete=models.CASCADE,
+    )  # Field name made lowercase.
+    idproduit = models.ForeignKey(
+        Produit, db_column="idproduit", on_delete=models.CASCADE
+    )  # Field name made lowercase.
+    idclient = models.ForeignKey(
+        Client, db_column="idclient", on_delete=models.CASCADE
     )  # Field name made lowercase.
     idassure = models.IntegerField(
         db_column="idassure", default=0
     )  # Field name made lowercase.
-    idavenant = models.ForeignKey(Avenant, db_column="idavenant", on_delete=models.CASCADE)  # Field name made lowercase.
-    flotte = models.BooleanField(db_column="flotte")  # Field name made lowercase.
+    idavenant = models.ForeignKey(
+        Avenant, db_column="idavenant", on_delete=models.CASCADE
+    )  # Field name made lowercase.
+    flotte = models.BooleanField(
+        db_column="flotte"
+    )  # Field name made lowercase.
     coassurance = models.BooleanField(
         db_column="coassurance"
     )  # Field name made lowercase.
@@ -854,22 +986,40 @@ class Contrat(models.Model):
         db_column="accessoire", max_digits=19, decimal_places=4, default=0
     )  # Field name made lowercase.
     accessoirecompagnie = models.DecimalField(
-        db_column="accessoirecompagnie", max_digits=19, decimal_places=4, default=0
+        db_column="accessoirecompagnie",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     accessoireintermediaire = models.DecimalField(
-        db_column="accessoireintermediaire", max_digits=19, decimal_places=4, default=0
+        db_column="accessoireintermediaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     accessoiregestionnaire = models.DecimalField(
-        db_column="accessoiregestionnaire", max_digits=19, decimal_places=4, default=0
+        db_column="accessoiregestionnaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissionintermediaire = models.DecimalField(
-        db_column="commissionintermediaire", max_digits=19, decimal_places=4, default=0
+        db_column="commissionintermediaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissiongestionnaire = models.DecimalField(
-        db_column="commissiongestionnaire", max_digits=19, decimal_places=4, default=0
+        db_column="commissiongestionnaire",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     commissionaperiteur = models.DecimalField(
-        db_column="commissionaperiteur", max_digits=19, decimal_places=4, default=0
+        db_column="commissionaperiteur",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )  # Field name made lowercase.
     taxe = models.DecimalField(
         db_column="taxe", max_digits=19, decimal_places=4, default=0
@@ -893,13 +1043,19 @@ class Contrat(models.Model):
         db_column="assure", max_length=255, blank=True, null=True
     )  # Field name made lowercase.
     idcontratannulation = models.IntegerField(
-        db_column="idcontratannulation", null=True, blank=True,
+        db_column="idcontratannulation",
+        null=True,
+        blank=True,
     )  # Field name made lowercase.
     motifannulation = models.CharField(
         db_column="motifannulation", max_length=255, blank=True, null=True
     )
     idquittance = models.OneToOneField(
-        "Quittance", db_column="idquittance", null=True, on_delete=models.SET_NULL, related_name="contrat",
+        "Quittance",
+        db_column="idquittance",
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="contrat",
     )
     idduree = models.IntegerField(default=1, blank=True, null=True)
     idterme = models.IntegerField(default=1, blank=True, null=True)
@@ -927,17 +1083,24 @@ class Contrat(models.Model):
     prime_imposee = models.BooleanField(
         default=False, blank=True, null=True, db_column="primeimposee"
     )
-    numero_facture = models.CharField(max_length=20, null=True, blank=True, unique=True, db_column="numerofacture")
-    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    numero_facture = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        unique=True,
+        db_column="numerofacture",
+    )
+    taux_commission = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
     # Relation avec la pièce jointe (partagée avec le devis)
     piece_jointe = models.ForeignKey(
         PieceJointe,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='contrats'
+        related_name="contrats",
     )
-
 
     class Meta:
         db_table = "stdcontrat"
@@ -955,11 +1118,23 @@ class ContratDetail(models.Model):
     idcontratdetail = models.AutoField(
         db_column="idcontratdetail", primary_key=True
     )  # Field name made lowercase.
-    idcontrat = models.IntegerField(db_column="idcontrat")  # Field name made lowercase.
-    idassure = models.IntegerField(db_column="idassure")  # Field name made lowercase.
-    idproduit = models.IntegerField(db_column="idproduit")  # Field name made lowercase.
-    idoffre = models.IntegerField(db_column="idoffre")  # Field name made lowercase.
-    idtarif = models.IntegerField(db_column="idtarif")  # Field name made lowercase.
+    idcontrat = models.ForeignKey(
+        Contrat,
+        db_column="idcontrat",
+        on_delete=models.CASCADE,
+    )  # Field name made lowercase.
+    idassure = models.IntegerField(
+        db_column="idassure"
+    )  # Field name made lowercase.
+    idproduit = models.IntegerField(
+        db_column="idproduit"
+    )  # Field name made lowercase.
+    idoffre = models.IntegerField(
+        db_column="idoffre"
+    )  # Field name made lowercase.
+    idtarif = models.IntegerField(
+        db_column="idtarif"
+    )  # Field name made lowercase.
     codeusage = models.CharField(
         db_column="codeusage", max_length=3, blank=True, null=True
     )  # Field name made lowercase.
@@ -1018,7 +1193,11 @@ class ContratDetail(models.Model):
         db_column="assure", max_length=255, blank=True, null=True
     )  # Field name made lowercase.
     adressecnd = models.CharField(
-        db_column="adressecnd", max_length=50, default="", null=True, blank=True
+        db_column="adressecnd",
+        max_length=50,
+        default="",
+        null=True,
+        blank=True,
     )  # Field name made lowercase.
     villecnd = models.IntegerField(
         db_column="villecnd", blank=True, null=True
@@ -1139,7 +1318,10 @@ class ContratDetail(models.Model):
         db_column="pctype", max_length=50, default="000000000000"
     )  # Field name made lowercase.
     taxeenregistrement = models.DecimalField(
-        db_column="taxeenregistrement", max_digits=19, decimal_places=4, default=0
+        db_column="taxeenregistrement",
+        max_digits=19,
+        decimal_places=4,
+        default=0,
     )
     fga = models.DecimalField(
         db_column="fga", max_digits=19, decimal_places=4, default=0
@@ -1168,7 +1350,12 @@ class ContratDetail(models.Model):
 
 class ContratDetGarantie(models.Model):
     idcontratdetgarantie = models.AutoField(primary_key=True)
-    idcontratdetail = models.IntegerField()
+    idcontratdetail = models.ForeignKey(
+        ContratDetail,
+        db_column="idcontratdetail",
+        related_name="garanties",
+        on_delete=models.CASCADE,
+    )
     idgarantie = models.ForeignKey(
         SousGarantie,
         db_column="idgarantie",
@@ -1190,16 +1377,28 @@ class ContratDetGarantie(models.Model):
     minfranchise = models.DecimalField(max_digits=19, decimal_places=4)
     maxfranchise = models.DecimalField(max_digits=19, decimal_places=4)
     deces = models.DecimalField(
-        db_column="deces", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="deces",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     ipp = models.DecimalField(
         db_column="ipp", max_digits=19, decimal_places=4, blank=True, null=True
     )
     fraismed = models.DecimalField(
-        db_column="fraismed", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="fraismed",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     hosp = models.DecimalField(
-        db_column="hosp", max_digits=19, decimal_places=4, blank=True, null=True
+        db_column="hosp",
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
     )
     Formule = models.IntegerField(db_column="formule", blank=True, null=True)
 
@@ -1207,7 +1406,9 @@ class ContratDetGarantie(models.Model):
         db_table = "stdcontratdetgarantie"
         verbose_name = "Garantie souscrite"
         verbose_name_plural = "Garanties souscrites"
-        unique_together = (("idcontratdetgarantie", "idcontratdetail", "idgarantie"),)
+        unique_together = (
+            ("idcontratdetgarantie", "idcontratdetail", "idgarantie"),
+        )
 
 
 class QuittanceFn(models.Model):
@@ -1230,14 +1431,20 @@ class QuittanceFn(models.Model):
     Fga = models.DecimalField(max_digits=19, decimal_places=4)
     Accessoire = models.DecimalField(max_digits=19, decimal_places=4)
     AccessoireCompagnie = models.DecimalField(max_digits=19, decimal_places=4)
-    AccessoireIntermediaire = models.DecimalField(max_digits=19, decimal_places=4)
+    AccessoireIntermediaire = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     TaxeEnregistrement = models.DecimalField(max_digits=19, decimal_places=4)
     PrimeTtc = models.DecimalField(max_digits=19, decimal_places=4)
     Confirme = models.BooleanField(null=True)
     LibelleProduit = models.CharField(max_length=60)
     LibelleCategorie = models.CharField(max_length=100)
-    CommissionIntermediaire = models.DecimalField(max_digits=19, decimal_places=4)
-    CommissionGestionnaire = models.DecimalField(max_digits=19, decimal_places=4)
+    CommissionIntermediaire = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
+    CommissionGestionnaire = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     CommissionAperition = models.DecimalField(max_digits=19, decimal_places=4)
     TitreClient = models.CharField(max_length=100)
     ProfessionClient = models.CharField(max_length=100)
@@ -1264,9 +1471,19 @@ class QuittanceFn(models.Model):
 
     def __str__(self):
         if self.NumeroDevis:
-            return "Devis N°: " + self.NumeroDevis + " du client " + self.NomClient
+            return (
+                "Devis N°: "
+                + self.NumeroDevis
+                + " du client "
+                + self.NomClient
+            )
         elif self.NumeroAvenant:
-            return "Police N°: " + self.NumeroPolice + " du client " + self.NomClient
+            return (
+                "Police N°: "
+                + self.NumeroPolice
+                + " du client "
+                + self.NomClient
+            )
         return "Devis ou police invalide du client " + self.NomClient
 
     class Meta:
@@ -1323,14 +1540,18 @@ class VehiculeContrat(models.Model):
     VolMainsArmees = models.DecimalField(max_digits=19, decimal_places=4)
     Vandalisme = models.DecimalField(max_digits=19, decimal_places=4)
     VolAccessoires = models.DecimalField(max_digits=19, decimal_places=4)
-    IndividuelleChauffeur = models.DecimalField(max_digits=19, decimal_places=4)
+    IndividuelleChauffeur = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     InfirmitePermanente = models.DecimalField(max_digits=19, decimal_places=4)
     IncapaciteTemporaire = models.DecimalField(max_digits=19, decimal_places=4)
     Deces = models.DecimalField(max_digits=19, decimal_places=4)
     FraisTraitement = models.DecimalField(max_digits=19, decimal_places=4)
     Immobilisation = models.DecimalField(max_digits=19, decimal_places=4)
     NsiaAssistCar = models.DecimalField(max_digits=19, decimal_places=4)
-    PersonnesTransportees = models.DecimalField(max_digits=19, decimal_places=4)
+    PersonnesTransportees = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     RecoursTiersIncendie = models.DecimalField(max_digits=19, decimal_places=4)
     SecuriteRoutiere = models.DecimalField(max_digits=19, decimal_places=4)
     PrimeHorsTaxes = models.DecimalField(max_digits=19, decimal_places=4)
@@ -1338,7 +1559,9 @@ class VehiculeContrat(models.Model):
     PrimeNette = models.DecimalField(max_digits=19, decimal_places=4)
 
     def __str__(self):
-        return "{} immatriculé {}".format(self.LibelleMarque, self.Immatriculation)
+        return "{} immatriculé {}".format(
+            self.LibelleMarque, self.Immatriculation
+        )
 
     class Meta:
         managed = False
@@ -1354,9 +1577,13 @@ class LogRecord(models.Model):
 
 class AyantDroitIa(models.Model):
     id_ayant_droit = models.AutoField(
-        verbose_name="Id Ayant-droit", db_column="idayantdroit", primary_key=True
+        verbose_name="Id Ayant-droit",
+        db_column="idayantdroit",
+        primary_key=True,
     )
-    id_assure = models.IntegerField(verbose_name="Assuré", db_column="idassure")
+    id_assure = models.IntegerField(
+        verbose_name="Assuré", db_column="idassure"
+    )
     qualite_ayant_droit = models.ForeignKey(
         QualiteAyantDroit,
         verbose_name="Qualité",
@@ -1407,7 +1634,9 @@ class Quittance(models.Model):
     primenette = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="primenette"
     )
-    taxe = models.DecimalField(max_digits=19, decimal_places=4, db_column="taxe")
+    taxe = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="taxe"
+    )
     accessoire = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="accessoire"
     )
@@ -1446,10 +1675,14 @@ class Quittance(models.Model):
     )
     exoneredetaxes = models.BooleanField(db_column="exoneredetaxes")
     exoneredeaccess = models.BooleanField(db_column="exoneredeaccess")
-    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    taux_commission = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
 
     def __str__(self):
-        return "Quittance n° {} de la police {}".format(self.quittance, self.police)
+        return "Quittance n° {} de la police {}".format(
+            self.quittance, self.police
+        )
 
     class Meta:
         db_table = "stdquittance"
@@ -1462,9 +1695,15 @@ class Quittance(models.Model):
     #     if cnt:
     #         cnt = cnt.first()
     #     return cnt
+
+
 class DetailQuittance(models.Model):
-    iddetquittance = models.AutoField(primary_key=True, db_column="iddetquittance")
-    quittance = models.ForeignKey(Quittance, models.CASCADE, db_column="idquittance")
+    iddetquittance = models.AutoField(
+        primary_key=True, db_column="iddetquittance"
+    )
+    quittance = models.ForeignKey(
+        Quittance, models.CASCADE, db_column="idquittance"
+    )
     branche = models.ForeignKey(
         Garantie, models.CASCADE, db_column="idbranchereassurance"
     )
@@ -1477,7 +1716,9 @@ class DetailQuittance(models.Model):
     primenette = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="primenette"
     )
-    taxe = models.DecimalField(max_digits=19, decimal_places=4, db_column="taxe")
+    taxe = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="taxe"
+    )
     commission = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="commission"
     )
@@ -1486,11 +1727,15 @@ class DetailQuittance(models.Model):
         db_table = "stddetquittance"
         verbose_name = "Ligne de quittance"
         verbose_name_plural = "Lignes de quittance"
-        unique_together = (("quittance", "branche", "tauxtaxe", "tauxcommission"),)
+        unique_together = (
+            ("quittance", "branche", "tauxtaxe", "tauxcommission"),
+        )
 
 
 class Encaissement(models.Model):
-    idencaissement = models.AutoField(primary_key=True, db_column="idencaissement")
+    idencaissement = models.AutoField(
+        primary_key=True, db_column="idencaissement"
+    )
     numeropiece = models.CharField(max_length=20, db_column="numeropiece")
     dateencaissement = models.DateTimeField(db_column="dateencaissement")
     montantencaissement = models.DecimalField(
@@ -1511,10 +1756,16 @@ class Encaissement(models.Model):
         db_column="montantdeduit",
     )
     modepaiement = models.ForeignKey(
-        ModeEncaissement, db_column="idmodepaiement", on_delete=models.DO_NOTHING
+        ModeEncaissement,
+        db_column="idmodepaiement",
+        on_delete=models.DO_NOTHING,
     )
     banque = models.ForeignKey(
-        Banque, blank=True, null=True, db_column="idbanque", on_delete=models.SET_NULL
+        Banque,
+        blank=True,
+        null=True,
+        db_column="idbanque",
+        on_delete=models.SET_NULL,
     )
     numerocheque = models.CharField(
         max_length=20, blank=True, null=True, db_column="numerocheque"
@@ -1523,9 +1774,9 @@ class Encaissement(models.Model):
         max_length=10, blank=True, null=True, db_column="compte_compensation"
     )
     utilisateur = models.ForeignKey(
-        User, 
-        on_delete=models.PROTECT, 
-        related_name='encaissements',
+        User,
+        on_delete=models.PROTECT,
+        related_name="encaissements",
         null=True,
         blank=True,
         db_column="idutilisateur",
@@ -1544,7 +1795,9 @@ class Encaissement(models.Model):
     datesaisieannulation = models.DateTimeField(
         blank=True, null=True, db_column="datesaisieannulation"
     )
-    nomtireurcheque = models.CharField(max_length=50, db_column="nomtireurcheque")
+    nomtireurcheque = models.CharField(
+        max_length=50, db_column="nomtireurcheque"
+    )
     referencetransaction = models.UUIDField(
         verbose_name="Reference Transaction Mobile",
         db_column="referencetransaction",
@@ -1560,15 +1813,16 @@ class Encaissement(models.Model):
         return "Encaissement n° {} ({}) du {}".format(
             self.numeropiece, self.idencaissement, self.dateencaissement
         )
-        
-    @property   
+
+    @property
     def demande_annulation(self):
         """
         Retourne la demande d'annulation associée à l'instance
         """
         from django.contrib.contenttypes.models import ContentType
+
         from autorisations.models import DemandeAutorisation
-        
+
         content_type = ContentType.objects.get_for_model(self.__class__)
         return DemandeAutorisation.objects.filter(
             content_type=content_type,
@@ -1581,21 +1835,25 @@ class Encaissement(models.Model):
         Indique si l'encaissement a une demande d'annulation en cours
         """
         from autorisations.models import StatutDemande
+
         demande = self.demande_annulation
-        return demande.statut in  [StatutDemande.APPROUVEE, StatutDemande.EN_ATTENTE] if demande else None
-        
-    
+        return (
+            demande.statut
+            in [StatutDemande.APPROUVEE, StatutDemande.EN_ATTENTE]
+            if demande
+            else None
+        )
+
     class Meta:
         db_table = "stdencaissement"
         verbose_name = "Encaissement"
         verbose_name_plural = "Encaissements"
         indexes = [
-            models.Index(fields=['numeropiece']),
-            models.Index(fields=['piece_annulee', 'dateencaissement']),
-            models.Index(fields=['utilisateur', 'dateencaissement']),
+            models.Index(fields=["numeropiece"]),
+            models.Index(fields=["piece_annulee", "dateencaissement"]),
+            models.Index(fields=["utilisateur", "dateencaissement"]),
         ]
-        ordering = ['-dateencaissement']
-    
+        ordering = ["-dateencaissement"]
 
 
 class DetailEncaissement(models.Model):
@@ -1694,7 +1952,11 @@ class DetailEncaissement(models.Model):
         blank=True, null=True, db_column="dedcoassurance"
     )
     primecedee = models.DecimalField(
-        max_digits=19, decimal_places=4, blank=True, null=True, db_column="primecedee"
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
+        db_column="primecedee",
     )
     taxe_commission_deduit = models.DecimalField(
         max_digits=19,
@@ -1711,7 +1973,11 @@ class DetailEncaissement(models.Model):
         db_column="taxeaccessoire_deduit",
     )
     impotdeduit = models.DecimalField(
-        max_digits=19, decimal_places=4, blank=True, null=True, db_column="impotdeduit"
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
+        db_column="impotdeduit",
     )
 
     class Meta:
@@ -1722,7 +1988,9 @@ class DetailEncaissement(models.Model):
 
 class ReversementCompagnie(models.Model):
     id_reversement = models.AutoField(
-        primary_key=True, verbose_name="ID Reversement", db_column="idreversement"
+        primary_key=True,
+        verbose_name="ID Reversement",
+        db_column="idreversement",
     )
     compagnie = models.ForeignKey(
         Compagnie,
@@ -1731,10 +1999,15 @@ class ReversementCompagnie(models.Model):
         on_delete=models.DO_NOTHING,
     )
     numero_reversement = models.CharField(
-        max_length=16, db_column="numeroreversement", verbose_name="Numéro Reversement"
+        max_length=16,
+        db_column="numeroreversement",
+        verbose_name="Numéro Reversement",
     )
     date_reversement = models.DateField(
-        db_column="datereversement", verbose_name="Date de reversement", null=True, blank=True
+        db_column="datereversement",
+        verbose_name="Date de reversement",
+        null=True,
+        blank=True,
     )
     montant_reversement = models.DecimalField(
         max_digits=19,
@@ -1761,10 +2034,15 @@ class ReversementCompagnie(models.Model):
         verbose_name="Mode de reversement",
         db_column="idmodereversement",
         on_delete=models.DO_NOTHING,
-        null=True, blank=True,
+        null=True,
+        blank=True,
     )
     banque = models.ForeignKey(
-        Banque, blank=True, null=True, db_column="idbanque", on_delete=models.SET_NULL
+        Banque,
+        blank=True,
+        null=True,
+        db_column="idbanque",
+        on_delete=models.SET_NULL,
     )
     numero_cheque = models.CharField(
         max_length=20, blank=True, null=True, db_column="numerocheque"
@@ -1794,16 +2072,22 @@ class ReversementCompagnie(models.Model):
     date_saisie_annulation = models.DateTimeField(
         blank=True, null=True, db_column="datesaisieannulation"
     )
-    nom_tireur_cheque = models.CharField(max_length=50, db_column="nomtireurcheque", null=True, blank=True)
-    
+    nom_tireur_cheque = models.CharField(
+        max_length=50, db_column="nomtireurcheque", null=True, blank=True
+    )
+
     valide = models.BooleanField(db_column="valide", default=False)
-    date_validation = models.DateTimeField(db_column="datevalidation", null=True, blank=True)
-    utilisateur_validation = models.ForeignKey(UranusUser,
+    date_validation = models.DateTimeField(
+        db_column="datevalidation", null=True, blank=True
+    )
+    utilisateur_validation = models.ForeignKey(
+        UranusUser,
         blank=True,
         null=True,
         db_column="idutilisateurvalidation",
         on_delete=models.SET_NULL,
-        related_name="validations_reversement",)
+        related_name="validations_reversement",
+    )
 
     def __str__(self):
         return "Reversement n° {} ({}) du {}".format(
@@ -1907,7 +2191,11 @@ class DetailReversement(models.Model):
         blank=True, null=True, db_column="dedcoassurance"
     )
     prime_cedee = models.DecimalField(
-        max_digits=19, decimal_places=4, blank=True, null=True, db_column="primecedee"
+        max_digits=19,
+        decimal_places=4,
+        blank=True,
+        null=True,
+        db_column="primecedee",
     )
     taxe_commission_deduit = models.DecimalField(
         max_digits=19,
@@ -2065,7 +2353,9 @@ class AssureIaInfo(models.Model):
     libelle_profession = models.CharField(max_length=150)
     capital_deces = models.DecimalField(max_digits=19, decimal_places=4)
     capital_infirmite = models.DecimalField(max_digits=19, decimal_places=4)
-    capital_frais_traitement = models.DecimalField(max_digits=19, decimal_places=4)
+    capital_frais_traitement = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     telephone = models.CharField(max_length=20, null=True)
     adresse_geographique = models.CharField(max_length=100, null=True)
     lieu_naissance = models.CharField(max_length=100, null=True)
@@ -2121,7 +2411,9 @@ class AssureIaParDevisOuContrat(models.Model):
     Nom = models.CharField(max_length=60)
     Prenoms = models.CharField(max_length=60, null=True, blank=True)
     AdressePostale = models.CharField(max_length=100, null=True, blank=True)
-    AdresseGeographique = models.CharField(max_length=100, null=True, blank=True)
+    AdresseGeographique = models.CharField(
+        max_length=100, null=True, blank=True
+    )
     DateNaissance = models.DateField(null=True, blank=True)
     LieuNaissance = models.CharField(max_length=100, null=True, blank=True)
     Profession = models.CharField(max_length=150, null=True, blank=True)
@@ -2671,7 +2963,9 @@ class ComplementContratDetailMrh(models.Model):
 
 class ArreteExercice(models.Model):
     id_arrete = models.AutoField(
-        verbose_name="ID Arrêté Exercice", db_column="idarrete", primary_key=True
+        verbose_name="ID Arrêté Exercice",
+        db_column="idarrete",
+        primary_key=True,
     )
     exercice = models.IntegerField(
         verbose_name="Exercice d'inventaire", db_column="exercice", unique=True
@@ -3031,11 +3325,17 @@ class InfoVehicule(models.Model):
     typesouscripteur = models.CharField(max_length=100, null=True, blank=True)
     telephoneclient = models.CharField(max_length=20, null=True, blank=True)
     mobileclient = models.CharField(max_length=20, null=True, blank=True)
-    adressegeographique = models.CharField(max_length=100, null=True, blank=True)
+    adressegeographique = models.CharField(
+        max_length=100, null=True, blank=True
+    )
     emailclient = models.CharField(max_length=125)
     nomassure = models.CharField(max_length=125)
-    adressepostaleassure = models.CharField(max_length=100, null=True, blank=True)
-    adressegeographiqueassure = models.CharField(max_length=100, null=True, blank=True)
+    adressepostaleassure = models.CharField(
+        max_length=100, null=True, blank=True
+    )
+    adressegeographiqueassure = models.CharField(
+        max_length=100, null=True, blank=True
+    )
 
     def __str__(self):
         return self.numeroimmatriculation
@@ -3057,9 +3357,13 @@ class ContratEcheance(models.Model):
 
 class CertificatTransport(models.Model):
     id_certificat = models.AutoField(
-        primary_key=True, verbose_name="ID Certificat", db_column="idcertificat"
+        primary_key=True,
+        verbose_name="ID Certificat",
+        db_column="idcertificat",
     )
-    statut = models.CharField(max_length=20, verbose_name="Statut", db_column="statut")
+    statut = models.CharField(
+        max_length=20, verbose_name="Statut", db_column="statut"
+    )
     numero_requete = models.CharField(
         verbose_name="No. Requête",
         max_length=20,
@@ -3089,12 +3393,16 @@ class CertificatTransport(models.Model):
         blank=True,
         db_column="numerofdi",
     )
-    date_fdi = models.DateField(verbose_name="Date FDI", null=True, db_column="datefdi")
+    date_fdi = models.DateField(
+        verbose_name="Date FDI", null=True, db_column="datefdi"
+    )
     assureur = models.CharField(
         max_length=255, verbose_name="Assureur", db_column="assureur"
     )
     adresse_assureur = models.CharField(
-        max_length=255, verbose_name="Adresse Assureur", db_column="adresseassureur"
+        max_length=255,
+        verbose_name="Adresse Assureur",
+        db_column="adresseassureur",
     )
     id_client_uranus = models.IntegerField(
         verbose_name="ID Client URANUS",
@@ -3103,27 +3411,37 @@ class CertificatTransport(models.Model):
         blank=True,
     )
     nom_souscripteur = models.CharField(
-        max_length=255, verbose_name="Souscripteur", db_column="nomsouscripteur"
+        max_length=255,
+        verbose_name="Souscripteur",
+        db_column="nomsouscripteur",
     )
     adresse_souscripteur = models.CharField(
         max_length=255,
         verbose_name="Adresse souscripteur",
         db_column="adressesouscripteur",
     )
-    assure = models.CharField(max_length=255, verbose_name="Assuré", db_column="assure")
+    assure = models.CharField(
+        max_length=255, verbose_name="Assuré", db_column="assure"
+    )
     adresse_assure = models.CharField(
-        max_length=255, verbose_name="Adresse Assuré", db_column="adresseassure"
+        max_length=255,
+        verbose_name="Adresse Assuré",
+        db_column="adresseassure",
     )
     intermediaire = models.CharField(
         max_length=60, verbose_name="Intermédiaire", db_column="intermediaire"
     )
     moyen_transport = models.CharField(
-        max_length=60, verbose_name="Moyen de Transport", db_column="moyentransport"
+        max_length=60,
+        verbose_name="Moyen de Transport",
+        db_column="moyentransport",
     )
     date_debut_voyage = models.DateField(
         verbose_name="Date Début Voyage", db_column="datedebutvoyage"
     )
-    voyage = models.CharField(max_length=120, verbose_name="Voyage", db_column="voyage")
+    voyage = models.CharField(
+        max_length=120, verbose_name="Voyage", db_column="voyage"
+    )
     description_commerciale = models.CharField(
         max_length=255,
         verbose_name="Description Commerciale",
@@ -3172,7 +3490,10 @@ class CertificatTransport(models.Model):
         db_column="accessoire",
     )
     taxe = models.DecimalField(
-        max_digits=19, decimal_places=4, verbose_name="Montant Taxe", db_column="taxe"
+        max_digits=19,
+        decimal_places=4,
+        verbose_name="Montant Taxe",
+        db_column="taxe",
     )
     prime_ttc = models.DecimalField(
         max_digits=19,
@@ -3206,10 +3527,14 @@ class CertificatTransport(models.Model):
 
 class HistoriqueImportationCertificat(models.Model):
     id_importation = models.AutoField(
-        primary_key=True, verbose_name="ID Importation", db_column="idimportation"
+        primary_key=True,
+        verbose_name="ID Importation",
+        db_column="idimportation",
     )
     nom_fichier_excel = models.CharField(
-        max_length=255, verbose_name="Nom Fichier Excel", db_column="nomfichierexcel"
+        max_length=255,
+        verbose_name="Nom Fichier Excel",
+        db_column="nomfichierexcel",
     )
     sha256_hash = models.BinaryField(
         verbose_name="Checksum Fichier", db_column="sha256hash", null=True
@@ -3264,7 +3589,10 @@ class ImportationCertificatDevis(models.Model):
         on_delete=models.CASCADE,
     )
     devis = models.ForeignKey(
-        Devis, verbose_name="ID Devis", db_column="iddevis", on_delete=models.CASCADE
+        Devis,
+        verbose_name="ID Devis",
+        db_column="iddevis",
+        on_delete=models.CASCADE,
     )
 
     class Meta:
@@ -3276,396 +3604,417 @@ class SequenceFacture(models.Model):
     Modèle représentant la séquence des numéros de facture de devis et de contrat pour un mois et une année donnés.
     Utilisé pour générer le numéro séquentiel unique et réinitialisé mensuellement.
     """
-    
+
     annee = models.IntegerField(
         help_text="Année pour la séquence (e.g., 2025)"
     )
-    mois = models.IntegerField(
-        help_text="Mois pour la séquence (1 à 12)"
-    )
-    dernier_numero_devis = models.IntegerField(db_column="derniernumerodevis",
+    mois = models.IntegerField(help_text="Mois pour la séquence (1 à 12)")
+    dernier_numero_devis = models.IntegerField(
+        db_column="derniernumerodevis",
         default=0,
-        help_text="Le dernier numéro séquentiel attribué aux factures proforma pour ce mois et cette année."
+        help_text="Le dernier numéro séquentiel attribué aux factures proforma pour ce mois et cette année.",
     )
-    
-    dernier_numero_contrat = models.IntegerField(db_column="derniernumerocontrat",
+
+    dernier_numero_contrat = models.IntegerField(
+        db_column="derniernumerocontrat",
         default=0,
-        help_text="Le dernier numéro séquentiel attribué aux factures de contrat pour ce mois et cette année."
+        help_text="Le dernier numéro séquentiel attribué aux factures de contrat pour ce mois et cette année.",
     )
 
     class Meta:
         # 1. Clé Primaire Composite et Index Unique
-        # Ceci crée la contrainte UNIQUE sur (annee, mois), 
+        # Ceci crée la contrainte UNIQUE sur (annee, mois),
         # agissant comme la clé primaire pour notre séquence : PRIMARY KEY (annee, mois)
-        unique_together = ('annee', 'mois',)
-        
+        unique_together = (
+            "annee",
+            "mois",
+        )
+
         # 2. Nom de la table PostgreSQL
-        # Nous spécifions le nom de la table pour qu'il corresponde exactement 
+        # Nous spécifions le nom de la table pour qu'il corresponde exactement
         # à 'sequence_devis_mensuelle' si vous le souhaitez.
-        db_table = 'stdsequencefacture'
-        
+        db_table = "stdsequencefacture"
+
         verbose_name = "Séquence de factures mensuelle"
         verbose_name_plural = "Séquences de factures mensuelles"
-        
+
     def __str__(self):
         return f"Séquence {self.annee}/{self.mois}: Dernier numéro proforma {self.dernier_numero_devis}, dernier numéro facture {self.dernier_numero_contrat}"
-    
+
+
 class Cheque(models.Model):
     id_cheque = models.AutoField(primary_key=True, db_column="idcheque")
     numero_cheque = models.CharField(max_length=50, db_column="numerocheque")
-    banque = models.ForeignKey(Banque, on_delete=models.PROTECT, db_column="idbanque")
-    montant_initial = models.DecimalField(max_digits=19, decimal_places=4, db_column="montantinitial")
-    solde_disponible = models.DecimalField(max_digits=19, decimal_places=4, db_column="soldedisponible")
-    date_saisie = models.DateTimeField(auto_now_add=True, db_column="datesaisie")
+    banque = models.ForeignKey(
+        Banque, on_delete=models.PROTECT, db_column="idbanque"
+    )
+    montant_initial = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="montantinitial"
+    )
+    solde_disponible = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="soldedisponible"
+    )
+    date_saisie = models.DateTimeField(
+        auto_now_add=True, db_column="datesaisie"
+    )
 
     class Meta:
         db_table = "stdcheque"
-        unique_together = ('numero_cheque', 'banque')
+        unique_together = ("numero_cheque", "banque")
         constraints = [
             # Contrainte : Montant initial >= Solde disponible et les deux doivent être >= 0
             CheckConstraint(
-                check=Q(montant_initial__gte=F('solde_disponible')) & Q(solde_disponible__gte=0),
-                name='check_solde_coherence'
+                check=Q(montant_initial__gte=F("solde_disponible"))
+                & Q(solde_disponible__gte=0),
+                name="check_solde_coherence",
             ),
             CheckConstraint(
                 check=Q(montant_initial__gt=0),
-                name='check_montant_initial_positif'
-            )
+                name="check_montant_initial_positif",
+            ),
         ]
 
     def __str__(self):
         return f"Chèque {self.numero_cheque} ({self.banque})"
 
+
 class ChequeOperation(models.Model):
     id_operation = models.AutoField(primary_key=True, db_column="idoperation")
-    cheque = models.ForeignKey(Cheque, on_delete=models.CASCADE, related_name='operations', db_column="idcheque")
-    id_encaissement = models.IntegerField(db_column="idencaissement") # Retourné par la procédure sp_enregistrement_encaissement
-    utilisateur = models.ForeignKey(User, on_delete=models.PROTECT, db_column="idutilisateur")
-    montant_operation = models.DecimalField(max_digits=19, decimal_places=4, db_column="montantoperation")
+    cheque = models.ForeignKey(
+        Cheque,
+        on_delete=models.CASCADE,
+        related_name="operations",
+        db_column="idcheque",
+    )
+    id_encaissement = models.IntegerField(
+        db_column="idencaissement"
+    )  # Retourné par la procédure sp_enregistrement_encaissement
+    utilisateur = models.ForeignKey(
+        User, on_delete=models.PROTECT, db_column="idutilisateur"
+    )
+    montant_operation = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="montantoperation"
+    )
     date_operation = models.DateField(db_column="dateoperation")
-    date_saisie = models.DateTimeField(auto_now_add=True, db_column="datesaisie")
-    
+    date_saisie = models.DateTimeField(
+        auto_now_add=True, db_column="datesaisie"
+    )
+
     class Meta:
         db_table = "stdchequeoperation"
-        
-        
+
 
 # ============================================================================
 # NOUVEAU MODÈLE : Table d'historique des impositions
 # ============================================================================
 
+
 class ImpositionPrime(models.Model):
     """
     Historique des impositions de prime MRH.
-    
+
     Cette table conserve la traçabilité complète de toutes les impositions
     de prime (qui, quand, pourquoi) au niveau maison ou devis.
     """
-    
+
     # Choix pour le type d'imposition
-    TYPE_DEVIS = 'DEVIS'
-    TYPE_MAISON = 'MAISON'
+    TYPE_DEVIS = "DEVIS"
+    TYPE_MAISON = "MAISON"
     TYPE_IMPOSITION_CHOICES = [
-        (TYPE_DEVIS, 'Devis (global)'),
-        (TYPE_MAISON, 'Maison (individuelle)'),
+        (TYPE_DEVIS, "Devis (global)"),
+        (TYPE_MAISON, "Maison (individuelle)"),
     ]
-    
+
     # Type et cible
     type_imposition = models.CharField(
         max_length=20,
         choices=TYPE_IMPOSITION_CHOICES,
         verbose_name="Type d'imposition",
-        help_text="DEVIS pour imposition globale, MAISON pour imposition individuelle"
+        help_text="DEVIS pour imposition globale, MAISON pour imposition individuelle",
     )
-    
+
     id_cible = models.IntegerField(
         verbose_name="ID de la cible",
-        help_text="ID du devis (si DEVIS) ou ID du DevisDetail (si MAISON)"
+        help_text="ID du devis (si DEVIS) ou ID du DevisDetail (si MAISON)",
     )
-    
+
     # Montants (toujours prime NETTE)
     montant_impose = models.DecimalField(
         max_digits=19,
         decimal_places=4,
         verbose_name="Montant imposé",
-        help_text="Montant de la prime NETTE imposée (en FCFA)"
+        help_text="Montant de la prime NETTE imposée (en FCFA)",
     )
-    
+
     ancien_montant_nette = models.DecimalField(
         max_digits=19,
         decimal_places=4,
         null=True,
         blank=True,
         verbose_name="Ancien montant prime nette",
-        help_text="Prime nette avant l'imposition"
+        help_text="Prime nette avant l'imposition",
     )
-    
+
     ancien_montant_ttc = models.DecimalField(
         max_digits=19,
         decimal_places=4,
         null=True,
         blank=True,
         verbose_name="Ancien montant prime TTC",
-        help_text="Prime TTC avant l'imposition"
+        help_text="Prime TTC avant l'imposition",
     )
-    
+
     # Traçabilité de la création
     user_id = models.IntegerField(
         null=True,
         blank=True,
         verbose_name="ID utilisateur",
-        help_text="ID de l'utilisateur qui a imposé la prime"
+        help_text="ID de l'utilisateur qui a imposé la prime",
     )
-    
+
     user_nom = models.CharField(
         max_length=200,
         null=True,
         blank=True,
         verbose_name="Nom utilisateur",
-        help_text="Nom complet de l'utilisateur"
+        help_text="Nom complet de l'utilisateur",
     )
-    
+
     date_imposition = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Date d'imposition",
-        help_text="Date et heure de l'imposition"
+        help_text="Date et heure de l'imposition",
     )
-    
+
     motif = models.TextField(
         null=True,
         blank=True,
         verbose_name="Motif",
-        help_text="Raison de l'imposition (ex: négociation commerciale)"
+        help_text="Raison de l'imposition (ex: négociation commerciale)",
     )
-    
+
     # État de l'imposition
     actif = models.BooleanField(
         default=True,
         verbose_name="Actif",
-        help_text="TRUE si l'imposition est active, FALSE si levée"
+        help_text="TRUE si l'imposition est active, FALSE si levée",
     )
-    
+
     # Traçabilité de la levée
     date_levee = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="Date de levée",
-        help_text="Date et heure où l'imposition a été levée"
+        help_text="Date et heure où l'imposition a été levée",
     )
-    
+
     levee_par_user_id = models.IntegerField(
         null=True,
         blank=True,
         verbose_name="Levée par user ID",
-        help_text="ID de l'utilisateur qui a levé l'imposition"
+        help_text="ID de l'utilisateur qui a levé l'imposition",
     )
-    
+
     levee_par_user_nom = models.CharField(
         max_length=200,
         null=True,
         blank=True,
         verbose_name="Levée par user nom",
-        help_text="Nom de l'utilisateur qui a levé l'imposition"
+        help_text="Nom de l'utilisateur qui a levé l'imposition",
     )
-    
+
     motif_levee = models.TextField(
         null=True,
         blank=True,
         verbose_name="Motif de levée",
-        help_text="Raison de la levée de l'imposition"
+        help_text="Raison de la levée de l'imposition",
     )
-    
+
     class Meta:
-        db_table = 'stdmrh_imposition_prime'
+        db_table = "stdmrh_imposition_prime"
         verbose_name = "Imposition de prime MRH"
         verbose_name_plural = "Impositions de prime MRH"
-        ordering = ['-date_imposition']
+        ordering = ["-date_imposition"]
         indexes = [
-            models.Index(fields=['type_imposition', 'id_cible'], name='idx_impo_type_cible'),
-            models.Index(fields=['actif'], name='idx_impo_actif'),
-            models.Index(fields=['-date_imposition'], name='idx_impo_date'),
+            models.Index(
+                fields=["type_imposition", "id_cible"],
+                name="idx_impo_type_cible",
+            ),
+            models.Index(fields=["actif"], name="idx_impo_actif"),
+            models.Index(fields=["-date_imposition"], name="idx_impo_date"),
         ]
-    
+
     def __str__(self):
         status = "Active" if self.actif else "Levée"
         return f"{self.type_imposition} {self.id_cible} - {self.montant_impose:,.2f} FCFA ({status})"
-    
+
     @property
     def est_active(self):
         """Retourne True si l'imposition est active."""
         return self.actif
-    
+
     @property
     def duree_jours(self):
         """Retourne la durée de l'imposition en jours."""
         from django.utils import timezone
+
         if self.actif:
             fin = timezone.now()
         else:
             fin = self.date_levee or timezone.now()
-        
+
         delta = fin - self.date_imposition
         return delta.days
-    
+
     def lever_imposition(self, user_id=None, user_nom=None, motif=None):
         """
         Lève l'imposition.
-        
+
         Args:
             user_id: ID de l'utilisateur qui lève
             user_nom: Nom de l'utilisateur
             motif: Raison de la levée
         """
         from django.utils import timezone
-        
+
         self.actif = False
         self.date_levee = timezone.now()
         self.levee_par_user_id = user_id
-        self.levee_par_user_nom = user_nom or 'Système'
+        self.levee_par_user_nom = user_nom or "Système"
         self.motif_levee = motif
         self.save()
-
 
 
 class ImportsHistorique(models.Model):
     """
     Historique de tous les imports de fichiers Excel d'assurés.
-    
+
     Permet de:
     - Détecter les réimportations de fichiers identiques
     - Tracer toutes les opérations d'import
     - Analyser les statistiques d'import
     - Déboguer les problèmes d'import
     """
-    
+
     # ─── Identification du fichier ───
     hash_fichier = models.CharField(
         max_length=64,
         unique=True,
         db_index=True,
         verbose_name="Hash du fichier",
-        help_text="Hash SHA256 du fichier pour détecter les doublons"
+        help_text="Hash SHA256 du fichier pour détecter les doublons",
     )
-    
+
     nom_fichier = models.CharField(
-        max_length=255,
-        verbose_name="Nom du fichier"
+        max_length=255, verbose_name="Nom du fichier"
     )
-    
+
     taille_fichier = models.BigIntegerField(
-        verbose_name="Taille du fichier",
-        help_text="Taille en octets"
+        verbose_name="Taille du fichier", help_text="Taille en octets"
     )
-    
+
     # ─── Métadonnées de l'import ───
     date_import = models.DateTimeField(
-        default=timezone.now,
-        db_index=True,
-        verbose_name="Date d'import"
+        default=timezone.now, db_index=True, verbose_name="Date d'import"
     )
-    
+
     user_id = models.IntegerField(
         null=True,
         blank=True,
         db_index=True,
         verbose_name="ID Utilisateur",
-        help_text="ID de l'utilisateur ayant effectué l'import"
+        help_text="ID de l'utilisateur ayant effectué l'import",
     )
-    
+
     mode_import = models.CharField(
         max_length=50,
-        default='creer_seulement',
+        default="creer_seulement",
         verbose_name="Mode d'import",
-        help_text="creer_seulement, mettre_a_jour, erreur_si_doublon, ignorer_silencieux"
+        help_text="creer_seulement, mettre_a_jour, erreur_si_doublon, ignorer_silencieux",
     )
-    
+
     # ─── Statistiques ───
     nb_assures_total = models.IntegerField(
         default=0,
         verbose_name="Nombre total d'assurés",
-        help_text="Nombre total de lignes dans le fichier"
+        help_text="Nombre total de lignes dans le fichier",
     )
-    
+
     nb_assures_nouveaux = models.IntegerField(
-        default=0,
-        verbose_name="Assurés créés"
+        default=0, verbose_name="Assurés créés"
     )
-    
+
     nb_assures_ignores = models.IntegerField(
         default=0,
         verbose_name="Assurés ignorés",
-        help_text="Assurés ignorés car déjà existants"
+        help_text="Assurés ignorés car déjà existants",
     )
-    
+
     nb_assures_mis_a_jour = models.IntegerField(
-        default=0,
-        verbose_name="Assurés mis à jour"
+        default=0, verbose_name="Assurés mis à jour"
     )
-    
+
     nb_erreurs = models.IntegerField(
-        default=0,
-        verbose_name="Nombre d'erreurs"
+        default=0, verbose_name="Nombre d'erreurs"
     )
-    
+
     # ─── Résultat ───
     STATUT_CHOICES = [
-        ('REUSSI', 'Réussi'),
-        ('ECHOUE', 'Échoué'),
-        ('PARTIEL', 'Partiel'),
-        ('REFUSE', 'Refusé'),
+        ("REUSSI", "Réussi"),
+        ("ECHOUE", "Échoué"),
+        ("PARTIEL", "Partiel"),
+        ("REFUSE", "Refusé"),
     ]
-    
+
     statut = models.CharField(
         max_length=20,
         choices=STATUT_CHOICES,
         db_index=True,
-        verbose_name="Statut"
+        verbose_name="Statut",
     )
-    
+
     details_erreur = models.TextField(
-        null=True,
-        blank=True,
-        verbose_name="Détails de l'erreur"
+        null=True, blank=True, verbose_name="Détails de l'erreur"
     )
-    
+
     id_devis = models.IntegerField(
         null=True,
         blank=True,
         verbose_name="ID Devis",
-        help_text="ID du devis créé lors de l'import"
+        help_text="ID du devis créé lors de l'import",
     )
-    
+
     # ─── Audit ───
     duree_secondes = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         null=True,
         blank=True,
-        verbose_name="Durée (secondes)"
+        verbose_name="Durée (secondes)",
     )
-    
+
     details_json = models.JSONField(
         null=True,
         blank=True,
         verbose_name="Détails JSON",
-        help_text="Détails complets de l'import en JSON"
+        help_text="Détails complets de l'import en JSON",
     )
-    
+
     class Meta:
-        db_table = 'stdimports_historique'
+        db_table = "stdimports_historique"
         verbose_name = "Import d'assurés"
         verbose_name_plural = "Historique des imports"
-        ordering = ['-date_import']
+        ordering = ["-date_import"]
         indexes = [
-            models.Index(fields=['hash_fichier'], name='idx_imports_hash'),
-            models.Index(fields=['-date_import'], name='idx_imports_date'),
-            models.Index(fields=['user_id'], name='idx_imports_user'),
-            models.Index(fields=['statut'], name='idx_imports_statut'),
+            models.Index(fields=["hash_fichier"], name="idx_imports_hash"),
+            models.Index(fields=["-date_import"], name="idx_imports_date"),
+            models.Index(fields=["user_id"], name="idx_imports_user"),
+            models.Index(fields=["statut"], name="idx_imports_statut"),
         ]
-    
+
     def __str__(self):
         return f"{self.nom_fichier} - {self.date_import.strftime('%d/%m/%Y %H:%M')} - {self.statut}"
-    
+
     def __repr__(self):
         return (
             f"<ImportsHistorique(id={self.id}, "
@@ -3673,51 +4022,54 @@ class ImportsHistorique(models.Model):
             f"statut='{self.statut}', "
             f"nouveaux={self.nb_assures_nouveaux})>"
         )
-    
+
     @property
     def taux_reussite(self):
         """Calcule le taux de réussite de l'import"""
         if self.nb_assures_total == 0:
             return 0
-        
+
         traites = self.nb_assures_nouveaux + self.nb_assures_mis_a_jour
         return (traites / self.nb_assures_total) * 100
-    
+
     @property
     def hash_court(self):
         """Retourne les 8 premiers caractères du hash"""
         return self.hash_fichier[:8] if self.hash_fichier else ""
-    
+
     @classmethod
     def rechercher_par_hash(cls, hash_fichier):
         """Recherche un import par son hash de fichier"""
-        return cls.objects.filter(hash_fichier=hash_fichier).order_by('-date_import')
-    
+        return cls.objects.filter(hash_fichier=hash_fichier).order_by(
+            "-date_import"
+        )
+
     @classmethod
     def imports_recents(cls, nb_jours=7):
         """Retourne les imports des N derniers jours"""
         from datetime import timedelta
+
         date_limite = timezone.now() - timedelta(days=nb_jours)
         return cls.objects.filter(date_import__gte=date_limite)
-    
+
     @classmethod
     def statistiques_globales(cls):
         """Retourne des statistiques globales sur tous les imports"""
-        from django.db.models import Sum, Avg, Count, Q
-        
+        from django.db.models import Avg, Count, Q, Sum
+
         stats = cls.objects.aggregate(
-            total_imports=Count('id'),
-            total_assures_crees=Sum('nb_assures_nouveaux'),
-            total_assures_ignores=Sum('nb_assures_ignores'),
-            total_erreurs=Sum('nb_erreurs'),
-            duree_moyenne=Avg('duree_secondes'),
-            nb_reussis=Count('id', filter=Q(statut='REUSSI')),
-            nb_echecs=Count('id', filter=Q(statut='ECHOUE')),
-            nb_refuses=Count('id', filter=Q(statut='REFUSE'))
+            total_imports=Count("id"),
+            total_assures_crees=Sum("nb_assures_nouveaux"),
+            total_assures_ignores=Sum("nb_assures_ignores"),
+            total_erreurs=Sum("nb_erreurs"),
+            duree_moyenne=Avg("duree_secondes"),
+            nb_reussis=Count("id", filter=Q(statut="REUSSI")),
+            nb_echecs=Count("id", filter=Q(statut="ECHOUE")),
+            nb_refuses=Count("id", filter=Q(statut="REFUSE")),
         )
-        
+
         return stats
-    
+
     def generer_resume_texte(self):
         """Génère un résumé textuel de l'import"""
         return f"""

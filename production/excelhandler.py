@@ -1,8 +1,8 @@
+from typing import Any, Callable, List
+
+import pandas as pd
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import InMemoryUploadedFile
-import pandas as pd
-import io
-from typing import List, Callable, Any
 
 
 class ExcelFileValidator:
@@ -47,7 +47,9 @@ class ExcelColumnValidator:
 
 class ExcelFileHandler:
     def __init__(
-        self, file_validator: ExcelFileValidator, column_validator: ExcelColumnValidator
+        self,
+        file_validator: ExcelFileValidator,
+        column_validator: ExcelColumnValidator,
     ):
         self.file_validator = file_validator
         self.column_validator = column_validator

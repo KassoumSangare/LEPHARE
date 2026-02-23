@@ -1,52 +1,196 @@
-from rest_framework import viewsets
-from rest_framework import permissions
-from knox.auth import TokenAuthentication
-from rest_framework.authentication import BasicAuthentication
-from rest_framework.views import APIView
-from django.db.models import Q, Subquery, OuterRef
-from django.conf import settings
-from rest_framework.response import Response
 from django.db import connection
-
-from .serializers import *
-from .models import *
-from .utils import (
-    get_garantie_offre,
-    get_offre_par_produit,
-    get_tarif_par_produit,
-    get_tarif_voyage,
-    get_offre_voyage,
-    get_garantie_offre_ia,
-    get_garantie_offre_voyage,
-    get_garantie_offre_mrh,
-    get_garantie_offre_rc,
-    get_offre_sante_par_tarif,
-    get_college_sante_par_offre,
-    get_zone_couverture_sante,
-    save_offre_garantie,
-    get_garantie_produit,
-    get_formule_securite_routiere,
-    get_liste_avenant_produit,
-    get_liste_pays_voyage,
-)
-
-# from customer.models import Client
-
-from django.shortcuts import render
+from django.db.models import F, Q, Subquery
 from django.http.response import JsonResponse
-from rest_framework.parsers import JSONParser
-from rest_framework import status
+from django_celery_beat.models import (
+    ClockedSchedule,
+    CrontabSchedule,
+    IntervalSchedule,
+    PeriodicTask,
+    SolarSchedule,
+)
+from knox.auth import TokenAuthentication
+from rest_framework import permissions, status, viewsets
+from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
 )
+from rest_framework.parsers import JSONParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .serializers import (
-    PrimeCalculationInputSerializer,
-    PrimeCalculationOutputSerializer
+from .models import (
+    Accessoire,
+    AccessoireCourtierParCompagnie,
+    Acte,
+    AssistanceAutomobile,
+    Avenant,
+    AvenantProduit,
+    Banque,
+    Branche,
+    Carrosserie,
+    Categorie,
+    CategoriePermis,
+    CollegeSante,
+    Commission,
+    CommissionProduit,
+    Commune,
+    Compagnie,
+    Continent,
+    DelaiAvisEcheance,
+    DomaineActiviteRC,
+    Energie,
+    FormuleSecuriteRoutiere,
+    Garantie,
+    GarantieRisque,
+    GenreVehicule,
+    GroupeUtilisateur,
+    Intermediaire,
+    LienJuridiqueSante,
+    Marque,
+    Menu,
+    MenuParent,
+    ModeEncaissement,
+    ModeleVehicule,
+    Offre,
+    OffreAutomobileBoisee,
+    OffreCollegeSante,
+    OffreDetail,
+    OffreGarantie,
+    ParametreSite,
+    Pays,
+    Produit,
+    Profession,
+    ProfessionIa,
+    Qualite,
+    QualiteAyantDroit,
+    QualiteSouscripteurMrh,
+    ReductionFlotte,
+    Region,
+    Risque,
+    SecteurActivite,
+    SousGarantie,
+    SystemeSecurite,
+    Tarif,
+    TarifDetail,
+    TauxTaxeGarantieProduit,
+    TypeAssure,
+    TypeContratSante,
+    TypeReduction,
+    TypeSouscripteur,
+    TypeVehicule,
+    UsageVehicule,
+    Utilisateur,
+    Ville,
+    ZoneCouvertureSante,
+    ZoneVoyage,
 )
-
+from .serializers import (
+    AccessoireCourtierParCompagnieSerializer,
+    AccessoireSerializer,
+    ActeSerializer,
+    AssistanceAutomobileSerializer,
+    AvenantSerializer,
+    BanqueSerializer,
+    BrancheSerializer,
+    CarrosserieSerializer,
+    CategoriePermisSerializer,
+    CategorieSerializer,
+    ClockedScheduleSerializer,
+    CollegeSanteSerializer,
+    CommissionProduitSerializer,
+    CommissionSerializer,
+    CommuneSerializer,
+    CompagnieSerializer,
+    ContinentSerializer,
+    CrontabScheduleSerializer,
+    DelaiAvisEcheanceSerializer,
+    DemandeAvenantSerializer,
+    DemandeGarantieHabitationSerializer,
+    DemandeGarantieIaSerializer,
+    DemandeGarantieRCSerializer,
+    DemandeGarantieSerializer,
+    DemandeGarantieVoyageSerializer,
+    DomaineActiviteRCSerializer,
+    EnergieSerializer,
+    EnregistrementOffreGarantieSerializer,
+    FormuleSecuriteRoutiereParCompagnieSerializer,
+    FormuleSecuriteRoutiereSerializer,
+    GarantieParProduitSerializer,
+    GarantiePourOffreSerializer,
+    GarantieProposeeSerializer,
+    GarantieRisqueSerializer,
+    GarantieSerializer,
+    GenreVehiculeSerializer,
+    GroupeUtilisateurSerializer,
+    IntermediaireSerializer,
+    IntervalScheduleSerializer,
+    LienJuridiqueSanteSerializer,
+    MarqueSerializer,
+    MenuParentSerializer,
+    MenuSerializer,
+    ModeEncaissementSerializer,
+    ModeleVehiculeSerializer,
+    OffreCollegeSanteSerializer,
+    OffreDetailSerializer,
+    OffreGarantieSerializer,
+    OffreParProduitSerializer,
+    OffreSanteParTarifSerializer,
+    OffreSerializer,
+    ParametreSiteSerializer,
+    PaysSerializer,
+    PaysZoneSerializer,
+    PeriodicTaskSerializer,
+    PrimeCalculationInputSerializer,
+    PrimeCalculationOutputSerializer,
+    ProduitSerializer,
+    ProfessionIaSerializer,
+    ProfessionSerializer,
+    QualiteAyantDroitSerializer,
+    QualiteSerializer,
+    QualiteSouscripteurMrhSerializer,
+    ReductionFlotteSerializer,
+    RegionSerializer,
+    RisqueSerializer,
+    SecteurActiviteSerializer,
+    SolarScheduleSerializer,
+    SousGarantieSerializer,
+    SystemeSecuriteSerializer,
+    TarifDetailSerializer,
+    TarifParProduitSerializer,
+    TarifSerializer,
+    TauxTaxeGarantieProduitSerializer,
+    TypeAssureSerializer,
+    TypeContratSanteSerializer,
+    TypeReductionSerializer,
+    TypeSouscripteurSerializer,
+    TypeVehiculeSerializer,
+    UsageVehiculeSerializer,
+    UtilisateurSerializer,
+    VilleSerializer,
+    ZoneCouvertureSanteSerializer,
+    ZoneVoyageSerializer,
+)
+from .utils import (
+    get_college_sante_par_offre,
+    get_formule_securite_routiere,
+    get_garantie_offre,
+    get_garantie_offre_ia,
+    get_garantie_offre_mrh,
+    get_garantie_offre_rc,
+    get_garantie_offre_voyage,
+    get_garantie_produit,
+    get_liste_avenant_produit,
+    get_liste_pays_voyage,
+    get_offre_par_produit,
+    get_offre_sante_par_tarif,
+    get_offre_voyage,
+    get_tarif_par_produit,
+    get_tarif_voyage,
+    get_zone_couverture_sante,
+    save_offre_garantie,
+)
 
 
 class SettingsModelViewSet(viewsets.ModelViewSet):
@@ -67,6 +211,8 @@ class SettingsModelViewSet(viewsets.ModelViewSet):
         ),
         "search": (permissions.IsAuthenticated,),
     }
+
+
 class PrimeCalculationView(APIView):
     """
     Vue permettant de calculer :
@@ -75,8 +221,13 @@ class PrimeCalculationView(APIView):
     - le montant de la taxe
     """
 
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
     def post(self, request, *args, **kwargs):
-        from decimal import Decimal, ROUND_HALF_UP
+        from decimal import ROUND_HALF_UP, Decimal
+
         input_serializer = PrimeCalculationInputSerializer(data=request.data)
         input_serializer.is_valid(raise_exception=True)
 
@@ -90,7 +241,7 @@ class PrimeCalculationView(APIView):
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT public.fn_get_taux_taxe(%s, %s, %s, %s)",
-                [id_compagnie, id_produit, id_offre, date_effet]
+                [id_compagnie, id_produit, id_offre, date_effet],
             )
             row = cursor.fetchone()
             taux_taxe = row[0] if row is not None else Decimal("0")
@@ -100,7 +251,7 @@ class PrimeCalculationView(APIView):
             cursor.execute(
                 "SELECT accessoire_compagnie, accessoire_intermediaire "
                 "FROM public.fn_get_accessoire(%s, %s, %s, %s, %s)",
-                [prime_nette, id_produit, id_offre, id_compagnie, date_effet]
+                [prime_nette, id_produit, id_offre, id_compagnie, date_effet],
             )
             row = cursor.fetchone()
 
@@ -110,7 +261,9 @@ class PrimeCalculationView(APIView):
             cout_police = accessoire_compagnie + accessoire_intermediaire
 
         # 4. Taxe
-        base_taxe = (prime_nette + cout_police) * taux_taxe / Decimal("100")  # Arrondi à l’unité (0 décimale), comme round(..., 0) mais en Decimal 
+        base_taxe = (
+            (prime_nette + cout_police) * taux_taxe / Decimal("100")
+        )  # Arrondi à l’unité (0 décimale), comme round(..., 0) mais en Decimal
         montant_taxe = base_taxe.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
         prime_totale = prime_nette + cout_police + montant_taxe
@@ -125,13 +278,13 @@ class PrimeCalculationView(APIView):
         output_serializer = PrimeCalculationOutputSerializer(output_data)
         return Response(output_serializer.data, status=status.HTTP_200_OK)
 
+
 class GarantieViewSet(viewsets.ModelViewSet):
     queryset = Garantie.objects.filter(~Q(IdGarantie=0))
     serializer_class = GarantieSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
-
 
 
 class DomaineActiviteRCViewSet(viewsets.ModelViewSet):
@@ -141,12 +294,13 @@ class DomaineActiviteRCViewSet(viewsets.ModelViewSet):
     queryset = DomaineActiviteRC.objects.all()
     serializer_class = DomaineActiviteRCSerializer
 
+
 class MenuViewSet(viewsets.ModelViewSet):
+    queryset = Menu.objects.all()
+    serializer_class = MenuSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
-    queryset = Menu.objects.all()
-    serializer_class = MenuSerializer
 
 
 class MenuParentViewSet(viewsets.ModelViewSet):
@@ -268,9 +422,6 @@ class OffreGarantieViewSet(viewsets.ModelViewSet):
         ~Q(IdOffre=0) & ~Q(IdSousGarantie=0) & ~Q(IdCompagnie=0)
     )
     serializer_class = OffreGarantieSerializer
-    # permission_classes = [
-    #     permissions.IsAuthenticated,
-    # ]
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
@@ -301,38 +452,11 @@ class GenreVehiculeViewSet(viewsets.ModelViewSet):
 class FormuleSecuriteRoutiereViewSet(SettingsModelViewSet):
     queryset = FormuleSecuriteRoutiere.objects.all()
     serializer_class = FormuleSecuriteRoutiereSerializer
-    # permission_classes_by_action = {
-    #     "create": (
-    #         permissions.IsAuthenticated,
-    #         permissions.IsAdminUser,
-    #     ),
-    #     "list": (permissions.IsAuthenticated,),
-    #     "retrieve": (permissions.IsAuthenticated,),
-    #     "update": (
-    #         permissions.IsAuthenticated,
-    #         permissions.IsAdminUser,
-    #     ),
-    #     "destroy": (
-    #         permissions.IsAuthenticated,
-    #         permissions.IsAdminUser,
-    #     ),
-    #     "search": (permissions.IsAuthenticated,),
-    # }
-
-
-# class OffreViewSet(viewsets.ModelViewSet):
-#     def list(self, request):
-#         queryset = User.objects.all()
-#         serializer = UserSerializer(queryset, many=True)
-#         return Response(serializer.data)
 
 
 class AvenantViewSet(viewsets.ModelViewSet):
     queryset = Avenant.objects.filter(~Q(IdAvenant=0))
     serializer_class = AvenantSerializer
-    # permission_classes = [
-    #     permissions.IsAuthenticated,
-    # ]
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
@@ -368,9 +492,15 @@ class AvenantViewSet(viewsets.ModelViewSet):
                 "vrai",
                 "vraie",
                 "oui",
+                "o",
+                "y",
+                "v",
+                "t",
             ]
             if contrat_flotte:
-                avenants_produits = AvenantProduit.objects.filter(Q(flotte=True))
+                avenants_produits = AvenantProduit.objects.filter(
+                    Q(flotte=True)
+                )
             else:
                 avenants_produits = AvenantProduit.objects.filter(Q(mono=True))
 
@@ -399,6 +529,10 @@ class AvenantViewSet(viewsets.ModelViewSet):
                     "vrai",
                     "vraie",
                     "oui",
+                    "o",
+                    "y",
+                    "v",
+                    "t",
                 ]
                 id_produit = int(id_produit)
                 contrat_produit = Produit.objects.get(pk=id_produit)
@@ -500,7 +634,9 @@ class CommissionProduitViewSet(viewsets.ModelViewSet):
 
 
 class TauxTaxeGarantieProduitViewSet(viewsets.ModelViewSet):
-    queryset = TauxTaxeGarantieProduit.objects.filter(~Q(garantie=0) & ~Q(produit=0))
+    queryset = TauxTaxeGarantieProduit.objects.filter(
+        ~Q(garantie=0) & ~Q(produit=0)
+    )
     serializer_class = TauxTaxeGarantieProduitSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -561,6 +697,8 @@ class QualiteViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+
 class TermeViewSet(viewsets.ViewSet):
     def list(self, request):
         data = [
@@ -569,31 +707,35 @@ class TermeViewSet(viewsets.ViewSet):
                 "Libelle": "Tacite reconduction",
             },
             {
-               "IdTerme": 2,
+                "IdTerme": 2,
                 "Libelle": "Ferme",
             },
             {
-               "IdTerme": 3,
-               "Libelle": "Autre",
-            }
+                "IdTerme": 3,
+                "Libelle": "Autre",
+            },
         ]
 
         # 3. Return the list directly
         return Response(data)
 
     def retrieve(self, request, pk=None):
-        data = {1: {
+        data = {
+            1: {
                 "IdTerme": 1,
                 "Libelle": "Tacite reconduction",
-            }, 2:{
-               "IdTerme": 2,
+            },
+            2: {
+                "IdTerme": 2,
                 "Libelle": "Ferme",
             },
-            3:{
-               "IdTerme": 3,
-               "Libelle": "Autre",
-            }}
-        return Response (data.get(pk, {}))
+            3: {
+                "IdTerme": 3,
+                "Libelle": "Autre",
+            },
+        }
+        return Response(data.get(pk, {}))
+
     permission_classes = [
         permissions.IsAuthenticated,
     ]
@@ -686,7 +828,9 @@ class ProduitViewSet(viewsets.ModelViewSet):
 
 class ProfessionIaViewSet(viewsets.ModelViewSet):
     queryset = (
-        ProfessionIa.objects.filter(active=True).order_by("libelle_profession").values()
+        ProfessionIa.objects.filter(active=True)
+        .order_by("libelle_profession")
+        .values()
     )
     serializer_class = ProfessionIaSerializer
     permission_classes = [
@@ -713,7 +857,9 @@ class BanqueViewSet(viewsets.ModelViewSet):
 
 
 class ModeEncaissementViewSet(viewsets.ModelViewSet):
-    queryset = ModeEncaissement.objects.all().order_by("ordreaffichage").values()
+    queryset = (
+        ModeEncaissement.objects.all().order_by("ordreaffichage").values()
+    )
     serializer_class = ModeEncaissementSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -729,7 +875,9 @@ class AccessoireCourtierParCompagnieViewSet(viewsets.ModelViewSet):
 
 
 class LienJuridiqueSanteViewSet(viewsets.ModelViewSet):
-    queryset = LienJuridiqueSante.objects.all().order_by("-libellelien").values()
+    queryset = (
+        LienJuridiqueSante.objects.all().order_by("-libellelien").values()
+    )
     serializer_class = LienJuridiqueSanteSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -766,13 +914,17 @@ class OffreCollegeSanteViewSet(viewsets.ModelViewSet):
 def get_garantie(request):
     garantiedemandee_data = JSONParser().parse(request)
     print("JSON de la requête:", garantiedemandee_data)
-    garantiedemandee_serializer = DemandeGarantieSerializer(data=garantiedemandee_data)
+    garantiedemandee_serializer = DemandeGarantieSerializer(
+        data=garantiedemandee_data
+    )
     if garantiedemandee_serializer.is_valid():
         garantieproposee_serializer = GarantieProposeeSerializer(
             get_garantie_offre(garantiedemandee_data), many=True
         )
         return JsonResponse(
-            garantieproposee_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            garantieproposee_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         garantiedemandee_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -793,7 +945,9 @@ def get_garantie_ia(request):
             get_garantie_offre_ia(garantiedemandee_data), many=True
         )
         return JsonResponse(
-            garantieproposee_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            garantieproposee_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         garantiedemandee_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -816,7 +970,9 @@ def get_garantie_voyage(request):
             get_garantie_offre_voyage(garantiedemandee_data), many=True
         )
         return JsonResponse(
-            garantieproposee_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            garantieproposee_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         garantiedemandee_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -835,7 +991,9 @@ def create_offre_garantie(request):
         data=enregistrementoffregarantie_data
     )
     if serializer.is_valid():
-        (code_retour, msg, qset) = save_offre_garantie(enregistrementoffregarantie_data)
+        (code_retour, msg, qset) = save_offre_garantie(
+            enregistrementoffregarantie_data
+        )
         if code_retour == 0:
             offregarantie_serializer = OffreGarantieSerializer(qset, many=True)
             return JsonResponse(
@@ -845,7 +1003,8 @@ def create_offre_garantie(request):
             )
         else:
             return JsonResponse(
-                {"Statut": "Echec", "Data": msg}, status=status.HTTP_204_NO_CONTENT
+                {"Statut": "Echec", "Data": msg},
+                status=status.HTTP_204_NO_CONTENT,
             )
     return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -887,7 +1046,9 @@ def get_garantie_mrh(request):
             get_garantie_offre_mrh(garantiedemandee_data), many=True
         )
         return JsonResponse(
-            garantieproposee_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            garantieproposee_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         garantiedemandee_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -910,7 +1071,9 @@ def get_garantie_rc(request):
             get_garantie_offre_rc(garantiedemandee_data), many=True
         )
         return JsonResponse(
-            garantieproposee_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            garantieproposee_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         garantiedemandee_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -924,7 +1087,9 @@ def get_garantie_rc(request):
 def get_liste_avenant(request):
     avenantdemande_data = JSONParser().parse(request)
     # print("JSON de la requête:", avenantdemande_data)
-    avenantdemande_serializer = DemandeAvenantSerializer(data=avenantdemande_data)
+    avenantdemande_serializer = DemandeAvenantSerializer(
+        data=avenantdemande_data
+    )
     if avenantdemande_serializer.is_valid():
         try:
             id_produit = int(avenantdemande_data["IdProduit"])
@@ -984,7 +1149,9 @@ class OffreParProduitView(APIView):
         idproduit = request.query_params.get("idproduit")
         idtarif = request.query_params.get("idtarif")
 
-        (msg, item) = get_offre_par_produit(idproduit=idproduit, idtarif=idtarif)
+        (msg, item) = get_offre_par_produit(
+            idproduit=idproduit, idtarif=idtarif
+        )
         if not msg:
             serializer = OffreParProduitSerializer(item, many=True)
             # print(serializer.data)
@@ -1099,7 +1266,9 @@ class FormuleSecuriteRoutiereView(APIView):
     ]
 
     def get(self, request, idcompagnie):
-        (msg, formules) = get_formule_securite_routiere(idcompagnie=idcompagnie)
+        (msg, formules) = get_formule_securite_routiere(
+            idcompagnie=idcompagnie
+        )
         if not msg:
             serializer = FormuleSecuriteRoutiereParCompagnieSerializer(
                 formules, many=True
@@ -1260,25 +1429,34 @@ class TypeContratSanteViewSet(SettingsModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+
 class IATarifGroupeView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
     def get(self, request, idtarif):
         with connection.cursor() as cursor:
             cursor.execute("SELECT fn_tarif_ia_groupe(%s)", [idtarif])
-            
+
             row = cursor.fetchone()
             return_value = row[0] if row else None
 
         # 4. Return to API client
         return Response({"est_tarif_ia_groupe": return_value})
-    
+
+
 class IATarifPersonnaliseView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
     def get(self, request, idtarif):
         with connection.cursor() as cursor:
             cursor.execute("SELECT fn_tarif_ia_personnalise(%s)", [idtarif])
-            
+
             row = cursor.fetchone()
             return_value = row[0] if row else None
 
         # 4. Return to API client
         return Response({"est_tarif_ia_personnalise": return_value})
-    

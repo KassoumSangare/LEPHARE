@@ -1,247 +1,227 @@
-from rest_framework import viewsets
-from rest_framework import permissions
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from datetime import datetime, date
-from django.conf import settings
-from django.db.models import Q, F, Prefetch
-from django.http import FileResponse, Http404
-from rest_framework import generics
-from django.shortcuts import get_object_or_404
-from core.date_parser import parse_date_string
-from typing import cast
-from django_filters import rest_framework as filters
 import json
+import logging
+from datetime import date, datetime
 from decimal import Decimal
-from django.shortcuts import render, redirect
+from typing import cast
+
+from django.conf import settings
 from django.contrib import messages
-from .anti_doublons.importateur import importer_assures_anti_doublons
-from .anti_doublons.rapport import ConfigurationImport
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.viewsets import GenericViewSet
-from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
-
-
-
-from rest_framework import status
-
-
-from knox.auth import TokenAuthentication
-from rest_framework.authentication import BasicAuthentication
-from .tasks import send_sms_enregistrement_contrat, send_sms_encaissement_contrat
-from customer.models import Client
-from .serializers import (
-    DevisDetGarantieSerializer,
-    DevisDetailSerializer,
-    DevisSerializer,
-    DevisClientSerializer,
-    TarifEcranSerializer,
-    ContratSerializer,
-    ContratDetailSerializer,
-    EnregistrementDevisAutoSerializer,
-    OperationSurDevisSerializer,
-    DataInsertionSerializer,
-    QuotationInsertionSerializer,
-    ContratDetGarantieSerializer,
-    QuittancePropositionSerializer,
-    QuittanceContratSerializer,
-    CreationAyantDroitIaSerializer,
-    EnregistrementDevisIaSerializer,
-    AyantDroitIaSerializer,
-    EnregistrementDevisVoyageSerializer,
-    ExtendedQuotationInfoSerializer,
-    EnregistrementDevisMrhSerializer,
-    QuittanceSerializer,
-    DetailQuittanceSerializer,
-    EncaissementSerializer,
-    DetailEncaissementSerializer,
-    NumeroSerializer,
-    FinalisationDevisFlotteSerializer,
-    OperationSurDevisDetailSerializer,
-    GarantieContratFlotteSerializer,
-    VehiculeContratSerializer,
-    ContractForPremiumCollectionSerializer,
-    EnregistrementEncaissementSerializer,
-    DemandeContratPourEncaissementSerializer,
-    EncaissementGroupeQuittanceSerializer,
-    ReversementCompagnieSerializer,
-    DetailReversementSerializer,
-    ReversementGroupePrimeSerializer,
-    ReversementGroupePrimeValidateSerializer,
-    ReversementGroupePrimeInsertSerializer,
-    PremiumCollectionInfoSerializer,
-    PremiumRemittanceInfoSerializer,
-    EnregistrementDevisTRInfoSerializer,
-    EnregistrementDevisGlobaleDeBanqueSerializer,
-    QuotationIaInsertionSerializer,
-    AssureIaInfoSerializer,
-    AssureIaParDevisOuContratSerializer,
-    GarantieSouscriteSerializer,
-    ChangementImmatriculationSerializer,
-    AvenantAnlRenSerializer,
-    InfoVehiculeSerializer,
-    AnnulationEncaissementSerializer,
-    LogRecordSerializer,
-    EnregistrementDevisRCSerializer,
-    ImportationAssureIaSerializer,
-    ImportationTransportSerializer,
-    CertificatTransportSerializer,
-    CorrectionDevisSerializer,
-    PrimeUpdateSerializer,
-    ConsolidationDevisClientSerializer,
-)
-
-# Imports des serializers
-from .serializers import (
-    MaisonModificationRequestSerializer,
-    MaisonModificationResponseSerializer,
-    ImpositionPrimeMaisonRequestSerializer,
-    ImpositionPrimeDevisRequestSerializer,
-    LeveeImpositionRequestSerializer,
-    ImpositionPrimeResponseSerializer,
-    DetailMaisonSerializer,
-    PieceJointeSerializer,
-    
-)
-
-from .models import (
-    Devis,
-    DevisDetail,
-    DevisDetGarantie,
-    TarifEcran,
-    Contrat,
-    ContratDetail,
-    ContratDetGarantie,
-    AyantDroitIa,
-    Quittance,
-    DetailQuittance,
-    Encaissement,
-    DetailEncaissement,
-    Numero,
-    ContractForPremiumCollection,
-    ReversementCompagnie,
-    DetailReversement,
-    LogRecord,
-    CertificatTransport,
-    Cheque,
-    ImpositionPrime,
-    PieceJointe,
-)
-
-
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
-from django.db import transaction
-from django.utils import timezone
-
-from autorisations.serializers import AnnulerAvecJetonSerializer
-from autorisations.models import JetonAutorisation
-from autorisations.models import DemandeAutorisation, TypeOperation
-from autorisations.tasks import envoyer_notification_nouvelle_demande
 from django.contrib.contenttypes.models import ContentType
-
-
-# Import du service de calcul de prime MRH
-from .services.mrh_calcul_service import MRHCalculService
-
-
-
-# Import du module de calcul du résumé financier
-from .services.resume_financier_devis import obtenir_resume_financier_devis
-
-# Import du serializer
-from .serializers import ResumeFinancierDevisSerializer
-
-# Import des modèles MRH
-from configuration_api.models import (
-    UsageHabitation,
-    SousGarantieMRH,
-    ParametresCalcul,
-    Option,
-    SousGarantieForfait,
-)
-
-from configuration_api.serializers import (
-    # Serializers lecture
-    UsageHabitationSerializer,
-    SousGarantieMRHSerializer,
-    OptionSerializer,
-    SousGarantieForfaitSerializer,
-    ParametresCalculSerializer,
-)
-# Import des serializers
-from .serializers import (
-    # Serializers requêtes
-    MaisonCalculRequestSerializer,
-    DevisMRHCreateRequestSerializer,
-    MaisonAjoutRequestSerializer,
-    
-    # Serializers réponses
-    DevisMRHResponseSerializer,
-    MaisonCalculeeSerializer,
-    DevisMRHCalculeResponseSerializer,
-    MaisonAjouteeResponseSerializer,
-    EncaissementResponseSerializer,
-    ChequeSerializer,
-    ChequeOperationSerializer,
-)
-
-from core.services import ServiceError
-from .exceltopostgresql import export_excel
-
-from .database import (
-    save_quotation,
-    save_quotation_ia,
-    save_quotation_voyage,
-    save_quotation_mrh,
-    save_quotation_tousrisquesinfo,
-    save_contract,
-    get_quotation_info,
-    get_contract_info,
-    enregistrer_ayant_droit,
-    get_extended_quotation_info,
-    quotation_completion,
-    archive_quote,
-    cancel_car_input,
-    get_contract_coverage,
-    get_contract_car_list,
-    get_contract_list_for_pc,
-    save_premium_collection,
-    save_premium_collection_cancellation,
-    get_contract_premium_remittance,
-    save_premium_remittance,
-    premium_remittance_validation,
-    get_info_encaissement,
-    get_info_reversement,
-    get_info_vehicule,
-    save_insured_ia,
-    get_assure_ia,
-    save_quotation_globaledebanque,
-    save_quotation_rc,
-    get_liste_assure_ia,
-    get_taux_reduction_flotte,
-    get_garantie_souscrite,
-    save_plate_number,
-    policy_modification,
-    unarchive_quote,
-    get_encaissement_recherche,
-    get_contract_list_for_customer,
-    get_certificat_transport,
-    correction_devis,
-    execute_maj_manuelle_primes,
-    consolider_devis_db,
-    offre_mrh_compatible,
-)
-from .import_assures import import_ia_insured
+from django.db import transaction
+from django.db.models import F, Prefetch, Q
+from django.http import FileResponse, Http404
 from django.http.response import JsonResponse
-from rest_framework.parsers import JSONParser
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django_filters import rest_framework as filters
+from knox.auth import TokenAuthentication
+from rest_framework import generics, permissions, status, viewsets
+from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import (
+    action,
     api_view,
     authentication_classes,
     permission_classes,
 )
-from configuration_api.models import OffreAutomobileBoisee, Produit
-import logging
+from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.viewsets import GenericViewSet
+
+from autorisations.models import (
+    DemandeAutorisation,
+    JetonAutorisation,
+    TypeOperation,
+)
+from autorisations.serializers import AnnulerAvecJetonSerializer
+from autorisations.tasks import envoyer_notification_nouvelle_demande
+
+# Import des modèles MRH
+from configuration_api.models import (
+    OffreAutomobileBoisee,
+    Option,
+    ParametresCalcul,
+    Produit,
+    SousGarantieForfait,
+    SousGarantieMRH,
+    UsageHabitation,
+)
+from configuration_api.serializers import (  # Serializers lecture
+    OptionSerializer,
+    ParametresCalculSerializer,
+    SousGarantieForfaitSerializer,
+    SousGarantieMRHSerializer,
+    UsageHabitationSerializer,
+)
+from core.date_parser import parse_date_string
+from core.services import ServiceError
+from customer.models import Client
+
+from .anti_doublons.importateur import importer_assures_anti_doublons
+from .anti_doublons.rapport import ConfigurationImport
+from .database import (
+    archive_quote,
+    cancel_car_input,
+    consolider_devis_db,
+    correction_devis,
+    enregistrer_ayant_droit,
+    execute_maj_manuelle_primes,
+    get_assure_ia,
+    get_certificat_transport,
+    get_contract_car_list,
+    get_contract_coverage,
+    get_contract_info,
+    get_contract_list_for_customer,
+    get_contract_list_for_pc,
+    get_contract_premium_remittance,
+    get_encaissement_recherche,
+    get_extended_quotation_info,
+    get_garantie_souscrite,
+    get_info_encaissement,
+    get_info_reversement,
+    get_info_vehicule,
+    get_liste_assure_ia,
+    get_quotation_info,
+    get_taux_reduction_flotte,
+    offre_mrh_compatible,
+    policy_modification,
+    premium_remittance_validation,
+    quotation_completion,
+    save_contract,
+    save_insured_ia,
+    save_plate_number,
+    save_premium_collection,
+    save_premium_collection_cancellation,
+    save_premium_remittance,
+    save_quotation,
+    save_quotation_globaledebanque,
+    save_quotation_ia,
+    save_quotation_mrh,
+    save_quotation_rc,
+    save_quotation_tousrisquesinfo,
+    save_quotation_voyage,
+    unarchive_quote,
+)
+from .exceltopostgresql import export_excel
+from .import_assures import import_ia_insured
+from .models import (
+    AyantDroitIa,
+    CertificatTransport,
+    Cheque,
+    ContractForPremiumCollection,
+    Contrat,
+    ContratDetail,
+    ContratDetGarantie,
+    DetailEncaissement,
+    DetailQuittance,
+    DetailReversement,
+    Devis,
+    DevisDetail,
+    DevisDetGarantie,
+    Encaissement,
+    ImpositionPrime,
+    LogRecord,
+    Numero,
+    PieceJointe,
+    Quittance,
+    ReversementCompagnie,
+    TarifEcran,
+)
+
+# Import des serializers
+# Import du serializer
+# Imports des serializers
+from .serializers import (  # Serializers requêtes; Serializers réponses
+    AnnulationEncaissementSerializer,
+    AssureIaInfoSerializer,
+    AssureIaParDevisOuContratSerializer,
+    AvenantAnlRenSerializer,
+    AyantDroitIaSerializer,
+    CertificatTransportSerializer,
+    ChangementImmatriculationSerializer,
+    ChequeOperationSerializer,
+    ChequeSerializer,
+    ConsolidationDevisClientSerializer,
+    ContractForPremiumCollectionSerializer,
+    ContratDetailSerializer,
+    ContratDetGarantieSerializer,
+    ContratSerializer,
+    CorrectionDevisSerializer,
+    CreationAyantDroitIaSerializer,
+    DataInsertionSerializer,
+    DemandeContratPourEncaissementSerializer,
+    DetailEncaissementSerializer,
+    DetailMaisonSerializer,
+    DetailQuittanceSerializer,
+    DetailReversementSerializer,
+    DevisClientSerializer,
+    DevisDetailSerializer,
+    DevisDetGarantieSerializer,
+    DevisMRHCalculeResponseSerializer,
+    DevisMRHCreateRequestSerializer,
+    DevisMRHResponseSerializer,
+    DevisSerializer,
+    EncaissementGroupeQuittanceSerializer,
+    EncaissementResponseSerializer,
+    EncaissementSerializer,
+    EnregistrementDevisAutoSerializer,
+    EnregistrementDevisGlobaleDeBanqueSerializer,
+    EnregistrementDevisIaSerializer,
+    EnregistrementDevisMrhSerializer,
+    EnregistrementDevisRCSerializer,
+    EnregistrementDevisTRInfoSerializer,
+    EnregistrementDevisVoyageSerializer,
+    EnregistrementEncaissementSerializer,
+    ExtendedQuotationInfoSerializer,
+    FinalisationDevisFlotteSerializer,
+    GarantieContratFlotteSerializer,
+    GarantieSouscriteSerializer,
+    ImportationAssureIaSerializer,
+    ImportationTransportSerializer,
+    ImpositionPrimeDevisRequestSerializer,
+    ImpositionPrimeMaisonRequestSerializer,
+    ImpositionPrimeResponseSerializer,
+    InfoVehiculeSerializer,
+    LeveeImpositionRequestSerializer,
+    LogRecordSerializer,
+    MaisonAjouteeResponseSerializer,
+    MaisonAjoutRequestSerializer,
+    MaisonCalculeeSerializer,
+    MaisonCalculRequestSerializer,
+    MaisonModificationRequestSerializer,
+    MaisonModificationResponseSerializer,
+    NumeroSerializer,
+    OperationSurDevisDetailSerializer,
+    OperationSurDevisSerializer,
+    PieceJointeSerializer,
+    PremiumCollectionInfoSerializer,
+    PremiumRemittanceInfoSerializer,
+    PrimeUpdateSerializer,
+    QuittanceContratSerializer,
+    QuittancePropositionSerializer,
+    QuittanceSerializer,
+    QuotationIaInsertionSerializer,
+    QuotationInsertionSerializer,
+    ResumeFinancierDevisSerializer,
+    ReversementCompagnieSerializer,
+    ReversementGroupePrimeInsertSerializer,
+    ReversementGroupePrimeSerializer,
+    ReversementGroupePrimeValidateSerializer,
+    TarifEcranSerializer,
+    VehiculeContratSerializer,
+)
+
+# Import du service de calcul de prime MRH
+from .services.mrh_calcul_service import MRHCalculService
+
+# Import du module de calcul du résumé financier
+from .services.resume_financier_devis import obtenir_resume_financier_devis
+from .tasks import (
+    send_sms_encaissement_contrat,
+    send_sms_enregistrement_contrat,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +240,9 @@ def stored_procedure_result(
         if err:
             st = status.HTTP_400_BAD_REQUEST
         return JsonResponse(qry_res_serializer.data, status=st, safe=False)
-    return JsonResponse(post_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return JsonResponse(
+        post_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
 
 
 class ContractForPremiumCollectionView(generics.ListCreateAPIView):
@@ -270,13 +252,19 @@ class ContractForPremiumCollectionView(generics.ListCreateAPIView):
     ]
 
     def get_queryset(self):
-        reference_client = self.request.query_params.get("referenceclient", None)
-        reference_contrat = self.request.query_params.get("referencecontrat", None)
+        reference_client = self.request.query_params.get(
+            "referenceclient", None
+        )
+        reference_contrat = self.request.query_params.get(
+            "referencecontrat", None
+        )
         if reference_client:
             reference_client = str(reference_client)
         if reference_contrat:
             reference_contrat = str(reference_contrat)
-        (msg, item) = get_contract_list_for_pc(reference_client, reference_contrat)
+        (msg, item) = get_contract_list_for_pc(
+            reference_client, reference_contrat
+        )
         if not msg:
             return item
         else:
@@ -293,8 +281,12 @@ class EncaissementRechercheView(generics.ListCreateAPIView):
     ]
 
     def get_queryset(self):
-        reference_client = self.request.query_params.get("referenceclient", None)
-        reference_contrat = self.request.query_params.get("referencecontrat", None)
+        reference_client = self.request.query_params.get(
+            "referenceclient", None
+        )
+        reference_contrat = self.request.query_params.get(
+            "referencecontrat", None
+        )
         if reference_client or reference_contrat:
             if reference_client:
                 reference_client = str(reference_client)
@@ -314,92 +306,86 @@ class PieceJointeViewSet(viewsets.ModelViewSet):
     """
     ViewSet pour gérer les pièces jointes
     """
+
     queryset = PieceJointe.objects.all()
     serializer_class = PieceJointeSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
     parser_classes = [MultiPartParser, FormParser]
-    
+
     def perform_destroy(self, instance):
         """Supprimer la pièce jointe et le fichier associé"""
         instance.delete()
 
 
-
-class DevisViewSet(ModelViewSet):
-    queryset = Devis.objects.all()
-    serializer_class = DevisSerializer
-
-    @action(detail=True, methods=["get"], url_path="garanties")
-    def get_garanties(self, request, pk=None):
-        """
-        Retourne toutes les garanties d'un devis donné, sans duplication.
-        """
-        devis = self.get_object()
-
-        # >>> À TOI d'implémenter la logique métier ici <<<
-        garanties = ...  # Queryset ou liste de garanties uniques
-
-        serializer = GarantieSerializer(garanties, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-class DevisViewSet(ListModelMixin,
-                     RetrieveModelMixin,
-                     GenericViewSet):
-    queryset = (Devis.objects .prefetch_related('piece_jointe').annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre"))) .all())
+class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
+    queryset = (
+        Devis.objects.prefetch_related("piece_jointe")
+        .annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre")))
+        .all()
+    )
     serializer_class = DevisSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    
+
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):
         """
         Retourne toutes les garanties d'un devis donné, sans duplication.
         """
         devis = cast(Devis, self.get_object())
-        garanties = DevisDetGarantie.objects.filter(IdDevisDet__iddevis=devis).distinct('IdGarantie')
+        garanties = DevisDetGarantie.objects.filter(
+            IdDevisDet__iddevis=devis
+        ).distinct("IdGarantie")
         serializer = DevisDetGarantieSerializer(garanties, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    
-    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    @action(
+        detail=True,
+        methods=["post"],
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def attacher_piece_jointe(self, request, pk=None):
         """
         Attacher une pièce jointe à un devis
-        
+
         Body (multipart/form-data):
         - fichier: Le fichier à joindre (PDF, JPG, PNG)
         """
         devis = self.get_object()
-        
-        if 'fichier' not in request.FILES:
+
+        if "fichier" not in request.FILES:
             return Response(
-                {'erreur': 'Aucun fichier fourni'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "Aucun fichier fourni"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         # Créer la pièce jointe
         piece_serializer = PieceJointeSerializer(
-            data={'fichier': request.FILES['fichier']},
-            context={'request': request}
+            data={"fichier": request.FILES["fichier"]},
+            context={"request": request},
         )
-        
+
         if piece_serializer.is_valid():
             piece_jointe = piece_serializer.save()
-            
+
             # Attacher au devis
             devis.piece_jointe = piece_jointe
             devis.save()
-            
+
             # Retourner le devis mis à jour
-            devis_serializer = DevisSerializer(devis, context={'request': request})
+            devis_serializer = DevisSerializer(
+                devis, context={"request": request}
+            )
             return Response(devis_serializer.data, status=status.HTTP_200_OK)
-        
-        return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+        return Response(
+            piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        )
+
     @action(detail=True, methods=["get"])
     def telecharger_piece_jointe(self, request, pk=None):
         devis = cast(Devis, self.get_object())
@@ -409,11 +395,10 @@ class DevisViewSet(ListModelMixin,
         return FileResponse(
             open(devis.piece_jointe.fichier.path, "rb"),
             as_attachment=True,
-            filename=devis.piece_jointe.fichier.name
+            filename=devis.piece_jointe.fichier.name,
         )
 
-        
-    #@action(detail=True, methods=["get"], url_path="piece-jointe")
+    # @action(detail=True, methods=["get"], url_path="piece-jointe")
     @action(detail=True, methods=["get"])
     def obtenir_url_piece_jointe(self, request, pk=None):
         try:
@@ -422,16 +407,21 @@ class DevisViewSet(ListModelMixin,
                 raise Http404("Pas de pièce jointe pour ce devis")
 
             # Retourner uniquement l’URL sécurisée
-            return Response({
-                "id": devis.piece_jointe.pk,
-                "nom_fichier": devis.piece_jointe.fichier.name,
-                "url": devis.piece_jointe.fichier.url
-            })
+            return Response(
+                {
+                    "id": devis.piece_jointe.pk,
+                    "nom_fichier": devis.piece_jointe.fichier.name,
+                    "url": devis.piece_jointe.fichier.url,
+                }
+            )
         except Devis.DoesNotExist:
             raise Http404("Devis introuvable")
 
+
 class CertificatTransportView(generics.ListCreateAPIView):
-    queryset = CertificatTransport.objects.all().order_by("-date_fin_periode")[:1000]
+    queryset = CertificatTransport.objects.all().order_by("-date_fin_periode")[
+        :1000
+    ]
     serializer_class = CertificatTransportSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -455,14 +445,18 @@ class DevisClientView(generics.ListAPIView):
 
     def get_queryset(self):
         from django.db.models import Count
+
         id_client = self.request.query_params.get("idclient", None)
         nom_client = self.request.query_params.get("nomclient", None)
         id_produit = self.request.query_params.get("idproduit", None)
-        devis_qs = Devis.objects.annotate(nombre_objets= Count("details")).filter(confirme=False, archive=False, flotte=False, nombre_objets=1)
+        devis_qs = Devis.objects.annotate(
+            nombre_objets=Count("details")
+        ).filter(confirme=False, archive=False, flotte=False, nombre_objets=1)
         try:
             if nom_client:
                 clients = Client.objects.filter(
-                    Q(Nom__istartswith=nom_client) | Q(Prenoms__istartswith=nom_client)
+                    Q(Nom__istartswith=nom_client)
+                    | Q(Prenoms__istartswith=nom_client)
                 )
                 if clients:
                     devis_qs = devis_qs.filter(client__in=clients)
@@ -480,7 +474,8 @@ class DevisClientView(generics.ListAPIView):
             devis_qs = devis_qs.filter(iddevis=0)
         devis_qs = devis_qs.prefetch_related(
             Prefetch(
-                "details", queryset=DevisDetail.objects.filter(iddevis__in=devis_qs)
+                "details",
+                queryset=DevisDetail.objects.filter(iddevis__in=devis_qs),
             )
         )
         return devis_qs
@@ -496,7 +491,9 @@ class ConsolidationDevisView(APIView):
     def post(self, request):
         user_id = request.user.id
         # Validation du format de données
-        serializer = ConsolidationDevisClientSerializer(data=request.data, many=True)
+        serializer = ConsolidationDevisClientSerializer(
+            data=request.data, many=True
+        )
         if not serializer.is_valid():
             return Response(
                 {"erreur": "Format de données invalide."},
@@ -506,12 +503,13 @@ class ConsolidationDevisView(APIView):
         # Extraction des IDs de devis
         devis_ids = [item["iddevis"] for item in serializer.validated_data]
 
-        # Vérification du nombre minimum de devis
+        # Vérification du nombre minimum de devis. Il en faut au moins deux.
         if len(devis_ids) < 2:
             return Response(
                 {
                     "erreur": (
-                        "Au minimum 2 devis sont requis pour la " "consolidation."
+                        "Au minimum 2 devis sont requis pour la "
+                        "consolidation."
                     )
                 },
                 status=status.HTTP_400_BAD_REQUEST,
@@ -547,7 +545,9 @@ class ConsolidationDevisView(APIView):
         clients = devis_list.values_list("client", flat=True).distinct()
         if len(clients) > 1:
             return Response(
-                {"erreur": "Tous les devis doivent appartenir au même client."},
+                {
+                    "erreur": "Tous les devis doivent appartenir au même client."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -555,7 +555,9 @@ class ConsolidationDevisView(APIView):
         produits = devis_list.values_list("produit", flat=True).distinct()
         if len(produits) > 1:
             return Response(
-                {"erreur": "Tous les devis doivent concerner le même produit."},
+                {
+                    "erreur": "Tous les devis doivent concerner le même produit."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -570,7 +572,9 @@ class ConsolidationDevisView(APIView):
             )
 
         # Vérification que tous les devis concernent le même intermediaire
-        intermediaires = devis_list.values_list("intermediaire", flat=True).distinct()
+        intermediaires = devis_list.values_list(
+            "intermediaire", flat=True
+        ).distinct()
         if len(intermediaires) > 1:
             return Response(
                 {
@@ -597,7 +601,9 @@ class ConsolidationDevisView(APIView):
         dates_effet = devis_list.values_list("dateeffet", flat=True).distinct()
         if len(dates_effet) > 1:
             return Response(
-                {"erreur": "Tous les devis doivent avoir la même date d'effet."},
+                {
+                    "erreur": "Tous les devis doivent avoir la même date d'effet."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
         dates_expiration = devis_list.values_list(
@@ -605,7 +611,9 @@ class ConsolidationDevisView(APIView):
         ).distinct()
         if len(dates_expiration) > 1:
             return Response(
-                {"erreur": "Tous les devis doivent avoir la même date d'expiration."},
+                {
+                    "erreur": "Tous les devis doivent avoir la même date d'expiration."
+                },
                 status=status.HTTP_403_FORBIDDEN,
             )
         # Appel de la fonction utilitaire pour consolider les devis
@@ -651,50 +659,71 @@ class TarifEcranViewSet(viewsets.ModelViewSet):
     ]
 
 
-class ContratViewSet(ListModelMixin,
-                     RetrieveModelMixin,
-                     GenericViewSet):
-    queryset = Contrat.objects.prefetch_related('piece_jointe').filter(Q(idcontratannulation=0))
+class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
+    queryset = Contrat.objects.prefetch_related("piece_jointe").filter(
+        Q(idcontratannulation=0)
+    )
     serializer_class = ContratSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    
-    @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+
+    @action(detail=True, methods=["get"], url_path="garanties")
+    def get_garanties(self, request, pk=None):
+        """
+        Retourne toutes les garanties d'un contrat
+        donné, sans duplication.
+        """
+        contrat = cast(Contrat, self.get_object())
+        garanties = ContratDetGarantie.objects.filter(
+            idcontratdetail__idcontrat=contrat
+        ).distinct("IdGarantie")
+        serializer = ContratDetGarantieSerializer(garanties, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        parser_classes=[MultiPartParser, FormParser],
+    )
     def attacher_piece_jointe(self, request, pk=None):
         """
         Attacher une pièce jointe à un contrat
-        
+
         Body (multipart/form-data):
         - fichier: Le fichier à joindre (PDF, JPG, PNG)
         """
         contrat = self.get_object()
-        
-        if 'fichier' not in request.FILES:
+
+        if "fichier" not in request.FILES:
             return Response(
-                {'error': 'Aucun fichier fourni'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "Aucun fichier fourni"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         # Créer la pièce jointe
         piece_serializer = PieceJointeSerializer(
-            data={'fichier': request.FILES['fichier']},
-            context={'request': request}
+            data={"fichier": request.FILES["fichier"]},
+            context={"request": request},
         )
-        
+
         if piece_serializer.is_valid():
             piece_jointe = piece_serializer.save()
-            
+
             # Attacher au contrat
             contrat.piece_jointe = piece_jointe
             contrat.save()
-            
+
             # Retourner le contrat mis à jour
-            contrat_serializer = ContratSerializer(contrat, context={'request': request})
+            contrat_serializer = ContratSerializer(
+                contrat, context={"request": request}
+            )
             return Response(contrat_serializer.data, status=status.HTTP_200_OK)
-        
-        return Response(piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            piece_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        )
 
     @action(detail=True, methods=["get"])
     def telecharger_piece_jointe(self, request, pk=None):
@@ -705,10 +734,9 @@ class ContratViewSet(ListModelMixin,
         return FileResponse(
             open(contrat.piece_jointe.fichier.path, "rb"),
             as_attachment=True,
-            filename=contrat.piece_jointe.fichier.name
+            filename=contrat.piece_jointe.fichier.name,
         )
 
-        
     @action(detail=True, methods=["get"])
     def obtenir_url_piece_jointe(self, request, pk=None):
         try:
@@ -717,11 +745,13 @@ class ContratViewSet(ListModelMixin,
                 raise Http404("Pas de pièce jointe pour ce devis")
 
             # Retourner uniquement l’URL sécurisée
-            return Response({
-                "id": contrat.piece_jointe.pk,
-                "nom_fichier": contrat.piece_jointe.fichier.name,
-                "url": contrat.piece_jointe.fichier.url
-            })
+            return Response(
+                {
+                    "id": contrat.piece_jointe.pk,
+                    "nom_fichier": contrat.piece_jointe.fichier.name,
+                    "url": contrat.piece_jointe.fichier.url,
+                }
+            )
         except Devis.DoesNotExist:
             raise Http404("Devis introuvable")
 
@@ -789,43 +819,46 @@ class AyantDroitIaView(APIView):
 
 
 def import_assures_view(request):
-    if request.method == 'POST':
-        fichier = request.FILES['FichierExcel']
-        
+    if request.method == "POST":
+        fichier = request.FILES["FichierExcel"]
+
         # Sauvegarder temporairement
         temp_path = f"/tmp/{fichier.name}"
-        with open(temp_path, 'wb+') as f:
+        with open(temp_path, "wb+") as f:
             for chunk in fichier.chunks():
                 f.write(chunk)
-        
+
         # Configuration
         config = ConfigurationImport()
-        
+
         # Import avec anti-doublons
         erreur, id_devis, rapport = importer_assures_anti_doublons(
             filepath=temp_path,
             user_id=request.user.id,
             request_post_data=request.POST.dict(),
-            config=config
+            config=config,
         )
-        
+
         # Nettoyer
         import os
+
         os.remove(temp_path)
-        
+
         # Messages
         if not erreur:
             messages.success(
                 request,
                 f"✓ Import réussi! {len(rapport.assures_nouveaux)} créés, "
-                f"{len(rapport.assures_ignores)} ignorés"
+                f"{len(rapport.assures_ignores)} ignorés",
             )
         else:
             messages.error(request, f"✗ Erreur: {rapport.details_erreur}")
-        
-        return redirect('import_resultat')
-    
-    return render(request, 'import_form.html')
+
+        return redirect("import_resultat")
+
+    return render(request, "import_form.html")
+
+
 class ImportationAssureIaViewSet(viewsets.ViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
@@ -835,7 +868,10 @@ class ImportationAssureIaViewSet(viewsets.ViewSet):
         message = {}
         id_devis = 0
         serializer_class = ImportationAssureIaSerializer(data=request.data)
-        if "FichierExcel" not in request.FILES or not serializer_class.is_valid():
+        if (
+            "FichierExcel" not in request.FILES
+            or not serializer_class.is_valid()
+        ):
             if "IdDevis" in request.POST:
                 if request.POST["IdDevis"]:
                     id_devis = int(request.POST["IdDevis"])
@@ -855,10 +891,12 @@ class ImportationAssureIaViewSet(viewsets.ViewSet):
                 ]
                 return Response(data=message, status=status.HTTP_202_ACCEPTED)
             else:
-                message["messages"] =  [
+                message["messages"] = [
                     "Echec de l'importation des assurés.",
                 ]
-                return Response(data=message, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    data=message, status=status.HTTP_400_BAD_REQUEST
+                )
 
 
 class LogRecordView(APIView):
@@ -869,7 +907,9 @@ class LogRecordView(APIView):
     def get(self, request):
         msg = request.query_params.get("msg", "")
         level_name = request.query_params.get("levelname", "")
-        serializer = LogRecordSerializer(LogRecord(msg=msg, level_name=level_name))
+        serializer = LogRecordSerializer(
+            LogRecord(msg=msg, level_name=level_name)
+        )
         print(serializer.data)
         return Response(
             {"Status": "Succès", "data": serializer.data},
@@ -897,11 +937,16 @@ class EncaissementViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
-    
+
     def get_queryset(self):
-        if self.action in ['list', 'retrieve', 'annuler']:
-            return Encaissement.objects.select_related('modepaiement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False)).order_by("-dateencaissement")
-        
+        if self.action in ["list", "retrieve", "annuler"]:
+            return (
+                Encaissement.objects.select_related("modepaiement", "banque")
+                .prefetch_related("details")
+                .filter(Q(piece_annulee=False))
+                .order_by("-dateencaissement")
+            )
+
         else:
             return Encaissement.objects.none()
 
@@ -927,91 +972,112 @@ class EncaissementViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, pk=None):
         pass
-    
-        
-    @action(detail=True, methods=['post'])
+
+    @action(detail=True, methods=["post"])
     def annuler(self, request, pk=None):
         """
         🆕 Endpoint pour annuler un encaissement avec un jeton d'autorisation
-        
+
         POST /api/encaissement/{id}/annuler/
         Body: {
             "jeton": "ABC12345"
         }
         """
         encaissement = cast(Encaissement, self.get_object())
-        
+
         # Vérifier que l'encaissement n'est pas déjà annulé
         if encaissement.piece_annulee:
-            return Response({
-                'erreur': 'Cet encaissement est déjà annulé'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {"erreur": "Cet encaissement est déjà annulé"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Validation avec le serializer d'autorisation
         serializer = AnnulerAvecJetonSerializer(
             data=request.data,
-            context={'request': request, 'objet': encaissement}
+            context={"request": request, "objet": encaissement},
         )
         serializer.is_valid(raise_exception=True)
-        
+
         # Récupérer le jeton validé
-        jeton_obj = cast(JetonAutorisation, serializer.validated_data['jeton_obj'])
-        
+        jeton_obj = cast(
+            JetonAutorisation, serializer.validated_data["jeton_obj"]
+        )
+
         # Transaction atomique pour garantir la cohérence
         try:
             with transaction.atomic():
                 # Utiliser le jeton
                 jeton_obj.utiliser(
                     ip_address=self.get_client_ip(request),
-                    user_agent=request.META.get('HTTP_USER_AGENT', '')
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 )
-                
+
                 # Annuler l'encaissement
-                cancellation_data = {"id_encaissement":encaissement.idencaissement, "date_annulation":timezone.now().date(), "motif_annulation":jeton_obj.demande.motif}
-                (err, qryset) = save_premium_collection_cancellation(request.user.id, cancellation_data)
-                data_insertion_serializer = DataInsertionSerializer(qryset, many=True,)
+                cancellation_data = {
+                    "id_encaissement": encaissement.idencaissement,
+                    "date_annulation": timezone.now().date(),
+                    "motif_annulation": jeton_obj.demande.motif,
+                }
+                (err, qryset) = save_premium_collection_cancellation(
+                    request.user.id, cancellation_data
+                )
+                data_insertion_serializer = DataInsertionSerializer(
+                    qryset,
+                    many=True,
+                )
                 st = status.HTTP_201_CREATED
                 if err:
-                    transaction.set_rollback(True) 
+                    transaction.set_rollback(True)
                     st = status.HTTP_400_BAD_REQUEST
-                return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+                return JsonResponse(
+                    data_insertion_serializer.data, status=st, safe=False
+                )
         except Exception as error:
-            return JsonResponse({"ObjectId":encaissement.idencaissement, "OutputMessage":str(error).split("\n")[0]}, status=status.HTTP_400_BAD_REQUEST)
-    
+            return JsonResponse(
+                {
+                    "ObjectId": encaissement.idencaissement,
+                    "OutputMessage": str(error).split("\n")[0],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     @staticmethod
     def get_client_ip(request):
         """Récupère l'adresse IP du client"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
         if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
+            ip = x_forwarded_for.split(",")[0]
         else:
-            ip = request.META.get('REMOTE_ADDR')
+            ip = request.META.get("REMOTE_ADDR")
         return ip
-    
-    @action(detail=True, methods=['post'])
+
+    @action(detail=True, methods=["post"])
     def demander_annulation(self, request, pk=None):
         """
         🆕 Raccourci pour créer directement une demande d'annulation
-        
+
         POST /api/encaissement/{id}/demander_annulation/
         Body: {
             "motif": "Erreur de saisie du montant"
         }
         """
-        
+
         encaissement = cast(Encaissement, self.get_object())
-        
+
         if encaissement.piece_annulee:
-            return Response({
-                'erreur': 'Cet encaissement est déjà annulé'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        motif = request.data.get('motif')
+            return Response(
+                {"erreur": "Cet encaissement est déjà annulé"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        motif = request.data.get("motif")
         if not motif or len(motif) < 10:
-            return Response({
-                'erreur': 'Le motif doit contenir au moins 10 caractères'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
+            return Response(
+                {"erreur": "Le motif doit contenir au moins 10 caractères"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Créer la demande
         content_type = ContentType.objects.get_for_model(Encaissement)
         demande = DemandeAutorisation.objects.create(
@@ -1022,17 +1088,20 @@ class EncaissementViewSet(viewsets.ModelViewSet):
             content_type=content_type,
             object_id=encaissement.idencaissement,
             metadata={
-                'reference': encaissement.numeropiece,
-                'montant': str(encaissement.montantencaissement),
-            }
+                "reference": encaissement.numeropiece,
+                "montant": str(encaissement.montantencaissement),
+            },
         )
-        
+
         envoyer_notification_nouvelle_demande.delay(demande.id)
-        
-        return Response({
-            'message': 'Demande d\'annulation créée avec succès',
-            'demande_id': demande.id
-        }, status=status.HTTP_201_CREATED)
+
+        return Response(
+            {
+                "message": "Demande d'annulation créée avec succès",
+                "demande_id": demande.id,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class DetailEncaissementViewSet(viewsets.ModelViewSet):
@@ -1041,6 +1110,7 @@ class DetailEncaissementViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
 
 class ContractListView(APIView):
     def get(self, request, format=None):
@@ -1065,17 +1135,24 @@ class ContractListView(APIView):
             # Validate range
             if end_date < start_date:
                 return Response(
-                    {"erreur": "La date de fin doit être postérieure à la date de début."},
+                    {
+                        "erreur": "La date de fin doit être postérieure à la date de début."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
         contracts = (
-            Contrat.objects
+            Contrat.objects.filter(
+                dateemission__range=(start_date, end_date),
+            )
             .filter(
-                    dateemission__range=(start_date, end_date),)
-            .filter(Q(idcontratannulation__isnull=True) | Q(idcontratannulation=0))
+                Q(idcontratannulation__isnull=True) | Q(idcontratannulation=0)
+            )
             .select_related("idclient", "iddevis")
-            .annotate(client=F("idclient__Nom"),numerodevis=F("iddevis__numerodevis"))
+            .annotate(
+                client=F("idclient__Nom"),
+                numerodevis=F("iddevis__numerodevis"),
+            )
             .values(
                 "client",
                 "idcontrat",
@@ -1098,45 +1175,24 @@ class ReversementCompagnieNonValideViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
-    def list(self, request):
-        queryset = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")[:1000]
-        serializer = ReversementCompagnieSerializer(queryset, many=True)
-        return Response(serializer.data)
-    
-    def retrieve(self, request, pk=None):
-        queryset = ReversementCompagnie.objects.filter(Q(valide=False)).select_related("compagnie", "banque").prefetch_related("details").order_by("-date_reversement")
-        reversement = get_object_or_404(queryset, pk=pk)
-        serializer = ReversementCompagnieSerializer(reversement)
-        return Response(serializer.data)
-    
-    def create(self, request):
-        pass
-
-    def update(self, request, pk=None):
-        pass
-
-    def partial_update(self, request, pk=None):
-        pass
-
-    def destroy(self, request, pk=None):
-        pass
-        
-    
-class ReversementCompagnieViewSet(viewsets.ModelViewSet):    
-    permission_classes = [
-        permissions.IsAuthenticated,
-    ]
 
     def list(self, request):
         queryset = (
-            ReversementCompagnie.objects.filter(Q(valide=True)).select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+            ReversementCompagnie.objects.filter(Q(valide=False))
+            .select_related("compagnie", "banque")
+            .prefetch_related("details")
             .order_by("-date_reversement")[:1000]
         )
         serializer = ReversementCompagnieSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def retrieve(self, request, pk=None):
-        queryset = ReversementCompagnie.objects.filter(Q(valide=True)).select_related('compagnie', 'mode_reversement', 'banque').prefetch_related("details").filter(Q(piece_annulee=False))
+        queryset = (
+            ReversementCompagnie.objects.filter(Q(valide=False))
+            .select_related("compagnie", "banque")
+            .prefetch_related("details")
+            .order_by("-date_reversement")
+        )
         reversement = get_object_or_404(queryset, pk=pk)
         serializer = ReversementCompagnieSerializer(reversement)
         return Response(serializer.data)
@@ -1153,6 +1209,45 @@ class ReversementCompagnieViewSet(viewsets.ModelViewSet):
     def destroy(self, request, pk=None):
         pass
 
+
+class ReversementCompagnieViewSet(viewsets.ModelViewSet):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def list(self, request):
+        queryset = (
+            ReversementCompagnie.objects.filter(Q(valide=True))
+            .select_related("compagnie", "mode_reversement", "banque")
+            .prefetch_related("details")
+            .filter(Q(piece_annulee=False))
+            .order_by("-date_reversement")[:1000]
+        )
+        serializer = ReversementCompagnieSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        queryset = (
+            ReversementCompagnie.objects.filter(Q(valide=True))
+            .select_related("compagnie", "mode_reversement", "banque")
+            .prefetch_related("details")
+            .filter(Q(piece_annulee=False))
+        )
+        reversement = get_object_or_404(queryset, pk=pk)
+        serializer = ReversementCompagnieSerializer(reversement)
+        return Response(serializer.data)
+
+    def create(self, request):
+        pass
+
+    def update(self, request, pk=None):
+        pass
+
+    def partial_update(self, request, pk=None):
+        pass
+
+    def destroy(self, request, pk=None):
+        pass
 
 
 class DetailReversementViewSet(viewsets.ModelViewSet):
@@ -1215,7 +1310,9 @@ def finalize_quotation_flotte(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         finalisationdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -1238,7 +1335,9 @@ def quote_archival(request):
         if err:
             st = status.HTTP_400_BAD_REQUEST
 
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         inputcancelation_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -1258,9 +1357,13 @@ def quote_unarchival(request):
         if err:
             st = status.HTTP_400_BAD_REQUEST
 
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
 
-    return JsonResponse(input_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return JsonResponse(
+        input_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+    )
 
 
 # Car input cancelation
@@ -1279,7 +1382,9 @@ def car_input_cancelation(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         inputcancelation_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -1297,15 +1402,20 @@ def create_quotation_ia(request):
     )
     if enregistrementdevis_ia_serializer.is_valid():
         (error, queryset) = save_quotation_ia(enregistrementdevis_ia_data)
-        data_insertion_serializer = QuotationIaInsertionSerializer(queryset, many=True)
+        data_insertion_serializer = QuotationIaInsertionSerializer(
+            queryset, many=True
+        )
         st = status.HTTP_201_CREATED
         if error:
             st = status.HTTP_400_BAD_REQUEST
 
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
 
     return JsonResponse(
-        enregistrementdevis_ia_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_ia_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1326,7 +1436,9 @@ def create_insured_ia(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         enregistrement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -1340,18 +1452,27 @@ def create_insured_ia(request):
 def create_quotation_voyage(request):
     enregistrementdevis_voyage_data = JSONParser().parse(request)
     print("JSON de la requête:", enregistrementdevis_voyage_data)
-    enregistrementdevis_voyage_serializer = EnregistrementDevisVoyageSerializer(
-        data=enregistrementdevis_voyage_data
+    enregistrementdevis_voyage_serializer = (
+        EnregistrementDevisVoyageSerializer(
+            data=enregistrementdevis_voyage_data
+        )
     )
     if enregistrementdevis_voyage_serializer.is_valid():
-        (err, queryset) = save_quotation_voyage(enregistrementdevis_voyage_data)
-        data_insertion_serializer = DataInsertionSerializer(queryset, many=True)
+        (err, queryset) = save_quotation_voyage(
+            enregistrementdevis_voyage_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset, many=True
+        )
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_voyage_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_voyage_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1370,13 +1491,18 @@ def create_quotation_mrh(request):
         (err, queryset) = save_quotation_mrh(
             request.user.id, enregistrementdevis_mrh_data
         )
-        data_insertion_serializer = DataInsertionSerializer(queryset, many=True)
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset, many=True
+        )
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_mrh_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_mrh_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1402,9 +1528,12 @@ def create_quotation_tousrisquesinfo(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_tri_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_tri_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1430,9 +1559,12 @@ def create_quotation_rc(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_rc_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_rc_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1444,8 +1576,10 @@ def create_quotation_rc(request):
 def create_quotation_globaledebanque(request):
     enregistrementdevis_gdb_data = JSONParser().parse(request)
     # #print("JSON de la requête:", enregistrementdevis_gdb_data)
-    enregistrementdevis_gdb_serializer = EnregistrementDevisGlobaleDeBanqueSerializer(
-        data=enregistrementdevis_gdb_data
+    enregistrementdevis_gdb_serializer = (
+        EnregistrementDevisGlobaleDeBanqueSerializer(
+            data=enregistrementdevis_gdb_data
+        )
     )
     if enregistrementdevis_gdb_serializer.is_valid():
         (err, queryset) = save_quotation_globaledebanque(
@@ -1458,9 +1592,12 @@ def create_quotation_globaledebanque(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_gdb_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_gdb_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1480,10 +1617,13 @@ def creer_ayant_droit_ia(request):
             enregistrer_ayant_droit(creationayantdroit_data), many=True
         )
         return JsonResponse(
-            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            data_insertion_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
-        creationayantdroit_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        creationayantdroit_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -1507,7 +1647,9 @@ def create_contract(request):
             send_sms_enregistrement_contrat.delay(
                 int(data_insertion_serializer.data[0]["ObjectId"])
             )
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
 
     return JsonResponse(
         confirmationdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -1522,12 +1664,17 @@ class AssureIaParDevisView(APIView):
     def get(self, request, iddevis):
         (msg, assures) = get_liste_assure_ia(id=iddevis, statut="DEV")
         if not msg:
-            serializer = AssureIaParDevisOuContratSerializer(assures, many=True)
+            serializer = AssureIaParDevisOuContratSerializer(
+                assures, many=True
+            )
             # print(serializer)
-            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+            return JsonResponse(
+                serializer.data, status=status.HTTP_200_OK, safe=False
+            )
         else:
             return JsonResponse(
-                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                {"Status": "Echec", "Data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -1539,12 +1686,17 @@ class AssureIaParContratView(APIView):
     def get(self, request, idcontrat):
         (msg, assures) = get_liste_assure_ia(id=idcontrat, statut="CNT")
         if not msg:
-            serializer = AssureIaParDevisOuContratSerializer(assures, many=True)
+            serializer = AssureIaParDevisOuContratSerializer(
+                assures, many=True
+            )
             # print(serializer.data)
-            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+            return JsonResponse(
+                serializer.data, status=status.HTTP_200_OK, safe=False
+            )
         else:
             return JsonResponse(
-                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                {"Status": "Echec", "Data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -1558,10 +1710,13 @@ class AssureIaInfoView(APIView):
         if not msg:
             serializer = AssureIaInfoSerializer(assureiainfo, many=True)
             # print(serializer.data)
-            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+            return JsonResponse(
+                serializer.data, status=status.HTTP_200_OK, safe=False
+            )
         else:
             return JsonResponse(
-                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                {"Status": "Echec", "Data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -1599,7 +1754,9 @@ class ContratDetailInfoView(APIView):
         contratdetail = ContratDetail.objects.filter(idcontrat=idcontrat)
         serializer = ContratDetailSerializer(contratdetail, many=True)
         # print(serializer.data)
-        return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+        return JsonResponse(
+            serializer.data, status=status.HTTP_200_OK, safe=False
+        )
 
 
 class QuittancePropositionView(APIView):
@@ -1717,7 +1874,9 @@ class ListeContratReversementView(APIView):
     def get(self, request, idcompagnie):
         (msg, item) = get_contract_premium_remittance(idcompagnie=idcompagnie)
         if not msg:
-            serializer = ContractForPremiumCollectionSerializer(item, many=True)
+            serializer = ContractForPremiumCollectionSerializer(
+                item, many=True
+            )
             # print(serializer.data)
             return Response(
                 {"status": "succès", "data": serializer.data},
@@ -1739,7 +1898,9 @@ class InfoEncaissementView(APIView):
     ]
 
     def get(self, request, iddetailencaissement):
-        (msg, item) = get_info_encaissement(detailencaissement=iddetailencaissement)
+        (msg, item) = get_info_encaissement(
+            detailencaissement=iddetailencaissement
+        )
         if not msg:
             serializer = PremiumCollectionInfoSerializer(item, many=True)
             # print(serializer.data)
@@ -1814,7 +1975,9 @@ class DetailEncaissementListView(APIView):
                 status=status.HTTP_204_NO_CONTENT,
             )
         else:
-            details = DetailEncaissement.objects.filter(encaissement=encaissement)
+            details = DetailEncaissement.objects.filter(
+                encaissement=encaissement
+            )
             if details.exists():
                 serializer = DetailEncaissementSerializer(details, many=True)
                 # print(serializer.data)
@@ -1864,6 +2027,7 @@ class DetailReversementListView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+
 class ImportationFichierGUCEViewSet(viewsets.ViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
@@ -1872,7 +2036,10 @@ class ImportationFichierGUCEViewSet(viewsets.ViewSet):
     def create(self, request):
         messages = []
         serializer_class = ImportationTransportSerializer(data=request.data)
-        if "fichier_excel" not in request.FILES or not serializer_class.is_valid():
+        if (
+            "fichier_excel" not in request.FILES
+            or not serializer_class.is_valid()
+        ):
             return Response(status=status.HTTP_400_BAD_REQUEST)
         else:
             (error_occured, messages) = export_excel(
@@ -1881,10 +2048,13 @@ class ImportationFichierGUCEViewSet(viewsets.ViewSet):
                 request.POST["debut_periode"],
                 request.POST["fin_periode"],
             )
-            data_insertion_serializer = DataInsertionSerializer(messages, many=True)
+            data_insertion_serializer = DataInsertionSerializer(
+                messages, many=True
+            )
             if not error_occured:
                 return Response(
-                    data=data_insertion_serializer.data, status=status.HTTP_202_ACCEPTED
+                    data=data_insertion_serializer.data,
+                    status=status.HTTP_202_ACCEPTED,
                 )
             else:
                 return Response(
@@ -1895,36 +2065,43 @@ class ImportationFichierGUCEViewSet(viewsets.ViewSet):
 
 class ExtendedQuotationInfoView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request, idproduit):
         # Récupération des paramètres de pagination de l'URL
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 50))
-        nom_client = request.query_params.get('nom_client', '')
-        numero_police = request.query_params.get('numero_police', '')
-        
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 50))
+        nom_client = request.query_params.get("nom_client", "")
+        numero_police = request.query_params.get("numero_police", "")
+
         # Calcul de l'offset
         limit = page_size
         offset = (page - 1) * page_size
-        
+
         (msg, devis_list, total_count) = get_extended_quotation_info(
-            0, numero_police, nom_client, None, None, idproduit, limit=limit, offset=offset
+            0,
+            numero_police,
+            nom_client,
+            None,
+            None,
+            idproduit,
+            limit=limit,
+            offset=offset,
         )
-        
+
         if not msg:
             serializer = ExtendedQuotationInfoSerializer(devis_list, many=True)
-            
+
             # Réponse structurée avec données et méta-pagination
             return Response(
                 {
-                    "status": "succès", 
+                    "status": "succès",
                     "data": serializer.data,
                     "pagination": {
                         "total_items": total_count,
                         "page_size": limit,
                         "current_page": page,
-                        "total_pages": (total_count + limit - 1) // limit
-                    }
+                        "total_pages": (total_count + limit - 1) // limit,
+                    },
                 },
                 status=status.HTTP_200_OK,
             )
@@ -1933,6 +2110,7 @@ class ExtendedQuotationInfoView(APIView):
                 {"status": "Echec", "data": msg},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
 
 class ExtendedQuotationInfoRechercheView(APIView):
     permission_classes = [
@@ -1961,7 +2139,9 @@ class ExtendedQuotationInfoRechercheView(APIView):
                         str(parameters[3]), "%Y-%m-%d"
                     ).date()
                 if parameters[4]:
-                    date_fin = datetime.strptime(str(parameters[4]), "%Y-%m-%d").date()
+                    date_fin = datetime.strptime(
+                        str(parameters[4]), "%Y-%m-%d"
+                    ).date()
         except Exception as error:
             return Response(
                 {"status": "Echec", "data": str(error).split(":")[0]},
@@ -1998,7 +2178,10 @@ class ReductionFlotteDevisView(APIView):
             else ("Echec", status.HTTP_400_BAD_REQUEST)
         )
         return Response(
-            {"Status": statut_msg, "TauxReduction": str(taux_reduction_flotte)},
+            {
+                "Status": statut_msg,
+                "TauxReduction": str(taux_reduction_flotte),
+            },
             status=statut_code,
         )
 
@@ -2013,11 +2196,13 @@ class GarantieSouscriteView(APIView):
         if not msg:
             serializer = GarantieSouscriteSerializer(garanties, many=True)
             return Response(
-                {"Status": "Succès", "Data": serializer.data}, status=status.HTTP_200_OK
+                {"Status": "Succès", "Data": serializer.data},
+                status=status.HTTP_200_OK,
             )
         else:
             return Response(
-                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                {"Status": "Echec", "Data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
@@ -2038,26 +2223,36 @@ class GarantieSouscriteDevisView(GarantieSouscriteView):
 def collect_premium(request):
     enregistrementencaissement_data = JSONParser().parse(request)
     print("JSON de la requête:", enregistrementencaissement_data)
-    enregistrementencaissement_serializer = EncaissementGroupeQuittanceSerializer(
-        data=enregistrementencaissement_data
+    enregistrementencaissement_serializer = (
+        EncaissementGroupeQuittanceSerializer(
+            data=enregistrementencaissement_data
+        )
     )
     enregistrementencaissement_serializer.is_valid(raise_exception=True)
     try:
-        
-        result_data = save_premium_collection(request.user, enregistrementencaissement_data)
+
+        result_data = save_premium_collection(
+            request.user, enregistrementencaissement_data
+        )
         # 3. Réponse de succès utilisant notre structure définie
         output_serializer = EncaissementResponseSerializer(result_data)
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
     except ServiceError as e:
-            # Erreur renvoyée par la procédure SQL (id=0)
-            return Response({"erreur": str(e.detail)}, status=status.HTTP_400_BAD_REQUEST)
-            
+        # Erreur renvoyée par la procédure SQL (id=0)
+        return Response(
+            {"erreur": str(e.detail)}, status=status.HTTP_400_BAD_REQUEST
+        )
+
     except Exception as e:
-            # Erreur système inattendue
-            return Response(
-                {"erreur": "Une erreur technique est survenue.", "details": str(e)}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        # Erreur système inattendue
+        return Response(
+            {
+                "erreur": "Une erreur technique est survenue.",
+                "details": str(e),
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
 
 # Cancel Premium collection
 # @api_view(["POST"])
@@ -2106,7 +2301,9 @@ def remit_premium(request):
             many=True,
         )
         return JsonResponse(
-            data_insertion_serializer.data, status=status.HTTP_201_CREATED, safe=False
+            data_insertion_serializer.data,
+            status=status.HTTP_201_CREATED,
+            safe=False,
         )
     return JsonResponse(
         reversement_serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -2125,8 +2322,11 @@ def validate_premium_remittance(request):
     )
     if reversement_serializer.is_valid():
         validated_data = reversement_serializer.validated_data
-        error, queryset = premium_remittance_validation(request.user.id, validated_data)
-        data_insertion_serializer = DataInsertionSerializer(queryset,
+        error, queryset = premium_remittance_validation(
+            request.user.id, validated_data
+        )
+        data_insertion_serializer = DataInsertionSerializer(
+            queryset,
             many=True,
         )
         resp_status = status.HTTP_201_CREATED
@@ -2160,7 +2360,9 @@ def change_plate_number(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         chgplatenumber_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -2184,7 +2386,9 @@ def modify_policy(request):
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
         cancelpolicy_serializer.errors, status=status.HTTP_400_BAD_REQUEST
     )
@@ -2238,9 +2442,13 @@ class ListeContratClientView(APIView):
             id_client=idclient,
         )
         if not msg:
-            serializer = ContractForPremiumCollectionSerializer(item, many=True)
+            serializer = ContractForPremiumCollectionSerializer(
+                item, many=True
+            )
             # print(serializer.data)
-            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+            return JsonResponse(
+                serializer.data, status=status.HTTP_200_OK, safe=False
+            )
         else:
             return Response(
                 {"status": "Echec", "data": msg},
@@ -2260,10 +2468,16 @@ def get_contracts_for_pc(request):
     if contratdemande_serializer.is_valid():
         referenceclient = str(contratdemande_data["referenceclient"])
         referencecontrat = str(contratdemande_data["referencecontrat"])
-        (msg, item) = get_contract_list_for_pc(referenceclient, referencecontrat)
+        (msg, item) = get_contract_list_for_pc(
+            referenceclient, referencecontrat
+        )
         if not msg:
-            serializer = ContractForPremiumCollectionSerializer(item, many=True)
-            return JsonResponse(serializer.data, status=status.HTTP_200_OK, safe=False)
+            serializer = ContractForPremiumCollectionSerializer(
+                item, many=True
+            )
+            return JsonResponse(
+                serializer.data, status=status.HTTP_200_OK, safe=False
+            )
         else:
             return Response(
                 {"status": "Echec", "data": msg},
@@ -2352,122 +2566,135 @@ class PrimeUpdateAPIView(APIView):
             except Exception as e:
                 # Handle database or execution errors
                 return Response(
-                    {"message": "Error executing stored procedure.", "details": str(e)},
+                    {
+                        "message": "Error executing stored procedure.",
+                        "details": str(e),
+                    },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 # ============================================================================
 # SECTION 1 : ENDPOINTS DE RÉFÉRENCE (LECTURE SEULE)
 # ============================================================================
 
+
 class UsageHabitationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet pour lister les usages habitation disponibles.
-    
+
     GET /api/mrh/usages/
     GET /api/mrh/usages/{code}/
     """
-    queryset = UsageHabitation.objects.filter(actif=True).order_by('libelle')
+
+    queryset = UsageHabitation.objects.filter(actif=True).order_by("libelle")
     serializer_class = UsageHabitationSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'code'
-    
-    @action(detail=True, methods=['get'])
+    lookup_field = "code"
+
+    @action(detail=True, methods=["get"])
     def parametres(self, request, code=None):
         """
         Retourne les paramètres de calcul pour un usage spécifique.
-        
+
         GET /api/mrh/usages/{code}/parametres/
         """
         usage = cast(UsageHabitation, self.get_object())
-        
+
         try:
             parametres = usage.parametres
             serializer = ParametresCalculSerializer(parametres)
             return Response(serializer.data)
         except ParametresCalcul.DoesNotExist:
             return Response(
-                {'erreur': f'Paramètres de calcul non trouvés pour {code}'},
-                status=status.HTTP_404_NOT_FOUND
+                {"erreur": f"Paramètres de calcul non trouvés pour {code}"},
+                status=status.HTTP_404_NOT_FOUND,
             )
-    
-    @action(detail=True, methods=['get'])
+
+    @action(detail=True, methods=["get"])
     def garanties(self, request, code=None):
         """
         Retourne les sous-garanties (obligatoires et optionnelles) pour un usage.
-        
+
         GET /api/mrh/usages/{code}/garanties/
         """
         usage = cast(UsageHabitation, self.get_object())
-        
+
         # Garanties obligatoires
-        sous_garanties_oblig = usage.sous_garanties_liees.filter(
-            obligatoire=True,
-            actif=True
-        ).select_related('sous_garantie').order_by('ordre_affichage')
-        
+        sous_garanties_oblig = (
+            usage.sous_garanties_liees.filter(obligatoire=True, actif=True)
+            .select_related("sous_garantie")
+            .order_by("ordre_affichage")
+        )
+
         # Garanties optionnelles
-        sous_garanties_opt = usage.sous_garanties_liees.filter(
-            obligatoire=False,
-            actif=True
-        ).select_related('sous_garantie').order_by('ordre_affichage')
-        
-        return Response({
-            'obligatoires': [
-                {
-                    'code': gu.sous_garantie.code,
-                    'libelle': gu.sous_garantie.libelle,
-                    'taux_repartition': gu.taux_repartition,
-                }
-                for gu in sous_garanties_oblig
-            ],
-            'optionnelles': [
-                {
-                    'code': gu.sous_garantie.code,
-                    'libelle': gu.sous_garantie.libelle,
-                }
-                for gu in sous_garanties_opt
-            ]
-        })
-    
-    @action(detail=True, methods=['get'])
+        sous_garanties_opt = (
+            usage.sous_garanties_liees.filter(obligatoire=False, actif=True)
+            .select_related("sous_garantie")
+            .order_by("ordre_affichage")
+        )
+
+        return Response(
+            {
+                "obligatoires": [
+                    {
+                        "code": gu.sous_garantie.code,
+                        "libelle": gu.sous_garantie.libelle,
+                        "taux_repartition": gu.taux_repartition,
+                    }
+                    for gu in sous_garanties_oblig
+                ],
+                "optionnelles": [
+                    {
+                        "code": gu.sous_garantie.code,
+                        "libelle": gu.sous_garantie.libelle,
+                    }
+                    for gu in sous_garanties_opt
+                ],
+            }
+        )
+
+    @action(detail=True, methods=["get"])
     def offres(self, request, code=None):
         """
         Retourne les offres pour un usage.
-        
+
         GET /api/mrh/usages/{code}/offres/
         """
         usage = cast(UsageHabitation, self.get_object())
-        
+
         offre_mrh_liee = usage.offre
-        return Response({
+        return Response(
+            {
+                "id_offre": offre_mrh_liee.IdOffre if offre_mrh_liee else "",
+                "libelle_offre": (
+                    offre_mrh_liee.LibelleOffre if offre_mrh_liee else ""
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
 
-                    'id_offre': offre_mrh_liee.IdOffre if offre_mrh_liee else "",
-                    'libelle_offre': offre_mrh_liee.LibelleOffre if offre_mrh_liee else "",
-
-        }, status = status.HTTP_200_OK)
-    
-    
-    
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=["get"])
     def options(self, request, code=None):
         """
         Retourne les options applicables à un usage.
-        
+
         GET /api/mrh/usages/{code}/options/
         """
         usage = self.get_object()
-        
-        options = Option.objects.filter(
-            usages_applicables__usage=usage,
-            usages_applicables__actif=True,
-            actif=True
-        ).distinct().order_by('type_option', 'libelle')
-        
+
+        options = (
+            Option.objects.filter(
+                usages_applicables__usage=usage,
+                usages_applicables__actif=True,
+                actif=True,
+            )
+            .distinct()
+            .order_by("type_option", "libelle")
+        )
+
         serializer = OptionSerializer(options, many=True)
         return Response(serializer.data)
 
@@ -2475,23 +2702,29 @@ class UsageHabitationViewSet(viewsets.ReadOnlyModelViewSet):
 class SousGarantieMRHViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet pour lister les sous-garanties MRH.
-    
+
     GET /api/mrh/sous-garanties/
     GET /api/mrh/sous-garanties/{code}/
     """
-    queryset = SousGarantieMRH.objects.filter(actif=True).order_by('type', 'libelle')
+
+    queryset = SousGarantieMRH.objects.filter(actif=True).order_by(
+        "type", "libelle"
+    )
     serializer_class = SousGarantieMRHSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'code'
+    lookup_field = "code"
 
 
 class SousGarantieForfaitViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet pour lister les garanties optionnelles à forfait.
-    
+
     GET /api/mrh/sous-garanties-forfait/
     """
-    queryset = SousGarantieForfait.objects.filter(actif=True).select_related('sous_garantie')
+
+    queryset = SousGarantieForfait.objects.filter(actif=True).select_related(
+        "sous_garantie"
+    )
     serializer_class = SousGarantieForfaitSerializer
     permission_classes = [IsAuthenticated]
 
@@ -2499,70 +2732,79 @@ class SousGarantieForfaitViewSet(viewsets.ReadOnlyModelViewSet):
 class OptionViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet pour lister les options disponibles.
-    
+
     GET /api/mrh/options/
     GET /api/mrh/options/{code}/
     """
-    queryset = Option.objects.filter(actif=True).order_by('type_option', 'libelle')
+
+    queryset = Option.objects.filter(actif=True).order_by(
+        "type_option", "libelle"
+    )
     serializer_class = OptionSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'code'
+    lookup_field = "code"
 
 
 # ============================================================================
 # MISE A JOUR DU DEVIS
 # ============================================================================
-class MiseAJourDevis (APIView):
-    @action(detail=True, methods=['post'])
+class MiseAJourDevis(APIView):
+    @action(detail=True, methods=["post"])
     def garanties(self, request, pk=None):
         """
         Met à jour un devis avec les informations.
-        
+
         GET /api/mrh/devis//garanties/
         """
         usage = cast(UsageHabitation, self.get_object())
-        
+
         # Garanties obligatoires
-        sous_garanties_oblig = usage.sous_garanties_liees.filter(
-            obligatoire=True,
-            actif=True
-        ).select_related('sous_garantie').order_by('ordre_affichage')
-        
+        sous_garanties_oblig = (
+            usage.sous_garanties_liees.filter(obligatoire=True, actif=True)
+            .select_related("sous_garantie")
+            .order_by("ordre_affichage")
+        )
+
         # Garanties optionnelles
-        sous_garanties_opt = usage.sous_garanties_liees.filter(
-            obligatoire=False,
-            actif=True
-        ).select_related('sous_garantie').order_by('ordre_affichage')
-        
-        return Response({
-            'obligatoires': [
-                {
-                    'code': gu.sous_garantie.code,
-                    'libelle': gu.sous_garantie.libelle,
-                    'taux_repartition': gu.taux_repartition,
-                }
-                for gu in sous_garanties_oblig
-            ],
-            'optionnelles': [
-                {
-                    'code': gu.sous_garantie.code,
-                    'libelle': gu.sous_garantie.libelle,
-                }
-                for gu in sous_garanties_opt
-            ]
-        })
+        sous_garanties_opt = (
+            usage.sous_garanties_liees.filter(obligatoire=False, actif=True)
+            .select_related("sous_garantie")
+            .order_by("ordre_affichage")
+        )
+
+        return Response(
+            {
+                "obligatoires": [
+                    {
+                        "code": gu.sous_garantie.code,
+                        "libelle": gu.sous_garantie.libelle,
+                        "taux_repartition": gu.taux_repartition,
+                    }
+                    for gu in sous_garanties_oblig
+                ],
+                "optionnelles": [
+                    {
+                        "code": gu.sous_garantie.code,
+                        "libelle": gu.sous_garantie.libelle,
+                    }
+                    for gu in sous_garanties_opt
+                ],
+            }
+        )
+
 
 # ============================================================================
 # SECTION 2 : ENDPOINT DE CALCUL (SANS ENREGISTREMENT)
 # ============================================================================
 
+
 class CalculMaisonView(APIView):
     """
     Calcule la prime d'une maison SANS l'enregistrer.
     Utile pour des simulations ou devis rapides.
-    
+
     POST /api/mrh/calcul/maison/
-    
+
     Body:
     {
         "code_usage": "proprietaire_occupant_total",
@@ -2571,7 +2813,7 @@ class CalculMaisonView(APIView):
         "options": ["presence_gardien"],
         "sous_garanties_optionnelles": ["RC_MEMBRE"]
     }
-    
+
     Response:
     {
         "code_usage": "proprietaire_occupant_total",
@@ -2584,44 +2826,48 @@ class CalculMaisonView(APIView):
         "options_appliquees": [...]
     }
     """
+
     permission_classes = [IsAuthenticated]
-                                    
+
     def post(self, request):
         # Valider les données d'entrée
         serializer = MaisonCalculRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         data = serializer.validated_data
         service = MRHCalculService()
-        
+
         try:
             # Calculer la prime
             resultat = service.calculer_maison(
-                code_usage=data['code_usage'],
-                valeur_batiment=data.get('valeur_batiment'),
-                valeur_contenu=data.get('valeur_contenu'),
-                loyer_mensuel=data.get('loyer_mensuel'),
-                capital_rvt=data.get('capital_rvt'),
-                options=[opt['code_option'] for opt in data.get('options', [])],
-                sous_garanties_optionnelles=[
-                    gar['code_sous_garantie'] for gar in data.get('sous_garanties_optionnelles', [])
+                code_usage=data["code_usage"],
+                valeur_batiment=data.get("valeur_batiment"),
+                valeur_contenu=data.get("valeur_contenu"),
+                loyer_mensuel=data.get("loyer_mensuel"),
+                capital_rvt=data.get("capital_rvt"),
+                options=[
+                    opt["code_option"] for opt in data.get("options", [])
                 ],
-                adresse=data.get('adresse'),
-                description=data.get('description'),
+                sous_garanties_optionnelles=[
+                    gar["code_sous_garantie"]
+                    for gar in data.get("sous_garanties_optionnelles", [])
+                ],
+                adresse=data.get("adresse"),
+                description=data.get("description"),
             )
-            
+
             # Sérialiser la réponse
             response_serializer = MaisonCalculeeSerializer(resultat)
-            return Response(response_serializer.data, status=status.HTTP_200_OK)
-        
+            return Response(
+                response_serializer.data, status=status.HTTP_200_OK
+            )
+
         except Exception as e:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
 
 
@@ -2629,24 +2875,26 @@ class CalculMaisonView(APIView):
 # SECTION 3 : ENDPOINTS DE GESTION DE DEVIS
 # ============================================================================
 
+
 class DevisMRHViewSet(viewsets.ViewSet):
     """
     ViewSet pour la gestion des devis MRH.
-    
+
     POST /api/mrh/devis/ - Créer un devis vide
     GET /api/mrh/devis/{id}/ - Récupérer un devis
     PATCH /api/mrh/devis/{id}/finalisation
     GET /api/mrh/devis/ - Lister les devis
     DELETE /api/mrh/devis/{id}/ - Supprimer un devis
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def create(self, request):
         """
         Crée un nouveau devis MRH vide.
-        
+
         POST /api/mrh/devis/
-        
+
         Body:
         {
             "idintermediaire": 1,
@@ -2662,57 +2910,69 @@ class DevisMRHViewSet(viewsets.ViewSet):
         serializer = DevisMRHCreateRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         data = serializer.validated_data
         service = MRHCalculService()
-        
+
         try:
             # Créer le devis
             id_devis = service.creer_devis(
-                idintermediaire=data['idintermediaire'],
-                idcompagnie=data['idcompagnie'],
-                idproduit=data['idproduit'],
-                idtarif=data['idtarif'],
-                idoffre=data['idoffre'],
-                idclient=data['idclient'],
-                dateeffet=data['dateeffet'],
-                **{k: v for k, v in data.items() if k not in [
-                    'idintermediaire', 'idcompagnie', 'idproduit', 'idtarif',
-                    'idoffre', 'idclient', 'dateeffet'
-                ]}
+                idintermediaire=data["idintermediaire"],
+                idcompagnie=data["idcompagnie"],
+                idproduit=data["idproduit"],
+                idtarif=data["idtarif"],
+                idoffre=data["idoffre"],
+                idclient=data["idclient"],
+                dateeffet=data["dateeffet"],
+                **{
+                    k: v
+                    for k, v in data.items()
+                    if k
+                    not in [
+                        "idintermediaire",
+                        "idcompagnie",
+                        "idproduit",
+                        "idtarif",
+                        "idoffre",
+                        "idclient",
+                        "dateeffet",
+                    ]
+                },
             )
-            
+
             # Retourner la réponse
             from .models import Devis  # Import local
+
             devis = Devis.objects.get(iddevis=id_devis)
-            
+
             response_data = {
-                'devis_id': id_devis,
-                'numero_devis': devis.numerodevis or '',
-                'statut': 'success',
-                'message': 'Devis créé avec succès',
-                'date_creation': devis.dateemission,
+                "devis_id": id_devis,
+                "numero_devis": devis.numerodevis or "",
+                "statut": "success",
+                "message": "Devis créé avec succès",
+                "date_creation": devis.dateemission,
             }
-            
+
             response_serializer = DevisMRHResponseSerializer(response_data)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        
+            return Response(
+                response_serializer.data, status=status.HTTP_201_CREATED
+            )
+
         except Exception as e:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
-            
+
     def partial_update(self, request, pk=None):
         mrh_devis = get_object_or_404(Devis, pk=pk)
         from customer.models import Client
+
         idassure = request.data.get("idassure", 0)
         idclient = request.data.get("idclient", 0)
         numero_telephone_assure = request.data.get("numerotelephoneassure", "")
-        
+
         # Pass update_data instead of request.data
         try:
             with transaction.atomic():
@@ -2722,149 +2982,164 @@ class DevisMRHViewSet(viewsets.ViewSet):
                     mrh_devis.assure_id = idassure
                 mrh_devis.save()
                 if numero_telephone_assure and idassure:
-                        assure = Client.objects.filter(IdClient=idassure).first()
-                        assure.Mobile = numero_telephone_assure
-                        assure.save()
-                
-                return Response({"message":"Devis enregistré avec succès"}, status=status.HTTP_200_OK)
+                    assure = Client.objects.filter(IdClient=idassure).first()
+                    assure.Mobile = numero_telephone_assure
+                    assure.save()
+
+                return Response(
+                    {"message": "Devis enregistré avec succès"},
+                    status=status.HTTP_200_OK,
+                )
         except Exception as e:
-            return Response({"erreur":str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
+            return Response(
+                {"erreur": str(e)}, status=status.HTTP_400_BAD_REQUEST
+            )
+
     def retrieve(self, request, pk=None):
         """
         Récupère les détails d'un devis avec toutes ses maisons.
-        
+
         GET /api/mrh/devis/{id}/
         """
         from .models import Devis, DevisDetail  # Import local
-        
+
         try:
             devis = Devis.objects.get(iddevis=pk)
             maisons = DevisDetail.objects.filter(iddevis_id=pk)
-            
+
             # Construire la réponse
             response_data = {
-                'devis_id': devis.iddevis,
-                'numero_devis': devis.numerodevis,
-                'statut': 'success',
-                'message': 'Devis récupéré avec succès',
-                'prime_nette_totale': devis.primenette,
-                'taxe_totale': devis.taxe,
-                'accessoires': devis.accessoire,
-                'prime_ttc_totale': devis.primettc,
-                'maisons': [
+                "devis_id": devis.iddevis,
+                "numero_devis": devis.numerodevis,
+                "statut": "success",
+                "message": "Devis récupéré avec succès",
+                "prime_nette_totale": devis.primenette,
+                "taxe_totale": devis.taxe,
+                "accessoires": devis.accessoire,
+                "prime_ttc_totale": devis.primettc,
+                "maisons": [
                     {
-                        'maison_id': str(m.iddevisdetail),
-                        'code_usage': m.observation[:30] if m.observation else '',  # Approximatif
-                        'libelle_usage': m.observation[:30] if m.observation else '',
-                        'parametres': {
-                            'valeur_batiment': m.valeurneuve,
-                            'valeur_contenu': m.valeurvenale,
+                        "maison_id": str(m.iddevisdetail),
+                        "code_usage": (
+                            m.observation[:30] if m.observation else ""
+                        ),  # Approximatif
+                        "libelle_usage": (
+                            m.observation[:30] if m.observation else ""
+                        ),
+                        "parametres": {
+                            "valeur_batiment": m.valeurneuve,
+                            "valeur_contenu": m.valeurvenale,
                         },
-                        'prime_nette_totale': m.primenette,
-                        'prime_annuelle_totale': m.primeannuelle,
-                        'taxe_totale': m.taxeenregistrement,
-                        'prime_ttc_totale': m.primenette + m.taxeenregistrement,
-                        'sous_garanties': [],  # Peut être enrichi si besoin
-                        'options_appliquees': [],
-                        'adresse': m.observation[33:] if len(m.observation or '') > 33 else '',
+                        "prime_nette_totale": m.primenette,
+                        "prime_annuelle_totale": m.primeannuelle,
+                        "taxe_totale": m.taxeenregistrement,
+                        "prime_ttc_totale": m.primenette
+                        + m.taxeenregistrement,
+                        "sous_garanties": [],  # Peut être enrichi si besoin
+                        "options_appliquees": [],
+                        "adresse": (
+                            m.observation[33:]
+                            if len(m.observation or "") > 33
+                            else ""
+                        ),
                     }
                     for m in maisons
                 ],
-                'nombre_maisons': maisons.count(),
-                'date_calcul': devis.dateemission,
+                "nombre_maisons": maisons.count(),
+                "date_calcul": devis.dateemission,
             }
-            
-            
+
             serializer = DevisMRHCalculeResponseSerializer(response_data)
             return Response(serializer.data, status=status.HTTP_200_OK)
-        
+
         except Devis.DoesNotExist:
             return Response(
-                {'error': f'Devis {pk} non trouvé'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": f"Devis {pk} non trouvé"},
+                status=status.HTTP_404_NOT_FOUND,
             )
         except Exception as e:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-    
+
     def list(self, request):
         """
         Liste les devis (avec filtres optionnels).
-        
+
         GET /api/mrh/devis/?client={id}&statut={statut}
         """
         from .models import Devis  # Import local
-        
-        queryset = Devis.objects.all().order_by('-dateemission')
-        
+
+        queryset = Devis.objects.all().order_by("-dateemission")
+
         # Filtres optionnels
-        client_id = request.query_params.get('client', None)
+        client_id = request.query_params.get("client", None)
         if client_id:
             queryset = queryset.filter(client_id=client_id)
-        
-        statut = request.query_params.get('statut', None)
+
+        statut = request.query_params.get("statut", None)
         if statut:
             queryset = queryset.filter(statut=statut)
-        
+
         # Pagination simple
-        page_size = int(request.query_params.get('page_size', 20))
-        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get("page_size", 20))
+        page = int(request.query_params.get("page", 1))
         start = (page - 1) * page_size
         end = start + page_size
-        
+
         devis_list = queryset[start:end]
-        
+
         data = [
             {
-                'devis_id': d.iddevis,
-                'numero_devis': d.numerodevis,
-                'client': d.client_id,
-                'date_effet': d.dateeffet,
-                'prime_ttc': d.primettc,
-                'statut': d.statut,
+                "devis_id": d.iddevis,
+                "numero_devis": d.numerodevis,
+                "client": d.client_id,
+                "date_effet": d.dateeffet,
+                "prime_ttc": d.primettc,
+                "statut": d.statut,
             }
             for d in devis_list
         ]
-        
-        return Response({
-            'count': queryset.count(),
-            'page': page,
-            'page_size': page_size,
-            'results': data
-        }, status=status.HTTP_200_OK)
-    
+
+        return Response(
+            {
+                "count": queryset.count(),
+                "page": page,
+                "page_size": page_size,
+                "results": data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
     def destroy(self, request, pk=None):
         """
         Supprime un devis (et toutes ses maisons en cascade).
-        
+
         DELETE /api/mrh/devis/{id}/
         """
         from .models import Devis  # Import local
-        
+
         try:
             devis = Devis.objects.get(iddevis=pk)
-            
+
             # Vérifier que le devis n'est pas confirmé
             if devis.confirme:
                 return Response(
-                    {'error': 'Impossible de supprimer un devis confirmé'},
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Impossible de supprimer un devis confirmé"},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-            
+
             devis.delete()
-            
+
             return Response(
-                {'message': f'Devis {pk} supprimé avec succès'},
-                status=status.HTTP_204_NO_CONTENT
+                {"message": f"Devis {pk} supprimé avec succès"},
+                status=status.HTTP_204_NO_CONTENT,
             )
-        
+
         except Devis.DoesNotExist:
             return Response(
-                {'error': f'Devis {pk} non trouvé'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": f"Devis {pk} non trouvé"},
+                status=status.HTTP_404_NOT_FOUND,
             )
 
 
@@ -2872,24 +3147,26 @@ class DevisMRHViewSet(viewsets.ViewSet):
 # SECTION 4 : ENDPOINTS DE GESTION DE MAISONS
 # ============================================================================
 
+
 class MaisonViewSet(viewsets.ViewSet):
     """
     ViewSet pour la gestion des maisons dans un devis.
-    
+
     POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
     DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/ - Supprimer une maison
     PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/ - Modifier une maison
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def create(self, request, devis_id=None):
         """
         Ajoute une maison à un devis existant.
         Calcule la prime et enregistre dans la base.
         Met à jour automatiquement les totaux du devis.
-        
+
         POST /api/mrh/devis/{devis_id}/maisons/
-        
+
         Body:
         {
             "maison": {
@@ -2905,90 +3182,94 @@ class MaisonViewSet(viewsets.ViewSet):
         }
         """
         from .models import Devis
-        
+
         # Vérifier que le devis existe
         try:
             devis = Devis.objects.get(iddevis=devis_id)
         except Devis.DoesNotExist:
             return Response(
-                {'erreur': f'Devis {devis_id} non trouvé'},
-                status=status.HTTP_404_NOT_FOUND
+                {"erreur": f"Devis {devis_id} non trouvé"},
+                status=status.HTTP_404_NOT_FOUND,
             )
-        
+
         # Valider les données
         serializer = MaisonAjoutRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
-        data = serializer.validated_data['maison']
+
+        data = serializer.validated_data["maison"]
         service = MRHCalculService()
-        
+
         if not offre_mrh_compatible(data["id_offre"], data["code_usage"]):
             return Response(
-                {'erreur': "Offre incompatible avec l'usage"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "Offre incompatible avec l'usage"},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-         
+
         try:
             # Calculer et enregistrer la maison
             resultat = service.calculer_et_enregistrer_maison(
                 id_devis=devis_id,
                 id_produit=devis.produit_id,
                 id_compagnie=devis.compagnie_id,
-                id_tarif=data.get('id_tarif'),
-                id_offre=data.get('id_offre'),
-                code_usage=data['code_usage'],
-                valeur_batiment=data.get('valeur_batiment'),
-                valeur_contenu=data.get('valeur_contenu'),
-                loyer_mensuel=data.get('loyer_mensuel'),
-                capital_rvt=data.get('capital_rvt'),
-                options=[opt['code_option'] for opt in data.get('options', [])],
-                sous_garanties_optionnelles=[
-                    gar['code_sous_garantie'] for gar in data.get('sous_garanties_optionnelles', [])
+                id_tarif=data.get("id_tarif"),
+                id_offre=data.get("id_offre"),
+                code_usage=data["code_usage"],
+                valeur_batiment=data.get("valeur_batiment"),
+                valeur_contenu=data.get("valeur_contenu"),
+                loyer_mensuel=data.get("loyer_mensuel"),
+                capital_rvt=data.get("capital_rvt"),
+                options=[
+                    opt["code_option"] for opt in data.get("options", [])
                 ],
-                adresse=data.get('adresse'),
-                description=data.get('description'),
+                sous_garanties_optionnelles=[
+                    gar["code_sous_garantie"]
+                    for gar in data.get("sous_garanties_optionnelles", [])
+                ],
+                adresse=data.get("adresse"),
+                description=data.get("description"),
             )
-            
+
             # Construire la réponse
             response_data = {
-                'devis_id': devis_id,
-                'maison_id': resultat['id_maison'],
-                'statut': 'success',
-                'message': 'Maison ajoutée avec succès',
-                'calcul': resultat['calcul'],
+                "devis_id": devis_id,
+                "maison_id": resultat["id_maison"],
+                "statut": "success",
+                "message": "Maison ajoutée avec succès",
+                "calcul": resultat["calcul"],
             }
-            
-            response_serializer = MaisonAjouteeResponseSerializer(response_data)
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        
+
+            response_serializer = MaisonAjouteeResponseSerializer(
+                response_data
+            )
+            return Response(
+                response_serializer.data, status=status.HTTP_201_CREATED
+            )
+
         except Exception as e:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
-    
-    
+
     def update(self, request, devis_id=None, pk=None):
         """
         Modifier une maison existante dans un devis MRH.
-        
+
         PUT /api/mrh/devis/{devis_id}/maisons/{maison_id}/
-        
+
         Permet de modifier les caractéristiques d'une maison :
         - Valeurs (bâtiment, contenu, loyer, RVT)
         - Options (gardien, zone industrielle, etc.)
         - Garanties optionnelles
         - Adresse
-        
+
         Règles :
         - Si prime maison imposée : erreur (sauf force_recalcul=True)
         - Si prime devis imposée : erreur (sauf force_recalcul=True)
         - Si force_recalcul=True : lève l'imposition automatiquement
-        
+
         Request body :
         {
             "code_usage": "proprietaire_occupant_total",  // optionnel
@@ -2998,7 +3279,7 @@ class MaisonViewSet(viewsets.ViewSet):
             "sous_garanties_optionnelles": ["RC_MEMBRE"],  // optionnel
             "force_recalcul": false  // optionnel, défaut false
         }
-        
+
         Response 200 (succès) :
         {
             "success": true,
@@ -3008,7 +3289,7 @@ class MaisonViewSet(viewsets.ViewSet):
             "totaux_devis": { ... },
             "imposition_levee": false
         }
-        
+
         Response 400 (prime imposée) :
         {
             "success": false,
@@ -3022,29 +3303,30 @@ class MaisonViewSet(viewsets.ViewSet):
         # Validation des données
         serializer = MaisonModificationRequestSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Vérifier que la maison appartient au devis
         maison = get_object_or_404(DevisDetail, iddevisdetail=pk)
         if maison.iddevis_id != int(devis_id):
             return Response(
                 {
-                    'erreur': 'MAISON_NOT_IN_DEVIS',
-                    'message': f'La maison {pk} n\'appartient pas au devis {devis_id}'
+                    "erreur": "MAISON_NOT_IN_DEVIS",
+                    "message": f"La maison {pk} n'appartient pas au devis {devis_id}",
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Appeler le service métier
         service = MRHCalculService()
         try:
             resultat = service.modifier_maison(
-                id_maison=pk,
-                **serializer.validated_data
+                id_maison=pk, **serializer.validated_data
             )
 
             # Si échec (prime imposée)
-            if not resultat.get('success', False):
+            if not resultat.get("success", False):
                 return Response(resultat, status=status.HTTP_400_BAD_REQUEST)
 
             # Succès
@@ -3052,69 +3334,70 @@ class MaisonViewSet(viewsets.ViewSet):
 
         except ValueError as e:
             return Response(
-                {'erreur': 'VALIDATION_ERROR', 'message': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "VALIDATION_ERROR", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         except Exception as e:
             return Response(
-                {'erreur': 'INTERNAL_ERROR', 'message': f'Erreur lors de la modification : {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {
+                    "erreur": "INTERNAL_ERROR",
+                    "message": f"Erreur lors de la modification : {str(e)}",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
+
     def destroy(self, request, devis_id=None, pk=None):
         """
         Supprime une maison d'un devis.
         Met à jour automatiquement les totaux du devis.
-        
+
         DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/
         """
         from .models import Devis, DevisDetail  # Import local
-        
+
         try:
             # Vérifier que le devis existe
             devis = Devis.objects.get(iddevis=devis_id)
-            
+
             # Vérifier que la maison existe et appartient bien au devis
             maison = DevisDetail.objects.get(
-                iddevisdetail=pk,
-                iddevis_id=devis_id
+                iddevisdetail=pk, iddevis_id=devis_id
             )
-            
+
             # Supprimer la maison (les garanties seront supprimées en cascade)
             maison.delete()
-            
+
             # Mettre à jour les totaux du devis
             service = MRHCalculService()
             totaux = service.mettre_a_jour_totaux_devis(
                 id_devis=devis_id,
                 id_produit=devis.produit_id,
                 id_compagnie=devis.compagnie_id,
-                inclure_accessoires=True
+                inclure_accessoires=True,
             )
-            
+
             return Response(
                 {
-                    'message': f'Maison {pk} supprimée avec succès',
-                    'totaux_devis': totaux
+                    "message": f"Maison {pk} supprimée avec succès",
+                    "totaux_devis": totaux,
                 },
-                status=status.HTTP_200_OK
+                status=status.HTTP_200_OK,
             )
-        
+
         except Devis.DoesNotExist:
             return Response(
-                {'error': f'Devis {devis_id} non trouvé'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": f"Devis {devis_id} non trouvé"},
+                status=status.HTTP_404_NOT_FOUND,
             )
         except DevisDetail.DoesNotExist:
             return Response(
-                {'error': f'Maison {pk} non trouvée dans le devis {devis_id}'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": f"Maison {pk} non trouvée dans le devis {devis_id}"},
+                status=status.HTTP_404_NOT_FOUND,
             )
         except Exception as e:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 
@@ -3122,79 +3405,81 @@ class MaisonViewSet(viewsets.ViewSet):
 # SECTION 5 : ENDPOINTS UTILITAIRES
 # ============================================================================
 
+
 class ValidateParametersView(APIView):
     """
     Valide les paramètres pour un usage donné sans faire de calcul.
     Utile pour validation côté frontend.
-    
+
     POST /api/mrh/validate-parameters/
-    
+
     Body:
     {
         "code_usage": "proprietaire_occupant_total",
         "valeur_batiment": 50000000,
         "valeur_contenu": 10000000
     }
-    
+
     Response:
     {
         "valid": true,
         "errors": {}
     }
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request):
         serializer = MaisonCalculRequestSerializer(data=request.data)
-        
+
         if serializer.is_valid():
-            return Response({
-                'valid': True,
-                'errors': {}
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {"valid": True, "errors": {}}, status=status.HTTP_200_OK
+            )
         else:
-            return Response({
-                'valid': False,
-                'errors': serializer.errors
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {"valid": False, "errors": serializer.errors},
+                status=status.HTTP_200_OK,
+            )
 
 
 class RecalculerDevisView(APIView):
     """
     Recalcule les totaux d'un devis (utile après modification manuelle).
-    
+
     POST /api/mrh/devis/{devis_id}/recalculer/
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, devis_id):
         from .models import Devis  # Import local
-        
+
         try:
             devis = Devis.objects.get(iddevis=devis_id)
-            
+
             service = MRHCalculService()
             totaux = service.mettre_a_jour_totaux_devis(
                 id_devis=devis_id,
                 id_produit=devis.produit_id,
                 id_compagnie=devis.compagnie_id,
-                inclure_accessoires=True
+                inclure_accessoires=True,
             )
-            
-            return Response({
-                'message': 'Devis recalculé avec succès',
-                'totaux': totaux
-            }, status=status.HTTP_200_OK)
-        
+
+            return Response(
+                {"message": "Devis recalculé avec succès", "totaux": totaux},
+                status=status.HTTP_200_OK,
+            )
+
         except Devis.DoesNotExist:
             return Response(
-                {'erreur': f'Devis {devis_id} non trouvé'},
-                status=status.HTTP_404_NOT_FOUND
+                {"erreur": f"Devis {devis_id} non trouvé"},
+                status=status.HTTP_404_NOT_FOUND,
             )
         except Exception as e:
             return Response(
-                {'erreur': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"erreur": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -3203,12 +3488,13 @@ Vue pour l'endpoint de résumé financier des devis MRH
 ======================================================
 """
 
+
 class ResumeFinancierDevisView(APIView):
     """
     Endpoint pour obtenir le résumé financier complet d'un devis MRH.
-    
+
     GET /api/mrh/devis/{devis_id}/resume-financier/
-    
+
     Retourne :
     - Prime nette totale (après options)
     - Prime annuelle (avant options)
@@ -3216,14 +3502,14 @@ class ResumeFinancierDevisView(APIView):
     - Taxe totale (garanties + accessoire)
     - Prime TTC
     - Liste des garanties acquises avec prime nette et taxe
-    
+
     Permissions :
     - Utilisateur authentifié
-    
+
     Exemples d'utilisation :
-    
+
     curl http://localhost:8000/api/mrh/devis/456/resume-financier/
-    
+
     Réponse :
     {
         "id_devis": 456,
@@ -3240,107 +3526,114 @@ class ResumeFinancierDevisView(APIView):
         "sous_garanties_acquises": [...]
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, devis_id):
         """
         Récupère le résumé financier complet du devis.
-        
+
         Args:
             request: Requête HTTP
             devis_id: ID du devis
-        
+
         Returns:
             Response avec le résumé financier complet
         """
         try:
             # Calculer le résumé financier
             resume = obtenir_resume_financier_devis(devis_id)
-            
+
             # Sérialiser la réponse
             serializer = ResumeFinancierDevisSerializer(resume)
-            
+
             return Response(serializer.data, status=status.HTTP_200_OK)
-        
+
         except ValueError as e:
             # Devis non trouvé
             return Response(
-                {
-                    'erreur': str(e),
-                    'code': 'DEVIS_INTROUVABLE'
-                },
-                status=status.HTTP_404_NOT_FOUND
+                {"erreur": str(e), "code": "DEVIS_INTROUVABLE"},
+                status=status.HTTP_404_NOT_FOUND,
             )
-        
+
         except Exception as e:
             # Erreur interne
             return Response(
                 {
-                    'erreur': f"Erreur lors du calcul du résumé financier : {str(e)}",
-                    'code': 'ERREUR_INTERNE'
+                    "erreur": f"Erreur lors du calcul du résumé financier : {str(e)}",
+                    "code": "ERREUR_INTERNE",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
 class ChequeFilter(filters.FilterSet):
     # Filtre pour les chèques non épuisés (solde > 0)
-    non_epuise = filters.BooleanFilter(method='filter_non_epuise')
+    non_epuise = filters.BooleanFilter(method="filter_non_epuise")
     # Filtre par plage de dates
-    date_min = filters.DateFilter(field_name="date_saisie", lookup_expr='gte')
-    date_max = filters.DateFilter(field_name="date_saisie", lookup_expr='lte')
+    date_min = filters.DateFilter(field_name="date_saisie", lookup_expr="gte")
+    date_max = filters.DateFilter(field_name="date_saisie", lookup_expr="lte")
 
     class Meta:
         model = Cheque
-        fields = ['banque', 'numero_cheque', 'non_epuise', 'date_min', 'date_max']
+        fields = [
+            "banque",
+            "numero_cheque",
+            "non_epuise",
+            "date_min",
+            "date_max",
+        ]
 
     def filter_non_epuise(self, queryset, name, value):
-        if value: # true → non épuisés
+        if value:  # true → non épuisés
             return queryset.filter(solde_disponible__gt=0)
-        else: # false → épuisés 
+        else:  # false → épuisés
             return queryset.filter(solde_disponible=0)
 
 
 class CheckChequeStatusView(APIView):
     def get(self, request):
-        numero = request.query_params.get('numero_cheque')
-        banque_id = request.query_params.get('banque')
-        
-        cheque = Cheque.objects.filter(numero_cheque=numero, banque_id=banque_id).first()
-        
+        numero = request.query_params.get("numero_cheque")
+        banque_id = request.query_params.get("banque")
+
+        cheque = Cheque.objects.filter(
+            numero_cheque=numero, banque_id=banque_id
+        ).first()
+
         if cheque:
-            return Response({
-                "existe": True,
-                "montant_initial": cheque.montant_initial,
-                "solde_disponible": cheque.solde_disponible
-            })
+            return Response(
+                {
+                    "existe": True,
+                    "montant_initial": cheque.montant_initial,
+                    "solde_disponible": cheque.solde_disponible,
+                }
+            )
         return Response({"existe": False})
-    
+
 
 class ChequeListView(generics.ListAPIView):
-    queryset = Cheque.objects.all().order_by('-date_saisie')
+    queryset = Cheque.objects.all().order_by("-date_saisie")
     serializer_class = ChequeSerializer
     filter_backends = (filters.DjangoFilterBackend,)
     filterset_class = ChequeFilter
+
 
 class ChequeDetailOperationsView(APIView):
     def get(self, request, id_cheque):
         # On récupère le chèque
         cheque = get_object_or_404(Cheque, id_cheque=id_cheque)
-        
+
         # On récupère toutes les opérations liées
-        operations = cheque.operations.all().order_by('-date_saisie')
-        
+        operations = cheque.operations.all().order_by("-date_saisie")
+
         # Sérialisation
         cheque_data = ChequeSerializer(cheque).data
         operations_data = ChequeOperationSerializer(operations, many=True).data
-        
-        return Response({
-            "chèque": cheque_data,
-            "historique_operations": operations_data
-        })
-        
+
+        return Response(
+            {"chèque": cheque_data, "historique_operations": operations_data}
+        )
+
 
 """
 Vues API pour modification de maison et imposition de prime MRH
@@ -3358,21 +3651,22 @@ Ces vues exposent les endpoints REST pour :
 # VUE 1 : IMPOSER LA PRIME D'UNE MAISON
 # ============================================================================
 
+
 class ImposerPrimeMaisonView(APIView):
     """
     Imposer la prime NETTE d'une maison.
-    
+
     POST /api/mrh/devis/{devis_id}/maisons/{maison_id}/imposer-prime/
-    
+
     Fixe manuellement la prime nette d'une maison.
     La taxe sera recalculée automatiquement.
-    
+
     Request body :
     {
         "montant_impose": 150000.00,  // Prime NETTE en FCFA
         "motif": "Négociation commerciale - remise de 10 000 FCFA"  // optionnel
     }
-    
+
     Response 200 :
     {
         "success": true,
@@ -3386,67 +3680,66 @@ class ImposerPrimeMaisonView(APIView):
         "totaux_devis": { ... }
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, devis_id, maison_id):
         """Impose la prime d'une maison."""
-        
+
         # Validation
         serializer = ImpositionPrimeMaisonRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Vérifier que la maison appartient au devis
         maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
         if maison.iddevis_id != devis_id:
             return Response(
                 {
-                    'erreur': 'MAISON_NOT_IN_DEVIS',
-                    'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                    "erreur": "MAISON_NOT_IN_DEVIS",
+                    "message": f"La maison {maison_id} n'appartient pas au devis {devis_id}",
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         # Appeler le service
         service = MRHCalculService()
-        
+
         try:
             resultat = service.imposer_prime_maison(
                 id_maison=maison_id,
-                montant_impose=serializer.validated_data['montant_impose'],
-                user_id=request.user.id if hasattr(request.user, 'id') else None,
-                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
-                motif=serializer.validated_data.get('motif')
+                montant_impose=serializer.validated_data["montant_impose"],
+                user_id=(
+                    request.user.id if hasattr(request.user, "id") else None
+                ),
+                user_nom=(
+                    request.user.get_full_name()
+                    if hasattr(request.user, "get_full_name")
+                    else str(request.user)
+                ),
+                motif=serializer.validated_data.get("motif"),
             )
-            
-            if not resultat.get('success', False):
-                return Response(
-                    resultat,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+
+            if not resultat.get("success", False):
+                return Response(resultat, status=status.HTTP_400_BAD_REQUEST)
+
             return Response(resultat, status=status.HTTP_201_CREATED)
-        
+
         except ValueError as e:
             return Response(
-                {
-                    'erreur': 'VALIDATION_ERROR',
-                    'message': str(e)
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "VALIDATION_ERROR", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         except Exception as e:
             return Response(
                 {
-                    'erreur': 'INTERNAL_ERROR',
-                    'message': f'Erreur lors de l\'imposition : {str(e)}'
+                    "erreur": "INTERNAL_ERROR",
+                    "message": f"Erreur lors de l'imposition : {str(e)}",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -3454,23 +3747,24 @@ class ImposerPrimeMaisonView(APIView):
 # VUE 2 : IMPOSER LA PRIME D'UN DEVIS
 # ============================================================================
 
+
 class ImposerPrimeDevisView(APIView):
     """
     Imposer la prime NETTE globale d'un devis.
-    
+
     POST /api/mrh/devis/{devis_id}/imposer-prime/
-    
+
     Fixe manuellement la prime nette totale du devis.
     - La prime est répartie proportionnellement sur les maisons
     - La taxe et les accessoires sont recalculés
     - Bloque toute modification des maisons
-    
+
     Request body :
     {
         "montant_impose": 400000.00,  // Prime NETTE totale en FCFA
         "motif": "Négociation commerciale - accord client"  // optionnel
     }
-    
+
     Response 201 :
     {
         "success": true,
@@ -3489,59 +3783,58 @@ class ImposerPrimeDevisView(APIView):
         "note": "La taxe et les accessoires sont calculés sur cette prime imposée"
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def post(self, request, devis_id):
         """Impose la prime globale d'un devis."""
-        
+
         # Validation
         serializer = ImpositionPrimeDevisRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Vérifier que le devis existe
         devis = get_object_or_404(Devis, iddevis=devis_id)
-        
+
         # Appeler le service
         service = MRHCalculService()
-        
+
         try:
             resultat = service.imposer_prime_devis(
                 id_devis=devis_id,
-                montant_impose=serializer.validated_data['montant_impose'],
-                user_id=request.user.id if hasattr(request.user, 'id') else None,
-                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
-                motif=serializer.validated_data.get('motif')
+                montant_impose=serializer.validated_data["montant_impose"],
+                user_id=(
+                    request.user.id if hasattr(request.user, "id") else None
+                ),
+                user_nom=(
+                    request.user.get_full_name()
+                    if hasattr(request.user, "get_full_name")
+                    else str(request.user)
+                ),
+                motif=serializer.validated_data.get("motif"),
             )
-            
-            if not resultat.get('success', False):
-                return Response(
-                    resultat,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
+
+            if not resultat.get("success", False):
+                return Response(resultat, status=status.HTTP_400_BAD_REQUEST)
+
             return Response(resultat, status=status.HTTP_201_CREATED)
-        
+
         except ValueError as e:
             return Response(
-                {
-                    'erreur': 'VALIDATION_ERROR',
-                    'message': str(e)
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "VALIDATION_ERROR", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         except Exception as e:
             return Response(
                 {
-                    'erreur': 'INTERNAL_ERROR',
-                    'message': f'Erreur lors de l\'imposition : {str(e)}'
+                    "erreur": "INTERNAL_ERROR",
+                    "message": f"Erreur lors de l'imposition : {str(e)}",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -3549,20 +3842,21 @@ class ImposerPrimeDevisView(APIView):
 # VUE 3 : LEVER UNE IMPOSITION
 # ============================================================================
 
+
 class LeverImpositionView(APIView):
     """
     Lever une imposition de prime (maison ou devis).
-    
+
     DELETE /api/mrh/devis/{devis_id}/imposer-prime/  (devis)
     DELETE /api/mrh/devis/{devis_id}/maisons/{maison_id}/imposer-prime/  (maison)
-    
+
     Désactive l'imposition et autorise à nouveau les modifications.
-    
+
     Request body (optionnel) :
     {
         "motif": "Erreur de saisie corrigée"
     }
-    
+
     Response 200 :
     {
         "success": true,
@@ -3571,74 +3865,76 @@ class LeverImpositionView(APIView):
         "message": "Imposition levée pour DEVIS 123"
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def delete(self, request, devis_id, maison_id=None):
         """Lève une imposition."""
-        
+
         # Validation
         serializer = LeveeImpositionRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(
-                serializer.errors,
-                status=status.HTTP_400_BAD_REQUEST
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Déterminer le type et l'ID
         if maison_id:
             # Lever imposition maison
-            type_imposition = 'MAISON'
+            type_imposition = "MAISON"
             id_cible = maison_id
-            
+
             # Vérifier que la maison existe et appartient au devis
             maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
             if maison.iddevis_id != devis_id:
                 return Response(
                     {
-                        'erreur': 'MAISON_NOT_IN_DEVIS',
-                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                        "erreur": "MAISON_NOT_IN_DEVIS",
+                        "message": f"La maison {maison_id} n'appartient pas au devis {devis_id}",
                     },
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
             # Lever imposition devis
-            type_imposition = 'DEVIS'
+            type_imposition = "DEVIS"
             id_cible = devis_id
-            
+
             # Vérifier que le devis existe
             get_object_or_404(Devis, iddevis=devis_id)
-        
+
         # Appeler le service
         service = MRHCalculService()
-        
+
         try:
             resultat = service.lever_imposition(
                 type_imposition=type_imposition,
                 id_cible=id_cible,
-                user_id=request.user.id if hasattr(request.user, 'id') else None,
-                user_nom=request.user.get_full_name() if hasattr(request.user, 'get_full_name') else str(request.user),
-                motif_levee=serializer.validated_data.get('motif')
+                user_id=(
+                    request.user.id if hasattr(request.user, "id") else None
+                ),
+                user_nom=(
+                    request.user.get_full_name()
+                    if hasattr(request.user, "get_full_name")
+                    else str(request.user)
+                ),
+                motif_levee=serializer.validated_data.get("motif"),
             )
-            
+
             return Response(resultat, status=status.HTTP_200_OK)
-        
+
         except ValueError as e:
             return Response(
-                {
-                    'erreur': 'VALIDATION_ERROR',
-                    'message': str(e)
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"erreur": "VALIDATION_ERROR", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         except Exception as e:
             return Response(
                 {
-                    'erreur': 'INTERNAL_ERROR',
-                    'message': f'Erreur lors de la levée : {str(e)}'
+                    "erreur": "INTERNAL_ERROR",
+                    "message": f"Erreur lors de la levée : {str(e)}",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -3646,15 +3942,16 @@ class LeverImpositionView(APIView):
 # VUE 4 : HISTORIQUE DES IMPOSITIONS
 # ============================================================================
 
+
 class HistoriqueImpositionsView(APIView):
     """
     Consulter l'historique des impositions d'une entité.
-    
+
     GET /api/mrh/devis/{devis_id}/impositions/  (historique devis)
     GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/impositions/  (historique maison)
-    
+
     Retourne toutes les impositions (actives et levées) avec détails.
-    
+
     Response 200 :
     {
         "type_imposition": "DEVIS",
@@ -3677,86 +3974,101 @@ class HistoriqueImpositionsView(APIView):
         "levees": 2
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, devis_id, maison_id=None):
         """Récupère l'historique des impositions."""
-        
+
         # Déterminer le type et l'ID
         if maison_id:
-            type_imposition = 'MAISON'
+            type_imposition = "MAISON"
             id_cible = maison_id
-            
+
             # Vérifier existence
             maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
             if maison.iddevis_id != devis_id:
                 return Response(
                     {
-                        'erreur': 'MAISON_NOT_IN_DEVIS',
-                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                        "erreur": "MAISON_NOT_IN_DEVIS",
+                        "message": f"La maison {maison_id} n'appartient pas au devis {devis_id}",
                     },
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            type_imposition = 'DEVIS'
+            type_imposition = "DEVIS"
             id_cible = devis_id
             get_object_or_404(Devis, iddevis=devis_id)
-        
+
         # Récupérer l'historique
         impositions = ImpositionPrime.objects.filter(
-            type_imposition=type_imposition,
-            id_cible=id_cible
-        ).order_by('-date_imposition')
-        
+            type_imposition=type_imposition, id_cible=id_cible
+        ).order_by("-date_imposition")
+
         # Formater les données
         data_impositions = []
         for imp in impositions:
-            data_impositions.append({
-                'id': imp.id,
-                'montant_impose': float(imp.montant_impose),
-                'ancien_montant_nette': float(imp.ancien_montant_nette) if imp.ancien_montant_nette else None,
-                'ancien_montant_ttc': float(imp.ancien_montant_ttc) if imp.ancien_montant_ttc else None,
-                'user_nom': imp.user_nom,
-                'date_imposition': imp.date_imposition.isoformat(),
-                'motif': imp.motif,
-                'actif': imp.actif,
-                'date_levee': imp.date_levee.isoformat() if imp.date_levee else None,
-                'levee_par_user_nom': imp.levee_par_user_nom,
-                'motif_levee': imp.motif_levee,
-                'duree_jours': imp.duree_jours,
-            })
-        
+            data_impositions.append(
+                {
+                    "id": imp.id,
+                    "montant_impose": float(imp.montant_impose),
+                    "ancien_montant_nette": (
+                        float(imp.ancien_montant_nette)
+                        if imp.ancien_montant_nette
+                        else None
+                    ),
+                    "ancien_montant_ttc": (
+                        float(imp.ancien_montant_ttc)
+                        if imp.ancien_montant_ttc
+                        else None
+                    ),
+                    "user_nom": imp.user_nom,
+                    "date_imposition": imp.date_imposition.isoformat(),
+                    "motif": imp.motif,
+                    "actif": imp.actif,
+                    "date_levee": (
+                        imp.date_levee.isoformat() if imp.date_levee else None
+                    ),
+                    "levee_par_user_nom": imp.levee_par_user_nom,
+                    "motif_levee": imp.motif_levee,
+                    "duree_jours": imp.duree_jours,
+                }
+            )
+
         # Statistiques
         total = impositions.count()
         actives = impositions.filter(actif=True).count()
         levees = impositions.filter(actif=False).count()
-        
-        return Response({
-            'type_imposition': type_imposition,
-            'id_cible': id_cible,
-            'impositions': data_impositions,
-            'statistiques': {
-                'total': total,
-                'actives': actives,
-                'levees': levees
-            }
-        }, status=status.HTTP_200_OK)
+
+        return Response(
+            {
+                "type_imposition": type_imposition,
+                "id_cible": id_cible,
+                "impositions": data_impositions,
+                "statistiques": {
+                    "total": total,
+                    "actives": actives,
+                    "levees": levees,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # ============================================================================
 # VUE 6 : STATUT D'IMPOSITION
 # ============================================================================
 
+
 class StatutImpositionView(APIView):
     """
     Vérifier le statut d'imposition d'une entité.
-    
+
     GET /api/mrh/devis/{devis_id}/statut-imposition/  (statut devis)
     GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/statut-imposition/  (statut maison)
-    
+
     Retourne si l'entité a une prime imposée et les détails.
-    
+
     Response 200 :
     {
         "imposee": true,
@@ -3771,82 +4083,86 @@ class StatutImpositionView(APIView):
         "message": "Prime imposée à 400 000,00 FCFA le 18/12/2024 par John DOE"
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, devis_id, maison_id=None):
         """Vérifie le statut d'imposition."""
-        
+
         # Déterminer le type et l'ID
         if maison_id:
-            type_imposition = 'MAISON'
+            type_imposition = "MAISON"
             id_cible = maison_id
-            
+
             # Récupérer la maison
             maison = get_object_or_404(DevisDetail, iddevisdetail=maison_id)
             if maison.iddevis_id != devis_id:
                 return Response(
-                    {'erreur': 'MAISON_NOT_IN_DEVIS'},
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"erreur": "MAISON_NOT_IN_DEVIS"},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-            
+
             imposee = maison.prime_imposee
             montant = maison.primenette if imposee else None
         else:
-            type_imposition = 'DEVIS'
+            type_imposition = "DEVIS"
             id_cible = devis_id
-            
+
             # Récupérer le devis
             devis = get_object_or_404(Devis, iddevis=devis_id)
             imposee = devis.prime_imposee
             montant = devis.primenette if imposee else None
-        
+
         # Si imposée, récupérer les détails
         if imposee:
             imposition = ImpositionPrime.objects.filter(
-                type_imposition=type_imposition,
-                id_cible=id_cible,
-                actif=True
+                type_imposition=type_imposition, id_cible=id_cible, actif=True
             ).first()
-            
+
             if imposition:
-                return Response({
-                    'imposee': True,
-                    'type_imposition': type_imposition,
-                    'id_cible': id_cible,
-                    'montant_impose': float(montant),
-                    'user_nom': imposition.user_nom,
-                    'date_imposition': imposition.date_imposition.isoformat(),
-                    'motif': imposition.motif,
-                    'duree_jours': imposition.duree_jours,
-                    'peut_modifier': False,
-                    'message': (
-                        f"Prime imposée à {montant:,.2f} FCFA "
-                        f"le {imposition.date_imposition.strftime('%d/%m/%Y')} "
-                        f"par {imposition.user_nom}"
-                    )
-                })
-        
+                return Response(
+                    {
+                        "imposee": True,
+                        "type_imposition": type_imposition,
+                        "id_cible": id_cible,
+                        "montant_impose": float(montant),
+                        "user_nom": imposition.user_nom,
+                        "date_imposition": imposition.date_imposition.isoformat(),
+                        "motif": imposition.motif,
+                        "duree_jours": imposition.duree_jours,
+                        "peut_modifier": False,
+                        "message": (
+                            f"Prime imposée à {montant:,.2f} FCFA "
+                            f"le {imposition.date_imposition.strftime('%d/%m/%Y')} "
+                            f"par {imposition.user_nom}"
+                        ),
+                    }
+                )
+
         # Pas d'imposition
-        return Response({
-            'imposee': False,
-            'type_imposition': type_imposition,
-            'id_cible': id_cible,
-            'peut_modifier': True,
-            'message': 'Aucune imposition active'
-        })
-        
+        return Response(
+            {
+                "imposee": False,
+                "type_imposition": type_imposition,
+                "id_cible": id_cible,
+                "peut_modifier": True,
+                "message": "Aucune imposition active",
+            }
+        )
+
 
 """
 Vue pour consulter les détails complets d'une maison MRH
 =========================================================
 """
+
+
 class DetailMaisonView(APIView):
     """
     Consulter les détails complets d'une maison MRH.
-    
+
     GET /api/mrh/devis/{devis_id}/maisons/{maison_id}/details/
-    
+
     Retourne toutes les informations sur une maison :
     - Paramètres de calcul (usage, valeurs, loyer, etc.)
     - Liste complète des garanties avec leurs montants
@@ -3854,7 +4170,7 @@ class DetailMaisonView(APIView):
     - Totaux financiers détaillés
     - Statut d'imposition
     - Métadonnées
-    
+
     Response 200 :
     {
         "id_maison": 456,
@@ -3916,114 +4232,117 @@ class DetailMaisonView(APIView):
         "peut_etre_modifiee": true
     }
     """
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request, devis_id, maison_id):
         """Récupère les détails complets d'une maison."""
-        
+
         try:
             # Récupérer la maison
             maison = get_object_or_404(
-                DevisDetail.objects.select_related('iddevis'),
-                iddevisdetail=maison_id
+                DevisDetail.objects.select_related("iddevis"),
+                iddevisdetail=maison_id,
             )
-            
+
             # Vérifier que la maison appartient au devis
             if maison.iddevis_id != devis_id:
                 return Response(
                     {
-                        'error': 'MAISON_NOT_IN_DEVIS',
-                        'message': f'La maison {maison_id} n\'appartient pas au devis {devis_id}'
+                        "error": "MAISON_NOT_IN_DEVIS",
+                        "message": f"La maison {maison_id} n'appartient pas au devis {devis_id}",
                     },
-                    status=status.HTTP_400_BAD_REQUEST
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-            
+
             # Construire les données complètes
             details = self._construire_details(maison)
-            
+
             # Sérialiser
             serializer = DetailMaisonSerializer(details)
-            
+
             return Response(serializer.data, status=status.HTTP_200_OK)
-        
+
         except Exception as e:
             return Response(
                 {
-                    'error': 'INTERNAL_ERROR',
-                    'message': f'Erreur lors de la récupération des détails : {str(e)}'
+                    "error": "INTERNAL_ERROR",
+                    "message": f"Erreur lors de la récupération des détails : {str(e)}",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
+
     def _construire_details(self, maison):
         """Construit le dictionnaire complet des détails de la maison."""
-        
+
         # 1. Récupérer les garanties
         sous_garanties = self._get_garanties(maison)
-        
+
         # 2. Extraire les paramètres depuis les nouvelles colonnes
         parametres = self._extraire_parametres(maison)
-        
+
         # 3. Extraire les options depuis JSON
         options = self._extraire_options(maison)
-        
+
         # 4. Calculer les totaux
         totaux = self._calculer_totaux(maison, sous_garanties)
-        
+
         # 5. Récupérer les infos d'imposition
         imposition = self._get_imposition_info(maison)
-        
+
         # 6. Statistiques garanties
-        sous_garanties_obligatoires = [g for g in sous_garanties if g['type'] == 'OBLIGATOIRE']
-        sous_garanties_optionnelles = [g for g in sous_garanties if g['type'] == 'OPTIONNELLE']
-        
+        sous_garanties_obligatoires = [
+            g for g in sous_garanties if g["type"] == "OBLIGATOIRE"
+        ]
+        sous_garanties_optionnelles = [
+            g for g in sous_garanties if g["type"] == "OPTIONNELLE"
+        ]
+
         return {
             # Identifiants
-            'id_maison': maison.iddevisdetail,
-            'id_devis': maison.iddevis_id,
-            'numero_devis': maison.iddevis.numerodevis if maison.iddevis else None,
-            'matricule': maison.matricule or None,
-            
+            "id_maison": maison.iddevisdetail,
+            "id_devis": maison.iddevis_id,
+            "numero_devis": (
+                maison.iddevis.numerodevis if maison.iddevis else None
+            ),
+            "matricule": maison.matricule or None,
             # Informations générales
-            'adresse': maison.adressecnd or '', 
-            'description': maison.observation,
-            
+            "adresse": maison.adressecnd or "",
+            "description": maison.observation,
             # Paramètres
-            'parametres': parametres,
-            
+            "parametres": parametres,
             # Options
-            'options': options,
-            
+            "options": options,
             # Garanties
-            'sous_garanties': sous_garanties,
-            'nombre_sous_garanties_obligatoires': len(sous_garanties_obligatoires),
-            'nombre_sous_garanties_optionnelles': len(sous_garanties_optionnelles),
-            'nombre_sous_garanties_total': len(sous_garanties),
-            
+            "sous_garanties": sous_garanties,
+            "nombre_sous_garanties_obligatoires": len(
+                sous_garanties_obligatoires
+            ),
+            "nombre_sous_garanties_optionnelles": len(
+                sous_garanties_optionnelles
+            ),
+            "nombre_sous_garanties_total": len(sous_garanties),
             # Totaux
-            'totaux': totaux,
-            
+            "totaux": totaux,
             # Imposition
-            'imposition': imposition,
-            
+            "imposition": imposition,
             # Dates (non disponibles pour l'instant)
-            'date_creation': None,
-            'date_modification': None,
-            
+            "date_creation": None,
+            "date_modification": None,
             # Métadonnées
-            'peut_etre_modifiee': not maison.prime_imposee,
+            "peut_etre_modifiee": not maison.prime_imposee,
         }
-    
+
     def _get_garanties(self, maison):
         """Récupère toutes les garanties de la maison avec leurs détails."""
-        
+
         from django.db import connection
-        
+
         sous_garanties = []
-        
+
         with connection.cursor() as cursor:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT 
                     dg.idgarantie,
                     g.code,
@@ -4042,217 +4361,259 @@ class DetailMaisonView(APIView):
                 JOIN stdmrh_sous_garantie g ON dg.idgarantie = g.idsousgarantie
                 WHERE dg.iddevisdet = %s
                 ORDER BY g.libelle
-            """, [maison.iddevisdetail])
-            
+            """,
+                [maison.iddevisdetail],
+            )
+
             for row in cursor.fetchall():
-                id_garantie, code, libelle, type_garantie, acquise, prime_nette, prime_annuelle, taxe, taux_taxe = row
-                
-                prime_nette = Decimal(str(prime_nette)) if prime_nette else Decimal('0')
-                prime_annuelle = Decimal(str(prime_annuelle)) if prime_annuelle else Decimal('0')
-                taxe = Decimal(str(taxe)) if taxe else Decimal('0')
-                taux_taxe = Decimal(str(taux_taxe)) if taux_taxe else Decimal('0.145')
-                
+                (
+                    id_garantie,
+                    code,
+                    libelle,
+                    type_garantie,
+                    acquise,
+                    prime_nette,
+                    prime_annuelle,
+                    taxe,
+                    taux_taxe,
+                ) = row
+
+                prime_nette = (
+                    Decimal(str(prime_nette)) if prime_nette else Decimal("0")
+                )
+                prime_annuelle = (
+                    Decimal(str(prime_annuelle))
+                    if prime_annuelle
+                    else Decimal("0")
+                )
+                taxe = Decimal(str(taxe)) if taxe else Decimal("0")
+                taux_taxe = (
+                    Decimal(str(taux_taxe)) if taux_taxe else Decimal("0.145")
+                )
+
                 # Déterminer le type (obligatoire ou optionnelle)
                 # On considère qu'une garantie avec prime_annuelle = prime_nette est obligatoire
                 # et qu'une garantie forfaitaire (sans répartition) est optionnelle
-                #type_garantie = tyself._determiner_type_garantie(code, prime_annuelle, prime_nette)
-                
-                sous_garanties.append({
-                    'id_sous_garantie': id_garantie,
-                    'code_sous_garantie': code,
-                    'libelle': libelle,
-                    'type': type_garantie,
-                    'acquise': bool(acquise),
-                    'prime_nette': float(prime_nette),
-                    'prime_annuelle': float(prime_annuelle),
-                    'taux_taxe': float(taux_taxe),
-                    'taxe': float(taxe),
-                    'prime_ttc': float(prime_nette + taxe),
-                })
-        
+                # type_garantie = tyself._determiner_type_garantie(code, prime_annuelle, prime_nette)
+
+                sous_garanties.append(
+                    {
+                        "id_sous_garantie": id_garantie,
+                        "code_sous_garantie": code,
+                        "libelle": libelle,
+                        "type": type_garantie,
+                        "acquise": bool(acquise),
+                        "prime_nette": float(prime_nette),
+                        "prime_annuelle": float(prime_annuelle),
+                        "taux_taxe": float(taux_taxe),
+                        "taxe": float(taxe),
+                        "prime_ttc": float(prime_nette + taxe),
+                    }
+                )
+
         return sous_garanties
-    
-    def _determiner_type_garantie(self, code_garantie, prime_annuelle, prime_nette):
+
+    def _determiner_type_garantie(
+        self, code_garantie, prime_annuelle, prime_nette
+    ):
         """Détermine si une garantie est obligatoire ou optionnelle."""
-        
+
         # Les garanties optionnelles à forfait sont facilement identifiables
-        codes_optionnels = ['RC_MEMBRE', 'BRIS_GLACE', 'VOL_AGGRAVE']
-        
+        codes_optionnels = ["RC_MEMBRE", "BRIS_GLACE", "VOL_AGGRAVE"]
+
         if any(opt in code_garantie.upper() for opt in codes_optionnels):
-            return 'OPTIONNELLE'
-        
-        return 'OBLIGATOIRE'
-    
+            return "OPTIONNELLE"
+
+        return "OBLIGATOIRE"
+
     def _extraire_parametres(self, maison):
         """Extrait les paramètres de calcul depuis la maison."""
-        
-        code_usage = maison.modelevehicule or 'proprietaire_occupant_total'
-        
-        loyer_mensuel = Decimal(maison.chargeutile) if maison.chargeutile and maison.chargeutile > 0 else None
-        capital_rvt = Decimal(maison.valeuraccessoire) if maison.valeuraccessoire and maison.valeuraccessoire > 0 else None
-        
+
+        code_usage = maison.modelevehicule or "proprietaire_occupant_total"
+
+        loyer_mensuel = (
+            Decimal(maison.chargeutile)
+            if maison.chargeutile and maison.chargeutile > 0
+            else None
+        )
+        capital_rvt = (
+            Decimal(maison.valeuraccessoire)
+            if maison.valeuraccessoire and maison.valeuraccessoire > 0
+            else None
+        )
+
         return {
-            'code_usage': code_usage,
-            'libelle_usage': self._get_libelle_usage(code_usage),
-            'valeur_batiment': Decimal(maison.valeurneuve or 0),
-            'valeur_contenu': Decimal(maison.valeurvenale or 0),
-            'loyer_mensuel': loyer_mensuel,
-            'capital_rvt': capital_rvt,
+            "code_usage": code_usage,
+            "libelle_usage": self._get_libelle_usage(code_usage),
+            "valeur_batiment": Decimal(maison.valeurneuve or 0),
+            "valeur_contenu": Decimal(maison.valeurvenale or 0),
+            "loyer_mensuel": loyer_mensuel,
+            "capital_rvt": capital_rvt,
         }
 
-
-    
     def _extraire_code_usage(self, observation):
         """Extrait le code usage depuis l'observation."""
-        
+
         # Liste des codes usage possibles
         from configuration_api.models import UsageHabitation
-        codes_usage = list(UsageHabitation.objects.values_list("code", flat=True))
-        
+
+        codes_usage = list(
+            UsageHabitation.objects.values_list("code", flat=True)
+        )
+
         observation_lower = observation.lower()
-        
+
         for code in codes_usage:
             if code in observation_lower:
                 return code
-        
+
         # Par défaut
-        return 'proprietaire_occupant_total'
-    
+        return "proprietaire_occupant_total"
+
     def _get_libelle_usage(self, code_usage):
         """Retourne le libellé de l'usage."""
-        
+
         libelles = {
-            'proprietaire_occupant_total': 'Propriétaire occupant - Total',
-            'proprietaire_occupant_rez': 'Propriétaire occupant - Rez-de-chaussée',
-            'proprietaire_bailleur': 'Propriétaire bailleur',
-            'proprietaire_non_occupant': 'Propriétaire non occupant',
-            'locataire': 'Locataire',
-            'locataire_saisonnier': 'Locataire saisonnier',
-            'locaux_commerciaux': 'Locaux commerciaux',
-            'batiment_usage_mixte': 'Bâtiment à usage mixte',
+            "proprietaire_occupant_total": "Propriétaire occupant - Total",
+            "proprietaire_occupant_rez": "Propriétaire occupant - Rez-de-chaussée",
+            "proprietaire_bailleur": "Propriétaire bailleur",
+            "proprietaire_non_occupant": "Propriétaire non occupant",
+            "locataire": "Locataire",
+            "locataire_saisonnier": "Locataire saisonnier",
+            "locaux_commerciaux": "Locaux commerciaux",
+            "batiment_usage_mixte": "Bâtiment à usage mixte",
         }
-        
+
         return libelles.get(code_usage, code_usage)
-    
+
     def _extraire_options(self, maison):
         """Extrait les options appliquées depuis le JSON."""
-        
-        if not maison.conducteur or maison.conducteur.strip() in ['', '[]', 'null']:
+
+        if not maison.conducteur or maison.conducteur.strip() in [
+            "",
+            "[]",
+            "null",
+        ]:
             return []
-        
+
         try:
             codes_options = json.loads(maison.conducteur)
         except (json.JSONDecodeError, TypeError, ValueError):
             # Si le JSON est invalide, retourner liste vide
             return []
-        
+
         if not codes_options or not isinstance(codes_options, list):
             return []
-        
+
         # Récupérer les détails des options depuis stdmrhoption
         from django.db import connection
-        
+
         options = []
-        
+
         if codes_options:
-            codes = [opt['code_option'] for opt in codes_options]
-            placeholders = ','.join(['%s'] * len(codes_options))
-            
+            codes = [opt["code_option"] for opt in codes_options]
+            placeholders = ",".join(["%s"] * len(codes_options))
+
             with connection.cursor() as cursor:
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     SELECT code AS code_option, libelle, signe_ajustement AS signe, taux_ajustement AS pourcentage
                     FROM stdmrh_option
                     WHERE code IN ({placeholders})
                     ORDER BY libelle
-                """, codes)
-                
+                """,
+                    codes,
+                )
+
                 for row in cursor.fetchall():
                     code, libelle, signe, pourcentage = row
-                    
+
                     # Calculer l'impact financier estimé si possible
                     impact = None
                     if pourcentage and maison.primeannuelle:
                         base = float(maison.primeannuelle)
                         pct = float(pourcentage) / 100
-                        if signe == '-':
+                        if signe == "-":
                             impact = -1 * base * pct
                         else:
                             impact = base * pct
-                    
-                    options.append({
-                        'code_option': code,
-                        'libelle': libelle,
-                        'signe': signe,
-                        'pourcentage': float(pourcentage) if pourcentage else None,
-                        'impact_financier': impact,
-                    })
-        
+
+                    options.append(
+                        {
+                            "code_option": code,
+                            "libelle": libelle,
+                            "signe": signe,
+                            "pourcentage": (
+                                float(pourcentage) if pourcentage else None
+                            ),
+                            "impact_financier": impact,
+                        }
+                    )
+
         return options
-    
+
     def _extraire_adresse(self, observation):
         """Extrait l'adresse depuis l'observation."""
-        
+
         if not observation:
             return ""
-        
+
         # L'adresse est généralement au début de l'observation
         # Format possible : "Adresse - usage - autres infos"
-        parts = observation.split(' - ')
+        parts = observation.split(" - ")
         if parts:
             return parts[0].strip()
-        
+
         return observation[:100]  # Premiers 100 caractères
-    
+
     def _calculer_totaux(self, maison, garanties):
         """Calcule les totaux financiers."""
-        
-        prime_nette_totale = sum(g['prime_nette'] for g in garanties)
-        prime_annuelle_totale = sum(g['prime_annuelle'] for g in garanties)
-        taxe_totale = sum(g['taxe'] for g in garanties)
-        
+
+        prime_nette_totale = sum(g["prime_nette"] for g in garanties)
+        prime_annuelle_totale = sum(g["prime_annuelle"] for g in garanties)
+        taxe_totale = sum(g["taxe"] for g in garanties)
+
         return {
-            'prime_nette_totale': prime_nette_totale,
-            'prime_annuelle_totale': prime_annuelle_totale,
-            'taxe_totale': taxe_totale,
-            'prime_ttc_totale': prime_nette_totale + taxe_totale,
-            'economie_options': prime_annuelle_totale - prime_nette_totale,
+            "prime_nette_totale": prime_nette_totale,
+            "prime_annuelle_totale": prime_annuelle_totale,
+            "taxe_totale": taxe_totale,
+            "prime_ttc_totale": prime_nette_totale + taxe_totale,
+            "economie_options": prime_annuelle_totale - prime_nette_totale,
         }
-    
+
     def _get_imposition_info(self, maison):
         """Récupère les informations d'imposition."""
-        
+
         if not maison.prime_imposee:
             return {
-                'imposee': False,
-                'montant_impose': None,
-                'date_imposition': None,
-                'user_nom': None,
-                'motif': None,
-                'duree_jours': None,
+                "imposee": False,
+                "montant_impose": None,
+                "date_imposition": None,
+                "user_nom": None,
+                "motif": None,
+                "duree_jours": None,
             }
-        
+
         # Récupérer l'imposition active
         imposition = ImpositionPrime.objects.filter(
-            type_imposition='MAISON',
-            id_cible=maison.iddevisdetail,
-            actif=True
+            type_imposition="MAISON", id_cible=maison.iddevisdetail, actif=True
         ).first()
-        
+
         if imposition:
             return {
-                'imposee': True,
-                'montant_impose': float(maison.primenette),
-                'date_imposition': imposition.date_imposition,
-                'user_nom': imposition.user_nom,
-                'motif': imposition.motif,
-                'duree_jours': imposition.duree_jours,
+                "imposee": True,
+                "montant_impose": float(maison.primenette),
+                "date_imposition": imposition.date_imposition,
+                "user_nom": imposition.user_nom,
+                "motif": imposition.motif,
+                "duree_jours": imposition.duree_jours,
             }
-        
+
         return {
-            'imposee': True,
-            'montant_impose': float(maison.primenette),
-            'date_imposition': maison.prime_imposee_date,
-            'user_nom': None,
-            'motif': None,
-            'duree_jours': None,
+            "imposee": True,
+            "montant_impose": float(maison.primenette),
+            "date_imposition": maison.prime_imposee_date,
+            "user_nom": None,
+            "motif": None,
+            "duree_jours": None,
         }
