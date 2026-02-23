@@ -157,6 +157,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     DetailQuittanceSerializer,
     DetailReversementSerializer,
     DevisClientSerializer,
+    DevisDetailGarantieSerializer,
     DevisDetailSerializer,
     DevisDetGarantieSerializer,
     DevisMRHCalculeResponseSerializer,
@@ -339,8 +340,8 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         devis = cast(Devis, self.get_object())
         garanties = DevisDetGarantie.objects.filter(
             IdDevisDet__iddevis=devis
-        ).distinct("IdGarantie")
-        serializer = DevisDetGarantieSerializer(garanties, many=True)
+        ).distinct("IdGarantie_id")
+        serializer = DevisDetailGarantieSerializer(garanties, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(
@@ -678,7 +679,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         contrat = cast(Contrat, self.get_object())
         garanties = ContratDetGarantie.objects.filter(
             idcontratdetail__idcontrat=contrat
-        ).distinct("IdGarantie")
+        ).distinct("idgarantie_id")
         serializer = ContratDetGarantieSerializer(garanties, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 

@@ -1,81 +1,82 @@
-from rest_framework import serializers
-from typing import Any, cast
 from decimal import Decimal
+from typing import Any, cast
 
+from django.db.models import F
+from rest_framework import serializers
+
+# Import des modèles MRH
 from configuration_api.models import (
+    Banque,
+    Compagnie,
     GenreVehicule,
     Marque,
+    ModeEncaissement,
     OffreAutomobileBoisee,
+    Option,
+    OptionUsage,
+    ParametresCalcul,
+    SousGarantieMRH,
+    SousGarantieUsage,
     Tarif,
     TypeVehicule,
-    SousGarantieMRH,
+    UsageHabitation,
 )
-from configuration_api.models import Banque, ModeEncaissement, Compagnie
-from core.serializers import EnregistrementDevisBaseSerializer
-from core.serializers import DynamicFieldsSerializer
+from core.serializers import (
+    DynamicFieldsSerializer,
+    EnregistrementDevisBaseSerializer,
+)
 from core.validators import ErrorMessage, validate_contrat_validity_period
 from customer.models import Client
 
 from .models import (
     AssistanceAutomobile,
-    ComplementContratDetailAuto,
-    ComplementDevisDetailAuto,
-    ComplementDevisDetailVoyage,
-    ComplementDevisDetailMrh,
-    ComplementDevisDetailSante,
-    ComplementDevisDetailRC,
-    ComplementDevisDetailDommage,
-    ContractForPremiumCollection,
-    PremiumCollectionInfo,
-    PremiumRemittanceInfo,
-    DevisDetGarantie,
-    DevisDetail,
-    CertificatTransport,
-    Devis,
-    TarifEcran,
-    Contrat,
-    ContratDetail,
-    LogRecord,
-    AyantDroitIa,
-    ContratDetGarantie,
-    Quittance,
-    DetailQuittance,
-    DetailEncaissement,
-    Encaissement,
-    DetailReversement,
-    ReversementCompagnie,
-    Numero,
-    DataInsertionResult,
-    QuotationInsertionResult,
-    ExtendedDevisInfo,
-    QuittanceFn,
-    GarantieContratFlotte,
-    VehiculeContrat,
-    EnregistrementEncaissement,
-    DemandeContratPourEncaissement,
-    EncaissementQuittance,
-    ReversementPrime,
-    EncaissementGroupeQuittance,
-    ReversementGroupePrime,
     AssureIaInfo,
     AssureIaParDevisOuContrat,
+    AyantDroitIa,
+    CertificatTransport,
+    Cheque,
+    ChequeOperation,
+    ComplementContratDetailAuto,
+    ComplementDevisDetailAuto,
+    ComplementDevisDetailDommage,
+    ComplementDevisDetailMrh,
+    ComplementDevisDetailRC,
+    ComplementDevisDetailSante,
+    ComplementDevisDetailVoyage,
+    ContractForPremiumCollection,
+    Contrat,
+    ContratDetail,
+    ContratDetGarantie,
+    DataInsertionResult,
+    DemandeContratPourEncaissement,
+    DetailEncaissement,
+    DetailQuittance,
+    DetailReversement,
+    Devis,
+    DevisDetail,
+    DevisDetGarantie,
+    Encaissement,
+    EncaissementGroupeQuittance,
+    EncaissementQuittance,
+    EnregistrementEncaissement,
+    ExtendedDevisInfo,
+    GarantieContratFlotte,
     GarantieSouscrite,
-    InfoVehicule,
     ImportsHistorique,
+    InfoVehicule,
+    LogRecord,
+    Numero,
     PieceJointe,
-)
-
-from .models import Cheque, ChequeOperation
-from django.db.models import F
-
-
-# Import des modèles MRH
-from configuration_api.models import (
-    UsageHabitation,
-    SousGarantieUsage,
-    ParametresCalcul,
-    Option,
-    OptionUsage,
+    PremiumCollectionInfo,
+    PremiumRemittanceInfo,
+    Quittance,
+    QuittanceFn,
+    QuotationInsertionResult,
+    ReversementCompagnie,
+    ReversementGroupePrime,
+    ReversementPrime,
+    TarifEcran,
+    VehiculeContrat,
 )
 
 
@@ -90,7 +91,9 @@ def get_libelle_option(id_detail, entite="CNT"):
                 complement = complement_info[0]
                 # Guard against a missing assistance_automobile relation
                 if getattr(complement, "assistance_automobile", None):
-                    id_option_assistance = complement.assistance_automobile.id_option
+                    id_option_assistance = (
+                        complement.assistance_automobile.id_option
+                    )
                     try:
                         option = AssistanceAutomobile.objects.get(
                             pk=id_option_assistance
@@ -111,7 +114,9 @@ def get_libelle_option(id_detail, entite="CNT"):
                 complement = complement_info[0]
                 # Guard against a missing assistance_automobile relation
                 if getattr(complement, "assistance_automobile", None):
-                    id_option_assistance = complement.assistance_automobile.id_option
+                    id_option_assistance = (
+                        complement.assistance_automobile.id_option
+                    )
                     try:
                         option = AssistanceAutomobile.objects.get(
                             pk=id_option_assistance
@@ -135,7 +140,9 @@ class ImportationTransportSerializer(serializers.Serializer):
         max_length=None,
         allow_empty_file=False,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le fichier Excel", field_type="fichier", gender_number="ms"
+            field_name="Le fichier Excel",
+            field_type="fichier",
+            gender_number="ms",
         ),
     )
     debut_periode = serializers.DateField(
@@ -195,11 +202,10 @@ class PremiumRemittanceInfoSerializer(serializers.ModelSerializer):
         ]
 
 
-class DevisDetGarantieSerializer(serializers.ModelSerializer):
+class DevisDetailGarantieSerializer(serializers.ModelSerializer):
     class Meta:
         model = DevisDetGarantie
         fields = "__all__"
-        depth = 1
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
@@ -207,10 +213,14 @@ class DevisDetGarantieSerializer(serializers.ModelSerializer):
         deces = representation["deces"]
         ipp = representation["ipp"]
         ft = representation["fraismed"]
-        idsousgarantie = int(representation["IdGarantie"]["IdSousGarantie"])
+        idsousgarantie = instance.IdGarantie.pk
         if idsousgarantie == 22:
-            textecapital = get_libelle_option(int(representation["IdDevisDet"]), "DEV")
-        elif int(float(deces)) > 0 or int(float(ipp)) > 0 or int(float(ft)) > 0:
+            textecapital = get_libelle_option(
+                int(representation["IdDevisDet"]), "DEV"
+            )
+        elif (
+            int(float(deces)) > 0 or int(float(ipp)) > 0 or int(float(ft)) > 0
+        ):
             textecapital = (
                 "Décès: "
                 + f"{int(float(deces)):,}".replace(",", " ")
@@ -223,6 +233,13 @@ class DevisDetGarantieSerializer(serializers.ModelSerializer):
             textecapital = f"{int(float(capital)):,}".replace(",", " ")
         representation["textecapital"] = textecapital
         return representation
+
+
+class DevisDetGarantieSerializer(DevisDetailGarantieSerializer):
+    class Meta:
+        model = DevisDetGarantie
+        fields = "__all__"
+        depth = 1
 
 
 class DevisDetailSerializer(serializers.ModelSerializer):
@@ -254,18 +271,25 @@ class DevisDetailSerializer(serializers.ModelSerializer):
                 representation["carburant_autre_matiere"] = complementinfo[
                     0
                 ].carburant_autre_matiere
-                representation["transport_eleves"] = complementinfo[0].transport_eleves
+                representation["transport_eleves"] = complementinfo[
+                    0
+                ].transport_eleves
                 representation["transport_employes"] = complementinfo[
                     0
                 ].transport_employes
-                representation["transport_passager_supplementaire"] = complementinfo[
-                    0
-                ].transport_passager_supplementaire
-        elif devis.produit.id_produit in (2, 3):  # Individuelle Accident ou Voyage
+                representation["transport_passager_supplementaire"] = (
+                    complementinfo[0].transport_passager_supplementaire
+                )
+        elif devis.produit.id_produit in (
+            2,
+            3,
+        ):  # Individuelle Accident ou Voyage
             representation["date_naissance"] = representation["datemec"]
             representation["capital_ipp"] = representation["valeurneuve"]
             representation["capital_deces"] = representation["valeurvenale"]
-            representation["frais_traitement"] = representation["valeuraccessoire"]
+            representation["frais_traitement"] = representation[
+                "valeuraccessoire"
+            ]
             if devis.produit.id_produit == 2:
                 id_assure = int(representation["matricule"])
                 representation["id_assure"] = id_assure
@@ -289,7 +313,9 @@ class DevisDetailSerializer(serializers.ModelSerializer):
                     representation["numero_attestation"] = complementinfo[
                         0
                     ].numero_attestation
-                    representation["schengen"] = complementinfo[0].visa_schengen
+                    representation["schengen"] = complementinfo[
+                        0
+                    ].visa_schengen
                     representation["numero_passeport"] = complementinfo[
                         0
                     ].numero_passeport
@@ -298,16 +324,22 @@ class DevisDetailSerializer(serializers.ModelSerializer):
                 devis_detail=instance
             )
             if complementinfo.count() > 0:
-                representation["presence_gardien"] = complementinfo[0].presence_gardien
+                representation["presence_gardien"] = complementinfo[
+                    0
+                ].presence_gardien
                 representation["occupant_locataire"] = complementinfo[
                     0
                 ].occupant_locataire
                 representation["valeur_loyer"] = complementinfo[0].valeur_loyer
-                representation["valeur_contenu"] = complementinfo[0].valeur_contenu
+                representation["valeur_contenu"] = complementinfo[
+                    0
+                ].valeur_contenu
                 representation["valeur_objet_precieux"] = complementinfo[
                     0
                 ].valeur_objet_precieux
-                representation["valeur_materiel"] = complementinfo[0].valeur_materiel
+                representation["valeur_materiel"] = complementinfo[
+                    0
+                ].valeur_materiel
                 representation["valeur_degat_batiment"] = complementinfo[
                     0
                 ].valeur_degat_batiment
@@ -320,10 +352,18 @@ class DevisDetailSerializer(serializers.ModelSerializer):
                 devis_detail=instance
             )
             if complementinfo.count() > 0:
-                representation["prime_famille"] = complementinfo[0].prime_famille
-                representation["prime_affilie"] = complementinfo[0].prime_affilie
-                representation["prime_globale"] = complementinfo[0].prime_globale
-                representation["montant_surprime"] = complementinfo[0].montant_surprime
+                representation["prime_famille"] = complementinfo[
+                    0
+                ].prime_famille
+                representation["prime_affilie"] = complementinfo[
+                    0
+                ].prime_affilie
+                representation["prime_globale"] = complementinfo[
+                    0
+                ].prime_globale
+                representation["montant_surprime"] = complementinfo[
+                    0
+                ].montant_surprime
                 representation["montant_accessoire_manuel"] = complementinfo[
                     0
                 ].montant_accessoire_manuel
@@ -340,19 +380,23 @@ class DevisDetailSerializer(serializers.ModelSerializer):
             tarif = Tarif.objects.get(pk=instance.idtarif)
             if tarif:
                 representation["codecategorie"] = tarif.CodeCategorie
-                representation["libellecategorie"] = tarif.IdCategorie.LibelleCategorie
+                representation["libellecategorie"] = (
+                    tarif.IdCategorie.LibelleCategorie
+                )
         elif devis.produit.id_produit == 6:  # Transport
             pass
         elif devis.produit.id_produit == 7:  # Multirisque Professionnelle
             pass
         elif devis.produit.id_produit == 8:  # Responsabilité Civile
-            
+
             complementinfo = ComplementDevisDetailRC.objects.filter(
                 devis_detail=instance
             )
             if complementinfo.count() > 0:
                 representation["taux_prime"] = complementinfo[0].taux_prime
-                representation["assiette_prime"] = complementinfo[0].assiette_prime
+                representation["assiette_prime"] = complementinfo[
+                    0
+                ].assiette_prime
                 representation["nombre_participants"] = complementinfo[
                     0
                 ].nombre_participants
@@ -365,31 +409,33 @@ class DevisDetailSerializer(serializers.ModelSerializer):
 
         elif devis.produit.id_produit == 9:  # Tous Dommages
             if devis.offre.IdOffre == 32:
-                representation["capital_materiel_informatique"] = representation[
-                    "valeurneuve"
-                ]
-                representation["capital_frais_reconstitution"] = representation[
-                    "valeurvenale"
-                ]
-                representation["capital_frais_supplementaire"] = representation[
-                    "valeuraccessoire"
-                ]
+                representation["capital_materiel_informatique"] = (
+                    representation["valeurneuve"]
+                )
+                representation["capital_frais_reconstitution"] = (
+                    representation["valeurvenale"]
+                )
+                representation["capital_frais_supplementaire"] = (
+                    representation["valeuraccessoire"]
+                )
             elif devis.offre.IdOffre == 33:
-                representation["capital_detournement_usage_faux"] = representation[
-                    "valeurneuve"
-                ]
+                representation["capital_detournement_usage_faux"] = (
+                    representation["valeurneuve"]
+                )
                 representation["capital_dommages_confondus"] = representation[
                     "valeurvenale"
                 ]
-                representation["capital_deterioration_mobiliere_immobiliere"] = (
-                    representation["valeuraccessoire"]
-                )
+                representation[
+                    "capital_deterioration_mobiliere_immobiliere"
+                ] = representation["valeuraccessoire"]
             complementinfo = ComplementDevisDetailDommage.objects.filter(
                 devis_detail=instance
             )
             if complementinfo.count() > 0:
                 representation["taux_prime"] = complementinfo[0].taux_prime
-                representation["montant_prime"] = complementinfo[0].montant_prime
+                representation["montant_prime"] = complementinfo[
+                    0
+                ].montant_prime
 
         return representation
 
@@ -399,44 +445,62 @@ class CertificatTransportSerializer(serializers.ModelSerializer):
         model = CertificatTransport
         fields = "__all__"
 
-   
+
 class PieceJointeSerializer(serializers.ModelSerializer):
     """Serializer pour les pièces jointes"""
+
     url = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = PieceJointe
-        fields = ['id', 'fichier', 'url', 'nom_original', 'type_fichier', 'taille', 'date_upload']
-        read_only_fields = ['id', 'nom_original', 'type_fichier', 'taille', 'date_upload']
-    
+        fields = [
+            "id",
+            "fichier",
+            "url",
+            "nom_original",
+            "type_fichier",
+            "taille",
+            "date_upload",
+        ]
+        read_only_fields = [
+            "id",
+            "nom_original",
+            "type_fichier",
+            "taille",
+            "date_upload",
+        ]
+
     def get_url(self, obj):
         """Retourner l'URL complète du fichier"""
-        request = self.context.get('request')
+        request = self.context.get("request")
         if obj.fichier and request:
             return request.build_absolute_uri(obj.fichier.url)
         return None
-    
+
     def create(self, validated_data):
         """Créer une pièce jointe avec métadonnées extraites du fichier"""
-        fichier = validated_data.get('fichier')
+        fichier = validated_data.get("fichier")
         if fichier:
-            validated_data['nom_original'] = fichier.name
-            validated_data['type_fichier'] = fichier.content_type
-            validated_data['taille'] = fichier.size
+            validated_data["nom_original"] = fichier.name
+            validated_data["type_fichier"] = fichier.content_type
+            validated_data["taille"] = fichier.size
         return super().create(validated_data)
+
 
 class DevisSerializer(serializers.ModelSerializer):
     offreboisee = serializers.SerializerMethodField()
-    piece_jointe_info = PieceJointeSerializer(source='piece_jointe', read_only=True)
+    piece_jointe_info = PieceJointeSerializer(
+        source="piece_jointe", read_only=True
+    )
 
     class Meta:
         model = Devis
-        fields = '__all__'
+        fields = "__all__"
         read_only_fields = [
-            'date_creation',
-            'date_modification',
-            'prime_imposee_montant',
-            'piece_jointe_info',
+            "date_creation",
+            "date_modification",
+            "prime_imposee_montant",
+            "piece_jointe_info",
         ]
         depth = 1
 
@@ -459,10 +523,16 @@ class DevisSerializer(serializers.ModelSerializer):
                 representation["datenaissaissanceclient"] = (
                     instance.client.DateNaissance
                 )
-                representation["numeroidentificationclient"] = instance.client.CniPat
+                representation["numeroidentificationclient"] = (
+                    instance.client.CniPat
+                )
             if instance.assure:
-                representation["datenaissanceassure"] = instance.assure.DateNaissance
-                representation["numeroidentificationassure"] = instance.assure.CniPat
+                representation["datenaissanceassure"] = (
+                    instance.assure.DateNaissance
+                )
+                representation["numeroidentificationassure"] = (
+                    instance.assure.CniPat
+                )
         except Exception as error:
             print(error)
         finally:
@@ -477,13 +547,15 @@ class TarifEcranSerializer(serializers.ModelSerializer):
 
 class ContratSerializer(serializers.ModelSerializer):
     offreboisee = serializers.SerializerMethodField()
-    piece_jointe_info = PieceJointeSerializer(source='piece_jointe', read_only=True)
+    piece_jointe_info = PieceJointeSerializer(
+        source="piece_jointe", read_only=True
+    )
 
     class Meta:
         model = Contrat
         fields = "__all__"
         depth = 1
-        read_only_fields = ['idcontrat', 'piece_jointe_info']
+        read_only_fields = ["idcontrat", "piece_jointe_info"]
 
     def get_offreboisee(self, obj):
         try:
@@ -502,15 +574,25 @@ class ContratSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         try:
             if instance.idclient:
-                representation["datenaissanceclient"] = instance.idclient.DateNaissance
-                representation["numeroidentificationclient"] = instance.idclient.CniPat
+                representation["datenaissanceclient"] = (
+                    instance.idclient.DateNaissance
+                )
+                representation["numeroidentificationclient"] = (
+                    instance.idclient.CniPat
+                )
             if instance.idassure:
                 assure = Client.objects.get(pk=instance)
                 if assure:
-                    representation["datenaissanceassure"] = assure.DateNaissance
-                    representation["numeroidentificationassure"] = assure.CniPat
+                    representation["datenaissanceassure"] = (
+                        assure.DateNaissance
+                    )
+                    representation["numeroidentificationassure"] = (
+                        assure.CniPat
+                    )
             if instance.id_police_pegas:
-                representation["numeropolice"] = representation["id_police_pegas"]
+                representation["numeropolice"] = representation[
+                    "id_police_pegas"
+                ]
         except Client.DoesNotExist as error:
             print(error)
         finally:
@@ -544,25 +626,33 @@ class ContratDetailSerializer(serializers.ModelSerializer):
                 representation["carburant_autre_matiere"] = complementinfo[
                     0
                 ].carburant_autre_matiere
-                representation["transport_eleves"] = complementinfo[0].transport_eleves
+                representation["transport_eleves"] = complementinfo[
+                    0
+                ].transport_eleves
                 representation["transport_employes"] = complementinfo[
                     0
                 ].transport_employes
-                representation["transport_passager_supplementaire"] = complementinfo[
-                    0
-                ].transport_passager_supplementaire
+                representation["transport_passager_supplementaire"] = (
+                    complementinfo[0].transport_passager_supplementaire
+                )
             try:
                 if int(representation["idmarque"]) != 0:
-                    marque = Marque.objects.get(pk=int(representation["idmarque"]))
+                    marque = Marque.objects.get(
+                        pk=int(representation["idmarque"])
+                    )
                     representation["libellemarque"] = marque.LibelleMarque
                 idtv = int(representation["idtypevehicule"])
                 if idtv != 0:
                     typevehicule = TypeVehicule.objects.get(pk=idtv)
-                    representation["libelletypevehicule"] = typevehicule.libelle_type
+                    representation["libelletypevehicule"] = (
+                        typevehicule.libelle_type
+                    )
                 idgv = int(representation["idgenrevehicule"])
                 if idgv != 0:
                     genrevehicule = GenreVehicule.objects.get(pk=idgv)
-                    representation["libellegenrevehicule"] = genrevehicule.LibelleGenre
+                    representation["libellegenrevehicule"] = (
+                        genrevehicule.LibelleGenre
+                    )
 
             except Exception as error:
                 print(error)
@@ -596,6 +686,7 @@ class AyantDroitIaSerializer(serializers.ModelSerializer):
             "part",
         )
 
+
 # class ImportAssuresSerializer(serializers.Serializer):
 #     """
 #     Serializer pour l'upload de fichier Excel d'assurés.
@@ -604,7 +695,7 @@ class AyantDroitIaSerializer(serializers.ModelSerializer):
 #         required=True,
 #         help_text="Fichier Excel (.xlsx ou .xls) contenant les assurés à importer"
 #     )
-    
+
 #     mode_import = serializers.ChoiceField(
 #         choices=[
 #             ('creer_seulement', 'Créer seulement (ignorer les doublons)'),
@@ -615,13 +706,13 @@ class AyantDroitIaSerializer(serializers.ModelSerializer):
 #         required=False,
 #         help_text="Mode de gestion des doublons"
 #     )
-    
+
 #     autoriser_reimport = serializers.BooleanField(
 #         default=False,
 #         required=False,
 #         help_text="Autoriser la réimportation du même fichier"
 #     )
-    
+
 #     def validate_fichier_excel(self, value):
 #         """
 #         Valide que le fichier est bien un Excel.
@@ -631,14 +722,15 @@ class AyantDroitIaSerializer(serializers.ModelSerializer):
 #             raise serializers.ValidationError(
 #                 "Le fichier doit être au format Excel (.xlsx ou .xls)"
 #             )
-        
+
 #         # Vérifier la taille (max 10 Mo)
 #         if value.size > 10 * 1024 * 1024:
 #             raise serializers.ValidationError(
 #                 "Le fichier est trop volumineux (maximum 10 Mo)"
 #             )
-        
+
 #         return value
+
 
 class ImportationAssureIaSerializer(serializers.Serializer):
     FichierExcel = serializers.FileField(
@@ -649,9 +741,9 @@ class ImportationAssureIaSerializer(serializers.Serializer):
             "blank": "Le choix du fichier Excel est obligatoire",
         },
         required=True,
-        help_text="Fichier Excel (.xlsx ou .xls) contenant les assurés à importer"
+        help_text="Fichier Excel (.xlsx ou .xls) contenant les assurés à importer",
     )
-    
+
     IdCompagnie = serializers.IntegerField(
         error_messages={
             "null": "La compagnie doit être renseignée.",
@@ -752,79 +844,75 @@ class ImportationAssureIaSerializer(serializers.Serializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
-        
+
     ModeImport = serializers.ChoiceField(
         choices=[
-            ('creer_seulement', 'Créer seulement (ignorer les doublons)'),
-            ('mettre_a_jour', 'Mettre à jour les existants'),
-            ('erreur_si_doublon', 'Erreur si doublon détecté'),
+            ("creer_seulement", "Créer seulement (ignorer les doublons)"),
+            ("mettre_a_jour", "Mettre à jour les existants"),
+            ("erreur_si_doublon", "Erreur si doublon détecté"),
         ],
-        default='creer_seulement',
+        default="creer_seulement",
         required=False,
-        help_text="Mode de gestion des doublons"
+        help_text="Mode de gestion des doublons",
     )
-    
+
     AutoriserReimport = serializers.BooleanField(
         default=False,
         required=False,
-        help_text="Autoriser la réimportation du même fichier"
+        help_text="Autoriser la réimportation du même fichier",
     )
-    
+
     def validate_FichierExcel(self, value):
         """
         Valide que le fichier est bien un Excel.
         """
         # Vérifier l'extension
-        if not value.name.endswith(('.xlsx', '.xls')):
+        if not value.name.endswith((".xlsx", ".xls")):
             raise serializers.ValidationError(
                 "Le fichier doit être au format Excel (.xlsx ou .xls)"
             )
-        
+
         # Vérifier la taille (max 10 Mo)
         if value.size > 10 * 1024 * 1024:
             raise serializers.ValidationError(
                 "Le fichier est trop volumineux (maximum 10 Mo)"
             )
-        
-        return value
 
+        return value
 
     def validate(self, data):
         validate_contrat_validity_period(data)
         return data
 
+
 class ImportResultatSerializer(serializers.Serializer):
     """
     Serializer pour le résultat d'un import.
     """
-    success = serializers.BooleanField(
-        help_text="True si l'import a réussi"
-    )
-    
+
+    success = serializers.BooleanField(help_text="True si l'import a réussi")
+
     statut = serializers.CharField(
         help_text="REUSSI, ECHOUE, PARTIEL, ou REFUSE"
     )
-    
-    message = serializers.CharField(
-        help_text="Message descriptif du résultat"
-    )
-    
+
+    message = serializers.CharField(help_text="Message descriptif du résultat")
+
     statistiques = serializers.DictField(
         help_text="Statistiques détaillées de l'import"
     )
-    
+
     id_devis = serializers.IntegerField(
-        allow_null=True,
-        help_text="ID du devis créé (si applicable)"
+        allow_null=True, help_text="ID du devis créé (si applicable)"
     )
-    
+
     hash_fichier = serializers.CharField(
         help_text="Hash SHA256 du fichier importé"
     )
-    
+
     details = serializers.DictField(
         required=False,
-        help_text="Détails additionnels (nouveaux, ignorés, erreurs)"
+        help_text="Détails additionnels (nouveaux, ignorés, erreurs)",
     )
 
 
@@ -832,37 +920,38 @@ class ImportsHistoriqueSerializer(serializers.ModelSerializer):
     """
     Serializer pour l'historique des imports.
     """
+
     taux_reussite = serializers.SerializerMethodField()
     hash_court = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = ImportsHistorique
         fields = [
-            'id',
-            'hash_fichier',
-            'hash_court',
-            'nom_fichier',
-            'taille_fichier',
-            'date_import',
-            'user_id',
-            'mode_import',
-            'nb_assures_total',
-            'nb_assures_nouveaux',
-            'nb_assures_ignores',
-            'nb_assures_mis_a_jour',
-            'nb_erreurs',
-            'statut',
-            'taux_reussite',
-            'details_erreur',
-            'id_devis',
-            'duree_secondes',
+            "id",
+            "hash_fichier",
+            "hash_court",
+            "nom_fichier",
+            "taille_fichier",
+            "date_import",
+            "user_id",
+            "mode_import",
+            "nb_assures_total",
+            "nb_assures_nouveaux",
+            "nb_assures_ignores",
+            "nb_assures_mis_a_jour",
+            "nb_erreurs",
+            "statut",
+            "taux_reussite",
+            "details_erreur",
+            "id_devis",
+            "duree_secondes",
         ]
-        read_only_fields = ['id', 'date_import']
-    
+        read_only_fields = ["id", "date_import"]
+
     def get_taux_reussite(self, obj):
         """Calcule le taux de réussite"""
         return obj.taux_reussite
-    
+
     def get_hash_court(self, obj):
         """Retourne un hash court"""
         return obj.hash_court
@@ -872,14 +961,15 @@ class ImportsHistoriqueDetailSerializer(ImportsHistoriqueSerializer):
     """
     Serializer détaillé avec le JSON complet.
     """
+
     class Meta(ImportsHistoriqueSerializer.Meta):
-        fields = ImportsHistoriqueSerializer.Meta.fields + ['details_json']
+        fields = ImportsHistoriqueSerializer.Meta.fields + ["details_json"]
+
 
 class ContratDetGarantieSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContratDetGarantie
         fields = "__all__"
-        depth = 1
 
 
 class QuittanceSerializer(serializers.ModelSerializer):
@@ -904,11 +994,25 @@ class DetailQuittanceSerializer(serializers.ModelSerializer):
 
 
 class DetailEncaissementShortSerializer(serializers.ModelSerializer):
-    nomclient = serializers.CharField(source='numeroquittance.client.Nom', read_only=True)
-    prenomsclient = serializers.CharField(source='numeroquittance.client.Prenoms', read_only=True)
-    telephoneclient = serializers.CharField(source='numeroquittance.client.Telephone', read_only=True)
-    mobileclient = serializers.CharField(source='numeroquittance.client.Mobile', read_only=True)
-    primettc = serializers.DecimalField(source="numeroquittance.primettc", max_digits=19, decimal_places=4, read_only=True)
+    nomclient = serializers.CharField(
+        source="numeroquittance.client.Nom", read_only=True
+    )
+    prenomsclient = serializers.CharField(
+        source="numeroquittance.client.Prenoms", read_only=True
+    )
+    telephoneclient = serializers.CharField(
+        source="numeroquittance.client.Telephone", read_only=True
+    )
+    mobileclient = serializers.CharField(
+        source="numeroquittance.client.Mobile", read_only=True
+    )
+    primettc = serializers.DecimalField(
+        source="numeroquittance.primettc",
+        max_digits=19,
+        decimal_places=4,
+        read_only=True,
+    )
+
     class Meta:
         model = DetailEncaissement
         fields = (
@@ -927,12 +1031,14 @@ class DetailEncaissementShortSerializer(serializers.ModelSerializer):
 
 class EncaissementSerializer(serializers.ModelSerializer):
     details = DetailEncaissementShortSerializer(many=True, read_only=True)
-    modepaiement = serializers.CharField(source='modepaiement.libellemodepaiement', read_only=True)
-    banque = serializers.CharField(source='banque.libelle', read_only=True)
-    idutilisateur = serializers.IntegerField(source='utilisateur.id', read_only=True)
-    demande_annulation_en_cours = serializers.BooleanField(
-        read_only=True
+    modepaiement = serializers.CharField(
+        source="modepaiement.libellemodepaiement", read_only=True
     )
+    banque = serializers.CharField(source="banque.libelle", read_only=True)
+    idutilisateur = serializers.IntegerField(
+        source="utilisateur.id", read_only=True
+    )
+    demande_annulation_en_cours = serializers.BooleanField(read_only=True)
     statut_demande_annulation = serializers.SerializerMethodField()
 
     class Meta:
@@ -957,12 +1063,14 @@ class EncaissementSerializer(serializers.ModelSerializer):
             "datesaisieannulation",
             "nomtireurcheque",
             "details",
-            'demande_annulation_en_cours',
-            'statut_demande_annulation',
+            "demande_annulation_en_cours",
+            "statut_demande_annulation",
         )
+
     def get_statut_demande_annulation(self, obj):
         demande = obj.demande_annulation
         return demande.statut if demande else None
+
 
 class DetailEncaissementSerializer(serializers.ModelSerializer):
     class Meta:
@@ -972,10 +1080,22 @@ class DetailEncaissementSerializer(serializers.ModelSerializer):
 
 
 class DetailReversementShortSerializer(serializers.ModelSerializer):
-    nomclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Nom', read_only=True)
-    prenomsclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Prenoms', read_only=True)
-    telephoneclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Telephone', read_only=True)
-    mobileclient = serializers.CharField(source='ligne_encaissement.numeroquittance.client.Mobile', read_only=True)
+    nomclient = serializers.CharField(
+        source="ligne_encaissement.numeroquittance.client.Nom", read_only=True
+    )
+    prenomsclient = serializers.CharField(
+        source="ligne_encaissement.numeroquittance.client.Prenoms",
+        read_only=True,
+    )
+    telephoneclient = serializers.CharField(
+        source="ligne_encaissement.numeroquittance.client.Telephone",
+        read_only=True,
+    )
+    mobileclient = serializers.CharField(
+        source="ligne_encaissement.numeroquittance.client.Mobile",
+        read_only=True,
+    )
+
     class Meta:
         model = DetailReversement
         fields = (
@@ -988,24 +1108,31 @@ class DetailReversementShortSerializer(serializers.ModelSerializer):
             "mobileclient",
         )
 
+
 class CompagnieShortSerializer(serializers.ModelSerializer):
     # idcompagnie = serializers.IntegerField(source="Idcompagnie")
     # raisonsociale = serializers.CharField(source="RaisonSociale")
     class Meta:
         model = Compagnie
         fields = ["IdCompagnie", "RaisonSociale"]
-        
+
+
 class BanqueShortSerializer(serializers.ModelSerializer):
     class Meta:
         model = Banque
         fields = ["idbanque", "libelle"]
-        
+
+
 class ModeReversementShortSerializer(serializers.ModelSerializer):
     idmodereversement = serializers.IntegerField(source="idmodeencaissement")
-    libellemodereversement = serializers.CharField(source="libellemodepaiement")
+    libellemodereversement = serializers.CharField(
+        source="libellemodepaiement"
+    )
+
     class Meta:
         model = ModeEncaissement
         fields = ["idmodereversement", "libellemodereversement"]
+
 
 class ReversementCompagnieSerializer(serializers.ModelSerializer):
     details = DetailReversementShortSerializer(many=True, read_only=True)
@@ -1131,12 +1258,16 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
     )
     Puissance = serializers.IntegerField(
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La puissance fiscale", field_type="int", gender_number="fs"
+            field_name="La puissance fiscale",
+            field_type="int",
+            gender_number="fs",
         ),
     )
     NombrePlace = serializers.IntegerField(
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le nombre de places", field_type="int", gender_number="ms"
+            field_name="Le nombre de places",
+            field_type="int",
+            gender_number="ms",
         ),
     )
     Charge = serializers.IntegerField(
@@ -1148,21 +1279,27 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
         max_digits=19,
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La valeur neuve", field_type="decimal", gender_number="fs"
+            field_name="La valeur neuve",
+            field_type="decimal",
+            gender_number="fs",
         ),
     )
     ValeurVenale = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La valeur venale", field_type="decimal", gender_number="fs"
+            field_name="La valeur venale",
+            field_type="decimal",
+            gender_number="fs",
         ),
     )
     ValeurAccessoire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La valeur accessoire", field_type="decimal", gender_number="fs"
+            field_name="La valeur accessoire",
+            field_type="decimal",
+            gender_number="fs",
         ),
     )
     TauxReduction = serializers.DecimalField(
@@ -1262,7 +1399,9 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
     IdDevisDetail = serializers.IntegerField(
         default=0,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="L'ID du détail du devis", field_type="int", gender_number="ms"
+            field_name="L'ID du détail du devis",
+            field_type="int",
+            gender_number="ms",
         ),
     )
     RemorqueAttelee = serializers.BooleanField(
@@ -1289,8 +1428,12 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
     NsiaAutoPlus = serializers.BooleanField(
         required=False, default=False, allow_null=True
     )
-    IdDuree = serializers.IntegerField(required=False, allow_null=True, default=1)
-    IdTerme = serializers.IntegerField(required=False, allow_null=True, default=1)
+    IdDuree = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
+    IdTerme = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
@@ -1313,7 +1456,9 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
         val_accessoire = data.get("ValeurAccessoire")
         if val_accessoire is None:
             raise serializers.ValidationError(
-                {"Valeur accessoire": "La valeur accessoire doit être renseignée."}
+                {
+                    "Valeur accessoire": "La valeur accessoire doit être renseignée."
+                }
             )
 
         if val_accessoire > val_venale:
@@ -1435,14 +1580,18 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
         max_digits=19,
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le capital décès", field_type="decimal", gender_number="ms"
+            field_name="Le capital décès",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     CapitalIpp = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le capital IPP", field_type="decimal", gender_number="ms"
+            field_name="Le capital IPP",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     FraisTraitement = serializers.DecimalField(
@@ -1459,7 +1608,9 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     CodeActivite = serializers.CharField(
@@ -1472,7 +1623,9 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
         format="%d-%m-%Y",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La date de naissance", field_type="date", gender_number="fs"
+            field_name="La date de naissance",
+            field_type="date",
+            gender_number="fs",
         ),
     )
     AdresseGeographique = serializers.CharField(
@@ -1496,7 +1649,9 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
     IdDevisDetail = serializers.IntegerField(
         default=0,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="L'ID du détail du devis", field_type="int", gender_number="ms"
+            field_name="L'ID du détail du devis",
+            field_type="int",
+            gender_number="ms",
         ),
     )
     NumeroPoliceConnexe = serializers.CharField(
@@ -1505,29 +1660,49 @@ class EnregistrementDevisIaSerializer(EnregistrementDevisBaseSerializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
-    PrimeNette = serializers.DecimalField(max_digits=19,
-        decimal_places=4,required=False, default=0, allow_null=True)
-    Accessoire = serializers.DecimalField(max_digits=19,
-        decimal_places=4,required=False, default=0, allow_null=True)
-    Taxe = serializers.DecimalField(max_digits=19,
-        decimal_places=4,required=False, default=0, allow_null=True)
-    PrimeTTC = serializers.DecimalField(max_digits=19,
-        decimal_places=4,required=False, default=0, allow_null=True)
+    PrimeNette = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True,
+    )
+    Accessoire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True,
+    )
+    Taxe = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True,
+    )
+    PrimeTTC = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        default=0,
+        allow_null=True,
+    )
 
     def to_internal_value(self, data):
 
         if "AdresseGeographique" in data:
             if data["AdresseGeographique"] == "":
                 data["AdresseGeographique"] = None
-                
+
         if "NumeroPoliceConnexe" in data:
             if data["NumeroPoliceConnexe"] == "":
                 data["NumeroPoliceConnexe"] = None
-                
+
         if "NumeroPoliceCompagnie" in data:
             if data["NumeroPoliceCompagnie"] == "":
                 data["NumeroPoliceCompagnie"] = None
-                            
+
         return super().to_internal_value(data)
 
 
@@ -1537,17 +1712,23 @@ class EnregistrementDevisVoyageSerializer(EnregistrementDevisBaseSerializer):
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     DateNaissance = serializers.DateField(
         format="%d-%m-%Y",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="La date de naissance", field_type="date", gender_number="fs"
+            field_name="La date de naissance",
+            field_type="date",
+            gender_number="fs",
         ),
     )
-    IdDevis = serializers.IntegerField(required=False, default=0, allow_null=True)
+    IdDevis = serializers.IntegerField(
+        required=False, default=0, allow_null=True
+    )
     IdPaysDestination = serializers.IntegerField(
         required=False, default=1, allow_null=True
     )
@@ -1626,7 +1807,9 @@ class EnregistrementDevisMrhSerializer(EnregistrementDevisBaseSerializer):
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     ValeurCapitalLoyer = serializers.DecimalField(
@@ -1683,13 +1866,21 @@ class EnregistrementDevisMrhSerializer(EnregistrementDevisBaseSerializer):
             gender_number="fs",
         ),
     )
-    IdDevis = serializers.IntegerField(required=False, allow_null=True, default=0)
+    IdDevis = serializers.IntegerField(
+        required=False, allow_null=True, default=0
+    )
     Localisation = serializers.CharField(
         required=False, allow_null=True, default="", max_length=100
     )
-    IdDuree = serializers.IntegerField(required=False, allow_null=True, default=1)
-    IdTerme = serializers.IntegerField(required=False, allow_null=True, default=1)
-    TelephoneAssure = serializers.CharField(required=False, allow_null=True, default="")
+    IdDuree = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
+    IdTerme = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
+    TelephoneAssure = serializers.CharField(
+        required=False, allow_null=True, default=""
+    )
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
@@ -1723,14 +1914,18 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de prime", field_type="decimal", gender_number="ms"
+            field_name="Le taux de prime",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     TauxReduction = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     CapitalMaterielInformatique = serializers.DecimalField(
@@ -1768,7 +1963,9 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
             field_type="decimal",
             gender_number="ms",
         ),
-        required=False, default=0, allow_null=True
+        required=False,
+        default=0,
+        allow_null=True,
     )
     MontantPrime = serializers.DecimalField(
         max_digits=19,
@@ -1779,9 +1976,15 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
             gender_number="ms",
         ),
     )
-    IdDevis = serializers.IntegerField(required=False, allow_null=True, default=0)
-    IdDuree = serializers.IntegerField(required=False, allow_null=True, default=1)
-    TelephoneAssure = serializers.CharField(required=False, allow_null=True, default="")
+    IdDevis = serializers.IntegerField(
+        required=False, allow_null=True, default=0
+    )
+    IdDuree = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
+    TelephoneAssure = serializers.CharField(
+        required=False, allow_null=True, default=""
+    )
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
@@ -1796,11 +1999,11 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
         if "IdDuree" in data:
             if not data["IdDuree"]:
                 data["IdDuree"] = 1
-        
+
         if "CapitalCautionnement" in data:
             if not data["CapitalCautionnement"]:
-                data["CapitalCautionnement"] = 0      
-                
+                data["CapitalCautionnement"] = 0
+
         if "NumeroPoliceCompagnie" in data:
             if data["NumeroPoliceCompagnie"] == "":
                 data["NumeroPoliceCompagnie"] = None
@@ -1817,23 +2020,36 @@ class GarantieCapitauxSerializer(serializers.Serializer):
     id_garantie = serializers.IntegerField()
     acquise = serializers.BooleanField()
     capital = serializers.DecimalField(max_digits=19, decimal_places=4)
-    montant_franchise = serializers.DecimalField(required=False, max_digits=19, decimal_places=4)
-    taux_franchise = serializers.DecimalField(required=False, max_digits=5, decimal_places=2)
-    franchise_minimum = serializers.DecimalField(required=False, 
+    montant_franchise = serializers.DecimalField(
+        required=False, max_digits=19, decimal_places=4
+    )
+    taux_franchise = serializers.DecimalField(
+        required=False, max_digits=5, decimal_places=2
+    )
+    franchise_minimum = serializers.DecimalField(
+        required=False,
         max_digits=19,
         decimal_places=4,
     )
-    franchise_maximum = serializers.DecimalField(required=False, max_digits=19, decimal_places=4)
+    franchise_maximum = serializers.DecimalField(
+        required=False, max_digits=19, decimal_places=4
+    )
 
 
 class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     AssiettePrime = serializers.DecimalField(
-        max_digits=19, decimal_places=4, required=False, allow_null=True, default=0
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        default=0,
     )
     IdDomaineActivite = serializers.IntegerField(
         required=False, allow_null=True, default=0
     )
-    Activite = serializers.CharField(max_length=100, required=False, allow_null=True, default="")
+    Activite = serializers.CharField(
+        max_length=100, required=False, allow_null=True, default=""
+    )
     Localisation = serializers.CharField(
         max_length=60, required=False, allow_null=True, default=""
     )
@@ -1850,14 +2066,18 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de prime", field_type="decimal", gender_number="ms"
+            field_name="Le taux de prime",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     TauxReduction = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     CapitalDommageCorporel = serializers.DecimalField(
@@ -1887,8 +2107,12 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
             gender_number="ms",
         ),
     )
-    IdDevis = serializers.IntegerField(required=False, allow_null=True, default=0)
-    IdDuree = serializers.IntegerField(required=False, allow_null=True, default=1)
+    IdDevis = serializers.IntegerField(
+        required=False, allow_null=True, default=0
+    )
+    IdDuree = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
     TelephoneAssure = serializers.CharField(
         max_length=20, required=False, allow_null=True, default=""
     )
@@ -1901,12 +2125,21 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
-    PrimeNette = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
-    Accessoire = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
-    Taxe = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
-    PrimeTTC = serializers.DecimalField(max_digits=19, decimal_places=4, required=False, default=0)
-    ListeGarantie = GarantieCapitauxSerializer(many=True, allow_null=True, required=False)
-    
+    PrimeNette = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, default=0
+    )
+    Accessoire = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, default=0
+    )
+    Taxe = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, default=0
+    )
+    PrimeTTC = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, default=0
+    )
+    ListeGarantie = GarantieCapitauxSerializer(
+        many=True, allow_null=True, required=False
+    )
 
     def to_internal_value(self, data):
         if "TelephoneAssure" in data:
@@ -1944,19 +2177,25 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
 
 
 ############################## Enregistrement Devis Globale de Banque Serializer ###########################
-class EnregistrementDevisGlobaleDeBanqueSerializer(EnregistrementDevisBaseSerializer):
+class EnregistrementDevisGlobaleDeBanqueSerializer(
+    EnregistrementDevisBaseSerializer
+):
     TauxPrime = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de prime", field_type="decimal", gender_number="ms"
+            field_name="Le taux de prime",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
     TauxReduction = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
         error_messages=ErrorMessage.generate_error_messages(
-            field_name="Le taux de réduction", field_type="decimal", gender_number="ms"
+            field_name="Le taux de réduction",
+            field_type="decimal",
+            gender_number="ms",
         ),
     )
 
@@ -1996,9 +2235,15 @@ class EnregistrementDevisGlobaleDeBanqueSerializer(EnregistrementDevisBaseSerial
             gender_number="ms",
         ),
     )
-    IdDevis = serializers.IntegerField(required=False, default=0, allow_null=True)
-    IdDuree = serializers.IntegerField(required=False, allow_null=True, default=1)
-    TelephoneAssure = serializers.CharField(required=False, allow_null=True, default="")
+    IdDevis = serializers.IntegerField(
+        required=False, default=0, allow_null=True
+    )
+    IdDuree = serializers.IntegerField(
+        required=False, allow_null=True, default=1
+    )
+    TelephoneAssure = serializers.CharField(
+        required=False, allow_null=True, default=""
+    )
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
@@ -2037,7 +2282,9 @@ class DataInsertionSerializer(serializers.ModelSerializer):
 
 
 class QuotationIaInsertionSerializer(serializers.ModelSerializer):
-    Assure = serializers.CharField(source="NumeroImmatriculation", max_length=50)
+    Assure = serializers.CharField(
+        source="NumeroImmatriculation", max_length=50
+    )
 
     class Meta:
         model = QuotationInsertionResult
@@ -2323,12 +2570,18 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
     )
-    banque = serializers.IntegerField(required=False, default=1, allow_null=True)
+    banque = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
     montant_total = serializers.DecimalField(
         required=True, max_digits=19, decimal_places=4
     )
     montant_initial_cheque = serializers.DecimalField(
-        required=False, max_digits=19, decimal_places=4, allow_null=True, default=0
+        required=False,
+        max_digits=19,
+        decimal_places=4,
+        allow_null=True,
+        default=0,
     )
     numero_cheque = serializers.CharField(
         max_length=20, required=False, default="", allow_null=True
@@ -2393,28 +2646,46 @@ class EncaissementGroupeQuittanceSerializer(serializers.Serializer):
             "liste_quittance", instance.liste_quittance
         )
         return instance
-    
+
+
 class EncaissementResponseSerializer(serializers.Serializer):
     id_encaissement = serializers.IntegerField()
     message = serializers.CharField()
-    solde_restant_cheque = serializers.DecimalField(max_digits=19, decimal_places=4, required=False)
+    solde_restant_cheque = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False
+    )
+
 
 class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
     id_reversement = serializers.IntegerField(required=False, allow_null=True)
     compagnie = serializers.IntegerField(required=True)
-    mode_reversement = serializers.IntegerField(required=False, allow_null=True)
+    mode_reversement = serializers.IntegerField(
+        required=False, allow_null=True
+    )
     date_reversement = serializers.DateField(
         required=False,
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         allow_null=True,
     )
-    banque = serializers.IntegerField(required=False, default=1, allow_null=True)
-    montant_total = serializers.DecimalField(required=True, max_digits=19, decimal_places=4)
-    numero_cheque = serializers.CharField(max_length=20, required=False, default="", allow_null=True)
-    nom_emetteur = serializers.CharField(required=False, max_length=50, default="", allow_null=True)
-    reference_reversement = serializers.CharField(max_length=40, required=False, default="", allow_null=True)
-    reference_compensation = serializers.CharField(max_length=10, required=False, default="", allow_null=True)
+    banque = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
+    montant_total = serializers.DecimalField(
+        required=True, max_digits=19, decimal_places=4
+    )
+    numero_cheque = serializers.CharField(
+        max_length=20, required=False, default="", allow_null=True
+    )
+    nom_emetteur = serializers.CharField(
+        required=False, max_length=50, default="", allow_null=True
+    )
+    reference_reversement = serializers.CharField(
+        max_length=40, required=False, default="", allow_null=True
+    )
+    reference_compensation = serializers.CharField(
+        max_length=10, required=False, default="", allow_null=True
+    )
     liste_encaissement = serializers.ListField(
         required=True,
         child=ReversementPrimeSerializer(),
@@ -2423,7 +2694,11 @@ class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
     )
 
     def to_internal_value(self, data):
-        for field in ["numero_cheque", "reference_reversement", "reference_compensation"]:
+        for field in [
+            "numero_cheque",
+            "reference_reversement",
+            "reference_compensation",
+        ]:
             if field in data and data[field] == "":
                 data[field] = None
         return super().to_internal_value(data)
@@ -2436,11 +2711,15 @@ class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):
             setattr(instance, field, value)
         return instance
 
+
 class ReversementGroupePrimeInsertSerializer(ReversementGroupePrimeSerializer):
     class Meta:
-        fields = ['compagnie', 'montant_total', 'liste_encaissement']
+        fields = ["compagnie", "montant_total", "liste_encaissement"]
 
-class ReversementGroupePrimeValidateSerializer(ReversementGroupePrimeSerializer):
+
+class ReversementGroupePrimeValidateSerializer(
+    ReversementGroupePrimeSerializer
+):
     compagnie = None
     montant_total = None
     liste_encaissement = None
@@ -2452,17 +2731,19 @@ class ReversementGroupePrimeValidateSerializer(ReversementGroupePrimeSerializer)
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
     )
     reference_reversement = serializers.CharField(required=True)
+
     class Meta:
         fields = [
-        "id_reversement",
-        "mode_reversement",
-        "date_reversement",
-        "banque",
-        "numero_cheque",
-        "nom_emetteur",
-        "reference_reversement",
-        "reference_compensation",
+            "id_reversement",
+            "mode_reversement",
+            "date_reversement",
+            "banque",
+            "numero_cheque",
+            "nom_emetteur",
+            "reference_reversement",
+            "reference_compensation",
         ]
+
 
 class ChangementImmatriculationSerializer(serializers.Serializer):
     date_emission = serializers.DateField(
@@ -2477,14 +2758,24 @@ class ChangementImmatriculationSerializer(serializers.Serializer):
     )
     id_devis_ancien = serializers.IntegerField(required=True)
     id_devis_detail_ancien = serializers.IntegerField(required=True)
-    numero_carte_brune_physique = serializers.CharField(required=True, max_length=100)
-    numero_immatriculation = serializers.CharField(required=True, max_length=100)
-    id_devis = serializers.IntegerField(required=False, default=0, allow_null=True)
+    numero_carte_brune_physique = serializers.CharField(
+        required=True, max_length=100
+    )
+    numero_immatriculation = serializers.CharField(
+        required=True, max_length=100
+    )
+    id_devis = serializers.IntegerField(
+        required=False, default=0, allow_null=True
+    )
     id_devis_detail = serializers.IntegerField(
         required=False, default=0, allow_null=True
     )
-    id_produit = serializers.IntegerField(required=False, default=1, allow_null=True)
-    id_avenant = serializers.IntegerField(required=False, default=10, allow_null=True)
+    id_produit = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
+    id_avenant = serializers.IntegerField(
+        required=False, default=10, allow_null=True
+    )
 
     def to_internal_value(self, data):
         if "id_devis" in data:
@@ -2518,7 +2809,7 @@ class AvenantAnlRenSerializer(serializers.Serializer):
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         default=None,
     )
-    
+
     date_expiration = serializers.DateField(
         required=False,
         allow_null=True,
@@ -2591,7 +2882,11 @@ class GarantieSouscriteSerializer(serializers.ModelSerializer):
             deces = representation["deces"]
             ipp = representation["ipp"]
             ft = representation["ft"]
-            if int(float(deces)) > 0 or int(float(ipp)) > 0 or int(float(ft)) > 0:
+            if (
+                int(float(deces)) > 0
+                or int(float(ipp)) > 0
+                or int(float(ft)) > 0
+            ):
                 textecapital = (
                     "Décès: "
                     + f"{int(float(deces)):,}".replace(",", " ")
@@ -2637,19 +2932,24 @@ class GarantieSerializer(serializers.Serializer):
     capital = serializers.DecimalField(max_digits=19, decimal_places=4)
     prime_annuelle = serializers.DecimalField(max_digits=19, decimal_places=4)
     prime_nette = serializers.DecimalField(max_digits=19, decimal_places=4)
-    montant_franchise = serializers.DecimalField(max_digits=19, decimal_places=4)
+    montant_franchise = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     taux_franchise = serializers.DecimalField(max_digits=5, decimal_places=2)
     franchise_minimum = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
     )
-    franchise_maximum = serializers.DecimalField(max_digits=19, decimal_places=4)
+    franchise_maximum = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     capital_deces = serializers.DecimalField(max_digits=19, decimal_places=4)
     capital_ipp = serializers.DecimalField(max_digits=19, decimal_places=4)
     capital_ft = serializers.DecimalField(max_digits=19, decimal_places=4)
-    reduction_commerciale = serializers.DecimalField(max_digits=5, decimal_places=2)
+    reduction_commerciale = serializers.DecimalField(
+        max_digits=5, decimal_places=2
+    )
     reduction_bns = serializers.DecimalField(max_digits=5, decimal_places=2)
-    
 
 
 # I have modified this on Novembre 5th, 2025
@@ -2706,7 +3006,9 @@ class CorrectionDevisSerializer(serializers.Serializer):
     reduction_flotte = serializers.DecimalField(
         max_digits=5, decimal_places=2, allow_null=True, required=False
     )
-    liste_garantie = GarantieSerializer(many=True, allow_null=True, required=False)
+    liste_garantie = GarantieSerializer(
+        many=True, allow_null=True, required=False
+    )
     supprimer_garanties_manquantes = serializers.BooleanField(
         allow_null=True, required=False
     )
@@ -2729,9 +3031,7 @@ class CorrectionDevisSerializer(serializers.Serializer):
                         )
                 data["id_produit"] = id_produit
         except ValueError:
-            message = (
-                f"ValueError: Impossible de convertir '{id_devis_recu}' en entier."
-            )
+            message = f"ValueError: Impossible de convertir '{id_devis_recu}' en entier."
             print(message)
             raise serializers.ValidationError(message)
         except TypeError:
@@ -2756,7 +3056,9 @@ class CorrectionDevisSerializer(serializers.Serializer):
 
 class DevisDetailClientSerializer(serializers.ModelSerializer):
     iddevisdetail = serializers.IntegerField(source="pk")
-    marque = serializers.CharField(source="idmarque.LibelleMarque", max_length=60)
+    marque = serializers.CharField(
+        source="idmarque.LibelleMarque", max_length=60
+    )
 
     class Meta:
         model = DevisDetail
@@ -2795,7 +3097,9 @@ class ConsolidationDevisClientSerializer(serializers.Serializer):
         Validation supplémentaire pour l'ID du devis.
         """
         if value <= 0:
-            raise serializers.ValidationError("L'ID du devis doit être positif.")
+            raise serializers.ValidationError(
+                "L'ID du devis doit être positif."
+            )
         return value
 
 
@@ -2817,9 +3121,15 @@ class PrimeUpdateSerializer(serializers.Serializer):
     accessoire = serializers.DecimalField(
         max_digits=19, decimal_places=4, allow_null=True
     )
-    taxe = serializers.DecimalField(max_digits=19, decimal_places=4, allow_null=True)
-    fga = serializers.DecimalField(max_digits=19, decimal_places=4, allow_null=True)
-    cedeao = serializers.DecimalField(max_digits=19, decimal_places=4, allow_null=True)
+    taxe = serializers.DecimalField(
+        max_digits=19, decimal_places=4, allow_null=True
+    )
+    fga = serializers.DecimalField(
+        max_digits=19, decimal_places=4, allow_null=True
+    )
+    cedeao = serializers.DecimalField(
+        max_digits=19, decimal_places=4, allow_null=True
+    )
     prime_ttc = serializers.DecimalField(
         max_digits=19, decimal_places=4, allow_null=True
     )
@@ -2840,32 +3150,37 @@ Organisation :
 # SECTION 1 : SERIALIZERS POUR LES REQUÊTES DE CALCUL
 # ============================================================================
 
+
 class OptionSelectionSerializer(serializers.Serializer):
     """Serializer pour la sélection d'une option"""
-    
+
     code_option = serializers.CharField(
         max_length=50,
-        help_text="Code de l'option (ex: zone_industrielle, presence_gardien)"
+        help_text="Code de l'option (ex: zone_industrielle, presence_gardien)",
     )
-    
+
     def validate_code_option(self, value):
         """Valide que l'option existe"""
         if not Option.objects.filter(code=value, actif=True).exists():
-            raise serializers.ValidationError(f"L'option '{value}' n'existe pas ou est inactive.")
+            raise serializers.ValidationError(
+                f"L'option '{value}' n'existe pas ou est inactive."
+            )
         return value
 
 
 class SousGarantieOptionnelleSelectionSerializer(serializers.Serializer):
     """Serializer pour la sélection d'une sous-garantie optionnelle"""
-    
+
     code_sous_garantie = serializers.CharField(
         max_length=50,
-        help_text="Code de la sous-garantie optionnelle (ex: RC_MEMBRE, LOISIRS)"
+        help_text="Code de la sous-garantie optionnelle (ex: RC_MEMBRE, LOISIRS)",
     )
-    
+
     def validate_code_sous_garantie(self, value):
         """Valide que la sous-garantie optionnelle existe"""
-        if not SousGarantieMRH.objects.filter(code=value, type='OPTIONNELLE', actif=True).exists():
+        if not SousGarantieMRH.objects.filter(
+            code=value, type="OPTIONNELLE", actif=True
+        ).exists():
             raise serializers.ValidationError(
                 f"La sous-garantie optionnelle '{value}' n'existe pas ou est inactive."
             )
@@ -2877,92 +3192,94 @@ class MaisonCalculRequestSerializer(serializers.Serializer):
     Serializer pour la requête de calcul d'une maison.
     Contient tous les paramètres nécessaires au calcul de la prime.
     """
-    
+
     # Identifiant de l'usage
     code_usage = serializers.CharField(
         max_length=50,
-        help_text="Code de l'usage habitation (ex: proprietaire_occupant_total)"
+        help_text="Code de l'usage habitation (ex: proprietaire_occupant_total)",
     )
     id_tarif = serializers.IntegerField(help_text="ID du tarif")
-    
+
     id_offre = serializers.IntegerField(help_text="ID de l'offre")
-    
+
     # Paramètres de calcul (optionnels selon l'usage)
     valeur_batiment = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Valeur du bâtiment en FCFA"
+        help_text="Valeur du bâtiment en FCFA",
     )
-    
+
     valeur_contenu = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Valeur du contenu/mobilier en FCFA"
+        help_text="Valeur du contenu/mobilier en FCFA",
     )
-    
+
     loyer_mensuel = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Loyer mensuel en FCFA"
+        help_text="Loyer mensuel en FCFA",
     )
-    
+
     capital_rvt = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Capital RVT (Recours des Voisins et Tiers) en FCFA"
+        help_text="Capital RVT (Recours des Voisins et Tiers) en FCFA",
     )
-    
+
     # Options sélectionnées
     options = OptionSelectionSerializer(
         many=True,
         required=False,
         default=list,
-        help_text="Liste des options sélectionnées"
+        help_text="Liste des options sélectionnées",
     )
-    
+
     # Sous-Garanties optionnelles sélectionnées
     sous_garanties_optionnelles = SousGarantieOptionnelleSelectionSerializer(
         many=True,
         required=False,
         default=list,
-        help_text="Liste des sous-garanties optionnelles sélectionnées"
+        help_text="Liste des sous-garanties optionnelles sélectionnées",
     )
-    
+
     # Informations supplémentaires (pour enregistrement dans DevisDetail)
     adresse = serializers.CharField(
         max_length=500,
         required=False,
         allow_blank=True,
-        help_text="Adresse de la maison"
+        help_text="Adresse de la maison",
     )
-    
+
     description = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Description supplémentaire"
+        help_text="Description supplémentaire",
     )
-    
+
     def validate_code_usage(self, value):
         """Valide que l'usage existe"""
         if not UsageHabitation.objects.filter(code=value, actif=True).exists():
-            raise serializers.ValidationError(f"L'usage '{value}' n'existe pas ou est inactif.")
+            raise serializers.ValidationError(
+                f"L'usage '{value}' n'existe pas ou est inactif."
+            )
         return value
-    
+
     def validate(self, data):
         """
         Validation globale : vérifie que les paramètres requis sont fournis
         selon l'usage sélectionné.
         """
-        code_usage = data.get('code_usage')
-        
+        code_usage = data.get("code_usage")
+
         try:
             usage = UsageHabitation.objects.get(code=code_usage, actif=True)
             params = usage.parametres
@@ -2970,52 +3287,64 @@ class MaisonCalculRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f"Paramètres de calcul non trouvés pour l'usage '{code_usage}'."
             )
-        
+
         # Vérification des paramètres requis
         errors = {}
-        
-        if params.param_valeur_batiment_requis and not data.get('valeur_batiment'):
-            errors['valeur_batiment'] = "La valeur du bâtiment est requise pour cet usage."
-        
-        if params.param_valeur_contenu_requis and not data.get('valeur_contenu'):
-            errors['valeur_contenu'] = "La valeur du contenu est requise pour cet usage."
-        
-        if params.param_loyer_requis and not data.get('loyer_mensuel'):
-            errors['loyer_mensuel'] = "Le loyer mensuel est requis pour cet usage."
-        
-        if params.param_capital_rvt_requis and not data.get('capital_rvt'):
-            errors['capital_rvt'] = "Le capital RVT est requis pour cet usage."
-        
+
+        if params.param_valeur_batiment_requis and not data.get(
+            "valeur_batiment"
+        ):
+            errors["valeur_batiment"] = (
+                "La valeur du bâtiment est requise pour cet usage."
+            )
+
+        if params.param_valeur_contenu_requis and not data.get(
+            "valeur_contenu"
+        ):
+            errors["valeur_contenu"] = (
+                "La valeur du contenu est requise pour cet usage."
+            )
+
+        if params.param_loyer_requis and not data.get("loyer_mensuel"):
+            errors["loyer_mensuel"] = (
+                "Le loyer mensuel est requis pour cet usage."
+            )
+
+        if params.param_capital_rvt_requis and not data.get("capital_rvt"):
+            errors["capital_rvt"] = "Le capital RVT est requis pour cet usage."
+
         if errors:
             raise serializers.ValidationError(errors)
-        
+
         # Vérification que les options sont applicables à cet usage
-        options = data.get('options', [])
+        options = data.get("options", [])
         for opt in options:
-            code_option = opt['code_option']
+            code_option = opt["code_option"]
             if not OptionUsage.objects.filter(
-                option__code=code_option,
-                usage__code=code_usage,
-                actif=True
+                option__code=code_option, usage__code=code_usage, actif=True
             ).exists():
-                raise serializers.ValidationError({
-                    'options': f"L'option '{code_option}' n'est pas applicable à l'usage '{code_usage}'."
-                })
-        
+                raise serializers.ValidationError(
+                    {
+                        "options": f"L'option '{code_option}' n'est pas applicable à l'usage '{code_usage}'."
+                    }
+                )
+
         # Vérification que les garanties optionnelles sont disponibles pour cet usage
-        sous_garanties_opt = data.get('sous_garanties_optionnelles', [])
+        sous_garanties_opt = data.get("sous_garanties_optionnelles", [])
         for gar in sous_garanties_opt:
-            code_sous_garantie = gar['code_sous_garantie']
+            code_sous_garantie = gar["code_sous_garantie"]
             if not SousGarantieUsage.objects.filter(
                 sous_garantie__code=code_sous_garantie,
                 usage__code=code_usage,
                 obligatoire=False,
-                actif=True
+                actif=True,
             ).exists():
-                raise serializers.ValidationError({
-                    'sous_garanties_optionnelles': f"La garantie '{code_sous_garantie}' n'est pas disponible pour l'usage '{code_usage}'."
-                })
-        
+                raise serializers.ValidationError(
+                    {
+                        "sous_garanties_optionnelles": f"La garantie '{code_sous_garantie}' n'est pas disponible pour l'usage '{code_usage}'."
+                    }
+                )
+
         return data
 
 
@@ -3024,162 +3353,143 @@ class DevisMRHCreateRequestSerializer(serializers.Serializer):
     Serializer pour la création d'un devis MRH vide.
     Contient les informations de base du devis.
     """
-    
+
     # Relations obligatoires (ForeignKeys)
     idintermediaire = serializers.IntegerField(
-        required=True,
-        help_text="ID de l'intermédiaire"
+        required=True, help_text="ID de l'intermédiaire"
     )
-    
+
     idcompagnie = serializers.IntegerField(
-        required=True,
-        help_text="ID de la compagnie"
+        required=True, help_text="ID de la compagnie"
     )
-    
+
     idproduit = serializers.IntegerField(
-        required=True,
-        help_text="ID du produit MRH"
+        required=True, help_text="ID du produit MRH"
     )
     idavenant = serializers.IntegerField(
-        required=False,
-        allow_null=True,
-        help_text="ID de l'avenant"
+        required=False, allow_null=True, help_text="ID de l'avenant"
     )
     idtarif = serializers.IntegerField(
-        required=True,
-        help_text="ID du tarif MRH choisi"
+        required=True, help_text="ID du tarif MRH choisi"
     )
-    
+
     idoffre = serializers.IntegerField(
-        required=True,
-        help_text="ID de l'offre"
+        required=True, help_text="ID de l'offre"
     )
-    
+
     idclient = serializers.IntegerField(
-        required=True,
-        help_text="ID du client (souscripteur)"
+        required=True, help_text="ID du client (souscripteur)"
     )
-    
+
     idassure = serializers.IntegerField(
-        required=False,
-        help_text="ID de l'assuré (si différent du client)"
+        required=False, help_text="ID de l'assuré (si différent du client)"
     )
-    
+
     # Dates
     dateeffet = serializers.DateTimeField(
-        required=True,
-        help_text="Date d'effet du contrat"
+        required=True, help_text="Date d'effet du contrat"
     )
-    
+
     dateemission = serializers.DateTimeField(
         required=False,
         allow_null=True,
-        help_text="Date d'émission (positionnée automatiquement si non fournie)"
+        help_text="Date d'émission (positionnée automatiquement si non fournie)",
     )
     dateexpiration = serializers.DateTimeField(
         required=False,
         allow_null=True,
-        help_text="Date d'expiration (calculée automatiquement si non fournie)"
+        help_text="Date d'expiration (calculée automatiquement si non fournie)",
     )
-    
+
     # Durée et périodicité
     idduree = serializers.IntegerField(
         required=False,
         default=1,
-        help_text="ID de la durée (1=12 mois par défaut)"
+        help_text="ID de la durée (1=12 mois par défaut)",
     )
-    
+
     idterme = serializers.IntegerField(
-        required=False,
-        default=1,
-        help_text="ID du terme de paiement"
+        required=False, default=1, help_text="ID du terme de paiement"
     )
-    
+
     periode = serializers.CharField(
         max_length=1,
         required=False,
-        default='A',
-        help_text="Période de facturation (A=Annuelle, S=Semestrielle, etc.)"
+        default="A",
+        help_text="Période de facturation (A=Annuelle, S=Semestrielle, etc.)",
     )
-    
+
     # Informations complémentaires
     referenceagent = serializers.CharField(
         max_length=50,
         required=False,
-        default='',
+        default="",
         allow_blank=True,
-        help_text="Référence de l'agent"
+        help_text="Référence de l'agent",
     )
-    
+
     observation = serializers.CharField(
         max_length=50,
         required=False,
-        default='',
+        default="",
         allow_blank=True,
-        help_text="Observations sur le devis"
+        help_text="Observations sur le devis",
     )
-    
+
     # Booléens
     flotte = serializers.BooleanField(
         required=False,
         default=False,
-        help_text="Flotte (toujours False pour MRH)"
+        help_text="Flotte (toujours False pour MRH)",
     )
-    
+
     coassurance = serializers.BooleanField(
-        required=False,
-        default=False,
-        help_text="Coassurance"
+        required=False, default=False, help_text="Coassurance"
     )
-    
+
     renouvelable = serializers.BooleanField(
-        required=False,
-        default=True,
-        help_text="Contrat renouvelable"
+        required=False, default=True, help_text="Contrat renouvelable"
     )
-    
+
     confirme = serializers.BooleanField(
-        required=False,
-        default=False,
-        help_text="Devis confirmé"
+        required=False, default=False, help_text="Devis confirmé"
     )
-    
+
     # Mode imposé
     prime_imposee = serializers.BooleanField(
-        required=False,
-        default=False,
-        help_text="Prime imposée (mode imposé)"
-        
+        required=False, default=False, help_text="Prime imposée (mode imposé)"
     )
-    
+
     numeropolicecompagnie = serializers.CharField(
         max_length=60,
         required=False,
         default="",
         allow_blank=True,
-        help_text="Numéro de police affecté par la compagnie"
+        help_text="Numéro de police affecté par la compagnie",
     )
     numerotelephoneassure = serializers.CharField(
         max_length=20,
         required=False,
         default="",
         allow_blank=True,
-        help_text="Numéro de téléphone de l'assuré"
+        help_text="Numéro de téléphone de l'assuré",
     )
-        
+
     def validate(self, data):
         """Validation globale"""
         # Si dateexpiration n'est pas fournie, elle sera calculée selon la durée
-        if 'dateexpiration' not in data or data['dateexpiration'] is None:
+        if "dateexpiration" not in data or data["dateexpiration"] is None:
             # La date d'expiration sera calculée côté service/view
             pass
         else:
             # Vérifier que dateexpiration >= dateeffet
-            if data['dateexpiration'] < data['dateeffet']:
-                raise serializers.ValidationError({
-                    'dateexpiration': "La date d'expiration doit être >= à la date d'effet"
-                })
-        
+            if data["dateexpiration"] < data["dateeffet"]:
+                raise serializers.ValidationError(
+                    {
+                        "dateexpiration": "La date d'expiration doit être >= à la date d'effet"
+                    }
+                )
+
         return data
 
 
@@ -3188,7 +3498,7 @@ class MaisonAjoutRequestSerializer(serializers.Serializer):
     Serializer pour ajouter une maison à un devis existant.
     Combine les données de calcul avec l'ID du devis.
     """
-    
+
     maison = MaisonCalculRequestSerializer(
         help_text="Données de la maison à ajouter"
     )
@@ -3198,14 +3508,17 @@ class MaisonAjoutRequestSerializer(serializers.Serializer):
 # SECTION 2 : SERIALIZERS POUR LES RÉPONSES
 # ============================================================================
 
+
 class SousGarantieCalculeeSerializer(serializers.Serializer):
     """Serializer pour une garantie calculée (dans la réponse)"""
-    
+
     code_sous_garantie = serializers.CharField()
     libelle_sous_garantie = serializers.CharField()
     code_sous_garantie_std = serializers.CharField(allow_null=True)
     id_sous_garantie_std = serializers.IntegerField(allow_null=True)
-    type_garantie = serializers.ChoiceField(choices=['OBLIGATOIRE', 'OPTIONNELLE'])
+    type_garantie = serializers.ChoiceField(
+        choices=["OBLIGATOIRE", "OPTIONNELLE"]
+    )
     prime_nette = serializers.DecimalField(max_digits=12, decimal_places=2)
     taux_taxe = serializers.DecimalField(max_digits=5, decimal_places=2)
     taxe = serializers.DecimalField(max_digits=12, decimal_places=2)
@@ -3214,48 +3527,56 @@ class SousGarantieCalculeeSerializer(serializers.Serializer):
         max_digits=5,
         decimal_places=2,
         allow_null=True,
-        help_text="Taux de répartition (pour garanties obligatoires uniquement)"
+        help_text="Taux de répartition (pour garanties obligatoires uniquement)",
     )
 
 
 class OptionAppliqueeSerializer(serializers.Serializer):
     """Serializer pour une option appliquée (dans la réponse)"""
-    
+
     code_option = serializers.CharField()
     libelle_option = serializers.CharField()
     type_option = serializers.CharField()
     type_ajustement = serializers.CharField()
     sous_garantie_cible = serializers.CharField()
     sous_garantie_cible_libelle = serializers.CharField()
-    montant_ajustement = serializers.DecimalField(max_digits=12, decimal_places=2)
+    montant_ajustement = serializers.DecimalField(
+        max_digits=12, decimal_places=2
+    )
     signe = serializers.CharField()
 
 
 class MaisonCalculeeSerializer(serializers.Serializer):
     """Serializer pour le résultat du calcul d'une maison"""
-    
+
     # Identifiant temporaire (avant enregistrement)
     maison_id = serializers.CharField(required=False, allow_null=True)
-    
+
     # Informations de base
     code_usage = serializers.CharField()
     libelle_usage = serializers.CharField()
-    
+
     # Paramètres utilisés
     parametres = serializers.DictField(
         help_text="Paramètres utilisés pour le calcul (valeur_batiment, valeur_contenu, etc.)"
     )
-    
+
     # Résultats du calcul
-    prime_annuelle_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
-    prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_annuelle_totale = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )
+    prime_nette_totale = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
-    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
-    
+    prime_ttc_totale = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )  # prime_ttc_totale
+
     # Détails
     sous_garanties = SousGarantieCalculeeSerializer(many=True)
     options_appliquees = OptionAppliqueeSerializer(many=True, required=False)
-    
+
     # Informations supplémentaires
     adresse = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
@@ -3263,20 +3584,28 @@ class MaisonCalculeeSerializer(serializers.Serializer):
 
 class DevisMRHCalculeResponseSerializer(serializers.Serializer):
     """Serializer pour la réponse complète du calcul d'un devis"""
-    
+
     devis_id = serializers.IntegerField(help_text="ID du devis")
-    statut = serializers.CharField(help_text="Statut du calcul (success, error)")
+    statut = serializers.CharField(
+        help_text="Statut du calcul (success, error)"
+    )
     message = serializers.CharField(required=False)
-    
+
     # Totaux du devis
-    prime_nette_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_nette_totale = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     taxe_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
-    accessoires = serializers.DecimalField(max_digits=19, decimal_places=4, default=Decimal('0'))
-    prime_ttc_totale = serializers.DecimalField(max_digits=19, decimal_places=4) #prime_ttc_totale
-    
+    accessoires = serializers.DecimalField(
+        max_digits=19, decimal_places=4, default=Decimal("0")
+    )
+    prime_ttc_totale = serializers.DecimalField(
+        max_digits=19, decimal_places=4
+    )  # prime_ttc_totale
+
     # Détails par maison
     maisons = MaisonCalculeeSerializer(many=True)
-    
+
     # Métadonnées
     nombre_maisons = serializers.IntegerField()
     date_calcul = serializers.DateTimeField()
@@ -3284,7 +3613,7 @@ class DevisMRHCalculeResponseSerializer(serializers.Serializer):
 
 class DevisMRHResponseSerializer(serializers.Serializer):
     """Serializer pour la réponse de création d'un devis"""
-    
+
     devis_id = serializers.IntegerField()
     numero_devis = serializers.CharField(required=False)
     statut = serializers.CharField()
@@ -3294,7 +3623,7 @@ class DevisMRHResponseSerializer(serializers.Serializer):
 
 class MaisonAjouteeResponseSerializer(serializers.Serializer):
     """Serializer pour la réponse d'ajout d'une maison"""
-    
+
     devis_id = serializers.IntegerField()
     maison_id = serializers.IntegerField()
     statut = serializers.CharField()
@@ -3306,161 +3635,140 @@ class MaisonAjouteeResponseSerializer(serializers.Serializer):
 # SECTION 3 : SERIALIZERS POUR LES MODÈLES LEGACY (ENREGISTREMENT)
 # ============================================================================
 
+
 class DevisDetailCreateSerializer(serializers.Serializer):
     """
     Serializer pour créer un DevisDetail.
     Adapté au modèle legacy automobile - utilisé pour stocker une maison MRH.
-    
+
     Note: Le modèle DevisDetail a été conçu pour l'automobile, donc certains champs
     ne sont pas pertinents pour MRH mais doivent être remplis avec des valeurs par défaut.
     """
-    
+
     # Relation avec Devis
-    iddevis = serializers.IntegerField(
-        help_text="ID du devis parent"
-    )
-    
+    iddevis = serializers.IntegerField(help_text="ID du devis parent")
+
     # Champs obligatoires (avec valeurs par défaut pour MRH)
     idoffre = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="ID de l'offre (peut être NULL pour MRH)"
+        help_text="ID de l'offre (peut être NULL pour MRH)",
     )
-    
+
     idtarif = serializers.IntegerField(
         required=False,
         default=0,
-        help_text="ID du tarif (0 par défaut pour MRH)"
+        help_text="ID du tarif (0 par défaut pour MRH)",
     )
-    
+
     vehicule = serializers.IntegerField(
         required=False,
         default=0,
-        help_text="ID véhicule (0 pour MRH - champ legacy)"
+        help_text="ID véhicule (0 pour MRH - champ legacy)",
     )
-    
+
     # Montants calculés pour MRH
     primenette = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        help_text="Prime nette de la maison"
+        max_digits=19, decimal_places=4, help_text="Prime nette de la maison"
     )
-    
+
     taxeenregistrement = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        help_text="Taxe totale de la maison"
+        max_digits=19, decimal_places=4, help_text="Taxe totale de la maison"
     )
-    
+
     primeannuelle = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Prime TTC de la maison (primenette + taxeenregistrement)"
+        help_text="Prime TTC de la maison (primenette + taxeenregistrement)",
     )
-    
+
     # Champs utilisables pour stocker des infos MRH
     observation = serializers.CharField(
         max_length=50,
         required=False,
-        default='',
+        default="",
         allow_blank=True,
-        help_text="Observations - peut contenir l'usage MRH ou l'adresse (tronquée)"
+        help_text="Observations - peut contenir l'usage MRH ou l'adresse (tronquée)",
     )
-    
+
     # Champs avec valeurs par défaut pour compatibilité
     nombreplace = serializers.IntegerField(
-        required=False,
-        default=0,
-        help_text="Nombre de places (0 pour MRH)"
+        required=False, default=0, help_text="Nombre de places (0 pour MRH)"
     )
-    
+
     chargeutile = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Charge utile (0 pour MRH)"
+        help_text="Charge utile (0 pour MRH)",
     )
-    
+
     valeurneuve = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Valeur neuve (peut stocker valeur_batiment pour MRH)"
+        help_text="Valeur neuve (peut stocker valeur_batiment pour MRH)",
     )
-    
+
     valeurvenale = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Valeur vénale (peut stocker valeur_contenu pour MRH)"
+        help_text="Valeur vénale (peut stocker valeur_contenu pour MRH)",
     )
-    
+
     valeuraccessoire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Valeur accessoire (0 pour MRH)"
+        help_text="Valeur accessoire (0 pour MRH)",
     )
-    
+
     fga = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="FGA (0 pour MRH)"
+        help_text="FGA (0 pour MRH)",
     )
-    
+
     # Booléens
-    remorque = serializers.BooleanField(
-        required=False,
-        default=False
-    )
-    
-    extincteur = serializers.BooleanField(
-        required=False,
-        default=False
-    )
-    
-    provisoire = serializers.BooleanField(
-        required=False,
-        default=False
-    )
-    
-    carteverte = serializers.BooleanField(
-        required=False,
-        default=False
-    )
-    
+    remorque = serializers.BooleanField(required=False, default=False)
+
+    extincteur = serializers.BooleanField(required=False, default=False)
+
+    provisoire = serializers.BooleanField(required=False, default=False)
+
+    carteverte = serializers.BooleanField(required=False, default=False)
+
     # Champs texte avec valeurs par défaut
     matricule = serializers.CharField(
         max_length=50,
         required=False,
-        default='MRH',
-        help_text="Matricule (MRH par défaut)"
+        default="MRH",
+        help_text="Matricule (MRH par défaut)",
     )
-    
+
     typeimmat = serializers.CharField(
-        max_length=1,
-        required=False,
-        default='M'
+        max_length=1, required=False, default="M"
     )
-    
+
     attestation = serializers.CharField(
-        max_length=50,
-        required=False,
-        default=''
+        max_length=50, required=False, default=""
     )
-    
+
     def validate(self, data):
         """Validation et calcul de primeannuelle si nécessaire"""
         # Assurer que primeannuelle = primenette + taxeenregistrement
-        if 'primenette' in data and 'taxeenregistrement' in data:
-            data['primeannuelle'] = data['primenette'] + data['taxeenregistrement']
-        
+        if "primenette" in data and "taxeenregistrement" in data:
+            data["primeannuelle"] = (
+                data["primenette"] + data["taxeenregistrement"]
+            )
+
         return data
 
 
@@ -3469,161 +3777,128 @@ class DevisMRHDetGarantieCreateSerializer(serializers.Serializer):
     Serializer pour créer un DevisDetGarantie.
     Enregistre les garanties MRH avec leurs primes.
     """
-    
+
     # Relations
     IdDevisDet = serializers.IntegerField(
         help_text="ID du DevisDetail (maison) parent"
     )
-    
+
     IdGarantie = serializers.IntegerField(
         help_text="ID de la garantie dans stdgarantie (obtenu via GarantieMRH.get_id_garantie_std())"
     )
-    
+
     # Statut
     Acquise = serializers.BooleanField(
         default=True,
-        help_text="Garantie acquise (toujours True pour garanties obligatoires)"
+        help_text="Garantie acquise (toujours True pour garanties obligatoires)",
     )
-    
+
     # Capital et franchise (pour MRH, peuvent être NULL)
     Capital = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Capital assuré pour cette garantie (optionnel pour MRH)"
+        help_text="Capital assuré pour cette garantie (optionnel pour MRH)",
     )
-    
+
     Franchise = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Franchise applicable (optionnel pour MRH)"
+        help_text="Franchise applicable (optionnel pour MRH)",
     )
-    
+
     TexteFranchise = serializers.CharField(
         max_length=120,
         required=False,
         allow_null=True,
         allow_blank=True,
-        help_text="Description de la franchise"
+        help_text="Description de la franchise",
     )
-    
+
     Formule = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="Formule (non utilisé pour MRH)"
+        help_text="Formule (non utilisé pour MRH)",
     )
-    
+
     # Montants calculés (champs principaux)
     PrimeNette = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        help_text="Prime nette de la garantie"
+        max_digits=19, decimal_places=4, help_text="Prime nette de la garantie"
     )
-    
+
     taxe = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        help_text="Taxe sur la garantie"
+        max_digits=19, decimal_places=4, help_text="Taxe sur la garantie"
     )
-    
+
     primeannuelle = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Prime TTC de la garantie (PrimeNette + taxe)"
+        help_text="Prime TTC de la garantie (PrimeNette + taxe)",
     )
-    
+
     # Champs old_ (pour historique - valeurs par défaut)
     old_acquise = serializers.CharField(
-        max_length=1,
-        required=False,
-        default='0'
+        max_length=1, required=False, default="0"
     )
-    
+
     old_capital = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        allow_null=True
+        allow_null=True,
     )
-    
+
     old_franchise = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        allow_null=True
+        allow_null=True,
     )
-    
-    old_formule = serializers.IntegerField(
-        required=False,
-        allow_null=True
-    )
-    
-    old_places = serializers.IntegerField(
-        required=False,
-        allow_null=True
-    )
-    
+
+    old_formule = serializers.IntegerField(required=False, allow_null=True)
+
+    old_places = serializers.IntegerField(required=False, allow_null=True)
+
     old_primenette = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        default=0
+        max_digits=19, decimal_places=4, required=False, default=0
     )
-    
+
     # Champs spécifiques (non utilisés pour MRH - valeurs par défaut)
     deces = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        allow_null=True
+        max_digits=19, decimal_places=4, required=False, allow_null=True
     )
-    
+
     ipp = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        allow_null=True
+        max_digits=19, decimal_places=4, required=False, allow_null=True
     )
-    
+
     fraismed = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        allow_null=True
+        max_digits=19, decimal_places=4, required=False, allow_null=True
     )
-    
+
     hosp = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        allow_null=True
+        max_digits=19, decimal_places=4, required=False, allow_null=True
     )
-    
+
     minfranchise = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        default=0
+        max_digits=19, decimal_places=4, required=False, default=0
     )
-    
+
     maxfranchise = serializers.DecimalField(
-        max_digits=19,
-        decimal_places=4,
-        required=False,
-        default=0
+        max_digits=19, decimal_places=4, required=False, default=0
     )
-    
+
     def validate(self, data):
         """Validation et calcul de primeannuelle si nécessaire"""
         # Assurer que primeannuelle = PrimeNette + taxe
-        if 'PrimeNette' in data and 'taxe' in data:
-            data['primeannuelle'] = data['PrimeNette'] + data['taxe']
-        
+        if "PrimeNette" in data and "taxe" in data:
+            data["primeannuelle"] = data["PrimeNette"] + data["taxe"]
+
         return data
 
 
@@ -3631,58 +3906,59 @@ class DevisMRHDetGarantieCreateSerializer(serializers.Serializer):
 # SERIALIZERS UTILITAIRES
 # ============================================================================
 
+
 class DevisUpdateTotauxSerializer(serializers.Serializer):
     """
     Serializer pour mettre à jour les totaux d'un devis après calcul.
     Utilisé pour mettre à jour le modèle Devis avec les montants consolidés.
     """
-    
+
     primenette = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Prime nette totale (somme de toutes les maisons)"
+        help_text="Prime nette totale (somme de toutes les maisons)",
     )
-    
+
     taxe = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Taxe totale (somme de toutes les maisons)"
+        help_text="Taxe totale (somme de toutes les maisons)",
     )
-    
+
     accessoire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Accessoires (frais de dossier, etc.)"
+        help_text="Accessoires (frais de dossier, etc.)",
     )
-    
+
     primeannuelle = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Prime annuelle (primenette + taxe + accessoire avant FGA et CEDEAO)"
+        help_text="Prime annuelle (primenette + taxe + accessoire avant FGA et CEDEAO)",
     )
-    
+
     fga = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="FGA (Fonds de Garantie Automobile - 0 pour MRH)"
+        help_text="FGA (Fonds de Garantie Automobile - 0 pour MRH)",
     )
-    
+
     cedeao = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Taxe CEDEAO - 0 pour MRH)"
+        help_text="Taxe CEDEAO - 0 pour MRH)",
     )
-    
+
     primettc = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        help_text="Prime TTC finale (primenette + taxe + accessoire)"
+        help_text="Prime TTC finale (primenette + taxe + accessoire)",
     )
 
 
@@ -3691,52 +3967,52 @@ class AccessoiresConfigSerializer(serializers.Serializer):
     Serializer pour configurer les accessoires (frais de dossier, etc.)
     Ces montants peuvent être ajoutés au devis.
     """
-    
+
     accessoire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         default=0,
-        help_text="Montant total des accessoires"
+        help_text="Montant total des accessoires",
     )
-    
+
     accessoirecompagnie = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Part compagnie des accessoires"
+        help_text="Part compagnie des accessoires",
     )
-    
+
     accessoireintermediaire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Part intermédiaire des accessoires"
+        help_text="Part intermédiaire des accessoires",
     )
-    
+
     accessoiregestionnaire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         default=0,
-        help_text="Part gestionnaire des accessoires"
+        help_text="Part gestionnaire des accessoires",
     )
-    
+
     def validate(self, data):
         """Vérifier que la somme des parts = accessoire total"""
-        total = data.get('accessoire', 0)
+        total = data.get("accessoire", 0)
         somme_parts = (
-            data.get('accessoirecompagnie', 0) +
-            data.get('accessoireintermediaire', 0) +
-            data.get('accessoiregestionnaire', 0)
+            data.get("accessoirecompagnie", 0)
+            + data.get("accessoireintermediaire", 0)
+            + data.get("accessoiregestionnaire", 0)
         )
-        
+
         if total > 0 and abs(total - somme_parts) > 0.01:  # Tolérance de 0.01
             raise serializers.ValidationError(
                 "La somme des parts d'accessoires doit être égale au montant total des accessoires"
             )
-        
+
         return data
 
 
@@ -3745,15 +4021,20 @@ class UsageInfoDetailSerializer(serializers.Serializer):
     Serializer pour obtenir les informations détaillées d'un usage.
     Utile pour l'endpoint GET /usages/{code}/
     """
-    from configuration_api.serializers import SousGarantieMRHSerializer, OptionSerializer
+
+    from configuration_api.serializers import (
+        OptionSerializer,
+        SousGarantieMRHSerializer,
+    )
+
     code = serializers.CharField()
     libelle = serializers.CharField()
     description = serializers.CharField()
     formule = serializers.CharField()
-    
+
     parametres_requis = serializers.DictField()
     coefficients = serializers.DictField()
-    
+
     sous_garanties_obligatoires = SousGarantieMRHSerializer(many=True)
     sous_garanties_optionnelles = SousGarantieMRHSerializer(many=True)
     options_disponibles = OptionSerializer(many=True)
@@ -3761,36 +4042,38 @@ class UsageInfoDetailSerializer(serializers.Serializer):
 
 class StatutDevisSerializer(serializers.Serializer):
     """Serializer pour mettre à jour le statut d'un devis"""
-    
+
     statut = serializers.ChoiceField(
         choices=[
-            ('ACTIF', 'Actif'),
-            ('CONFIRME', 'Confirmé'),
-            ('ANNULE', 'Annulé'),
-            ('EXPIRE', 'Expiré'),
+            ("ACTIF", "Actif"),
+            ("CONFIRME", "Confirmé"),
+            ("ANNULE", "Annulé"),
+            ("EXPIRE", "Expiré"),
         ],
-        help_text="Nouveau statut du devis"
+        help_text="Nouveau statut du devis",
     )
-    
+
     motifannulation = serializers.CharField(
         max_length=255,
         required=False,
         allow_blank=True,
-        help_text="Motif d'annulation (requis si statut=ANNULE)"
+        help_text="Motif d'annulation (requis si statut=ANNULE)",
     )
-    
+
     def validate(self, data):
         """Vérifier que le motif est fourni pour une annulation"""
-        if data.get('statut') == 'ANNULE' and not data.get('motifannulation'):
-            raise serializers.ValidationError({
-                'motifannulation': "Le motif d'annulation est requis pour annuler un devis"
-            })
+        if data.get("statut") == "ANNULE" and not data.get("motifannulation"):
+            raise serializers.ValidationError(
+                {
+                    "motifannulation": "Le motif d'annulation est requis pour annuler un devis"
+                }
+            )
         return data
 
 
 class ErrorSerializer(serializers.Serializer):
     """Serializer standard pour les erreurs"""
-    
+
     erreur = serializers.CharField()
     details = serializers.DictField(required=False)
     code = serializers.CharField(required=False)
@@ -3801,52 +4084,36 @@ class MaisonStorageDataSerializer(serializers.Serializer):
     Serializer pour stocker les données MRH d'une maison en JSON.
     Ces données peuvent être stockées dans un champ JSON de DevisDetail ou dans une table séparée.
     """
-    
+
     code_usage = serializers.CharField()
     libelle_usage = serializers.CharField()
-    
+
     # Paramètres de calcul utilisés
     valeur_batiment = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=12, decimal_places=2, required=False, allow_null=True
     )
-    
+
     valeur_contenu = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=12, decimal_places=2, required=False, allow_null=True
     )
-    
+
     loyer_mensuel = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=10, decimal_places=2, required=False, allow_null=True
     )
-    
+
     capital_rvt = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        required=False,
-        allow_null=True
+        max_digits=12, decimal_places=2, required=False, allow_null=True
     )
-    
+
     # Options et garanties optionnelles sélectionnées
     options_selectionnees = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        default=list
+        child=serializers.CharField(), required=False, default=list
     )
-    
+
     sous_garanties_optionnelles_selectionnees = serializers.ListField(
-        child=serializers.CharField(),
-        required=False,
-        default=list
+        child=serializers.CharField(), required=False, default=list
     )
-    
+
     # Informations supplémentaires
     adresse = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
@@ -3855,6 +4122,7 @@ class MaisonStorageDataSerializer(serializers.Serializer):
 # ============================================================================
 # VALIDATION HELPERS
 # ============================================================================
+
 
 def validate_decimal_positive(value: Decimal, field_name: str) -> Decimal:
     """Helper pour valider qu'un Decimal est positif"""
@@ -3869,35 +4137,36 @@ def validate_decimal_positive(value: Decimal, field_name: str) -> Decimal:
 Serializers pour le résumé financier des devis MRH
 ===================================================
 """
+
+
 class GarantieAcquiseSerializer(serializers.Serializer):
     """
     Serializer pour une garantie acquise avec ses montants.
     """
+
     id_sous_garantie = serializers.IntegerField(
         help_text="ID de la garantie dans stdgarantie"
     )
     code_sous_garantie = serializers.CharField(
-        max_length=50,
-        help_text="Code de la garantie"
+        max_length=50, help_text="Code de la garantie"
     )
     libelle_sous_garantie = serializers.CharField(
-        max_length=200,
-        help_text="Libellé de la garantie"
+        max_length=200, help_text="Libellé de la garantie"
     )
     prime_nette = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Prime nette de la garantie (en FCFA)"
+        help_text="Prime nette de la garantie (en FCFA)",
     )
     taxe = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Taxe sur la garantie (en FCFA)"
+        help_text="Taxe sur la garantie (en FCFA)",
     )
     prime_ttc = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Prime TTC de la garantie (en FCFA)"
+        help_text="Prime TTC de la garantie (en FCFA)",
     )
 
 
@@ -3905,30 +4174,25 @@ class PalierAccessoireSerializer(serializers.Serializer):
     """
     Serializer pour les informations du palier d'accessoire.
     """
+
     id = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="ID du palier dans stdaccessoire"
+        help_text="ID du palier dans stdaccessoire",
     )
     primemin = serializers.FloatField(
-        required=False,
-        allow_null=True,
-        help_text="Prime minimum du palier"
+        required=False, allow_null=True, help_text="Prime minimum du palier"
     )
     primemax = serializers.FloatField(
-        required=False,
-        allow_null=True,
-        help_text="Prime maximum du palier"
+        required=False, allow_null=True, help_text="Prime maximum du palier"
     )
     accessoires = serializers.FloatField(
         required=False,
         allow_null=True,
-        help_text="Montant accessoire du palier"
+        help_text="Montant accessoire du palier",
     )
     montantforfait = serializers.FloatField(
-        required=False,
-        allow_null=True,
-        help_text="Montant forfait du palier"
+        required=False, allow_null=True, help_text="Montant forfait du palier"
     )
 
 
@@ -3936,25 +4200,24 @@ class AccessoireDetailsSerializer(serializers.Serializer):
     """
     Serializer pour les détails de l'accessoire.
     """
+
     accessoire = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Montant de l'accessoire HT (en FCFA)"
+        help_text="Montant de l'accessoire HT (en FCFA)",
     )
     taxe_accessoire = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Taxe sur l'accessoire 14.5% (en FCFA)"
+        help_text="Taxe sur l'accessoire 14.5% (en FCFA)",
     )
     accessoire_ttc = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Accessoire TTC (en FCFA)"
+        max_digits=15, decimal_places=2, help_text="Accessoire TTC (en FCFA)"
     )
     palier = PalierAccessoireSerializer(
         required=False,
         allow_null=True,
-        help_text="Informations sur le palier appliqué"
+        help_text="Informations sur le palier appliqué",
     )
 
 
@@ -3962,6 +4225,7 @@ class StatistiquesDevisSerializer(serializers.Serializer):
     """
     Serializer pour les statistiques du devis.
     """
+
     nombre_maisons = serializers.IntegerField(
         help_text="Nombre de maisons assurées dans le devis"
     )
@@ -3976,27 +4240,25 @@ class StatistiquesDevisSerializer(serializers.Serializer):
 class ResumeFinancierDevisSerializer(serializers.Serializer):
     """
     Serializer pour le résumé financier complet d'un devis MRH.
-    
+
     Ce serializer retourne tous les montants financiers d'un devis :
     - Prime nette totale (après options)
-    - Prime annuelle (avant options) 
+    - Prime annuelle (avant options)
     - Accessoires
     - Taxes (garanties + accessoire)
     - Prime TTC
     - Liste des garanties acquises
     """
-    
+
     # Identifiants
-    id_devis = serializers.IntegerField(
-        help_text="ID du devis"
-    )
+    id_devis = serializers.IntegerField(help_text="ID du devis")
     numero_devis = serializers.CharField(
         max_length=100,
         allow_blank=True,
         allow_null=True,
-        help_text="Numéro du devis"
+        help_text="Numéro du devis",
     )
-    
+
     # Montants principaux (en FCFA)
     prime_nette_totale = serializers.DecimalField(
         max_digits=15,
@@ -4005,9 +4267,9 @@ class ResumeFinancierDevisSerializer(serializers.Serializer):
             "Prime nette totale APRÈS application des options. "
             "C'est la somme des primes nettes de toutes les garanties "
             "de toutes les maisons après options."
-        )
+        ),
     )
-    
+
     prime_annuelle = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
@@ -4015,185 +4277,201 @@ class ResumeFinancierDevisSerializer(serializers.Serializer):
             "Prime annuelle AVANT application des options. "
             "NOTE : Actuellement identique à prime_nette_totale car les options "
             "ne sont pas stockées séparément."
-        )
+        ),
     )
-    
+
     accessoire = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         help_text=(
             "Montant de l'accessoire calculé selon les paliers définis "
             "dans stdaccessoire (en FCFA)"
-        )
+        ),
     )
-    
+
     taxe_totale = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text=(
-            "Taxe totale = taxe_garanties + taxe_accessoire (en FCFA)"
-        )
+        help_text=("Taxe totale = taxe_garanties + taxe_accessoire (en FCFA)"),
     )
-    
+
     prime_ttc = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         help_text=(
             "Prime TTC = prime_nette_totale + taxe_totale + accessoire (en FCFA)"
-        )
+        ),
     )
-    
+
     # Détails des taxes
     taxe_sous_garanties = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Somme des taxes sur toutes les garanties (en FCFA)"
+        help_text="Somme des taxes sur toutes les garanties (en FCFA)",
     )
-    
+
     taxe_accessoire = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Taxe sur l'accessoire 14.5% (en FCFA)"
+        help_text="Taxe sur l'accessoire 14.5% (en FCFA)",
     )
-    
+
     # Détails accessoire
     accessoire_details = AccessoireDetailsSerializer(
         help_text="Détails complets de l'accessoire avec palier"
     )
-    
+
     # Statistiques
     statistiques = StatistiquesDevisSerializer(
         help_text="Statistiques sur le devis"
     )
-    
+
     # Liste des garanties acquises
     sous_garanties_acquises = GarantieAcquiseSerializer(
-        many=True,
-        help_text="Liste de toutes les garanties acquises du devis"
+        many=True, help_text="Liste de toutes les garanties acquises du devis"
     )
-    
+
     # Note explicative
     note = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Note explicative sur les calculs"
+        help_text="Note explicative sur les calculs",
     )
-    
+
     class Meta:
         # Ordre d'affichage des champs
         fields = [
-            'id_devis',
-            'numero_devis',
-            'prime_nette_totale',
-            'prime_annuelle',
-            'accessoire',
-            'taxe_totale',
-            'prime_ttc',
-            'taxe_sous_garanties',
-            'taxe_accessoire',
-            'accessoire_details',
-            'statistiques',
-            'sous_garanties_acquises',
-            'note',
+            "id_devis",
+            "numero_devis",
+            "prime_nette_totale",
+            "prime_annuelle",
+            "accessoire",
+            "taxe_totale",
+            "prime_ttc",
+            "taxe_sous_garanties",
+            "taxe_accessoire",
+            "accessoire_details",
+            "statistiques",
+            "sous_garanties_acquises",
+            "note",
         ]
 
 
 class ChequeOperationSerializer(serializers.ModelSerializer):
-    nom_utilisateur = serializers.ReadOnlyField(source='utilisateur.email')
+    nom_utilisateur = serializers.ReadOnlyField(source="utilisateur.email")
 
     class Meta:
         model = ChequeOperation
-        fields = ['id_operation', 'id_encaissement', 'nom_utilisateur', 'montant_operation', 'date_operation', 'date_saisie']
+        fields = [
+            "id_operation",
+            "id_encaissement",
+            "nom_utilisateur",
+            "montant_operation",
+            "date_operation",
+            "date_saisie",
+        ]
+
 
 class ChequeSerializer(serializers.ModelSerializer):
-    nom_banque = serializers.ReadOnlyField(source='banque.libelle')
+    nom_banque = serializers.ReadOnlyField(source="banque.libelle")
 
     class Meta:
         model = Cheque
-        fields = ['id_cheque', 'numero_cheque', 'banque', 'nom_banque', 'montant_initial', 'solde_disponible', 'date_saisie']
-        
-        
+        fields = [
+            "id_cheque",
+            "numero_cheque",
+            "banque",
+            "nom_banque",
+            "montant_initial",
+            "solde_disponible",
+            "date_saisie",
+        ]
+
+
 """
 Serializers pour modification de maison et imposition de prime
 ===============================================================
 """
+
+
 class MaisonModificationRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête de modification d'une maison.
     """
+
     code_usage = serializers.CharField(
         max_length=100,
         required=False,
         allow_null=True,
-        help_text="Code de l'usage habitation"
+        help_text="Code de l'usage habitation",
     )
-    
+
     valeur_batiment = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Valeur du bâtiment en FCFA"
+        help_text="Valeur du bâtiment en FCFA",
     )
-    
+
     valeur_contenu = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Valeur du contenu en FCFA"
+        help_text="Valeur du contenu en FCFA",
     )
-    
+
     loyer_mensuel = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Loyer mensuel en FCFA"
+        help_text="Loyer mensuel en FCFA",
     )
-    
+
     capital_rvt = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Capital RVT en FCFA"
+        help_text="Capital RVT en FCFA",
     )
-    
+
     options = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
         allow_null=True,
-        help_text="Liste des codes d'options"
+        help_text="Liste des codes d'options",
     )
-    
+
     sous_garanties_optionnelles = serializers.ListField(
         child=serializers.CharField(max_length=100),
         required=False,
         allow_null=True,
-        help_text="Liste des codes de sous_garanties optionnelles"
+        help_text="Liste des codes de sous_garanties optionnelles",
     )
-    
+
     adresse = serializers.CharField(
         max_length=500,
         required=False,
         allow_null=True,
         allow_blank=True,
-        help_text="Adresse de la maison"
+        help_text="Adresse de la maison",
     )
-    
+
     description = serializers.CharField(
         max_length=1000,
         required=False,
         allow_null=True,
         allow_blank=True,
-        help_text="Description supplémentaire"
+        help_text="Description supplémentaire",
     )
-    
+
     force_recalcul = serializers.BooleanField(
         default=False,
         required=False,
-        help_text="Forcer le recalcul même si prime imposée"
+        help_text="Forcer le recalcul même si prime imposée",
     )
 
 
@@ -4201,18 +4479,19 @@ class ImpositionPrimeMaisonRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête d'imposition de prime maison.
     """
+
     montant_impose = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        min_value=Decimal('0.01'),
-        help_text="Montant de la prime NETTE à imposer (en FCFA)"
+        min_value=Decimal("0.01"),
+        help_text="Montant de la prime NETTE à imposer (en FCFA)",
     )
-    
+
     motif = serializers.CharField(
         max_length=1000,
         required=False,
         allow_blank=True,
-        help_text="Raison de l'imposition de la prime"
+        help_text="Raison de l'imposition de la prime",
     )
 
 
@@ -4220,18 +4499,19 @@ class ImpositionPrimeDevisRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête d'imposition de prime devis.
     """
+
     montant_impose = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
-        min_value=Decimal('0.01'),
-        help_text="Montant de la prime NETTE à imposer pour le devis complet (en FCFA)"
+        min_value=Decimal("0.01"),
+        help_text="Montant de la prime NETTE à imposer pour le devis complet (en FCFA)",
     )
-    
+
     motif = serializers.CharField(
         max_length=1000,
         required=False,
         allow_blank=True,
-        help_text="Raison de l'imposition (ex: négociation commerciale)"
+        help_text="Raison de l'imposition (ex: négociation commerciale)",
     )
 
 
@@ -4239,11 +4519,12 @@ class LeveeImpositionRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête de levée d'imposition.
     """
+
     motif = serializers.CharField(
         max_length=1000,
         required=False,
         allow_blank=True,
-        help_text="Raison de la levée de l'imposition"
+        help_text="Raison de la levée de l'imposition",
     )
 
 
@@ -4251,6 +4532,7 @@ class ImpositionPrimeResponseSerializer(serializers.Serializer):
     """
     Serializer pour la réponse d'imposition de prime.
     """
+
     success = serializers.BooleanField()
     id_maison = serializers.IntegerField(required=False)
     id_devis = serializers.IntegerField(required=False)
@@ -4265,6 +4547,7 @@ class MaisonModificationResponseSerializer(serializers.Serializer):
     """
     Serializer pour la réponse de modification de maison.
     """
+
     success = serializers.BooleanField()
     id_maison = serializers.IntegerField(required=False)
     message = serializers.CharField()
@@ -4272,189 +4555,153 @@ class MaisonModificationResponseSerializer(serializers.Serializer):
     prime_imposee = serializers.BooleanField(required=False)
     montant_impose = serializers.FloatField(required=False)
     imposition_levee = serializers.BooleanField(required=False)
-    
-    
+
+
 """
 Serializer pour les détails complets d'une maison MRH
 ======================================================
 """
+
+
 class GarantieDetailSerializer(serializers.Serializer):
     """Détail d'une garantie de la maison."""
-    
+
     id_sous_garantie = serializers.IntegerField(
         help_text="ID dans stdgarantie"
     )
-    code_sous_garantie = serializers.CharField(
-        help_text="Code de la garantie"
-    )
-    libelle = serializers.CharField(
-        help_text="Libellé de la garantie"
-    )
-    type = serializers.CharField(
-        help_text="OBLIGATOIRE ou OPTIONNELLE"
-    )
-    acquise = serializers.BooleanField(
-        help_text="Si la garantie est acquise"
-    )
+    code_sous_garantie = serializers.CharField(help_text="Code de la garantie")
+    libelle = serializers.CharField(help_text="Libellé de la garantie")
+    type = serializers.CharField(help_text="OBLIGATOIRE ou OPTIONNELLE")
+    acquise = serializers.BooleanField(help_text="Si la garantie est acquise")
     prime_nette = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Prime nette après options (FCFA)"
+        help_text="Prime nette après options (FCFA)",
     )
     prime_annuelle = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Prime avant options (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Prime avant options (FCFA)"
     )
     taux_taxe = serializers.DecimalField(
         max_digits=5,
         decimal_places=3,
-        help_text="Taux de taxe (0.145 ou 0.25)"
+        help_text="Taux de taxe (0.145 ou 0.25)",
     )
     taxe = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Montant de la taxe (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Montant de la taxe (FCFA)"
     )
     prime_ttc = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Prime TTC (prime nette + taxe)"
+        help_text="Prime TTC (prime nette + taxe)",
     )
 
 
 class ParametresCalculMaisonSerializer(serializers.Serializer):
     """Paramètres utilisés pour le calcul de la maison."""
-    
-    code_usage = serializers.CharField(
-        help_text="Code de l'usage habitation"
-    )
-    libelle_usage = serializers.CharField(
-        help_text="Libellé de l'usage"
-    )
+
+    code_usage = serializers.CharField(help_text="Code de l'usage habitation")
+    libelle_usage = serializers.CharField(help_text="Libellé de l'usage")
     valeur_batiment = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Valeur du bâtiment (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Valeur du bâtiment (FCFA)"
     )
     valeur_contenu = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Valeur du contenu (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Valeur du contenu (FCFA)"
     )
     loyer_mensuel = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         required=False,
         allow_null=True,
-        help_text="Loyer mensuel si applicable (FCFA)"
+        help_text="Loyer mensuel si applicable (FCFA)",
     )
     capital_rvt = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         required=False,
         allow_null=True,
-        help_text="Capital RVT si applicable (FCFA)"
+        help_text="Capital RVT si applicable (FCFA)",
     )
 
 
 class OptionAppliqueeSerializer(serializers.Serializer):
     """Option appliquée sur la maison."""
-    
-    code_option = serializers.CharField(
-        help_text="Code de l'option"
-    )
-    libelle = serializers.CharField(
-        help_text="Libellé de l'option"
-    )
-    signe = serializers.CharField(
-        help_text="Signe de l'option (+ ou -)"
-    )
+
+    code_option = serializers.CharField(help_text="Code de l'option")
+    libelle = serializers.CharField(help_text="Libellé de l'option")
+    signe = serializers.CharField(help_text="Signe de l'option (+ ou -)")
     pourcentage = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
         required=False,
         allow_null=True,
-        help_text="Pourcentage d'ajustement"
+        help_text="Pourcentage d'ajustement",
     )
     impact_financier = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         required=False,
         allow_null=True,
-        help_text="Impact financier estimé (FCFA)"
+        help_text="Impact financier estimé (FCFA)",
     )
 
 
 class ImpositionInfoSerializer(serializers.Serializer):
     """Informations sur l'imposition de la maison."""
-    
-    imposee = serializers.BooleanField(
-        help_text="Si la prime est imposée"
-    )
+
+    imposee = serializers.BooleanField(help_text="Si la prime est imposée")
     montant_impose = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
         required=False,
         allow_null=True,
-        help_text="Montant de la prime imposée (FCFA)"
+        help_text="Montant de la prime imposée (FCFA)",
     )
     date_imposition = serializers.DateTimeField(
-        required=False,
-        allow_null=True,
-        help_text="Date de l'imposition"
+        required=False, allow_null=True, help_text="Date de l'imposition"
     )
     user_nom = serializers.CharField(
-        required=False,
-        allow_null=True,
-        help_text="Utilisateur ayant imposé"
+        required=False, allow_null=True, help_text="Utilisateur ayant imposé"
     )
     motif = serializers.CharField(
-        required=False,
-        allow_null=True,
-        help_text="Motif de l'imposition"
+        required=False, allow_null=True, help_text="Motif de l'imposition"
     )
     duree_jours = serializers.IntegerField(
         required=False,
         allow_null=True,
-        help_text="Durée de l'imposition en jours"
+        help_text="Durée de l'imposition en jours",
     )
 
 
 class TotauxMaisonSerializer(serializers.Serializer):
     """Totaux financiers de la maison."""
-    
+
     prime_nette_totale = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Somme des primes nettes après options (FCFA)"
+        help_text="Somme des primes nettes après options (FCFA)",
     )
     prime_annuelle_totale = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Somme des primes annuelles avant options (FCFA)"
+        help_text="Somme des primes annuelles avant options (FCFA)",
     )
     taxe_totale = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Somme des taxes (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Somme des taxes (FCFA)"
     )
     prime_ttc_totale = serializers.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        help_text="Prime TTC totale (FCFA)"
+        max_digits=15, decimal_places=2, help_text="Prime TTC totale (FCFA)"
     )
     economie_options = serializers.DecimalField(
         max_digits=15,
         decimal_places=2,
-        help_text="Économie réalisée via les options (FCFA)"
+        help_text="Économie réalisée via les options (FCFA)",
     )
 
 
 class DetailMaisonSerializer(serializers.Serializer):
     """
     Serializer pour les détails complets d'une maison MRH.
-    
+
     Contient toutes les informations de la maison :
     - Identifiants
     - Paramètres de calcul
@@ -4463,49 +4710,41 @@ class DetailMaisonSerializer(serializers.Serializer):
     - Totaux financiers
     - Statut d'imposition
     """
-    
+
     # Identifiants
     id_maison = serializers.IntegerField(
         help_text="ID de la maison (DevisDetail)"
     )
-    id_devis = serializers.IntegerField(
-        help_text="ID du devis parent"
-    )
+    id_devis = serializers.IntegerField(help_text="ID du devis parent")
     numero_devis = serializers.CharField(
-        required=False,
-        allow_null=True,
-        help_text="Numéro du devis"
+        required=False, allow_null=True, help_text="Numéro du devis"
     )
-    
+
     # Informations générales
     adresse = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        help_text="Adresse de la maison"
+        required=False, allow_blank=True, help_text="Adresse de la maison"
     )
     description = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Description supplémentaire"
+        help_text="Description supplémentaire",
     )
-    
+
     # Paramètres de calcul
     parametres = ParametresCalculMaisonSerializer(
         help_text="Paramètres utilisés pour le calcul"
     )
-    
+
     # Options appliquées
     options = OptionAppliqueeSerializer(
-        many=True,
-        help_text="Liste des options appliquées"
+        many=True, help_text="Liste des options appliquées"
     )
-    
+
     # Garanties
     sous_garanties = GarantieDetailSerializer(
-        many=True,
-        help_text="Liste de toutes les garanties"
+        many=True, help_text="Liste de toutes les garanties"
     )
-    
+
     # Statistiques garanties
     nombre_sous_garanties_obligatoires = serializers.IntegerField(
         help_text="Nombre de garanties obligatoires"
@@ -4516,63 +4755,76 @@ class DetailMaisonSerializer(serializers.Serializer):
     nombre_sous_garanties_total = serializers.IntegerField(
         help_text="Nombre total de garanties"
     )
-    
+
     # Totaux financiers
-    totaux = TotauxMaisonSerializer(
-        help_text="Totaux financiers de la maison"
-    )
-    
+    totaux = TotauxMaisonSerializer(help_text="Totaux financiers de la maison")
+
     # Statut d'imposition
     imposition = ImpositionInfoSerializer(
         help_text="Informations sur l'imposition"
     )
-    
+
     # Dates
     date_creation = serializers.DateTimeField(
         required=False,
         allow_null=True,
-        help_text="Date de création de la maison"
+        help_text="Date de création de la maison",
     )
     date_modification = serializers.DateTimeField(
         required=False,
         allow_null=True,
-        help_text="Date de dernière modification"
+        help_text="Date de dernière modification",
     )
-    
+
     # Métadonnées
     peut_etre_modifiee = serializers.BooleanField(
         help_text="Si la maison peut être modifiée (pas imposée)"
     )
-    
-    #Matricule généré automatiquement
+
+    # Matricule généré automatiquement
     matricule = serializers.CharField(
         required=False,
         allow_null=True,
-        help_text="Matricule unique (ex: MRH-2024-00456)"
+        help_text="Matricule unique (ex: MRH-2024-00456)",
     )
-    
-    
+
+
 class PieceJointeSerializer(serializers.ModelSerializer):
     """Serializer pour les pièces jointes"""
+
     url = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = PieceJointe
-        fields = ['id', 'fichier', 'url', 'nom_original', 'type_fichier', 'taille', 'date_upload']
-        read_only_fields = ['id', 'nom_original', 'type_fichier', 'taille', 'date_upload']
-    
+        fields = [
+            "id",
+            "fichier",
+            "url",
+            "nom_original",
+            "type_fichier",
+            "taille",
+            "date_upload",
+        ]
+        read_only_fields = [
+            "id",
+            "nom_original",
+            "type_fichier",
+            "taille",
+            "date_upload",
+        ]
+
     def get_url(self, obj):
         """Retourner l'URL complète du fichier"""
-        request = self.context.get('request')
+        request = self.context.get("request")
         if obj.fichier and request:
             return request.build_absolute_uri(obj.fichier.url)
         return None
-    
+
     def create(self, validated_data):
         """Créer une pièce jointe avec métadonnées extraites du fichier"""
-        fichier = validated_data.get('fichier')
+        fichier = validated_data.get("fichier")
         if fichier:
-            validated_data['nom_original'] = fichier.name
-            validated_data['type_fichier'] = fichier.content_type
-            validated_data['taille'] = fichier.size
+            validated_data["nom_original"] = fichier.name
+            validated_data["type_fichier"] = fichier.content_type
+            validated_data["taille"] = fichier.size
         return super().create(validated_data)
