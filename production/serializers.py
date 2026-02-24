@@ -421,6 +421,7 @@ class DevisDetailSerializer(serializers.ModelSerializer):
                         0
                     ].localisation
                     representation["date_debut"] = complementinfo[0].date_debut
+                    representation["activite"] = representation["observation"]
 
             elif devis.produit.id_produit == 9:  # Tous Dommages
                 if devis.offre.IdOffre == 32:
