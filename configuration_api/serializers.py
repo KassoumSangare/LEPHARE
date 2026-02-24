@@ -132,7 +132,7 @@ class PrimeCalculationOutputSerializer(serializers.Serializer):
     taux_taxe = serializers.DecimalField(max_digits=5, decimal_places=2)
     accessoire = serializers.DecimalField(max_digits=19, decimal_places=4)
     montant_taxe = serializers.DecimalField(max_digits=19, decimal_places=4)
-    prime_ttc = serializers.DecimalField(max_digits=19, decimal_places=4)
+    prime_totale = serializers.DecimalField(max_digits=19, decimal_places=4)
 
 
 class SousGarantieSerializer(DynamicFieldsModelSerializer):
