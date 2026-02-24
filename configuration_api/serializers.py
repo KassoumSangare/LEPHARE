@@ -1,22 +1,98 @@
-from rest_framework import serializers
-from .models import (DemandeGarantieVoyage, SousGarantie,Garantie, MenuParent, Menu, Utilisateur, GroupeUtilisateur, GarantieRisque, Categorie, Tarif, TarifDetail, Branche,
-                     Risque, Energie, Avenant, Compagnie, Offre, OffreGarantie, OffreDetail, Carrosserie, TypeVehicule, QualiteSouscripteurMrh, TypeSouscripteur, TypeAssure,
-                     Profession, GenreVehicule, Acte, CommissionProduit, TauxTaxeGarantieProduit, Accessoire, Pays, PaysZone, Continent, ZoneVoyage, Region, Ville, Commune,
-                     Intermediaire, Qualite, SecteurActivite, QualiteAyantDroit, Marque, SystemeSecurite, ZoneCouvertureSante, Produit, OffreParProduit, OffreSanteParTarif,
-                     TarifParProduit, ModeleVehicule, ProfessionIa, UsageVehicule, TypeReduction, Banque, ModeEncaissement, GarantieProposee, DemandeGarantieHabitation,
-                     DemandeGarantieRC, DemandeGarantieIa, DemandeGarantie, CategoriePermis, AccessoireCourtierParCompagnie, CollegeSante, OffreCollegeSante, LienJuridiqueSante,
-                     ChoixSousGarantie, EnregistrementOffreGarantie, GarantiePourOffre, ReductionFlotte, FormuleSecuriteRoutiere, FormuleSecuriteRoutiereParCompagnie,
-                     AssistanceAutomobile, DelaiAvisEcheance, ParametreSite, TypeContratSante, UsageHabitation, SousGarantieMRH, SousGarantieForfait, Option, ParametresCalcul,
-                     DomaineActiviteRC, Commission,)
 from django_celery_beat.models import (
-    SolarSchedule,
-    IntervalSchedule,
     ClockedSchedule,
     CrontabSchedule,
+    IntervalSchedule,
     PeriodicTask,
+    SolarSchedule,
+)
+from rest_framework import serializers
+
+from core.validators import ErrorMessage, validate_contrat_validity_period
+
+from .models import (
+    Accessoire,
+    AccessoireCourtierParCompagnie,
+    Acte,
+    AssistanceAutomobile,
+    Avenant,
+    Banque,
+    Branche,
+    Carrosserie,
+    Categorie,
+    CategoriePermis,
+    ChoixSousGarantie,
+    CollegeSante,
+    Commission,
+    CommissionProduit,
+    Commune,
+    Compagnie,
+    Continent,
+    DelaiAvisEcheance,
+    DemandeGarantie,
+    DemandeGarantieHabitation,
+    DemandeGarantieIa,
+    DemandeGarantieRC,
+    DemandeGarantieVoyage,
+    DomaineActiviteRC,
+    Energie,
+    EnregistrementOffreGarantie,
+    FormuleSecuriteRoutiere,
+    FormuleSecuriteRoutiereParCompagnie,
+    Garantie,
+    GarantiePourOffre,
+    GarantieProposee,
+    GarantieRisque,
+    GenreVehicule,
+    GroupeUtilisateur,
+    Intermediaire,
+    LienJuridiqueSante,
+    Marque,
+    Menu,
+    MenuParent,
+    ModeEncaissement,
+    ModeleVehicule,
+    Offre,
+    OffreCollegeSante,
+    OffreDetail,
+    OffreGarantie,
+    OffreParProduit,
+    OffreSanteParTarif,
+    Option,
+    ParametresCalcul,
+    ParametreSite,
+    Pays,
+    PaysZone,
+    Produit,
+    Profession,
+    ProfessionIa,
+    Qualite,
+    QualiteAyantDroit,
+    QualiteSouscripteurMrh,
+    ReductionFlotte,
+    Region,
+    Risque,
+    SecteurActivite,
+    SousGarantie,
+    SousGarantieForfait,
+    SousGarantieMRH,
+    SystemeSecurite,
+    Tarif,
+    TarifDetail,
+    TarifParProduit,
+    TauxTaxeGarantieProduit,
+    TypeAssure,
+    TypeContratSante,
+    TypeReduction,
+    TypeSouscripteur,
+    TypeVehicule,
+    UsageHabitation,
+    UsageVehicule,
+    Utilisateur,
+    Ville,
+    ZoneCouvertureSante,
+    ZoneVoyage,
 )
 
-from core.validators import validate_contrat_validity_period, ErrorMessage
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
     """
@@ -42,17 +118,21 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
 class PrimeCalculationInputSerializer(serializers.Serializer):
     id_produit = serializers.IntegerField(required=True)
     id_compagnie = serializers.IntegerField(required=True)
-    prime_nette = serializers.DecimalField(max_digits=19, decimal_places=4, required=True)
+    prime_nette = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=True
+    )
     date_effet = serializers.DateField(
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
     )
+
 
 class PrimeCalculationOutputSerializer(serializers.Serializer):
     taux_taxe = serializers.DecimalField(max_digits=5, decimal_places=2)
     accessoire = serializers.DecimalField(max_digits=19, decimal_places=4)
     montant_taxe = serializers.DecimalField(max_digits=19, decimal_places=4)
     prime_ttc = serializers.DecimalField(max_digits=19, decimal_places=4)
+
 
 class SousGarantieSerializer(DynamicFieldsModelSerializer):
     class Meta:
@@ -62,7 +142,9 @@ class SousGarantieSerializer(DynamicFieldsModelSerializer):
 
 class GarantieSerializer(serializers.ModelSerializer):
     sousgaranties = SousGarantieSerializer(
-        many=True, read_only=True, fields=("IdSousGarantie", "LibelleSousGarantie")
+        many=True,
+        read_only=True,
+        fields=("IdSousGarantie", "LibelleSousGarantie"),
     )
 
     class Meta:
@@ -217,6 +299,7 @@ class TypeAssureSerializer(serializers.ModelSerializer):
     class Meta:
         model = TypeAssure
         fields = "__all__"
+
 
 class ProfessionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -383,6 +466,7 @@ class OffreSanteParTarifSerializer(serializers.ModelSerializer):
             "IdZoneCouverture",
         ]
 
+
 class TarifParProduitSerializer(serializers.ModelSerializer):
     class Meta:
         model = TarifParProduit
@@ -402,7 +486,12 @@ class ModeleVehiculeSerializer(serializers.ModelSerializer):
 class ProfessionIaSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfessionIa
-        fields = ["id", "code_profession", "libelle_profession", "code_classe_assure"]
+        fields = [
+            "id",
+            "code_profession",
+            "libelle_profession",
+            "code_classe_assure",
+        ]
 
 
 class UsageVehiculeSerializer(serializers.ModelSerializer):
@@ -449,6 +538,7 @@ class GarantieProposeeSerializer(serializers.ModelSerializer):
             "TauxFranchise",
             "FranchiseMinimum",
             "FranchiseMaximum",
+            "MontantFranchise",
             "TexteFranchise",
         ]
 
@@ -510,8 +600,12 @@ class DemandeGarantieVoyageSerializer(serializers.ModelSerializer):
             gender_number="fs",
         ),
     )
-    IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
-    IdTarif = serializers.IntegerField(required=False, default=79, allow_null=True)
+    IdCompagnie = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
+    IdTarif = serializers.IntegerField(
+        required=False, default=79, allow_null=True
+    )
 
     def validate(self, data):
         validate_contrat_validity_period(data)
@@ -657,7 +751,9 @@ class DemandeGarantieHabitationSerializer(serializers.ModelSerializer):
             "invalid": "Mauvais format pour la date d'expiration.",
         },
     )
-    IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
+    IdCompagnie = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
 
     def validate(self, data):
         return validate_contrat_validity_period(data)
@@ -775,8 +871,12 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
             "invalid": "Mauvais format pour la date d'effet.",
         },
     )
-    IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
-    IdDevis = serializers.IntegerField(required=False, default=0, allow_null=True)
+    IdCompagnie = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
+    IdDevis = serializers.IntegerField(
+        required=False, default=0, allow_null=True
+    )
 
     def validate(self, data):
         validate_contrat_validity_period(data)
@@ -892,9 +992,23 @@ class DemandeGarantieIaSerializer(serializers.ModelSerializer):
             "invalid": "Format invalide pour la date de naissance.",
         },
     )
-    IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
-    PrimeNette = serializers.DecimalField(required=False, default=0, allow_null=True, max_digits=19, decimal_places=4)
-    Accessoire = serializers.DecimalField(required=False, default=0, allow_null=True, max_digits=19, decimal_places=4)
+    IdCompagnie = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
+    PrimeNette = serializers.DecimalField(
+        required=False,
+        default=0,
+        allow_null=True,
+        max_digits=19,
+        decimal_places=4,
+    )
+    Accessoire = serializers.DecimalField(
+        required=False,
+        default=0,
+        allow_null=True,
+        max_digits=19,
+        decimal_places=4,
+    )
 
     def validate(self, data):
         validate_contrat_validity_period(data)
@@ -1046,7 +1160,9 @@ class DemandeGarantieSerializer(serializers.ModelSerializer):
             "null": "La date d'expiration du contrat doit être renseignée",
         },
     )
-    IdCompagnie = serializers.IntegerField(required=False, default=1, allow_null=True)
+    IdCompagnie = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
     DateMec = serializers.DateField(
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
@@ -1062,9 +1178,13 @@ class DemandeGarantieSerializer(serializers.ModelSerializer):
     IdOptionAssistance = serializers.IntegerField(
         required=False, default=0, allow_null=True
     )
-    NombrePlace = serializers.IntegerField(required=False, default=1, allow_null=True)
+    NombrePlace = serializers.IntegerField(
+        required=False, default=1, allow_null=True
+    )
 
-    CodeUsage = serializers.IntegerField(required=False, default=0, allow_null=True)
+    CodeUsage = serializers.IntegerField(
+        required=False, default=0, allow_null=True
+    )
     CarburantAutreMatiere = serializers.BooleanField(
         required=False, default=False, allow_null=True
     )
@@ -1108,13 +1228,17 @@ class DemandeGarantieSerializer(serializers.ModelSerializer):
         val_accessoire = data.get("ValAccessoire")
         if val_accessoire is None:
             raise serializers.ValidationError(
-                {"Valeur Accessoire": "La valeur accessoire doit être renseignée."}
+                {
+                    "Valeur Accessoire": "La valeur accessoire doit être renseignée."
+                }
             )
 
         puissance_fiscale = data.get("Puissance")
         if puissance_fiscale is None:
             raise serializers.ValidationError(
-                {"Puissance Fiscale": "La puissance fiscale doit être renseignée."}
+                {
+                    "Puissance Fiscale": "La puissance fiscale doit être renseignée."
+                }
             )
 
         code_carburant = data.get("CodeCarburant")
@@ -1140,7 +1264,9 @@ class DemandeGarantieSerializer(serializers.ModelSerializer):
         code_alarme = data.get("CodeAlarme")
         if code_alarme is None:
             raise serializers.ValidationError(
-                {"Système Sécurité": "Le système de sécurité doit être renseigné."}
+                {
+                    "Système Sécurité": "Le système de sécurité doit être renseigné."
+                }
             )
         reduction_bns = data.get("Bns")
         if reduction_bns is None:
@@ -1275,20 +1401,34 @@ class ChoixSousGarantieSerializer(serializers.Serializer):
     idgarantie = serializers.IntegerField(required=True)
     idsousgarantie = serializers.IntegerField(required=True)
     tauxfranchise = serializers.DecimalField(
-        required=False, max_digits=5, decimal_places=2, default=0, allow_null=True
+        required=False,
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        allow_null=True,
     )
     franchiseminimum = serializers.DecimalField(
-        required=False, max_digits=19, decimal_places=4, default=0, allow_null=True
+        required=False,
+        max_digits=19,
+        decimal_places=4,
+        default=0,
+        allow_null=True,
     )
     franchisemaximum = serializers.DecimalField(
-        required=False, max_digits=19, decimal_places=4, default=0, allow_null=True
+        required=False,
+        max_digits=19,
+        decimal_places=4,
+        default=0,
+        allow_null=True,
     )
 
     def create(self, validated_data):
         return ChoixSousGarantie(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.idgarantie = validated_data.get("idgarantie", instance.idgarantie)
+        instance.idgarantie = validated_data.get(
+            "idgarantie", instance.idgarantie
+        )
         instance.idsousgarantie = validated_data.get(
             "idsousgarantie", instance.idsousgarantie
         )
@@ -1321,8 +1461,12 @@ class EnregistrementOffreGarantieSerializer(serializers.Serializer):
         return EnregistrementOffreGarantie(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.idcompagnie = validated_data.get("idcompagnie", instance.idcompagnie)
-        instance.idproduit = validated_data.get("idproduit", instance.idproduit)
+        instance.idcompagnie = validated_data.get(
+            "idcompagnie", instance.idcompagnie
+        )
+        instance.idproduit = validated_data.get(
+            "idproduit", instance.idproduit
+        )
         instance.idoffre = validated_data.get("idoffre", instance.idoffre)
         instance.liste_sous_garantie = validated_data.get(
             "liste_sous_garantie", instance.liste_sous_garantie
@@ -1365,8 +1509,12 @@ class FormuleSecuriteRoutiereParCompagnieSerializer(serializers.Serializer):
         return FormuleSecuriteRoutiereParCompagnie(**validated_data)
 
     def update(self, instance, validated_data):
-        instance.idcompagnie = validated_data.get("idcompagnie", instance.idcompagnie)
-        instance.codeformule = validated_data.get("codeformule", instance.codeformule)
+        instance.idcompagnie = validated_data.get(
+            "idcompagnie", instance.idcompagnie
+        )
+        instance.codeformule = validated_data.get(
+            "codeformule", instance.codeformule
+        )
         instance.libellelongformule = validated_data.get(
             "libellelongformule", instance.libellelongformule
         )
@@ -1429,40 +1577,45 @@ class TypeContratSanteSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-
 # ============================================================================
 # SERIALIZERS POUR LES MODÈLES MRH DE BASE (LECTURE)
 # ============================================================================
 
+
 class UsageHabitationSerializer(serializers.ModelSerializer):
     """Serializer pour les usages habitation (lecture seule)"""
-    
+
     nombre_sous_garanties_obligatoires = serializers.SerializerMethodField()
     nombre_sous_garanties_optionnelles = serializers.SerializerMethodField()
     libelle_offre = serializers.SerializerMethodField()
+
     class Meta:
         model = UsageHabitation
         fields = [
-            'code',
-            'libelle',
-            'qualite_assure',
-            'description',
-            'offre',
-            'libelle_offre',
-            'actif',
-            'nombre_sous_garanties_obligatoires',
-            'nombre_sous_garanties_optionnelles',
+            "code",
+            "libelle",
+            "qualite_assure",
+            "description",
+            "offre",
+            "libelle_offre",
+            "actif",
+            "nombre_sous_garanties_obligatoires",
+            "nombre_sous_garanties_optionnelles",
         ]
         read_only_fields = fields
-    
+
     def get_nombre_sous_garanties_obligatoires(self, obj):
         """Compte les sous-garanties obligatoires pour cet usage"""
-        return obj.sous_garanties_liees.filter(obligatoire=True, actif=True).count()
-    
+        return obj.sous_garanties_liees.filter(
+            obligatoire=True, actif=True
+        ).count()
+
     def get_nombre_sous_garanties_optionnelles(self, obj):
         """Compte les sous-garanties optionnelles pour cet usage"""
-        return obj.sous_garanties_liees.filter(obligatoire=False, actif=True).count()
-    
+        return obj.sous_garanties_liees.filter(
+            obligatoire=False, actif=True
+        ).count()
+
     def get_libelle_offre(self, obj):
         if obj.offre:
             return obj.offre.LibelleOffre
@@ -1470,27 +1623,27 @@ class UsageHabitationSerializer(serializers.ModelSerializer):
 
 class SousGarantieMRHSerializer(serializers.ModelSerializer):
     """Serializer pour les sous-garanties MRH (lecture seule)"""
-    
+
     code_sous_garantie_std = serializers.SerializerMethodField()
     id_sous_garantie_std = serializers.SerializerMethodField()
-    
+
     class Meta:
         model = SousGarantieMRH
         fields = [
-            'code',
-            'libelle',
-            'type',
-            'description',
-            'code_sous_garantie_std',
-            'id_sous_garantie_std',
-            'actif',
+            "code",
+            "libelle",
+            "type",
+            "description",
+            "code_sous_garantie_std",
+            "id_sous_garantie_std",
+            "actif",
         ]
         read_only_fields = fields
-    
+
     def get_code_sous_garantie_std(self, obj):
         """Retourne le code de la garantie standard"""
         return obj.get_code_sous_garantie_std()
-    
+
     def get_id_sous_garantie_std(self, obj):
         """Retourne l'ID de la garantie standard"""
         return obj.get_id_sous_garantie_std()
@@ -1498,70 +1651,75 @@ class SousGarantieMRHSerializer(serializers.ModelSerializer):
 
 class SousGarantieForfaitSerializer(serializers.ModelSerializer):
     """Serializer pour les sous-garanties à forfait"""
-    
-    sous_garantie_code = serializers.CharField(source='sous_garantie.code', read_only=True)
-    sous_garantie_libelle = serializers.CharField(source='sous_garantie.libelle', read_only=True)
-    
+
+    sous_garantie_code = serializers.CharField(
+        source="sous_garantie.code", read_only=True
+    )
+    sous_garantie_libelle = serializers.CharField(
+        source="sous_garantie.libelle", read_only=True
+    )
+
     class Meta:
         model = SousGarantieForfait
         fields = [
-            'sous_garantie_code',
-            'sous_garantie_libelle',
-            'prime_nette',
-            'description',
+            "sous_garantie_code",
+            "sous_garantie_libelle",
+            "prime_nette",
+            "description",
         ]
         read_only_fields = fields
 
 
 class OptionSerializer(serializers.ModelSerializer):
     """Serializer pour les options (lecture seule)"""
-    
+
     sous_garantie_cible_libelle = serializers.CharField(
-        source='sous_garantie_cible.libelle',
-        read_only=True,
-        allow_null=True
+        source="sous_garantie_cible.libelle", read_only=True, allow_null=True
     )
-    
+
     class Meta:
         model = Option
         fields = [
-            'code',
-            'libelle',
-            'description',
-            'type_option',
-            'type_ajustement',
-            'sous_garantie_cible',
-            'sous_garantie_cible_libelle',
-            'taux_ajustement',
-            'montant_forfait',
-            'signe_ajustement',
+            "code",
+            "libelle",
+            "description",
+            "type_option",
+            "type_ajustement",
+            "sous_garantie_cible",
+            "sous_garantie_cible_libelle",
+            "taux_ajustement",
+            "montant_forfait",
+            "signe_ajustement",
         ]
         read_only_fields = fields
 
 
 class ParametresCalculSerializer(serializers.ModelSerializer):
     """Serializer pour les paramètres de calcul (lecture seule)"""
-    
-    usage_libelle = serializers.CharField(source='usage.libelle', read_only=True)
-    
+
+    usage_libelle = serializers.CharField(
+        source="usage.libelle", read_only=True
+    )
+
     class Meta:
         model = ParametresCalcul
         fields = [
-            'usage',
-            'usage_libelle',
-            'coeff_valeur_batiment',
-            'coeff_valeur_contenu',
-            'coeff_loyer',
-            'coeff_capital_rvt',
-            'coeff_reduction',
-            'forfait_fixe',
-            'param_valeur_batiment_requis',
-            'param_valeur_contenu_requis',
-            'param_loyer_requis',
-            'param_capital_rvt_requis',
-            'formule_texte',
+            "usage",
+            "usage_libelle",
+            "coeff_valeur_batiment",
+            "coeff_valeur_contenu",
+            "coeff_loyer",
+            "coeff_capital_rvt",
+            "coeff_reduction",
+            "forfait_fixe",
+            "param_valeur_batiment_requis",
+            "param_valeur_contenu_requis",
+            "param_loyer_requis",
+            "param_capital_rvt_requis",
+            "formule_texte",
         ]
         read_only_fields = fields
+
 
 class DomaineActiviteRCSerializer(serializers.ModelSerializer):
     class Meta:

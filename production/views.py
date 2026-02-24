@@ -129,12 +129,7 @@ from .models import (
     ReversementCompagnie,
     TarifEcran,
 )
-
-# Import des serializers
-# Import du serializer
-# Imports des serializers
 from .serializers import (  # Serializers requêtes; Serializers réponses
-    AnnulationEncaissementSerializer,
     AssureIaInfoSerializer,
     AssureIaParDevisOuContratSerializer,
     AvenantAnlRenSerializer,
@@ -174,7 +169,6 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     EnregistrementDevisRCSerializer,
     EnregistrementDevisTRInfoSerializer,
     EnregistrementDevisVoyageSerializer,
-    EnregistrementEncaissementSerializer,
     ExtendedQuotationInfoSerializer,
     FinalisationDevisFlotteSerializer,
     GarantieContratFlotteSerializer,
@@ -183,7 +177,6 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ImportationTransportSerializer,
     ImpositionPrimeDevisRequestSerializer,
     ImpositionPrimeMaisonRequestSerializer,
-    ImpositionPrimeResponseSerializer,
     InfoVehiculeSerializer,
     LeveeImpositionRequestSerializer,
     LogRecordSerializer,
@@ -192,7 +185,6 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     MaisonCalculeeSerializer,
     MaisonCalculRequestSerializer,
     MaisonModificationRequestSerializer,
-    MaisonModificationResponseSerializer,
     NumeroSerializer,
     OperationSurDevisDetailSerializer,
     OperationSurDevisSerializer,
@@ -208,26 +200,17 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ResumeFinancierDevisSerializer,
     ReversementCompagnieSerializer,
     ReversementGroupePrimeInsertSerializer,
-    ReversementGroupePrimeSerializer,
     ReversementGroupePrimeValidateSerializer,
     TarifEcranSerializer,
     VehiculeContratSerializer,
 )
-
-# Import du service de calcul de prime MRH
 from .services.mrh_calcul_service import MRHCalculService
-
-# Import du module de calcul du résumé financier
 from .services.resume_financier_devis import obtenir_resume_financier_devis
-from .tasks import (
-    send_sms_encaissement_contrat,
-    send_sms_enregistrement_contrat,
-)
+from .tasks import send_sms_enregistrement_contrat
 
 logger = logging.getLogger(__name__)
 
 
-# Create your views here.
 def stored_procedure_result(
     request, post_serializer_cls, stored_proc_caller, qry_res_serializer_cls
 ):

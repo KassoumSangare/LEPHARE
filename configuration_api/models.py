@@ -1,10 +1,13 @@
-from django.db import models
-from django.core.validators import MinLengthValidator
-from django.db.models import CheckConstraint, Q, F, Func
-
-from django.core.validators import MinValueValidator, MaxValueValidator
-from django.core.exceptions import ValidationError
 from decimal import Decimal
+
+from django.core.exceptions import ValidationError
+from django.core.validators import (
+    MaxValueValidator,
+    MinLengthValidator,
+    MinValueValidator,
+)
+from django.db import models
+from django.db.models import CheckConstraint, F, Func, Q
 
 
 class OffreAutomobileBoisee(Func):
@@ -17,9 +20,13 @@ class Garantie(models.Model):
         verbose_name="Id Garantie", db_column="idgarantie", primary_key=True
     )
     CodeGarantie = models.CharField(
-        db_column="codegarantie", max_length=3, validators=[MinLengthValidator(3)]
+        db_column="codegarantie",
+        max_length=3,
+        validators=[MinLengthValidator(3)],
     )
-    LibelleGarantie = models.CharField(db_column="libellegarantie", max_length=60)
+    LibelleGarantie = models.CharField(
+        db_column="libellegarantie", max_length=60
+    )
     Active = models.BooleanField(db_column="active")
     Ordre = models.SmallIntegerField(db_column="ordre")
     ModeCalcInd = models.CharField(
@@ -33,8 +40,12 @@ class Garantie(models.Model):
     SaisieRd = models.BooleanField(db_column="saisierd")
     SaisieSante = models.BooleanField(db_column="saisiesante")
     SaisieTransport = models.BooleanField(db_column="saisietransport")
-    SinDelai = models.SmallIntegerField(db_column="sindelai", null=True, blank=True)
-    SinBloquant = models.BooleanField(db_column="sinbloquant", null=True, blank=True)
+    SinDelai = models.SmallIntegerField(
+        db_column="sindelai", null=True, blank=True
+    )
+    SinBloquant = models.BooleanField(
+        db_column="sinbloquant", null=True, blank=True
+    )
 
     def __str__(self):
         return self.LibelleGarantie
@@ -48,7 +59,9 @@ class MenuParent(models.Model):
     LibelleParent = models.CharField(
         db_column="libelleparent", max_length=50, blank=False
     )
-    Actif = models.BooleanField(verbose_name="Actif", db_column="actif", blank=False)
+    Actif = models.BooleanField(
+        verbose_name="Actif", db_column="actif", blank=False
+    )
 
     def __str__(self):
         return self.LibelleParent
@@ -63,9 +76,14 @@ class Menu(models.Model):
         MenuParent, db_column="idmenuparent", on_delete=models.CASCADE
     )
     LibelleMenu = models.CharField(
-        verbose_name="Libellé Menu", db_column="libellemenu", max_length=50, blank=False
+        verbose_name="Libellé Menu",
+        db_column="libellemenu",
+        max_length=50,
+        blank=False,
     )
-    Actif = models.BooleanField(verbose_name="Actif", db_column="actif", blank=False)
+    Actif = models.BooleanField(
+        verbose_name="Actif", db_column="actif", blank=False
+    )
 
     def __str__(self):
         return self.LibelleMenu
@@ -108,7 +126,9 @@ class Utilisateur(models.Model):
 class GroupeUtilisateur(models.Model):
     IdGroupe = models.AutoField(db_column="idgroupe", primary_key=True)
     LibelleGroupe = models.CharField(db_column="libellegroupe", max_length=60)
-    DateCreation = models.DateTimeField(db_column="datecreation", auto_now_add=True)
+    DateCreation = models.DateTimeField(
+        db_column="datecreation", auto_now_add=True
+    )
     Active = models.CharField(
         db_column="active", max_length=1, validators=[MinLengthValidator(1)]
     )
@@ -134,7 +154,9 @@ class Branche(models.Model):
         validators=[MinLengthValidator(3)],
     )
     LibelleBranche = models.CharField(
-        verbose_name="Libellé Branche", db_column="libellebranche", max_length=50
+        verbose_name="Libellé Branche",
+        db_column="libellebranche",
+        max_length=50,
     )
 
     def __str__(self):
@@ -157,7 +179,10 @@ class Risque(models.Model):
         on_delete=models.CASCADE,
     )
     Libelle = models.CharField(
-        verbose_name="Libellé Risque", db_column="libelle", max_length=50, default=" "
+        verbose_name="Libellé Risque",
+        db_column="libelle",
+        max_length=50,
+        default=" ",
     )
     Active = models.BooleanField(
         verbose_name="Actif", db_column="active", default=False
@@ -171,7 +196,9 @@ class Risque(models.Model):
 
 
 class SousGarantie(models.Model):
-    IdSousGarantie = models.AutoField(db_column="idsousgarantie", primary_key=True)
+    IdSousGarantie = models.AutoField(
+        db_column="idsousgarantie", primary_key=True
+    )
     CodeSousGarantie = models.CharField(
         verbose_name="Code S/Garantie",
         db_column="codesousgarantie",
@@ -198,7 +225,9 @@ class SousGarantie(models.Model):
     SaisieAuto = models.BooleanField(
         verbose_name="Saisie en Auto", db_column="saisieauto"
     )
-    SaisieRd = models.BooleanField(verbose_name="Saisie en RD", db_column="saisierd")
+    SaisieRd = models.BooleanField(
+        verbose_name="Saisie en RD", db_column="saisierd"
+    )
     SaisieSante = models.BooleanField(
         verbose_name="Saisie en Santé", db_column="saisiesante"
     )
@@ -230,7 +259,9 @@ class Acte(models.Model):
         validators=[MinLengthValidator(1)],
     )
     Personnalisable = models.BooleanField(
-        verbose_name="Personnalisable", db_column="personnalisable", max_length=1
+        verbose_name="Personnalisable",
+        db_column="personnalisable",
+        max_length=1,
     )
 
     def __str__(self):
@@ -242,10 +273,13 @@ class Acte(models.Model):
 
 class Commission(models.Model):
     IdCommission = models.AutoField(
-        verbose_name="Id Commission", db_column="idcommission", primary_key=True
+        verbose_name="Id Commission",
+        db_column="idcommission",
+        primary_key=True,
     )
     CodeNatureIntermediaire = models.SmallIntegerField(
-        verbose_name="Nature Intermediaire", db_column="codenatureintermediaire"
+        verbose_name="Nature Intermediaire",
+        db_column="codenatureintermediaire",
     )
     IdGarantie = models.ForeignKey(
         Garantie,
@@ -272,7 +306,9 @@ class Compagnie(models.Model):
         verbose_name="Id Compagnie", db_column="idcompagnie", primary_key=True
     )
     RaisonSociale = models.CharField(
-        verbose_name="Raison Sociale", db_column="raisonsociale", max_length=100
+        verbose_name="Raison Sociale",
+        db_column="raisonsociale",
+        max_length=100,
     )
     CodeAsaci = models.CharField(
         verbose_name="Code ASACI",
@@ -347,7 +383,9 @@ class Compagnie(models.Model):
     Etranger = models.BooleanField(
         verbose_name="Compagnie Etrangère", db_column="etranger"
     )
-    codeacces = models.CharField(max_length=20, null=True, db_column="codeacces")
+    codeacces = models.CharField(
+        max_length=20, null=True, db_column="codeacces"
+    )
     Active = models.BooleanField(
         verbose_name="Active", db_column="active", default=True
     )
@@ -376,7 +414,9 @@ class GarantieRisque(models.Model):
         db_column="idrisque",
         on_delete=models.CASCADE,
     )
-    TauxTaxe = models.FloatField(verbose_name="Taux Taxe", db_column="tauxtaxe")
+    TauxTaxe = models.FloatField(
+        verbose_name="Taux Taxe", db_column="tauxtaxe"
+    )
     TauxTaxeGroupe = models.FloatField(
         verbose_name="Taux Taxe Groupe", db_column="tauxtaxegroupe"
     )
@@ -387,14 +427,19 @@ class GarantieRisque(models.Model):
         decimal_places=4,
         null=True,
     )
-    ValiditeMin = models.DateField(verbose_name="Valide du", db_column="validitemin")
-    ValiditeMax = models.DateField(verbose_name="Valide au", db_column="validitemax")
+    ValiditeMin = models.DateField(
+        verbose_name="Valide du", db_column="validitemin"
+    )
+    ValiditeMax = models.DateField(
+        verbose_name="Valide au", db_column="validitemax"
+    )
 
     class Meta:
         db_table = "stdgarantierisque"
         constraints = [
             models.UniqueConstraint(
-                fields=["IdGarantie", "IdRisque"], name="unique_garantie_risque"
+                fields=["IdGarantie", "IdRisque"],
+                name="unique_garantie_risque",
             ),
         ]
 
@@ -411,7 +456,9 @@ class Categorie(models.Model):
         unique=True,
     )
     LibelleCategorie = models.CharField(
-        verbose_name="Libellé Catégorie", db_column="libellecategorie", max_length=100
+        verbose_name="Libellé Catégorie",
+        db_column="libellecategorie",
+        max_length=100,
     )
     code_asaci = models.CharField(
         max_length=100,
@@ -429,7 +476,7 @@ class Categorie(models.Model):
 
 
 class Tarif(models.Model):
-    CATEGORY_MRH = '320'
+    CATEGORY_MRH = "320"
     IdTarif = models.AutoField(
         verbose_name="Id Tarif", db_column="idtarif", primary_key=True
     )
@@ -460,8 +507,12 @@ class Tarif(models.Model):
         blank=True,
         validators=[MinLengthValidator(3)],
     )
-    ValiditeMin = models.DateField(verbose_name="Valide du", db_column="validitemin")
-    ValiditeMax = models.DateField(verbose_name="Valide au", db_column="validitemax")
+    ValiditeMin = models.DateField(
+        verbose_name="Valide du", db_column="validitemin"
+    )
+    ValiditeMax = models.DateField(
+        verbose_name="Valide au", db_column="validitemax"
+    )
     NatAccessoires = models.SmallIntegerField(
         verbose_name="Nature Accessoires", db_column="nataccessoires"
     )
@@ -480,9 +531,12 @@ class Tarif(models.Model):
         null=True,
         default="",
     )
+
     @classmethod
     def is_mrh(cls, tarif_id):
-        return cls.objects.filter(pk=tarif_id, CodeCategorie=cls.CATEGORY_MRH).exists()
+        return cls.objects.filter(
+            pk=tarif_id, CodeCategorie=cls.CATEGORY_MRH
+        ).exists()
 
     def __str__(self):
         return self.Libelle + " (" + self.CodeCategorie + ")"
@@ -522,7 +576,9 @@ class TarifDetail(models.Model):
         default=0, verbose_name="Puissance Minimale", db_column="puissancemin"
     )
     PuissanceMax = models.SmallIntegerField(
-        default=30000, verbose_name="Puissance Maximale", db_column="puissancemax"
+        default=30000,
+        verbose_name="Puissance Maximale",
+        db_column="puissancemax",
     )
     TonnageMin = models.IntegerField(
         default=0, verbose_name="Tonnage Minimal", db_column="tonnagemin"
@@ -566,13 +622,19 @@ class TarifDetail(models.Model):
         decimal_places=4,
     )
     AgeVehiculeMin = models.SmallIntegerField(
-        default=0, verbose_name="Âge Minimal Véhicule", db_column="agevehiculemin"
+        default=0,
+        verbose_name="Âge Minimal Véhicule",
+        db_column="agevehiculemin",
     )
     AgeVehiculeMax = models.SmallIntegerField(
-        default=30000, verbose_name="Âge Maximal Véhicule", db_column="agevehiculemax"
+        default=30000,
+        verbose_name="Âge Maximal Véhicule",
+        db_column="agevehiculemax",
     )
     AgeConducteurMin = models.SmallIntegerField(
-        default=0, verbose_name="Âge Minimal Conducteur", db_column="ageconducteurmin"
+        default=0,
+        verbose_name="Âge Minimal Conducteur",
+        db_column="ageconducteurmin",
     )
     AgeConducteurMax = models.SmallIntegerField(
         default=30000,
@@ -580,10 +642,14 @@ class TarifDetail(models.Model):
         db_column="ageconducteurmax",
     )
     NombrePlacesMin = models.SmallIntegerField(
-        default=0, verbose_name="Nombre Minimum Places", db_column="nombreplacesmin"
+        default=0,
+        verbose_name="Nombre Minimum Places",
+        db_column="nombreplacesmin",
     )
     NombrePlacesMax = models.SmallIntegerField(
-        default=30000, verbose_name="Nombre Maximum Places", db_column="nombreplacesmax"
+        default=30000,
+        verbose_name="Nombre Maximum Places",
+        db_column="nombreplacesmax",
     )
     Taux = models.DecimalField(
         default=0,
@@ -624,7 +690,11 @@ class TarifDetail(models.Model):
         decimal_places=4,
     )
     Ipp = models.DecimalField(
-        default=0, verbose_name="IPP", db_column="ipp", max_digits=19, decimal_places=4
+        default=0,
+        verbose_name="IPP",
+        db_column="ipp",
+        max_digits=19,
+        decimal_places=4,
     )
     FraisMed = models.DecimalField(
         default=0,
@@ -641,7 +711,10 @@ class TarifDetail(models.Model):
         decimal_places=4,
     )
     CodeCarburant = models.IntegerField(
-        verbose_name="Code Carburant", db_column="codecarburant", null=True, blank=True
+        verbose_name="Code Carburant",
+        db_column="codecarburant",
+        null=True,
+        blank=True,
     )
 
     class Meta:
@@ -668,11 +741,15 @@ class TarifDetail(models.Model):
                 name="detailtarif_agevehiculemax_gte_agevehiculemin",
             ),
             models.CheckConstraint(
-                check=models.Q(AgeConducteurMax__gte=models.F("AgeConducteurMin")),
+                check=models.Q(
+                    AgeConducteurMax__gte=models.F("AgeConducteurMin")
+                ),
                 name="detailtarif_ageconducteurmax_gte_ageconducteurmin",
             ),
             models.CheckConstraint(
-                check=models.Q(NombrePlacesMax__gte=models.F("NombrePlacesMin")),
+                check=models.Q(
+                    NombrePlacesMax__gte=models.F("NombrePlacesMin")
+                ),
                 name="detailtarif_nombreplacesmax_gte_nombreplacesmin",
             ),
         ]
@@ -699,29 +776,47 @@ class Offre(models.Model):
         default=None,
     )
     TarifOffre = models.ForeignKey(
-        Tarif, db_column="idtarif", null=True, default=None, on_delete=models.SET_NULL
+        Tarif,
+        db_column="idtarif",
+        null=True,
+        default=None,
+        on_delete=models.SET_NULL,
     )
-    Payement = models.CharField(db_column="payement", max_length=1, default="A")
+    Payement = models.CharField(
+        db_column="payement", max_length=1, default="A"
+    )
     JPaiement = models.SmallIntegerField(db_column="jpaiement", default=1)
     Entreprise = models.BooleanField(db_column="entreprise", default=False)
-    Echeance = models.CharField(db_column="echeance", max_length=1, default="L")
+    Echeance = models.CharField(
+        db_column="echeance", max_length=1, default="L"
+    )
     Renouvelable = models.CharField(
         db_column="renouvelable", max_length=1, default="L"
     )  # CHAR(1)
-    MajFract = models.SmallIntegerField(db_column="majfract", default=0)  # Default =0
+    MajFract = models.SmallIntegerField(
+        db_column="majfract", default=0
+    )  # Default =0
     Visibilite = models.CharField(
         db_column="visibilite", max_length=1, default="T"
     )  # CHAR(1): T ou P
     Flotte = models.BooleanField(db_column="flotte", default=False)
-    Anticipation = models.SmallIntegerField(db_column="anticipation", default=26)
+    Anticipation = models.SmallIntegerField(
+        db_column="anticipation", default=26
+    )
     Differe = models.SmallIntegerField(
         db_column="differe", default=0
     )  # 0 pour l'automobile, utilisé en Risques
-    Ppr = models.CharField(db_column="ppr", max_length=1, default="N")  # N en auto
+    Ppr = models.CharField(
+        db_column="ppr", max_length=1, default="N"
+    )  # N en auto
     Actif = models.BooleanField(db_column="actif", default=True)
     Gestion = models.BooleanField(db_column="gestion", default=False)
-    ExoneredeTaxes = models.BooleanField(db_column="exoneredetaxes", default=False)
-    ExoneredeAccess = models.BooleanField(db_column="exoneredeaccess", default=False)
+    ExoneredeTaxes = models.BooleanField(
+        db_column="exoneredetaxes", default=False
+    )
+    ExoneredeAccess = models.BooleanField(
+        db_column="exoneredeaccess", default=False
+    )
 
     def __str_(self):
         return self.LibelleOffre
@@ -759,7 +854,9 @@ class OffreDetail(models.Model):
 
 class Profession(models.Model):
     IdProfession = models.AutoField(
-        verbose_name="Id Profession", db_column="idprofession", primary_key=True
+        verbose_name="Id Profession",
+        db_column="idprofession",
+        primary_key=True,
     )
     Libelle = models.CharField(
         verbose_name="Libellé", db_column="libelle", max_length=100
@@ -810,7 +907,9 @@ class Avenant(models.Model):
         max_length=5, verbose_name="Code Avenant", db_column="codeavenant"
     )
     LibelleAvenant = models.CharField(
-        max_length=50, verbose_name="Libellé Avenant", db_column="libelleavenant"
+        max_length=50,
+        verbose_name="Libellé Avenant",
+        db_column="libelleavenant",
     )
     TexteMouvement = models.CharField(
         max_length=50,
@@ -829,7 +928,9 @@ class Avenant(models.Model):
     )
     Active = models.BooleanField(verbose_name="Actif", db_column="active")
     EditionAttestation = models.BooleanField(
-        verbose_name="Edition Attestation", db_column="editionattestation", null=True
+        verbose_name="Edition Attestation",
+        db_column="editionattestation",
+        null=True,
     )
 
     def __str__(self):
@@ -869,7 +970,9 @@ class SecteurActivite(models.Model):
         primary_key=True,
     )
     Libelle = models.CharField(
-        verbose_name="Libellé Secteur Activité", max_length=100, db_column="libelle"
+        verbose_name="Libellé Secteur Activité",
+        max_length=100,
+        db_column="libelle",
     )
 
     def __str__(self):
@@ -877,7 +980,8 @@ class SecteurActivite(models.Model):
 
     class Meta:
         db_table = "stdsecteuractivite"
-        
+
+
 class DomaineActiviteRC(models.Model):
     id_domaine_activite = models.AutoField(
         verbose_name="Id Domaine Activité RC",
@@ -887,7 +991,7 @@ class DomaineActiviteRC(models.Model):
     libelle = models.CharField(
         verbose_name="Libellé Domaine Activité RC",
         max_length=100,
-        db_column="libelle"
+        db_column="libelle",
     )
 
     def save(self, *args, **kwargs):
@@ -897,16 +1001,16 @@ class DomaineActiviteRC(models.Model):
 
     def __str__(self):
         return self.libelle
+
     class Meta:
         db_table = "stddomaineactivite"
         constraints = [
             models.CheckConstraint(
-                check=models.Q(
-                    libelle__regex=r'^[A-Z]+(?: [A-Z]+)*$'
-                ),
-                name="chk_libelle_format"
+                check=models.Q(libelle__regex=r"^[A-Z]+(?: [A-Z]+)*$"),
+                name="chk_libelle_format",
             )
         ]
+
 
 class Marque(models.Model):
     IdMarque = models.AutoField(
@@ -930,7 +1034,9 @@ class SystemeSecurite(models.Model):
         db_column="idsystemesecurite",
     )
     LibelleSystemeSecurite = models.CharField(
-        verbose_name="Libellé", max_length=60, db_column="libellesystemesecurite"
+        verbose_name="Libellé",
+        max_length=60,
+        db_column="libellesystemesecurite",
     )
     TauxReduction = models.DecimalField(
         verbose_name="Taux Réduction",
@@ -953,7 +1059,10 @@ class ModeleVehicule(models.Model):
         verbose_name="Id Modèle", db_column="idmodele", primary_key=True
     )
     IdMarque = models.ForeignKey(
-        Marque, verbose_name="Id Marque", db_column="idmarque", on_delete=models.CASCADE
+        Marque,
+        verbose_name="Id Marque",
+        db_column="idmarque",
+        on_delete=models.CASCADE,
     )
     LibelleModele = models.CharField(
         verbose_name="Libellé", db_column="libellemodele", max_length=30
@@ -974,7 +1083,9 @@ class TypeAssure(models.Model):
         verbose_name="Code Type Assuré", db_column="codetype", max_length=50
     )
     libelle_type = models.CharField(
-        verbose_name="Libellé Type Assuré", db_column="libelletype", max_length=100
+        verbose_name="Libellé Type Assuré",
+        db_column="libelletype",
+        max_length=100,
     )
 
     def __str__(self):
@@ -987,9 +1098,13 @@ class TypeAssure(models.Model):
 
 
 class TypeSouscripteur(models.Model):
-    id = models.AutoField(verbose_name="Id type Souscripteur", primary_key=True)
+    id = models.AutoField(
+        verbose_name="Id type Souscripteur", primary_key=True
+    )
     code_type = models.CharField(
-        verbose_name="Code Type Souscripteur", db_column="codetype", max_length=20
+        verbose_name="Code Type Souscripteur",
+        db_column="codetype",
+        max_length=20,
     )
     libelle_type = models.CharField(
         verbose_name="Libellé Type Souscripteur",
@@ -1090,7 +1205,9 @@ class TypeVehicule(models.Model):
 
 class Carrosserie(models.Model):
     IdCarrosserie = models.AutoField(
-        verbose_name="Id Carrosserie", db_column="idcarrosserie", primary_key=True
+        verbose_name="Id Carrosserie",
+        db_column="idcarrosserie",
+        primary_key=True,
     )
 
     LibelleCarrosserie = models.CharField(
@@ -1143,9 +1260,13 @@ class UsageCarrosserie(models.Model):
 
 class TypeReduction(models.Model):
     IdTypeReduction = models.AutoField(
-        verbose_name="Id Type Réduction", db_column="idtypereduction", primary_key=True
+        verbose_name="Id Type Réduction",
+        db_column="idtypereduction",
+        primary_key=True,
     )
-    IdProduit = models.IntegerField(verbose_name="Id Produit", db_column="idproduit")
+    IdProduit = models.IntegerField(
+        verbose_name="Id Produit", db_column="idproduit"
+    )
     CodeTypeReduction = models.CharField(
         max_length=2,
         verbose_name=" Code Type Réduction",
@@ -1153,7 +1274,9 @@ class TypeReduction(models.Model):
         validators=[MinLengthValidator(2)],
     )
     LibelleTypeReduction = models.CharField(
-        max_length=60, verbose_name="Type Réduction", db_column="libelletypereduction"
+        max_length=60,
+        verbose_name="Type Réduction",
+        db_column="libelletypereduction",
     )
     NombreMinimum = models.IntegerField(
         verbose_name="Nombre minimum", db_column="nombreminimum"
@@ -1162,10 +1285,14 @@ class TypeReduction(models.Model):
         verbose_name="Nombre maximum", db_column="nombremaximum"
     )
     NbreJourMinimum = models.IntegerField(
-        default=0, verbose_name="Nombre minimum de jours", db_column="nbrejourminimum"
+        default=0,
+        verbose_name="Nombre minimum de jours",
+        db_column="nbrejourminimum",
     )
     NbreJourMaximum = models.IntegerField(
-        default=0, verbose_name="Nombre maximum de jours", db_column="nbrejourmaximum"
+        default=0,
+        verbose_name="Nombre maximum de jours",
+        db_column="nbrejourmaximum",
     )
     CapitalMinimum = models.DecimalField(
         max_digits=19,
@@ -1182,7 +1309,9 @@ class TypeReduction(models.Model):
         db_column="capitalmaximum",
     )
     TauxReduction = models.FloatField(
-        default=0.0, verbose_name="Taux de réduction", db_column="tauxreduction"
+        default=0.0,
+        verbose_name="Taux de réduction",
+        db_column="tauxreduction",
     )
     Forfait = models.DecimalField(
         max_digits=19,
@@ -1201,10 +1330,15 @@ class TypeReduction(models.Model):
 
 class OffreGarantie(models.Model):
     IdOffreGarantie = models.AutoField(
-        verbose_name="Id Offre Garantie", primary_key=True, db_column="idoffregarantie"
+        verbose_name="Id Offre Garantie",
+        primary_key=True,
+        db_column="idoffregarantie",
     )
     IdOffre = models.ForeignKey(
-        Offre, verbose_name="Offre", db_column="idoffre", on_delete=models.CASCADE
+        Offre,
+        verbose_name="Offre",
+        db_column="idoffre",
+        on_delete=models.CASCADE,
     )
     IdSousGarantie = models.ForeignKey(
         SousGarantie,
@@ -1224,10 +1358,16 @@ class OffreGarantie(models.Model):
         max_digits=5, decimal_places=2, db_column="tauxfranchise", default=0
     )
     FranchiseMinimum = models.DecimalField(
-        max_digits=19, decimal_places=4, db_column="franchiseminimum", default=0
+        max_digits=19,
+        decimal_places=4,
+        db_column="franchiseminimum",
+        default=0,
     )
     FranchiseMaximum = models.DecimalField(
-        max_digits=19, decimal_places=4, db_column="franchisemaximum", default=0
+        max_digits=19,
+        decimal_places=4,
+        db_column="franchisemaximum",
+        default=0,
     )
 
     class Meta:
@@ -1248,9 +1388,18 @@ class GarantieProposee(models.Model):
     PrimeNette = models.DecimalField(max_digits=19, decimal_places=4)
     Taxe = models.DecimalField(max_digits=19, decimal_places=4)
     MontantAccessoire = models.DecimalField(max_digits=19, decimal_places=4)
-    TauxFranchise = models.DecimalField(max_digits=5, decimal_places=2, null=True)
-    FranchiseMinimum = models.DecimalField(max_digits=19, decimal_places=4, null=True)
-    FranchiseMaximum = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    TauxFranchise = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
+    FranchiseMinimum = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    FranchiseMaximum = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    MontantFranchise = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     TexteFranchise = models.CharField(max_length=120, null=True)
 
     def __str__(self):
@@ -1271,11 +1420,15 @@ class DemandeGarantie(models.Model):
     IdTarif = models.IntegerField(null=True)
     ValNeuve = models.DecimalField(max_digits=19, decimal_places=4, null=True)
     ValVenale = models.DecimalField(max_digits=19, decimal_places=4, null=True)
-    ValAccessoire = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    ValAccessoire = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     Puissance = models.SmallIntegerField(null=True)
     CodeCarburant = models.IntegerField(null=True)
     Tonnage = models.IntegerField(null=True)
-    TauxReduction = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    TauxReduction = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     CodeAlarme = models.IntegerField(null=True)
     Bns = models.DecimalField(max_digits=19, decimal_places=4, null=True)
 
@@ -1285,12 +1438,18 @@ class DemandeGarantie(models.Model):
 
 class DemandeGarantieIa(models.Model):
     IdOffre = models.IntegerField(null=True)
-    CapitalDeces = models.DecimalField(max_digits=19, decimal_places=4, null=True)
-    CapitalInfirmite = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    CapitalDeces = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    CapitalInfirmite = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     CapitalFraisTraitement = models.DecimalField(
         max_digits=19, decimal_places=4, null=True
     )
-    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    TauxReduction = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
     CodeActivite = models.CharField(max_length=3, null=True)
 
     class Meta:
@@ -1299,7 +1458,9 @@ class DemandeGarantieIa(models.Model):
 
 class DemandeGarantieHabitation(models.Model):
     IdOffre = models.IntegerField(null=True)
-    ValeurCapitalLoyer = models.DecimalField(max_digits=19, decimal_places=4, null=True)
+    ValeurCapitalLoyer = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
     ValeurCapitalContenu = models.DecimalField(
         max_digits=19, decimal_places=4, null=True
     )
@@ -1312,8 +1473,12 @@ class DemandeGarantieHabitation(models.Model):
     ValeurDegatBatiment = models.DecimalField(
         max_digits=19, decimal_places=4, null=True
     )
-    ValeurDegatContenu = models.DecimalField(max_digits=19, decimal_places=4, null=True)
-    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    ValeurDegatContenu = models.DecimalField(
+        max_digits=19, decimal_places=4, null=True
+    )
+    TauxReduction = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
     Gardien = models.BooleanField(null=True)
     Locataire = models.BooleanField(null=True)
 
@@ -1323,8 +1488,12 @@ class DemandeGarantieHabitation(models.Model):
 
 class DemandeGarantieRC(models.Model):
     IdOffre = models.IntegerField()
-    CapitalDommageCorporel = models.DecimalField(max_digits=19, decimal_places=4)
-    CapitalDommageMateriel = models.DecimalField(max_digits=19, decimal_places=4)
+    CapitalDommageCorporel = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
+    CapitalDommageMateriel = models.DecimalField(
+        max_digits=19, decimal_places=4
+    )
     CapitalIntoxicationAlimentaire = models.DecimalField(
         max_digits=19, decimal_places=4
     )
@@ -1339,7 +1508,9 @@ class DemandeGarantieRC(models.Model):
 class DemandeGarantieVoyage(models.Model):
     IdOffre = models.IntegerField(null=True)
     IdZoneVoyage = models.IntegerField(null=True)
-    TauxReduction = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    TauxReduction = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True
+    )
 
     class Meta:
         managed = False
@@ -1350,7 +1521,10 @@ class GenreVehicule(models.Model):
         verbose_name="Id Genre", primary_key=True, db_column="idgenre"
     )
     CodeGenre = models.CharField(
-        max_length=50, verbose_name="Code Genre", db_column="codegenre", unique=True,
+        max_length=50,
+        verbose_name="Code Genre",
+        db_column="codegenre",
+        unique=True,
     )
     LibelleGenre = models.CharField(
         db_column="libellegenre", max_length=50, verbose_name="Libellé"
@@ -1385,13 +1559,18 @@ class Pays(models.Model):
         verbose_name="Id Pays", db_column="id_pays", primary_key=True
     )
     libelle_pays = models.CharField(
-        db_column="libelle_pays", verbose_name="Libellé", max_length=50, default=""
+        db_column="libelle_pays",
+        verbose_name="Libellé",
+        max_length=50,
+        default="",
     )
     nationalite = models.CharField(
         db_column="nationalite", verbose_name="Nationalité", max_length=60
     )
     sin_autorise = models.BooleanField(
-        db_column="sin_autorise", verbose_name="Sinistre Autorisé", default=False
+        db_column="sin_autorise",
+        verbose_name="Sinistre Autorisé",
+        default=False,
     )
     continent = models.ForeignKey(
         Continent,
@@ -1423,7 +1602,10 @@ class PaysZone(models.Model):
         verbose_name="Id Pays", db_column="id_pays", primary_key=True
     )
     libelle_pays = models.CharField(
-        db_column="libelle_pays", verbose_name="Libellé", max_length=50, default=""
+        db_column="libelle_pays",
+        verbose_name="Libellé",
+        max_length=50,
+        default="",
     )
     nationalite = models.CharField(
         db_column="nationalite", verbose_name="Nationalité", max_length=60
@@ -1481,7 +1663,9 @@ class ZoneVoyagePays(models.Model):
     )
 
     def __str__(self):
-        return "{}---{}".format(self.zone_voyage.libelle_zone, self.pays.libelle_pays)
+        return "{}---{}".format(
+            self.zone_voyage.libelle_zone, self.pays.libelle_pays
+        )
 
     class Meta:
         db_table = "stdzonevoyagepays"
@@ -1537,7 +1721,10 @@ class ZoneVoyagePrime(models.Model):
         verbose_name="Taxe", db_column="taxe", max_digits=19, decimal_places=4
     )
     prime_ttc = models.DecimalField(
-        verbose_name="Prime TTC", db_column="prime_ttc", max_digits=19, decimal_places=4
+        verbose_name="Prime TTC",
+        db_column="prime_ttc",
+        max_digits=19,
+        decimal_places=4,
     )
     prime_nette_ristourne = models.DecimalField(
         verbose_name="Prime nette (ristourne)",
@@ -1628,7 +1815,10 @@ class ZoneVoyagePrimeNsia(models.Model):
         verbose_name="Taxe", db_column="taxe", max_digits=19, decimal_places=4
     )
     prime_ttc = models.DecimalField(
-        verbose_name="Prime TTC", db_column="prime_ttc", max_digits=19, decimal_places=4
+        verbose_name="Prime TTC",
+        db_column="prime_ttc",
+        max_digits=19,
+        decimal_places=4,
     )
     prime_nette_ristourne = models.DecimalField(
         verbose_name="Prime nette (ristourne)",
@@ -1688,7 +1878,11 @@ class Region(models.Model):
         on_delete=models.CASCADE,
     )
     Libelle = models.CharField(
-        verbose_name="Nom", db_column="libelle", max_length=100, blank=True, null=True
+        verbose_name="Nom",
+        db_column="libelle",
+        max_length=100,
+        blank=True,
+        null=True,
     )
     CodeRegion = models.CharField(
         verbose_name="Code Région",
@@ -1766,10 +1960,14 @@ class Commune(models.Model):
 
 class Intermediaire(models.Model):
     IdIntermediaire = models.AutoField(
-        verbose_name="Id Intermediaire", db_column="idintermediaire", primary_key=True
+        verbose_name="Id Intermediaire",
+        db_column="idintermediaire",
+        primary_key=True,
     )
     CodeIntermediaire = models.CharField(
-        verbose_name="Code Intermediaire", db_column="codeintermediaire", max_length=10
+        verbose_name="Code Intermediaire",
+        db_column="codeintermediaire",
+        max_length=10,
     )
     LibelleIntermediaire = models.CharField(
         verbose_name="Libellé", db_column="libelleintermediaire", max_length=50
@@ -1780,22 +1978,31 @@ class Intermediaire(models.Model):
     Telephone = models.CharField(
         verbose_name="Téléphone", db_column="telephone", max_length=20
     )
-    Fax = models.CharField(verbose_name="Télécopie", db_column="fax", max_length=20)
+    Fax = models.CharField(
+        verbose_name="Télécopie", db_column="fax", max_length=20
+    )
     Mobile = models.CharField(
         verbose_name="Téléphone Mobile", db_column="mobile", max_length=20
     )
     Email = models.EmailField(verbose_name="Adresse Email", db_column="email")
     IdVille = models.ForeignKey(
-        Ville, verbose_name="Ville", on_delete=models.DO_NOTHING, db_column="idville"
+        Ville,
+        verbose_name="Ville",
+        on_delete=models.DO_NOTHING,
+        db_column="idville",
     )
-    Retard = models.SmallIntegerField(verbose_name="Retard", db_column="retard")
+    Retard = models.SmallIntegerField(
+        verbose_name="Retard", db_column="retard"
+    )
     Coassurance = models.BooleanField(
         verbose_name="Coassurance", db_column="coassurance"
     )
     CodeAsaci = models.CharField(
         verbose_name="Code ASACI", db_column="codeasaci", max_length=20
     )
-    Login = models.CharField(verbose_name="Login", db_column="login", max_length=50)
+    Login = models.CharField(
+        verbose_name="Login", db_column="login", max_length=50
+    )
     MotDePasse = models.CharField(
         verbose_name="Mot de passe", db_column="motdepasse", max_length=50
     )
@@ -1803,7 +2010,9 @@ class Intermediaire(models.Model):
         verbose_name="Date Début", db_column="datedebut", blank=True, null=True
     )
     TitulaireAgrement = models.CharField(
-        verbose_name="Titulaire Agrément", db_column="titulaireagrement", max_length=50
+        verbose_name="Titulaire Agrément",
+        db_column="titulaireagrement",
+        max_length=50,
     )
     Responsable = models.CharField(
         verbose_name="Responsable", db_column="responsable", max_length=50
@@ -1812,7 +2021,10 @@ class Intermediaire(models.Model):
         verbose_name="Police RC", db_column="policerc", max_length=50
     )
     EcheanceRc = models.DateTimeField(
-        verbose_name="Echéance RC", db_column="echeancerc", blank=True, null=True
+        verbose_name="Echéance RC",
+        db_column="echeancerc",
+        blank=True,
+        null=True,
     )
     NumChar = models.SmallIntegerField(
         verbose_name="NumChar",
@@ -1840,10 +2052,16 @@ class Intermediaire(models.Model):
         decimal_places=4,
     )
     serie_devis = models.IntegerField(
-        verbose_name="Serie devis", db_column="seriedevis", null=True, blank=True
+        verbose_name="Serie devis",
+        db_column="seriedevis",
+        null=True,
+        blank=True,
     )
     serie_contrat = models.IntegerField(
-        verbose_name="Serie contrat", db_column="seriecontrat", null=True, blank=True
+        verbose_name="Serie contrat",
+        db_column="seriecontrat",
+        null=True,
+        blank=True,
     )
     numero_rccm = models.CharField(
         max_length=40,
@@ -1872,7 +2090,9 @@ class ContinentZonePays(models.Model):
     id_continent = models.ForeignKey(
         Continent, db_column="id_continent", on_delete=models.CASCADE
     )
-    id_pays = models.ForeignKey(Pays, db_column="id_pays", on_delete=models.CASCADE)
+    id_pays = models.ForeignKey(
+        Pays, db_column="id_pays", on_delete=models.CASCADE
+    )
 
     class Meta:
         db_table = "stdcontinentzonepays"
@@ -1952,7 +2172,9 @@ class TauxTaxeGarantieProduit(models.Model):
         on_delete=models.CASCADE,
     )
     tauxtaxe = models.DecimalField(max_digits=5, decimal_places=2)
-    tauxtaxegroupe = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    tauxtaxegroupe = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0
+    )
     debutvalidite = models.DateField()
     finvalidite = models.DateField()
 
@@ -2019,7 +2241,10 @@ class CommissionProduit(models.Model):
         db_column="tauxcommission",
     )
     forfait = models.DecimalField(
-        verbose_name="Forfait", db_column="forfait", max_digits=19, decimal_places=4
+        verbose_name="Forfait",
+        db_column="forfait",
+        max_digits=19,
+        decimal_places=4,
     )
     debut_validite = models.DateField(
         verbose_name="Valide à partir de", db_column="debutvalidite"
@@ -2040,7 +2265,9 @@ class QualiteAyantDroit(models.Model):
         verbose_name="Id Qualité", db_column="idqualite", primary_key=True
     )
     libelle_qualite_ayant_droit = models.CharField(
-        verbose_name="Libellé", db_column="libellequaliteayantdroit", max_length=60
+        verbose_name="Libellé",
+        db_column="libellequaliteayantdroit",
+        max_length=60,
     )
     code_qualite_ayant_droit = models.CharField(
         verbose_name="Code Qualité",
@@ -2110,7 +2337,9 @@ class TarifParProduit(models.Model):
 
 
 class QualiteSouscripteurMrh(models.Model):
-    id = models.AutoField(verbose_name="ID Qualité Souscripteur MRH", primary_key=True)
+    id = models.AutoField(
+        verbose_name="ID Qualité Souscripteur MRH", primary_key=True
+    )
     libelle = models.CharField(
         verbose_name="Libellé Qualité Souscripteur",
         db_column="libellequalitesouscripteur",
@@ -2194,7 +2423,9 @@ class ModeEncaissement(models.Model):
         db_column="idmodeencaissement",
     )
     libellemodepaiement = models.CharField(
-        max_length=60, verbose_name="Mode de paiement", db_column="libellemodepaiement"
+        max_length=60,
+        verbose_name="Mode de paiement",
+        db_column="libellemodepaiement",
     )
     banque = models.BooleanField(
         verbose_name="Paiement bancaire", db_column="banque", default=False
@@ -2245,7 +2476,9 @@ class AccessoireCourtierParCompagnie(models.Model):
     PrimeMax = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="primemax"
     )
-    Forfait = models.DecimalField(max_digits=19, decimal_places=4, db_column="forfait")
+    Forfait = models.DecimalField(
+        max_digits=19, decimal_places=4, db_column="forfait"
+    )
     Accessoires = models.DecimalField(
         max_digits=19, decimal_places=4, db_column="accessoires", default=0
     )
@@ -2273,10 +2506,15 @@ class CollegeSante(models.Model):
 
 class OffreCollegeSante(models.Model):
     idoffrecollege = models.AutoField(
-        db_column="idoffrecollege", verbose_name="ID Offre Collège", primary_key=True
+        db_column="idoffrecollege",
+        verbose_name="ID Offre Collège",
+        primary_key=True,
     )
     offre = models.ForeignKey(
-        Offre, db_column="idoffre", on_delete=models.CASCADE, verbose_name="Offre"
+        Offre,
+        db_column="idoffre",
+        on_delete=models.CASCADE,
+        verbose_name="Offre",
     )
     college = models.ForeignKey(
         CollegeSante,
@@ -2292,7 +2530,8 @@ class OffreCollegeSante(models.Model):
         db_table = "stdoffrecollege"
         constraints = [
             models.UniqueConstraint(
-                fields=["offre", "college"], name="offrecollege_unique_offre_college"
+                fields=["offre", "college"],
+                name="offrecollege_unique_offre_college",
             )
         ]
 
@@ -2313,11 +2552,15 @@ class LienJuridiqueSante(models.Model):
 
 
 class ZoneCouvertureSante(models.Model):
-    idzone = models.AutoField(verbose_name="ID Zone Couverture", primary_key=True)
+    idzone = models.AutoField(
+        verbose_name="ID Zone Couverture", primary_key=True
+    )
     codezone = models.CharField(
         verbose_name="Code Zone Couverture", max_length=3, unique=True
     )
-    libellezone = models.CharField(max_length=40, verbose_name="Nom Zone Couverture")
+    libellezone = models.CharField(
+        max_length=40, verbose_name="Nom Zone Couverture"
+    )
 
     def __str__(self):
         return "{} ({})".format(self.libellezone, self.codezone)
@@ -2380,7 +2623,9 @@ class GarantiePourOffre(models.Model):
     Choix = models.BooleanField()
 
     def __str__(self):
-        return "{} ({})".format(self.LibelleSousGarantie, self.CodeSousGarantie)
+        return "{} ({})".format(
+            self.LibelleSousGarantie, self.CodeSousGarantie
+        )
 
     class Meta:
         managed = False
@@ -2400,7 +2645,10 @@ class ReductionFlotte(models.Model):
         null=True,
     )
     produit = models.ForeignKey(
-        Produit, db_column="idproduit", verbose_name="Produit", on_delete=models.CASCADE
+        Produit,
+        db_column="idproduit",
+        verbose_name="Produit",
+        on_delete=models.CASCADE,
     )
     nombre_minimum = models.IntegerField(
         verbose_name="Nombre Minimum", db_column="nombreminimum"
@@ -2474,7 +2722,9 @@ class FormuleSecuriteRoutiere(models.Model):
         on_delete=models.CASCADE,
     )
     libelle_formule = models.CharField(
-        verbose_name="Libellé Formule", db_column="libelleformule", max_length=80
+        verbose_name="Libellé Formule",
+        db_column="libelleformule",
+        max_length=80,
     )
     capital_deces = models.DecimalField(
         verbose_name="Capital Décès",
@@ -2506,7 +2756,10 @@ class FormuleSecuriteRoutiere(models.Model):
 
     def __str__(self):
         return "{} - Décès: {}, IPP: {}, FT: {}".format(
-            self.libelle_formule, self.capital_deces, self.capital_ipp, self.capital_ft
+            self.libelle_formule,
+            self.capital_deces,
+            self.capital_ipp,
+            self.capital_ft,
         )
 
     class Meta:
@@ -2560,26 +2813,41 @@ class AssistanceAutomobile(models.Model):
 
 class DelaiAvisEcheance(models.Model):
     id_delai_avis_echeance = models.AutoField(
-        verbose_name="ID Délai Avis", db_column="iddelaiavisecheance", primary_key=True
+        verbose_name="ID Délai Avis",
+        db_column="iddelaiavisecheance",
+        primary_key=True,
     )
     produit = models.ForeignKey(
-        Produit, verbose_name="Produit", db_column="idproduit", on_delete=models.CASCADE
+        Produit,
+        verbose_name="Produit",
+        db_column="idproduit",
+        on_delete=models.CASCADE,
     )
     delai_flotte = models.PositiveIntegerField(
-        verbose_name="Délai pour une flotte", db_column="delaiflotte", default=0
+        verbose_name="Délai pour une flotte",
+        db_column="delaiflotte",
+        default=0,
     )
     delai_mono = models.PositiveIntegerField(
-        verbose_name="Délai pour un contrat mono", db_column="delaimono", default=0
+        verbose_name="Délai pour un contrat mono",
+        db_column="delaimono",
+        default=0,
     )
     duree_contrat_minimum = models.PositiveIntegerField(
-        verbose_name="Durée Contrat Min", db_column="dureecontratminimum", default=1
+        verbose_name="Durée Contrat Min",
+        db_column="dureecontratminimum",
+        default=1,
     )
     duree_contrat_maximum = models.PositiveIntegerField(
-        verbose_name="Durée Contrat Max", db_column="dureecontratmaximum", default=31
+        verbose_name="Durée Contrat Max",
+        db_column="dureecontratmaximum",
+        default=31,
     )
 
     def __str__(self):
-        return "Délai d'avis d'échéance: {}".format(self.produit.libelle_produit)
+        return "Délai d'avis d'échéance: {}".format(
+            self.produit.libelle_produit
+        )
 
     class Meta:
         db_table = "stddelaiavisecheance"
@@ -2592,7 +2860,9 @@ class DelaiAvisEcheance(models.Model):
             ),
             models.CheckConstraint(
                 check=models.Q(
-                    duree_contrat_maximum__gte=models.F("duree_contrat_minimum")
+                    duree_contrat_maximum__gte=models.F(
+                        "duree_contrat_minimum"
+                    )
                 ),
                 name="delai_avis_echeance_check_duree_min_max",
             ),
@@ -2601,7 +2871,9 @@ class DelaiAvisEcheance(models.Model):
 
 class ParametreSite(models.Model):
     id_parametre_site = models.AutoField(
-        verbose_name="ID Paramètre Site", db_column="idparametresite", primary_key=True
+        verbose_name="ID Paramètre Site",
+        db_column="idparametresite",
+        primary_key=True,
     )
     raison_sociale = models.CharField(
         verbose_name="Raison Sociale", db_column="raisonsociale", max_length=50
@@ -2615,7 +2887,9 @@ class ParametreSite(models.Model):
         verbose_name="Longueur N° Téléphone", db_column="longueurnumtel"
     )
     prefixe_mobile = models.CharField(
-        verbose_name="Préfixe Mobile", db_column="prefixemobile", max_length=200
+        verbose_name="Préfixe Mobile",
+        db_column="prefixemobile",
+        max_length=200,
     )
     longueur_prefixe_mobile = models.PositiveSmallIntegerField(
         verbose_name="Longueur Préfixe Mobile",
@@ -2663,7 +2937,9 @@ class ParametreSite(models.Model):
 
 class TypeContratSante(models.Model):
     id_type_contrat = models.AutoField(
-        db_column="idtypecontrat", verbose_name="ID Type Contrat", primary_key=True
+        db_column="idtypecontrat",
+        verbose_name="ID Type Contrat",
+        primary_key=True,
     )
     libelle = models.CharField(max_length=30, db_column="libelle")
 
@@ -2704,12 +2980,19 @@ class SousGarantieOrdre(models.Model):
 
 
 class EnteteSousGarantie(models.Model):
-    id = models.AutoField(verbose_name="ID", primary_key=True, db_column="identete")
+    id = models.AutoField(
+        verbose_name="ID", primary_key=True, db_column="identete"
+    )
     code_entete = models.CharField(
-        verbose_name="Code Entête", max_length=5, db_column="codeentete", unique=True
+        verbose_name="Code Entête",
+        max_length=5,
+        db_column="codeentete",
+        unique=True,
     )
     libelle_entete = models.CharField(
-        verbose_name="Libellé Entête", max_length=100, db_column="libelleentete"
+        verbose_name="Libellé Entête",
+        max_length=100,
+        db_column="libelleentete",
     )
     compagnie = models.ForeignKey(
         Compagnie,
@@ -2765,7 +3048,9 @@ class IntermediaireCompagnie(models.Model):
         on_delete=models.CASCADE,
     )
     codeintermediaire = models.CharField(
-        max_length=10, verbose_name="Code Intermediaire", db_column="codeintermediaire"
+        max_length=10,
+        verbose_name="Code Intermediaire",
+        db_column="codeintermediaire",
     )
     numchar = models.SmallIntegerField(
         verbose_name="NumChar",
@@ -2773,10 +3058,16 @@ class IntermediaireCompagnie(models.Model):
         default=0,
     )
     seriedevis = models.IntegerField(
-        verbose_name="Serie devis", db_column="seriedevis", null=True, blank=True
+        verbose_name="Serie devis",
+        db_column="seriedevis",
+        null=True,
+        blank=True,
     )
     seriecontrat = models.IntegerField(
-        verbose_name="Serie contrat", db_column="seriecontrat", null=True, blank=True
+        verbose_name="Serie contrat",
+        db_column="seriecontrat",
+        null=True,
+        blank=True,
     )
 
     class Meta:
@@ -2790,19 +3081,41 @@ class IntermediaireCompagnie(models.Model):
             ),
         ]
 
+
 class DepreciationVehicule(models.Model):
-    iddepreciation = models.AutoField(db_column="iddepreciation", verbose_name="ID Dépréciation", primary_key=True)
-    taux = models.DecimalField(max_digits=4, decimal_places=2, db_column="taux", verbose_name="Taux de dépréciation")
-    genre_vehicule = models.ForeignKey(GenreVehicule, db_column="codegenrevehicule", to_field="CodeGenre", verbose_name="Genre du véhicule", on_delete=models.CASCADE)
-    mois = models.SmallIntegerField(verbose_name="Nombre de mois", db_column="mois")
-    
+    iddepreciation = models.AutoField(
+        db_column="iddepreciation",
+        verbose_name="ID Dépréciation",
+        primary_key=True,
+    )
+    taux = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        db_column="taux",
+        verbose_name="Taux de dépréciation",
+    )
+    genre_vehicule = models.ForeignKey(
+        GenreVehicule,
+        db_column="codegenrevehicule",
+        to_field="CodeGenre",
+        verbose_name="Genre du véhicule",
+        on_delete=models.CASCADE,
+    )
+    mois = models.SmallIntegerField(
+        verbose_name="Nombre de mois", db_column="mois"
+    )
+
     class Meta:
         db_table = "stddepreciationvehicule"
         verbose_name = "Taux de dépréciation des véhicules"
-        verbose_name_plural= "Taux de dépréciation des véhicules"
-        constraints = [models.UniqueConstraint(fields = ["genre_vehicule", "mois"], name="depreciation_vehicule_mois_genre_unique"),]
-        
-        
+        verbose_name_plural = "Taux de dépréciation des véhicules"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["genre_vehicule", "mois"],
+                name="depreciation_vehicule_mois_genre_unique",
+            ),
+        ]
+
 
 # ============================================================================
 # IMPORT DU MODÈLE EXISTANT
@@ -2818,66 +3131,58 @@ class UsageHabitation(models.Model):
     """
     Les 8 types d'usage habitation pour MRH.
     """
+
     QUALITE_ASSURE_CHOICES = [
-        ('PROPRIETAIRE', 'Propriétaire'),
-        ('LOCATAIRE', 'Locataire'),
+        ("PROPRIETAIRE", "Propriétaire"),
+        ("LOCATAIRE", "Locataire"),
     ]
     code = models.CharField(
-        max_length=50,
-        primary_key=True,
-        verbose_name="Code usage"
+        max_length=50, primary_key=True, verbose_name="Code usage"
     )
-    qualite_assure = models.CharField(max_length=20, choices=QUALITE_ASSURE_CHOICES, verbose_name="Qualité Assuré")
-    libelle = models.CharField(
-        max_length=200,
-        verbose_name="Libellé"
+    qualite_assure = models.CharField(
+        max_length=20,
+        choices=QUALITE_ASSURE_CHOICES,
+        verbose_name="Qualité Assuré",
     )
+    libelle = models.CharField(max_length=200, verbose_name="Libellé")
     description = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Description"
+        blank=True, null=True, verbose_name="Description"
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
-    
+    actif = models.BooleanField(default=True, verbose_name="Actif")
+
     offre = models.ForeignKey(
         Offre,
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-        db_column='idoffre',
-        related_name='usage_habitation_mrh',
+        db_column="idoffre",
+        related_name="usage_habitation_mrh",
         verbose_name="Offre MRH liée",
-        help_text="Lien avec la table stdoffre existante"
+        help_text="Lien avec la table stdoffre existante",
     )
-    
+
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
     date_modification = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Date de modification"
+        auto_now=True, verbose_name="Date de modification"
     )
 
     class Meta:
-        db_table = 'stdmrh_usage_habitation'
+        db_table = "stdmrh_usage_habitation"
         verbose_name = "Usage habitation"
         verbose_name_plural = "Usages habitation"
-        ordering = ['libelle']
+        ordering = ["libelle"]
 
     def __str__(self):
         return f"{self.libelle} ({self.code})"
-    
-    
+
     def get_id_offre(self):
         """Retourne l'ID du modèle stdoffre si lié"""
         if self.offre:
             return self.offre.IdOffre
         return None
-    
+
     def get_libelle_offre(self):
         """Retourne le libellé du modèle stdoffre si lié"""
         if self.offre:
@@ -2893,78 +3198,66 @@ class SousGarantieMRH(models.Model):
     Sous-Garanties spécifiques au produit MRH (19 garanties).
     Ce modèle est lié au modèle SousGarantie existant via garantie_generale.
     """
+
     TYPE_CHOICES = [
-        ('OBLIGATOIRE', 'Obligatoire'),
-        ('OPTIONNELLE', 'Optionnelle'),
+        ("OBLIGATOIRE", "Obligatoire"),
+        ("OPTIONNELLE", "Optionnelle"),
     ]
 
     code = models.CharField(
         max_length=50,
         primary_key=True,
         verbose_name="Code sous-garantie MRH",
-        help_text="Code spécifique MRH (ex: INCENDIE, DEGAT_EAUX, etc.)"
+        help_text="Code spécifique MRH (ex: INCENDIE, DEGAT_EAUX, etc.)",
     )
-    libelle = models.CharField(
-        max_length=200,
-        verbose_name="Libellé"
-    )
+    libelle = models.CharField(max_length=200, verbose_name="Libellé")
     type = models.CharField(
-        max_length=20,
-        choices=TYPE_CHOICES,
-        verbose_name="Type"
+        max_length=20, choices=TYPE_CHOICES, verbose_name="Type"
     )
     description = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Description"
+        blank=True, null=True, verbose_name="Description"
     )
-    
+
     # LIEN AVEC LE MODÈLE SOUS-GARANTIE EXISTANT
     sous_garantie_std = models.ForeignKey(
         SousGarantie,
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
-        db_column='idsousgarantie',
-        related_name='config_mrh',
+        db_column="idsousgarantie",
+        related_name="config_mrh",
         verbose_name="Sous-Garantie générale liée",
-        help_text="Lien avec la table stdsousgarantie existante"
+        help_text="Lien avec la table stdsousgarantie existante",
     )
-    
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
     date_modification = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Date de modification"
+        auto_now=True, verbose_name="Date de modification"
     )
 
     class Meta:
-        db_table = 'stdmrh_sous_garantie'
+        db_table = "stdmrh_sous_garantie"
         verbose_name = "Sous-Garantie MRH"
         verbose_name_plural = "Sous-Garanties MRH"
-        ordering = ['type', 'libelle']
+        ordering = ["type", "libelle"]
 
     def __str__(self):
         return f"{self.libelle} ({self.type})"
-    
+
     def get_code_sous_garantie_std(self):
         """Retourne le CodeGarantie du modèle stdgarantie si lié"""
         if self.sous_garantie_std:
             return self.sous_garantie_std.CodeSousGarantie
         return None
-    
+
     def get_id_sous_garantie_std(self):
         """Retourne l'IdGarantie du modèle stdgarantie si lié"""
         if self.sous_garantie_std:
             return self.sous_garantie_std.IdSousGarantie
         return None
-
 
 
 # ============================================================================
@@ -2974,54 +3267,49 @@ class SousGarantieUsage(models.Model):
     """
     Mapping entre garanties MRH et usages avec taux de répartition.
     """
+
     usage = models.ForeignKey(
         UsageHabitation,
         on_delete=models.CASCADE,
-        related_name='sous_garanties_liees',
-        verbose_name="Usage"
+        related_name="sous_garanties_liees",
+        verbose_name="Usage",
     )
     sous_garantie = models.ForeignKey(
         SousGarantieMRH,  # ← Utilise GarantieMRH
         on_delete=models.CASCADE,
-        related_name='usages_lies',
-        verbose_name="Sous-Garantie MRH"
+        related_name="usages_lies",
+        verbose_name="Sous-Garantie MRH",
     )
-    obligatoire = models.BooleanField(
-        default=True,
-        verbose_name="Obligatoire"
-    )
+    obligatoire = models.BooleanField(default=True, verbose_name="Obligatoire")
     taux_repartition = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
+        validators=[
+            MinValueValidator(Decimal("0")),
+            MaxValueValidator(Decimal("100")),
+        ],
         verbose_name="Taux de répartition (%)",
-        help_text="Pourcentage de répartition de la prime de base"
+        help_text="Pourcentage de répartition de la prime de base",
     )
     ordre_affichage = models.IntegerField(
-        blank=True,
-        null=True,
-        verbose_name="Ordre d'affichage"
+        blank=True, null=True, verbose_name="Ordre d'affichage"
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
 
     class Meta:
-        db_table = 'stdmrh_sous_garantie_usage'
+        db_table = "stdmrh_sous_garantie_usage"
         verbose_name = "Sous-Garantie par usage"
         verbose_name_plural = "Sous-Garanties par usage"
-        unique_together = [['usage', 'sous_garantie']]
-        ordering = ['usage', 'ordre_affichage']
+        unique_together = [["usage", "sous_garantie"]]
+        ordering = ["usage", "ordre_affichage"]
         indexes = [
-            models.Index(fields=['usage']),
-            models.Index(fields=['sous_garantie']),
+            models.Index(fields=["usage"]),
+            models.Index(fields=["sous_garantie"]),
         ]
 
     def __str__(self):
@@ -3029,9 +3317,11 @@ class SousGarantieUsage(models.Model):
 
     def clean(self):
         if self.obligatoire and self.taux_repartition is None:
-            raise ValidationError({
-                'taux_repartition': 'Le taux de répartition est requis pour une garantie obligatoire.'
-            })
+            raise ValidationError(
+                {
+                    "taux_repartition": "Le taux de répartition est requis pour une garantie obligatoire."
+                }
+            )
 
 
 # ============================================================================
@@ -3041,12 +3331,13 @@ class ParametresCalcul(models.Model):
     """
     Paramètres de calcul des primes par usage.
     """
+
     usage = models.OneToOneField(
         UsageHabitation,
         on_delete=models.CASCADE,
         primary_key=True,
-        related_name='parametres',
-        verbose_name="Usage"
+        related_name="parametres",
+        verbose_name="Usage",
     )
 
     # Coefficients de base (en ‰)
@@ -3055,87 +3346,79 @@ class ParametresCalcul(models.Model):
         decimal_places=6,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Coefficient valeur bâtiment (‰)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Coefficient valeur bâtiment (‰)",
     )
     coeff_valeur_contenu = models.DecimalField(
         max_digits=10,
         decimal_places=6,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Coefficient valeur contenu (‰)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Coefficient valeur contenu (‰)",
     )
     coeff_loyer = models.DecimalField(
         max_digits=10,
         decimal_places=6,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Coefficient loyer (‰)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Coefficient loyer (‰)",
     )
     coeff_capital_rvt = models.DecimalField(
         max_digits=10,
         decimal_places=6,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Coefficient capital RVT (‰)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Coefficient capital RVT (‰)",
     )
     coeff_reduction = models.DecimalField(
         max_digits=5,
         decimal_places=4,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('1'))],
-        verbose_name="Coefficient de réduction"
+        validators=[
+            MinValueValidator(Decimal("0")),
+            MaxValueValidator(Decimal("1")),
+        ],
+        verbose_name="Coefficient de réduction",
     )
     forfait_fixe = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=Decimal('0'),
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Forfait fixe (FCFA)"
+        default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Forfait fixe (FCFA)",
     )
 
     # Paramètres requis
     param_valeur_batiment_requis = models.BooleanField(
-        default=False,
-        verbose_name="Valeur bâtiment requise"
+        default=False, verbose_name="Valeur bâtiment requise"
     )
     param_valeur_contenu_requis = models.BooleanField(
-        default=False,
-        verbose_name="Valeur contenu requise"
+        default=False, verbose_name="Valeur contenu requise"
     )
     param_loyer_requis = models.BooleanField(
-        default=False,
-        verbose_name="Loyer requis"
+        default=False, verbose_name="Loyer requis"
     )
     param_capital_rvt_requis = models.BooleanField(
-        default=False,
-        verbose_name="Capital RVT requis"
+        default=False, verbose_name="Capital RVT requis"
     )
 
     formule_texte = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Formule (texte)"
+        blank=True, null=True, verbose_name="Formule (texte)"
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
     date_modification = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Date de modification"
+        auto_now=True, verbose_name="Date de modification"
     )
 
     class Meta:
-        db_table = 'stdmrh_parametres_calcul'
+        db_table = "stdmrh_parametres_calcul"
         verbose_name = "Paramètres de calcul"
         verbose_name_plural = "Paramètres de calcul"
 
@@ -3150,111 +3433,104 @@ class Option(models.Model):
     """
     Options générales et spécifiques pour ajustements de primes.
     """
+
     TYPE_OPTION_CHOICES = [
-        ('GENERALE', 'Générale'),
-        ('SPECIFIQUE', 'Spécifique'),
+        ("GENERALE", "Générale"),
+        ("SPECIFIQUE", "Spécifique"),
     ]
     TYPE_AJUSTEMENT_CHOICES = [
-        ('TYPE1', 'TYPE 1 - Taux sur prime de base'),
-        ('TYPE2', 'TYPE 2 - Taux sur prime garantie'),
-        ('FORFAIT', 'FORFAIT - Montant fixe'),
+        ("TYPE1", "TYPE 1 - Taux sur prime de base"),
+        ("TYPE2", "TYPE 2 - Taux sur prime garantie"),
+        ("FORFAIT", "FORFAIT - Montant fixe"),
     ]
     SIGNE_CHOICES = [
-        ('+', 'Majoration'),
-        ('-', 'Réduction'),
+        ("+", "Majoration"),
+        ("-", "Réduction"),
     ]
 
     code = models.CharField(
-        max_length=50,
-        primary_key=True,
-        verbose_name="Code option"
+        max_length=50, primary_key=True, verbose_name="Code option"
     )
-    libelle = models.CharField(
-        max_length=200,
-        verbose_name="Libellé"
-    )
+    libelle = models.CharField(max_length=200, verbose_name="Libellé")
     description = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Description"
+        blank=True, null=True, verbose_name="Description"
     )
     type_option = models.CharField(
         max_length=20,
         choices=TYPE_OPTION_CHOICES,
-        verbose_name="Type d'option"
+        verbose_name="Type d'option",
     )
     type_ajustement = models.CharField(
         max_length=20,
         choices=TYPE_AJUSTEMENT_CHOICES,
-        verbose_name="Type d'ajustement"
+        verbose_name="Type d'ajustement",
     )
     sous_garantie_cible = models.ForeignKey(
         SousGarantieMRH,  # ← Utilise GarantieMRH
         on_delete=models.PROTECT,
         blank=True,
         null=True,
-        related_name='options_liees',
-        verbose_name="Sous-Garantie cible"
+        related_name="options_liees",
+        verbose_name="Sous-Garantie cible",
     )
     taux_ajustement = models.DecimalField(
         max_digits=10,
         decimal_places=4,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Taux d'ajustement"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Taux d'ajustement",
     )
     montant_forfait = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Montant forfait (FCFA)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Montant forfait (FCFA)",
     )
     signe_ajustement = models.CharField(
         max_length=1,
         choices=SIGNE_CHOICES,
         blank=True,
         null=True,
-        verbose_name="Signe ajustement"
+        verbose_name="Signe ajustement",
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
     date_modification = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Date de modification"
+        auto_now=True, verbose_name="Date de modification"
     )
 
     class Meta:
-        db_table = 'stdmrh_option'
+        db_table = "stdmrh_option"
         verbose_name = "Option"
         verbose_name_plural = "Options"
-        ordering = ['type_option', 'libelle']
+        ordering = ["type_option", "libelle"]
         indexes = [
-            models.Index(fields=['sous_garantie_cible']),
+            models.Index(fields=["sous_garantie_cible"]),
         ]
 
     def __str__(self):
         return f"{self.libelle} ({self.type_option})"
 
     def clean(self):
-        if self.type_ajustement in ['TYPE1', 'TYPE2']:
+        if self.type_ajustement in ["TYPE1", "TYPE2"]:
             if self.taux_ajustement is None:
-                raise ValidationError({
-                    'taux_ajustement': f'Le taux d\'ajustement est requis pour {self.type_ajustement}.'
-                })
-        elif self.type_ajustement == 'FORFAIT':
+                raise ValidationError(
+                    {
+                        "taux_ajustement": f"Le taux d'ajustement est requis pour {self.type_ajustement}."
+                    }
+                )
+        elif self.type_ajustement == "FORFAIT":
             if self.montant_forfait is None:
-                raise ValidationError({
-                    'montant_forfait': 'Le montant forfait est requis pour TYPE FORFAIT.'
-                })
+                raise ValidationError(
+                    {
+                        "montant_forfait": "Le montant forfait est requis pour TYPE FORFAIT."
+                    }
+                )
 
 
 # ============================================================================
@@ -3264,36 +3540,33 @@ class OptionUsage(models.Model):
     """
     Applicabilité des options par usage.
     """
+
     option = models.ForeignKey(
         Option,
         on_delete=models.CASCADE,
-        related_name='usages_applicables',
-        verbose_name="Option"
+        related_name="usages_applicables",
+        verbose_name="Option",
     )
     usage = models.ForeignKey(
         UsageHabitation,
         on_delete=models.CASCADE,
-        related_name='options_applicables',
-        verbose_name="Usage"
+        related_name="options_applicables",
+        verbose_name="Usage",
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
 
     class Meta:
-        db_table = 'stdmrh_option_usage'
+        db_table = "stdmrh_option_usage"
         verbose_name = "Option par usage"
         verbose_name_plural = "Options par usage"
-        unique_together = [['option', 'usage']]
-        ordering = ['usage', 'option']
+        unique_together = [["option", "usage"]]
+        ordering = ["usage", "option"]
         indexes = [
-            models.Index(fields=['usage']),
-            models.Index(fields=['option']),
+            models.Index(fields=["usage"]),
+            models.Index(fields=["option"]),
         ]
 
     def __str__(self):
@@ -3307,86 +3580,87 @@ class CleRepartition(models.Model):
     """
     Clés de répartition pour le mode imposé.
     """
+
     TYPE_REPARTITION_CHOICES = [
-        ('FIXE', 'Montant fixe'),
-        ('POURCENTAGE', 'Pourcentage'),
+        ("FIXE", "Montant fixe"),
+        ("POURCENTAGE", "Pourcentage"),
     ]
 
     usage = models.ForeignKey(
         UsageHabitation,
         on_delete=models.CASCADE,
-        related_name='cles_repartition',
-        verbose_name="Usage"
+        related_name="cles_repartition",
+        verbose_name="Usage",
     )
     sous_garantie = models.ForeignKey(
-        SousGarantieMRH,  
+        SousGarantieMRH,
         on_delete=models.CASCADE,
-        related_name='cles_repartition',
-        verbose_name="Garantie"
+        related_name="cles_repartition",
+        verbose_name="Garantie",
     )
     type_repartition = models.CharField(
         max_length=20,
         choices=TYPE_REPARTITION_CHOICES,
-        verbose_name="Type de répartition"
+        verbose_name="Type de répartition",
     )
     montant_fixe = models.DecimalField(
         max_digits=10,
         decimal_places=2,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Montant fixe (FCFA)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Montant fixe (FCFA)",
     )
     taux_pourcentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
         blank=True,
         null=True,
-        validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
-        verbose_name="Taux pourcentage (%)"
+        validators=[
+            MinValueValidator(Decimal("0")),
+            MaxValueValidator(Decimal("100")),
+        ],
+        verbose_name="Taux pourcentage (%)",
     )
     groupe = models.IntegerField(
-        verbose_name="Groupe",
-        help_text="1 = montants fixes, 2 = pourcentages"
+        verbose_name="Groupe", help_text="1 = montants fixes, 2 = pourcentages"
     )
     ordre_calcul = models.IntegerField(
-        blank=True,
-        null=True,
-        verbose_name="Ordre de calcul"
+        blank=True, null=True, verbose_name="Ordre de calcul"
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
 
     class Meta:
-        db_table = 'stdmrh_cle_repartition'
+        db_table = "stdmrh_cle_repartition"
         verbose_name = "Clé de répartition"
         verbose_name_plural = "Clés de répartition"
-        unique_together = [['usage', 'sous_garantie']]
-        ordering = ['usage', 'groupe', 'ordre_calcul']
+        unique_together = [["usage", "sous_garantie"]]
+        ordering = ["usage", "groupe", "ordre_calcul"]
         indexes = [
-            models.Index(fields=['usage']),
+            models.Index(fields=["usage"]),
         ]
 
     def __str__(self):
         return f"{self.sous_garantie.libelle} - {self.usage.libelle} (Groupe {self.groupe})"
 
     def clean(self):
-        if self.type_repartition == 'FIXE':
+        if self.type_repartition == "FIXE":
             if self.montant_fixe is None:
-                raise ValidationError({
-                    'montant_fixe': 'Le montant fixe est requis pour type FIXE.'
-                })
-        elif self.type_repartition == 'POURCENTAGE':
+                raise ValidationError(
+                    {
+                        "montant_fixe": "Le montant fixe est requis pour type FIXE."
+                    }
+                )
+        elif self.type_repartition == "POURCENTAGE":
             if self.taux_pourcentage is None:
-                raise ValidationError({
-                    'taux_pourcentage': 'Le taux pourcentage est requis pour type POURCENTAGE.'
-                })
+                raise ValidationError(
+                    {
+                        "taux_pourcentage": "Le taux pourcentage est requis pour type POURCENTAGE."
+                    }
+                )
 
 
 # ============================================================================
@@ -3396,42 +3670,35 @@ class SousGarantieForfait(models.Model):
     """
     Garanties optionnelles avec prime nette forfaitaire.
     """
+
     sous_garantie = models.OneToOneField(
-        SousGarantieMRH, 
+        SousGarantieMRH,
         on_delete=models.CASCADE,
         primary_key=True,
-        related_name='forfait',
-        verbose_name="Garantie"
+        related_name="forfait",
+        verbose_name="Garantie",
     )
     prime_nette = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0'))],
-        verbose_name="Prime nette (FCFA)"
+        validators=[MinValueValidator(Decimal("0"))],
+        verbose_name="Prime nette (FCFA)",
     )
     description = models.TextField(
-        blank=True,
-        null=True,
-        verbose_name="Description"
+        blank=True, null=True, verbose_name="Description"
     )
-    actif = models.BooleanField(
-        default=True,
-        verbose_name="Actif"
-    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
     date_creation = models.DateTimeField(
-        auto_now_add=True,
-        verbose_name="Date de création"
+        auto_now_add=True, verbose_name="Date de création"
     )
     date_modification = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Date de modification"
+        auto_now=True, verbose_name="Date de modification"
     )
 
     class Meta:
-        db_table = 'stdmrh_sous_garantie_forfait'
+        db_table = "stdmrh_sous_garantie_forfait"
         verbose_name = "Sous-Garantie forfait"
         verbose_name_plural = "Sous-Garanties forfait"
 
     def __str__(self):
         return f"{self.sous_garantie.libelle} - {self.prime_nette} FCFA"
-

@@ -253,189 +253,204 @@ class DevisDetailSerializer(serializers.ModelSerializer):
         representation["codecategorie"] = ""
         representation["libellecategorie"] = ""
         devis = instance.iddevis
-        if devis.produit.id_produit == 1:  # Automobile
-            complementinfo = ComplementDevisDetailAuto.objects.filter(
-                devis_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["bns"] = complementinfo[0].bns
-                representation["formule_securite_routiere"] = complementinfo[
-                    0
-                ].formule_securite_routiere.libelle_formule
-                if complementinfo[0].assistance_automobile:
-                    representation["assistance_automobie"] = complementinfo[
-                        0
-                    ].assistance_automobile.id_option
-                else:
-                    representation["assistance_automobie"] = None
-                representation["carburant_autre_matiere"] = complementinfo[
-                    0
-                ].carburant_autre_matiere
-                representation["transport_eleves"] = complementinfo[
-                    0
-                ].transport_eleves
-                representation["transport_employes"] = complementinfo[
-                    0
-                ].transport_employes
-                representation["transport_passager_supplementaire"] = (
-                    complementinfo[0].transport_passager_supplementaire
-                )
-        elif devis.produit.id_produit in (
-            2,
-            3,
-        ):  # Individuelle Accident ou Voyage
-            representation["date_naissance"] = representation["datemec"]
-            representation["capital_ipp"] = representation["valeurneuve"]
-            representation["capital_deces"] = representation["valeurvenale"]
-            representation["frais_traitement"] = representation[
-                "valeuraccessoire"
-            ]
-            if devis.produit.id_produit == 2:
-                id_assure = int(representation["matricule"])
-                representation["id_assure"] = id_assure
-                assureinfo = Client.objects.get(pk=id_assure)
-                representation["nom_assure"] = assureinfo.Nom
-                representation["prenoms_assure"] = assureinfo.Prenoms
-            if devis.produit.id_produit == 3:
-                complementinfo = ComplementDevisDetailVoyage.objects.filter(
+        if devis:
+            if devis.produit.id_produit == 1:  # Automobile
+                complementinfo = ComplementDevisDetailAuto.objects.filter(
                     devis_detail=instance
                 )
                 if complementinfo.count() > 0:
-                    representation["id_pays_destination"] = complementinfo[
+                    representation["bns"] = complementinfo[0].bns
+                    representation["formule_securite_routiere"] = (
+                        complementinfo[
+                            0
+                        ].formule_securite_routiere.libelle_formule
+                    )
+                    if complementinfo[0].assistance_automobile:
+                        representation["assistance_automobie"] = (
+                            complementinfo[0].assistance_automobile.id_option
+                        )
+                    else:
+                        representation["assistance_automobie"] = None
+                    representation["carburant_autre_matiere"] = complementinfo[
                         0
-                    ].pays_destination.id_pays
-                    representation["id_pays_voyageur"] = complementinfo[
+                    ].carburant_autre_matiere
+                    representation["transport_eleves"] = complementinfo[
                         0
-                    ].pays_voyageur.id_pays
-                    representation["reference_contrat"] = complementinfo[
+                    ].transport_eleves
+                    representation["transport_employes"] = complementinfo[
                         0
-                    ].reference_contrat
-                    representation["numero_attestation"] = complementinfo[
-                        0
-                    ].numero_attestation
-                    representation["schengen"] = complementinfo[
-                        0
-                    ].visa_schengen
-                    representation["numero_passeport"] = complementinfo[
-                        0
-                    ].numero_passeport
-        elif devis.produit.id_produit == 4:  # Multirisque Habitation
-            complementinfo = ComplementDevisDetailMrh.objects.filter(
-                devis_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["presence_gardien"] = complementinfo[
-                    0
-                ].presence_gardien
-                representation["occupant_locataire"] = complementinfo[
-                    0
-                ].occupant_locataire
-                representation["valeur_loyer"] = complementinfo[0].valeur_loyer
-                representation["valeur_contenu"] = complementinfo[
-                    0
-                ].valeur_contenu
-                representation["valeur_objet_precieux"] = complementinfo[
-                    0
-                ].valeur_objet_precieux
-                representation["valeur_materiel"] = complementinfo[
-                    0
-                ].valeur_materiel
-                representation["valeur_degat_batiment"] = complementinfo[
-                    0
-                ].valeur_degat_batiment
-                representation["valeur_degat_contenu"] = complementinfo[
-                    0
-                ].valeur_degat_contenu
-                representation["localisation"] = complementinfo[0].localisation
-        elif devis.produit.id_produit == 5:  # Santé
-            complementinfo = ComplementDevisDetailSante.objects.filter(
-                devis_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["prime_famille"] = complementinfo[
-                    0
-                ].prime_famille
-                representation["prime_affilie"] = complementinfo[
-                    0
-                ].prime_affilie
-                representation["prime_globale"] = complementinfo[
-                    0
-                ].prime_globale
-                representation["montant_surprime"] = complementinfo[
-                    0
-                ].montant_surprime
-                representation["montant_accessoire_manuel"] = complementinfo[
-                    0
-                ].montant_accessoire_manuel
-                representation["gestionnaire_sante"] = complementinfo[
-                    0
-                ].gestionnaire_sante
-                representation["taux_reduction_commerciale"] = complementinfo[
-                    0
-                ].taux_reduction_commerciale
-                representation["type_contrat"] = complementinfo[
-                    0
-                ].type_contrat.id_type_contrat
-
-            tarif = Tarif.objects.get(pk=instance.idtarif)
-            if tarif:
-                representation["codecategorie"] = tarif.CodeCategorie
-                representation["libellecategorie"] = (
-                    tarif.IdCategorie.LibelleCategorie
-                )
-        elif devis.produit.id_produit == 6:  # Transport
-            pass
-        elif devis.produit.id_produit == 7:  # Multirisque Professionnelle
-            pass
-        elif devis.produit.id_produit == 8:  # Responsabilité Civile
-
-            complementinfo = ComplementDevisDetailRC.objects.filter(
-                devis_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["taux_prime"] = complementinfo[0].taux_prime
-                representation["assiette_prime"] = complementinfo[
-                    0
-                ].assiette_prime
-                representation["nombre_participants"] = complementinfo[
-                    0
-                ].nombre_participants
-                representation["id_domaine_activite"] = complementinfo[
-                    0
-                ].id_domaine_activite
-                representation["id_activite"] = complementinfo[0].id_activite
-                representation["localisation"] = complementinfo[0].localisation
-                representation["date_debut"] = complementinfo[0].date_debut
-
-        elif devis.produit.id_produit == 9:  # Tous Dommages
-            if devis.offre.IdOffre == 32:
-                representation["capital_materiel_informatique"] = (
-                    representation["valeurneuve"]
-                )
-                representation["capital_frais_reconstitution"] = (
-                    representation["valeurvenale"]
-                )
-                representation["capital_frais_supplementaire"] = (
-                    representation["valeuraccessoire"]
-                )
-            elif devis.offre.IdOffre == 33:
-                representation["capital_detournement_usage_faux"] = (
-                    representation["valeurneuve"]
-                )
-                representation["capital_dommages_confondus"] = representation[
+                    ].transport_employes
+                    representation["transport_passager_supplementaire"] = (
+                        complementinfo[0].transport_passager_supplementaire
+                    )
+            elif devis.produit.id_produit in (
+                2,
+                3,
+            ):  # Individuelle Accident ou Voyage
+                representation["date_naissance"] = representation["datemec"]
+                representation["capital_ipp"] = representation["valeurneuve"]
+                representation["capital_deces"] = representation[
                     "valeurvenale"
                 ]
-                representation[
-                    "capital_deterioration_mobiliere_immobiliere"
-                ] = representation["valeuraccessoire"]
-            complementinfo = ComplementDevisDetailDommage.objects.filter(
-                devis_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["taux_prime"] = complementinfo[0].taux_prime
-                representation["montant_prime"] = complementinfo[
-                    0
-                ].montant_prime
+                representation["frais_traitement"] = representation[
+                    "valeuraccessoire"
+                ]
+                if devis.produit.id_produit == 2:
+                    id_assure = int(representation["matricule"])
+                    representation["id_assure"] = id_assure
+                    assureinfo = Client.objects.get(pk=id_assure)
+                    representation["nom_assure"] = assureinfo.Nom
+                    representation["prenoms_assure"] = assureinfo.Prenoms
+                if devis.produit.id_produit == 3:
+                    complementinfo = (
+                        ComplementDevisDetailVoyage.objects.filter(
+                            devis_detail=instance
+                        )
+                    )
+                    if complementinfo.count() > 0:
+                        representation["id_pays_destination"] = complementinfo[
+                            0
+                        ].pays_destination.id_pays
+                        representation["id_pays_voyageur"] = complementinfo[
+                            0
+                        ].pays_voyageur.id_pays
+                        representation["reference_contrat"] = complementinfo[
+                            0
+                        ].reference_contrat
+                        representation["numero_attestation"] = complementinfo[
+                            0
+                        ].numero_attestation
+                        representation["schengen"] = complementinfo[
+                            0
+                        ].visa_schengen
+                        representation["numero_passeport"] = complementinfo[
+                            0
+                        ].numero_passeport
+            elif devis.produit.id_produit == 4:  # Multirisque Habitation
+                complementinfo = ComplementDevisDetailMrh.objects.filter(
+                    devis_detail=instance
+                )
+                if complementinfo.count() > 0:
+                    representation["presence_gardien"] = complementinfo[
+                        0
+                    ].presence_gardien
+                    representation["occupant_locataire"] = complementinfo[
+                        0
+                    ].occupant_locataire
+                    representation["valeur_loyer"] = complementinfo[
+                        0
+                    ].valeur_loyer
+                    representation["valeur_contenu"] = complementinfo[
+                        0
+                    ].valeur_contenu
+                    representation["valeur_objet_precieux"] = complementinfo[
+                        0
+                    ].valeur_objet_precieux
+                    representation["valeur_materiel"] = complementinfo[
+                        0
+                    ].valeur_materiel
+                    representation["valeur_degat_batiment"] = complementinfo[
+                        0
+                    ].valeur_degat_batiment
+                    representation["valeur_degat_contenu"] = complementinfo[
+                        0
+                    ].valeur_degat_contenu
+                    representation["localisation"] = complementinfo[
+                        0
+                    ].localisation
+            elif devis.produit.id_produit == 5:  # Santé
+                complementinfo = ComplementDevisDetailSante.objects.filter(
+                    devis_detail=instance
+                )
+                if complementinfo.count() > 0:
+                    representation["prime_famille"] = complementinfo[
+                        0
+                    ].prime_famille
+                    representation["prime_affilie"] = complementinfo[
+                        0
+                    ].prime_affilie
+                    representation["prime_globale"] = complementinfo[
+                        0
+                    ].prime_globale
+                    representation["montant_surprime"] = complementinfo[
+                        0
+                    ].montant_surprime
+                    representation["montant_accessoire_manuel"] = (
+                        complementinfo[0].montant_accessoire_manuel
+                    )
+                    representation["gestionnaire_sante"] = complementinfo[
+                        0
+                    ].gestionnaire_sante
+                    representation["taux_reduction_commerciale"] = (
+                        complementinfo[0].taux_reduction_commerciale
+                    )
+                    representation["type_contrat"] = complementinfo[
+                        0
+                    ].type_contrat.id_type_contrat
+
+                tarif = Tarif.objects.get(pk=instance.idtarif)
+                if tarif:
+                    representation["codecategorie"] = tarif.CodeCategorie
+                    representation["libellecategorie"] = (
+                        tarif.IdCategorie.LibelleCategorie
+                    )
+            elif devis.produit.id_produit == 6:  # Transport
+                pass
+            elif devis.produit.id_produit == 7:  # Multirisque Professionnelle
+                pass
+            elif devis.produit.id_produit == 8:  # Responsabilité Civile
+
+                complementinfo = ComplementDevisDetailRC.objects.filter(
+                    devis_detail=instance
+                )
+                if complementinfo.count() > 0:
+                    representation["taux_prime"] = complementinfo[0].taux_prime
+                    representation["assiette_prime"] = complementinfo[
+                        0
+                    ].assiette_prime
+                    representation["nombre_participants"] = complementinfo[
+                        0
+                    ].nombre_participants
+                    representation["id_domaine_activite"] = complementinfo[
+                        0
+                    ].id_domaine_activite
+                    representation["id_activite"] = complementinfo[
+                        0
+                    ].id_activite
+                    representation["localisation"] = complementinfo[
+                        0
+                    ].localisation
+                    representation["date_debut"] = complementinfo[0].date_debut
+
+            elif devis.produit.id_produit == 9:  # Tous Dommages
+                if devis.offre.IdOffre == 32:
+                    representation["capital_materiel_informatique"] = (
+                        representation["valeurneuve"]
+                    )
+                    representation["capital_frais_reconstitution"] = (
+                        representation["valeurvenale"]
+                    )
+                    representation["capital_frais_supplementaire"] = (
+                        representation["valeuraccessoire"]
+                    )
+                elif devis.offre.IdOffre == 33:
+                    representation["capital_detournement_usage_faux"] = (
+                        representation["valeurneuve"]
+                    )
+                    representation["capital_dommages_confondus"] = (
+                        representation["valeurvenale"]
+                    )
+                    representation[
+                        "capital_deterioration_mobiliere_immobiliere"
+                    ] = representation["valeuraccessoire"]
+                complementinfo = ComplementDevisDetailDommage.objects.filter(
+                    devis_detail=instance
+                )
+                if complementinfo.count() > 0:
+                    representation["taux_prime"] = complementinfo[0].taux_prime
+                    representation["montant_prime"] = complementinfo[
+                        0
+                    ].montant_prime
 
         return representation
 
@@ -609,53 +624,56 @@ class ContratDetailSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation["codecategorie"] = ""
-        contrat = Contrat.objects.get(pk=instance.idcontrat)
-        if contrat.idproduit.id_produit == 5:
-            tarif = Tarif.objects.get(pk=instance.idtarif)
-            if tarif:
-                representation["codecategorie"] = tarif.CodeCategorie
-        if contrat.idproduit.id_produit == 1:
-            complementinfo = ComplementContratDetailAuto.objects.filter(
-                contrat_detail=instance
-            )
-            if complementinfo.count() > 0:
-                representation["bns"] = complementinfo[0].bns
-                representation["formule_securite_routiere"] = complementinfo[
-                    0
-                ].formule_securite_routiere.libelle_formule
-                representation["carburant_autre_matiere"] = complementinfo[
-                    0
-                ].carburant_autre_matiere
-                representation["transport_eleves"] = complementinfo[
-                    0
-                ].transport_eleves
-                representation["transport_employes"] = complementinfo[
-                    0
-                ].transport_employes
-                representation["transport_passager_supplementaire"] = (
-                    complementinfo[0].transport_passager_supplementaire
+        contrat = instance.idcontrat
+        if contrat:
+            if contrat.idproduit.id_produit == 5:
+                tarif = Tarif.objects.get(pk=instance.idtarif)
+                if tarif:
+                    representation["codecategorie"] = tarif.CodeCategorie
+            if contrat.idproduit.id_produit == 1:
+                complementinfo = ComplementContratDetailAuto.objects.filter(
+                    contrat_detail=instance
                 )
-            try:
-                if int(representation["idmarque"]) != 0:
-                    marque = Marque.objects.get(
-                        pk=int(representation["idmarque"])
+                if complementinfo.count() > 0:
+                    representation["bns"] = complementinfo[0].bns
+                    representation["formule_securite_routiere"] = (
+                        complementinfo[
+                            0
+                        ].formule_securite_routiere.libelle_formule
                     )
-                    representation["libellemarque"] = marque.LibelleMarque
-                idtv = int(representation["idtypevehicule"])
-                if idtv != 0:
-                    typevehicule = TypeVehicule.objects.get(pk=idtv)
-                    representation["libelletypevehicule"] = (
-                        typevehicule.libelle_type
+                    representation["carburant_autre_matiere"] = complementinfo[
+                        0
+                    ].carburant_autre_matiere
+                    representation["transport_eleves"] = complementinfo[
+                        0
+                    ].transport_eleves
+                    representation["transport_employes"] = complementinfo[
+                        0
+                    ].transport_employes
+                    representation["transport_passager_supplementaire"] = (
+                        complementinfo[0].transport_passager_supplementaire
                     )
-                idgv = int(representation["idgenrevehicule"])
-                if idgv != 0:
-                    genrevehicule = GenreVehicule.objects.get(pk=idgv)
-                    representation["libellegenrevehicule"] = (
-                        genrevehicule.LibelleGenre
-                    )
+                try:
+                    if int(representation["idmarque"]) != 0:
+                        marque = Marque.objects.get(
+                            pk=int(representation["idmarque"])
+                        )
+                        representation["libellemarque"] = marque.LibelleMarque
+                    idtv = int(representation["idtypevehicule"])
+                    if idtv != 0:
+                        typevehicule = TypeVehicule.objects.get(pk=idtv)
+                        representation["libelletypevehicule"] = (
+                            typevehicule.libelle_type
+                        )
+                    idgv = int(representation["idgenrevehicule"])
+                    if idgv != 0:
+                        genrevehicule = GenreVehicule.objects.get(pk=idgv)
+                        representation["libellegenrevehicule"] = (
+                            genrevehicule.LibelleGenre
+                        )
 
-            except Exception as error:
-                print(error)
+                except Exception as error:
+                    print(error)
         return representation
 
 

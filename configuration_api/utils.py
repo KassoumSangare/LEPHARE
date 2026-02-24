@@ -1,25 +1,26 @@
+import re
+from datetime import date, datetime
+from decimal import Decimal
+from itertools import chain
+
 from django.db import connection
 from django.db.models import Q
-from itertools import chain
-from .models import (
-    GarantieProposee,
-    OffreParProduit,
-    TarifParProduit,
-    OffreSanteParTarif,
-    ZoneCouvertureSante,
-    OffreGarantie,
-    GarantiePourOffre,
-    FormuleSecuriteRoutiereParCompagnie,
-    Avenant,
-    PaysZone,
-    CollegeSante,
-    OffreCollegeSante,
-    Offre,
-)
 
-import re
-from datetime import datetime, date
-from decimal import Decimal
+from .models import (
+    Avenant,
+    CollegeSante,
+    FormuleSecuriteRoutiereParCompagnie,
+    GarantiePourOffre,
+    GarantieProposee,
+    Offre,
+    OffreCollegeSante,
+    OffreGarantie,
+    OffreParProduit,
+    OffreSanteParTarif,
+    PaysZone,
+    TarifParProduit,
+    ZoneCouvertureSante,
+)
 
 
 def check_iso_date_format(date_str):
@@ -57,7 +58,9 @@ def compute_rate(bns, date_effet, date_expiration):
         taux = (100.0 - bns) / 100.0
         contract_year = date_effet.year
         contract_duration = (date_expiration - date_effet).days + 1
-        year_length = (date(contract_year, 12, 31) - date(contract_year, 1, 1)).days + 1
+        year_length = (
+            date(contract_year, 12, 31) - date(contract_year, 1, 1)
+        ).days + 1
     return Decimal(taux * contract_duration / year_length)
 
 
@@ -69,7 +72,9 @@ def get_garantie_offre(request_data):
     DateMec = None
     if "DateMec" in request_data:
         if request_data["DateMec"]:
-            DateMec = datetime.strptime(request_data["DateMec"], "%d-%m-%Y").date()
+            DateMec = datetime.strptime(
+                request_data["DateMec"], "%d-%m-%Y"
+            ).date()
     RemorqueAttelee = False
     if "RemorqueAttelee" in request_data:
         if request_data["RemorqueAttelee"]:
@@ -217,7 +222,9 @@ def get_garantie_offre_ia(request_data):
     DateExpiration = datetime.strptime(
         request_data["DateExpiration"], "%d-%m-%Y"
     ).date()
-    DateNaissance = datetime.strptime(request_data["DateNaissance"], "%d-%m-%Y").date()
+    DateNaissance = datetime.strptime(
+        request_data["DateNaissance"], "%d-%m-%Y"
+    ).date()
     CodeActivite = request_data["CodeActivite"]
     PrimeNette = 0
     if "PrimeNette" in request_data:
@@ -226,7 +233,7 @@ def get_garantie_offre_ia(request_data):
     Accessoire = 0
     if "Accessoire" in request_data:
         if request_data["Accessoire"]:
-            Accessoire = Decimal(request_data["Accessoire"])   
+            Accessoire = Decimal(request_data["Accessoire"])
     CapitalFraisTraitement = Decimal(request_data["CapitalFraisTraitement"])
     try:
         status = 0
@@ -295,7 +302,9 @@ def get_garantie_offre_voyage(request_data):
     DateExpiration = datetime.strptime(
         request_data["DateExpiration"], "%d-%m-%Y"
     ).date()
-    DateNaissance = datetime.strptime(request_data["DateNaissance"], "%d-%m-%Y").date()
+    DateNaissance = datetime.strptime(
+        request_data["DateNaissance"], "%d-%m-%Y"
+    ).date()
     try:
         status = 0
         with connection.cursor() as cursor:
@@ -406,7 +415,9 @@ def get_liste_avenant_produit(id_produit, flotte):
             avenant_propose_list = []
             for row in result:
                 avenant_propose_list.append(row[0])
-            avenants = Avenant.objects.filter(IdAvenant__in=avenant_propose_list)
+            avenants = Avenant.objects.filter(
+                IdAvenant__in=avenant_propose_list
+            )
     except Exception as error:
         print(error)
         msg = str(error)
@@ -428,10 +439,18 @@ def save_offre_garantie(input_data):
     idoffre = int(input_data["idoffre"])
 
     liste_sous_garantie = list(input_data["liste_sous_garantie"])
-    liste_id = ";".join([str(d["idsousgarantie"]) for d in liste_sous_garantie])
-    liste_taux = ";".join([str(d["tauxfranchise"]) for d in liste_sous_garantie])
-    liste_min = ";".join([str(d["franchiseminimum"]) for d in liste_sous_garantie])
-    liste_max = ";".join([str(d["franchisemaximum"]) for d in liste_sous_garantie])
+    liste_id = ";".join(
+        [str(d["idsousgarantie"]) for d in liste_sous_garantie]
+    )
+    liste_taux = ";".join(
+        [str(d["tauxfranchise"]) for d in liste_sous_garantie]
+    )
+    liste_min = ";".join(
+        [str(d["franchiseminimum"]) for d in liste_sous_garantie]
+    )
+    liste_max = ";".join(
+        [str(d["franchisemaximum"]) for d in liste_sous_garantie]
+    )
 
     code_retour = 0
     output_message = ""
@@ -481,7 +500,9 @@ def get_garantie_offre_mrh(request_data):
     IdOffre = int(request_data["IdOffre"])
     ValeurCapitalLoyer = Decimal(request_data["ValeurCapitalLoyer"])
     ValeurCapitalContenu = Decimal(request_data["ValeurCapitalContenu"])
-    ValeurCapitalObjetPrecieux = Decimal(request_data["ValeurCapitalObjetPrecieux"])
+    ValeurCapitalObjetPrecieux = Decimal(
+        request_data["ValeurCapitalObjetPrecieux"]
+    )
     ValeurCapitalMateriel = Decimal(request_data["ValeurCapitalMateriel"])
     ValeurDegatBatiment = Decimal(request_data["ValeurDegatBatiment"])
     ValeurDegatContenu = Decimal(request_data["ValeurDegatContenu"])
@@ -555,7 +576,7 @@ def get_garantie_offre_rc(request_data):
     IdDevis = 0
     if "IdDevis" in request_data:
         if request_data["IdDevis"]:
-            IdDevis = int(request_data["IdDevis"])   
+            IdDevis = int(request_data["IdDevis"])
     IdOffre = int(request_data["IdOffre"])
     CapitalDommageCorporel = Decimal(request_data["CapitalDommageCorporel"])
     CapitalDommageMateriel = Decimal(request_data["CapitalDommageMateriel"])
@@ -605,6 +626,11 @@ def get_garantie_offre_rc(request_data):
                     PrimeNette=row[8],
                     Taxe=row[9],
                     MontantAccessoire=row[10],
+                    TauxFranchise=row[11],
+                    FranchiseMinimum=row[12],
+                    FranchiseMaximum=row[13],
+                    MontantFranchise=row[14],
+                    TexteFranchise=row[15],
                 )
                 garantie_proposee_list.append(gp)
     except Exception as error:
@@ -617,6 +643,140 @@ def get_garantie_offre_rc(request_data):
             cursor.close()
             connection.close()
     return res
+
+
+# Proposée par l'IA, mais je ne l'utilise pas
+def get_garanties_offre_rc(
+    id_compagnie,
+    id_offre,
+    taux_prime,
+    capital_dommage_corporel,
+    capital_intoxication_alimentaire,
+    capital_dommage_materiel,
+    assiette_prime,
+    taux_reduction,
+    date_effet,
+    date_expiration,
+    id_devis=0,
+):
+    """
+    Appelle fn_garantie_offre_rc puis, si id_devis != 0,
+    fusionne les données du devis existant sur le résultat.
+    """
+
+    # ----------------------------------------------------------
+    # Étape 1 : appel de la fonction SQL toujours avec id_devis=0
+    # On obtient ainsi les lignes de base (capitaux, franchises…)
+    # sans que la branche UPDATE buggée ne s'exécute.
+    # ----------------------------------------------------------
+    sql_fn = """
+        SELECT
+            idgarantie, libellegarantie, idsousgarantie, libellesousgarantie,
+            acquise, capital, nombreplace, primeannuelle, primenette, taxe,
+            montantaccessoire, tauxfranchise, franchiseminimum, franchisemaximum,
+            franchisetexte
+        FROM public.fn_garantie_offre_rc(
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0
+        )
+    """
+    params_fn = [
+        id_compagnie,
+        id_offre,
+        taux_prime,
+        capital_dommage_corporel,
+        capital_intoxication_alimentaire,
+        capital_dommage_materiel,
+        assiette_prime,
+        taux_reduction,
+        date_effet,
+        date_expiration,
+    ]
+
+    with connection.cursor() as cursor:
+        cursor.execute(sql_fn, params_fn)
+        colonnes = [col[0] for col in cursor.description]
+        lignes = [dict(zip(colonnes, row)) for row in cursor.fetchall()]
+
+    # ----------------------------------------------------------
+    # Étape 2 : si id_devis != 0, on fusionne les données du devis
+    # ----------------------------------------------------------
+    if id_devis != 0:
+
+        # 2a. Détail des garanties du devis
+        sql_det = """
+            SELECT
+                SDG.idgarantie      AS idsousgar,
+                SDG.primeannuelle,
+                SDG.primenette,
+                SDG.taxe,
+                SDG.capital,
+                SDG.minfranchise,
+                SDG.maxfranchise,
+                SDG.textefranchise
+            FROM public.stddevisdetgarantie AS SDG
+            WHERE SDG.iddevisdet IN (
+                SELECT SDD.iddevisdetail
+                FROM public.stddevisdetail AS SDD
+                WHERE SDD.iddevis = %s
+            )
+        """
+
+        # 2b. Totaux du devis (ligne de cumul)
+        sql_devis = """
+            SELECT
+                primeannuelle,
+                primenette,
+                taxe,
+                accessoirecompagnie,
+                accessoireintermediaire
+            FROM public.stddevis
+            WHERE iddevis = %s
+        """
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(sql_det, [id_devis])
+            cols_det = [col[0] for col in cursor.description]
+            # Dictionnaire indexé par idsousgar pour une fusion O(1)
+            details_devis = {
+                row[0]: dict(zip(cols_det, row)) for row in cursor.fetchall()
+            }
+
+            cursor.execute(sql_devis, [id_devis])
+            row_devis = cursor.fetchone()
+
+        # 2c. Fusion ligne par ligne sur les garanties (idgarantie != 0)
+        for ligne in lignes:
+            if ligne["idgarantie"] == 0:
+                # La ligne de cumul est traitée séparément ci-dessous
+                continue
+
+            det = details_devis.get(ligne["idsousgarantie"])
+            if det:
+                ligne["acquise"] = True
+                ligne["primeannuelle"] = det["primeannuelle"] or Decimal(0)
+                ligne["primenette"] = det["primenette"] or Decimal(0)
+                ligne["taxe"] = det["taxe"] or Decimal(0)
+                ligne["franchiseminimum"] = det["minfranchise"] or Decimal(0)
+                ligne["franchisemaximum"] = det["maxfranchise"] or Decimal(0)
+                ligne["franchisetexte"] = det["textefranchise"] or ""
+                if det["capital"]:
+                    ligne["capital"] = det["capital"]
+
+        # 2d. Mise à jour de la ligne de cumul (idgarantie = 0)
+        if row_devis:
+            (pan, pne, tx, acc_comp, acc_inter) = row_devis
+            for ligne in lignes:
+                if ligne["idgarantie"] == 0:
+                    ligne["primeannuelle"] = pan or Decimal(0)
+                    ligne["primenette"] = pne or Decimal(0)
+                    ligne["taxe"] = tx or Decimal(0)
+                    ligne["montantaccessoire"] = (acc_comp or Decimal(0)) + (
+                        acc_inter or Decimal(0)
+                    )
+                    break
+
+    return lignes
 
 
 def get_offre_par_produit(idproduit, idtarif=None):
@@ -664,7 +824,11 @@ def get_offre_voyage(idcompagnie, idtarif, idzone):
     msg = ""
     queryset_vide = OffreParProduit.objects.none()
     try:
-        idcompagnie, idtarif, idzone = int(idcompagnie), int(idtarif), int(idzone)
+        idcompagnie, idtarif, idzone = (
+            int(idcompagnie),
+            int(idtarif),
+            int(idzone),
+        )
         with connection.cursor() as cursor:
             cursor.callproc(
                 "fn_liste_offre_voyage",

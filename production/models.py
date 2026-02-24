@@ -1,20 +1,11 @@
 import os
 import uuid
-from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from django.db.models import (
-    CheckConstraint,
-    F,
-    JSONField,  # Django >= 3.1
-    Q,
-    UniqueConstraint,
-)
-from django.db.models.signals import post_save
-from django.dispatch import receiver
+from django.db.models import CheckConstraint, F, Q, UniqueConstraint
 from django.utils import timezone
 
 from account.models import UranusUser
@@ -814,6 +805,14 @@ class DevisDetGarantie(models.Model):
     maxfranchise = models.DecimalField(
         db_column="maxfranchise", max_digits=19, decimal_places=4
     )
+    tauxfranchise = models.DecimalField(
+        db_column="tauxfranchise",
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        null=True,
+        blank=True,
+    )
     primeannuelle = models.DecimalField(
         db_column="primeannuelle", max_digits=19, decimal_places=4, default=0
     )
@@ -1376,6 +1375,14 @@ class ContratDetGarantie(models.Model):
     taxe = models.DecimalField(max_digits=19, decimal_places=4)
     minfranchise = models.DecimalField(max_digits=19, decimal_places=4)
     maxfranchise = models.DecimalField(max_digits=19, decimal_places=4)
+    tauxfranchise = models.DecimalField(
+        db_column="tauxfranchise",
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        null=True,
+        blank=True,
+    )
     deces = models.DecimalField(
         db_column="deces",
         max_digits=19,
