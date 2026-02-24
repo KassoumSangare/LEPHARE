@@ -232,6 +232,9 @@ class DevisDetailGarantieSerializer(serializers.ModelSerializer):
         else:
             textecapital = f"{int(float(capital)):,}".replace(",", " ")
         representation["textecapital"] = textecapital
+        representation["libellegarantie"] = (
+            instance.IdGarantie.LibelleSousGarantie
+        )
         return representation
 
 

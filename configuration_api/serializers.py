@@ -125,6 +125,7 @@ class PrimeCalculationInputSerializer(serializers.Serializer):
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
     )
+    id_offre = serializers.IntegerField(required=True)
 
 
 class PrimeCalculationOutputSerializer(serializers.Serializer):
