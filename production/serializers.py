@@ -993,6 +993,36 @@ class ContratDetGarantieSerializer(serializers.ModelSerializer):
         model = ContratDetGarantie
         fields = "__all__"
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        capital = representation["capital"]
+        deces = representation["deces"]
+        ipp = representation["ipp"]
+        ft = representation["fraismed"]
+        idsousgarantie = instance.idgarantie.pk
+        if idsousgarantie == 22:
+            textecapital = get_libelle_option(
+                int(representation["idcontratdetail"]), "CNT"
+            )
+        elif (
+            int(float(deces)) > 0 or int(float(ipp)) > 0 or int(float(ft)) > 0
+        ):
+            textecapital = (
+                "Décès: "
+                + f"{int(float(deces)):,}".replace(",", " ")
+                + ", IPP: "
+                + f"{int(float(ipp)):,}".replace(",", " ")
+                + ", FT: "
+                + f"{int(float(ft)):,}".replace(",", " ")
+            )
+        else:
+            textecapital = f"{int(float(capital)):,}".replace(",", " ")
+        representation["textecapital"] = textecapital
+        representation["libellegarantie"] = (
+            instance.idgarantie.LibelleSousGarantie
+        )
+        return representation
+
 
 class QuittanceSerializer(serializers.ModelSerializer):
     class Meta:
