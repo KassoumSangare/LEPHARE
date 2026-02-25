@@ -1,4 +1,5 @@
 from decimal import Decimal
+
 from core.utils import convert_to_date
 
 
@@ -46,16 +47,16 @@ def unpack_ia_quotation_post_data(post_data):
     if "NumeroPoliceCompagnie" in post_data:
         if post_data["NumeroPoliceCompagnie"]:
             NumeroPoliceCompagnie = str(post_data["NumeroPoliceCompagnie"])
-            
-    PrimeNette = 0
+
+    PrimeNette = Decimal("0")
     if "PrimeNette" in post_data:
         if post_data["PrimeNette"]:
-            NumeroPoliceCompagnie = Decimal(post_data["PrimeNette"])
-    Accessoire = 0
+            PrimeNette = Decimal(post_data["PrimeNette"])
+    Accessoire = Decimal("0")
     if "Accessoire" in post_data:
         if post_data["Accessoire"]:
-            NumeroPoliceCompagnie = Decimal(post_data["Accessoire"])
-    
+            Accessoire = Decimal(post_data["Accessoire"])
+
     return (
         IdIntermediaire,
         IdCompagnie,
