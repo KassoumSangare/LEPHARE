@@ -1369,6 +1369,11 @@ class OffreGarantie(models.Model):
         db_column="franchisemaximum",
         default=0,
     )
+    OrdreAffichage = models.SmallIntegerField(
+        verbose_name="Ordre d'affichage",
+        db_column="ordreaffichage",
+        default=0,
+    )
 
     class Meta:
         db_table = "stdoffregarantie"
