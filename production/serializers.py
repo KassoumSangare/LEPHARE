@@ -2100,10 +2100,18 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
         required=False, allow_null=True, default=0
     )
     Activite = serializers.CharField(
-        max_length=100, required=False, allow_null=True, default=""
+        max_length=100,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default="",
     )
     Localisation = serializers.CharField(
-        max_length=60, required=False, allow_null=True, default=""
+        max_length=60,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default="",
     )
     DateDebut = serializers.DateField(
         format="%d-%m-%Y",
@@ -2169,7 +2177,11 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
         max_length=20, required=False, allow_null=True, default=""
     )
     AdresseGeographique = serializers.CharField(
-        max_length=60, required=False, allow_null=True, default=""
+        max_length=60,
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default="",
     )
     NumeroPoliceConnexe = serializers.CharField(
         max_length=50, required=False, default="", allow_null=True
