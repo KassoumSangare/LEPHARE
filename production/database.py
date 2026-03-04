@@ -1,43 +1,43 @@
-from typing import cast
-from django.db import connection
-from django.db import connections
-from uranus.settings import MAX_LIMIT_FOR_SEARCH
+import json
+import logging
 import re
-from itertools import chain
 from datetime import datetime
 from decimal import Decimal
-import json
-from core.date_parser import parse_date_string
-from django.db import transaction
+from itertools import chain
+from typing import cast
+
+from django.db import connection, connections, transaction
 from django.db.utils import DatabaseError
-from rest_framework.exceptions import ValidationError, APIException
+from rest_framework.exceptions import APIException, ValidationError
+
+from core.date_parser import parse_date_string
+from core.services import ServiceError
+from customer.models import Client
+from uranus.settings import MAX_LIMIT_FOR_SEARCH
+
+from .iautils import convert_to_date, unpack_ia_quotation_post_data
 from .models import (
-    DataInsertionResult,
-    QuittanceFn,
-    ExtendedDevisInfo,
-    QuotationInsertionResult,
-    GarantieContratFlotte,
-    VehiculeContrat,
-    ContractForPremiumCollection,
-    PremiumCollectionInfo,
-    PremiumRemittanceInfo,
     AssureIaInfo,
     AssureIaParDevisOuContrat,
-    GarantieSouscrite,
-    Devis,
-    InfoVehicule,
-    Encaissement,
-    Contrat,
-    ContratEcheance,
     CertificatTransport,
     Cheque,
     ChequeOperation,
+    ContractForPremiumCollection,
+    Contrat,
+    ContratEcheance,
+    DataInsertionResult,
+    Devis,
+    Encaissement,
+    ExtendedDevisInfo,
+    GarantieContratFlotte,
+    GarantieSouscrite,
+    InfoVehicule,
+    PremiumCollectionInfo,
+    PremiumRemittanceInfo,
+    QuittanceFn,
+    QuotationInsertionResult,
+    VehiculeContrat,
 )
-from .iautils import unpack_ia_quotation_post_data, convert_to_date
-
-from customer.models import Client
-from core.services import ServiceError
-import logging
 
 # Configuration du logging pour tracer les erreurs en production
 logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 DEVIS_NON_CONFIRME = 0
 DEVIS_CONFIRME = 1
 DEVIS_INEXISTANT = 2
+
 
 def get_devis(iddevis):
     if iddevis == 0:
@@ -151,7 +152,9 @@ def save_contract(input_data):
                     contrat.piece_jointe = devis.piece_jointe
                     contrat.save()
 
-                    sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+                    sql_output = DataInsertionResult(
+                        ObjectId=row[0], OutputMessage=row[1]
+                    )
                     data_insertion_result_list.append(sql_output)
 
     except Exception as error:
@@ -160,7 +163,10 @@ def save_contract(input_data):
         sql_output = DataInsertionResult(ObjectId=0, OutputMessage=err_msg)
         data_insertion_result_list.append(sql_output)
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 # Save quotation IA
@@ -213,7 +219,10 @@ def save_quotation_ia(input_data):
             cursor.close()
             connection.close()
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #########################################################################
@@ -223,14 +232,20 @@ def save_insured_ia(input_data):
     IdAssure = int(input_data["IdAssure"])
     IdOffre = int(input_data["IdOffre"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     CapitalDeces = Decimal(input_data["CapitalDeces"])
     CapitalIpp = Decimal(input_data["CapitalIpp"])
     FraisTraitement = Decimal(input_data["FraisTraitement"])
     TauxReduction = Decimal(input_data["TauxReduction"])
     CodeActivite = str(input_data["CodeActivite"])
-    DateNaissance = datetime.strptime(input_data["DateNaissance"], "%d-%m-%Y").date()
+    DateNaissance = datetime.strptime(
+        input_data["DateNaissance"], "%d-%m-%Y"
+    ).date()
     IdDevis = 0
     IdDevisDetail = 0
     if input_data["IdDevis"]:
@@ -266,7 +281,9 @@ def save_insured_ia(input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occured = True
@@ -280,7 +297,10 @@ def save_insured_ia(input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #########################################################################
@@ -298,11 +318,17 @@ def save_quotation_voyage(input_data):
     Flotte = bool(input_data["Flotte"])
     Coassurance = bool(input_data["Coassurance"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     IdTarif = int(input_data["IdTarif"])
     TauxReduction = Decimal(input_data["TauxReduction"])
-    DateNaissance = datetime.strptime(input_data["DateNaissance"], "%d-%m-%Y").date()
+    DateNaissance = datetime.strptime(
+        input_data["DateNaissance"], "%d-%m-%Y"
+    ).date()
 
     IdDevis = 0
     if "IdDevis" in input_data:
@@ -338,12 +364,16 @@ def save_quotation_voyage(input_data):
     NumeroPasseport = ""
     if "NumeroPasseport" in input_data:
         NumeroPasseport = (
-            str(input_data["NumeroPasseport"]) if input_data["NumeroPasseport"] else ""
+            str(input_data["NumeroPasseport"])
+            if input_data["NumeroPasseport"]
+            else ""
         )
 
     Schengen = False
     if "Schengen" in input_data:
-        Schengen = bool(input_data["Schengen"]) if input_data["Schengen"] else False
+        Schengen = (
+            bool(input_data["Schengen"]) if input_data["Schengen"] else False
+        )
 
     NumeroPoliceCompagnie = ""
     if "NumeroPoliceCompagnie" in input_data:
@@ -399,7 +429,9 @@ def save_quotation_voyage(input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occured = True
@@ -413,7 +445,10 @@ def save_quotation_voyage(input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 ##################################################################################################
@@ -431,15 +466,21 @@ def save_quotation_mrh(user_id, input_data):
     Flotte = bool(input_data["Flotte"])
     Coassurance = bool(input_data["Coassurance"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     IdTarif = int(input_data["IdTarif"])
     Gardien = bool(input_data["Gardien"])
     Locataire = bool(input_data["Locataire"])
     TauxReduction = Decimal(input_data["TauxReduction"])
     ValeurCapitalLoyer = Decimal(input_data["ValeurCapitalLoyer"])
     ValeurCapitalContenu = Decimal(input_data["ValeurCapitalContenu"])
-    ValeurCapitalObjetPrecieux = Decimal(input_data["ValeurCapitalObjetPrecieux"])
+    ValeurCapitalObjetPrecieux = Decimal(
+        input_data["ValeurCapitalObjetPrecieux"]
+    )
     ValeurCapitalMateriel = Decimal(input_data["ValeurCapitalMateriel"])
     ValeurDegatBatiment = Decimal(input_data["ValeurDegatBatiment"])
     ValeurDegatContenu = Decimal(input_data["ValeurDegatContenu"])
@@ -450,7 +491,9 @@ def save_quotation_mrh(user_id, input_data):
     Localisation = ""
     if "Localisation" in input_data:
         Localisation = (
-            str(input_data["Localisation"]) if input_data["Localisation"] else ""
+            str(input_data["Localisation"])
+            if input_data["Localisation"]
+            else ""
         )
 
     IdDuree = 1
@@ -464,7 +507,9 @@ def save_quotation_mrh(user_id, input_data):
     TelephoneAssure = ""
     if "TelephoneAssure" in input_data:
         TelephoneAssure = (
-            str(input_data["TelephoneAssure"]) if input_data["TelephoneAssure"] else ""
+            str(input_data["TelephoneAssure"])
+            if input_data["TelephoneAssure"]
+            else ""
         )
 
     NumeroPoliceCompagnie = ""
@@ -523,7 +568,9 @@ def save_quotation_mrh(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occurred = True
@@ -537,7 +584,10 @@ def save_quotation_mrh(user_id, input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 # Save Quotation Damage (IT Risk Insurance)
@@ -555,19 +605,32 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     Flotte = bool(input_data["Flotte"])
     Coassurance = bool(input_data["Coassurance"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     IdTarif = int(input_data["IdTarif"])
     TauxPrime = Decimal(input_data["TauxPrime"])
     TauxReduction = Decimal(input_data["TauxReduction"])
-    CapitalMaterielInformatique = Decimal(input_data["CapitalMaterielInformatique"])
-    CapitalFraisReconstitution = Decimal(input_data["CapitalFraisReconstitution"])
-    CapitalFraisSupplementaire = Decimal(input_data["CapitalFraisSupplementaire"])
-    
+    CapitalMaterielInformatique = Decimal(
+        input_data["CapitalMaterielInformatique"]
+    )
+    CapitalFraisReconstitution = Decimal(
+        input_data["CapitalFraisReconstitution"]
+    )
+    CapitalFraisSupplementaire = Decimal(
+        input_data["CapitalFraisSupplementaire"]
+    )
+
     CapitalCautionnement = 0
-    if "CapitalCautionnement" in input_data and input_data["CapitalCautionnement"]:
+    if (
+        "CapitalCautionnement" in input_data
+        and input_data["CapitalCautionnement"]
+    ):
         CapitalCautionnement = Decimal(input_data["CapitalCautionnement"])
-        
+
     MontantPrime = Decimal(input_data["MontantPrime"])
     IdDuree = 1
     if "IdDuree" in input_data:
@@ -577,7 +640,9 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     TelephoneAssure = ""
     if "TelephoneAssure" in input_data:
         TelephoneAssure = (
-            str(input_data["TelephoneAssure"]) if input_data["TelephoneAssure"] else ""
+            str(input_data["TelephoneAssure"])
+            if input_data["TelephoneAssure"]
+            else ""
         )
     IdDevis = 0
     if "IdDevis" in input_data:
@@ -638,7 +703,9 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occurred = True
@@ -652,7 +719,10 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 # Save Quotation - RC
@@ -662,13 +732,25 @@ def save_quotation_rc(user_id: int, input_data: dict):
 
     # Utilitaires pour récupérer les champs avec valeur par défaut
     def get_int(key, default=0):
-        return int(input_data.get(key, default)) if input_data.get(key) else default
+        return (
+            int(input_data.get(key, default))
+            if input_data.get(key)
+            else default
+        )
 
     def get_str(key, default=""):
-        return str(input_data.get(key, default)) if input_data.get(key) else default
+        return (
+            str(input_data.get(key, default))
+            if input_data.get(key)
+            else default
+        )
 
     def get_decimal(key, default=Decimal(0)):
-        return Decimal(input_data.get(key, default)) if input_data.get(key) else default
+        return (
+            Decimal(input_data.get(key, default))
+            if input_data.get(key)
+            else default
+        )
 
     def get_date(key):
         val = input_data.get(key)
@@ -695,7 +777,9 @@ def save_quotation_rc(user_id: int, input_data: dict):
     TauxPrime = get_decimal("TauxPrime")
     TauxReduction = get_decimal("TauxReduction")
     CapitalDommageCorporel = get_decimal("CapitalDommageCorporel")
-    CapitalIntoxicationAlimentaire = get_decimal("CapitalIntoxicationAlimentaire")
+    CapitalIntoxicationAlimentaire = get_decimal(
+        "CapitalIntoxicationAlimentaire"
+    )
     CapitalDommageMateriel = get_decimal("CapitalDommageMateriel")
     AssiettePrime = get_decimal("AssiettePrime")
     NombreParticipants = get_decimal("NombreParticipants")
@@ -709,7 +793,9 @@ def save_quotation_rc(user_id: int, input_data: dict):
     Accessoire = get_decimal("Accessoire")
     Taxe = get_decimal("Taxe")
     PrimeTTC = get_decimal("PrimeTTC")
-    liste_garantie = json.dumps(input_data.get("ListeGarantie", []), default=str)
+    liste_garantie = json.dumps(
+        input_data.get("ListeGarantie", []), default=str
+    )
 
     OutputMessage = ""
     data_insertion_result_list = []
@@ -728,21 +814,50 @@ def save_quotation_rc(user_id: int, input_data: dict):
                 cursor.execute(
                     "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
-                        IdIntermediaire, IdCompagnie, IdProduit, IdOffre, IdAvenant,
-                        IdClient, IdAssure, Flotte, Coassurance, DateEffet,
-                        DateExpiration, DateEmission, IdTarif, AssiettePrime,
-                        IdDomaineActivite, Activite, Localisation, DateDebut,
-                        NombreParticipants, TauxPrime, TauxReduction,
-                        CapitalDommageCorporel, CapitalIntoxicationAlimentaire,
-                        CapitalDommageMateriel, IdDuree, TelephoneAssure,
-                        AdresseGeographique, NumeroPoliceConnexe,
-                        NumeroPoliceCompagnie, user_id, PrimeNette, Accessoire,
-                        Taxe, PrimeTTC, liste_garantie, IdDevis, OutputMessage,
+                        IdIntermediaire,
+                        IdCompagnie,
+                        IdProduit,
+                        IdOffre,
+                        IdAvenant,
+                        IdClient,
+                        IdAssure,
+                        Flotte,
+                        Coassurance,
+                        DateEffet,
+                        DateExpiration,
+                        DateEmission,
+                        IdTarif,
+                        AssiettePrime,
+                        IdDomaineActivite,
+                        Activite,
+                        Localisation,
+                        DateDebut,
+                        NombreParticipants,
+                        TauxPrime,
+                        TauxReduction,
+                        CapitalDommageCorporel,
+                        CapitalIntoxicationAlimentaire,
+                        CapitalDommageMateriel,
+                        IdDuree,
+                        TelephoneAssure,
+                        AdresseGeographique,
+                        NumeroPoliceConnexe,
+                        NumeroPoliceCompagnie,
+                        user_id,
+                        PrimeNette,
+                        Accessoire,
+                        Taxe,
+                        PrimeTTC,
+                        liste_garantie,
+                        IdDevis,
+                        OutputMessage,
                     ),
                 )
                 row = cursor.fetchone()
                 if row:
-                    sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+                    sql_output = DataInsertionResult(
+                        ObjectId=row[0], OutputMessage=row[1]
+                    )
                     data_insertion_result_list.append(sql_output)
 
     except Exception as error:
@@ -751,7 +866,9 @@ def save_quotation_rc(user_id: int, input_data: dict):
         sql_output = DataInsertionResult(ObjectId=IdDevis, OutputMessage=msg)
         data_insertion_result_list.append(sql_output)
 
-    return error_occurred, list(chain(queryset_vide, data_insertion_result_list))
+    return error_occurred, list(
+        chain(queryset_vide, data_insertion_result_list)
+    )
 
 
 ################################################################################
@@ -770,12 +887,18 @@ def save_quotation_globaledebanque(user_id, input_data):
     Flotte = bool(input_data["Flotte"])
     Coassurance = bool(input_data["Coassurance"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     IdTarif = int(input_data["IdTarif"])
     TauxPrime = Decimal(input_data["TauxPrime"])
     TauxReduction = Decimal(input_data["TauxReduction"])
-    CapitalDetournementUsageFaux = Decimal(input_data["CapitalDetournementUsageFaux"])
+    CapitalDetournementUsageFaux = Decimal(
+        input_data["CapitalDetournementUsageFaux"]
+    )
     CapitalDommagesConfondus = Decimal(input_data["CapitalDommagesConfondus"])
     CapitalDeteriorationImmobiliere = Decimal(
         input_data["CapitalDeteriorationImmobiliere"]
@@ -790,7 +913,9 @@ def save_quotation_globaledebanque(user_id, input_data):
     TelephoneAssure = ""
     if "TelephoneAssure" in input_data:
         TelephoneAssure = (
-            str(input_data["TelephoneAssure"]) if input_data["TelephoneAssure"] else ""
+            str(input_data["TelephoneAssure"])
+            if input_data["TelephoneAssure"]
+            else ""
         )
 
     IdDevis = 0
@@ -851,7 +976,9 @@ def save_quotation_globaledebanque(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occurred = True
@@ -865,7 +992,10 @@ def save_quotation_globaledebanque(user_id, input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 # Save quotation
@@ -883,8 +1013,12 @@ def save_quotation(input_data):
     Flotte = bool(input_data["Flotte"])
     Coassurance = bool(input_data["Coassurance"])
     DateEffet = datetime.strptime(input_data["DateEffet"], "%d-%m-%Y").date()
-    DateExpiration = datetime.strptime(input_data["DateExpiration"], "%d-%m-%Y").date()
-    DateEmission = datetime.strptime(input_data["DateEmission"], "%d-%m-%Y").date()
+    DateExpiration = datetime.strptime(
+        input_data["DateExpiration"], "%d-%m-%Y"
+    ).date()
+    DateEmission = datetime.strptime(
+        input_data["DateEmission"], "%d-%m-%Y"
+    ).date()
     IdTarif = int(input_data["IdTarif"])
     CodeUsage = int(input_data["CodeUsage"])
     IdCarrosserie = int(input_data["IdCarrosserie"])
@@ -922,11 +1056,15 @@ def save_quotation(input_data):
 
     NumMoteur = ""
     if "NumMoteur" in input_data:
-        NumMoteur = str(input_data["NumMoteur"]) if input_data["NumMoteur"] else ""
+        NumMoteur = (
+            str(input_data["NumMoteur"]) if input_data["NumMoteur"] else ""
+        )
 
     NumChassis = ""
     if "NumChassis" in input_data:
-        NumChassis = str(input_data["NumChassis"]) if input_data["NumChassis"] else ""
+        NumChassis = (
+            str(input_data["NumChassis"]) if input_data["NumChassis"] else ""
+        )
 
     IdTypeVehicule = int(input_data["IdTypeVehicule"])
     IdMarque = int(input_data["IdMarque"])
@@ -950,7 +1088,9 @@ def save_quotation(input_data):
     ModeleVehicule = ""
     if "ModeleVehicule" in input_data:
         ModeleVehicule = (
-            str(input_data["ModeleVehicule"]) if input_data["ModeleVehicule"] else ""
+            str(input_data["ModeleVehicule"])
+            if input_data["ModeleVehicule"]
+            else ""
         )
 
     RemorqueAttelee = False
@@ -1126,7 +1266,10 @@ def save_quotation(input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 # Finalize Quotation ( Auto & Individuelle Accident)
@@ -1175,7 +1318,10 @@ def quotation_completion(input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 ################################################################################
@@ -1219,7 +1365,10 @@ def archive_quote(input_data, user_id):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 def unarchive_quote(input_data, user_id):
@@ -1261,7 +1410,10 @@ def unarchive_quote(input_data, user_id):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 ###################################################################
@@ -1304,7 +1456,10 @@ def cancel_car_input(input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occured, list(chain(queryset_vide, data_deletion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_deletion_result_list)),
+    )
 
 
 ################################################################################
@@ -1337,7 +1492,9 @@ def enregistrer_ayant_droit(input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         print(error)
@@ -1534,6 +1691,9 @@ def get_assure_ia(iddevis):
                     telephone=row[11],
                     adresse_geographique=row[12],
                     lieu_naissance=row[13],
+                    prime_nette=row[14],
+                    accessoire=row[15],
+                    taxe=row[16],
                 )
                 assure_ia_list.append(assure)
                 # print(assure)
@@ -2002,7 +2162,9 @@ def get_certificat_transport(start_date=None, end_date=None, customer_id=None):
             print(error)
             customer_id = None
 
-    return CertificatTransport.objects.filter(**filters).order_by("-date_fin_periode")
+    return CertificatTransport.objects.filter(**filters).order_by(
+        "-date_fin_periode"
+    )
 
 
 ########################################################################
@@ -2276,26 +2438,32 @@ def get_info_reversement(reversement):
 #################################################################################""
 # get_extended_quotation_info  -- ExtendedDevisInfo
 def get_extended_quotation_info(
-    iddevis, numeropolice, nomclient, datedebut, datefin, idproduit, limit=50, offset=0
+    iddevis,
+    numeropolice,
+    nomclient,
+    datedebut,
+    datefin,
+    idproduit,
+    limit=50,
+    offset=0,
 ):
     msg = ""
     results = []
     total_count = 0
-    
-    
+
     sql_query = """
         SELECT *
         FROM fn_get_devis(%s, %s, %s, %s, %s, %s, %s, %s)
     """
     is_client_search = bool(nomclient.strip())
-    
+
     current_limit = limit
     current_offset = offset
-    
+
     if is_client_search:
         # Si l'utilisateur recherche par nom, annuler la pagination.
         # Nous voulons tous les résultats pour CE client.
-        current_limit = MAX_LIMIT_FOR_SEARCH 
+        current_limit = MAX_LIMIT_FOR_SEARCH
         current_offset = 0
     params = [
         iddevis if iddevis != 0 else None,
@@ -2312,32 +2480,31 @@ def get_extended_quotation_info(
         with connection.cursor() as cursor:
             # Exécuter la procédure stockée
             cursor.execute(sql_query, params)
-            
+
             # Récupérer les noms de colonnes pour les utiliser comme clés de dictionnaire
             columns = [col[0] for col in cursor.description]
-            
+
             # Récupérer toutes les lignes (seulement 50 grâce au LIMIT de la PS)
             rows = cursor.fetchall()
 
             if rows:
                 # 1. Récupération du total (doit être fait avant de mapper)
                 total_count = rows[0][-1]
-                
+
                 # 2. OPTIMISATION : Utilisation de la Compréhension de Liste pour le mapping
-                results = [
-                    dict(zip(columns, row))
-                    for row in rows
-                ]
+                results = [dict(zip(columns, row)) for row in rows]
             else:
                 results = []
-            
+
     except Exception as error:
         print(f"Erreur SQL/DB Connection: {error}")
         msg = str(error)
         # Retourne des valeurs sûres en cas d'échec
-        return (msg, [], 0) 
-        
+        return (msg, [], 0)
+
     return ("", results, total_count)
+
+
 #####################################################################
 # Save premium collection
 def save_premium_collection(user, input_data):
@@ -2352,12 +2519,14 @@ def save_premium_collection(user, input_data):
     if "numero_cheque" in input_data:
         if input_data["numero_cheque"]:
             numero_cheque = str(input_data["numero_cheque"]).strip()
-    utilisation_cheque = banque != 1 and numero_cheque != ''
+    utilisation_cheque = banque != 1 and numero_cheque != ""
     if utilisation_cheque:
         montant_initial_cheque = None
         if "montant_initial_cheque" in input_data:
             if input_data["montant_initial_cheque"]:
-                montant_initial_cheque = Decimal(input_data["montant_initial_cheque"])
+                montant_initial_cheque = Decimal(
+                    input_data["montant_initial_cheque"]
+                )
     reference_encaissement = ""
     if "reference_encaissement" in input_data:
         if input_data["reference_encaissement"]:
@@ -2374,35 +2543,43 @@ def save_premium_collection(user, input_data):
     ).date()
     liste_quittance = list(input_data["liste_quittance"])
     liste_q = ";".join([d["numero_quittance"] for d in liste_quittance])
-    liste_m = ";".join([str(d["montant_encaissement"]) for d in liste_quittance])
-    
+    liste_m = ";".join(
+        [str(d["montant_encaissement"]) for d in liste_quittance]
+    )
+
     id_encaissement = 0
     output_message = ""
-    
+
     with transaction.atomic():
         # 1. Tentative de récupération ou création du chèque
         # On verrouille la ligne pour éviter les accès concurrents (select_for_update)
         if utilisation_cheque:
-            cheque = Cheque.objects.select_for_update().filter(
-                    numero_cheque=numero_cheque, banque_id=banque
-                ).first()
+            cheque = (
+                Cheque.objects.select_for_update()
+                .filter(numero_cheque=numero_cheque, banque_id=banque)
+                .first()
+            )
 
             if not cheque:
                 # Premier usage : le montant_initial est obligatoire
                 m_initial = montant_initial_cheque
-                if not m_initial or float(m_initial) <= 0: 
-                    raise ValidationError("Le montant initial est requis pour le premier usage de ce chèque.")
-                    
-                cheque = Cheque.objects.create(
-                        numero_cheque=numero_cheque,
-                        banque_id=banque,
-                        montant_initial=m_initial,
-                        solde_disponible=m_initial
+                if not m_initial or float(m_initial) <= 0:
+                    raise ValidationError(
+                        "Le montant initial est requis pour le premier usage de ce chèque."
                     )
-                
+
+                cheque = Cheque.objects.create(
+                    numero_cheque=numero_cheque,
+                    banque_id=banque,
+                    montant_initial=m_initial,
+                    solde_disponible=m_initial,
+                )
+
             # 2. Vérification de la suffisance du solde
             if cheque.solde_disponible < montant_total:
-                raise ValidationError(f"Solde du chèque insuffisant. Restant: {cheque.solde_disponible}")
+                raise ValidationError(
+                    f"Solde du chèque insuffisant. Restant: {cheque.solde_disponible}"
+                )
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL sp_enregistrement_encaissement(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
@@ -2426,27 +2603,27 @@ def save_premium_collection(user, input_data):
         if row:
             id_enc_genere = row[0]
             msg_retour = row[1]
-        
+
         if id_enc_genere == 0:
             raise ServiceError(detail=msg_retour)
-            
+
         # 4. Mise à jour du chèque et enregistrement de l'opération
         if utilisation_cheque:
             cheque.solde_disponible -= montant_total
             cheque.save()
-            
+
             ChequeOperation.objects.create(
                 cheque=cheque,
                 id_encaissement=id_enc_genere,
                 utilisateur=user,
                 montant_operation=montant_total,
-                date_operation=date_encaissement
+                date_operation=date_encaissement,
             )
-    
+
     res_dict = {
-                "id_encaissement": id_enc_genere,
-                "message": msg_retour,
-            }
+        "id_encaissement": id_enc_genere,
+        "message": msg_retour,
+    }
     if utilisation_cheque:
         res_dict["solde_restant_cheque"] = cheque.solde_disponible
     return res_dict
@@ -2486,7 +2663,10 @@ def save_premium_collection_cancellation(user_id, input_data):
     except Exception:
         raise
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #####################################################################
@@ -2494,12 +2674,16 @@ def save_premium_collection_cancellation(user_id, input_data):
 def save_plate_number(user_id, input_data):
     sql_output = None
     error_occured = False
-    date_emission = datetime.strptime(input_data["date_emission"], "%d-%m-%Y").date()
+    date_emission = datetime.strptime(
+        input_data["date_emission"], "%d-%m-%Y"
+    ).date()
     date_effet = datetime.strptime(input_data["date_effet"], "%d-%m-%Y").date()
     id_devis_ancien = int(input_data["id_devis_ancien"])
     id_devis_detail_ancien = int(input_data["id_devis_detail_ancien"])
     numero_immatriculation = str(input_data["numero_immatriculation"])
-    numero_carte_brune_physique = str(input_data["numero_carte_brune_physique"])
+    numero_carte_brune_physique = str(
+        input_data["numero_carte_brune_physique"]
+    )
     (id_devis, id_devis_detail, id_produit, id_avenant) = (0, 0, 1, 10)
     if "id_devis" in input_data:
         if input_data["id_devis"]:
@@ -2562,13 +2746,16 @@ def save_plate_number(user_id, input_data):
             cursor.close()
             connection.close()
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #####################################################################
 # Save policy cancellation or renewal or change effective date
 def policy_modification(user_id, input_data):
-    
+
     sql_output = None
     error_occured = False
     date_emission = None
@@ -2582,13 +2769,13 @@ def policy_modification(user_id, input_data):
         date_effet = parse_date_string(input_data["date_effet"])
         if date_effet:
             date_effet = date_effet.date()
-            
+
     date_expiration = None
     if "date_expiration" in input_data and input_data["date_expiration"]:
         date_expiration = parse_date_string(input_data["date_expiration"])
         if date_expiration:
             date_expiration = date_expiration.date()
-            
+
     id_contrat = int(input_data["id_contrat"])
     id_avenant = int(input_data["id_avenant"])
     motif_annulation = ""
@@ -2638,7 +2825,10 @@ def policy_modification(user_id, input_data):
             cursor.close()
             connection.close()
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #####################################################################
@@ -2659,8 +2849,13 @@ def save_premium_remittance(user_id, input_data):
     date_reversement = input_data.get("date_reversement")
 
     # Ici, on garde les listes telles quelles
-    liste_enc = [d["identifiant_encaissement"] for d in input_data["liste_encaissement"]]
-    liste_mont = [Decimal(d["montant_reversement"]) for d in input_data["liste_encaissement"]]
+    liste_enc = [
+        d["identifiant_encaissement"] for d in input_data["liste_encaissement"]
+    ]
+    liste_mont = [
+        Decimal(d["montant_reversement"])
+        for d in input_data["liste_encaissement"]
+    ]
 
     id_reversement = 0
     output_message = ""
@@ -2690,10 +2885,14 @@ def save_premium_remittance(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
-        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=str(error))
+        sql_output = DataInsertionResult(
+            ObjectId=id_reversement, OutputMessage=str(error)
+        )
         data_insertion_result_list.append(sql_output)
     finally:
         if connection:
@@ -2701,6 +2900,7 @@ def save_premium_remittance(user_id, input_data):
             connection.close()
 
     return list(chain(queryset_vide, data_insertion_result_list))
+
 
 ##########################################################################
 # Save Premium Remittance
@@ -2736,19 +2936,25 @@ def premium_remittance_validation(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=row[0])
+            sql_output = DataInsertionResult(
+                ObjectId=id_reversement, OutputMessage=row[0]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
-        error_message = str(error).split('\n')[0]
+        error_message = str(error).split("\n")[0]
         error_occured = True
-        sql_output = DataInsertionResult(ObjectId=id_reversement, OutputMessage=error_message)
+        sql_output = DataInsertionResult(
+            ObjectId=id_reversement, OutputMessage=error_message
+        )
         data_insertion_result_list.append(sql_output)
     finally:
         if connection:
             cursor.close()
             connection.close()
 
-    return error_occured, list(chain(queryset_vide, data_insertion_result_list))
+    return error_occured, list(
+        chain(queryset_vide, data_insertion_result_list)
+    )
 
 
 #################################################################################
@@ -2926,10 +3132,14 @@ def consolider_devis_db(user_id, devis_ids):
 
     except Exception as e:
         print(e)
-        raise Exception(f"Erreur lors de l'appel à la procédure stockée: {str(e)}")
+        raise Exception(
+            f"Erreur lors de l'appel à la procédure stockée: {str(e)}"
+        )
 
 
-def obtenir_nouveau_numero_devis(id_intermediaire: int, id_compagnie: int, code_categorie: str) -> str:
+def obtenir_nouveau_numero_devis(
+    id_intermediaire: int, id_compagnie: int, code_categorie: str
+) -> str:
     """
     Appelle la procédure stockée PostgreSQL et retourne le numéro de devis.
     Lève une exception explicite en cas d'échec.
@@ -2937,59 +3147,72 @@ def obtenir_nouveau_numero_devis(id_intermediaire: int, id_compagnie: int, code_
     # Initialisation des variables de retour
     numero_devis_genere: str = ""
     message_retour: str = ""
-    code_categorie = code_categorie.strip() if code_categorie else code_categorie
+    code_categorie = (
+        code_categorie.strip() if code_categorie else code_categorie
+    )
 
     try:
         if not code_categorie:
             raise DatabaseError("Categorie non indiquée!")
-        
+
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL public.sp_generer_numero_devis(%s, %s, %s, %s, %s)",
-                [id_intermediaire, id_compagnie, code_categorie, numero_devis_genere, message_retour]
+                [
+                    id_intermediaire,
+                    id_compagnie,
+                    code_categorie,
+                    numero_devis_genere,
+                    message_retour,
+                ],
             )
-            
+
             # On récupère les valeurs mises à jour par le CALL
             resultat = cursor.fetchone()
-            
+
             if resultat:
                 numero_devis_genere, message_retour = resultat
-                
+
                 # Vérification de la logique métier (si out_message contient 'ERREUR')
                 message_retour = message_retour.strip()
                 if len(message_retour):
                     raise ValueError(f"Erreur SQL : {message_retour}")
-                
+
                 return numero_devis_genere
             else:
-                raise DatabaseError("La procédure n'a retourné aucun résultat.")
+                raise DatabaseError(
+                    "La procédure n'a retourné aucun résultat."
+                )
 
     except (DatabaseError, ValueError) as e:
         logger.error(f"Échec de génération du numéro de devis: {e}")
         # On relève l'exception pour que la couche supérieure décide quoi faire
         raise
-    
-def obtenir_code_categorie(id_tarif:int)  -> str:
+
+
+def obtenir_code_categorie(id_tarif: int) -> str:
     from configuration_api.models import Tarif
+
     code_categorie = ""
 
     try:
-        tarif= Tarif.objects.get(pk=id_tarif)
+        tarif = Tarif.objects.get(pk=id_tarif)
         code_categorie = tarif.CodeCategorie
     except Exception as error:
         if code_categorie == "":
-             logger.error(f"Échec de récupération du code catégorie: {error}")
-    
+            logger.error(f"Échec de récupération du code catégorie: {error}")
+
     return code_categorie
 
-def offre_mrh_compatible(id_offre:int, code_usage_mrh:str) -> bool:
+
+def offre_mrh_compatible(id_offre: int, code_usage_mrh: str) -> bool:
     from configuration_api.models import UsageHabitation
+
     offre_compatible = False
     try:
         usage_mrh = UsageHabitation.objects.get(code=code_usage_mrh)
         if usage_mrh and usage_mrh.offre:
-            offre_compatible = (usage_mrh.offre.pk == id_offre)
+            offre_compatible = usage_mrh.offre.pk == id_offre
     except UsageHabitation.DoesNotExist:
         pass
     return offre_compatible
-    

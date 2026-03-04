@@ -1,41 +1,45 @@
-from rest_framework import viewsets
-from rest_framework import permissions
-from rest_framework.response import Response
-from rest_framework.views import APIView
-
 from django.db.models import Q
-from rest_framework import generics
-
-from knox.auth import TokenAuthentication
-from rest_framework.authentication import BasicAuthentication
-
 from django.http.response import JsonResponse
-from rest_framework.parsers import JSONParser
-from rest_framework import status
-
-from rest_framework.generics import get_object_or_404
-
-
+from knox.auth import TokenAuthentication
+from rest_framework import generics, permissions, status, viewsets
+from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
 )
+from rest_framework.generics import get_object_or_404
+from rest_framework.parsers import JSONParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-
-from .serializers import *
-from production.serializers import DataInsertionSerializer
 from production.models import Devis
-from .models import *
+from production.serializers import DataInsertionSerializer
+
+from .models import Adherent, Affilie, FilialeSante
+from .serializers import (
+    AdherentSanteInsertionSerializer,
+    AdherentSerializer,
+    AffilieFnSerializer,
+    AffilieSanteInsertionSerializer,
+    AffilieSerializer,
+    AnnulationSaisieObjetSanteSerializer,
+    EnregistrementDevisSanteSerializer,
+    FilialeSanteInsertionSerializer,
+    FilialeSanteSaisieSerializer,
+    FilialeSanteSerializer,
+    ImportationAffilieSerializer,
+    SaisieDevisSanteEnCoursSerializer,
+)
 from .utils import (
-    save_quotation_sante,
     enregistrer_adherent_sante,
     enregistrer_affilie_sante,
     enregistrer_filiale_sante,
+    get_liste_affilie_sante,
     get_quotation_id,
     get_saisie_sante_en_cours,
     import_insured,
-    get_liste_affilie_sante,
+    save_quotation_sante,
 )
 
 
@@ -72,7 +76,10 @@ class ImportationAffilieViewSet(viewsets.ViewSet):
     def create(self, request):
         messages = []
         serializer_class = ImportationAffilieSerializer(data=request.data)
-        if "fichier_excel" not in request.FILES or not serializer_class.is_valid():
+        if (
+            "fichier_excel" not in request.FILES
+            or not serializer_class.is_valid()
+        ):
             return Response(status=status.HTTP_400_BAD_REQUEST)
         else:
             (error_count, messages) = import_insured(
@@ -85,7 +92,9 @@ class ImportationAffilieViewSet(viewsets.ViewSet):
             if error_count == 0:
                 return Response(data=messages, status=status.HTTP_202_ACCEPTED)
             else:
-                return Response(data=messages, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    data=messages, status=status.HTTP_400_BAD_REQUEST
+                )
 
 
 class AdherentEnSaisieView(APIView):
@@ -129,7 +138,9 @@ class AffilieListeEnSaisieView(APIView):
     ]
 
     def get(self, request, iddevis=None, format=None) -> Response:
-        affilies = Affilie.objects.filter(Q(operateur=request.user) & Q(devis=iddevis))
+        affilies = Affilie.objects.filter(
+            Q(operateur=request.user) & Q(devis=iddevis)
+        )
         serializer = AffilieSerializer(affilies, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -194,8 +205,11 @@ class SaisieDevisSanteEnCoursView(APIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
 class ListeAffilieSanteView(APIView):
-    permission_classes = [permissions.IsAuthenticated,]
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
 
     def get(self, request, iddevis, format=None) -> Response:
         (msg, qryset) = get_liste_affilie_sante(iddevis=iddevis)
@@ -209,6 +223,8 @@ class ListeAffilieSanteView(APIView):
             {"status": "échec", "message": msg},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
 # Create a new quotation (Health Insurance)
 @api_view(["POST"])
 @authentication_classes([TokenAuthentication, BasicAuthentication])
@@ -220,14 +236,19 @@ def create_quotation_sante(request):
         data=enregistrementdevis_data
     )
     if enregistrementdevis_serializer.is_valid():
-        (err, qryset) = save_quotation_sante(request.user.id, enregistrementdevis_data)
+        (err, qryset) = save_quotation_sante(
+            request.user.id, enregistrementdevis_data
+        )
         data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(
-        enregistrementdevis_serializer.errors, status=status.HTTP_400_BAD_REQUEST
+        enregistrementdevis_serializer.errors,
+        status=status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -243,21 +264,25 @@ def saisir_adherent_sante(request):
         if request.FILES["fichierpiece"]:
             fichier_piece = request.FILES["fichierpiece"]
 
-    #adherent_data = JSONParser().parse(request)
+    # adherent_data = JSONParser().parse(request)
     adherent_data = request.POST
-    #serializer = AdherentSaisieSerializer(data=adherent_data)
+    # serializer = AdherentSaisieSerializer(data=adherent_data)
 
-    #if serializer.is_valid():
+    # if serializer.is_valid():
     user_id = request.user.id
-    (err, qryset) = enregistrer_adherent_sante(user_id, adherent_data, fichier_piece)
-        # Implementation future
-        # (err, qryset) = enregistrer_adherent_sante(user_id, fichier_piece, request.POST)
-    data_insertion_serializer = AdherentSanteInsertionSerializer(qryset, many=True)
+    (err, qryset) = enregistrer_adherent_sante(
+        user_id, adherent_data, fichier_piece
+    )
+    # Implementation future
+    # (err, qryset) = enregistrer_adherent_sante(user_id, fichier_piece, request.POST)
+    data_insertion_serializer = AdherentSanteInsertionSerializer(
+        qryset, many=True
+    )
     st = status.HTTP_201_CREATED
     if err:
         st = status.HTTP_400_BAD_REQUEST
     return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
-    #return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 def annuler_saisie_objet_sante(request, type_objet):
@@ -329,7 +354,10 @@ def annuler_saisie_objet_sante(request, type_objet):
                 res_del = filiale.delete()
             if res_del[0] > 0:
                 return JsonResponse(
-                    {"statut": "Succès", "message": "Suppression réalisée avec succès"},
+                    {
+                        "statut": "Succès",
+                        "message": "Suppression réalisée avec succès",
+                    },
                     status=status.HTTP_200_OK,
                 )
 
@@ -402,7 +430,7 @@ def annuler_saisie_filiale(request):
 @authentication_classes([TokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def saisir_affilie_sante(request):
-    #affilie_data = JSONParser().parse(request)
+    # affilie_data = JSONParser().parse(request)
     # print("JSON de la requête:", affilie_data)
     # Implementation future
     fichier_piece = None
@@ -413,15 +441,19 @@ def saisir_affilie_sante(request):
     affilie_data = request.POST
     # print("JSON de la requête:", affilie_data)
     user_id = request.user.id
-    #serializer = AffilieSaisieSerializer(data=affilie_data)
-    #if serializer.is_valid():
-    (err, qryset) = enregistrer_affilie_sante(user_id, affilie_data, fichier_piece)
-    data_insertion_serializer = AffilieSanteInsertionSerializer(qryset, many=True)
+    # serializer = AffilieSaisieSerializer(data=affilie_data)
+    # if serializer.is_valid():
+    (err, qryset) = enregistrer_affilie_sante(
+        user_id, affilie_data, fichier_piece
+    )
+    data_insertion_serializer = AffilieSanteInsertionSerializer(
+        qryset, many=True
+    )
     st = status.HTTP_201_CREATED
     if err:
         st = status.HTTP_400_BAD_REQUEST
     return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
-    #return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 #####################################################################################
@@ -436,10 +468,13 @@ def saisir_filiale_sante(request):
     if serializer.is_valid():
         user_id = request.user.id
         (err, qryset) = enregistrer_filiale_sante(user_id, filiale_data)
-        data_insertion_serializer = FilialeSanteInsertionSerializer(qryset, many=True)
+        data_insertion_serializer = FilialeSanteInsertionSerializer(
+            qryset, many=True
+        )
         st = status.HTTP_201_CREATED
         if err:
             st = status.HTTP_400_BAD_REQUEST
-        return JsonResponse(data_insertion_serializer.data, status=st, safe=False)
+        return JsonResponse(
+            data_insertion_serializer.data, status=st, safe=False
+        )
     return JsonResponse(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-

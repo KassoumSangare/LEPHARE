@@ -2366,6 +2366,9 @@ class AssureIaInfo(models.Model):
     telephone = models.CharField(max_length=20, null=True)
     adresse_geographique = models.CharField(max_length=100, null=True)
     lieu_naissance = models.CharField(max_length=100, null=True)
+    prime_nette = models.DecimalField(max_digits=19, decimal_places=4)
+    accessoire = models.DecimalField(max_digits=19, decimal_places=4)
+    taxe = models.DecimalField(max_digits=19, decimal_places=4)
 
     def __str__(self):
         pr = ""
