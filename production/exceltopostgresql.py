@@ -98,7 +98,11 @@ excel_expected_columns = [
     "Accessories",
     "Montant Taxe",
     "Prime Totale",
+    "Accessoires AFS-CI",
 ]
+
+# 🔥 Colonnes à supprimer avant le mapping avec les colonnes dans PostgreSQL:
+columns_to_remove = ["Accessoires AFS-CI"]
 
 max_file_size = 5 * 1024 * 1024
 
@@ -511,8 +515,22 @@ def export_excel_to_postgres(
             msg += f"Colonnes manquantes : {', '.join(missing)}"
         return True, msg
 
+    # Supprimer les colonnes parasites avant le mapping
+    # Normalisation des colonnes du DataFrame pour faire le mapping de manière insensible à la casse et aux espaces
+    df_columns_lower = {col.lower(): col for col in df.columns}
+    columns_to_remove_lower = [c.lower() for c in columns_to_remove]
+
+    # Colonnes réellement présentes (matching insensible à la casse)
+    columns_found = [
+        df_columns_lower[c]
+        for c in columns_to_remove_lower
+        if c in df_columns_lower
+    ]
+
+    # Suppression des colonnes parasites
+    df = df.drop(columns=columns_found)
+
     # Map the Excel columns to the PostgreSQL table columns
-    # df = map_columns(df, column_mapping)
     try:
         df = map_columns(df, column_mapping)
     except Exception as error:
