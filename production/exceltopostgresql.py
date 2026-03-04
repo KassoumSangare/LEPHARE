@@ -1,18 +1,24 @@
+import hashlib
 import os
 from collections import Counter
-import pandas as pd
-from django.db import connection
-from django.core.files.uploadedfile import InMemoryUploadedFile
-import hashlib
-from .models import HistoriqueImportationCertificat
-from django.db.models import Q
-from account.models import UranusUser
-from .models import DataInsertionResult
-from itertools import chain
 from datetime import datetime, timedelta
-from .iautils import convert_to_date
+from itertools import chain
+
+import pandas as pd
+from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.db import connection
+from django.db.models import Q
+
+from account.models import UranusUser
 from customer.models import Client
-from .excelhandler import ExcelColumnValidator, ExcelFileValidator, ExcelFileHandler
+
+from .excelhandler import (
+    ExcelColumnValidator,
+    ExcelFileHandler,
+    ExcelFileValidator,
+)
+from .iautils import convert_to_date
+from .models import DataInsertionResult, HistoriqueImportationCertificat
 
 os.environ["PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT"] = "1.0"
 
@@ -49,7 +55,12 @@ excel_column_mapping = {
     "Prime Totale": "primettc",
 }
 
-date_columns = ["Date Requête", "Date Certificat", "Date FDI", "Date Debut Voyage"]
+date_columns = [
+    "Date Requête",
+    "Date Certificat",
+    "Date FDI",
+    "Date Debut Voyage",
+]
 
 date_columns_after_mapping = [
     "daterequete",
@@ -197,7 +208,9 @@ def check_date_validity(start_date: datetime, end_date: datetime) -> bool:
     if start_date >= end_date:
         return False
 
-    if (start_date.year != end_date.year) or (start_date.month != end_date.month):
+    if (start_date.year != end_date.year) or (
+        start_date.month != end_date.month
+    ):
         return False
 
     valid_period_start = start_date.day in (1, 16)
@@ -268,6 +281,65 @@ def map_columns(df, column_mapping):
     return df
 
 
+def locate_header_and_read_excel(
+    excel_file,
+    expected_columns,
+    sheet_name=0,
+    date_columns=None,
+):
+    """
+    Détecte automatiquement la ligne d'en-tête dans un fichier Excel
+    contenant des lignes parasites avant la zone de données.
+    """
+
+    # 1. Lire le fichier sans typer, sans parser les dates
+    df_raw = pd.read_excel(
+        excel_file,
+        sheet_name=sheet_name,
+        header=None,  # On lit tout brut
+        dtype=str,  # On évite les conversions automatiques
+    )
+
+    # Normalisation des colonnes attendues
+    expected_lower = [col.lower().strip() for col in expected_columns]
+
+    header_row_index = None
+
+    # 2. Parcourir chaque ligne pour trouver l'en-tête
+    for idx, row in df_raw.iterrows():
+        row_values = [str(v).strip().lower() for v in row.tolist()]
+
+        # Vérifier si cette ligne contient toutes les colonnes attendues
+        if all(col in row_values for col in expected_lower):
+            header_row_index = idx
+            break
+
+    if header_row_index is None:
+        raise ValueError(
+            "Impossible de trouver la ligne d'en-tête dans le fichier Excel."
+        )
+
+    # Dtypes spécifiques pour éviter les conversions automatiques
+    forced_dtypes = {
+        "Référence Certificat": str,
+        "Numero FDI": str,
+        "Numero Document Transport": str,
+    }
+
+    # 3. Relire proprement le fichier à partir de la bonne ligne
+    df = pd.read_excel(
+        excel_file,
+        sheet_name=sheet_name,
+        header=header_row_index,
+        parse_dates=date_columns,
+        date_format="%d/%m/%Y",
+        decimal=",",
+        dtype=forced_dtypes,
+    )
+
+    return df, header_row_index
+
+
 # Function to upsert data using psycopg3 within Django
 def upsert_data_psycopg3(table_name, data_row, unique_column):
     """
@@ -280,7 +352,9 @@ def upsert_data_psycopg3(table_name, data_row, unique_column):
     try:
         with connection.cursor() as cursor:
             # Check if the record exists
-            check_query = f"SELECT * FROM {table_name} WHERE {unique_column} = %s"
+            check_query = (
+                f"SELECT * FROM {table_name} WHERE {unique_column} = %s"
+            )
             cursor.execute(check_query, (data_row[unique_column],))
             result = cursor.fetchone()
 
@@ -299,9 +373,13 @@ def upsert_data_psycopg3(table_name, data_row, unique_column):
                 )
 
                 values = tuple(
-                    data_row[col] for col in data_row.keys() if col != unique_column
+                    data_row[col]
+                    for col in data_row.keys()
+                    if col != unique_column
                 )
-                cursor.execute(update_query, values + (data_row[unique_column],))
+                cursor.execute(
+                    update_query, values + (data_row[unique_column],)
+                )
             else:
                 # Perform an insert
                 insert_query = f"INSERT INTO {table_name} ({', '.join(data_row.keys())}) VALUES ({', '.join(['%s'] * len(data_row))})"
@@ -389,17 +467,25 @@ def export_excel_to_postgres(
         initial_position = excel_file.tell()
 
         # Read the Excel file into a pandas DataFrame
-        df = pd.read_excel(
+        # df = pd.read_excel(
+        #     excel_file,
+        #     sheet_name=sheet_name,
+        #     parse_dates=date_columns,
+        #     date_format="%d/%m/%Y",
+        #     decimal=",",
+        #     dtype={
+        #         "Référence Certificat": str,
+        #         "Numero FDI": str,
+        #         "Numero Document Transport": str,
+        #     },
+        # )
+
+        # Détection automatique de la ligne d'en-tête + lecture propre
+        df, header_index = locate_header_and_read_excel(
             excel_file,
+            expected_columns=excel_expected_columns,
             sheet_name=sheet_name,
-            parse_dates=date_columns,
-            date_format="%d/%m/%Y",
-            decimal=",",
-            dtype={
-                "Référence Certificat": str,
-                "Numero FDI": str,
-                "Numero Document Transport": str,
-            },
+            date_columns=date_columns,
         )
 
         # Reset the file pointer to the initial position
@@ -407,21 +493,30 @@ def export_excel_to_postgres(
     except Exception as error:
         # Reset the file pointer to the initial position
         excel_file.seek(initial_position)
-        return (
-            True,
-            str(error),
-        )
+        return True, f"Erreur lors de la lecture du fichier : {error}"
 
-    # Get the column list and compare it with the expected column names
-    actual_columns = df.columns.tolist()
-    columns_are_equal = Counter(item.lower() for item in actual_columns) == Counter(
-        item.lower() for item in excel_expected_columns
-    )
-    if not columns_are_equal:
-        return (True, "Colonne(s) inconnue(s) dans le fichier Excel")
+    # Vérification stricte des colonnes
+    actual_columns = [col.strip() for col in df.columns]
+    expected_lower = {col.lower() for col in excel_expected_columns}
+    actual_lower = {col.lower() for col in actual_columns}
+
+    if actual_lower != expected_lower:
+        unknown = actual_lower - expected_lower
+        missing = expected_lower - actual_lower
+
+        msg = "Erreur dans les colonnes du fichier Excel.\n"
+        if unknown:
+            msg += f"Colonnes inconnues : {', '.join(unknown)}\n"
+        if missing:
+            msg += f"Colonnes manquantes : {', '.join(missing)}"
+        return True, msg
 
     # Map the Excel columns to the PostgreSQL table columns
-    df = map_columns(df, column_mapping)
+    # df = map_columns(df, column_mapping)
+    try:
+        df = map_columns(df, column_mapping)
+    except Exception as error:
+        return True, f"Erreur lors du mapping des colonnes : {error}"
 
     # check if dates in the file are consistent with the period given by the end_user
     if not check_dates_consistent_with_period(df, start_date, end_date):
@@ -481,21 +576,31 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
     error_occured = False
 
     try:
-        start_date, end_date = convert_to_date(start_date), convert_to_date(end_date)
+        start_date, end_date = convert_to_date(start_date), convert_to_date(
+            end_date
+        )
     except ValueError as error:
         print(error)
         error_occured = True
         data_insertion_result_list.append(
-            DataInsertionResult(ObjectId=0, OutputMessage="Mauvais format de date!")
+            DataInsertionResult(
+                ObjectId=0, OutputMessage="Mauvais format de date!"
+            )
         )
-        return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+        return (
+            error_occured,
+            list(chain(queryset_vide, data_insertion_result_list)),
+        )
 
     error_occured = not check_date_validity(start_date, end_date)
     if error_occured:
         data_insertion_result_list.append(
             DataInsertionResult(ObjectId=0, OutputMessage="Période invalide!")
         )
-        return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+        return (
+            error_occured,
+            list(chain(queryset_vide, data_insertion_result_list)),
+        )
 
     (error_occured, message) = export_excel_to_postgres(
         excel_file=uploaded_excel_file,
@@ -511,19 +616,31 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
         data_insertion_result_list.append(
             DataInsertionResult(ObjectId=0, OutputMessage=message)
         )
-        return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+        return (
+            error_occured,
+            list(chain(queryset_vide, data_insertion_result_list)),
+        )
 
     # file_sha256_hash = calculate_sha256(uploaded_excel_file)
     file_sha256_hash = None
-    (error_occured, message, importation_histo_id) = upsert_importation_history(
-        start_date, end_date, uploaded_excel_file, file_sha256_hash, user_id
+    (error_occured, message, importation_histo_id) = (
+        upsert_importation_history(
+            start_date,
+            end_date,
+            uploaded_excel_file,
+            file_sha256_hash,
+            user_id,
+        )
     )
 
     if error_occured:
         data_insertion_result_list.append(
             DataInsertionResult(ObjectId=0, OutputMessage=message)
         )
-        return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+        return (
+            error_occured,
+            list(chain(queryset_vide, data_insertion_result_list)),
+        )
 
     (error_occured, messages) = create_transport_insurance_quote(
         importation_histo_id,
@@ -534,7 +651,9 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
     return (error_occured, messages)
 
 
-def create_transport_insurance_quote(export_histo_id, start_date, end_date, user_id):
+def create_transport_insurance_quote(
+    export_histo_id, start_date, end_date, user_id
+):
     id_devis = 0
     output_message = ""
     data_insertion_result_list = []
@@ -555,7 +674,9 @@ def create_transport_insurance_quote(export_histo_id, start_date, end_date, user
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
 
     except Exception as error:
@@ -573,4 +694,7 @@ def create_transport_insurance_quote(export_histo_id, start_date, end_date, user
             cursor.close()
             connection.close()
 
-    return (error_occured, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occured,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
