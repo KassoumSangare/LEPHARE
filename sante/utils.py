@@ -1,28 +1,30 @@
-from django.db import connection
 import os
-from django.conf import settings
-from openpyxl import load_workbook
-import re
 from collections import OrderedDict
-from itertools import chain
 from datetime import datetime
 from decimal import Decimal
+from itertools import chain
+
+from django.conf import settings
+from django.db import connection
+from openpyxl import load_workbook
+
+from core.utils import convert_to_date
 from production.models import DataInsertionResult
+
 from .models import (
+    Adherent,
     AdherentSanteInsertionResult,
+    Affilie,
+    AffilieFn,
     AffilieSanteInsertionResult,
     FilialeSanteInsertionResult,
     SaisieDevisSanteEnCours,
-    Adherent,
-    Affilie,
-    AffilieFn,
 )
-
 from .serializers import (
     AdherentSanteInsertionSerializer,
     AffilieSanteInsertionSerializer,
 )
-from core.utils import convert_to_date
+
 importation_col_list = [
     "Nom",
     "Prenom",
@@ -94,8 +96,6 @@ def load_people_data_from_excel(filename, index=0):
         d["dateeffet"] = d["dateeffet"][:10]
         d["dateentree"] = d["dateentree"][:10]
 
-        
-
         dict_list.append(d)
     return dict_list
 
@@ -105,7 +105,9 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
     messages = []
     error_count = 0
     try:
-        request_data_list = load_people_data_from_excel(filename=filename, index=0)
+        request_data_list = load_people_data_from_excel(
+            filename=filename, index=0
+        )
 
         if request_data_list is None or len(request_data_list) == 0:
             error_count += 1
@@ -145,8 +147,12 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
             current_request_data["sexe"] = str(item["sexe"]).strip()
             current_request_data["cni"] = str(item["numerocni"]).strip()
             current_request_data["vip"] = True
-            current_request_data["adresse"] = str(item["adresseadherent"]).strip()
-            current_request_data["mobile1"] = str(item["numerotelephone"]).strip()
+            current_request_data["adresse"] = str(
+                item["adresseadherent"]
+            ).strip()
+            current_request_data["mobile1"] = str(
+                item["numerotelephone"]
+            ).strip()
             current_request_data["mobile2"] = ""
             current_request_data["email"] = str(item["emailadherent"]).strip()
             current_request_data["numerocmu"] = str(item["numerocmu"]).strip()
@@ -154,14 +160,19 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
             current_request_data["dateeffet"] = str(
                 item["dateentree"]
             )  # Ce choix n'est pas intuitif
-            current_request_data["datedebutconsommation"] = str(item["dateeffet"])
+            current_request_data["datedebutconsommation"] = str(
+                item["dateeffet"]
+            )
             current_request_data["datenaissance"] = str(item["datenaissance"])
             current_request_data["matricule"] = str(item["matricule"]).strip()
             current_request_data["surprimeappliquee"] = False
             current_request_data["montantsurprime"] = 0
             current_request_data["nombrepathologie"] = 0
-            if str(item["nombreaffection"]).strip():
-                current_request_data["nombrepathologie"] = int(item["nombreaffection"])
+            item["nombreaffection"] = str(item["nombreaffection"]).strip()
+            if item["nombreaffection"].isdigit():
+                current_request_data["nombrepathologie"] = int(
+                    item["nombreaffection"]
+                )
 
             current_request_data["groupesanguin"] = item["groupesanguin"]
 
@@ -169,14 +180,20 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
                 (err, qryset) = enregistrer_adherent_sante(
                     user_id, current_request_data
                 )
-                message = AdherentSanteInsertionSerializer(qryset, many=True).data
+                message = AdherentSanteInsertionSerializer(
+                    qryset, many=True
+                ).data
                 if not err:
                     id_adherent = message[0]["idadherent"]
                 else:
                     id_adherent = -1
             else:
-                (err, qryset) = enregistrer_affilie_sante(user_id, current_request_data)
-                message = AffilieSanteInsertionSerializer(qryset, many=True).data
+                (err, qryset) = enregistrer_affilie_sante(
+                    user_id, current_request_data
+                )
+                message = AffilieSanteInsertionSerializer(
+                    qryset, many=True
+                ).data
             # Implementation future
             # (err, qryset) = enregistrer_adherent_sante(user_id, fichier_piece, request.POST)
             if err:
@@ -254,10 +271,14 @@ def save_quotation_sante(user_id, input_data):
             MontantSurprime = Decimal(input_data["MontantSuprime"])
     if "MontantAccessoireManuel" in input_data:
         if input_data["MontantAccessoireManuel"]:
-            MontantAccessoireManuel = Decimal(input_data["MontantAccessoireManuel"])
+            MontantAccessoireManuel = Decimal(
+                input_data["MontantAccessoireManuel"]
+            )
     if "TauxReductionCommerciale" in input_data:
         if input_data["TauxReductionCommerciale"]:
-            TauxReductionCommerciale = Decimal(input_data["TauxReductionCommerciale"])
+            TauxReductionCommerciale = Decimal(
+                input_data["TauxReductionCommerciale"]
+            )
     if "TypeContrat" in input_data:
         if input_data["TypeContrat"]:
             TypeContrat = int(input_data["TypeContrat"])
@@ -312,7 +333,9 @@ def save_quotation_sante(user_id, input_data):
             )
             connection.commit()
             row = cursor.fetchone()
-            sql_output = DataInsertionResult(ObjectId=row[0], OutputMessage=row[1])
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
             data_insertion_result_list.append(sql_output)
     except Exception as error:
         error_occurred = True
@@ -326,7 +349,10 @@ def save_quotation_sante(user_id, input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
@@ -360,12 +386,20 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
             dateeffet = convert_to_date(input_data["dateeffet"])
 
         datedebutconsommation = None
-        if str(input_data["datedebutconsommation"]) not in ("NA", "N/A", "N-A"):
-            datedebutconsommation = convert_to_date(input_data["datedebutconsommation"])
+        if str(input_data["datedebutconsommation"]) not in (
+            "NA",
+            "N/A",
+            "N-A",
+        ):
+            datedebutconsommation = convert_to_date(
+                input_data["datedebutconsommation"]
+            )
 
         datenaissance = None
         if "datenaissance" in input_data:
-            if input_data["datenaissance"] and input_data["datenaissance"] not in (
+            if input_data["datenaissance"] and input_data[
+                "datenaissance"
+            ] not in (
                 "NA",
                 "N/A",
                 "N-A",
@@ -457,7 +491,9 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
                     adherent.fichier_piece.name = (
                         "uploads/adherents/" + fichier_piece.name
                     )
-                    new_path = settings.MEDIA_ROOT + adherent.fichier_piece.name
+                    new_path = (
+                        settings.MEDIA_ROOT + adherent.fichier_piece.name
+                    )
                     os.rename(old_path, new_path)
                 else:
                     adherent.fichier_piece = fichier_piece
@@ -476,7 +512,10 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 #########################################################################
@@ -518,7 +557,9 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
         # observations = str(input_data["observations"])
         if "observations" in input_data:
             observations = (
-                str(input_data["observations"]) if input_data["observations"] else ""
+                str(input_data["observations"])
+                if input_data["observations"]
+                else ""
             )
         else:
             observations = "RAS"
@@ -536,8 +577,14 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
             dateeffet = convert_to_date(input_data["dateeffet"])
 
         datedebutconsommation = None
-        if str(input_data["datedebutconsommation"]) not in ("NA", "N/A", "N-A"):
-            datedebutconsommation = convert_to_date(input_data["datedebutconsommation"])
+        if str(input_data["datedebutconsommation"]) not in (
+            "NA",
+            "N/A",
+            "N-A",
+        ):
+            datedebutconsommation = convert_to_date(
+                input_data["datedebutconsommation"]
+            )
 
         surprimeappliquee = bool(input_data["surprimeappliquee"])
         montantsurprime = Decimal(input_data["montantsurprime"])
@@ -607,7 +654,10 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
             connection.commit()
             row = cursor.fetchone()
             sql_output = AffilieSanteInsertionResult(
-                idaffilie=row[0], adherent=row[1], devis=row[2], outputmessage=row[3]
+                idaffilie=row[0],
+                adherent=row[1],
+                devis=row[2],
+                outputmessage=row[3],
             )
             data_insertion_result_list.append(sql_output)
             # Gestion du fichier joint
@@ -643,7 +693,10 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 ######################################################################################
@@ -658,7 +711,9 @@ def enregistrer_filiale_sante(userid, input_data):
     college = int(input_data["college"])
     offresante = int(input_data["offresante"])
     zonecouverture = int(input_data["zonecouverture"])
-    date_emission = datetime.strptime(input_data["date_emission"], "%d-%m-%Y").date()
+    date_emission = datetime.strptime(
+        input_data["date_emission"], "%d-%m-%Y"
+    ).date()
     date_effet = datetime.strptime(input_data["date_effet"], "%d-%m-%Y").date()
     date_expiration = datetime.strptime(
         input_data["date_expiration"], "%d-%m-%Y"
@@ -709,7 +764,10 @@ def enregistrer_filiale_sante(userid, input_data):
         if connection:
             cursor.close()
             connection.close()
-    return (error_occurred, list(chain(queryset_vide, data_insertion_result_list)))
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
 
 
 def get_quotation_id(userid):
