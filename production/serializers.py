@@ -2088,7 +2088,9 @@ class GarantieCapitauxSerializer(serializers.Serializer):
     )
 
 
-class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
+class EnregistrementDevisRisqquesDiversSerializer(
+    EnregistrementDevisBaseSerializer
+):
     AssiettePrime = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
@@ -2148,6 +2150,9 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
             field_type="decimal",
             gender_number="ms",
         ),
+        required=False,
+        allow_null=True,
+        default=0,
     )
     CapitalIntoxicationAlimentaire = serializers.DecimalField(
         max_digits=19,
@@ -2157,6 +2162,9 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
             field_type="decimal",
             gender_number="ms",
         ),
+        required=False,
+        allow_null=True,
+        default=0,
     )
     CapitalDommageMateriel = serializers.DecimalField(
         max_digits=19,
@@ -2166,6 +2174,9 @@ class EnregistrementDevisRCSerializer(EnregistrementDevisBaseSerializer):
             field_type="decimal",
             gender_number="ms",
         ),
+        required=False,
+        allow_null=True,
+        default=0,
     )
     IdDevis = serializers.IntegerField(
         required=False, allow_null=True, default=0

@@ -99,7 +99,7 @@ from .database import (
     save_quotation_globaledebanque,
     save_quotation_ia,
     save_quotation_mrh,
-    save_quotation_rc,
+    save_quotation_risques_divers,
     save_quotation_tousrisquesinfo,
     save_quotation_voyage,
     unarchive_quote,
@@ -166,7 +166,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     EnregistrementDevisGlobaleDeBanqueSerializer,
     EnregistrementDevisIaSerializer,
     EnregistrementDevisMrhSerializer,
-    EnregistrementDevisRCSerializer,
+    EnregistrementDevisRisqquesDiversSerializer,
     EnregistrementDevisTRInfoSerializer,
     EnregistrementDevisVoyageSerializer,
     ExtendedQuotationInfoSerializer,
@@ -1526,15 +1526,18 @@ def create_quotation_tousrisquesinfo(request):
 @api_view(["POST"])
 @authentication_classes([TokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
-def create_quotation_rc(request):
-    enregistrementdevis_rc_data = JSONParser().parse(request)
-    print("JSON de la requête:", enregistrementdevis_rc_data)
-    enregistrementdevis_rc_serializer = EnregistrementDevisRCSerializer(
-        data=enregistrementdevis_rc_data
+def create_quotation_risques_divers(request):
+    enregistrementdevis_risques_divers_data = JSONParser().parse(request)
+    print("JSON de la requête:", enregistrementdevis_risques_divers_data)
+    enregistrementdevis_risques_divers_serializer = (
+        EnregistrementDevisRisqquesDiversSerializer(
+            data=enregistrementdevis_risques_divers_data
+        )
     )
-    if enregistrementdevis_rc_serializer.is_valid():
-        (err, queryset) = save_quotation_rc(
-            request.user.id, enregistrementdevis_rc_serializer.validated_data
+    if enregistrementdevis_risques_divers_serializer.is_valid():
+        (err, queryset) = save_quotation_risques_divers(
+            request.user.id,
+            enregistrementdevis_risques_divers_serializer.validated_data,
         )
         data_insertion_serializer = DataInsertionSerializer(
             queryset,
@@ -1547,7 +1550,7 @@ def create_quotation_rc(request):
             data_insertion_serializer.data, status=st, safe=False
         )
     return JsonResponse(
-        enregistrementdevis_rc_serializer.errors,
+        enregistrementdevis_risques_divers_serializer.errors,
         status=status.HTTP_400_BAD_REQUEST,
     )
 

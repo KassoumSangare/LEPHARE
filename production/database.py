@@ -726,7 +726,7 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
 
 
 # Save Quotation - RC
-def save_quotation_rc(user_id: int, input_data: dict):
+def save_quotation_risques_divers(user_id: int, input_data: dict):
     sql_output = None
     error_occurred = False
 
@@ -812,7 +812,7 @@ def save_quotation_rc(user_id: int, input_data: dict):
         with transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "CALL sp_creation_devis_rc(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                    "CALL sp_creation_devis_risques_divers(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                     (
                         IdIntermediaire,
                         IdCompagnie,

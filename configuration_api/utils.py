@@ -566,9 +566,9 @@ def get_garantie_offre_mrh(request_data):
     return res
 
 
-# get_garantie_offre_rc
+# get_garantie_offre_risques_divers
 #############################################################################
-def get_garantie_offre_rc(request_data):
+def get_garantie_offre_risques_divers(id_produit, request_data):
     IdCompagnie = 1
     if "IdCompagnie" in request_data:
         if request_data["IdCompagnie"]:
@@ -596,7 +596,7 @@ def get_garantie_offre_rc(request_data):
     try:
         with connection.cursor() as cursor:
             cursor.callproc(
-                "fn_garantie_offre_rc",
+                "fn_garantie_offre_risques_divers",
                 [
                     IdCompagnie,
                     IdOffre,
@@ -608,6 +608,7 @@ def get_garantie_offre_rc(request_data):
                     TauxReduction,
                     DateEffet,
                     DateExpiration,
+                    id_produit,
                     IdDevis,
                 ],
             )

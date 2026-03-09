@@ -109,7 +109,7 @@ from .serializers import (
     DemandeAvenantSerializer,
     DemandeGarantieHabitationSerializer,
     DemandeGarantieIaSerializer,
-    DemandeGarantieRCSerializer,
+    DemandeGarantieRisquesDiversSerializer,
     DemandeGarantieSerializer,
     DemandeGarantieVoyageSerializer,
     DomaineActiviteRCSerializer,
@@ -178,7 +178,7 @@ from .utils import (
     get_garantie_offre,
     get_garantie_offre_ia,
     get_garantie_offre_mrh,
-    get_garantie_offre_rc,
+    get_garantie_offre_risques_divers,
     get_garantie_offre_voyage,
     get_garantie_produit,
     get_liste_avenant_produit,
@@ -1060,15 +1060,28 @@ def get_garantie_mrh(request):
 @authentication_classes([TokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_rc(request):
-    garantiedemandee_data = JSONParser().parse(request)
-    # print("JSON de la requête:", garantiedemandee_data)
+    return get_garantie_risques_divers(id_produit=8, request=request)
 
-    garantiedemandee_serializer = DemandeGarantieRCSerializer(
+
+##################################################################################
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def get_garantie_mrp(request):
+    return get_garantie_risques_divers(id_produit=7, request=request)
+
+
+def get_garantie_risques_divers(id_produit, request):
+    garantiedemandee_data = JSONParser().parse(request)
+    garantiedemandee_serializer = DemandeGarantieRisquesDiversSerializer(
         data=garantiedemandee_data
     )
     if garantiedemandee_serializer.is_valid():
         garantieproposee_serializer = GarantieProposeeSerializer(
-            get_garantie_offre_rc(garantiedemandee_data), many=True
+            get_garantie_offre_risques_divers(
+                id_produit, garantiedemandee_data
+            ),
+            many=True,
         )
         return JsonResponse(
             garantieproposee_serializer.data,

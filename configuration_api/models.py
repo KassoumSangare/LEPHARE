@@ -1491,7 +1491,7 @@ class DemandeGarantieHabitation(models.Model):
         managed = False
 
 
-class DemandeGarantieRC(models.Model):
+class DemandeGarantieRisquesDivers(models.Model):
     IdOffre = models.IntegerField()
     CapitalDommageCorporel = models.DecimalField(
         max_digits=19, decimal_places=4

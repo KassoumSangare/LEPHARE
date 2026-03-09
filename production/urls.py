@@ -1,116 +1,135 @@
 from django.urls import include, path
-
 from rest_framework import routers
 
-from .views import DevisViewSet, DevisDetGarantieViewSet
-from .views import TarifEcranViewSet, ContratViewSet
-from .views import (
-    ContratDetGarantieViewSet,
-    QuittancePropositionView,
-    QuittanceContratView,
+from .importation_views import (
+    ImportAssuresAPIView,
+    ImportsHistoriqueDetailAPIView,
+    ImportsHistoriqueListAPIView,
+    StatistiquesImportsAPIView,
+    VerifierFichierAPIView,
+)
+from .views import (  # cancel_premium_collection,
+    AssureIaInfoView,
+    AssureIaParContratView,
+    AssureIaParDevisView,
     AyantDroitIaView,
     AyantDroitMineneView,
-    ExtendedQuotationInfoView,
-    QuittanceViewSet,
-    DetailQuittanceViewSet,
-    EncaissementViewSet,
-    DetailEncaissementViewSet,
-    NumeroViewSet,
-    GarantieContratView,
-    ListeVehiculeContratView,
-    ListeVehiculeDevisView,
-    ReversementCompagnieViewSet,
-    DetailReversementViewSet,
-    ListeContratReversementView,
-    InfoEncaissementView,
-    InfoVehiculeView,
-    InfoReversementView,
-    DetailEncaissementListView,
-    DetailReversementListView,
-    ContratDetailInfoView,
-    DevisDetailInfoView,
-    ExtendedQuotationInfoRechercheView,
-    AssureIaInfoView,
-    AssureIaParDevisView,
-    AssureIaParContratView,
-    ReductionFlotteDevisView,
-    GarantieSouscriteContratView,
-    GarantieSouscriteDevisView,
-    EncaissementRechercheView,
-    ImportationAssureIaViewSet,
-    ImportationFichierGUCEViewSet,
+    CalculMaisonView,
     CertificatTransportView,
-    ListeContratClientView,
-    CorrectionDevisViewSet,
-    PrimeUpdateAPIView,
-    DevisClientView,
+    CheckChequeStatusView,
+    ChequeDetailOperationsView,
+    ChequeListView,
     ConsolidationDevisView,
     ContractListView,
-    ReversementCompagnieNonValideViewSet,
-    ResumeFinancierDevisView,
-    CheckChequeStatusView, 
-    ChequeListView, 
-    ChequeDetailOperationsView,
+    ContratDetailInfoView,
+    ContratDetGarantieViewSet,
+    ContratViewSet,
+    CorrectionDevisViewSet,
+    DetailEncaissementListView,
+    DetailEncaissementViewSet,
+    DetailMaisonView,
+    DetailQuittanceViewSet,
+    DetailReversementListView,
+    DetailReversementViewSet,
+    DevisClientView,
+    DevisDetailInfoView,
+    DevisDetGarantieViewSet,
+    DevisMRHViewSet,
+    DevisViewSet,
+    EncaissementRechercheView,
+    EncaissementViewSet,
+    ExtendedQuotationInfoRechercheView,
+    ExtendedQuotationInfoView,
+    GarantieContratView,
+    GarantieSouscriteContratView,
+    GarantieSouscriteDevisView,
+    HistoriqueImpositionsView,
+    ImportationAssureIaViewSet,
+    ImportationFichierGUCEViewSet,
+    ImposerPrimeDevisView,
+    ImposerPrimeMaisonView,
+    InfoEncaissementView,
+    InfoReversementView,
+    InfoVehiculeView,
+    LeverImpositionView,
+    ListeContratClientView,
+    ListeContratReversementView,
+    ListeVehiculeContratView,
+    ListeVehiculeDevisView,
+    MaisonViewSet,
+    NumeroViewSet,
+    OptionViewSet,
     PieceJointeViewSet,
-)
-from .importation_views import ImportAssuresAPIView, VerifierFichierAPIView, ImportsHistoriqueListAPIView, ImportsHistoriqueDetailAPIView, StatistiquesImportsAPIView
-from .views import (
+    PrimeUpdateAPIView,
+    QuittanceContratView,
+    QuittancePropositionView,
+    QuittanceViewSet,
+    RecalculerDevisView,
+    ReductionFlotteDevisView,
+    ResumeFinancierDevisView,
+    ReversementCompagnieNonValideViewSet,
+    ReversementCompagnieViewSet,
+    SousGarantieForfaitViewSet,
+    SousGarantieMRHViewSet,
+    StatutImpositionView,
+    TarifEcranViewSet,
+    UsageHabitationViewSet,
+    ValidateParametersView,
+    car_input_cancelation,
+    change_plate_number,
+    collect_premium,
     create_contract,
+    create_insured_ia,
     create_quotation,
-    creer_ayant_droit_ia,
-    create_quotation_voyage,
+    create_quotation_globaledebanque,
     create_quotation_ia,
     create_quotation_mrh,
+    create_quotation_risques_divers,
     create_quotation_tousrisquesinfo,
-    create_quotation_rc,
-    create_quotation_globaledebanque,
+    create_quotation_voyage,
+    creer_ayant_droit_ia,
     finalize_quotation_flotte,
-    quote_archival,
-    car_input_cancelation,
-    collect_premium,
-    #cancel_premium_collection,
     get_contracts_for_pc,
+    modify_policy,
+    quote_archival,
+    quote_unarchival,
     remit_premium,
     validate_premium_remittance,
-    create_insured_ia,
-    change_plate_number,
-    modify_policy,
-    quote_unarchival,
 )
 
-from .views import UsageHabitationViewSet, SousGarantieMRHViewSet, OptionViewSet, DevisMRHViewSet, SousGarantieForfaitViewSet, CalculMaisonView, MaisonViewSet, ValidateParametersView, RecalculerDevisView
-
-from .views import (
-    ImposerPrimeMaisonView,
-    ImposerPrimeDevisView,
-    LeverImpositionView,
-    HistoriqueImpositionsView,
-    StatutImpositionView,
-    DetailMaisonView,
-)
 # Créer le router pour les ViewSets
 router = routers.DefaultRouter()
 
 # Enregistrer les ViewSets de référence (lecture seule)
-router.register(r'mrh/usages', UsageHabitationViewSet, basename='usage')
-router.register(r'mrh/garanties', SousGarantieMRHViewSet, basename='garantie')
-router.register(r'mrh/garanties-forfait', SousGarantieForfaitViewSet, basename='garantie-forfait')
-router.register(r'mrh/options', OptionViewSet, basename='option')
+router.register(r"mrh/usages", UsageHabitationViewSet, basename="usage")
+router.register(r"mrh/garanties", SousGarantieMRHViewSet, basename="garantie")
+router.register(
+    r"mrh/garanties-forfait",
+    SousGarantieForfaitViewSet,
+    basename="garantie-forfait",
+)
+router.register(r"mrh/options", OptionViewSet, basename="option")
 # Enregistrer les ViewSets de gestion (avec actions personnalisées)
-router.register(r'mrh/devis', DevisMRHViewSet, basename='devis-mrh')
+router.register(r"mrh/devis", DevisMRHViewSet, basename="devis-mrh")
 
-router.register(r"devis", DevisViewSet, basename='devis')
+router.register(r"devis", DevisViewSet, basename="devis")
 router.register(r"devisdetgarantie", DevisDetGarantieViewSet)
 router.register(r"tarifecran", TarifEcranViewSet)
 router.register(r"contrat", ContratViewSet)
-router.register(r'pieces-jointes', PieceJointeViewSet, basename='piecejointe')
+router.register(r"pieces-jointes", PieceJointeViewSet, basename="piecejointe")
 router.register(r"contratdetgarantie", ContratDetGarantieViewSet)
 router.register(r"quittance", QuittanceViewSet)
 router.register(r"detailquittance", DetailQuittanceViewSet)
 router.register(r"encaissement", EncaissementViewSet, basename="encaissement")
 router.register(r"detailencaissement", DetailEncaissementViewSet)
-router.register(r"reversement", ReversementCompagnieViewSet, basename="reversement")
-router.register(r"reversementnonvalide", ReversementCompagnieNonValideViewSet, basename="reversement_non_valide")
+router.register(
+    r"reversement", ReversementCompagnieViewSet, basename="reversement"
+)
+router.register(
+    r"reversementnonvalide",
+    ReversementCompagnieNonValideViewSet,
+    basename="reversement_non_valide",
+)
 router.register(r"detailreversement", DetailReversementViewSet)
 router.register(r"numero", NumeroViewSet)
 
@@ -127,7 +146,11 @@ router.register(
 
 urlpatterns = [
     path("", include(router.urls)),
-    path(r"enregistrementdevis", create_quotation, name="enregistrement_devis_auto"),
+    path(
+        r"enregistrementdevis",
+        create_quotation,
+        name="enregistrement_devis_auto",
+    ),
     path(
         r"finalisationdevisauto",
         finalize_quotation_flotte,
@@ -163,8 +186,16 @@ urlpatterns = [
         car_input_cancelation,
         name="annulation_saisie_vehicule",
     ),
-    path(r"enregistrementassureia", create_insured_ia, name="enregistrement_assure_ia"),
-    path(r"enregistrementdevisia", create_quotation_ia, name="enregistrement_devis_ia"),
+    path(
+        r"enregistrementassureia",
+        create_insured_ia,
+        name="enregistrement_assure_ia",
+    ),
+    path(
+        r"enregistrementdevisia",
+        create_quotation_ia,
+        name="enregistrement_devis_ia",
+    ),
     path(
         r"enregistrementdevisvoyage",
         create_quotation_voyage,
@@ -182,15 +213,24 @@ urlpatterns = [
     ),
     path(
         r"enregistrementdevisrc",
-        create_quotation_rc,
+        create_quotation_risques_divers,
         name="enregistrement_devis_rc",
+    ),
+    path(
+        r"enregistrementdevismrp",
+        create_quotation_risques_divers,
+        name="enregistrement_devis_mrp",
     ),
     path(
         r"enregistrementdevisglobaledebanque",
         create_quotation_globaledebanque,
         name="enregistrement_devis_globaledebanque",
     ),
-    path(r"saisieayantdroitia", creer_ayant_droit_ia, name="saisie_ayant_droit_devis"),
+    path(
+        r"saisieayantdroitia",
+        creer_ayant_droit_ia,
+        name="saisie_ayant_droit_devis",
+    ),
     path(r"confirmationdevis", create_contract, name="confirmation_devis"),
     path(
         r"assureiainfo/<int:iddevis>",
@@ -382,9 +422,16 @@ urlpatterns = [
         modify_policy,
         name="avenant_retrait",
     ),
-    path("majrecapprimes/", PrimeUpdateAPIView.as_view(), name="maj_recap_primes"),
-    path("listecontratperiode/", ContractListView.as_view(), name="liste_contrat_periode"),
-    
+    path(
+        "majrecapprimes/",
+        PrimeUpdateAPIView.as_view(),
+        name="maj_recap_primes",
+    ),
+    path(
+        "listecontratperiode/",
+        ContractListView.as_view(),
+        name="liste_contrat_periode",
+    ),
     # ========================================================================
     # SECTION 1 : ENDPOINTS DE RÉFÉRENCE (complément aux ViewSets)
     # ========================================================================
@@ -402,17 +449,13 @@ urlpatterns = [
     #
     # GET /api/mrh/options/ - Liste des options
     # GET /api/mrh/options/{code}/ - Détail d'une option
-    
     # ========================================================================
     # SECTION 2 : ENDPOINT DE CALCUL (SANS ENREGISTREMENT)
     # ========================================================================
     path(
-        'mrh/calcul/maison/',
-        CalculMaisonView.as_view(),
-        name='calcul-maison'
+        "mrh/calcul/maison/", CalculMaisonView.as_view(), name="calcul-maison"
     ),
     # POST /api/mrh/calcul/maison/ - Calculer prime sans enregistrer
-    
     # ========================================================================
     # SECTION 3 : ENDPOINTS DE GESTION DE DEVIS
     # ========================================================================
@@ -421,178 +464,160 @@ urlpatterns = [
     # GET /api/mrh/devis/ - Lister les devis
     # GET /api/mrh/devis/{id}/ - Récupérer un devis
     # DELETE /api/mrh/devis/{id}/ - Supprimer un devis
-    
     # ========================================================================
     # SECTION 4 : ENDPOINTS DE GESTION DE MAISONS
     # ========================================================================
     path(
-        'mrh/devis/<int:devis_id>/maisons/',
-        MaisonViewSet.as_view({'post': 'create'}),
-        name='devis-maison-create'
+        "mrh/devis/<int:devis_id>/maisons/",
+        MaisonViewSet.as_view({"post": "create"}),
+        name="devis-maison-create",
     ),
     # POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
-    
-    path( 'mrh/devis/<int:devis_id>/maisons/<int:pk>/',
-         MaisonViewSet.as_view({'put': 'update', 'delete': 'destroy'}),
-         name='devis-maison'
+    path(
+        "mrh/devis/<int:devis_id>/maisons/<int:pk>/",
+        MaisonViewSet.as_view({"put": "update", "delete": "destroy"}),
+        name="devis-maison",
     ),
     # DELETE /api/mrh/devis/{devis_id}/maisons/{pk}/ - Supprimer une maison
     # PUT /api/mrh/devis/{devis_id}/maisons/{pk}/ - Modifier une maison
-    
     # ========================================================================
     # SECTION 5 : ENDPOINTS UTILITAIRES
     # ========================================================================
     path(
-        'mrh/validate-parameters/',
+        "mrh/validate-parameters/",
         ValidateParametersView.as_view(),
-        name='validate-parameters'
+        name="validate-parameters",
     ),
     # POST /api/mrh/validate-parameters/ - Valider paramètres
-    
     path(
-        'mrh/devis/<int:devis_id>/recalculer/',
+        "mrh/devis/<int:devis_id>/recalculer/",
         RecalculerDevisView.as_view(),
-        name='devis-recalculer'
+        name="devis-recalculer",
     ),
     # POST /api/mrh/devis/{devis_id}/recalculer/ - Recalculer totaux
-    
-     path(
-        'mrh/devis/<int:devis_id>/resume-financier/',
+    path(
+        "mrh/devis/<int:devis_id>/resume-financier/",
         ResumeFinancierDevisView.as_view(),
-        name='devis-resume-financier'
+        name="devis-resume-financier",
     ),
-    
     # ========================================================================
     # IMPOSITION DE PRIME MAISON
     # ========================================================================
-    
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposer-prime/',
+        "mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposer-prime/",
         ImposerPrimeMaisonView.as_view(),
-        name='mrh-imposer-prime-maison'
+        name="mrh-imposer-prime-maison",
     ),
     # POST /api/mrh/devis/123/maisons/456/imposer-prime/
     # Impose la prime d'une maison
-    
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposition-prime/',
+        "mrh/devis/<int:devis_id>/maisons/<int:maison_id>/imposition-prime/",
         LeverImpositionView.as_view(),
-        name='mrh-lever-imposition-maison'
+        name="mrh-lever-imposition-maison",
     ),
     # DELETE /api/mrh/devis/123/maisons/456/imposition-prime/
     # Lève l'imposition d'une maison
-    
     # ========================================================================
     # IMPOSITION DE PRIME DEVIS
     # ========================================================================
-    
     path(
-        'mrh/devis/<int:devis_id>/imposer-prime/',
+        "mrh/devis/<int:devis_id>/imposer-prime/",
         ImposerPrimeDevisView.as_view(),
-        name='mrh-imposer-prime-devis'
+        name="mrh-imposer-prime-devis",
     ),
     # POST /api/mrh/devis/123/imposer-prime/
     # Impose la prime globale du devis
-    
     path(
-        'mrh/devis/<int:devis_id>/imposition-prime/',
+        "mrh/devis/<int:devis_id>/imposition-prime/",
         LeverImpositionView.as_view(),
-        name='mrh-lever-imposition-devis'
+        name="mrh-lever-imposition-devis",
     ),
     # DELETE /api/mrh/devis/123/imposition-prime/
     # Lève l'imposition du devis
-    
     # ========================================================================
     # HISTORIQUE ET STATUT
     # ========================================================================
-    
     path(
-        'mrh/devis/<int:devis_id>/impositions/',
+        "mrh/devis/<int:devis_id>/impositions/",
         HistoriqueImpositionsView.as_view(),
-        name='mrh-historique-impositions-devis'
+        name="mrh-historique-impositions-devis",
     ),
     # GET /api/mrh/devis/123/impositions/
     # Historique des impositions du devis
-    
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/impositions/',
+        "mrh/devis/<int:devis_id>/maisons/<int:maison_id>/impositions/",
         HistoriqueImpositionsView.as_view(),
-        name='mrh-historique-impositions-maison'
+        name="mrh-historique-impositions-maison",
     ),
     # GET /api/mrh/devis/123/maisons/456/impositions/
     # Historique des impositions de la maison
-    
     path(
-        'mrh/devis/<int:devis_id>/statut-imposition/',
+        "mrh/devis/<int:devis_id>/statut-imposition/",
         StatutImpositionView.as_view(),
-        name='mrh-statut-imposition-devis'
+        name="mrh-statut-imposition-devis",
     ),
     # GET /api/mrh/devis/123/statut-imposition/
     # Statut d'imposition du devis
-    
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/statut-imposition/',
+        "mrh/devis/<int:devis_id>/maisons/<int:maison_id>/statut-imposition/",
         StatutImpositionView.as_view(),
-        name='mrh-statut-imposition-maison'
+        name="mrh-statut-imposition-maison",
     ),
     # GET /api/mrh/devis/123/maisons/456/statut-imposition/
     # Statut d'imposition de la maison
-    
     # ====================================================================
     # CONSULTATION MAISON
     # ====================================================================
-    
     # Détail complet d'une maison (NOUVEAU)
     path(
-        'mrh/devis/<int:devis_id>/maisons/<int:maison_id>/details/',
+        "mrh/devis/<int:devis_id>/maisons/<int:maison_id>/details/",
         DetailMaisonView.as_view(),
-        name='mrh-detail-maison'
+        name="mrh-detail-maison",
     ),
     # GET /api/mrh/devis/123/maisons/456/details/
-     
     # Endpoint de vérification d'existence (Autocomplete)
-    path('cheques/statut/', CheckChequeStatusView.as_view(), name='cheque-statut'),
-    
+    path(
+        "cheques/statut/",
+        CheckChequeStatusView.as_view(),
+        name="cheque-statut",
+    ),
     # Endpoint 1 : Liste filtrée des chèques
-    path('cheques/', ChequeListView.as_view(), name='cheque-liste'),
-    
+    path("cheques/", ChequeListView.as_view(), name="cheque-liste"),
     # Endpoint 2 : Détails et opérations d'un chèque
-    path('cheques/<int:id_cheque>/operations/', ChequeDetailOperationsView.as_view(), name='cheque-operations'),
-    
+    path(
+        "cheques/<int:id_cheque>/operations/",
+        ChequeDetailOperationsView.as_view(),
+        name="cheque-operations",
+    ),
     # ─── Import d'Assurés ───
     path(
-        'importationassureia/',
+        "importationassureia/",
         ImportAssuresAPIView.as_view(),
-        name='import_assures'
+        name="import_assures",
     ),
-    
     # ─── Vérifier un Fichier ───
     path(
-        'verifier-fichier/',
+        "verifier-fichier/",
         VerifierFichierAPIView.as_view(),
-        name='verifier_fichier'
+        name="verifier_fichier",
     ),
-    
     # ─── Historique des Imports ───
     path(
-        'imports-historique/',
+        "imports-historique/",
         ImportsHistoriqueListAPIView.as_view(),
-        name='imports_historique_list'
+        name="imports_historique_list",
     ),
-    
     path(
-        'imports-historique/<int:pk>/',
+        "imports-historique/<int:pk>/",
         ImportsHistoriqueDetailAPIView.as_view(),
-        name='imports_historique_detail'
+        name="imports_historique_detail",
     ),
-    
     # ─── Statistiques ───
     path(
-        'imports-statistiques/',
+        "imports-statistiques/",
         StatistiquesImportsAPIView.as_view(),
-        name='imports_statistiques'
+        name="imports_statistiques",
     ),
-    
 ]
 
 

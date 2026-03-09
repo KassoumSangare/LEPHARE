@@ -31,7 +31,7 @@ from .models import (
     DemandeGarantie,
     DemandeGarantieHabitation,
     DemandeGarantieIa,
-    DemandeGarantieRC,
+    DemandeGarantieRisquesDivers,
     DemandeGarantieVoyage,
     DomaineActiviteRC,
     Energie,
@@ -784,7 +784,7 @@ class DemandeGarantieHabitationSerializer(serializers.ModelSerializer):
         ]
 
 
-class DemandeGarantieRCSerializer(serializers.ModelSerializer):
+class DemandeGarantieRisquesDiversSerializer(serializers.ModelSerializer):
     IdOffre = serializers.IntegerField(
         allow_null=True,
         error_messages={
@@ -796,6 +796,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
     CapitalDommageCorporel = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "Le capital dommage corporel doit être renseigné.",
@@ -806,6 +807,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
     CapitalDommageMateriel = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "Le capital dommage matériel doit être renseigné.",
@@ -816,6 +818,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
     CapitalIntoxicationAlimentaire = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "Le capital intoxication alimentaire doit être renseigné.",
@@ -826,6 +829,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
     AssiettePrime = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "L'assiette de prime doit être renseignée.",
@@ -836,6 +840,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
     TauxPrime = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "Le taux de prime doit être renseigné.",
@@ -893,7 +898,7 @@ class DemandeGarantieRCSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
     class Meta:
-        model = DemandeGarantieRC
+        model = DemandeGarantieRisquesDivers
         fields = [
             "IdCompagnie",
             "IdOffre",
