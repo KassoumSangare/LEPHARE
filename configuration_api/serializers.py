@@ -851,6 +851,7 @@ class DemandeGarantieRisquesDiversSerializer(serializers.ModelSerializer):
     TauxReduction = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
+        required=False,
         allow_null=True,
         error_messages={
             "null": "Le taux de réduction doit être renseigné.",
@@ -872,9 +873,9 @@ class DemandeGarantieRisquesDiversSerializer(serializers.ModelSerializer):
         format="%Y-%m-%d",
         input_formats=["%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%Y-%m-%d"],
         error_messages={
-            "null": "La date d'effet doit être renseignée.",
-            "blank": "La date d'effet doit être renseignée.",
-            "invalid": "Mauvais format pour la date d'effet.",
+            "null": "La date d'expiration doit être renseignée.",
+            "blank": "La date d'expiration doit être renseignée.",
+            "invalid": "Mauvais format pour la date d'expiration.",
         },
     )
     IdCompagnie = serializers.IntegerField(
