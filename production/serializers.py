@@ -2127,6 +2127,8 @@ class EnregistrementDevisRisqquesDiversSerializer(
     TauxPrime = serializers.DecimalField(
         max_digits=5,
         decimal_places=2,
+        required=False,
+        allow_null=True,
         error_messages=ErrorMessage.generate_error_messages(
             field_name="Le taux de prime",
             field_type="decimal",
