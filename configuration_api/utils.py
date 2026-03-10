@@ -578,15 +578,21 @@ def get_garantie_offre_risques_divers(id_produit, request_data):
         if request_data["IdDevis"]:
             IdDevis = int(request_data["IdDevis"])
     IdOffre = int(request_data["IdOffre"])
-    CapitalDommageCorporel = Decimal(request_data["CapitalDommageCorporel"])
-    CapitalDommageMateriel = Decimal(request_data["CapitalDommageMateriel"])
-    CapitalIntoxicationAlimentaire = Decimal(
-        request_data["CapitalIntoxicationAlimentaire"]
+    CapitalDommageCorporel = Decimal(
+        request_data.get("CapitalDommageCorporel", 0)
     )
-    AssiettePrime = Decimal(request_data["AssiettePrime"])
-    TauxPrime = Decimal(request_data["TauxPrime"])
-    TauxReduction = Decimal(request_data["TauxReduction"])
-    DateEffet = datetime.strptime(request_data["DateEffet"], "%d-%m-%Y").date()
+    CapitalDommageMateriel = Decimal(
+        request_data.get("CapitalDommageMateriel", 0)
+    )
+    CapitalIntoxicationAlimentaire = Decimal(
+        request_data.get("CapitalIntoxicationAlimentaire", 0)
+    )
+    AssiettePrime = Decimal(request_data.get("AssiettePrime", 0))
+    TauxPrime = Decimal(request_data.get("TauxPrime", 0))
+    TauxReduction = Decimal(request_data.get("TauxReduction", 0))
+    DateEffet = datetime.strptime(
+        request_data.get("DateEffet"), "%d-%m-%Y"
+    ).date()
     DateExpiration = datetime.strptime(
         request_data["DateExpiration"], "%d-%m-%Y"
     ).date()
