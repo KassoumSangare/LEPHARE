@@ -57,6 +57,11 @@ def unpack_ia_quotation_post_data(post_data):
         if post_data["Accessoire"]:
             Accessoire = Decimal(post_data["Accessoire"])
 
+    PrimeTTC = Decimal("0")
+    if "PrimeTTC" in post_data:
+        if post_data["PrimeTTC"]:
+            PrimeTTC = Decimal(post_data["PrimeTTC"])
+
     return (
         IdIntermediaire,
         IdCompagnie,
@@ -84,6 +89,7 @@ def unpack_ia_quotation_post_data(post_data):
         IdDuree,
         PrimeNette,
         Accessoire,
+        PrimeTTC,
         IdDevis,
         IdDevisDetail,
         "",
