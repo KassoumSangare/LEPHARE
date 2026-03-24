@@ -31,6 +31,7 @@ from configuration_api.models import (
     SousGarantieUsage,
     UsageHabitation,
 )
+from production.models import Devis
 from production.services.recapitulatif_primes_mrh import RecapitulatifPrimesMRH
 
 from ..database import obtenir_code_categorie, obtenir_nouveau_numero_devis
@@ -847,6 +848,8 @@ class MRHCalculService:
         primettc = prime_nette_totale + accessoire + fga + cedeao + taxe_totale
 
         # 5. Mettre à jour le devis
+        print(">>> accessoire AVANT UPDATE =", accessoire, type(accessoire))
+
         Devis.objects.filter(iddevis=id_devis).update(
             primenette=prime_nette_totale,
             taxe=taxe_totale,
@@ -856,6 +859,10 @@ class MRHCalculService:
             cedeao=cedeao,
             primettc=primettc,
         )
+        devis_db = (
+            Devis.objects.filter(iddevis=id_devis).values("accessoire").first()
+        )
+        print(">>> accessoire EN BASE APRÈS UPDATE =", devis_db)
 
         # 6. Retourner les montants calculés
         return {
@@ -1754,7 +1761,9 @@ class MRHCalculService:
         devis.primenette = montant_impose
         devis.prime_imposee = True
         devis.prime_imposee_date = datetime.now()
-        devis.save()
+        devis.save(
+            update_fields=["primenette", "prime_imposee", "prime_imposee_date"]
+        )
 
         return {
             "success": True,
