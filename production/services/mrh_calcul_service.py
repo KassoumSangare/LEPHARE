@@ -795,6 +795,7 @@ class MRHCalculService:
         id_produit: int,
         id_compagnie: int,
         inclure_accessoires: bool = True,
+        montant_accessoire: Optional[Decimal] = None,
     ) -> Dict:
         """
         Met à jour les totaux du devis après ajout/modification de maisons.
@@ -804,6 +805,7 @@ class MRHCalculService:
             id_produit: ID du produit MRH
             id_compagnie: ID de la compagnie
             inclure_accessoires: Si True, calcule et ajoute les accessoires
+            montant_accessoire: Montant accessoire à utiliser (si non None, remplace le calcul)
 
         Returns:
             Dict contenant les montants calculés
@@ -823,13 +825,19 @@ class MRHCalculService:
         taxe_accessoire = Decimal("0")
 
         if inclure_accessoires:
-            result_accessoire = self.calculer_accessoire(
-                prime_nette_totale=prime_nette_totale,
-                id_produit=id_produit,
-                id_compagnie=id_compagnie,
-            )
-            accessoire = result_accessoire["accessoire"]
-            taxe_accessoire = result_accessoire["taxe_accessoire"]
+            if montant_accessoire is not None:
+                accessoire = montant_accessoire
+                taxe_accessoire = self._arrondir(
+                    accessoire * self.TAUX_TAXE_ACCESSOIRE
+                )
+            else:
+                result_accessoire = self.calculer_accessoire(
+                    prime_nette_totale=prime_nette_totale,
+                    id_produit=id_produit,
+                    id_compagnie=id_compagnie,
+                )
+                accessoire = result_accessoire["accessoire"]
+                taxe_accessoire = result_accessoire["taxe_accessoire"]
 
         # 4. Calculer les montants finaux
         taxe_totale = taxe_garanties_totale + taxe_accessoire
@@ -1620,6 +1628,7 @@ class MRHCalculService:
         self,
         id_devis: int,
         montant_impose: Decimal,
+        montant_accessoire: Optional[Decimal] = None,
         user_id: Optional[int] = None,
         user_nom: Optional[str] = None,
         motif: Optional[str] = None,
@@ -1627,18 +1636,20 @@ class MRHCalculService:
         """
         Impose une prime NETTE globale pour le devis.
 
-        La taxe et les accessoires seront recalculés sur cette prime.
+        La taxe sera recalculéz sur cette prime.
+        Les accessoires seront recalculés selon les paliers (si montant_accessoire non fourni).
         Les montants des maisons sont ajustés proportionnellement.
 
         Règles:
         - montant_impose = Prime NETTE uniquement
         - Taxe calculée selon les ratios actuels
-        - Accessoires calculés selon les paliers
+        - Accessoires calculés selon les paliers (ou montant_accessoire si fourni)
         - Prime TTC = Prime nette imposée + Taxe + Accessoires
 
         Args:
             id_devis: ID du devis
             montant_impose: Montant de la prime NETTE à imposer
+            montant_accessoire: Montant des accessoires (si fourni)
             user_id: ID de l'utilisateur
             user_nom: Nom de l'utilisateur
             motif: Raison de l'imposition
@@ -1736,6 +1747,7 @@ class MRHCalculService:
             id_produit=devis.produit.pk,
             id_compagnie=devis.compagnie.pk,
             inclure_accessoires=True,
+            montant_accessoire=montant_accessoire,  # Forcer le montant des accessoires si fourni
         )
 
         # 7. Forcer la prime nette imposée (au cas où il y aurait un écart d'arrondi)

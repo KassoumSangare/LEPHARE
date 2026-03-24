@@ -3749,6 +3749,7 @@ class ImposerPrimeDevisView(APIView):
     Request body :
     {
         "montant_impose": 400000.00,  // Prime NETTE totale en FCFA
+        "montant_accessoire": 5000.00,  // Accessoire total en FCFA (optionnel, sinon calculé automatiquement)
         "motif": "Négociation commerciale - accord client"  // optionnel
     }
 
@@ -3786,13 +3787,19 @@ class ImposerPrimeDevisView(APIView):
         # Vérifier que le devis existe
         devis = get_object_or_404(Devis, iddevis=devis_id)
 
+        montant_impose = serializer.validated_data["montant_impose"]
+        montant_accessoire = serializer.validated_data.get(
+            "montant_accessoire"
+        )
+
         # Appeler le service
         service = MRHCalculService()
 
         try:
             resultat = service.imposer_prime_devis(
                 id_devis=devis_id,
-                montant_impose=serializer.validated_data["montant_impose"],
+                montant_impose=montant_impose,
+                montant_accessoire=montant_accessoire,
                 user_id=(
                     request.user.id if hasattr(request.user, "id") else None
                 ),

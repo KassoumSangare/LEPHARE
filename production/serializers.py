@@ -4584,12 +4584,27 @@ class ImpositionPrimeDevisRequestSerializer(serializers.Serializer):
         help_text="Montant de la prime NETTE à imposer pour le devis complet (en FCFA)",
     )
 
+    montant_accessoire = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Montant de l'accessoire à imposer pour le devis complet (en FCFA)",
+    )
+
     motif = serializers.CharField(
         max_length=1000,
         required=False,
         allow_blank=True,
         help_text="Raison de l'imposition (ex: négociation commerciale)",
     )
+
+    def validate_montant_accessoire(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                "Le montant accessoire doit être strictement positif ou nul."
+            )
+        return value
 
 
 class LeveeImpositionRequestSerializer(serializers.Serializer):
