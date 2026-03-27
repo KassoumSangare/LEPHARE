@@ -1764,7 +1764,7 @@ class MRHCalculService:
         devis.save(
             update_fields=["primenette", "prime_imposee", "prime_imposee_date"]
         )
-
+        devis.refresh_from_db()
         return {
             "success": True,
             "id_devis": id_devis,
