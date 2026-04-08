@@ -919,7 +919,7 @@ class TransformerSanteEnIAView(APIView):
                 "Nom": adherent.nom,
                 "Prenoms": adherent.prenom or adherent.nom,
                 "Sexe": adherent.sexe,
-                "DateNaissance": adherent.datenaissanceadherent.strftime("%d-%m-%Y") if adherent.datenaissanceadherent else None,
+                "DateNaissance": adherent.datenaissanceadherent,  # date object, accepté par Client.objects.create()
                 "LieuNaissance": "",
                 "NumeroCNI": adherent.numerocni or "",
                 "Email": adherent.email or "",
