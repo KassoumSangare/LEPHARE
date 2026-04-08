@@ -7,7 +7,7 @@ from typing import cast
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F, Prefetch, Q
 from django.http import FileResponse, Http404
 from django.http.response import JsonResponse
@@ -950,31 +950,59 @@ class TransformerSanteEnIAView(APIView):
                     erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": msg})
                     continue
 
-            # 2. Lier ce client au devis IA (créer l'enregistrement assuré IA)
-            date_naissance_str = (
-                adherent.datenaissanceadherent.strftime("%d-%m-%Y")
-                if adherent.datenaissanceadherent
-                else "01-01-1990"
+            # 2. Lier ce client au devis IA via sp_enregistrement_assure_ia
+            # Récupérer id_tarif depuis un DevisDetail existant, sinon 103 (MINENE)
+            detail_existant = DevisDetail.objects.filter(iddevis=id_devis_ia).first()
+            id_tarif = detail_existant.idtarif if detail_existant else 103
+
+            date_naissance = (
+                adherent.datenaissanceadherent if adherent.datenaissanceadherent
+                else None
             )
-            insured_data = {
-                "IdAssure": client.IdClient,
-                "IdOffre": devis_ia.offre_id,
-                "DateEffet": devis_ia.dateeffet.strftime("%d-%m-%Y"),
-                "DateExpiration": devis_ia.dateexpiration.strftime("%d-%m-%Y"),
-                "DateEmission": devis_ia.dateemission.strftime("%d-%m-%Y"),
-                "CapitalDeces": str(capital_deces),
-                "CapitalIpp": str(capital_ipp),
-                "FraisTraitement": str(frais_traitement),
-                "TauxReduction": "0",
-                "CodeActivite": "01",
-                "DateNaissance": date_naissance_str,
-                "IdDevis": id_devis_ia,
-                "IdDevisDetail": 0,
-            }
-            (err_ia, result_ia) = save_insured_ia(insured_data)
-            if err_ia or not result_ia or result_ia[0].ObjectId <= 0:
-                msg = result_ia[0].OutputMessage if result_ia else "Erreur inconnue."
-                erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": msg})
+            date_effet = devis_ia.dateeffet.date() if hasattr(devis_ia.dateeffet, 'date') else devis_ia.dateeffet
+            date_expiration = devis_ia.dateexpiration.date() if hasattr(devis_ia.dateexpiration, 'date') else devis_ia.dateexpiration
+
+            id_devis_detail_out = 0
+            out_message = ""
+            err_ia = False
+            try:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        "CALL sp_enregistrement_assure_ia(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);",
+                        (
+                            devis_ia.compagnie_id,       # id_compagnie
+                            devis_ia.produit_id,          # id_produit
+                            devis_ia.offre_id,            # id_offre
+                            client.IdClient,              # id_assure
+                            12,                           # id_profession (défaut)
+                            date_effet,                   # date_effet
+                            date_expiration,              # date_expiration
+                            id_tarif,                     # id_tarif
+                            capital_deces,                # capital_deces
+                            capital_ipp,                  # capital_ipp
+                            frais_traitement,             # frais_traitement
+                            0,                            # taux_reduction
+                            "01",                         # code_activite
+                            date_naissance,               # date_naissance
+                            adherent.adresseadherent or "",  # adresse_geographique
+                            id_devis_ia,                  # id_devis
+                            0,                            # prime_nette
+                            0,                            # montant_accessoire
+                            0,                            # prime_ttc
+                            id_devis_detail_out,          # INOUT id_devis_detail
+                            out_message,                  # INOUT out_message
+                        ),
+                    )
+                    connection.commit()
+                    row = cur.fetchone()
+                    id_devis_detail_out = row[0] if row else 0
+                    out_message = row[1] if row and len(row) > 1 else ""
+            except Exception as e_ia:
+                err_ia = True
+                out_message = str(e_ia).split("\n")[0]
+
+            if err_ia or not id_devis_detail_out:
+                erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": out_message})
             else:
                 assures_crees.append({"idadherent": adherent.idadherent, "id_assure": client.IdClient})
 
