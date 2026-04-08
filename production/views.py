@@ -105,7 +105,8 @@ from .database import (
     unarchive_quote,
 )
 from .exceltopostgresql import export_excel
-from .import_assures import import_ia_insured
+from .import_assures import import_ia_insured, insert_new_assure
+from sante.models import Adherent, Affilie
 from .models import (
     AyantDroitIa,
     CertificatTransport,
@@ -202,6 +203,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ReversementGroupePrimeInsertSerializer,
     ReversementGroupePrimeValidateSerializer,
     TarifEcranSerializer,
+    TransformerSanteEnIASerializer,
     VehiculeContratSerializer,
 )
 from .services.mrh_calcul_service import MRHCalculService
@@ -798,6 +800,208 @@ class AyantDroitIaView(APIView):
         # print(serializer.data)
         return Response(
             {"Status": "Succès", "ayantdroits": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdherentsSantePourDevisIAView(APIView):
+    """
+    Retourne les adhérents actifs du contrat Santé MINENE lié au devis IA.
+    Utilise le champ numero_police_connexe du devis IA pour retrouver le contrat Santé.
+    Chaque adhérent est retourné avec ses affiliés actifs.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, id_devis_ia):
+        try:
+            devis_ia = Devis.objects.get(pk=id_devis_ia)
+        except Devis.DoesNotExist:
+            return Response(
+                {"Status": "Erreur", "message": "Devis IA introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        numeropolice_sante = devis_ia.numero_police_connexe
+        if not numeropolice_sante:
+            return Response(
+                {"Status": "Erreur", "message": "Aucun numéro de police Santé connexe sur ce devis IA."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contrat_sante = Contrat.objects.filter(numeropolice=numeropolice_sante).first()
+        if not contrat_sante:
+            return Response(
+                {"Status": "Erreur", "message": f"Aucun contrat Santé trouvé pour la police '{numeropolice_sante}'."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        iddevis_sante = contrat_sante.iddevis_id
+        adherents = Adherent.objects.filter(devis=iddevis_sante, actif=True)
+
+        result = []
+        for adherent in adherents:
+            affilies = list(
+                Affilie.objects.filter(adherent=adherent, actif=True).values(
+                    "idaffilie", "nom", "prenom", "lien", "date_naissance", "sexe"
+                )
+            )
+            result.append({
+                "idadherent": adherent.idadherent,
+                "nom": adherent.nom,
+                "prenom": adherent.prenom,
+                "sexe": adherent.sexe,
+                "date_naissance": adherent.datenaissanceadherent,
+                "affilies": affilies,
+            })
+
+        return Response(
+            {"Status": "Succès", "adherents": result, "numeropolice_sante": numeropolice_sante},
+            status=status.HTTP_200_OK,
+        )
+
+
+class TransformerSanteEnIAView(APIView):
+    """
+    Transforme les adhérents du contrat Santé MINENE en assurés du devis IA MINENE,
+    et les affiliés Santé MINENE en ayants-droits IA MINENE.
+
+    Chaque adhérent actif → Client (assuré IA) lié au devis IA via sp_creation_assure_ia.
+    Chaque affilié actif → ayant-droit via sp_saisie_ayant_droit_ia.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = TransformerSanteEnIASerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        id_devis_ia = serializer.validated_data["id_devis_ia"]
+        capital_deces = serializer.validated_data["capital_deces"]
+        capital_ipp = serializer.validated_data["capital_ipp"]
+        frais_traitement = serializer.validated_data["frais_traitement"]
+        affilies_qualites = serializer.validated_data.get("affilies_qualites", [])
+        qualites_map = {item["idaffilie"]: item["id_qualite"] for item in affilies_qualites}
+
+        try:
+            devis_ia = Devis.objects.get(pk=id_devis_ia)
+        except Devis.DoesNotExist:
+            return Response(
+                {"Status": "Erreur", "message": "Devis IA introuvable."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        numeropolice_sante = devis_ia.numero_police_connexe
+        if not numeropolice_sante:
+            return Response(
+                {"Status": "Erreur", "message": "Aucun numéro de police Santé connexe sur ce devis IA."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contrat_sante = Contrat.objects.filter(numeropolice=numeropolice_sante).first()
+        if not contrat_sante:
+            return Response(
+                {"Status": "Erreur", "message": f"Aucun contrat Santé trouvé pour la police '{numeropolice_sante}'."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        iddevis_sante = contrat_sante.iddevis_id
+        adherents = Adherent.objects.filter(devis=iddevis_sante, actif=True)
+
+        assures_crees = []
+        ayants_droits_crees = []
+        erreurs = []
+
+        for adherent in adherents:
+            # 1. Créer un Client (assuré IA) à partir de l'adhérent Santé
+            donnee_assure = {
+                "Nom": adherent.nom,
+                "Prenoms": adherent.prenom or adherent.nom,
+                "Sexe": adherent.sexe,
+                "DateNaissance": adherent.datenaissanceadherent.strftime("%d-%m-%Y") if adherent.datenaissanceadherent else None,
+                "LieuNaissance": "",
+                "NumeroCNI": adherent.numerocni or "",
+                "Email": adherent.email or "",
+                "NumeroTelephone": adherent.mobile1 or "",
+                "NumeroMobile": adherent.mobile1 or "",
+                "AdressePostale": adherent.adresseadherent or "",
+                "AdresseGeographique": adherent.adresseadherent or "",
+                "Fonction": "",
+            }
+            try:
+                client = insert_new_assure(donnee_assure)
+            except Exception as e:
+                erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": str(e)})
+                continue
+
+            # 2. Lier ce client au devis IA (créer l'enregistrement assuré IA)
+            date_naissance_str = (
+                adherent.datenaissanceadherent.strftime("%d-%m-%Y")
+                if adherent.datenaissanceadherent
+                else "01-01-1990"
+            )
+            insured_data = {
+                "IdAssure": client.IdClient,
+                "IdOffre": devis_ia.offre_id,
+                "DateEffet": devis_ia.dateeffet.strftime("%d-%m-%Y"),
+                "DateExpiration": devis_ia.dateexpiration.strftime("%d-%m-%Y"),
+                "DateEmission": devis_ia.dateemission.strftime("%d-%m-%Y"),
+                "CapitalDeces": str(capital_deces),
+                "CapitalIpp": str(capital_ipp),
+                "FraisTraitement": str(frais_traitement),
+                "TauxReduction": "0",
+                "CodeActivite": "01",
+                "DateNaissance": date_naissance_str,
+                "IdDevis": id_devis_ia,
+                "IdDevisDetail": 0,
+            }
+            (err_ia, result_ia) = save_insured_ia(insured_data)
+            if err_ia or not result_ia or result_ia[0].ObjectId <= 0:
+                msg = result_ia[0].OutputMessage if result_ia else "Erreur inconnue."
+                erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": msg})
+            else:
+                assures_crees.append({"idadherent": adherent.idadherent, "id_assure": client.IdClient})
+
+            id_assure_ia = client.IdClient
+
+            # 3. Créer les ayants-droits à partir des affiliés de cet adhérent
+            affilies = Affilie.objects.filter(adherent=adherent, actif=True)
+            for affilie in affilies:
+                id_qualite = qualites_map.get(affilie.idaffilie)
+                if not id_qualite:
+                    erreurs.append({
+                        "type": "ayant_droit",
+                        "idaffilie": affilie.idaffilie,
+                        "message": "Qualité non fournie pour cet affilié.",
+                    })
+                    continue
+
+                ayant_droit_data = {
+                    "IdAssure": id_assure_ia,
+                    "IdQualiteAyantDroit": id_qualite,
+                    "NomAyantDroit": affilie.nom,
+                    "PrenomsAyantDroit": affilie.prenom or affilie.nom,
+                    "Part": 0,
+                }
+                result_ad = enregistrer_ayant_droit(ayant_droit_data)
+                if result_ad and result_ad[0].ObjectId > 0:
+                    ayants_droits_crees.append({
+                        "idaffilie": affilie.idaffilie,
+                        "id_ayant_droit": result_ad[0].ObjectId,
+                    })
+                else:
+                    msg = result_ad[0].OutputMessage if result_ad else "Erreur inconnue."
+                    erreurs.append({"type": "ayant_droit", "idaffilie": affilie.idaffilie, "message": msg})
+
+        return Response(
+            {
+                "Status": "Succès",
+                "assures_crees": len(assures_crees),
+                "ayants_droits_crees": len(ayants_droits_crees),
+                "erreurs": len(erreurs),
+                "details_erreurs": erreurs,
+            },
             status=status.HTTP_200_OK,
         )
 
