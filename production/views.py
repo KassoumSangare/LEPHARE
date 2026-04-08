@@ -932,8 +932,23 @@ class TransformerSanteEnIAView(APIView):
             try:
                 client = insert_new_assure(donnee_assure)
             except Exception as e:
-                erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": str(e)})
-                continue
+                msg = str(e)
+                # Si violation de cle_unique → le client existe déjà, on le récupère
+                if "stdclient_cle_unique_key" in msg or "cle_unique" in msg:
+                    import re as _re
+                    match = _re.search(r'\(cle_unique\)=\(([^)]+)\)', msg)
+                    client = None
+                    if match:
+                        client = Client.objects.filter(cle_unique=match.group(1).strip()).first()
+                    if not client and adherent.numerocni:
+                        client = Client.objects.filter(cle_unique=f"CNI-{adherent.numerocni}").first()
+                    if not client:
+                        erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": "Client existant introuvable malgré doublon de cle_unique."})
+                        continue
+                    # Client récupéré — on continue sans erreur
+                else:
+                    erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": msg})
+                    continue
 
             # 2. Lier ce client au devis IA (créer l'enregistrement assuré IA)
             date_naissance_str = (
