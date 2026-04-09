@@ -1001,10 +1001,12 @@ class TransformerSanteEnIAView(APIView):
                 err_ia = True
                 out_message = str(e_ia).split("\n")[0]
 
-            if err_ia or not id_devis_detail_out:
+            deja_existant = not id_devis_detail_out and "déjà" in out_message.lower()
+            if err_ia:
                 erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": out_message})
             else:
-                assures_crees.append({"idadherent": adherent.idadherent, "id_assure": client.IdClient})
+                # Succès : soit nouvellement créé, soit déjà présent dans ce devis
+                assures_crees.append({"idadherent": adherent.idadherent, "id_assure": client.IdClient, "existant": deja_existant})
 
             id_assure_ia = client.IdClient
 
@@ -1037,10 +1039,13 @@ class TransformerSanteEnIAView(APIView):
                     msg = result_ad[0].OutputMessage if result_ad else "Erreur inconnue."
                     erreurs.append({"type": "ayant_droit", "idaffilie": affilie.idaffilie, "message": msg})
 
+        nouveaux = [a for a in assures_crees if not a.get("existant")]
+        existants = [a for a in assures_crees if a.get("existant")]
         return Response(
             {
                 "Status": "Succès",
-                "assures_crees": len(assures_crees),
+                "assures_crees": len(nouveaux),
+                "assures_deja_presents": len(existants),
                 "ayants_droits_crees": len(ayants_droits_crees),
                 "erreurs": len(erreurs),
                 "details_erreurs": erreurs,
