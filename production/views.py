@@ -1001,11 +1001,12 @@ class TransformerSanteEnIAView(APIView):
                 err_ia = True
                 out_message = str(e_ia).split("\n")[0]
 
-            deja_existant = not id_devis_detail_out and "déjà" in out_message.lower()
-            if err_ia:
+            # "déjà enregistré" peut venir d'un RAISE EXCEPTION (err_ia=True) ou d'un out_message (err_ia=False)
+            deja_existant = "déjà" in out_message.lower()
+            if err_ia and not deja_existant:
                 erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": out_message})
             else:
-                # Succès : soit nouvellement créé, soit déjà présent dans ce devis
+                # Succès : nouvellement créé ou déjà présent dans ce devis
                 assures_crees.append({"idadherent": adherent.idadherent, "id_assure": client.IdClient, "existant": deja_existant})
 
             id_assure_ia = client.IdClient
