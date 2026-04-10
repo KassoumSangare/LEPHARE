@@ -914,41 +914,13 @@ class TransformerSanteEnIAView(APIView):
         erreurs = []
 
         for adherent in adherents:
-            # 1. Créer un Client (assuré IA) à partir de l'adhérent Santé
-            donnee_assure = {
-                "Nom": adherent.nom,
-                "Prenoms": adherent.prenom or adherent.nom,
-                "Sexe": adherent.sexe,
-                "DateNaissance": adherent.datenaissanceadherent,  # date object, accepté par Client.objects.create()
-                "LieuNaissance": "",
-                "NumeroCNI": adherent.numerocni or "",
-                "Email": adherent.email or "",
-                "NumeroTelephone": adherent.mobile1 or "",
-                "NumeroMobile": adherent.mobile1 or "",
-                "AdressePostale": adherent.adresseadherent or "",
-                "AdresseGeographique": adherent.adresseadherent or "",
-                "Fonction": "",
-            }
-            try:
-                client = insert_new_assure(donnee_assure)
-            except Exception as e:
-                msg = str(e)
-                # Si violation de cle_unique → le client existe déjà, on le récupère
-                if "stdclient_cle_unique_key" in msg or "cle_unique" in msg:
-                    import re as _re
-                    match = _re.search(r'\(cle_unique\)=\(([^)]+)\)', msg)
-                    client = None
-                    if match:
-                        client = Client.objects.filter(cle_unique=match.group(1).strip()).first()
-                    if not client and adherent.numerocni:
-                        client = Client.objects.filter(cle_unique=f"CNI-{adherent.numerocni}").first()
-                    if not client:
-                        erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": "Client existant introuvable malgré doublon de cle_unique."})
-                        continue
-                    # Client récupéré — on continue sans erreur
-                else:
-                    erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": msg})
-                    continue
+            # 1. Créer ou trouver le Client (assuré IA) à partir de l'adhérent Santé
+            # La vérification du nom évite de retourner le souscripteur Santé en cas
+            # de collision de CNI entre le souscripteur et l'adhérent.
+            client = _find_or_create_client_from_adherent(adherent)
+            if not client:
+                erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": "Impossible de créer ou trouver le client pour cet adhérent."})
+                continue
 
             # 2. Lier ce client au devis IA via sp_enregistrement_assure_ia
             # Récupérer id_tarif depuis un DevisDetail existant, sinon 103 (MINENE)
@@ -1051,6 +1023,323 @@ class TransformerSanteEnIAView(APIView):
                 "erreurs": len(erreurs),
                 "details_erreurs": erreurs,
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+def _find_or_create_client_from_adherent(adherent):
+    """Trouve ou crée un Client à partir d'un adhérent Santé.
+
+    La recherche par CNI inclut une vérification du nom pour éviter de retourner
+    un client différent qui partagerait accidentellement le même numéro CNI
+    (ex. : le souscripteur du contrat Santé dont le CNI aurait été saisi par erreur
+    sur l'adhérent).
+    """
+    import re as _re
+
+    def _nom_correspond(candidate):
+        """Retourne True si le nom du candidat correspond à celui de l'adhérent."""
+        if not candidate or not candidate.Nom or not adherent.nom:
+            return True  # Pas d'info suffisante → on accepte le candidat
+        return candidate.Nom.strip().upper() == adherent.nom.strip().upper()
+
+    client = None
+
+    # Recherche par CNI avec vérification de nom
+    if adherent.numerocni:
+        candidate = Client.objects.filter(cle_unique=f"CNI-{adherent.numerocni}").first()
+        if candidate and _nom_correspond(candidate):
+            client = candidate
+        # Sinon : collision CNI avec une personne différente → on crée un nouveau client
+
+    if client is None:
+        # Tentative d'insertion. Si le CNI provoque une collision (nom différent),
+        # on retente sans CNI pour forcer une clé composite propre à cet adhérent.
+        for numerocni_essai in [adherent.numerocni or "", ""]:
+            try:
+                client = insert_new_assure({
+                    "Nom": adherent.nom,
+                    "Prenoms": adherent.prenom or "",
+                    "NumeroCNI": numerocni_essai,
+                    "DateNaissance": adherent.datenaissanceadherent,
+                    "Sexe": adherent.sexe or "",
+                    "NumeroTelephone": getattr(adherent, "mobile1", "") or "",
+                    "NumeroMobile": getattr(adherent, "mobile1", "") or "",
+                    "AdressePostale": getattr(adherent, "adresseadherent", "") or "",
+                    "AdresseGeographique": getattr(adherent, "adresseadherent", "") or "",
+                })
+                break  # Insertion réussie
+            except Exception as e:
+                msg = str(e)
+                if "stdclient_cle_unique_key" in msg or "cle_unique" in msg:
+                    match = _re.search(r"\(cle_unique\)=\(([^)]+)\)", msg)
+                    if match:
+                        candidate = Client.objects.filter(cle_unique=match.group(1)).first()
+                        if candidate and _nom_correspond(candidate):
+                            client = candidate
+                            break
+                    # Collision avec un nom différent et on a encore le CNI à essayer
+                    if numerocni_essai:
+                        continue  # Retenter sans CNI
+                # Autre erreur ou deuxième tentative épuisée : on abandonne
+                break
+
+    return client
+
+
+def _build_lien_qualite_map():
+    """Construit un dict {codelien: id_qualite} en croisant LienJuridiqueSante et QualiteAyantDroit."""
+    from configuration_api.models import QualiteAyantDroit, LienJuridiqueSante
+    qualite_map = {}
+    for lj in LienJuridiqueSante.objects.all():
+        # Tentative 1 : code_qualite_ayant_droit commence par le même code
+        qualite = QualiteAyantDroit.objects.filter(
+            code_qualite_ayant_droit__istartswith=lj.codelien
+        ).first()
+        if not qualite and len(lj.libellelien) >= 2:
+            # Tentative 2 : libelle similaire
+            qualite = QualiteAyantDroit.objects.filter(
+                libelle_qualite_ayant_droit__icontains=lj.libellelien[:4]
+            ).first()
+        if qualite:
+            qualite_map[lj.codelien] = qualite.id_qualite
+    return qualite_map
+
+
+class CreerDevisIAMineneView(APIView):
+    """
+    Crée un devis IA MINENE de façon entièrement automatique :
+    1. Cherche l'adhérent du contrat Santé via NumeroPoliceConnexe
+    2. Crée/trouve le Client correspondant → utilisé comme souscripteur et assuré
+    3. Enregistre le devis IA
+    4. Transforme automatiquement tous les adhérents → assurés IA
+    5. Transforme automatiquement tous les affiliés → ayants-droits IA
+       (qualité déterminée à partir du champ lien de l'affilié Santé)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .models import DevisDetail, Devis as DevisModel
+        from .database import save_quotation_ia
+
+        data = dict(request.data)
+        # Normaliser les valeurs (request.data peut renvoyer des listes pour chaque clé)
+        data = {k: (v[0] if isinstance(v, list) and len(v) == 1 else v) for k, v in data.items()}
+
+        numeropolice = str(data.get("NumeroPoliceConnexe", "")).strip()
+        if not numeropolice:
+            return Response({"Status": "Erreur", "message": "NumeroPoliceConnexe requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 1. Contrat Santé
+        contrat_sante = Contrat.objects.filter(numeropolice=numeropolice).first()
+        if not contrat_sante:
+            return Response(
+                {"Status": "Erreur", "message": f"Aucun contrat Santé trouvé pour la police '{numeropolice}'."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        adherents = list(Adherent.objects.filter(devis=contrat_sante.iddevis_id, actif=True))
+        if not adherents:
+            return Response({"Status": "Erreur", "message": "Aucun adhérent actif pour ce contrat Santé."}, status=status.HTTP_404_NOT_FOUND)
+
+        # 2. Client principal (souscripteur = assuré du devis IA)
+        adherent_principal = adherents[0]
+        client_principal = _find_or_create_client_from_adherent(adherent_principal)
+        if not client_principal:
+            return Response({"Status": "Erreur", "message": "Impossible de trouver/créer le client pour l'adhérent principal."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # 3. Préparer et enregistrer le devis IA
+        # Le CLIENT du contrat Santé reste le souscripteur (IdClient) du devis IA.
+        # Le premier ADHÉRENT Santé devient l'assuré (IdAssure) du devis IA.
+        devis_data = dict(data)
+        devis_data["IdClient"] = contrat_sante.idclient_id
+        devis_data["IdAssure"] = client_principal.IdClient
+        devis_data["Flotte"] = False
+
+        (error, result_list) = save_quotation_ia(devis_data)
+        if not result_list:
+            return Response({"Status": "Erreur", "message": "Erreur lors de la création du devis IA."}, status=status.HTTP_400_BAD_REQUEST)
+
+        id_devis = result_list[0].IdDevis
+        output_msg = result_list[0].OutputMessage or ""
+        if error or not id_devis or id_devis <= 0:
+            return Response({"Status": "Erreur", "message": output_msg or "Erreur lors de la création du devis IA."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4. Transformation automatique adhérents → assurés IA / affiliés → ayants-droits IA
+        try:
+            devis_ia = DevisModel.objects.get(pk=id_devis)
+        except DevisModel.DoesNotExist:
+            return Response({"Status": "Succès partiel", "iddevis": id_devis, "message": "Devis créé, transformation impossible (devis introuvable)."}, status=status.HTTP_200_OK)
+
+        devis_detail_obj = DevisDetail.objects.filter(iddevis=id_devis).first()
+        id_tarif = devis_detail_obj.idtarif if devis_detail_obj else 103
+
+        capital_deces = float(data.get("CapitalDeces", 0))
+        capital_ipp = float(data.get("CapitalIpp", 0))
+        frais_traitement = float(data.get("FraisTraitement", 0))
+        date_effet = devis_ia.dateeffet.date() if hasattr(devis_ia.dateeffet, 'date') else devis_ia.dateeffet
+        date_expiration = devis_ia.dateexpiration.date() if hasattr(devis_ia.dateexpiration, 'date') else devis_ia.dateexpiration
+
+        qualite_map = _build_lien_qualite_map()
+
+        assures_crees = []
+        ayants_droits_crees = []
+        erreurs = []
+
+        for adherent in adherents:
+            client = _find_or_create_client_from_adherent(adherent)
+            if not client:
+                erreurs.append({"type": "adherent", "idadherent": adherent.idadherent, "message": "Client introuvable"})
+                continue
+
+            date_naissance = adherent.datenaissanceadherent or date(1970, 1, 1)
+            id_devis_detail_out = 0
+            out_message = ""
+            err_ia = False
+
+            try:
+                with connection.cursor() as cur:
+                    cur.execute(
+                        "CALL sp_enregistrement_assure_ia(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);",
+                        (
+                            devis_ia.compagnie_id,
+                            devis_ia.produit_id,
+                            devis_ia.offre_id,
+                            client.IdClient,
+                            12,
+                            date_effet,
+                            date_expiration,
+                            id_tarif,
+                            capital_deces,
+                            capital_ipp,
+                            frais_traitement,
+                            0,
+                            "01",
+                            date_naissance,
+                            adherent.adresseadherent or "",
+                            id_devis,
+                            0,
+                            0,
+                            0,
+                            id_devis_detail_out,
+                            out_message,
+                        ),
+                    )
+                    connection.commit()
+                    row = cur.fetchone()
+                    id_devis_detail_out = row[0] if row else 0
+                    out_message = row[1] if row and len(row) > 1 else ""
+            except Exception as e_ia:
+                err_ia = True
+                out_message = str(e_ia).split("\n")[0]
+
+            deja_existant = "déjà" in out_message.lower()
+            if err_ia and not deja_existant:
+                erreurs.append({"type": "assure", "idadherent": adherent.idadherent, "message": out_message})
+            else:
+                assures_crees.append(adherent.idadherent)
+
+            # Ayants-droits depuis affiliés
+            for affilie in Affilie.objects.filter(adherent=adherent, actif=True):
+                id_qualite = qualite_map.get(affilie.lien)
+                if not id_qualite:
+                    continue
+                try:
+                    enregistrer_ayant_droit({
+                        "IdAssure": client.IdClient,
+                        "IdQualiteAyantDroit": id_qualite,
+                        "NomAyantDroit": affilie.nom,
+                        "PrenomsAyantDroit": affilie.prenom or "",
+                        "Part": 0,
+                    })
+                    ayants_droits_crees.append(affilie.idaffilie)
+                except Exception as e_ad:
+                    erreurs.append({"type": "ayant_droit", "idaffilie": affilie.idaffilie, "message": str(e_ad).split("\n")[0]})
+
+        return Response(
+            {
+                "Status": "Succès",
+                "iddevis": id_devis,
+                "assures_crees": len(assures_crees),
+                "ayants_droits_crees": len(ayants_droits_crees),
+                "erreurs": len(erreurs),
+                "details_erreurs": erreurs,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ClientDepuisPoliceMineneView(APIView):
+    """
+    Retourne le client (souscripteur/assuré) correspondant à l'adhérent principal
+    du contrat Santé MINENE identifié par son numéro de police.
+    Utilisé pour auto-remplir souscripteur/assuré lors de la création d'un devis IA MINENE.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        numeropolice = request.query_params.get("numeropolice", "").strip()
+        if not numeropolice:
+            return Response(
+                {"Status": "Erreur", "message": "Le paramètre 'numeropolice' est requis."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        contrat_sante = Contrat.objects.filter(numeropolice=numeropolice).first()
+        if not contrat_sante:
+            return Response(
+                {"Status": "Erreur", "message": f"Aucun contrat Santé trouvé pour la police '{numeropolice}'."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        adherents = Adherent.objects.filter(devis=contrat_sante.iddevis_id, actif=True)
+        if not adherents.exists():
+            return Response(
+                {"Status": "Erreur", "message": "Aucun adhérent actif trouvé pour ce contrat Santé."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        result = []
+        for adherent in adherents:
+            client = None
+            if adherent.numerocni:
+                cle_unique = f"CNI-{adherent.numerocni}"
+                client = Client.objects.filter(cle_unique=cle_unique).first()
+
+            if client is None:
+                # Tentative de création du client depuis les données de l'adhérent
+                try:
+                    client = insert_new_assure({
+                        "Nom": adherent.nom,
+                        "Prenoms": adherent.prenom or "",
+                        "NumeroCNI": adherent.numerocni or "",
+                        "DateNaissance": adherent.datenaissanceadherent,
+                        "Sexe": adherent.sexe or "",
+                        "NumeroTelephone": getattr(adherent, "telephone", "") or "",
+                        "NumeroMobile": getattr(adherent, "telephone", "") or "",
+                        "AdressePostale": getattr(adherent, "adresseadherent", "") or "",
+                        "AdresseGeographique": getattr(adherent, "adresseadherent", "") or "",
+                    })
+                except Exception as e:
+                    msg = str(e)
+                    import re
+                    match = re.search(r"\(cle_unique\)=\(([^)]+)\)", msg)
+                    if match:
+                        cle_unique_val = match.group(1)
+                        client = Client.objects.filter(cle_unique=cle_unique_val).first()
+                    if client is None and adherent.numerocni:
+                        client = Client.objects.filter(cle_unique=f"CNI-{adherent.numerocni}").first()
+
+            result.append({
+                "idadherent": adherent.idadherent,
+                "nom": adherent.nom,
+                "prenom": adherent.prenom or "",
+                "id_client": client.IdClient if client else None,
+                "nom_complet": f"{adherent.nom} {adherent.prenom or ''}".strip(),
+            })
+
+        return Response(
+            {"Status": "Succès", "adherents": result},
             status=status.HTTP_200_OK,
         )
 
