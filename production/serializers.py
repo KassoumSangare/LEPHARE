@@ -4920,3 +4920,21 @@ class PieceJointeSerializer(serializers.ModelSerializer):
             validated_data["type_fichier"] = fichier.content_type
             validated_data["taille"] = fichier.size
         return super().create(validated_data)
+
+
+
+##############################################################
+# Transformation adhérents/affiliés Santé MINENE → IA MINENE
+##############################################################
+
+class AffilieQualiteSerializer(serializers.Serializer):
+    idaffilie = serializers.IntegerField()
+    id_qualite = serializers.IntegerField()
+
+
+class TransformerSanteEnIASerializer(serializers.Serializer):
+    id_devis_ia = serializers.IntegerField()
+    capital_deces = serializers.DecimalField(max_digits=19, decimal_places=4)
+    capital_ipp = serializers.DecimalField(max_digits=19, decimal_places=4)
+    frais_traitement = serializers.DecimalField(max_digits=19, decimal_places=4)
+    affilies_qualites = AffilieQualiteSerializer(many=True, required=False, default=list)
