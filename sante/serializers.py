@@ -486,6 +486,9 @@ class EnregistrementDevisSanteSerializer(EnregistrementDevisBaseSerializer):
     GestionnaireSante = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
+    TauxReduction = serializers.DecimalField(
+        max_digits=6, decimal_places=2, required=False, default=0, allow_null=True
+    )
     TauxReductionCommerciale = serializers.DecimalField(
         max_digits=5, decimal_places=2, required=False, default=0, allow_null=True
     )
