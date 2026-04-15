@@ -183,6 +183,8 @@ def save_quotation_ia(input_data):
         + str(save_quotation_arg[19])
         + ")"
     )
+    # Accessoire saisi manuellement (index 25 dans save_quotation_arg)
+    accessoire_manuel = save_quotation_arg[25]
     queryset_vide = QuotationInsertionResult.objects.none()
     try:
         # status = 0
@@ -200,6 +202,19 @@ def save_quotation_ia(input_data):
                 OutputMessage=row[2],
             )
             data_insertion_result_list.append(sql_output)
+
+            # Si l'utilisateur a saisi un accessoire manuel, le persister
+            # pour éviter le recalcul lors de la confirmation du devis.
+            returned_id = row[0]
+            if returned_id and accessoire_manuel and accessoire_manuel > 0:
+                try:
+                    devis_obj = Devis.objects.get(iddevis=returned_id)
+                    devis_obj.prime_imposee = True
+                    devis_obj.accessoire = accessoire_manuel
+                    devis_obj.save(update_fields=["prime_imposee", "accessoire"])
+                except Devis.DoesNotExist:
+                    pass
+
     except Exception as error:
         error_occured = True
         print(error)
@@ -657,6 +672,10 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
             else ""
         )
 
+    Accessoire = Decimal("0")
+    if "Accessoire" in input_data and input_data["Accessoire"]:
+        Accessoire = Decimal(str(input_data["Accessoire"]))
+
     OutputMessage = ""
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
@@ -672,7 +691,7 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     IdIntermediaire,
                     IdCompagnie,
@@ -691,7 +710,6 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
                     CapitalMaterielInformatique,
                     CapitalFraisReconstitution,
                     CapitalFraisSupplementaire,
-                    CapitalCautionnement,
                     MontantPrime,
                     IdDuree,
                     TelephoneAssure,
@@ -707,6 +725,19 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
                 ObjectId=row[0], OutputMessage=row[1]
             )
             data_insertion_result_list.append(sql_output)
+
+            # Si l'utilisateur a saisi un accessoire manuel, le persister
+            # pour éviter le recalcul lors de la confirmation du devis.
+            returned_id = row[0]
+            if returned_id and Accessoire > 0:
+                try:
+                    devis_obj = Devis.objects.get(iddevis=returned_id)
+                    devis_obj.prime_imposee = True
+                    devis_obj.accessoire = Accessoire
+                    devis_obj.save(update_fields=["prime_imposee", "accessoire"])
+                except Devis.DoesNotExist:
+                    pass
+
     except Exception as error:
         error_occurred = True
         print(error)
@@ -859,6 +890,29 @@ def save_quotation_risques_divers(user_id: int, input_data: dict):
                         ObjectId=row[0], OutputMessage=row[1]
                     )
                     data_insertion_result_list.append(sql_output)
+
+                    # Si prime imposée : persister les valeurs manuelles pour
+                    # éviter le recalcul automatique lors de la confirmation.
+                    returned_id = row[0]
+                    if returned_id and PrimeNette > 0:
+                        try:
+                            devis_obj = Devis.objects.get(iddevis=returned_id)
+                            devis_obj.prime_imposee = True
+                            devis_obj.primenette = PrimeNette
+                            devis_obj.taxe = Taxe
+                            devis_obj.primettc = PrimeTTC
+                            update_fields = [
+                                "prime_imposee",
+                                "primenette",
+                                "taxe",
+                                "primettc",
+                            ]
+                            if Accessoire > 0:
+                                devis_obj.accessoire = Accessoire
+                                update_fields.append("accessoire")
+                            devis_obj.save(update_fields=update_fields)
+                        except Devis.DoesNotExist:
+                            pass
 
     except Exception as error:
         error_occurred = True

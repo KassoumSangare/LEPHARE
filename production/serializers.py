@@ -2040,6 +2040,9 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
     )
+    Accessoire = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, allow_null=True, default=0
+    )
 
     def to_internal_value(self, data):
         if "TelephoneAssure" in data:
