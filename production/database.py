@@ -1658,7 +1658,22 @@ def get_liste_assure_ia(id, statut):
             )
 
             result = cursor.fetchall()
+
+            # Récupération en lot de Client.Fonction pour tous les assurés
+            id_assures = [row[7] for row in result]
+            fonctions_map = {}
+            if id_assures:
+                fonctions_map = {
+                    c.IdClient: c.Fonction or ""
+                    for c in Client.objects.filter(
+                        IdClient__in=id_assures
+                    ).only("IdClient", "Fonction")
+                }
+
             for row in result:
+                id_assure = row[7]
+                # Priorité à Client.Fonction (valeur saisie ou importée depuis le fichier)
+                fonction = fonctions_map.get(id_assure, "")
                 assure = AssureIaParDevisOuContrat(
                     Nom=row[0],
                     Prenoms=row[1],
@@ -1666,15 +1681,14 @@ def get_liste_assure_ia(id, statut):
                     AdresseGeographique=row[3],
                     DateNaissance=row[4],
                     LieuNaissance=row[5],
-                    Profession=row[6],
-                    IdAssure=row[7],
+                    Profession=fonction if fonction else row[6],
+                    IdAssure=id_assure,
                     IdDetail=row[8],
                     CapitalDeces=row[9],
                     CapitalInfirmite=row[10],
                     CapitalFraisTraitement=row[11],
                 )
                 assure_ia_list.append(assure)
-                # print(assure)
     except Exception as error:
         print(error)
         msg = str(error)
