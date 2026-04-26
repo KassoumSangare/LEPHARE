@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             *load_sql_upgrade(
                 __file__,
-                "functions/fn_get_nouvelle_periode_couverture.sql",
+                "functions/fn_get_nouvelle_periode_couverture",
                 from_version=1,
                 to_version=2,
             )
