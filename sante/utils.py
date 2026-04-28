@@ -9,7 +9,7 @@ from django.db import connection
 from openpyxl import load_workbook
 
 from core.utils import convert_to_date
-from production.models import DataInsertionResult
+from production.models import ComplementDevisDetailSante, DataInsertionResult, DevisDetail
 
 from .models import (
     Adherent,
@@ -356,6 +356,24 @@ def save_quotation_sante(user_id, input_data):
         if connection:
             cursor.close()
             connection.close()
+
+    # Patch ORM : force la mise à jour de taux_reduction_commerciale après fermeture du curseur raw.
+    # Le SP peut ignorer ce champ lorsque le complément existe déjà (ex. renouvellement),
+    # donc on s'assure que la valeur envoyée est bien persistée.
+    if not error_occurred and sql_output and sql_output.ObjectId and TauxReductionCommerciale != Decimal("0"):
+        try:
+            det_ids = list(
+                DevisDetail.objects.filter(iddevis=sql_output.ObjectId).values_list(
+                    "iddevisdetail", flat=True
+                )
+            )
+            if det_ids:
+                ComplementDevisDetailSante.objects.filter(
+                    devis_detail__in=det_ids
+                ).update(taux_reduction_commerciale=TauxReductionCommerciale)
+        except Exception as patch_error:
+            print(f"ORM patch taux_reduction_commerciale: {patch_error}")
+
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
