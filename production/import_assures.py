@@ -511,7 +511,9 @@ def extraire_modele_1(df: pd.DataFrame) -> List[Dict]:
                         row.get("CapitalTraitement"), "CapitalTraitement"
                     ),
                     "Offre": row.get("Offre", 0),
-                    "Fonction": nettoyer_chaine(row.get("Fonction", "")),
+                    "Fonction": nettoyer_chaine(
+                        get_col_value(row, ["Fonction", "FONCTION", "fonction"]) or ""
+                    ),
                     "PrimeHT": Decimal("0.00"),
                     "Accessoire": Decimal("0.00"),
                     "PrimeTTC": Decimal("0.00"),
@@ -613,7 +615,9 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
                 "AdressePostale": "",
                 "AdresseGeographique": "",
                 "Email": "",
-                "Fonction": nettoyer_chaine(row.get("FONCTION", "")),
+                "Fonction": nettoyer_chaine(
+                    get_col_value(row, ["FONCTION", "Fonction", "fonction"]) or ""
+                ),
                 "CapitalDeces": valider_monetaire(
                     row.get("CAPITAL DECES"), "CAPITAL DECES"
                 ),
@@ -693,7 +697,9 @@ def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
                 "AdressePostale": "",
                 "AdresseGeographique": "",
                 "Email": "",
-                "Fonction": nettoyer_chaine(row.get("Fonction", "")),
+                "Fonction": nettoyer_chaine(
+                    get_col_value(row, ["Fonction", "FONCTION", "fonction"]) or ""
+                ),
                 "CapitalDeces": valider_monetaire(
                     row.get("Capitaux Décès"), "Capitaux Décès"
                 ),
