@@ -773,29 +773,6 @@ def enregistrer_filiale_sante(userid, input_data):
 def get_quotation_id(userid):
     msg = ""
     id_devis = 0
-    # try:
-    #     current_user = UranusUser.objects.get(pk=userid)
-    #     numeros = NumeroSaisieSante.objects.filter(
-    #         Q(operateur=current_user) & Q(saisie_en_cours=True)
-    #     )
-    #     if numeros.exists():
-    #         row = numeros.order_by("-date_creation")[0]
-    #         if row.devis_enregistre:
-    #             id_devis = row.id_devis_final
-    #         else:
-    #             id_devis = row.id_devis
-    #     else:
-    #         numero = NumeroSaisieSante(
-    #             operateur=current_user,
-    #             saisie_en_cours=True,
-    #             devis_enregistre=False,
-    #             id_devis_final=0,
-    #         )
-    #         numero.save()
-    #         id_devis = numero.id_devis
-    # except Exception as error:
-    #     id_devis = 0
-    #     msg = str(error)
     try:
         with connection.cursor() as cursor:
             cursor.execute(
