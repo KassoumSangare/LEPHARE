@@ -6,7 +6,7 @@ from .views import ClientViewSet, ClientRestreintViewSet, ClientRechercheView
 
 router = routers.DefaultRouter()
 router.register(r"client", ClientViewSet)
-router.register(r"clientrestreint", ClientRestreintViewSet)
+router.register(r"clientrestreint", ClientRestreintViewSet, basename='client-restreint')
 
 
 urlpatterns = [

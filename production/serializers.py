@@ -37,6 +37,7 @@ from .models import (
     Cheque,
     ChequeOperation,
     ComplementContratDetailAuto,
+    ComplementContratDetailSante,
     ComplementDevisDetailAuto,
     ComplementDevisDetailDommage,
     ComplementDevisDetailMrh,
@@ -634,6 +635,19 @@ class ContratDetailSerializer(serializers.ModelSerializer):
                 tarif = Tarif.objects.get(pk=instance.idtarif)
                 if tarif:
                     representation["codecategorie"] = tarif.CodeCategorie
+                complementsante = ComplementContratDetailSante.objects.filter(
+                    contrat_detail=instance
+                )
+                if complementsante.exists():
+                    c = complementsante[0]
+                    representation["taux_reduction_commerciale"] = c.taux_reduction_commerciale
+                    representation["prime_famille"] = c.prime_famille
+                    representation["prime_affilie"] = c.prime_affilie
+                    representation["prime_globale"] = c.prime_globale
+                    representation["montant_surprime"] = c.montant_surprime
+                    representation["montant_accessoire_manuel"] = c.montant_accessoire_manuel
+                    representation["type_contrat"] = c.type_contrat.id_type_contrat if c.type_contrat else None
+                    representation["gestionnaire_sante"] = c.gestionnaire_sante
             if contrat.idproduit.id_produit == 1:
                 complementinfo = ComplementContratDetailAuto.objects.filter(
                     contrat_detail=instance
@@ -2039,6 +2053,9 @@ class EnregistrementDevisTRInfoSerializer(EnregistrementDevisBaseSerializer):
     )
     NumeroPoliceCompagnie = serializers.CharField(
         max_length=60, required=False, default="", allow_null=True
+    )
+    Accessoire = serializers.DecimalField(
+        max_digits=19, decimal_places=4, required=False, allow_null=True, default=0
     )
 
     def to_internal_value(self, data):
@@ -4920,3 +4937,21 @@ class PieceJointeSerializer(serializers.ModelSerializer):
             validated_data["type_fichier"] = fichier.content_type
             validated_data["taille"] = fichier.size
         return super().create(validated_data)
+
+
+
+##############################################################
+# Transformation adhérents/affiliés Santé MINENE → IA MINENE
+##############################################################
+
+class AffilieQualiteSerializer(serializers.Serializer):
+    idaffilie = serializers.IntegerField()
+    id_qualite = serializers.IntegerField()
+
+
+class TransformerSanteEnIASerializer(serializers.Serializer):
+    id_devis_ia = serializers.IntegerField()
+    capital_deces = serializers.DecimalField(max_digits=19, decimal_places=4)
+    capital_ipp = serializers.DecimalField(max_digits=19, decimal_places=4)
+    frais_traitement = serializers.DecimalField(max_digits=19, decimal_places=4)
+    affilies_qualites = AffilieQualiteSerializer(many=True, required=False, default=list)
