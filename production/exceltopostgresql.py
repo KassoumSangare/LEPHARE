@@ -1,6 +1,7 @@
+import difflib
 import hashlib
 import os
-from collections import Counter
+import unicodedata
 from datetime import datetime, timedelta
 from itertools import chain
 
@@ -18,7 +19,11 @@ from .excelhandler import (
     ExcelFileValidator,
 )
 from .iautils import convert_to_date
-from .models import DataInsertionResult, HistoriqueImportationCertificat
+from .models import (
+    CertificatTransport,
+    DataInsertionResult,
+    HistoriqueImportationCertificat,
+)
 
 os.environ["PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT"] = "1.0"
 
@@ -53,6 +58,7 @@ excel_column_mapping = {
     "Accessories": "accessoire",
     "Montant Taxe": "taxe",
     "Prime Totale": "primettc",
+    "Accessoires AFS-CI": "accessoireafsci",
 }
 
 date_columns = [
@@ -102,7 +108,7 @@ excel_expected_columns = [
 ]
 
 # 🔥 Colonnes à supprimer avant le mapping avec les colonnes dans PostgreSQL:
-columns_to_remove = ["Accessoires AFS-CI"]
+columns_to_remove = []
 
 max_file_size = 5 * 1024 * 1024
 
@@ -285,52 +291,77 @@ def map_columns(df, column_mapping):
     return df
 
 
+####################################################################
+
+
+def normalize_text(value):
+    """Nettoie une chaîne : minuscules, suppression accents et espaces invisibles."""
+    if pd.isna(value):
+        return ""
+    text = str(value).strip().lower()
+    text = "".join(
+        c
+        for c in unicodedata.normalize("NFD", text)
+        if unicodedata.category(c) != "Mn"
+    )
+    text = text.replace("\u00a0", " ").replace("\t", " ")
+    return text
+
+
 def locate_header_and_read_excel(
     excel_file,
     expected_columns,
     sheet_name=0,
     date_columns=None,
+    tolerance=0.8,
 ):
     """
-    Détecte automatiquement la ligne d'en-tête dans un fichier Excel
-    contenant des lignes parasites avant la zone de données.
+    Détecte automatiquement la ligne d'en-tête dans un fichier Excel,
+    en tolérant les accents et espaces invisibles.
+    Toutes les colonnes attendues doivent être présentes (exactes ou proches).
+    Retourne un DataFrame dont les colonnes sont renommées selon expected_columns.
     """
 
-    # 1. Lire le fichier sans typer, sans parser les dates
+    # 1. Lecture brute
     df_raw = pd.read_excel(
         excel_file,
         sheet_name=sheet_name,
-        header=None,  # On lit tout brut
-        dtype=str,  # On évite les conversions automatiques
+        header=None,
+        dtype=str,
     )
 
-    # Normalisation des colonnes attendues
-    expected_lower = [col.lower().strip() for col in expected_columns]
-
+    expected_norm = [normalize_text(col) for col in expected_columns]
     header_row_index = None
+    matched_columns = {}
 
-    # 2. Parcourir chaque ligne pour trouver l'en-tête
+    # 2. Détection stricte de l'en-tête
     for idx, row in df_raw.iterrows():
-        row_values = [str(v).strip().lower() for v in row.tolist()]
+        row_values = [normalize_text(v) for v in row.tolist()]
+        all_found = True
 
-        # Vérifier si cette ligne contient toutes les colonnes attendues
-        if all(col in row_values for col in expected_lower):
+        for exp, exp_raw in zip(expected_norm, expected_columns):
+            if exp in row_values:
+                matched_columns[exp_raw] = exp_raw
+            else:
+                close = difflib.get_close_matches(
+                    exp, row_values, n=1, cutoff=tolerance
+                )
+                if close:
+                    matched_columns[exp_raw] = close[0]
+                else:
+                    all_found = False
+                    break
+
+        if all_found:
             header_row_index = idx
             break
 
     if header_row_index is None:
         raise ValueError(
-            "Impossible de trouver la ligne d'en-tête dans le fichier Excel."
+            "Impossible de trouver une ligne d'en-tête contenant toutes les colonnes attendues."
         )
 
-    # Dtypes spécifiques pour éviter les conversions automatiques
-    forced_dtypes = {
-        "Référence Certificat": str,
-        "Numero FDI": str,
-        "Numero Document Transport": str,
-    }
-
-    # 3. Relire proprement le fichier à partir de la bonne ligne
+    # 3. Relire proprement
     df = pd.read_excel(
         excel_file,
         sheet_name=sheet_name,
@@ -338,10 +369,73 @@ def locate_header_and_read_excel(
         parse_dates=date_columns,
         date_format="%d/%m/%Y",
         decimal=",",
-        dtype=forced_dtypes,
     )
 
+    # 4. Renommer les colonnes réelles avec les noms attendus
+    rename_map = {matched_columns[exp]: exp for exp in expected_columns}
+    df.rename(columns=rename_map, inplace=True)
+
     return df, header_row_index
+
+
+####################################################################
+# def locate_header_and_read_excel(
+#     excel_file,
+#     expected_columns,
+#     sheet_name=0,
+#     date_columns=None,
+# ):
+#     """
+#     Détecte automatiquement la ligne d'en-tête dans un fichier Excel
+#     contenant des lignes parasites avant la zone de données.
+#     """
+
+#     # 1. Lire le fichier sans typer, sans parser les dates
+#     df_raw = pd.read_excel(
+#         excel_file,
+#         sheet_name=sheet_name,
+#         header=None,  # On lit tout brut
+#         dtype=str,  # On évite les conversions automatiques
+#     )
+
+#     # Normalisation des colonnes attendues
+#     expected_lower = [col.lower().strip() for col in expected_columns]
+
+#     header_row_index = None
+
+#     # 2. Parcourir chaque ligne pour trouver l'en-tête
+#     for idx, row in df_raw.iterrows():
+#         row_values = [str(v).strip().lower() for v in row.tolist()]
+
+#         # Vérifier si cette ligne contient toutes les colonnes attendues
+#         if all(col in row_values for col in expected_lower):
+#             header_row_index = idx
+#             break
+
+#     if header_row_index is None:
+#         raise ValueError(
+#             "Impossible de trouver la ligne d'en-tête dans le fichier Excel."
+#         )
+
+#     # Dtypes spécifiques pour éviter les conversions automatiques
+#     forced_dtypes = {
+#         "Référence Certificat": str,
+#         "Numero FDI": str,
+#         "Numero Document Transport": str,
+#     }
+
+#     # 3. Relire proprement le fichier à partir de la bonne ligne
+#     df = pd.read_excel(
+#         excel_file,
+#         sheet_name=sheet_name,
+#         header=header_row_index,
+#         parse_dates=date_columns,
+#         date_format="%d/%m/%Y",
+#         decimal=",",
+#         dtype=forced_dtypes,
+#     )
+
+#     return df, header_row_index
 
 
 # Function to upsert data using psycopg3 within Django
@@ -470,20 +564,6 @@ def export_excel_to_postgres(
         # Save the current position of the file pointer (usually 0)
         initial_position = excel_file.tell()
 
-        # Read the Excel file into a pandas DataFrame
-        # df = pd.read_excel(
-        #     excel_file,
-        #     sheet_name=sheet_name,
-        #     parse_dates=date_columns,
-        #     date_format="%d/%m/%Y",
-        #     decimal=",",
-        #     dtype={
-        #         "Référence Certificat": str,
-        #         "Numero FDI": str,
-        #         "Numero Document Transport": str,
-        #     },
-        # )
-
         # Détection automatique de la ligne d'en-tête + lecture propre
         df, header_index = locate_header_and_read_excel(
             excel_file,
@@ -545,6 +625,20 @@ def export_excel_to_postgres(
 
     # Drop all rows where Request ID is NaN
     df.dropna(subset=["numerorequete"], inplace=True)
+
+    # Redimensionnement des colonnes de type texte après suppression des colonnes parasites
+    from django.db import models
+
+    char_fields = [
+        (field.db_column, field.max_length)
+        for field in CertificatTransport._meta.fields
+        if isinstance(field, models.CharField)
+    ]
+    for column_name, column_max_length in char_fields:
+        if column_name in df.columns:
+            df[column_name] = (
+                df[column_name].astype(str).str[:column_max_length]
+            )
 
     # Insert two new columns for start_date and end_date
     df.insert(0, "datefinperiode", end_date)
@@ -620,7 +714,7 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
             list(chain(queryset_vide, data_insertion_result_list)),
         )
 
-    (error_occured, message) = export_excel_to_postgres(
+    error_occured, message = export_excel_to_postgres(
         excel_file=uploaded_excel_file,
         start_date=start_date,
         end_date=end_date,
@@ -641,14 +735,12 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
 
     # file_sha256_hash = calculate_sha256(uploaded_excel_file)
     file_sha256_hash = None
-    (error_occured, message, importation_histo_id) = (
-        upsert_importation_history(
-            start_date,
-            end_date,
-            uploaded_excel_file,
-            file_sha256_hash,
-            user_id,
-        )
+    error_occured, message, importation_histo_id = upsert_importation_history(
+        start_date,
+        end_date,
+        uploaded_excel_file,
+        file_sha256_hash,
+        user_id,
     )
 
     if error_occured:
@@ -660,7 +752,7 @@ def export_excel(uploaded_excel_file, user_id, start_date, end_date):
             list(chain(queryset_vide, data_insertion_result_list)),
         )
 
-    (error_occured, messages) = create_transport_insurance_quote(
+    error_occured, messages = create_transport_insurance_quote(
         importation_histo_id,
         start_date,
         end_date,

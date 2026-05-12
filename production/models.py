@@ -3407,10 +3407,9 @@ class CertificatTransport(models.Model):
         verbose_name="Date FDI", null=True, db_column="datefdi"
     )
     assureur = models.CharField(
-        max_length=255, verbose_name="Assureur", db_column="assureur"
+        max_length=512, verbose_name="Assureur", db_column="assureur"
     )
-    adresse_assureur = models.CharField(
-        max_length=255,
+    adresse_assureur = models.TextField(
         verbose_name="Adresse Assureur",
         db_column="adresseassureur",
     )
@@ -3421,20 +3420,18 @@ class CertificatTransport(models.Model):
         blank=True,
     )
     nom_souscripteur = models.CharField(
-        max_length=255,
+        max_length=512,
         verbose_name="Souscripteur",
         db_column="nomsouscripteur",
     )
-    adresse_souscripteur = models.CharField(
-        max_length=255,
+    adresse_souscripteur = models.TextField(
         verbose_name="Adresse souscripteur",
         db_column="adressesouscripteur",
     )
     assure = models.CharField(
-        max_length=255, verbose_name="Assuré", db_column="assure"
+        max_length=512, verbose_name="Assuré", db_column="assure"
     )
-    adresse_assure = models.CharField(
-        max_length=255,
+    adresse_assure = models.TextField(
         verbose_name="Adresse Assuré",
         db_column="adresseassure",
     )
@@ -3450,10 +3447,9 @@ class CertificatTransport(models.Model):
         verbose_name="Date Début Voyage", db_column="datedebutvoyage"
     )
     voyage = models.CharField(
-        max_length=120, verbose_name="Voyage", db_column="voyage"
+        max_length=255, verbose_name="Voyage", db_column="voyage"
     )
-    description_commerciale = models.CharField(
-        max_length=255,
+    description_commerciale = models.TextField(
         verbose_name="Description Commerciale",
         db_column="descriptioncommerciale",
     )
@@ -3510,6 +3506,14 @@ class CertificatTransport(models.Model):
         decimal_places=4,
         verbose_name="Prime Totale",
         db_column="primettc",
+    )
+    accessoire_afs_ci = models.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        verbose_name="Accessoires AFS-CI",
+        db_column="accessoireafsci",
+        null=True,
+        default=500,
     )
     date_debut_periode = models.DateField(
         verbose_name="Date Début Periode", db_column="datedebutperiode"
