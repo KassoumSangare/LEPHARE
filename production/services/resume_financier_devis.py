@@ -92,16 +92,17 @@ class ResumeFinancierDevis:
             # Charger toutes les garanties de toutes les maisons
             for maison in self.maisons:
                 cursor.execute("""
-                    SELECT dg.IdDevisDet, dg.IdGarantie, 
+                    SELECT dg.IdDevisDet, dg.IdGarantie,
                            g.codesousgarantie, g.libellesousgarantie,
                            dg.PrimeNette, dg.taxe, dg.primeannuelle,
-                           dg.Acquise
+                           dg.Acquise, dg.capital, dg.franchise,
+                           dg.minfranchise, dg.maxfranchise, dg.tauxfranchise
                     FROM StdDevisDetGarantie dg
                     JOIN stdsousgarantie g ON dg.IdGarantie = g.idsousgarantie
                     WHERE dg.IdDevisDet = %s
                     ORDER BY g.libellesousgarantie
                 """, [maison['id']])
-                
+
                 for gar_row in cursor.fetchall():
                     self.sous_garanties.append({
                         'id_maison': gar_row[0],
@@ -112,6 +113,11 @@ class ResumeFinancierDevis:
                         'taxe': Decimal(str(gar_row[5])) if gar_row[5] else Decimal('0'),
                         'prime_ttc': Decimal(str(gar_row[6])) if gar_row[6] else Decimal('0'),
                         'acquise': gar_row[7],
+                        'capital': Decimal(str(gar_row[8])) if gar_row[8] else None,
+                        'franchise': Decimal(str(gar_row[9])) if gar_row[9] else None,
+                        'minfranchise': Decimal(str(gar_row[10])) if gar_row[10] else None,
+                        'maxfranchise': Decimal(str(gar_row[11])) if gar_row[11] else None,
+                        'tauxfranchise': Decimal(str(gar_row[12])) if gar_row[12] else None,
                     })
     
     def calculer_prime_annuelle_avant_options(self) -> Decimal:
@@ -164,14 +170,17 @@ class ResumeFinancierDevis:
                 cursor.execute("""
                     SELECT id, primemin, primemax, accessoires, montantforfait
                     FROM stdaccessoire
-                    WHERE idproduit = %s 
+                    WHERE idproduit = %s
                       AND idcompagnie = %s
-                      AND %s BETWEEN primemin AND primemax
+                      AND primemin <= %s
+                      AND (primemax >= %s OR primemax IS NULL)
+                    ORDER BY primemin DESC
                     LIMIT 1
                 """, [
                     self.devis['idproduit'],
                     self.devis['idcompagnie'],
-                    prime_nette_totale
+                    prime_nette_totale,
+                    prime_nette_totale,
                 ])
                 
                 row = cursor.fetchone()
@@ -223,15 +232,21 @@ class ResumeFinancierDevis:
     def obtenir_sous_garanties_acquises(self) -> List[Dict]:
         """
         Retourne la liste des garanties acquises avec leurs détails.
-        
+
         Returns:
             Liste des garanties acquises
         """
         sous_garanties_acquises = [
             {
+                'id_maison': g['id_maison'],
                 'id_sous_garantie': g['id_sous_garantie'],
                 'code_sous_garantie': g['code_sous_garantie'],
                 'libelle_sous_garantie': g['libelle_sous_garantie'],
+                'capital': g['capital'],
+                'franchise': g['franchise'],
+                'minfranchise': g['minfranchise'],
+                'maxfranchise': g['maxfranchise'],
+                'tauxfranchise': g['tauxfranchise'],
                 'prime_nette': g['prime_nette'],
                 'taxe': g['taxe'],
                 'prime_ttc': g['prime_ttc'],
@@ -239,7 +254,7 @@ class ResumeFinancierDevis:
             for g in self.sous_garanties
             if g['acquise']  # Seulement les garanties acquises
         ]
-        
+
         return sous_garanties_acquises
     
     def calculer_resume_complet(self) -> Dict:

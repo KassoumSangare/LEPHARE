@@ -223,31 +223,23 @@ class MRHCalculService:
     # SECTION 2 : RÉPARTITION SUR LES GARANTIES OBLIGATOIRES
     # ========================================================================
 
-    def repartir_prime_sous_garanties(self, prime_base: Decimal) -> List[Dict]:
+    def repartir_prime_sous_garanties(
+        self,
+        prime_base: Decimal,
+        repartition_manuelle: Optional[Dict[str, Decimal]] = None,
+    ) -> List[Dict]:
         """
         Répartit la prime de base sur les sous-garanties obligatoires.
 
-        Args:
-            prime_base: Prime de base calculée
+        Si repartition_manuelle est fourni (dict {code_sous_garantie: montant}),
+        les garanties spécifiées reçoivent leur montant direct et le reliquat
+        (prime_base - somme des montants manuels) est redistribué proportionnellement
+        sur les garanties non touchées selon leur taux_repartition renormalisé.
 
-        Returns:
-            Liste de dict contenant pour chaque sous-garantie:
-            {
-                'code_sous_garantie': str,
-                'libelle_sous_garantie': str,
-                'type_garantie': 'OBLIGATOIRE',
-                'prime_nette': Decimal,
-                'taux_repartition': Decimal,
-                'taux_taxe': Decimal,
-                'taxe': Decimal,
-                'prime_ttc': Decimal,
-                'code_sous_garantie_std': str,
-                'id_sous_garantie_std': int
-            }
+        Contrainte : somme des montants manuels ≤ prime_base.
         """
         sous_garanties_calculees = []
 
-        # Récupérer les sous-garanties obligatoires pour cet usage
         self.sous_garanties_obligatoires = (
             SousGarantieUsage.objects.filter(
                 usage=self.usage, obligatoire=True, actif=True
@@ -256,35 +248,83 @@ class MRHCalculService:
             .order_by("ordre_affichage")
         )
 
-        for gu in self.sous_garanties_obligatoires:
-            # Calcul de la prime nette de la sous-garantie
-            prime_nette = self._arrondir(
-                prime_base * (gu.taux_repartition / Decimal("100"))
+        if repartition_manuelle:
+            codes_obligs = {gu.sous_garantie.code for gu in self.sous_garanties_obligatoires}
+            somme_manuelle = sum(
+                Decimal(str(v)) for k, v in repartition_manuelle.items()
+                if k in codes_obligs
             )
+            # Arrondir prime_base à l'entier avant comparaison (FCFA = devise entière)
+            prime_base_arrondie = prime_base.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            if somme_manuelle > prime_base_arrondie:
+                raise ValidationError(
+                    {
+                        "repartition_manuelle": (
+                            f"La somme des montants ({somme_manuelle}) "
+                            f"dépasse la prime de base ({prime_base_arrondie})."
+                        )
+                    }
+                )
 
-            # Déterminer le taux de taxe selon la sous-garantie
-            taux_taxe = self._get_taux_taxe(gu.sous_garantie.code)
+            reliquat = prime_base - somme_manuelle
+            non_touches = [
+                gu for gu in self.sous_garanties_obligatoires
+                if gu.sous_garantie.code not in repartition_manuelle
+            ]
+            sum_taux_non_touches = sum(gu.taux_repartition for gu in non_touches)
 
-            # Calcul de la taxe
-            taxe = self._arrondir(prime_nette * taux_taxe)
+            for gu in self.sous_garanties_obligatoires:
+                code = gu.sous_garantie.code
+                if code in repartition_manuelle:
+                    prime_nette = self._arrondir(Decimal(str(repartition_manuelle[code])))
+                elif sum_taux_non_touches > 0:
+                    prime_nette = self._arrondir(
+                        reliquat * (gu.taux_repartition / sum_taux_non_touches)
+                    )
+                else:
+                    prime_nette = Decimal("0")
 
-            # Prime TTC
-            prime_ttc = prime_nette + taxe
+                taux_taxe = self._get_taux_taxe(code)
+                taxe = self._arrondir(prime_nette * taux_taxe)
 
-            sous_garanties_calculees.append(
-                {
-                    "code_sous_garantie": gu.sous_garantie.code,
-                    "libelle_sous_garantie": gu.sous_garantie.libelle,
-                    "type_garantie": "OBLIGATOIRE",
-                    "prime_nette": prime_nette,
-                    "taux_repartition": gu.taux_repartition,
-                    "taux_taxe": taux_taxe * 100,  # Convertir en pourcentage
-                    "taxe": taxe,
-                    "prime_ttc": prime_ttc,
-                    "code_sous_garantie_std": gu.sous_garantie.get_code_sous_garantie_std(),
-                    "id_sous_garantie_std": gu.sous_garantie.get_id_sous_garantie_std(),
-                }
-            )
+                sous_garanties_calculees.append(
+                    {
+                        "code_sous_garantie": code,
+                        "libelle_sous_garantie": gu.sous_garantie.libelle,
+                        "type_garantie": "OBLIGATOIRE",
+                        "prime_nette": prime_nette,
+                        "taux_repartition": gu.taux_repartition,
+                        "taux_taxe": taux_taxe * 100,
+                        "taxe": taxe,
+                        "prime_ttc": prime_nette + taxe,
+                        "code_sous_garantie_std": gu.sous_garantie.get_code_sous_garantie_std(),
+                        "id_sous_garantie_std": gu.sous_garantie.get_id_sous_garantie_std(),
+                        "manuel": True,
+                    }
+                )
+        else:
+            for gu in self.sous_garanties_obligatoires:
+                prime_nette = self._arrondir(
+                    prime_base * (gu.taux_repartition / Decimal("100"))
+                )
+                taux_taxe = self._get_taux_taxe(gu.sous_garantie.code)
+                taxe = self._arrondir(prime_nette * taux_taxe)
+
+                sous_garanties_calculees.append(
+                    {
+                        "code_sous_garantie": gu.sous_garantie.code,
+                        "libelle_sous_garantie": gu.sous_garantie.libelle,
+                        "type_garantie": "OBLIGATOIRE",
+                        "prime_nette": prime_nette,
+                        "taux_repartition": gu.taux_repartition,
+                        "taux_taxe": taux_taxe * 100,
+                        "taxe": taxe,
+                        "prime_ttc": prime_nette + taxe,
+                        "code_sous_garantie_std": gu.sous_garantie.get_code_sous_garantie_std(),
+                        "id_sous_garantie_std": gu.sous_garantie.get_id_sous_garantie_std(),
+                        "manuel": False,
+                    }
+                )
 
         return sous_garanties_calculees
 
@@ -423,7 +463,10 @@ class MRHCalculService:
     # ========================================================================
 
     def ajouter_sous_garanties_optionnelles(
-        self, sous_garanties: List[Dict], codes_sous_garanties_opt: List[str]
+        self,
+        sous_garanties: List[Dict],
+        codes_sous_garanties_opt: List[str],
+        repartition_manuelle: Optional[Dict[str, Decimal]] = None,
     ) -> List[Dict]:
         """
         Ajoute les sous-garanties optionnelles sélectionnées.
@@ -456,15 +499,18 @@ class MRHCalculService:
                 )
 
             # Récupérer la prime forfaitaire
-            try:
-                forfait = SousGarantieForfait.objects.get(
-                    sous_garantie=sous_gar_opt, actif=True
-                )
-                prime_nette = forfait.prime_nette
-            except SousGarantieForfait.DoesNotExist:
-                raise ValidationError(
-                    f"Prime forfaitaire non définie pour la garantie '{sous_gar_opt.code}'"
-                )
+            if repartition_manuelle and sous_gar_opt.code in repartition_manuelle:
+                prime_nette = self._arrondir(Decimal(str(repartition_manuelle[sous_gar_opt.code])))
+            else:
+                try:
+                    forfait = SousGarantieForfait.objects.get(
+                        sous_garantie=sous_gar_opt, actif=True
+                    )
+                    prime_nette = forfait.prime_nette
+                except SousGarantieForfait.DoesNotExist:
+                    raise ValidationError(
+                        f"Prime forfaitaire non définie pour la garantie '{sous_gar_opt.code}'"
+                    )
 
             # Calculer la taxe
             taux_taxe = self._get_taux_taxe(sous_gar_opt.code)
@@ -519,29 +565,29 @@ class MRHCalculService:
             }
         """
         from configuration_api.models import Accessoire
+        from django.db.models import Q
 
         accessoire = Decimal("0")
 
         try:
-            # Rechercher le palier applicable
+            # primemax peut être NULL pour le dernier palier (= sans plafond)
+            # Q(primemax__gte=...) | Q(primemax__isnull=True) gère les deux cas
             palier = Accessoire.objects.filter(
                 produit_id=id_produit,
                 compagnie_id=id_compagnie,
                 primemin__lte=prime_nette_totale,
-                primemax__gte=prime_nette_totale,
-            ).first()
+            ).filter(
+                Q(primemax__gte=prime_nette_totale) | Q(primemax__isnull=True)
+            ).order_by("primemin").last()  # dernier palier si plusieurs matchent (ex: primemax NULL)
 
             if palier:
-                # Logique COALESCE(NULLIF(montantforfait, 0), accessoires)
-                # Si montantforfait existe et n'est pas 0, on le prend, sinon on prend accessoires
                 if palier.montantforfait and palier.montantforfait != 0:
                     accessoire = palier.montantforfait
                 else:
                     accessoire = palier.accessoires or Decimal("0")
 
-        except Exception as e:
-            # En cas d'erreur, on continue avec accessoire = 0
-            print(e)
+        except Exception:
+            pass
 
         # Calcul de la taxe sur accessoire (14,5%)
         taxe_accessoire = self._arrondir(
@@ -569,6 +615,7 @@ class MRHCalculService:
         sous_garanties_optionnelles: Optional[List[str]] = None,
         adresse: Optional[str] = None,
         description: Optional[str] = None,
+        repartition_manuelle: Optional[Dict[str, Decimal]] = None,
     ) -> Dict:
         """
         Calcule la prime complète d'une maison avec toutes ses garanties.
@@ -600,7 +647,9 @@ class MRHCalculService:
         )
 
         # 2. Répartir sur les garanties obligatoires
-        sous_garanties = self.repartir_prime_sous_garanties(prime_base)
+        sous_garanties = self.repartir_prime_sous_garanties(
+            prime_base, repartition_manuelle=repartition_manuelle
+        )
 
         # 3. Appliquer les options
         sous_garanties, options_appliquees = self.appliquer_options(
@@ -609,7 +658,8 @@ class MRHCalculService:
 
         # 4. Ajouter les garanties optionnelles
         sous_garanties = self.ajouter_sous_garanties_optionnelles(
-            sous_garanties, sous_garanties_optionnelles
+            sous_garanties, sous_garanties_optionnelles,
+            repartition_manuelle=repartition_manuelle,
         )
 
         # 5. Calculer les totaux
@@ -848,8 +898,6 @@ class MRHCalculService:
         primettc = prime_nette_totale + accessoire + fga + cedeao + taxe_totale
 
         # 5. Mettre à jour le devis
-        print(">>> accessoire AVANT UPDATE =", accessoire, type(accessoire))
-
         Devis.objects.filter(iddevis=id_devis).update(
             primenette=prime_nette_totale,
             taxe=taxe_totale,
@@ -859,10 +907,6 @@ class MRHCalculService:
             cedeao=cedeao,
             primettc=primettc,
         )
-        devis_db = (
-            Devis.objects.filter(iddevis=id_devis).values("accessoire").first()
-        )
-        print(">>> accessoire EN BASE APRÈS UPDATE =", devis_db)
 
         # 6. Retourner les montants calculés
         return {
@@ -1006,6 +1050,7 @@ class MRHCalculService:
         sous_garanties_optionnelles: Optional[List[str]] = None,
         adresse: Optional[str] = None,
         description: Optional[str] = None,
+        repartition_manuelle: Optional[Dict[str, Decimal]] = None,
     ) -> Dict:
         """
         Méthode combinée : calcule la prime d'une maison ET l'enregistre dans le devis.
@@ -1042,6 +1087,7 @@ class MRHCalculService:
             sous_garanties_optionnelles=sous_garanties_optionnelles,
             adresse=adresse,
             description=description,
+            repartition_manuelle=repartition_manuelle,
         )
 
         # 2. Enregistrer dans DevisDetail et DevisDetGarantie
@@ -1249,8 +1295,8 @@ class MRHCalculService:
     # ========================================================================
 
     def _arrondir(self, montant: Decimal) -> Decimal:
-        """Arrondit un montant à 2 décimales"""
-        return montant.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        """Arrondit à l'entier le plus proche (FCFA = devise sans décimale)"""
+        return montant.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
     def _generer_matricule_maison(self) -> str:
         """
@@ -1635,7 +1681,9 @@ class MRHCalculService:
         self,
         id_devis: int,
         montant_impose: Decimal,
+        repartition_maisons: Optional[List[Dict]] = None,
         montant_accessoire: Optional[Decimal] = None,
+        montant_taxe: Optional[Decimal] = None,
         user_id: Optional[int] = None,
         user_nom: Optional[str] = None,
         motif: Optional[str] = None,
@@ -1710,42 +1758,43 @@ class MRHCalculService:
 
             imposition_id = cursor.fetchone()[0]
 
-        # 5. Répartir la prime imposée sur les maisons (garder les ratios)
-        total_prime_actuel = sum(m.primenette for m in maisons)
+        # 5. Appliquer la répartition explicite par maison
+        # repartition_maisons = [{id_maison, montant}, ...] fourni par l'utilisateur
+        map_repartition = {
+            item["id_maison"]: Decimal(str(item["montant"]))
+            for item in (repartition_maisons or [])
+        }
 
-        if total_prime_actuel and total_prime_actuel != 0:
-            # Répartir proportionnellement
-            for maison in maisons:
-                ratio_maison = maison.primenette / total_prime_actuel
+        for maison in maisons:
+            if map_repartition:
                 nouvelle_prime_maison = self._arrondir(
-                    montant_impose * ratio_maison
+                    map_repartition.get(maison.iddevisdetail, Decimal("0"))
                 )
-
-                # Recalculer la taxe de la maison (garder ratio)
-                if maison.primenette and maison.primenette != 0:
-                    ratio_taxe_maison = (
-                        maison.taxeenregistrement / maison.primenette
-                    )
+            else:
+                # Fallback : répartition proportionnelle (compatibilité)
+                total_prime_actuel = sum(m.primenette for m in maisons)
+                if total_prime_actuel and total_prime_actuel != 0:
+                    ratio_maison = maison.primenette / total_prime_actuel
+                    nouvelle_prime_maison = self._arrondir(montant_impose * ratio_maison)
                 else:
-                    ratio_taxe_maison = Decimal("0.185")
+                    nouvelle_prime_maison = self._arrondir(montant_impose / len(maisons))
 
-                nouvelle_taxe_maison = self._arrondir(
-                    nouvelle_prime_maison * ratio_taxe_maison
-                )
+            # Taxe par maison : imposée globalement → répartir proportionnellement,
+            # sinon recalculer via le ratio actuel taxe/prime
+            if montant_taxe is not None and montant_taxe > 0:
+                total_prime_pour_ratio = sum(m.primenette for m in maisons) or Decimal("1")
+                ratio_maison = nouvelle_prime_maison / total_prime_pour_ratio if total_prime_pour_ratio else Decimal("0")
+                nouvelle_taxe_maison = self._arrondir(montant_taxe * ratio_maison)
+            elif maison.primenette and maison.primenette != 0:
+                ratio_taxe_maison = maison.taxeenregistrement / maison.primenette
+                nouvelle_taxe_maison = self._arrondir(nouvelle_prime_maison * ratio_taxe_maison)
+            else:
+                ratio_taxe_maison = Decimal("0.185")
+                nouvelle_taxe_maison = self._arrondir(nouvelle_prime_maison * ratio_taxe_maison)
 
-                # Mettre à jour la maison
-                maison.primenette = nouvelle_prime_maison
-                maison.taxeenregistrement = nouvelle_taxe_maison
-                maison.save()
-        else:
-            # Répartition égale si pas de prime actuelle
-            prime_par_maison = self._arrondir(montant_impose / len(maisons))
-            for maison in maisons:
-                maison.primenette = prime_par_maison
-                maison.taxeenregistrement = self._arrondir(
-                    prime_par_maison * Decimal("0.185")
-                )
-                maison.save()
+            maison.primenette = nouvelle_prime_maison
+            maison.taxeenregistrement = nouvelle_taxe_maison
+            maison.save()
 
         # 6. Recalculer les totaux du devis
         # (utilise les nouvelles valeurs des maisons)
@@ -1757,13 +1806,17 @@ class MRHCalculService:
             montant_accessoire=montant_accessoire,  # Forcer le montant des accessoires si fourni
         )
 
-        # 7. Forcer la prime nette imposée (au cas où il y aurait un écart d'arrondi)
+        # 7. Forcer les montants imposés (au cas où il y aurait un écart d'arrondi)
+        update_fields = ["primenette", "prime_imposee", "prime_imposee_date"]
         devis.primenette = montant_impose
         devis.prime_imposee = True
         devis.prime_imposee_date = datetime.now()
-        devis.save(
-            update_fields=["primenette", "prime_imposee", "prime_imposee_date"]
-        )
+        if montant_taxe is not None and montant_taxe > 0:
+            accessoire_val = devis.accessoire or Decimal("0")
+            devis.taxe = montant_taxe
+            devis.primettc = montant_impose + montant_taxe + accessoire_val
+            update_fields += ["taxe", "primettc"]
+        devis.save(update_fields=update_fields)
         devis.refresh_from_db()
         return {
             "success": True,
