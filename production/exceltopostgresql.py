@@ -9,6 +9,7 @@ import pandas as pd
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.db import connection
 from django.db.models import Q
+from rapidfuzz import fuzz
 
 from account.models import UranusUser
 from customer.models import Client
@@ -168,19 +169,64 @@ def check_no_overlap(historical_data):
     return True
 
 
-def get_customer_id(client_name: str) -> int:
-    client_name = client_name.split("\n")[0].strip('\r" ')
-    customers = Client.objects.filter(Q(Nom__istartswith=client_name)).values(
-        "IdClient"
-    )
-    customer_ids = [customer["IdClient"] for customer in list(customers)]
+# def get_customer_id(client_name: str) -> int:
+#     client_name = client_name.split("\n")[0].strip('\r" ')
+#     customers = Client.objects.filter(Q(Nom__istartswith=client_name)).values(
+#         "IdClient"
+#     )
+#     customer_ids = [customer["IdClient"] for customer in list(customers)]
 
-    if len(customer_ids) == 0:
+#     if len(customer_ids) == 0:
+#         return 0
+#     elif len(customer_ids) == 1:
+#         return customer_ids[0]
+#     else:
+#         return -1
+
+
+#################################################################################
+
+
+def normalize_text(value):
+    """Nettoie une chaîne : minuscules, suppression accents et espaces invisibles."""
+    if pd.isna(value):
+        return ""
+    text = str(value).strip().lower()
+    text = "".join(
+        c
+        for c in unicodedata.normalize("NFD", text)
+        if unicodedata.category(c) != "Mn"
+    )
+    text = text.replace("\u00a0", " ").replace("\t", " ")
+    return text
+
+
+def get_customer_id(excel_name: str, threshold: int = 85) -> int:
+    excel_norm = normalize_text(excel_name)
+
+    # Pré-filtrage simple : récupérer seulement les clients contenant un mot clé
+    keywords = excel_norm.split()
+    query = Client.objects.none()
+    for kw in keywords[:3]:  # limiter à 3 mots clés
+        query = query | Client.objects.filter(Nom__icontains=kw)
+
+    candidates = query.values_list("IdClient", "Nom")
+
+    matches = []
+    for client_id, db_name in candidates:
+        score = fuzz.token_set_ratio(excel_norm, normalize_text(db_name))
+        if score >= threshold:
+            matches.append((client_id, db_name, score))
+
+    if len(matches) == 0:
         return 0
-    elif len(customer_ids) == 1:
-        return customer_ids[0]
+    elif len(matches) == 1:
+        return matches[0][0]  # (id, nom, score)
     else:
         return -1
+
+
+#################################################################################
 
 
 def check_dates_consistent_with_period(certificat_df, start_date, end_date):
@@ -292,20 +338,6 @@ def map_columns(df, column_mapping):
 
 
 ####################################################################
-
-
-def normalize_text(value):
-    """Nettoie une chaîne : minuscules, suppression accents et espaces invisibles."""
-    if pd.isna(value):
-        return ""
-    text = str(value).strip().lower()
-    text = "".join(
-        c
-        for c in unicodedata.normalize("NFD", text)
-        if unicodedata.category(c) != "Mn"
-    )
-    text = text.replace("\u00a0", " ").replace("\t", " ")
-    return text
 
 
 def locate_header_and_read_excel(
