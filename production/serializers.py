@@ -3281,6 +3281,15 @@ class SousGarantieOptionnelleSelectionSerializer(serializers.Serializer):
         return value
 
 
+class RepartitionManuelleItemSerializer(serializers.Serializer):
+    """Un item de répartition manuelle : code garantie + montant."""
+
+    code_sous_garantie = serializers.CharField(max_length=50)
+    montant = serializers.DecimalField(
+        max_digits=19, decimal_places=2, min_value=0
+    )
+
+
 class MaisonCalculRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête de calcul d'une maison.
@@ -3357,6 +3366,16 @@ class MaisonCalculRequestSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         help_text="Description supplémentaire",
+    )
+
+    repartition_manuelle = RepartitionManuelleItemSerializer(
+        many=True,
+        required=False,
+        default=list,
+        help_text=(
+            "Répartition manuelle des primes par garantie. "
+            "Les garanties non listées reçoivent le reliquat automatiquement."
+        ),
     )
 
     def validate_code_usage(self, value):
@@ -4238,6 +4257,9 @@ class GarantieAcquiseSerializer(serializers.Serializer):
     Serializer pour une garantie acquise avec ses montants.
     """
 
+    id_maison = serializers.IntegerField(
+        help_text="ID du DevisDetail (maison) auquel appartient cette garantie"
+    )
     id_sous_garantie = serializers.IntegerField(
         help_text="ID de la garantie dans stdgarantie"
     )
@@ -4246,6 +4268,41 @@ class GarantieAcquiseSerializer(serializers.Serializer):
     )
     libelle_sous_garantie = serializers.CharField(
         max_length=200, help_text="Libellé de la garantie"
+    )
+    capital = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Capital assuré de la garantie (en FCFA)",
+    )
+    franchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Franchise de la garantie (en FCFA)",
+    )
+    minfranchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Franchise minimum",
+    )
+    maxfranchise = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        help_text="Franchise maximum",
+    )
+    tauxfranchise = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Taux de franchise (%)",
     )
     prime_nette = serializers.DecimalField(
         max_digits=15,
@@ -4589,16 +4646,31 @@ class ImpositionPrimeMaisonRequestSerializer(serializers.Serializer):
     )
 
 
+class RepartitionMaisonImpositionSerializer(serializers.Serializer):
+    id_maison = serializers.IntegerField()
+    montant = serializers.DecimalField(max_digits=19, decimal_places=2, min_value=0)
+
+
 class ImpositionPrimeDevisRequestSerializer(serializers.Serializer):
     """
     Serializer pour la requête d'imposition de prime devis.
+
+    Si repartition_maisons est fournie, sa somme doit être égale à montant_impose
+    (tolérance ±1 FCFA). Sinon, le service répartit proportionnellement.
     """
 
     montant_impose = serializers.DecimalField(
         max_digits=19,
         decimal_places=4,
         min_value=Decimal("0.01"),
-        help_text="Montant de la prime NETTE à imposer pour le devis complet (en FCFA)",
+        help_text="Prime NETTE totale imposée",
+    )
+
+    repartition_maisons = RepartitionMaisonImpositionSerializer(
+        many=True,
+        required=False,
+        default=list,
+        help_text="Répartition par maison (optionnel). Si absent : répartition proportionnelle.",
     )
 
     montant_accessoire = serializers.DecimalField(
@@ -4606,22 +4678,40 @@ class ImpositionPrimeDevisRequestSerializer(serializers.Serializer):
         decimal_places=4,
         required=False,
         allow_null=True,
-        help_text="Montant de l'accessoire à imposer pour le devis complet (en FCFA)",
+        help_text="Montant de l'accessoire (optionnel, sinon calculé automatiquement)",
+    )
+
+    montant_taxe = serializers.DecimalField(
+        max_digits=19,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+        min_value=Decimal("0"),
+        help_text="Taxe totale imposée (optionnel, sinon calculée automatiquement)",
     )
 
     motif = serializers.CharField(
         max_length=1000,
         required=False,
         allow_blank=True,
-        help_text="Raison de l'imposition (ex: négociation commerciale)",
+        help_text="Raison de l'imposition",
     )
 
-    def validate_montant_accessoire(self, value):
-        if value is not None and value <= 0:
-            raise serializers.ValidationError(
-                "Le montant accessoire doit être strictement positif ou nul."
-            )
-        return value
+    def validate(self, data):
+        repartition = data.get("repartition_maisons", [])
+        if repartition:
+            somme = sum(item["montant"] for item in repartition)
+            montant_impose = data["montant_impose"]
+            if abs(somme - montant_impose) > Decimal("1"):
+                raise serializers.ValidationError(
+                    {
+                        "repartition_maisons": (
+                            f"La somme des montants par maison ({somme} FCFA) "
+                            f"doit être égale au montant imposé ({montant_impose} FCFA)."
+                        )
+                    }
+                )
+        return data
 
 
 class LeveeImpositionRequestSerializer(serializers.Serializer):

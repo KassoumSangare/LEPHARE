@@ -69,6 +69,7 @@ from .views import (  # cancel_premium_collection,
     QuittanceViewSet,
     RecalculerDevisView,
     ReductionFlotteDevisView,
+    RepartirGarantiesView,
     ResumeFinancierDevisView,
     ReversementCompagnieNonValideViewSet,
     ReversementCompagnieViewSet,
@@ -492,7 +493,7 @@ urlpatterns = [
     # ========================================================================
     path(
         "mrh/devis/<int:devis_id>/maisons/",
-        MaisonViewSet.as_view({"post": "create"}),
+        MaisonViewSet.as_view({"get": "list", "post": "create"}),
         name="devis-maison-create",
     ),
     # POST /api/mrh/devis/{devis_id}/maisons/ - Ajouter une maison
@@ -523,6 +524,12 @@ urlpatterns = [
         ResumeFinancierDevisView.as_view(),
         name="devis-resume-financier",
     ),
+    path(
+        "mrh/devis/<int:devis_id>/repartir-garanties/",
+        RepartirGarantiesView.as_view(),
+        name="mrh-repartir-garanties",
+    ),
+    # POST /api/mrh/devis/{devis_id}/repartir-garanties/ - Répartition manuelle
     # ========================================================================
     # IMPOSITION DE PRIME MAISON
     # ========================================================================

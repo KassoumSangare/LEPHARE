@@ -3369,6 +3369,11 @@ class CalculMaisonView(APIView):
         data = serializer.validated_data
         service = MRHCalculService()
 
+        repartition_manuelle = {
+            item["code_sous_garantie"]: item["montant"]
+            for item in data.get("repartition_manuelle", [])
+        } or None
+
         try:
             # Calculer la prime
             resultat = service.calculer_maison(
@@ -3386,6 +3391,7 @@ class CalculMaisonView(APIView):
                 ],
                 adresse=data.get("adresse"),
                 description=data.get("description"),
+                repartition_manuelle=repartition_manuelle,
             )
 
             # Sérialiser la réponse
@@ -3688,6 +3694,118 @@ class MaisonViewSet(viewsets.ViewSet):
 
     permission_classes = [IsAuthenticated]
 
+    def list(self, request, devis_id=None):
+        """
+        Liste les maisons d'un devis avec leurs garanties.
+
+        GET /api/mrh/devis/{devis_id}/maisons/
+        """
+        from django.db import connection
+
+        maisons = []
+        devis_totaux = {}
+
+        with connection.cursor() as cursor:
+            # Totaux du devis (prime_nette, taxe, accessoire, prime_ttc)
+            cursor.execute("""
+                SELECT primenette, taxe, accessoire, primettc, primeannuelle
+                FROM stddevis
+                WHERE iddevis = %s
+            """, [devis_id])
+            row_devis = cursor.fetchone()
+            if row_devis:
+                devis_totaux = {
+                    "prime_nette_totale": float(row_devis[0] or 0),
+                    "taxe_totale": float(row_devis[1] or 0),
+                    "accessoire": float(row_devis[2] or 0),
+                    "prime_ttc_totale": float(row_devis[3] or 0),
+                    "prime_annuelle_totale": float(row_devis[4] or 0),
+                }
+
+            cursor.execute("""
+                SELECT
+                    dd.iddevisdetail,
+                    dd.modelevehicule AS code_usage,
+                    dd.observation,
+                    dd.adressecnd,
+                    dd.valeurneuve,
+                    dd.valeurvenale,
+                    dd.chargeutile,
+                    dd.valeuraccessoire,
+                    dd.primenette,
+                    dd.taxeenregistrement,
+                    dd.primeannuelle,
+                    dd.primeimposee,
+                    u.libelle AS usage_libelle
+                FROM stddevisdetail dd
+                LEFT JOIN stdmrh_usage_habitation u ON u.code = dd.modelevehicule
+                WHERE dd.iddevis = %s
+                ORDER BY dd.iddevisdetail
+            """, [devis_id])
+
+            for row in cursor.fetchall():
+                (
+                    iddevisdetail, code_usage, observation, adresse,
+                    valeur_batiment, valeur_contenu, loyer_mensuel, capital_rvt,
+                    primenette, taxe, primeannuelle, prime_imposee, usage_libelle,
+                ) = row
+
+                pn = float(primenette or 0)
+                tx = float(taxe or 0)
+
+                # Récupérer les garanties de cette maison
+                cursor.execute("""
+                    SELECT
+                        dg.idgarantie,
+                        g.code,
+                        g.libelle,
+                        dg.primenette,
+                        dg.taxe,
+                        dg.primeannuelle,
+                        dg.acquise
+                    FROM stddevisdetgarantie dg
+                    JOIN stdmrh_sous_garantie g ON dg.idgarantie = g.idsousgarantie
+                    WHERE dg.iddevisdet = %s
+                    ORDER BY g.libelle
+                """, [iddevisdetail])
+
+                garanties = [
+                    {
+                        "id_sous_garantie": r[0],
+                        "code_sous_garantie": r[1],
+                        "libelle_sous_garantie": r[2],
+                        "prime_nette": float(r[3] or 0),
+                        "taxe": float(r[4] or 0),
+                        "prime_ttc": float(r[5] or 0),
+                        "acquise": bool(r[6]),
+                    }
+                    for r in cursor.fetchall()
+                ]
+
+                maisons.append({
+                    "maison_id": iddevisdetail,
+                    "code_usage": code_usage,
+                    "usage_libelle": usage_libelle or code_usage,
+                    "adresse": adresse or "",
+                    "parametres": {
+                        "valeur_batiment": float(valeur_batiment or 0),
+                        "valeur_contenu": float(valeur_contenu or 0),
+                        "loyer_mensuel": float(loyer_mensuel or 0),
+                        "capital_rvt": float(capital_rvt or 0),
+                    },
+                    "prime_nette": pn,
+                    "taxe": tx,
+                    "prime_annuelle": float(primeannuelle or 0),
+                    "prime_ttc": pn + tx,
+                    "prime_imposee": bool(prime_imposee),
+                    "garanties": garanties,
+                })
+
+        return Response(
+            {"maisons": maisons, **devis_totaux},
+            status=status.HTTP_200_OK,
+        )
+
     def create(self, request, devis_id=None):
         """
         Ajoute une maison à un devis existant.
@@ -3737,6 +3855,11 @@ class MaisonViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        repartition_manuelle = {
+            item["code_sous_garantie"]: item["montant"]
+            for item in data.get("repartition_manuelle", [])
+        } or None
+
         try:
             # Calculer et enregistrer la maison
             resultat = service.calculer_et_enregistrer_maison(
@@ -3759,6 +3882,7 @@ class MaisonViewSet(viewsets.ViewSet):
                 ],
                 adresse=data.get("adresse"),
                 description=data.get("description"),
+                repartition_manuelle=repartition_manuelle,
             )
 
             # Construire la réponse
@@ -4096,6 +4220,196 @@ class ResumeFinancierDevisView(APIView):
             )
 
 
+class RepartirGarantiesView(APIView):
+    """
+    Répartition manuelle des primes par garantie pour une maison existante.
+
+    POST /api/mrh/devis/{devis_id}/repartir-garanties/
+
+    Body:
+    {
+        "id_maison": 123,
+        "garanties": [
+            {"code_sous_garantie": "INCENDIE", "montant": 4000},
+            {"code_sous_garantie": "DEGAT_EAUX", "montant": 3000}
+        ]
+    }
+
+    - La taxe est calculée automatiquement par le backend.
+    - Les garanties non listées reçoivent le reliquat (total_actuel - somme_listée)
+      redistribué proportionnellement à leur poids actuel.
+    - Contrainte : somme des montants ≤ total prime nette actuelle de la maison.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, devis_id):
+        from decimal import Decimal
+        from production.models import Devis, DevisDetail, DevisDetGarantie
+        from production.services.mrh_calcul_service import MRHCalculService
+        from production.services.resume_financier_devis import obtenir_resume_financier_devis
+
+        id_maison = request.data.get("id_maison")
+        garanties_data = request.data.get("garanties", [])
+
+        if not id_maison:
+            return Response({"erreur": "id_maison requis"}, status=status.HTTP_400_BAD_REQUEST)
+        if not garanties_data:
+            return Response({"erreur": "Aucune garantie fournie"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            devis = Devis.objects.get(iddevis=devis_id)
+        except Devis.DoesNotExist:
+            return Response({"erreur": "Devis introuvable"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            maison = DevisDetail.objects.get(iddevisdetail=id_maison, iddevis_id=devis_id)
+        except DevisDetail.DoesNotExist:
+            return Response({"erreur": "Maison introuvable dans ce devis"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Garanties actuelles de la maison
+        garanties_actuelles = list(DevisDetGarantie.objects.filter(IdDevisDet_id=id_maison).select_related("IdGarantie"))
+
+        # Référence pour la contrainte et la redistribution :
+        # si la prime est imposée, c'est maison.primenette (le montant imposé) qui fait foi,
+        # pas la somme des primenettes des garanties (qui peuvent être les anciennes valeurs calculées).
+        from decimal import ROUND_HALF_UP
+        total_actuel = maison.primenette
+
+        # Construire dict {code_garantie: montant_manuel}
+        service = MRHCalculService()
+        repartition = {
+            item["code_sous_garantie"]: Decimal(str(item["montant"]))
+            for item in garanties_data
+        }
+        capitaux = {
+            item["code_sous_garantie"]: Decimal(str(item["capital"]))
+            for item in garanties_data
+            if item.get("capital") is not None
+        }
+        franchises = {
+            item["code_sous_garantie"]: Decimal(str(item["franchise"]))
+            for item in garanties_data
+            if item.get("franchise") is not None
+        }
+        minfranchises = {
+            item["code_sous_garantie"]: Decimal(str(item["minfranchise"]))
+            for item in garanties_data
+            if item.get("minfranchise") is not None
+        }
+        maxfranchises = {
+            item["code_sous_garantie"]: Decimal(str(item["maxfranchise"]))
+            for item in garanties_data
+            if item.get("maxfranchise") is not None
+        }
+        tauxfranchises = {
+            item["code_sous_garantie"]: Decimal(str(item["tauxfranchise"]))
+            for item in garanties_data
+            if item.get("tauxfranchise") is not None
+        }
+
+        # Validation : somme ≤ prime nette de la maison (calculée ou imposée)
+        somme_manuelle = sum(repartition.values())
+        total_pour_comparaison = total_actuel.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        if somme_manuelle > total_pour_comparaison:
+            return Response(
+                {
+                    "erreur": (
+                        f"La somme des montants ({somme_manuelle}) dépasse "
+                        f"la prime nette de la maison ({total_pour_comparaison})."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reliquat = total_actuel - somme_manuelle
+
+        # Garanties non touchées par la saisie manuelle
+        non_touches = [
+            g for g in garanties_actuelles
+            if g.IdGarantie.CodeSousGarantie not in repartition
+        ]
+
+        # Redistribution proportionnelle du reliquat sur les garanties non touchées.
+        # Si la prime est imposée, les anciennes PrimeNette des garanties ne sont plus
+        # une référence fiable → on utilise les taux de répartition de l'usage si disponibles,
+        # sinon redistribution équipondérée.
+        sum_poids_non_touches = sum(g.PrimeNette for g in non_touches)
+
+        # Appliquer les nouveaux montants
+        for garantie in garanties_actuelles:
+            code = garantie.IdGarantie.CodeSousGarantie
+
+            if code in repartition:
+                nouvelle_prime = service._arrondir(repartition[code])
+            elif sum_poids_non_touches > 0:
+                poids = garantie.PrimeNette / sum_poids_non_touches
+                nouvelle_prime = service._arrondir(reliquat * poids)
+            elif non_touches:
+                # Redistribution équipondérée (cas prime imposée avec garanties à 0)
+                nouvelle_prime = service._arrondir(reliquat / Decimal(len(non_touches)))
+            else:
+                nouvelle_prime = Decimal("0")
+
+            taux_taxe = service._get_taux_taxe(code)
+            nouvelle_taxe = service._arrondir(nouvelle_prime * taux_taxe)
+
+            update_kwargs = {
+                "PrimeNette": nouvelle_prime,
+                "taxe": nouvelle_taxe,
+                "primeannuelle": nouvelle_prime + nouvelle_taxe,
+            }
+            if code in capitaux:
+                update_kwargs["Capital"] = capitaux[code]
+            if code in franchises:
+                update_kwargs["Franchise"] = franchises[code]
+            if code in minfranchises:
+                update_kwargs["minfranchise"] = minfranchises[code]
+            if code in maxfranchises:
+                update_kwargs["maxfranchise"] = maxfranchises[code]
+            if code in tauxfranchises:
+                update_kwargs["tauxfranchise"] = tauxfranchises[code]
+
+            DevisDetGarantie.objects.filter(pk=garantie.pk).update(**update_kwargs)
+
+        # Recalculer les totaux de la maison
+        garanties_maj = DevisDetGarantie.objects.filter(IdDevisDet_id=id_maison)
+        prime_nette_maison = sum(g.PrimeNette for g in garanties_maj)
+        taxe_maison = sum(g.taxe for g in garanties_maj)
+        DevisDetail.objects.filter(iddevisdetail=id_maison).update(
+            primenette=prime_nette_maison,
+            taxeenregistrement=taxe_maison,
+            primeannuelle=prime_nette_maison,
+        )
+
+        # Recalculer les totaux du devis
+        maisons = DevisDetail.objects.filter(iddevis_id=devis_id)
+        prime_nette_totale = sum(m.primenette for m in maisons)
+        taxe_maisons = sum(m.taxeenregistrement for m in maisons)
+
+        accessoire_result = service.calculer_accessoire(
+            prime_nette_totale=prime_nette_totale,
+            id_produit=devis.produit_id,
+            id_compagnie=devis.compagnie_id,
+        )
+        accessoire = accessoire_result["accessoire"]
+        taxe_accessoire = accessoire_result["taxe_accessoire"]
+        taxe_totale = taxe_maisons + taxe_accessoire
+        primettc = prime_nette_totale + taxe_totale + accessoire
+
+        Devis.objects.filter(iddevis=devis_id).update(
+            primenette=prime_nette_totale,
+            taxe=taxe_totale,
+            accessoire=accessoire,
+            primettc=primettc,
+        )
+
+        resume = obtenir_resume_financier_devis(devis_id)
+        serializer = ResumeFinancierDevisSerializer(resume)
+        return Response({"success": True, "resume_financier": serializer.data}, status=status.HTTP_200_OK)
+
+
 class ChequeFilter(filters.FilterSet):
     # Filtre pour les chèques non épuisés (solde > 0)
     non_epuise = filters.BooleanFilter(method="filter_non_epuise")
@@ -4330,9 +4644,8 @@ class ImposerPrimeDevisView(APIView):
         devis = get_object_or_404(Devis, iddevis=devis_id)
 
         montant_impose = serializer.validated_data["montant_impose"]
-        montant_accessoire = serializer.validated_data.get(
-            "montant_accessoire"
-        )
+        montant_accessoire = serializer.validated_data.get("montant_accessoire")
+        montant_taxe = serializer.validated_data.get("montant_taxe")
 
         # Appeler le service
         service = MRHCalculService()
@@ -4341,7 +4654,9 @@ class ImposerPrimeDevisView(APIView):
             resultat = service.imposer_prime_devis(
                 id_devis=devis_id,
                 montant_impose=montant_impose,
+                repartition_maisons=serializer.validated_data.get("repartition_maisons", []),
                 montant_accessoire=montant_accessoire,
+                montant_taxe=montant_taxe,
                 user_id=(
                     request.user.id if hasattr(request.user, "id") else None
                 ),
