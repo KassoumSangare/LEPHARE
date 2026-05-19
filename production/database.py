@@ -223,8 +223,8 @@ def save_quotation_ia(input_data):
             err_msg = err_msg.split("\n")[0]
 
         sql_output = QuotationInsertionResult(
-            IdDevis=save_quotation_arg[23],
-            IdDevisDetail=save_quotation_arg[24],
+            IdDevis=save_quotation_arg[27],
+            IdDevisDetail=save_quotation_arg[28],
             NumeroImmatriculation=donnees_assure,
             OutputMessage=err_msg,
         )
@@ -2854,6 +2854,7 @@ def policy_modification(user_id, input_data):
     id_devis = 0
     data_insertion_result_list = []
     queryset_vide = DataInsertionResult.objects.none()
+    print(f"valeur dans le CALL : {user_id}, {id_contrat}, {id_avenant}, {date_emission}, {date_effet}, {date_expiration}, {motif_annulation}, {id_devis}, {output_message}")
     try:
         with connection.cursor() as cursor:
             cursor.execute(
