@@ -8,7 +8,7 @@ from uranus.utils.migrations import load_sql_upgrade
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("production", "0136_merge_20260518_2207"),
+        ("production", "0136_merge_20260519_1004"),
     ]
 
     operations = [
