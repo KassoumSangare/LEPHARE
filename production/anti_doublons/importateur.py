@@ -67,9 +67,10 @@ def traiter_assures(assures, request_post_data, config, rapport):
         enregistrer_beneficiaire,
     )
     
+    id_devis_initial = int(request_post_data.get("IdDevis", 0) or 0)
     entete_devis = get_entete_devis(
         request_post_data=request_post_data,
-        flotte=(len(assures) > 1)
+        flotte=(len(assures) > 1) or (id_devis_initial > 0)
     )
     
     id_devis = 0
