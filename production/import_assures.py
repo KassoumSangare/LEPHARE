@@ -1067,8 +1067,10 @@ def enregistrer_assures(request_post_data: dict, assures: List[Dict]) -> int:
     if not assures:
         raise ValidationError("Aucun assuré à enregistrer")
 
+    id_devis_initial = int(request_post_data.get("IdDevis", 0) or 0)
     entete_devis = get_entete_devis(
-        request_post_data=request_post_data, flotte=(len(assures) > 1)
+        request_post_data=request_post_data,
+        flotte=(len(assures) > 1) or (id_devis_initial > 0)
     )
 
     id_devis = 0
