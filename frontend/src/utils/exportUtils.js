@@ -341,6 +341,196 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   downloadBlob(blob, cleanName);
 };
 
+const BORDEREAU_COLUMNS = [
+  'Numéro Police', 'Numéro quittance', 'Numéro Avenant', 'Date Emission',
+  'Date Effet', 'Date Expiration', 'Prime Nette', 'Accessoire', 'Taxe',
+  'Prime TTC', 'Comm. Interm.',
+];
+
+const fmtMoney = (v) => Math.round(Number(v || 0)).toLocaleString('fr-FR');
+const fmtDate = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('fr-FR');
+};
+
+/**
+ * Construit le corps HTML du tableau groupé Compagnie > Client > Branche
+ * (structure identique au bordereau réglementaire de référence OREOLE ASSURANCE).
+ */
+const buildBordereauGroupsHtml = (groups) => {
+  const th = (label, idx) =>
+    `<th style="text-align:${idx > 5 ? 'right' : 'left'};padding:6px 8px;background:#1e293b;color:#fff;border:1px solid #334155;font-size:7.5pt;text-transform:uppercase;">${label}</th>`;
+
+  let html = `<thead><tr>${BORDEREAU_COLUMNS.map(th).join('')}</tr></thead><tbody>`;
+  const nbCols = BORDEREAU_COLUMNS.length;
+
+  const groupRow = (label, bg, color = '#0f172a', bold = true) =>
+    `<tr><td colspan="${nbCols}" style="padding:5px 8px;background:${bg};color:${color};font-weight:${bold ? 700 : 600};font-size:8.5pt;border:1px solid #cbd5e1;">${label}</td></tr>`;
+
+  const totalRow = (label, totals, bg = '#dbeafe') => `
+    <tr style="background:${bg};font-weight:700;">
+      <td colspan="6" style="padding:5px 8px;border:1px solid #cbd5e1;font-size:8pt;">${label}</td>
+      <td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:8pt;">${fmtMoney(totals.primeNette)}</td>
+      <td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:8pt;">${fmtMoney(totals.accessoire)}</td>
+      <td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:8pt;">${fmtMoney(totals.taxe)}</td>
+      <td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:8pt;">${fmtMoney(totals.primeTtc)}</td>
+      <td style="padding:5px 8px;border:1px solid #cbd5e1;text-align:right;font-size:8pt;">${fmtMoney(totals.commission)}</td>
+    </tr>`;
+
+  groups.compagnies.forEach((compagnie) => {
+    html += groupRow(compagnie.label, '#0f172a', '#ffffff');
+    compagnie.clients.forEach((client) => {
+      html += groupRow(client.label, '#e2e8f0');
+      client.branches.forEach((branche) => {
+        html += groupRow(branche.label, '#f1f5f9', '#334155', false);
+        branche.lines.forEach((l) => {
+          html += `<tr>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${l.numero_police || ''}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${l.numero_quittance || ''}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${l.numero_avenant || ''}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${fmtDate(l.date_emission)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${fmtDate(l.date_effet)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;font-size:7.8pt;">${fmtDate(l.date_expiration)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;font-size:7.8pt;">${fmtMoney(l.prime_nette)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;font-size:7.8pt;">${fmtMoney(l.accessoire)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;font-size:7.8pt;">${fmtMoney(l.taxe)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;font-size:7.8pt;">${fmtMoney(l.prime_ttc)}</td>
+            <td style="padding:4px 8px;border:1px solid #e2e8f0;text-align:right;font-size:7.8pt;">${fmtMoney(l.commission_intermediaire)}</td>
+          </tr>`;
+        });
+        html += totalRow(`TOTAL ${branche.label}`, branche.total, '#eff6ff');
+      });
+      html += totalRow(`TOTAL ${client.label}`, client.total, '#dbeafe');
+    });
+    html += totalRow(`TOTAL ${compagnie.label}`, compagnie.total, '#bfdbfe');
+  });
+
+  html += `<tr style="background:#0f172a;color:#fff;font-weight:800;">
+      <td colspan="6" style="padding:8px;border:1px solid #0f172a;font-size:9pt;">TOTAL GÉNÉRAL</td>
+      <td style="padding:8px;border:1px solid #0f172a;text-align:right;font-size:9pt;">${fmtMoney(groups.grandTotal.primeNette)}</td>
+      <td style="padding:8px;border:1px solid #0f172a;text-align:right;font-size:9pt;">${fmtMoney(groups.grandTotal.accessoire)}</td>
+      <td style="padding:8px;border:1px solid #0f172a;text-align:right;font-size:9pt;">${fmtMoney(groups.grandTotal.taxe)}</td>
+      <td style="padding:8px;border:1px solid #0f172a;text-align:right;font-size:9pt;">${fmtMoney(groups.grandTotal.primeTtc)}</td>
+      <td style="padding:8px;border:1px solid #0f172a;text-align:right;font-size:9pt;">${fmtMoney(groups.grandTotal.commission)}</td>
+    </tr>`;
+
+  html += '</tbody>';
+  return html;
+};
+
+/**
+ * Export PDF du bordereau des émissions groupé par Compagnie / Client / Branche
+ * (mise en page A4 paysage, identique au modèle réglementaire de référence).
+ */
+export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, groups }) => {
+  const metaHtml = Object.entries(metadata)
+    .map(([k, v]) => `<div><span style="color:#64748b;font-weight:600;">${k} :</span> <strong>${v}</strong></div>`)
+    .join('');
+
+  const docHtml = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>${title || 'Bordereau des Émissions'}</title>
+  <style>
+    @page { size: A4 landscape; margin: 10mm 12mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a; background: #ffffff; margin: 0; padding: 8px; font-size: 9pt; line-height: 1.35;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .header-box { border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .republic-tag { font-size: 7pt; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #475569; }
+    .company-title { font-size: 12pt; font-weight: 900; color: #0f172a; margin-top: 2px; }
+    .doc-badge { text-align: right; font-size: 7.5pt; color: #64748b; }
+    .doc-badge-status { font-weight: 800; color: #0284c7; margin-top: 2px; letter-spacing: 0.5px; }
+    .meta-box { display: flex; flex-wrap: wrap; gap: 12px; background: #f8fafc; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; font-size: 7.8pt; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    .legal-notice { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px 10px; border-radius: 6px; font-size: 7.5pt; color: #166534; margin-top: 10px; }
+    @media print { .no-print { display: none !important; } body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <div>
+      <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
+      <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
+      <div style="font-size: 10pt; font-weight: 800; color: #0284c7; margin-top: 2px;">${title}</div>
+      ${subtitle ? `<div style="font-size: 7.8pt; color: #475569; margin-top: 2px;">${subtitle}</div>` : ''}
+    </div>
+    <div class="doc-badge">
+      <div>Édité le ${new Date().toLocaleDateString('fr-FR')}</div>
+      <div class="doc-badge-status">DOCUMENT OFFICIEL CERTIFIÉ</div>
+    </div>
+  </div>
+
+  <div class="meta-box">${metaHtml}</div>
+
+  <table>${buildBordereauGroupsHtml(groups)}</table>
+
+  <div class="legal-notice">
+    <strong>Attestation de Contrôle & Conformité Fiscale :</strong> Le présent bordereau consolide, par compagnie, par client et par branche, l'ensemble des émissions de polices et quittances de la période conformément aux dispositions des Articles 13 et suivants du Code CIMA.
+  </div>
+
+  <script>
+    window.onload = function() { setTimeout(function() { window.print(); }, 350); };
+  </script>
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(docHtml);
+    printWindow.document.close();
+  }
+
+  const cleanName = filename.endsWith('.pdf') ? filename.replace(/\.pdf$/, '.html') : (filename.endsWith('.html') ? filename : `${filename}.html`);
+  const blob = new Blob([docHtml], { type: 'text/html;charset=utf-8;' });
+  downloadBlob(blob, cleanName);
+};
+
+/**
+ * Export Excel du bordereau des émissions groupé par Compagnie / Client / Branche.
+ */
+export const exportBordereauExcel = ({ filename, title, subtitle, metadata = {}, groups }) => {
+  const metaRows = Object.entries(metadata)
+    .map(([k, v]) => `<tr><td style="font-weight:bold;color:#475569;padding:3px;">${k} :</td><td colspan="${BORDEREAU_COLUMNS.length - 1}" style="padding:3px;">${v}</td></tr>`)
+    .join('');
+
+  const html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <!--[if gte mso 9]>
+        <xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+          <x:Name>${(title || 'Bordereau').slice(0, 31)}</x:Name>
+          <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+        </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml>
+        <![endif]-->
+        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8"/>
+      </head>
+      <body style="font-family:Arial, sans-serif;font-size:10pt;">
+        <table style="margin-bottom:12px;">
+          <tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:14pt;font-weight:bold;color:#0f172a;">LE PHARE COURTAGE & GESTION D'ASSURANCES</td></tr>
+          <tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:12pt;font-weight:bold;color:#0284c7;padding-bottom:6px;">${title || ''}</td></tr>
+          ${subtitle ? `<tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:9pt;color:#475569;padding-bottom:8px;">${subtitle}</td></tr>` : ''}
+          ${metaRows}
+        </table>
+        <table border="1" style="border-collapse:collapse;width:100%;">
+          ${buildBordereauGroupsHtml(groups)}
+        </table>
+      </body>
+    </html>
+  `;
+
+  const cleanName = filename.endsWith('.xls') || filename.endsWith('.xlsx') ? filename : `${filename}.xls`;
+  const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  downloadBlob(blob, cleanName);
+};
+
 /**
  * Export XML Réglementaire CRCA
  */

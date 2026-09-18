@@ -34,6 +34,14 @@ import {
   Printer,
 } from 'lucide-react';
 
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}:${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+};
+
 export const QuoteListPage = () => {
   const { user } = useAuth();
   const [quotes, setQuotes] = useState([]);
@@ -192,7 +200,7 @@ export const QuoteListPage = () => {
         q.client_nom || q.nomcomplet || 'Client Particulier',
         branchProd,
         q.compagnie || 'LE PHARE',
-        q.date_emission || '-',
+        formatDateTime(q.date_emission),
         prime,
         q.statut || 'En cours',
       ];
@@ -231,6 +239,7 @@ export const QuoteListPage = () => {
     {
       header: 'N° Devis',
       accessor: 'numerodevis',
+      sortable: true,
       render: (row) => (
         <span
           style={{ color: '#60a5fa', fontFamily: 'var(--font-mono)', fontWeight: 700, cursor: 'pointer' }}
@@ -244,11 +253,14 @@ export const QuoteListPage = () => {
     {
       header: 'Assuré / Souscripteur',
       accessor: 'client_nom',
+      sortable: true,
       render: (row) => <div style={{ fontWeight: 600, color: '#fff' }}>{row.client_nom}</div>,
     },
     {
       header: 'Branche / Produit',
       accessor: 'produit',
+      sortable: true,
+      sortAccessor: (row) => row.branche || row.produit || '',
       render: (row) => {
         const b = String(row.branche || '').toLowerCase();
         let color = '#3b82f6';
@@ -281,8 +293,17 @@ export const QuoteListPage = () => {
         );
       },
     },
-    { header: 'Compagnie', accessor: 'compagnie' },
-    { header: 'Émission', accessor: 'date_emission' },
+    { header: 'Compagnie', accessor: 'compagnie', sortable: true },
+    {
+      header: 'Émission',
+      accessor: 'date_emission',
+      sortable: true,
+      sortAccessor: (row) => {
+        const t = row.date_emission ? new Date(row.date_emission).getTime() : NaN;
+        return isNaN(t) ? row.date_emission || '' : t;
+      },
+      render: (row) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{formatDateTime(row.date_emission)}</span>,
+    },
     {
       header: 'Prime Totale TTC',
       accessor: 'prime_totale',

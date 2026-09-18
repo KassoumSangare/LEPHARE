@@ -67,6 +67,7 @@ from .models import (
     QualiteAyantDroit,
     QualiteSouscripteurMrh,
     ReductionFlotte,
+    RepartitionPrimeSante,
     Region,
     Risque,
     SecteurActivite,
@@ -151,6 +152,8 @@ from .serializers import (
     QualiteSerializer,
     QualiteSouscripteurMrhSerializer,
     ReductionFlotteSerializer,
+    RepartitionPrimeSanteSerializer,
+    CalculRepartitionPrimeSanteInputSerializer,
     RegionSerializer,
     RisqueSerializer,
     SecteurActiviteSerializer,
@@ -277,6 +280,57 @@ class PrimeCalculationView(APIView):
 
         output_serializer = PrimeCalculationOutputSerializer(output_data)
         return Response(output_serializer.data, status=status.HTTP_200_OK)
+
+
+class RepartitionPrimeSanteViewSet(SettingsModelViewSet):
+    queryset = RepartitionPrimeSante.objects.all().order_by("avec_apporteur", "libelle")
+    serializer_class = RepartitionPrimeSanteSerializer
+
+
+class CalculRepartitionPrimeSanteView(APIView):
+    """
+    Calcule la ventilation d'une prime HT Santé (Minéné Santé) entre
+    NSIA CI (frais généraux), OREOLE ASSURANCES (commission courtier),
+    VITALIS (honoraires de gestion), ADEC (frais de gestion) — ou la
+    commission des commerciaux de la compagnie si le contrat est apporté
+    par un tiers — à partir du barème actif correspondant.
+    """
+
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(self, request, *args, **kwargs):
+        input_serializer = CalculRepartitionPrimeSanteInputSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+
+        prime_ht = input_serializer.validated_data["prime_ht"]
+        avec_apporteur = input_serializer.validated_data["avec_apporteur"]
+
+        bareme = (
+            RepartitionPrimeSante.objects.filter(
+                avec_apporteur=avec_apporteur, actif=True
+            )
+            .order_by("-date_modification")
+            .first()
+        )
+        if not bareme:
+            return Response(
+                {
+                    "error": "Aucun barème de répartition de la prime Santé actif "
+                    "n'est paramétré pour cette variante (avec_apporteur={}).".format(
+                        avec_apporteur
+                    )
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        repartition = bareme.calculer_repartition(prime_ht)
+        repartition["bareme_id"] = bareme.id
+        repartition["bareme_libelle"] = bareme.libelle
+        repartition["avec_apporteur"] = avec_apporteur
+
+        return Response(repartition, status=status.HTTP_200_OK)
 
 
 class GarantieViewSet(viewsets.ModelViewSet):

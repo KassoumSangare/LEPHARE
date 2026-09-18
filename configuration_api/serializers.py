@@ -69,6 +69,7 @@ from .models import (
     QualiteAyantDroit,
     QualiteSouscripteurMrh,
     ReductionFlotte,
+    RepartitionPrimeSante,
     Region,
     Risque,
     SecteurActivite,
@@ -1752,3 +1753,14 @@ class DomaineActiviteRCSerializer(serializers.ModelSerializer):
         model = DomaineActiviteRC
         fields = ["id_domaine_activite", "libelle"]
         read_only_fields = ["id_domaine_activite"]
+
+
+class RepartitionPrimeSanteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RepartitionPrimeSante
+        fields = "__all__"
+
+
+class CalculRepartitionPrimeSanteInputSerializer(serializers.Serializer):
+    prime_ht = serializers.DecimalField(max_digits=19, decimal_places=4)
+    avec_apporteur = serializers.BooleanField(default=False)

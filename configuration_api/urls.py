@@ -57,6 +57,8 @@ from .views import (
     QualiteSouscripteurMrhViewSet,
     QualiteViewSet,
     ReductionFlotteViewSet,
+    RepartitionPrimeSanteViewSet,
+    CalculRepartitionPrimeSanteView,
     RegionViewSet,
     RisqueViewSet,
     SecteurActiviteViewSet,
@@ -148,6 +150,7 @@ router.register(r"offrecollegesante", OffreCollegeSanteViewSet)
 router.register(r"lienjuridiquesante", LienJuridiqueSanteViewSet)
 router.register(r"zonecouverturesante", ZoneCouvertureSanteViewSet)
 router.register(r"reductionflotte", ReductionFlotteViewSet)
+router.register(r"repartitionprimesante", RepartitionPrimeSanteViewSet)
 router.register(r"formulesecuriteroutiere", FormuleSecuriteRoutiereViewSet)
 router.register(r"parametresite", ParametreSiteViewSet)
 router.register(r"delaiavisecheance", DelaiAvisEcheanceViewSet)
@@ -258,4 +261,9 @@ urlpatterns = [
         name="est-tarif-ia-personnalise",
     ),
     path(r"calculprime/", PrimeCalculationView.as_view(), name="calcul-prime"),
+    path(
+        r"calculrepartitionprimesante/",
+        CalculRepartitionPrimeSanteView.as_view(),
+        name="calcul-repartition-prime-sante",
+    ),
 ]

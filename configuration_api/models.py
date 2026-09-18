@@ -3707,3 +3707,108 @@ class SousGarantieForfait(models.Model):
 
     def __str__(self):
         return f"{self.sous_garantie.libelle} - {self.prime_nette} FCFA"
+
+
+# ============================================================================
+# RÉPARTITION DE LA PRIME SANTÉ (produit "Minéné Santé" — NSIA/OREOLE/VITALIS/ADEC)
+# ============================================================================
+class RepartitionPrimeSante(models.Model):
+    """
+    Barème de répartition de la prime HT du produit Santé (Minéné Santé)
+    entre les intervenants : frais généraux compagnie (NSIA CI), commission
+    du courtier (OREOLE ASSURANCES), honoraires du gestionnaire (VITALIS),
+    frais de gestion (ADEC), et éventuellement la commission des commerciaux
+    de la compagnie lorsque le contrat est apporté par un tiers.
+    Le solde (prime HT - somme des taux) constitue la provision pour sinistre.
+    """
+
+    libelle = models.CharField(max_length=150, verbose_name="Libellé du barème")
+    avec_apporteur = models.BooleanField(
+        default=False,
+        verbose_name="Variante avec apporteur d'affaires",
+        help_text="Les taux de commission changent lorsque le contrat est apporté par un tiers.",
+    )
+    taux_frais_generaux_compagnie = models.DecimalField(
+        max_digits=5, decimal_places=2, verbose_name="Frais généraux compagnie (NSIA CI) %"
+    )
+    taux_commission_courtier = models.DecimalField(
+        max_digits=5, decimal_places=2, verbose_name="Commission courtier (OREOLE ASSURANCES) %"
+    )
+    taux_honoraire_gestionnaire = models.DecimalField(
+        max_digits=5, decimal_places=2, verbose_name="Honoraires de gestion (VITALIS) %"
+    )
+    taux_frais_gestion_adec = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="Frais de gestion (ADEC) %",
+        help_text="Renseigné uniquement pour la variante sans apporteur.",
+    )
+    taux_autres_frais_gestion = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="Autres frais de gestion %",
+        help_text="Renseigné uniquement pour la variante sans apporteur.",
+    )
+    taux_commission_commerciaux = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="Commission commerciaux compagnie %",
+        help_text="Renseigné uniquement pour la variante avec apporteur.",
+    )
+    frais_gestion_adec_forfait_ia = models.DecimalField(
+        max_digits=19, decimal_places=4, default=Decimal("1500"),
+        verbose_name="Frais de gestion ADEC forfaitaires — Individuelle Accidents (FCFA)",
+    )
+    frais_gestion_adec_forfait_rc = models.DecimalField(
+        max_digits=19, decimal_places=4, default=Decimal("1500"),
+        verbose_name="Frais de gestion ADEC forfaitaires — RC Chef de Famille (FCFA)",
+    )
+    actif = models.BooleanField(default=True, verbose_name="Actif")
+    date_creation = models.DateTimeField(auto_now_add=True, verbose_name="Date de création")
+    date_modification = models.DateTimeField(auto_now=True, verbose_name="Date de modification")
+
+    class Meta:
+        db_table = "stdrepartitionprimesante"
+        verbose_name = "Répartition de la prime Santé"
+        verbose_name_plural = "Répartitions de la prime Santé"
+
+    def __str__(self):
+        variante = "Avec apporteur" if self.avec_apporteur else "Sans apporteur"
+        return f"{self.libelle} ({variante})"
+
+    def calculer_repartition(self, prime_ht):
+        """
+        Calcule la ventilation d'une prime HT selon ce barème.
+        Retourne un dict avec chaque part + la provision pour sinistre (solde).
+        """
+        prime_ht = Decimal(prime_ht)
+
+        def part(taux):
+            if taux is None:
+                return Decimal("0")
+            return (prime_ht * Decimal(taux) / Decimal("100")).quantize(Decimal("1"))
+
+        frais_generaux = part(self.taux_frais_generaux_compagnie)
+        commission_courtier = part(self.taux_commission_courtier)
+        honoraire_gestionnaire = part(self.taux_honoraire_gestionnaire)
+        frais_gestion_adec = part(self.taux_frais_gestion_adec)
+        autres_frais_gestion = part(self.taux_autres_frais_gestion)
+        commission_commerciaux = part(self.taux_commission_commerciaux)
+
+        total_parts = (
+            frais_generaux
+            + commission_courtier
+            + honoraire_gestionnaire
+            + frais_gestion_adec
+            + autres_frais_gestion
+            + commission_commerciaux
+        )
+        provision_sinistre = prime_ht - total_parts
+
+        return {
+            "prime_ht": prime_ht,
+            "frais_generaux_compagnie": frais_generaux,
+            "commission_courtier": commission_courtier,
+            "honoraire_gestionnaire": honoraire_gestionnaire,
+            "frais_gestion_adec": frais_gestion_adec,
+            "autres_frais_gestion": autres_frais_gestion,
+            "commission_commerciaux": commission_commerciaux,
+            "provision_sinistre": provision_sinistre,
+        }

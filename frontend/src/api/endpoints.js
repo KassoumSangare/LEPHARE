@@ -899,6 +899,19 @@ export const approvalApi = {
 export const reportingApi = {
   // GET /api/etatdecisionnel/
   getDecisionnel: async () => extractData(await apiClient.get('/etatdecisionnel/')),
+  // POST /api/etatdecisionnel/
+  createDecisionnel: (data) => apiClient.post('/etatdecisionnel/', data),
+  // PUT /api/etatdecisionnel/{id}/
+  updateDecisionnel: (id, data) => apiClient.put(`/etatdecisionnel/${id}/`, data),
+  // DELETE /api/etatdecisionnel/{id}/
+  deleteDecisionnel: (id) => apiClient.delete(`/etatdecisionnel/${id}/`),
+  // GET /api/etatdecisionnel/{id}/contenu?date_debut=&date_fin=
+  getDecisionnelContenu: async (id, dateDebut, dateFin) => {
+    const res = await apiClient.get(`/etatdecisionnel/${id}/contenu`, {
+      params: { date_debut: dateDebut, date_fin: dateFin },
+    });
+    return res?.data || res;
+  },
   // POST /api/bordereaurecapemission
   getBordereauRecapEmission: async (params) => {
     const payload = params || { date_debut: '2020-01-01', date_fin: '2026-12-31', type_etat: 1 };
@@ -953,6 +966,22 @@ export const settingsApi = {
   getCategoriesPermis: async () => extractData(await apiClient.get('/categoriepermis/')),
   // GET /api/terme/
   getTermes: async () => extractData(await apiClient.get('/terme/')),
+  // GET /api/repartitionprimesante/ (barèmes de répartition prime Santé Minéné : NSIA/OREOLE/VITALIS/ADEC)
+  getRepartitionsPrimeSante: async () => extractData(await apiClient.get('/repartitionprimesante/')),
+  // POST /api/repartitionprimesante/
+  createRepartitionPrimeSante: (data) => apiClient.post('/repartitionprimesante/', data),
+  // PUT /api/repartitionprimesante/{id}/
+  updateRepartitionPrimeSante: (id, data) => apiClient.put(`/repartitionprimesante/${id}/`, data),
+  // DELETE /api/repartitionprimesante/{id}/
+  deleteRepartitionPrimeSante: (id) => apiClient.delete(`/repartitionprimesante/${id}/`),
+  // POST /api/calculrepartitionprimesante/ — { prime_ht, avec_apporteur } → ventilation NSIA/OREOLE/VITALIS/ADEC
+  calculerRepartitionPrimeSante: async (primeHt, avecApporteur = false) => {
+    const res = await apiClient.post('/calculrepartitionprimesante/', {
+      prime_ht: primeHt,
+      avec_apporteur: avecApporteur,
+    });
+    return res?.data;
+  },
   // GET /api/offre/
   getOffres: async () => extractData(await apiClient.get('/offre/')),
   // POST /api/offre/

@@ -364,6 +364,9 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   <NavLink to="/admin/reporting/emissions" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     Bordereau des Émissions
                   </NavLink>
+                  <NavLink to="/admin/reporting/etats-decisionnels" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                    États Décisionnels
+                  </NavLink>
                 </div>
               )}
             </div>

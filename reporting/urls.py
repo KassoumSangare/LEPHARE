@@ -3,7 +3,7 @@ from django.urls import include, path
 from rest_framework import routers
 
 from .views import EtatDecisionnelViewSet, EtatCimaE1View, EtatCimaE2View
-from .views import get_emission_for_bordereau_recap
+from .views import get_emission_for_bordereau_recap, EtatDecisionnelContenuView
 
 
 router = routers.DefaultRouter()
@@ -25,5 +25,10 @@ urlpatterns = [
         r"cimaetate2/<int:exercice>",
         EtatCimaE2View.as_view(),
         name="arrieres_encaissements_annulations",
+    ),
+    path(
+        r"etatdecisionnel/<int:pk>/contenu",
+        EtatDecisionnelContenuView.as_view(),
+        name="etat_decisionnel_contenu",
     ),
 ]

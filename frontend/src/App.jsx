@@ -33,6 +33,7 @@ import MyDerogationsPage from './pages/user/derogations/MyDerogationsPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import CimaReportsPage from './pages/admin/reporting/CimaReportsPage';
 import EmissionSummaryPage from './pages/admin/reporting/EmissionSummaryPage';
+import DecisionalStatesPage from './pages/admin/reporting/DecisionalStatesPage';
 import ApprovalCenterPage from './pages/admin/approvals/ApprovalCenterPage';
 import CompanyRemittancePage from './pages/admin/remittances/CompanyRemittancePage';
 import CommissionDashboardPage from './pages/admin/commissions/CommissionDashboardPage';
@@ -158,6 +159,7 @@ function App() {
                 <Route path="/admin/compliance" element={<AdminRoute><ComplianceAuditPage /></AdminRoute>} />
                 <Route path="/admin/reporting/cima" element={<AdminRoute><CimaReportsPage /></AdminRoute>} />
                 <Route path="/admin/reporting/emissions" element={<AdminRoute><EmissionSummaryPage /></AdminRoute>} />
+                <Route path="/admin/reporting/etats-decisionnels" element={<AdminRoute><DecisionalStatesPage /></AdminRoute>} />
                 <Route path="/admin/approvals" element={<AdminRoute><ApprovalCenterPage /></AdminRoute>} />
                 <Route path="/admin/remittances" element={<AdminRoute><CompanyRemittancePage /></AdminRoute>} />
                 <Route path="/admin/commissions" element={<AdminRoute><CommissionDashboardPage /></AdminRoute>} />
