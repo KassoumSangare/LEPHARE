@@ -1,0 +1,1518 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { dataStore } from '../../../api/dataStore';
+import { quoteApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
+import { useToast } from '../../../context/ToastContext';
+import {
+  Car,
+  Shield,
+  Check,
+  Calculator,
+  ArrowRight,
+  ArrowLeft,
+  Percent,
+  Clock,
+  Award,
+  Building2,
+  Plus,
+  UserPlus,
+  Layers,
+  Trash2,
+  FileText,
+  User,
+  Zap,
+} from 'lucide-react';
+import { ViewQuoteModal } from './ViewQuoteModal';
+import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+
+// Listes de référence conformes Django std & CIMA pour fallback instantané si API indisponible
+const DEFAULT_CATEGORIES = [
+  { id: 1, code: '101', libelle: 'PROMENADE ET AFFAIRES' },
+  { id: 2, code: '102', libelle: 'AFFAIRES COMMERCIALES' },
+  { id: 3, code: '103', libelle: 'TRANSPORT PUBLIC DE MARCHANDISES (TPM)' },
+  { id: 4, code: '104', libelle: 'TRANSPORT PUBLIC DE VOYAGEURS (TPV)' },
+  { id: 5, code: '105', libelle: 'VEHICULES SPECIAUX & ENGINS' },
+];
+
+const DEFAULT_USAGES = [
+  { id: 1, code: '001', libelle: 'VEHICULE DE TOURISME' },
+  { id: 2, code: '002', libelle: 'UTILITAIRE COMMERCIAL' },
+  { id: 3, code: '003', libelle: 'TRANSPORT DE PERSONNEL' },
+  { id: 4, code: '004', libelle: 'TAXIS URBAINS & GBAKA' },
+  { id: 5, code: '005', libelle: 'AMBULANCE ET VEHICULE DE SECOURS' },
+];
+
+const DEFAULT_CARROSSERIES = [
+  { id: 1, libelle: 'CAMIONNETTE' },
+  { id: 2, libelle: 'BERLINE' },
+  { id: 3, libelle: 'BREAK / STATION WAGON' },
+  { id: 4, libelle: 'FOURGONNETTE' },
+  { id: 5, libelle: 'TRACTEUR ROUTIER' },
+  { id: 6, libelle: 'PICK-UP DOUBLE CABINE' },
+  { id: 7, libelle: 'BENNE BASCULANTE' },
+];
+
+const DEFAULT_TERMES = [
+  { id: 1, libelle: 'Tacite Reconduction' },
+  { id: 2, libelle: 'Ferme / Non Renouvelable' },
+];
+
+const DEFAULT_DUREES = [
+  { id: 1, mois: 1, libelle: 'Mensuelle (1 Mois)' },
+  { id: 2, mois: 3, libelle: 'Trimestrielle (3 Mois)' },
+  { id: 3, mois: 6, libelle: 'Semestrielle (6 Mois)' },
+  { id: 4, mois: 12, libelle: 'Annuelle (12 Mois)' },
+];
+
+const DEFAULT_SYSTEMES_SECURITE = [
+  { id: 0, code: 0, libelle: 'AUCUN SYSTEME' },
+  { id: 1, code: 1, libelle: 'ALARME' },
+  { id: 2, code: 2, libelle: 'COUPE-CIRCUIT' },
+  { id: 3, code: 3, libelle: 'TRACKING GPS' },
+  { id: 4, code: 4, libelle: 'ALARME + GPS' },
+];
+
+const DEFAULT_FORMULES_SECURITE = [
+  { code: 'AUCUNE', libelle: 'AUCUNE FORMULE' },
+  { code: 'STD', libelle: 'SECURITE ROUTIERE STANDARD' },
+  { code: 'CONFORT', libelle: 'SECURITE ROUTIERE CONFORT (Plafond 1M)' },
+  { code: 'PREMIUM', libelle: 'SECURITE ROUTIERE PREMIUM (Plafond 2.5M)' },
+];
+
+const DEFAULT_FORMULES_ASSISTANCE = [
+  { id: 0, libelle: 'AUCUNE OPTION' },
+  { id: 1, libelle: 'ASSISTANCE CLASSIC (Remorquage 50km)' },
+  { id: 2, libelle: 'ASSISTANCE CONFORT (+ Véhicule relais)' },
+  { id: 3, libelle: 'ASSISTANCE VIP 24H/24 ILLIMITEE' },
+];
+
+const DEFAULT_MARQUES = [
+  { id: 1, libelle: 'ALFA ROMEO' },
+  { id: 2, libelle: 'TOYOTA' },
+  { id: 3, libelle: 'RENAULT' },
+  { id: 4, libelle: 'PEUGEOT' },
+  { id: 5, libelle: 'MERCEDES-BENZ' },
+  { id: 6, libelle: 'HYUNDAI' },
+  { id: 7, libelle: 'NISSAN' },
+  { id: 8, libelle: 'KIA' },
+  { id: 9, libelle: 'MITSUBISHI' },
+  { id: 10, libelle: 'VOLKSWAGEN' },
+];
+
+const DEFAULT_GENRES = [
+  { id: 1, libelle: 'Véhicule Particulier (Tourisme)', coef: 1.0 },
+  { id: 2, libelle: 'Camion', coef: 1.6 },
+  { id: 3, libelle: 'Camionnette / Fourgon', coef: 1.25 },
+  { id: 4, libelle: 'Tracteur Routier', coef: 1.8 },
+  { id: 5, libelle: 'Deux / Trois Roues', coef: 0.8 },
+];
+
+const DEFAULT_TYPES_COMMERCIAUX = [
+  { id: 1, libelle: 'Ambulance' },
+  { id: 2, libelle: 'Véhicule de Société' },
+  { id: 3, libelle: 'Usage Personnel & Trajets' },
+  { id: 4, libelle: 'Taxi Urbain' },
+  { id: 5, libelle: 'Transport Interurbain' },
+];
+
+const DEFAULT_CATEGORIES_PERMIS = [
+  { id: 0, code: 'INFO_NON_DISPO', libelle: 'INFO NON DISPONIBLE' },
+  { id: 1, code: 'A', libelle: 'PERMIS A (Motos)' },
+  { id: 2, code: 'B', libelle: 'PERMIS B (Tourisme & Léger)' },
+  { id: 3, code: 'BCDE', libelle: 'PERMIS BCDE (Tous Véhicules/Poids Lourds)' },
+];
+
+const DEFAULT_OFFRES = [
+  { id: 1, code: 'TOUS_RISQUES', libelle: 'OFFRE AUTOMOBILE TOUS RISQUES' },
+  { id: 2, code: 'TIERS_SIMPLE', libelle: 'OFFRE AU TIERS SIMPLE (RC SEULE)' },
+  { id: 3, code: 'TIERS_COLLISION', libelle: 'OFFRE TIERS COMPLET (VOL + INCENDIE + BRIS)' },
+];
+
+export const NewAutoQuotePage = () => {
+  const navigate = useNavigate();
+  const { success } = useToast();
+
+  // Navigation étapes : 1 = CONTRAT, 2 = VÉHICULE, 3 = OFFRE & DÉCOMPTE, 4 = CLIENT/ASSURÉ/CONDUCTEUR
+  const [step, setStep] = useState(1);
+  const [createdQuote, setCreatedQuote] = useState(null);
+
+  // Données de références (Clients, Compagnies, Tables CIMA)
+  const [clients, setClients] = useState(() => dataStore.getClients());
+  const [companies, setCompanies] = useState(() => dataStore.getActiveCompanies('Auto'));
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [usages, setUsages] = useState(DEFAULT_USAGES);
+  const [carrosseries, setCarrosseries] = useState(DEFAULT_CARROSSERIES);
+  const [marques, setMarques] = useState(DEFAULT_MARQUES);
+  const [genres, setGenres] = useState(DEFAULT_GENRES);
+  const [systemesSecurite, setSystemesSecurite] = useState(DEFAULT_SYSTEMES_SECURITE);
+  const [categoriesPermis, setCategoriesPermis] = useState(DEFAULT_CATEGORIES_PERMIS);
+  const [offresList, setOffresList] = useState(DEFAULT_OFFRES);
+
+  // Modal ajout rapide client
+  const [isQuickAddClientOpen, setIsQuickAddClientOpen] = useState(false);
+
+  // ----------------------------------------------------
+  // ÉCRAN 1 : CONTRAT
+  // ----------------------------------------------------
+  const [typeContrat, setTypeContrat] = useState('MONO'); // 'MONO' | 'FLOTTE'
+  const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
+  const [compagnie, setCompagnie] = useState(() => companies[0]?.nom || 'AXA ASSURANCES');
+  const [categorieContrat, setCategorieContrat] = useState('PROMENADE ET AFFAIRES');
+  const [usageVehicule, setUsageVehicule] = useState('VEHICULE DE TOURISME');
+  const [carrosserie, setCarrosserie] = useState('CAMIONNETTE');
+  const [reductionCommerciale, setReductionCommerciale] = useState(0);
+  const [bonusMalus, setBonusMalus] = useState(0);
+  const [termeContrat, setTermeContrat] = useState('Tacite Reconduction');
+  
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [dateEmission, setDateEmission] = useState(todayStr);
+  const [dateEffet, setDateEffet] = useState(todayStr);
+  const [dureeContrat, setDureeContrat] = useState('Mensuelle'); // 'Mensuelle', 'Trimestrielle', 'Semestrielle', 'Annuelle'
+
+  // Calcul dynamique de la Date d'expiration selon Date Effet + Durée
+  const dateExpiration = useMemo(() => {
+    if (!dateEffet) return '';
+    const d = new Date(dateEffet);
+    let monthsToAdd = 1;
+    if (dureeContrat === 'Trimestrielle') monthsToAdd = 3;
+    else if (dureeContrat === 'Semestrielle') monthsToAdd = 6;
+    else if (dureeContrat === 'Annuelle') monthsToAdd = 12;
+    d.setMonth(d.getMonth() + monthsToAdd);
+    return d.toISOString().split('T')[0];
+  }, [dateEffet, dureeContrat]);
+
+  // ----------------------------------------------------
+  // ÉCRAN 2 : VÉHICULE
+  // ----------------------------------------------------
+  const [energie, setEnergie] = useState('Essence');
+  const [systemeSecurite, setSystemeSecurite] = useState('ALARME');
+  const [formuleSecurite, setFormuleSecurite] = useState('AUCUNE');
+  const [formuleAssistance, setFormuleAssistance] = useState('AUCUNE OPTION');
+  const [marqueVehicule, setMarqueVehicule] = useState('ALFA ROMEO');
+  const [genreVehicule, setGenreVehicule] = useState('Camion');
+  const [typeCommercial, setTypeCommercial] = useState('Ambulance');
+  const [remorqueAttelee, setRemorqueAttelee] = useState(false);
+  const [modeleVehicule, setModeleVehicule] = useState('');
+  const [puissanceFiscale, setPuissanceFiscale] = useState(7);
+  const [chargeUtile, setChargeUtile] = useState(0);
+  const [nombrePlace, setNombrePlace] = useState(5);
+  const [valeurNeuf, setValeurNeuf] = useState(0);
+  const [valeurVenale, setValeurVenale] = useState(0);
+  const [valeurAccessoire, setValeurAccessoire] = useState(0);
+  const [immatriculation, setImmatriculation] = useState('');
+  const [numeroCarteBrune, setNumeroCarteBrune] = useState('');
+  const [numeroChassis, setNumeroChassis] = useState('');
+  const [numeroMoteur, setNumeroMoteur] = useState('');
+  const [dateMec, setDateMec] = useState(todayStr);
+
+  // Flotte multi-véhicules si typeContrat === 'FLOTTE'
+  const [flotteVehicules, setFlotteVehicules] = useState([
+    {
+      id: 1,
+      immatriculation: '1234 AB 01',
+      marque: 'Toyota',
+      modele: 'Hilux',
+      puissanceFiscale: 8,
+      genre: 'Camionnette',
+      valeurVenale: 12000000,
+    },
+    {
+      id: 2,
+      immatriculation: '5678 CD 01',
+      marque: 'Renault',
+      modele: 'Duster',
+      puissanceFiscale: 7,
+      genre: 'Véhicule Particulier (Tourisme)',
+      valeurVenale: 9000000,
+    },
+  ]);
+
+  // ----------------------------------------------------
+  // ÉCRAN 3 : OFFRE & DÉCOMPTE
+  // ----------------------------------------------------
+  const [offreSelectionnee, setOffreSelectionnee] = useState('OFFRE AUTOMOBILE TOUS RISQUES');
+  const [primeImposeeActive, setPrimeImposeeActive] = useState(false);
+  const [montantPrimeImposee, setMontantPrimeImposee] = useState(0);
+
+  // Garanties
+  const [garanties, setGaranties] = useState([
+    { code: 'RC', nom: 'RESPONSABILITÉ CIVILE', acquise: true, capital: 'Illimité', franchise: 'Néant', formule: 'Légale', place: 5, primeAnnuelle: 85000, primeNette: 85000 },
+    { code: 'DEF_REC', nom: 'DÉFENSE ET RECOURS', acquise: true, capital: '1 000 000 F', franchise: 'Néant', formule: 'Forfait', place: 5, primeAnnuelle: 15000, primeNette: 15000 },
+    { code: 'INCENDIE', nom: 'INCENDIE & EXPLOSION', acquise: true, capital: 'Valeur Vénale', franchise: '10% min 50 000', formule: 'Taux Vénale', place: 5, primeAnnuelle: 35000, primeNette: 35000 },
+    { code: 'VOL', nom: 'VOL & TENTATIVE DE VOL', acquise: true, capital: 'Valeur Vénale', franchise: '15% min 75 000', formule: 'Taux Vénale', place: 5, primeAnnuelle: 45000, primeNette: 45000 },
+    { code: 'BRIS_GLACES', nom: 'BRIS DE GLACES', acquise: true, capital: 'Valeur à Neuf', franchise: 'Néant', formule: 'Plafond Réparation', place: 5, primeAnnuelle: 25000, primeNette: 25000 },
+    { code: 'TIERCE', nom: 'DOMMAGES TOUS ACCIDENTS', acquise: offreSelectionnee.includes('TOUS RISQUES'), capital: 'Valeur Vénale', franchise: '10% min 100 000', formule: 'Tierce Complète', place: 5, primeAnnuelle: 120000, primeNette: 120000 },
+  ]);
+
+  // Synchronisation des garanties avec l'offre
+  useEffect(() => {
+    if (offreSelectionnee.includes('TIERS SIMPLE')) {
+      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: g.code === 'RC' || g.code === 'DEF_REC' })));
+    } else if (offreSelectionnee.includes('TIERS COMPLET') || offreSelectionnee.includes('COLLISION')) {
+      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: g.code !== 'TIERCE' })));
+    } else {
+      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: true })));
+    }
+  }, [offreSelectionnee]);
+
+  // Calcul financier conforme aux 6 tuiles de l'Écran 3
+  const calculFinancier = useMemo(() => {
+    const vehiculesCount = typeContrat === 'FLOTTE' ? Math.max(1, flotteVehicules.length) : 1;
+    let ratioDuree = 1.0;
+    if (dureeContrat === 'Mensuelle') ratioDuree = 1 / 12 * 1.15;
+    else if (dureeContrat === 'Trimestrielle') ratioDuree = 3 / 12 * 1.10;
+    else if (dureeContrat === 'Semestrielle') ratioDuree = 6 / 12 * 1.05;
+
+    // Somme prime annuelle des garanties acquises
+    let primeAnnuelleBrute = garanties
+      .filter((g) => g.acquise)
+      .reduce((sum, g) => sum + g.primeAnnuelle, 0) * vehiculesCount;
+
+    // Prise en compte de la puissance fiscale et valeur vénale si saisies
+    if (puissanceFiscale > 7) {
+      primeAnnuelleBrute += (puissanceFiscale - 7) * 8000 * vehiculesCount;
+    }
+    if (valeurVenale > 0 && garanties.some((g) => g.code === 'TIERCE' && g.acquise)) {
+      primeAnnuelleBrute += Math.round(valeurVenale * 0.02 * vehiculesCount);
+    }
+
+    const primeNetteBase = Math.round(primeAnnuelleBrute * ratioDuree);
+    
+    // Application Réduction Commerciale et Bonus/Malus
+    const remiseMt = Math.round(primeNetteBase * (Number(reductionCommerciale) / 100));
+    const bonusMalusMt = Math.round(primeNetteBase * (Number(bonusMalus) / 100));
+    
+    const primeNette = primeImposeeActive && montantPrimeImposee > 0
+      ? Number(montantPrimeImposee)
+      : Math.max(0, primeNetteBase - remiseMt + bonusMalusMt);
+
+    // Frais & Taxes CIMA
+    const taxeEnregistrement = Math.round(primeNette * 0.145); // Taxe CIMA 14.5%
+    const fga = Math.round(primeNette * 0.02); // Fonds de Garantie Automobile 2%
+    const accessoire = 9000 * (typeContrat === 'FLOTTE' ? Math.min(vehiculesCount, 5) : 1);
+    
+    const primeTtc = primeNette + taxeEnregistrement + fga + accessoire;
+
+    return {
+      primeAnnuelle: primeAnnuelleBrute,
+      primeNette,
+      taxeEnregistrement,
+      fga,
+      accessoire,
+      primeTtc,
+      vehiculesCount,
+    };
+  }, [
+    typeContrat,
+    flotteVehicules,
+    dureeContrat,
+    garanties,
+    puissanceFiscale,
+    valeurVenale,
+    reductionCommerciale,
+    bonusMalus,
+    primeImposeeActive,
+    montantPrimeImposee,
+  ]);
+
+  // ----------------------------------------------------
+  // ÉCRAN 4 : CLIENT / ASSURÉ / CONDUCTEUR
+  // ----------------------------------------------------
+  const [souscripteurId, setSouscripteurId] = useState(() => clients[0]?.id || 1);
+  const [searchSouscripteur, setSearchSouscripteur] = useState('');
+  const [nomAssure, setNomAssure] = useState('');
+  const [telephoneClient, setTelephoneClient] = useState('+225 ');
+  const [nomConducteur, setNomConducteur] = useState('');
+  const [adresseConducteur, setAdresseConducteur] = useState('');
+  const [categoriePermis, setCategoriePermis] = useState('INFO NON DISPONIBLE');
+  const [numeroPermis, setNumeroPermis] = useState('');
+  const [lieuHabitation, setLieuHabitation] = useState('');
+  const [numeroConducteur, setNumeroConducteur] = useState('+225 ');
+
+  // Chargement des données réelles Django au montage
+  useEffect(() => {
+    let isMounted = true;
+    const fetchApiData = async () => {
+      try {
+        const [cls, cies, gnrs, mrqs, crs, usgs, cats, secr, prms, ofrs] = await Promise.all([
+          customerApi.getClients().catch(() => []),
+          settingsApi.getCompanies().catch(() => []),
+          settingsApi.getGenres().catch(() => []),
+          settingsApi.getMarques().catch(() => []),
+          settingsApi.getCarrosseries().catch(() => []),
+          settingsApi.getUsages().catch(() => []),
+          settingsApi.getCategories().catch(() => []),
+          settingsApi.getSystemesSecurite().catch(() => []),
+          settingsApi.getCategoriesPermis().catch(() => []),
+          settingsApi.getOffres().catch(() => []),
+        ]);
+
+        if (isMounted) {
+          if (cls && cls.length > 0) {
+            setClients(cls);
+            setSouscripteurId(cls[0].id);
+            setTelephoneClient(cls[0].telephone || cls[0].mobile || '+225 ');
+            setNomAssure(cls[0].nomcomplet || '');
+            setNomConducteur(cls[0].nomcomplet || '');
+          }
+          if (cies && cies.length > 0) {
+            const mappedCies = cies.map((c) => ({ id: c.id || c.IdCompagnie, nom: c.RaisonSociale || c.nom }));
+            setCompanies(mappedCies);
+            setCompagnie(mappedCies[0].nom);
+          }
+          if (gnrs && gnrs.length > 0) {
+            setGenres(gnrs.map((g) => ({ id: g.id || g.IdGenreVehicule, libelle: g.LibelleGenre || g.libelle })));
+          }
+          if (mrqs && mrqs.length > 0) {
+            setMarques(mrqs.map((m) => ({ id: m.id || m.IdMarque, libelle: m.LibelleMarque || m.libelle })));
+          }
+          if (crs && crs.length > 0) {
+            setCarrosseries(crs.map((c) => ({ id: c.id || c.IdCarrosserie, libelle: c.LibelleCarrosserie || c.libelle })));
+          }
+          if (usgs && usgs.length > 0) {
+            setUsages(usgs.map((u) => ({ id: u.id || u.IdUsage, code: u.CodeUsage || '', libelle: u.LibelleUsage || u.libelle })));
+          }
+          if (cats && cats.length > 0) {
+            setCategories(cats.map((cat) => ({ id: cat.id || cat.IdCategorie, code: cat.CodeCategorie || '', libelle: cat.LibelleCategorie || cat.libelle })));
+          }
+          if (secr && secr.length > 0) {
+            setSystemesSecurite(secr.map((s) => ({ id: s.id || s.IdSystemeSecurite, libelle: s.LibelleSystemeSecurite || s.libelle })));
+          }
+          if (prms && prms.length > 0) {
+            setCategoriesPermis(prms.map((p) => ({ id: p.id, code: p.code || '', libelle: p.libelle || p.libelle_type || p.code })));
+          }
+          if (ofrs && ofrs.length > 0) {
+            setOffresList(ofrs.map((o) => ({ id: o.id || o.IdOffre, code: o.CodeOffre || '', libelle: o.LibelleOffre || o.libelle })));
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback catalogue auto actif');
+      }
+    };
+    fetchApiData();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Synchronisation du client sélectionné
+  useEffect(() => {
+    const sc = clients.find((c) => String(c.id) === String(souscripteurId));
+    if (sc) {
+      setTelephoneClient(sc.telephone || sc.mobile || '+225 ');
+      setNomAssure(sc.nomcomplet || '');
+      setNomConducteur((prev) => prev || sc.nomcomplet || '');
+      setAdresseConducteur((prev) => prev || sc.adresse || '');
+      setLieuHabitation((prev) => prev || sc.ville || 'Abidjan');
+      setNumeroConducteur((prev) => (prev && prev !== '+225 ' ? prev : sc.telephone || '+225 '));
+    }
+  }, [souscripteurId, clients]);
+
+  // Clients filtrés par la recherche
+  const filteredClients = useMemo(() => {
+    if (!searchSouscripteur.trim()) return clients;
+    const q = searchSouscripteur.toLowerCase();
+    return clients.filter(
+      (c) =>
+        (c.nomcomplet && c.nomcomplet.toLowerCase().includes(q)) ||
+        (c.codeclient && c.codeclient.toLowerCase().includes(q)) ||
+        (c.telephone && c.telephone.includes(q))
+    );
+  }, [clients, searchSouscripteur]);
+
+  // ----------------------------------------------------
+  // ENREGISTREMENT & VALIDATION FINALE DU DEVIS AUTO
+  // ----------------------------------------------------
+  const handleFinalSubmit = async () => {
+    const selectedClient = clients.find((c) => String(c.id) === String(souscripteurId)) || clients[0];
+    const today = new Date();
+    const expiryDate = new Date(today);
+    expiryDate.setDate(expiryDate.getDate() + 30);
+
+    const needsDerogation = Number(reductionCommerciale) > 0;
+
+    const newQuote = {
+      client_nom: selectedClient?.nomcomplet || nomAssure || 'Assuré Uranus',
+      client_id: selectedClient?.id,
+      produit: typeContrat === 'FLOTTE'
+        ? `Flotte Automobile (${flotteVehicules.length} Véhicules)`
+        : `Automobile (${marqueVehicule} ${modeleVehicule || 'Standard'})`,
+      branche: 'Auto',
+      type_contrat: typeContrat,
+      flotte: typeContrat === 'FLOTTE',
+      nombre_vehicules: typeContrat === 'FLOTTE' ? flotteVehicules.length : 1,
+      compagnie,
+      prime_brute: calculFinancier.primeAnnuelle,
+      taux_remise: Number(reductionCommerciale),
+      montant_remise: Math.round(calculFinancier.primeAnnuelle * (Number(reductionCommerciale) / 100)),
+      prime_nette: calculFinancier.primeNette,
+      accessoires: calculFinancier.accessoire,
+      taxes: calculFinancier.taxeEnregistrement,
+      fga: calculFinancier.fga,
+      prime_totale: calculFinancier.primeTtc,
+      commission_estimee: Math.round(calculFinancier.primeNette * 0.10),
+      taux_commission: '10%',
+      date_emission: dateEmission,
+      date_effet: dateEffet,
+      date_expiration: dateExpiration,
+      validite_jours: 30,
+      statut: needsDerogation ? 'En attente approbation' : 'En attente',
+      statut_badge: needsDerogation ? 'purple' : 'amber',
+      numero_police_compagnie: numeroPoliceCompagnie,
+      details: {
+        typeContrat,
+        numeroPoliceCompagnie,
+        compagnie,
+        categorieContrat,
+        usageVehicule,
+        carrosserie,
+        reductionCommerciale,
+        bonusMalus,
+        termeContrat,
+        dureeContrat,
+        dateEmission,
+        dateEffet,
+        dateExpiration,
+        energie,
+        systemeSecurite,
+        formuleSecurite,
+        formuleAssistance,
+        marqueVehicule,
+        genreVehicule,
+        typeCommercial,
+        remorqueAttelee,
+        modeleVehicule,
+        puissanceFiscale,
+        chargeUtile,
+        nombrePlace,
+        valeurNeuf,
+        valeurVenale,
+        valeurAccessoire,
+        immatriculation: typeContrat === 'FLOTTE' ? `${flotteVehicules.length} Véhicules` : immatriculation,
+        numeroCarteBrune,
+        numeroChassis,
+        numeroMoteur,
+        dateMec,
+        flotteVehicules: typeContrat === 'FLOTTE' ? flotteVehicules : null,
+        offreSelectionnee,
+        primeImposeeActive,
+        montantPrimeImposee,
+        garanties,
+        nomAssure,
+        telephoneClient,
+        nomConducteur,
+        adresseConducteur,
+        categoriePermis,
+        numeroPermis,
+        lieuHabitation,
+        numeroConducteur,
+      },
+    };
+
+    const saved = dataStore.saveQuote(newQuote);
+
+    try {
+      await quoteApi.createAutoQuote(saved);
+    } catch (e) {
+      console.warn('API auto quote fallback to local database store');
+    }
+
+    if (needsDerogation) {
+      success(`Devis ${saved.numerodevis} créé avec succès et soumis au circuit de dérogation (Remise ${reductionCommerciale}%) !`);
+    } else {
+      success(`Devis Automobile ${saved.numerodevis} enregistré avec succès !`);
+    }
+
+    setCreatedQuote(saved);
+  };
+
+  const handleConvertToContract = async (quoteToConvert) => {
+    try {
+      await contractApi.createContractFromQuote(quoteToConvert.id);
+    } catch (e) {
+      console.warn('Fallback conversion contrat');
+    }
+    const newContract = dataStore.convertQuoteToContract(quoteToConvert);
+    success(`Devis ${quoteToConvert.numerodevis} émis en contrat sous le numéro ${newContract.numeropolice} !`);
+    setCreatedQuote(null);
+    navigate(`/user/contracts/${newContract.id || newContract.numeropolice}`);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1200px', margin: '0 auto', paddingBottom: '3rem' }}>
+      {/* Header avec lien Annuler et Stepper visuel */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <button
+            type="button"
+            className="btn btn-link"
+            onClick={() => navigate('/user/quotes')}
+            style={{ color: '#ef4444', fontWeight: 600, padding: 0, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            Annuler
+          </button>
+          <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <Car size={26} color="#3b82f6" />
+            Nouveau Devis Automobile & Flotte
+          </h1>
+        </div>
+
+        {/* Stepper à 4 onglets exactement conformes au parcours métier */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {[
+            { stepNum: 1, label: '1. CONTRAT' },
+            { stepNum: 2, label: '2. VÉHICULE' },
+            { stepNum: 3, label: '3. OFFRE' },
+            { stepNum: 4, label: '4. CLIENT / CONDUCTEUR' },
+          ].map((item) => (
+            <button
+              key={item.stepNum}
+              type="button"
+              onClick={() => setStep(item.stepNum)}
+              style={{
+                padding: '0.45rem 0.85rem',
+                borderRadius: '6px',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                border: step === item.stepNum ? '2px solid #2563eb' : '1px solid var(--border-subtle)',
+                background: step === item.stepNum ? 'rgba(37, 99, 235, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                color: step === item.stepNum ? '#60a5fa' : 'var(--text-muted)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* =========================================================================
+          ÉCRAN 1 : CONTRAT
+          ========================================================================= */}
+      {step === 1 && (
+        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
+          <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem', fontSize: '1.05rem' }}>
+            CONTRAT
+          </h3>
+
+          {/* TYPE DE CONTRAT SELECT */}
+          <div style={{ maxWidth: '280px', marginBottom: '1.75rem' }}>
+            <label className="form-label" style={{ fontWeight: 700, fontSize: '0.8rem', color: '#94a3b8' }}>
+              TYPE DE CONTRAT
+            </label>
+            <select
+              className="form-control"
+              value={typeContrat}
+              onChange={(e) => setTypeContrat(e.target.value)}
+              style={{ fontWeight: 700, borderColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.08)' }}
+            >
+              <option value="MONO">MONO</option>
+              <option value="FLOTTE">FLOTTE</option>
+            </select>
+          </div>
+
+          {/* Ligne 1 : Numéro police compagnie | Compagnie d'Assurance | Catégorie (* requis) | Usage Véhicule */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Numéro de police compagnie</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Ex: POL-AXA-2026-09"
+                value={numeroPoliceCompagnie}
+                onChange={(e) => setNumeroPoliceCompagnie(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Compagnie d'Assurance</label>
+              <select className="form-control" value={compagnie} onChange={(e) => setCompagnie(e.target.value)}>
+                {companies.map((c) => (
+                  <option key={c.id || c.nom} value={c.nom}>
+                    {c.nom}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Catégorie (* requis)</label>
+              <select className="form-control" value={categorieContrat} onChange={(e) => setCategorieContrat(e.target.value)}>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.libelle}>
+                    {cat.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" style={{ background: 'rgba(59, 130, 246, 0.2)', padding: '0.1rem 0.4rem', borderRadius: '4px', width: 'fit-content' }}>
+                Usage Véhicule
+              </label>
+              <select className="form-control" value={usageVehicule} onChange={(e) => setUsageVehicule(e.target.value)}>
+                {usages.map((u) => (
+                  <option key={u.id} value={u.libelle}>
+                    {u.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Ligne 2 : Carrosseries | Reduction commerciale (* requis) | Bonus malus (* requis) | Terme du contrat */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Carrosseries</label>
+              <select className="form-control" value={carrosserie} onChange={(e) => setCarrosserie(e.target.value)}>
+                {carrosseries.map((car) => (
+                  <option key={car.id} value={car.libelle}>
+                    {car.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Reduction commerciale (* requis)</label>
+              <input
+                type="number"
+                min="0"
+                max="50"
+                className="form-control"
+                value={reductionCommerciale}
+                onChange={(e) => setReductionCommerciale(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Bonus malus (* requis)</label>
+              <input
+                type="number"
+                min="-50"
+                max="100"
+                className="form-control"
+                value={bonusMalus}
+                onChange={(e) => setBonusMalus(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <select className="form-control" value={termeContrat} onChange={(e) => setTermeContrat(e.target.value)}>
+                {DEFAULT_TERMES.map((t) => (
+                  <option key={t.id} value={t.libelle}>
+                    {t.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Ligne 3 : Date d'emission | Date d'effet (* requis) | Durée du contrat | Date d'expiration (* requis) */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+            <div className="form-group">
+              <label className="form-label">Date d'emission</label>
+              <input
+                type="date"
+                className="form-control"
+                value={dateEmission}
+                onChange={(e) => setDateEmission(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Date d'effet (* requis)</label>
+              <input
+                type="date"
+                className="form-control"
+                value={dateEffet}
+                onChange={(e) => setDateEffet(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Durée du contrat</label>
+              <select className="form-control" value={dureeContrat} onChange={(e) => setDureeContrat(e.target.value)}>
+                {DEFAULT_DUREES.map((d) => (
+                  <option key={d.id} value={d.libelle.split(' ')[0]}>
+                    {d.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Date d'expiration (* requis)</label>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#2563eb', padding: '0.6rem 0' }}>
+                {dateExpiration}
+              </div>
+            </div>
+          </div>
+
+          {/* Bouton Suivant */}
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setStep(2)}
+              style={{ padding: '0.65rem 1.75rem', fontWeight: 700, borderRadius: '8px', background: '#2563eb' }}
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          ÉCRAN 2 : VÉHICULE
+          ========================================================================= */}
+      {step === 2 && (
+        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '1.05rem' }}>
+              VÉHICULE {typeContrat === 'FLOTTE' && `(GESTION PARC FLOTTE - ${flotteVehicules.length} VÉHICULES)`}
+            </h3>
+            {typeContrat === 'FLOTTE' && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  const newId = Date.now();
+                  setFlotteVehicules([
+                    ...flotteVehicules,
+                    {
+                      id: newId,
+                      immatriculation: `NOUV-${flotteVehicules.length + 1} CI`,
+                      marque: marqueVehicule,
+                      modele: modeleVehicule || 'Véhicule Flotte',
+                      puissanceFiscale: puissanceFiscale,
+                      genre: genreVehicule,
+                      valeurVenale: valeurVenale || 10000000,
+                    },
+                  ]);
+                }}
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              >
+                <Plus size={15} /> Ajouter un véhicule à la flotte
+              </button>
+            )}
+          </div>
+
+          {/* Ligne 1 : Énergie du véhicule (* requis) | Système de sécurité (* requis) | Formule de sécurité | Formule d'assistance */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Énergie du véhicule (* requis)</label>
+              <select className="form-control" value={energie} onChange={(e) => setEnergie(e.target.value)}>
+                <option value="Essence">Essence</option>
+                <option value="Diesel">Diesel</option>
+                <option value="Hybride">Hybride</option>
+                <option value="Électrique">Électrique</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Système de sécurité (* requis)</label>
+              <select className="form-control" value={systemeSecurite} onChange={(e) => setSystemeSecurite(e.target.value)}>
+                {systemesSecurite.map((s) => (
+                  <option key={s.id} value={s.libelle}>
+                    {s.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Formule de sécurité</label>
+              <select className="form-control" value={formuleSecurite} onChange={(e) => setFormuleSecurite(e.target.value)}>
+                {DEFAULT_FORMULES_SECURITE.map((f) => (
+                  <option key={f.code} value={f.code}>
+                    {f.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Formule d'assistance</label>
+              <select className="form-control" value={formuleAssistance} onChange={(e) => setFormuleAssistance(e.target.value)}>
+                {DEFAULT_FORMULES_ASSISTANCE.map((a) => (
+                  <option key={a.id} value={a.libelle}>
+                    {a.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Ligne 2 : Marque du véhicule (avec bouton +) | Genre de véhicule | Type commercial du véhicule | Remorque Attelée */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem', alignItems: 'center' }}>
+            <div className="form-group">
+              <label className="form-label">Marque du véhicule</label>
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                <select className="form-control" value={marqueVehicule} onChange={(e) => setMarqueVehicule(e.target.value)} style={{ flex: 1 }}>
+                  {marques.map((m) => (
+                    <option key={m.id} value={m.libelle}>
+                      {m.libelle}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const newM = prompt('Entrez le nom de la nouvelle marque :');
+                    if (newM && newM.trim()) {
+                      const brandObj = { id: Date.now(), libelle: newM.trim().toUpperCase() };
+                      setMarques((prev) => [brandObj, ...prev]);
+                      setMarqueVehicule(brandObj.libelle);
+                    }
+                  }}
+                  style={{ padding: '0.6rem 0.75rem', borderRadius: '8px', color: '#2563eb' }}
+                  title="Ajouter une marque"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Genre de véhicule</label>
+              <select className="form-control" value={genreVehicule} onChange={(e) => setGenreVehicule(e.target.value)}>
+                {genres.map((g) => (
+                  <option key={g.id} value={g.libelle}>
+                    {g.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Type commercial du véhicule</label>
+              <select className="form-control" value={typeCommercial} onChange={(e) => setTypeCommercial(e.target.value)}>
+                {DEFAULT_TYPES_COMMERCIAUX.map((tc) => (
+                  <option key={tc.id} value={tc.libelle}>
+                    {tc.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingTop: '1.2rem' }}>
+              <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '26px' }}>
+                <input
+                  type="checkbox"
+                  checked={remorqueAttelee}
+                  onChange={(e) => setRemorqueAttelee(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0 }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    cursor: 'pointer',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: remorqueAttelee ? '#2563eb' : '#475569',
+                    borderRadius: '34px',
+                    transition: '0.3s',
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      height: '20px',
+                      width: '20px',
+                      left: remorqueAttelee ? '24px' : '3px',
+                      bottom: '3px',
+                      backgroundColor: 'white',
+                      borderRadius: '50%',
+                      transition: '0.3s',
+                    }}
+                  />
+                </span>
+              </label>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>Remorque Attelée</span>
+            </div>
+          </div>
+
+          {/* Ligne 3 : Modèle véhicule | Puissance fiscale (* requis) | Charge utile (kg) (* requis) | Nombre de place */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Modèle véhicule</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Modèle de véhicule"
+                value={modeleVehicule}
+                onChange={(e) => setModeleVehicule(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Puissance fiscale (* requis)</label>
+              <input
+                type="number"
+                min="1"
+                className="form-control"
+                value={puissanceFiscale}
+                onChange={(e) => setPuissanceFiscale(parseInt(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Charge utile (kg) (* requis)</label>
+              <input
+                type="number"
+                min="0"
+                className="form-control"
+                value={chargeUtile}
+                onChange={(e) => setChargeUtile(parseInt(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nombre de place</label>
+              <input
+                type="number"
+                min="1"
+                className="form-control"
+                value={nombrePlace}
+                onChange={(e) => setNombrePlace(parseInt(e.target.value) || 1)}
+              />
+            </div>
+          </div>
+
+          {/* Ligne 4 : Valeur à neuf | Valeur vénale | Valeur Accessoire | Immatriculation du véhicule */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Valeur à neuf</label>
+              <input
+                type="number"
+                min="0"
+                className="form-control"
+                value={valeurNeuf}
+                onChange={(e) => setValeurNeuf(parseInt(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Valeur vénale</label>
+              <input
+                type="number"
+                min="0"
+                className="form-control"
+                value={valeurVenale}
+                onChange={(e) => setValeurVenale(parseInt(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Valeur Accessoire</label>
+              <input
+                type="number"
+                min="0"
+                className="form-control"
+                value={valeurAccessoire}
+                onChange={(e) => setValeurAccessoire(parseInt(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Immatriculation du véhicule</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Immatriculation du véhicule"
+                value={immatriculation}
+                onChange={(e) => setImmatriculation(e.target.value.toUpperCase())}
+              />
+            </div>
+          </div>
+
+          {/* Ligne 5 : Numero carte brune physique | Numéro chassis | Numéro moteur | 1ère mise en circulation */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+            <div className="form-group">
+              <label className="form-label">Numero carte brune physique</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Numero carte brune physique"
+                value={numeroCarteBrune}
+                onChange={(e) => setNumeroCarteBrune(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Numéro chassis</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Numéro du chassis"
+                value={numeroChassis}
+                onChange={(e) => setNumeroChassis(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Numéro moteur</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Numéro du moteur"
+                value={numeroMoteur}
+                onChange={(e) => setNumeroMoteur(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">1ère mise en circulation</label>
+              <input
+                type="date"
+                className="form-control"
+                value={dateMec}
+                onChange={(e) => setDateMec(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Boutons Précédent & Suivant */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-link"
+              onClick={() => setStep(1)}
+              style={{ color: '#ef4444', fontWeight: 600, padding: 0 }}
+            >
+              Précédent
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setStep(3)}
+              style={{ padding: '0.65rem 1.75rem', fontWeight: 700, borderRadius: '8px', background: '#2563eb' }}
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          ÉCRAN 3 : OFFRE & DÉCOMPTE
+          ========================================================================= */}
+      {step === 3 && (
+        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
+          {/* Bouton Imposer la prime */}
+          <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setPrimeImposeeActive(!primeImposeeActive)}
+              style={{
+                background: primeImposeeActive ? '#059669' : '#2563eb',
+                padding: '0.65rem 1.5rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+              }}
+            >
+              {primeImposeeActive ? '✓ Prime Imposée Activée' : 'Imposer la prime'}
+            </button>
+
+            {primeImposeeActive && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Montant net imposé (FCFA) :</span>
+                <input
+                  type="number"
+                  className="form-control"
+                  style={{ width: '160px', padding: '0.4rem 0.6rem', fontWeight: 700 }}
+                  value={montantPrimeImposee}
+                  onChange={(e) => setMontantPrimeImposee(parseInt(e.target.value) || 0)}
+                />
+              </div>
+            )}
+          </div>
+
+          <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', fontSize: '1.05rem' }}>
+            OFFRE
+          </h3>
+
+          {/* Select de l'offre */}
+          <div style={{ maxWidth: '420px', marginBottom: '1.75rem' }}>
+            <select
+              className="form-control"
+              value={offreSelectionnee}
+              onChange={(e) => setOffreSelectionnee(e.target.value)}
+              style={{ fontWeight: 700, fontSize: '0.9rem' }}
+            >
+              {offresList.map((o) => (
+                <option key={o.id} value={o.libelle}>
+                  {o.libelle}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Tableau des Garanties : GARANTIE | ACQUISE | CAPITAL | FRANCHISE | FORMULE | PLACE | PRIME ANNUELLE | PRIME NETTE */}
+          <div style={{ overflowX: 'auto', marginBottom: '2rem', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>GARANTIE</th>
+                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>ACQUISE</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>CAPITAL</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>FRANCHISE</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>FORMULE</th>
+                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>PLACE</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>PRIME ANNUELLE</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>PRIME NETTE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {garanties.map((g, idx) => (
+                  <tr key={g.code} style={{ borderTop: '1px solid var(--border-subtle)', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
+                    <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: '#fff' }}>{g.nom}</td>
+                    <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={g.acquise}
+                        disabled={g.code === 'RC'} // RC toujours obligatoire CIMA
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setGaranties((prev) => prev.map((item) => (item.code === g.code ? { ...item, acquise: checked } : item)));
+                        }}
+                        style={{ width: '16px', height: '16px', cursor: g.code === 'RC' ? 'not-allowed' : 'pointer' }}
+                      />
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', color: '#cbd5e1' }}>{g.capital}</td>
+                    <td style={{ padding: '0.85rem 1rem', color: '#cbd5e1' }}>{g.franchise}</td>
+                    <td style={{ padding: '0.85rem 1rem', color: '#cbd5e1' }}>{g.formule}</td>
+                    <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center', color: '#cbd5e1' }}>{g.place}</td>
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#fff' }}>
+                      {g.acquise ? g.primeAnnuelle.toLocaleString() : 0} F
+                    </td>
+                    <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>
+                      {g.acquise ? Math.round(g.primeNette * (calculFinancier.primeNette / (calculFinancier.primeAnnuelle || 1))).toLocaleString() : 0} F
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Les 6 tuiles financières de l'Écran 3 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+            {/* Tuile 1 : TAXE D'ENREGISTREMENT */}
+            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                <FileText size={15} color="#60a5fa" />
+                TAXE D'ENREGISTREMENT
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.taxeEnregistrement.toLocaleString()} FCFA
+              </div>
+            </div>
+
+            {/* Tuile 2 : FGA */}
+            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                <Shield size={15} color="#fbbf24" />
+                FGA
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.fga.toLocaleString()} FCFA
+              </div>
+            </div>
+
+            {/* Tuile 3 : ACCESSOIRE */}
+            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                <Layers size={15} color="#34d399" />
+                ACCESSOIRE
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.accessoire.toLocaleString()} FCFA
+              </div>
+            </div>
+
+            {/* Tuile 4 : TOTAL PRIME ANNUELLE */}
+            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                <Clock size={15} color="#a78bfa" />
+                TOTAL PRIME ANNUELLE
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.primeAnnuelle.toLocaleString()} FCFA
+              </div>
+            </div>
+
+            {/* Tuile 5 : TOTAL PRIME NETTE */}
+            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                <Plus size={15} color="#38bdf8" />
+                TOTAL PRIME NETTE
+              </div>
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#60a5fa', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.primeNette.toLocaleString()} FCFA
+              </div>
+            </div>
+
+            {/* Tuile 6 : PRIME TTC (Calculé) */}
+            <div style={{ background: 'rgba(37, 99, 235, 0.12)', padding: '1.25rem', borderRadius: '12px', border: '1.5px solid #2563eb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: '#60a5fa', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>PRIME TTC</span>
+                <span className="badge badge-blue" style={{ fontSize: '0.65rem' }}>Calculé</span>
+              </div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 900, color: '#38bdf8', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.primeTtc.toLocaleString()} FCFA
+              </div>
+            </div>
+          </div>
+
+          {/* Boutons Précédent & Suivant */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-link"
+              onClick={() => setStep(2)}
+              style={{ color: '#ef4444', fontWeight: 600, padding: 0 }}
+            >
+              Précédent
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setStep(4)}
+              style={{ padding: '0.65rem 1.75rem', fontWeight: 700, borderRadius: '8px', background: '#2563eb' }}
+            >
+              Suivant
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          ÉCRAN 4 : CLIENT / ASSURÉ / CONDUCTEUR
+          ========================================================================= */}
+      {step === 4 && (
+        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
+          <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem', fontSize: '1.05rem' }}>
+            CLIENT/ASSURÉ/CONDUCTEUR
+          </h3>
+
+          {/* Ligne 1 : Nom du souscripteur (avec search et bouton +) | Nom de l'assuré | Numéro de téléphone */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Nom du souscripteur</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Rechercher un client..."
+                value={searchSouscripteur}
+                onChange={(e) => setSearchSouscripteur(e.target.value)}
+                style={{ marginBottom: '0.4rem' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <select
+                  className="form-control"
+                  value={souscripteurId}
+                  onChange={(e) => setSouscripteurId(parseInt(e.target.value))}
+                  style={{ flex: 1 }}
+                >
+                  {filteredClients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nomcomplet} ({c.codeclient})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setIsQuickAddClientOpen(true)}
+                  style={{
+                    padding: '0.6rem 0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '0.35rem',
+                    background: '#2563eb',
+                    borderRadius: '8px',
+                    fontWeight: 700,
+                  }}
+                  title="Créer un nouveau client"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nom de l'assuré</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Rechercher un assuré..."
+                value={nomAssure}
+                onChange={(e) => setNomAssure(e.target.value)}
+                style={{ marginBottom: '0.4rem' }}
+              />
+              <input
+                type="text"
+                className="form-control"
+                value={nomAssure}
+                onChange={(e) => setNomAssure(e.target.value)}
+                placeholder="Nom complet de l'assuré"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Numéro de téléphone</label>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', borderRight: 'none', borderRadius: '8px 0 0 8px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  +225
+                </span>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Entrez votre numéro de téléphone"
+                  value={telephoneClient.replace(/^\+225\s*/, '')}
+                  onChange={(e) => setTelephoneClient(`+225 ${e.target.value}`)}
+                  style={{ borderRadius: '0 8px 8px 0' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Ligne 2 : Nom du conducteur | Adresse du conducteur | Catégorie de permis */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div className="form-group">
+              <label className="form-label">Nom du conducteur</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Nom complet du conducteur principal"
+                value={nomConducteur}
+                onChange={(e) => setNomConducteur(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Adresse du conducteur</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Adresse du conducteur"
+                value={adresseConducteur}
+                onChange={(e) => setAdresseConducteur(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Catégorie de permis</label>
+              <select className="form-control" value={categoriePermis} onChange={(e) => setCategoriePermis(e.target.value)}>
+                {categoriesPermis.map((cp) => (
+                  <option key={cp.id} value={cp.libelle}>
+                    {cp.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Ligne 3 : Numéro du permis | Lieu d'habitation | Numéro du conducteur */}
+          <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+            <div className="form-group">
+              <label className="form-label">Numéro du permis</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Numéro du permis"
+                value={numeroPermis}
+                onChange={(e) => setNumeroPermis(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Lieu d'habitation</label>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Lieu d'habitation (ex: Cocody, Plateau)"
+                value={lieuHabitation}
+                onChange={(e) => setLieuHabitation(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Numéro du conducteur</label>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ padding: '0.6rem 0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', borderRight: 'none', borderRadius: '8px 0 0 8px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                  +225
+                </span>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Entrez le numéro du conducteur"
+                  value={numeroConducteur.replace(/^\+225\s*/, '')}
+                  onChange={(e) => setNumeroConducteur(`+225 ${e.target.value}`)}
+                  style={{ borderRadius: '0 8px 8px 0' }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Boutons Précédent & Valider */}
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-link"
+              onClick={() => setStep(3)}
+              style={{ color: '#ef4444', fontWeight: 600, padding: 0 }}
+            >
+              Précédent
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleFinalSubmit}
+              style={{
+                padding: '0.65rem 2rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+                background: '#2563eb',
+                boxShadow: '0 4px 14px rgba(37, 99, 235, 0.4)',
+              }}
+            >
+              Valider
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de visualisation après création */}
+      {createdQuote && (
+        <ViewQuoteModal
+          isOpen={Boolean(createdQuote)}
+          quote={createdQuote}
+          onClose={() => {
+            setCreatedQuote(null);
+            navigate('/user/quotes');
+          }}
+          onConvertToContract={handleConvertToContract}
+        />
+      )}
+
+      {/* Modal d'ajout rapide complet de client */}
+      <QuickAddClientModal
+        isOpen={isQuickAddClientOpen}
+        onClose={() => setIsQuickAddClientOpen(false)}
+        onClientCreated={(newClient) => {
+          setClients((prev) => [newClient, ...prev]);
+          setSouscripteurId(newClient.id || newClient.IdClient);
+        }}
+      />
+    </div>
+  );
+};
+
+export default NewAutoQuotePage;

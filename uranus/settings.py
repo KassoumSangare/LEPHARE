@@ -82,11 +82,11 @@ ASACI_ACCESS_CODE = uranus_backend_config.get("ASACI_ACCESS_CODE", "")
 
 # Point de vente
 ASACI_POINT_OF_SALE = uranus_backend_config.get(
-    "ASACI_POINT_OF_SALE", "OREOLE ASSURANCES"
+    "ASACI_POINT_OF_SALE", "LE PHARE ASSURANCES"
 )
 
 # Bureau
-ASACI_OFFICE = uranus_backend_config.get("ASACI_OFFICE", "OREOLE ASSURANCES")
+ASACI_OFFICE = uranus_backend_config.get("ASACI_OFFICE", "LE PHARE ASSURANCES")
 
 # Code d'annulation
 ASACI_CERTIFICATE_CANCELLATION = uranus_backend_config.get(
@@ -134,12 +134,13 @@ INSTALLED_APPS = [
     "django_celery_results",
     "django_api_admin",
     "autorisations",
+    "institutionnel.apps.InstitutionnelConfig",
 ]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         # "rest_framework.authentication.SessionAuthentication",
-        "knox.auth.TokenAuthentication",
+        "institutionnel.authentication.KnoxOrDemoTokenAuthentication",
     ],
     # "DEFAULT_PERMISSION_CLASSES": [
     #    "rest_framework.permissions.IsAuthenticated",

@@ -1,0 +1,9 @@
+{
+  "short_name": "LE PHARE",
+  "name": "LE PHARE - Plateforme de Gestion & Courtage d'Assurances",
+  "icons": [],
+  "start_url": "/",
+  "background_color": "#0b1120",
+  "theme_color": "#2563eb",
+  "display": "standalone"
+}

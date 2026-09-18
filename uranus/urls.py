@@ -20,6 +20,8 @@ urlpatterns = [
     path('api/autorisations/', include('autorisations.urls')),
     # ✨ API Commissions
     path('api/commissions/', include('commissions.urls')),
+    # 🏛️ API Institutionnel V2 LE PHARE (CRM, Sinistres, Conventions, GED, Audit CIMA)
+    path('api/', include('institutionnel.urls')),
 ]
 
 if settings.DEBUG:

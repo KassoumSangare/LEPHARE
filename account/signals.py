@@ -13,4 +13,8 @@ def create_profile(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=UranusUser)
 def save_profile(sender, instance, **kwargs):
-    instance.profile.save()
+    if hasattr(instance, 'profile'):
+        instance.profile.save()
+    else:
+        Profile.objects.get_or_create(utilisateur=instance)
+

@@ -303,9 +303,18 @@ class TypeAssureSerializer(serializers.ModelSerializer):
 
 
 class ProfessionSerializer(serializers.ModelSerializer):
+    client_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Profession
-        fields = "__all__"
+        fields = ["IdProfession", "Libelle", "CodeProfession", "client_count"]
+
+    def get_client_count(self, obj):
+        try:
+            from customer.models import Client
+            return Client.objects.filter(IdProfession=obj.IdProfession).count()
+        except Exception:
+            return 0
 
 
 class GenreVehiculeSerializer(serializers.ModelSerializer):
@@ -409,9 +418,19 @@ class QualiteSerializer(serializers.ModelSerializer):
 
 
 class SecteurActiviteSerializer(serializers.ModelSerializer):
+    client_count = serializers.SerializerMethodField()
+
     class Meta:
         model = SecteurActivite
-        fields = "__all__"
+        fields = ["IdSecteurActivite", "Libelle", "client_count"]
+
+    def get_client_count(self, obj):
+        try:
+            from customer.models import Client
+            return Client.objects.filter(IdSecteurActivite=obj.IdSecteurActivite).count()
+        except Exception:
+            return 0
+
 
 
 class QualiteAyantDroitSerializer(serializers.ModelSerializer):

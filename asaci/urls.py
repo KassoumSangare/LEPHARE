@@ -8,6 +8,7 @@ from .views import (
     RetourDemAttestationViewSet,
     DetailRetourDemAttestationViewSet,
     CertificateDbApplicationViewSet,
+    AsaciGatewayStatusView,
 )
 
 router = routers.DefaultRouter()
@@ -42,15 +43,17 @@ router.register(
 router.register(
     r"asaci/retourdemandeattestation",
     RetourDemAttestationViewSet,
-    # basename="retourdemandeattestation",
+    basename="retourdemandeattestation",
 )
 
 router.register(
     r"asaci/detailretourdemandeattestation",
     DetailRetourDemAttestationViewSet,
-    # basename="detailretourdemandeattestation",
+    basename="detailretourdemandeattestation",
 )
 
 urlpatterns = [
+    path("asaci/statut_passerelle/", AsaciGatewayStatusView.as_view(), name="asaci_gateway_status"),
     path("", include(router.urls)),
 ]
+

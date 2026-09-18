@@ -108,7 +108,7 @@ class PaiementCommissionViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         
         stats = queryset.aggregate(
-            total_paiements=Count('id'),
+            total_paiements=Count('pk'),
             montant_total=Sum('montant_total'),
             montant_en_attente=Sum(
                 'montant_total',
@@ -520,7 +520,7 @@ class AffaireCommissionViewSet(viewsets.ViewSet):
         
         # Ajouter un résumé
         resume = queryset.aggregate(
-            nombre_affaires=Count('id'),
+            nombre_affaires=Count('pk'),
             montant_total_restant=Sum('montant_commission_restant')
         )
         
@@ -559,7 +559,7 @@ class AffaireCommissionViewSet(viewsets.ViewSet):
         ).filter(
             montant_commission_restant_total__gt=0
         ).annotate(
-            nombre_affaires=Count('id')
+            nombre_affaires=Count('pk')
         )
         
         # Convertir en liste avec Decimal en string

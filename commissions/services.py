@@ -93,10 +93,10 @@ class CommissionCalculService:
                 Sum('montant_commission_restant'),
                 Decimal('0.00')
             ),
-            nombre_affaires_total=Count('id'),
-            nombre_affaires_payees=Count('id', filter=Q(statut_paiement='PAYE')),
-            nombre_affaires_non_payees=Count('id', filter=Q(statut_paiement='NON_PAYE')),
-            nombre_affaires_partielles=Count('id', filter=Q(statut_paiement='PARTIELLEMENT_PAYE')),
+            nombre_affaires_total=Count('pk'),
+            nombre_affaires_payees=Count('pk', filter=Q(statut_paiement='PAYE')),
+            nombre_affaires_non_payees=Count('pk', filter=Q(statut_paiement='NON_PAYE')),
+            nombre_affaires_partielles=Count('pk', filter=Q(statut_paiement='PARTIELLEMENT_PAYE')),
         )
         
         # Calcul du taux de recouvrement
@@ -148,16 +148,16 @@ class CommissionCalculService:
             queryset = queryset.filter(reversement__date_reversement__lte=date_fin)
         
         stats = queryset.values(
-            'quittance__contrat__idcompagnie__IdCompagnie',
-            'quittance__contrat__idcompagnie__RaisonSociale'
+            'reversement__compagnie__IdCompagnie',
+            'reversement__compagnie__RaisonSociale'
         ).annotate(
             commissions_dues=Coalesce(Sum('montant_commission_du'), Decimal('0.00')),
             commissions_payees=Coalesce(Sum('montant_commission_paye'), Decimal('0.00')),
             commissions_en_attente=Coalesce(Sum('montant_commission_restant'), Decimal('0.00')),
-            nombre_affaires=Count('id'),
-            nombre_payees=Count('id', filter=Q(statut_paiement='PAYE')),
-            nombre_non_payees=Count('id', filter=Q(statut_paiement='NON_PAYE')),
-            nombre_partielles=Count('id', filter=Q(statut_paiement='PARTIELLEMENT_PAYE')),
+            nombre_affaires=Count('pk'),
+            nombre_payees=Count('pk', filter=Q(statut_paiement='PAYE')),
+            nombre_non_payees=Count('pk', filter=Q(statut_paiement='NON_PAYE')),
+            nombre_partielles=Count('pk', filter=Q(statut_paiement='PARTIELLEMENT_PAYE')),
         ).order_by('-commissions_dues')
         
         # Calcul du taux de recouvrement par compagnie
@@ -193,7 +193,7 @@ class CommissionCalculService:
             commissions_dues=Coalesce(Sum('montant_commission_du'), Decimal('0.00')),
             commissions_payees=Coalesce(Sum('montant_commission_paye'), Decimal('0.00')),
             commissions_en_attente=Coalesce(Sum('montant_commission_restant'), Decimal('0.00')),
-            nombre_affaires=Count('id'),
+            nombre_affaires=Count('pk'),
         ).order_by('mois')
         
         return list(evolution)
@@ -255,21 +255,34 @@ class CommissionCalculService:
             ordre = '-montant_commission_restant'
         
         top = queryset.order_by(ordre)[:limite]
-        
-        return [
-            {
-                'detail_reversement_id': item.id,
-                'quittance_numero': item.quittance.numeroquittance,
-                'contrat_numero': item.quittance.police,
-                'client_nom': f"{item.quittance.client.Prenoms} {item.quittance.client.Nom}",
-                'compagnie_nom': item.quittance.contrat.idcompagnie.RaisonSociale,
+        result = []
+        for item in top:
+            q = None
+            if hasattr(item, 'ligne_encaissement') and item.ligne_encaissement:
+                q = getattr(item.ligne_encaissement, 'numeroquittance', None)
+            
+            q_num = getattr(q, 'numeroquittance', f"QUI-{item.pk}") if q else f"QUI-{item.pk}"
+            ctr_num = getattr(q, 'police', 'POL-000') if q else 'POL-000'
+            cli_nom = "Client"
+            if q and getattr(q, 'client', None):
+                cli_nom = f"{getattr(q.client, 'Prenoms', '')} {getattr(q.client, 'Nom', '')}".strip() or "Client"
+            
+            cie_nom = "Compagnie Partenaire"
+            if item.reversement and getattr(item.reversement, 'compagnie', None):
+                cie_nom = getattr(item.reversement.compagnie, 'RaisonSociale', 'Compagnie Partenaire')
+
+            result.append({
+                'detail_reversement_id': item.pk,
+                'quittance_numero': q_num,
+                'contrat_numero': ctr_num,
+                'client_nom': cli_nom,
+                'compagnie_nom': cie_nom,
                 'montant_commission_du': str(item.montant_commission_du),
                 'montant_commission_paye': str(item.montant_commission_paye),
                 'montant_commission_restant': str(item.montant_commission_restant),
                 'statut': item.statut_paiement,
-            }
-            for item in top
-        ]
+            })
+        return result
     
     @staticmethod
     def calculer_performance_paiement():
@@ -289,7 +302,7 @@ class CommissionCalculService:
             delai_moyen=Avg(
                 F('paiement__date_paiement') - F('detail_reversement__reversement__date_reversement')
             ),
-            nombre_paiements=Count('id')
+            nombre_paiements=Count('pk')
         )
         
         resultats = []

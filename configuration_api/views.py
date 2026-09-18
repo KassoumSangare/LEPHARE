@@ -592,6 +592,37 @@ class TypeAssureViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        serializer.save(
+            code_type=data.get('code_type', '').strip().upper(),
+            libelle_type=data.get('libelle_type', '').strip().upper(),
+        )
+
+    def perform_update(self, serializer):
+        data = serializer.validated_data
+        serializer.save(
+            code_type=data.get('code_type', serializer.instance.code_type).strip().upper(),
+            libelle_type=data.get('libelle_type', serializer.instance.libelle_type).strip().upper(),
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Vérifier si ce type est utilisé dans les contrats/devis (production)
+        try:
+            from production.models import Devis
+            count = Devis.objects.filter(TypeSouscripteur=instance.code_type).count()
+            if count > 0:
+                return Response(
+                    {"error": f"Impossible de supprimer le type assuré « {instance.libelle_type} » "
+                              f"car il est utilisé dans {count} devis/contrat(s)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception:
+            pass
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class TypeSouscripteurViewSet(viewsets.ModelViewSet):
     queryset = TypeSouscripteur.objects.all()
@@ -600,13 +631,84 @@ class TypeSouscripteurViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        serializer.save(
+            code_type=data.get('code_type', '').strip().upper(),
+            libelle_type=data.get('libelle_type', '').strip().upper(),
+        )
+
+    def perform_update(self, serializer):
+        data = serializer.validated_data
+        serializer.save(
+            code_type=data.get('code_type', serializer.instance.code_type).strip().upper(),
+            libelle_type=data.get('libelle_type', serializer.instance.libelle_type).strip().upper(),
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Vérifier si ce type est utilisé dans les contrats/devis
+        try:
+            from production.models import Devis
+            count = Devis.objects.filter(TypeSouscripteur=instance.code_type).count()
+            if count > 0:
+                return Response(
+                    {"error": f"Impossible de supprimer le type souscripteur « {instance.libelle_type} » "
+                              f"car il est utilisé dans {count} devis/contrat(s)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception:
+            pass
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class ProfessionViewSet(viewsets.ModelViewSet):
-    queryset = Profession.objects.all().order_by("Libelle").values()
+    queryset = Profession.objects.all().order_by("Libelle")
     serializer_class = ProfessionSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+    def perform_create(self, serializer):
+        libelle = serializer.validated_data.get('Libelle', '').strip()
+        code = serializer.validated_data.get('CodeProfession')
+        if code:
+            code = code.strip().upper()
+        else:
+            try:
+                last = Profession.objects.order_by('-IdProfession').first()
+                next_id = (last.IdProfession + 1) if last else 1
+                code = f"PROF{str(next_id).zfill(2)}"
+            except Exception:
+                code = None
+        serializer.save(Libelle=libelle, CodeProfession=code)
+
+    def perform_update(self, serializer):
+        libelle = serializer.validated_data.get('Libelle', '').strip()
+        code = serializer.validated_data.get('CodeProfession')
+        if code:
+            code = code.strip().upper()
+        serializer.save(Libelle=libelle, CodeProfession=code)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            from customer.models import Client
+            client_count = Client.objects.filter(IdProfession=instance.IdProfession).count()
+            if client_count > 0:
+                return Response(
+                    {
+                        "error": f"Impossible de supprimer la profession « {instance.Libelle} » "
+                                 f"car elle est actuellement rattachée à {client_count} client(s). "
+                                 f"Veuillez d'abord retirer cette profession des fiches clients concernées."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception:
+            pass
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ActeViewSet(viewsets.ModelViewSet):
@@ -747,6 +849,33 @@ class SecteurActiviteViewSet(viewsets.ModelViewSet):
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+    def perform_create(self, serializer):
+        libelle = serializer.validated_data.get('Libelle', '').strip()
+        serializer.save(Libelle=libelle)
+
+    def perform_update(self, serializer):
+        libelle = serializer.validated_data.get('Libelle', '').strip()
+        serializer.save(Libelle=libelle)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            from customer.models import Client
+            client_count = Client.objects.filter(IdSecteurActivite=instance.IdSecteurActivite).count()
+            if client_count > 0:
+                return Response(
+                    {
+                        "error": f"Impossible de supprimer le secteur d'activité « {instance.Libelle} » "
+                                 f"car il est actuellement rattaché à {client_count} client(s). "
+                                 f"Veuillez d'abord retirer ce secteur des fiches clients concernées."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except Exception as e:
+            pass
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class QualiteAyantDroitViewSet(viewsets.ModelViewSet):

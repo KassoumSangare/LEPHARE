@@ -849,8 +849,8 @@ def get_param_data(compagnie, acces):
     data["code_intermediaire"] = "ASACI_CRT_146"
     data["code_compagnie"] = compagnie
     data["code_acces"] = acces
-    data["point_de_vente"] = "OREOLE ASSURANCES"
-    data["bureau"] = "OREOLE ASSURANCES"
+    data["point_de_vente"] = "LE PHARE"
+    data["bureau"] = "LE PHARE"
 
     return data
 
