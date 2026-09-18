@@ -500,64 +500,87 @@ export const QuoteListPage = () => {
         </div>
       </div>
 
-      {/* Branch Filter Tabs */}
+      {/* Branch Filter Tabs with Direct Print Button on Each Tab */}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button
-          className={`btn ${selectedBranchFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('ALL')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          Tous ({totalDevis})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'AUTO' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('AUTO')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <Car size={13} style={{ marginRight: '0.3rem' }} /> Auto ({countByBranch.AUTO})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'VOYAGE' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('VOYAGE')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <Plane size={13} style={{ marginRight: '0.3rem' }} /> Voyage ({countByBranch.VOYAGE})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'TRANSPORT' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('TRANSPORT')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <Ship size={13} style={{ marginRight: '0.3rem' }} /> Transport ({countByBranch.TRANSPORT})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'MRH' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('MRH')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <Home size={13} style={{ marginRight: '0.3rem' }} /> MRH ({countByBranch.MRH})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'SANTE' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('SANTE')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <HeartPulse size={13} style={{ marginRight: '0.3rem' }} /> Santé ({countByBranch.SANTE})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'IA' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('IA')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-        >
-          <UserPlus size={13} style={{ marginRight: '0.3rem' }} /> IA ({countByBranch.IA})
-        </button>
-        <button
-          className={`btn ${selectedBranchFilter === 'CONSOLIDATED' ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={() => setSelectedBranchFilter('CONSOLIDATED')}
-          style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', borderColor: selectedBranchFilter === 'CONSOLIDATED' ? '' : 'rgba(16, 185, 129, 0.4)' }}
-        >
-          <CheckCircle size={13} color="#34d399" style={{ marginRight: '0.3rem' }} /> Consolidés ({totalConsolides})
-        </button>
+        {[
+          { id: 'ALL', label: 'Tous', count: totalDevis, icon: null },
+          { id: 'AUTO', label: 'Auto', count: countByBranch.AUTO, icon: <Car size={13} /> },
+          { id: 'VOYAGE', label: 'Voyage', count: countByBranch.VOYAGE, icon: <Plane size={13} color="#60a5fa" /> },
+          { id: 'TRANSPORT', label: 'Transport', count: countByBranch.TRANSPORT, icon: <Ship size={13} color="#38bdf8" /> },
+          { id: 'MRH', label: 'MRH', count: countByBranch.MRH, icon: <Home size={13} /> },
+          { id: 'SANTE', label: 'Santé', count: countByBranch.SANTE, icon: <HeartPulse size={13} /> },
+          { id: 'IA', label: 'IA', count: countByBranch.IA, icon: <UserPlus size={13} /> },
+          { id: 'CONSOLIDATED', label: 'Consolidés', count: totalConsolides, icon: <CheckCircle size={13} color="#34d399" /> },
+        ].map((tab) => {
+          const isActive = selectedBranchFilter === tab.id;
+          return (
+            <div
+              key={tab.id}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                borderRadius: 'var(--radius-md)',
+                overflow: 'hidden',
+                border: isActive ? '1px solid #3b82f6' : '1px solid var(--border-subtle)',
+                background: isActive ? 'var(--primary)' : 'var(--surface-sunken)',
+                boxShadow: isActive ? '0 0 12px rgba(59, 130, 246, 0.3)' : 'none',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedBranchFilter(tab.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '0.4rem 0.65rem',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  border: 'none',
+                  background: 'transparent',
+                  color: isActive ? '#fff' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                }}
+                title={`Afficher les devis : ${tab.label}`}
+              >
+                {tab.icon}
+                <span>{tab.label} ({tab.count})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrintQuotes(tab.id);
+                }}
+                disabled={loading || tab.count === 0}
+                title={`Imprimer immédiatement la liste : ${tab.label} (${tab.count} devis)`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0.4rem 0.55rem',
+                  border: 'none',
+                  borderLeft: isActive ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid var(--border-subtle)',
+                  background: isActive ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                  color: isActive ? '#fff' : (tab.count > 0 ? '#38bdf8' : 'var(--text-muted)'),
+                  cursor: tab.count > 0 ? 'pointer' : 'not-allowed',
+                  opacity: tab.count === 0 ? 0.4 : 1,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  if (tab.count > 0) e.currentTarget.style.background = isActive ? 'rgba(0, 0, 0, 0.35)' : 'rgba(56, 189, 248, 0.2)';
+                }}
+                onMouseLeave={(e) => {
+                  if (tab.count > 0) e.currentTarget.style.background = isActive ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.03)';
+                }}
+              >
+                <Printer size={13} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Table */}
