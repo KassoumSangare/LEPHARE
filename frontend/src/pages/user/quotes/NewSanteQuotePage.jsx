@@ -135,6 +135,11 @@ export const NewSanteQuotePage = () => {
   const [surprimeAffection, setSurprimeAffection] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Répartition de la prime Santé (Minéné : NSIA CI / OREOLE / VITALIS / ADEC)
+  const [avecApporteur, setAvecApporteur] = useState(false);
+  const [repartitionPrime, setRepartitionPrime] = useState(null);
+  const [repartitionError, setRepartitionError] = useState('');
+
   // -------------------------------------------------------------
   // CHARGEMENT INITIAL DES RÉFÉRENTIELS
   // -------------------------------------------------------------
@@ -195,6 +200,36 @@ export const NewSanteQuotePage = () => {
       primeTtc,
     };
   }, [colleges, reductionCommerciale, surprimeAffection, montantAccessoireManuel]);
+
+  // Calcul de la répartition de la prime HT entre NSIA CI, OREOLE ASSURANCES,
+  // VITALIS et ADEC (ou commission commerciaux si apporteur d'affaires)
+  useEffect(() => {
+    const primeHt = totalsFinanciers.primeNetteApresReduction;
+    if (!primeHt || primeHt <= 0) {
+      setRepartitionPrime(null);
+      setRepartitionError('');
+      return;
+    }
+    let isMounted = true;
+    const loadRepartition = async () => {
+      try {
+        const data = await settingsApi.calculerRepartitionPrimeSante(primeHt, avecApporteur);
+        if (isMounted) {
+          setRepartitionPrime(data);
+          setRepartitionError('');
+        }
+      } catch (err) {
+        if (isMounted) {
+          setRepartitionPrime(null);
+          setRepartitionError(
+            err?.response?.data?.error || 'Barème de répartition indisponible pour cette variante.'
+          );
+        }
+      }
+    };
+    loadRepartition();
+    return () => { isMounted = false; };
+  }, [totalsFinanciers.primeNetteApresReduction, avecApporteur]);
 
   // Actions Collèges
   const handleSaveCollege = () => {
@@ -847,6 +882,63 @@ export const NewSanteQuotePage = () => {
                 onChange={(e) => setMontantAccessoireManuel(e.target.value.replace(/[^0-9]/g, ''))}
               />
             </div>
+          </div>
+
+          {/* Répartition de la prime Santé (Minéné : NSIA CI / OREOLE / VITALIS / ADEC) */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '1.25rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem' }}>Répartition de la Prime (Minéné Santé)</div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={avecApporteur}
+                  onChange={(e) => setAvecApporteur(e.target.checked)}
+                />
+                Contrat apporté par un tiers (apporteur d'affaires)
+              </label>
+            </div>
+
+            {repartitionError ? (
+              <div style={{ fontSize: '0.8rem', color: '#fbbf24' }}>{repartitionError}</div>
+            ) : repartitionPrime ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.78rem' }}>
+                <div>
+                  <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Frais généraux (NSIA CI)</div>
+                  <div style={{ fontWeight: 700, color: '#f8fafc' }}>{formatFcfa(repartitionPrime.frais_generaux_compagnie)} FCFA</div>
+                </div>
+                <div>
+                  <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Commission (OREOLE)</div>
+                  <div style={{ fontWeight: 700, color: '#34d399' }}>{formatFcfa(repartitionPrime.commission_courtier)} FCFA</div>
+                </div>
+                <div>
+                  <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Honoraires gestion (VITALIS)</div>
+                  <div style={{ fontWeight: 700, color: '#f8fafc' }}>{formatFcfa(repartitionPrime.honoraire_gestionnaire)} FCFA</div>
+                </div>
+                {avecApporteur ? (
+                  <div>
+                    <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Commission commerciaux</div>
+                    <div style={{ fontWeight: 700, color: '#f8fafc' }}>{formatFcfa(repartitionPrime.commission_commerciaux)} FCFA</div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Frais gestion (ADEC)</div>
+                      <div style={{ fontWeight: 700, color: '#f8fafc' }}>{formatFcfa(repartitionPrime.frais_gestion_adec)} FCFA</div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Autres frais de gestion</div>
+                      <div style={{ fontWeight: 700, color: '#f8fafc' }}>{formatFcfa(repartitionPrime.autres_frais_gestion)} FCFA</div>
+                    </div>
+                  </>
+                )}
+                <div>
+                  <div style={{ color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.68rem' }}>Provision pour sinistre</div>
+                  <div style={{ fontWeight: 700, color: '#ec4899' }}>{formatFcfa(repartitionPrime.provision_sinistre)} FCFA</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Renseignez une prime pour afficher la répartition.</div>
+            )}
           </div>
 
           {/* Synthèse financière finale */}

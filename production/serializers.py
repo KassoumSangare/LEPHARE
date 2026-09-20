@@ -512,6 +512,7 @@ class DevisSerializer(serializers.ModelSerializer):
     piece_jointe_info = PieceJointeSerializer(
         source="piece_jointe", read_only=True
     )
+    duree_terme_jours = serializers.ReadOnlyField()
 
     class Meta:
         model = Devis
@@ -521,6 +522,7 @@ class DevisSerializer(serializers.ModelSerializer):
             "date_modification",
             "prime_imposee_montant",
             "piece_jointe_info",
+            "duree_terme_jours",
         ]
         depth = 1
 
@@ -570,12 +572,17 @@ class ContratSerializer(serializers.ModelSerializer):
     piece_jointe_info = PieceJointeSerializer(
         source="piece_jointe", read_only=True
     )
+    duree_terme_jours = serializers.ReadOnlyField()
 
     class Meta:
         model = Contrat
         fields = "__all__"
         depth = 1
-        read_only_fields = ["idcontrat", "piece_jointe_info"]
+        read_only_fields = [
+            "idcontrat",
+            "piece_jointe_info",
+            "duree_terme_jours",
+        ]
 
     def get_offreboisee(self, obj):
         try:
@@ -897,6 +904,17 @@ class ImportationAssureIaSerializer(serializers.Serializer):
         required=False,
         help_text="Autoriser la réimportation du même fichier",
     )
+
+    def validate_TauxReduction(self, value):
+        """
+        Plafond métier OREOLE : la réduction commerciale ne peut jamais
+        dépasser 35%.
+        """
+        if value is not None and value > 35:
+            raise serializers.ValidationError(
+                "Le taux de réduction commerciale ne peut pas dépasser 35%."
+            )
+        return value
 
     def validate_FichierExcel(self, value):
         """
@@ -2837,6 +2855,16 @@ class ReversementGroupePrimeValidateSerializer(
             "reference_reversement",
             "reference_compensation",
         ]
+
+    def validate_mode_reversement(self, value):
+        """Le décaissement/reversement en espèces vers une compagnie est interdit (exigence OREOLE)."""
+        mode = ModeEncaissement.objects.filter(pk=value).first()
+        if mode and (mode.abregereglement or "").strip().upper() == "ESP":
+            raise serializers.ValidationError(
+                "Le décaissement/reversement en espèces n'est pas autorisé. "
+                "Veuillez sélectionner un autre mode de règlement."
+            )
+        return value
 
 
 class ChangementImmatriculationSerializer(serializers.Serializer):

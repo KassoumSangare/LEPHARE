@@ -31,6 +31,7 @@ from .utils import (
     get_bordereau_recap_emission,
     get_arrieres_encaissements_annulations,
     get_emissions_encaissements_commissions,
+    get_etat_decisionnel_contenu,
 )
 
 
@@ -64,11 +65,38 @@ def get_emission_for_bordereau_recap(request):
 
 
 class EtatDecisionnelViewSet(viewsets.ModelViewSet):
-    queryset = EtatDecisionnel.objects.filter(actif=True)
+    queryset = EtatDecisionnel.objects.all().order_by("code_etat")
     serializer_class = EtatDecisionnelSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+
+class EtatDecisionnelContenuView(APIView):
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def get(self, request, pk):
+        etat = get_object_or_404(EtatDecisionnel, pk=pk)
+        date_debut = request.query_params.get("date_debut")
+        date_fin = request.query_params.get("date_fin")
+
+        (msg, dossiers) = get_etat_decisionnel_contenu(
+            etat.code_etat, etat.libelle_etat, date_debut, date_fin
+        )
+        if not msg:
+            return Response(
+                {
+                    "Status": "Succès",
+                    "Etat": EtatDecisionnelSerializer(etat).data,
+                    "Data": dossiers,
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+        )
 
 
 class GarantieSouscriteView(APIView):

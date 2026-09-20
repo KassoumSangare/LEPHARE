@@ -20,6 +20,60 @@ def parse_date(date_val):
     return datetime.now().date()
 
 
+def get_etat_decisionnel_contenu(code_etat, libelle_etat, date_debut, date_fin):
+    """
+    Retourne les dossiers (devis) rattachés à un état décisionnel donné
+    (par correspondance sur le code ou le libellé de l'état), sur une période.
+    """
+    from django.db.models import Q
+
+    date_debut = parse_date(date_debut)
+    date_fin = parse_date(date_fin)
+
+    try:
+        from production.models import Devis
+    except Exception as e:
+        return (str(e), [])
+
+    try:
+        qs = (
+            Devis.objects.select_related("client", "produit")
+            .filter(
+                Q(statut__iexact=code_etat)
+                | Q(statut__iexact=libelle_etat)
+                | Q(statut__icontains=code_etat)
+            )
+            .filter(dateemission__date__gte=date_debut, dateemission__date__lte=date_fin)
+            .order_by("-dateemission")
+        )
+
+        dossiers = []
+        for d in qs:
+            nom_client = "Client Inconnu"
+            if d.client:
+                nom = getattr(d.client, "Nom", "")
+                prenoms = getattr(d.client, "Prenoms", "")
+                nom_client = f"{nom or ''} {prenoms or ''}".strip() or "Client"
+
+            produit_libelle = getattr(d.produit, "libelle_produit", "") if d.produit else ""
+
+            dossiers.append(
+                {
+                    "id_devis": d.iddevis,
+                    "numero_devis": d.numerodevis,
+                    "nom_client": nom_client,
+                    "produit": produit_libelle,
+                    "statut": d.statut,
+                    "date_emission": d.dateemission,
+                    "date_effet": d.dateeffet,
+                    "prime_ttc": d.primettc,
+                }
+            )
+        return ("", dossiers)
+    except Exception as error:
+        return (str(error), [])
+
+
 def get_bordereau_recap_emission(input_data):
     msg = ""
     res = BordereauEmissionResultSet.objects.none()

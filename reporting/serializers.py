@@ -26,9 +26,7 @@ class BordereauEmissionResultSetSerializer(serializers.ModelSerializer):
 class EtatDecisionnelSerializer(serializers.ModelSerializer):
     class Meta:
         model = EtatDecisionnel
-        exclude = [
-            "id_etat",
-        ]
+        fields = "__all__"
 
 
 class EtatCimaE1Serializer(serializers.ModelSerializer):

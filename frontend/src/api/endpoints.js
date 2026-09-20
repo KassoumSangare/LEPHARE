@@ -26,6 +26,10 @@ const extractData = (res) => {
   if (!res) return [];
   if (Array.isArray(res.data)) return res.data;
   if (res.data && Array.isArray(res.data.results)) return res.data.results;
+  // Beaucoup d'endpoints APIView du backend renvoient une enveloppe
+  // { status: 'succès'|'Echec', data: [...] } au lieu d'un tableau brut
+  // ou de la pagination DRF standard ({ results: [...] }).
+  if (res.data && Array.isArray(res.data.data)) return res.data.data;
   return res.data;
 };
 
@@ -341,7 +345,12 @@ export const normalizeDevis = (bq) => {
 
   let statutLabel = bq.statut;
   let statutBadge = 'amber';
-  if (bq.archive) {
+  if (bq.devis_consolide) {
+    // Ce devis a été fusionné dans un devis consolidé (sp_consolidation_devis) :
+    // il est scellé et ne doit plus être modifié ni confirmé individuellement.
+    statutLabel = 'Consolidé';
+    statutBadge = 'purple';
+  } else if (bq.archive) {
     statutLabel = 'Archivé';
     statutBadge = 'rose';
   } else if (bq.confirme) {
@@ -378,6 +387,7 @@ export const normalizeDevis = (bq) => {
     coassurance: Boolean(bq.coassurance),
     confirme: Boolean(bq.confirme),
     archive: Boolean(bq.archive),
+    devis_consolide: Boolean(bq.devis_consolide),
     statut: statutLabel,
     statut_badge: statutBadge,
     numero_police_compagnie: bq.numero_police_compagnie || null,
@@ -899,6 +909,19 @@ export const approvalApi = {
 export const reportingApi = {
   // GET /api/etatdecisionnel/
   getDecisionnel: async () => extractData(await apiClient.get('/etatdecisionnel/')),
+  // POST /api/etatdecisionnel/
+  createDecisionnel: (data) => apiClient.post('/etatdecisionnel/', data),
+  // PUT /api/etatdecisionnel/{id}/
+  updateDecisionnel: (id, data) => apiClient.put(`/etatdecisionnel/${id}/`, data),
+  // DELETE /api/etatdecisionnel/{id}/
+  deleteDecisionnel: (id) => apiClient.delete(`/etatdecisionnel/${id}/`),
+  // GET /api/etatdecisionnel/{id}/contenu?date_debut=&date_fin=
+  getDecisionnelContenu: async (id, dateDebut, dateFin) => {
+    const res = await apiClient.get(`/etatdecisionnel/${id}/contenu`, {
+      params: { date_debut: dateDebut, date_fin: dateFin },
+    });
+    return res?.data || res;
+  },
   // POST /api/bordereaurecapemission
   getBordereauRecapEmission: async (params) => {
     const payload = params || { date_debut: '2020-01-01', date_fin: '2026-12-31', type_etat: 1 };
@@ -953,6 +976,22 @@ export const settingsApi = {
   getCategoriesPermis: async () => extractData(await apiClient.get('/categoriepermis/')),
   // GET /api/terme/
   getTermes: async () => extractData(await apiClient.get('/terme/')),
+  // GET /api/repartitionprimesante/ (barèmes de répartition prime Santé Minéné : NSIA/OREOLE/VITALIS/ADEC)
+  getRepartitionsPrimeSante: async () => extractData(await apiClient.get('/repartitionprimesante/')),
+  // POST /api/repartitionprimesante/
+  createRepartitionPrimeSante: (data) => apiClient.post('/repartitionprimesante/', data),
+  // PUT /api/repartitionprimesante/{id}/
+  updateRepartitionPrimeSante: (id, data) => apiClient.put(`/repartitionprimesante/${id}/`, data),
+  // DELETE /api/repartitionprimesante/{id}/
+  deleteRepartitionPrimeSante: (id) => apiClient.delete(`/repartitionprimesante/${id}/`),
+  // POST /api/calculrepartitionprimesante/ — { prime_ht, avec_apporteur } → ventilation NSIA/OREOLE/VITALIS/ADEC
+  calculerRepartitionPrimeSante: async (primeHt, avecApporteur = false) => {
+    const res = await apiClient.post('/calculrepartitionprimesante/', {
+      prime_ht: primeHt,
+      avec_apporteur: avecApporteur,
+    });
+    return res?.data;
+  },
   // GET /api/offre/
   getOffres: async () => extractData(await apiClient.get('/offre/')),
   // POST /api/offre/

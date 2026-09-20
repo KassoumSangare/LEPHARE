@@ -1,6 +1,6 @@
 import { LoadingSpinner } from './LoadingSpinner';
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Inbox, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 export const DataTable = ({
   columns = [],
@@ -14,6 +14,7 @@ export const DataTable = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortConfig, setSortConfig] = useState({ index: null, direction: 'asc' });
 
   // Filter data based on search term (Optimized for speed on large datasets)
   const filteredData = useMemo(() => {
@@ -31,12 +32,52 @@ export const DataTable = ({
     });
   }, [data, searchTerm]);
 
+  const getSortValue = (col, row) => {
+    if (col.sortAccessor) return col.sortAccessor(row);
+    if (col.accessor) return row[col.accessor];
+    return '';
+  };
+
+  const sortedData = useMemo(() => {
+    if (sortConfig.index === null) return filteredData;
+    const col = columns[sortConfig.index];
+    if (!col) return filteredData;
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    return [...filteredData].sort((a, b) => {
+      const va = getSortValue(col, a);
+      const vb = getSortValue(col, b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return -1 * dir;
+      if (vb == null) return 1 * dir;
+      const na = Number(va);
+      const nb = Number(vb);
+      if (!isNaN(na) && !isNaN(nb) && va !== '' && vb !== '') {
+        return (na - nb) * dir;
+      }
+      const sa = String(va).toLowerCase();
+      const sb = String(vb).toLowerCase();
+      return sa.localeCompare(sb, 'fr', { numeric: true }) * dir;
+    });
+  }, [filteredData, sortConfig, columns]);
+
+  const handleSort = (colIdx) => {
+    const col = columns[colIdx];
+    if (!col || !col.sortable) return;
+    setSortConfig((prev) => {
+      if (prev.index === colIdx) {
+        return { index: colIdx, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { index: colIdx, direction: 'asc' };
+    });
+    setCurrentPage(1);
+  };
+
   // Pagination calculation
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
+  const totalPages = Math.ceil(sortedData.length / itemsPerPage) || 1;
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredData.slice(start, start + itemsPerPage);
-  }, [filteredData, currentPage, itemsPerPage]);
+    return sortedData.slice(start, start + itemsPerPage);
+  }, [sortedData, currentPage, itemsPerPage]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
@@ -73,11 +114,33 @@ export const DataTable = ({
         <table className="data-table">
           <thead>
             <tr>
-              {columns.map((col, idx) => (
-                <th key={idx} style={{ textAlign: col.align || 'left', width: col.width }}>
-                  {col.header}
-                </th>
-              ))}
+              {columns.map((col, idx) => {
+                const isSorted = sortConfig.index === idx;
+                return (
+                  <th
+                    key={idx}
+                    style={{
+                      textAlign: col.align || 'left',
+                      width: col.width,
+                      cursor: col.sortable ? 'pointer' : 'default',
+                      userSelect: 'none',
+                    }}
+                    onClick={() => handleSort(idx)}
+                    title={col.sortable ? 'Cliquer pour trier' : undefined}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                      {col.header}
+                      {col.sortable && (
+                        isSorted ? (
+                          sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+                        ) : (
+                          <ArrowUpDown size={12} style={{ opacity: 0.4 }} />
+                        )
+                      )}
+                    </span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -115,12 +178,12 @@ export const DataTable = ({
       </div>
 
       {/* Pagination Footer */}
-      {filteredData.length > itemsPerPage && (
+      {sortedData.length > itemsPerPage && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.825rem', color: 'var(--text-secondary)' }}>
           <span>
             Affichage de <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> à{' '}
-            <strong>{Math.min(currentPage * itemsPerPage, filteredData.length)}</strong> sur{' '}
-            <strong>{filteredData.length}</strong> lignes
+            <strong>{Math.min(currentPage * itemsPerPage, sortedData.length)}</strong> sur{' '}
+            <strong>{sortedData.length}</strong> lignes
           </span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
