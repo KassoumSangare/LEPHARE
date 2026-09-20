@@ -727,7 +727,7 @@ export const NewMrhQuotePage = () => {
               type="button"
               className="btn btn-primary"
               onClick={() => setStep(2)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#0ea5e9' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#0369a1' }}
             >
               Suivant : Habitation & Biens <ArrowRight size={16} />
             </button>

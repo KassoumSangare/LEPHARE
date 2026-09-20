@@ -1332,7 +1332,7 @@ export const NewAutoQuotePage = () => {
                   onChange={(e) => setCustomDateExpiration(e.target.value)}
                 />
               ) : (
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#2563eb', padding: '0.6rem 0' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary-500)', padding: '0.6rem 0' }}>
                   {effectiveDateExpiration}
                 </div>
               )}

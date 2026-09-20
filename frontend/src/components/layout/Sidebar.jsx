@@ -25,6 +25,30 @@ import {
   Compass,
   Settings,
   X,
+  Activity,
+  BadgeCheck,
+  Banknote,
+  Boxes,
+  Briefcase,
+  ClipboardList,
+  Contact,
+  Factory,
+  FileSignature,
+  HeartPulse,
+  House,
+  MapPin,
+  Package,
+  Percent,
+  Plane,
+  Receipt,
+  ScrollText,
+  Ship,
+  Tag,
+  TrafficCone,
+  Truck,
+  UserCog,
+  UserPlus,
+  Wallet,
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, onClose }) => {
@@ -231,34 +255,44 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.conventions && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/admin/conventions" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Moteur des Conventions
+                    <FileSignature size={14} className="nav-icon" />
+                    <span>Moteur des Conventions</span>
                   </NavLink>
                   <NavLink to="/admin/settings/products" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Branches & Produits
+                    <Package size={14} className="nav-icon" />
+                    <span>Branches & Produits</span>
                   </NavLink>
                   <NavLink to="/admin/settings/guarantees" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Référentiel Garanties
+                    <ShieldCheck size={14} className="nav-icon" />
+                    <span>Référentiel Garanties</span>
                   </NavLink>
                   <NavLink to="/admin/settings/tarifs" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Grilles Tarifaires & Taxes
+                    <Receipt size={14} className="nav-icon" />
+                    <span>Grilles Tarifaires & Taxes</span>
                   </NavLink>
                   <NavLink to="/admin/settings/companies" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Compagnies Partenaires
+                    <Building2 size={14} className="nav-icon" />
+                    <span>Compagnies Partenaires</span>
                   </NavLink>
                   <NavLink to="/admin/settings/vehicle-geo" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Référentiels Auto & Géo
+                    <MapPin size={14} className="nav-icon" />
+                    <span>Référentiels Auto & Géo</span>
                   </NavLink>
                   <NavLink to="/admin/settings/secteurs-activite" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Secteurs d'Activité Éco.
+                    <Factory size={14} className="nav-icon" />
+                    <span>Secteurs d'Activité Éco.</span>
                   </NavLink>
                   <NavLink to="/admin/settings/professions" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Professions & Métiers
+                    <Briefcase size={14} className="nav-icon" />
+                    <span>Professions & Métiers</span>
                   </NavLink>
                   <NavLink to="/admin/settings/types-souscripteur" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Types de Souscripteur
+                    <UserPlus size={14} className="nav-icon" />
+                    <span>Types de Souscripteur</span>
                   </NavLink>
                   <NavLink to="/admin/settings/types-assure" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Types d'Assuré
+                    <UserCheck size={14} className="nav-icon" />
+                    <span>Types d'Assuré</span>
                   </NavLink>
                 </div>
               )}
@@ -299,25 +333,32 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.oreole && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/admin/settings/offres" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Catalogue Offres & Packages
+                    <Boxes size={14} className="nav-icon" />
+                    <span>Catalogue Offres & Packages</span>
                   </NavLink>
                   <NavLink to="/admin/settings/garanties-oreole" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Garanties & Sous-Garanties
+                    <Shield size={14} className="nav-icon" />
+                    <span>Garanties & Sous-Garanties</span>
                   </NavLink>
                   <NavLink to="/admin/settings/taxes" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Taxes CIMA / Fiscalité
+                    <Percent size={14} className="nav-icon" />
+                    <span>Taxes CIMA / Fiscalité</span>
                   </NavLink>
                   <NavLink to="/admin/settings/commissions-baremes" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Barèmes Commissions
+                    <Coins size={14} className="nav-icon" />
+                    <span>Barèmes Commissions</span>
                   </NavLink>
                   <NavLink to="/admin/settings/flotte" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Réductions Flotte Auto
+                    <Truck size={14} className="nav-icon" />
+                    <span>Réductions Flotte Auto</span>
                   </NavLink>
                   <NavLink to="/admin/settings/securite-routiere" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Sécurité Routière
+                    <TrafficCone size={14} className="nav-icon" />
+                    <span>Sécurité Routière</span>
                   </NavLink>
                   <NavLink to="/admin/settings/marques" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Marques Véhicules
+                    <Tag size={14} className="nav-icon" />
+                    <span>Marques Véhicules</span>
                   </NavLink>
                 </div>
               )}
@@ -356,16 +397,20 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.compliance && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/admin/compliance" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Agrément, Caution & Audit
+                    <BadgeCheck size={14} className="nav-icon" />
+                    <span>Agrément, Caution & Audit</span>
                   </NavLink>
                   <NavLink to="/admin/reporting/cima" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    États CIMA E1 & E2
+                    <FileSpreadsheet size={14} className="nav-icon" />
+                    <span>États CIMA E1 & E2</span>
                   </NavLink>
                   <NavLink to="/admin/reporting/emissions" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Bordereau des Émissions
+                    <ScrollText size={14} className="nav-icon" />
+                    <span>Bordereau des Émissions</span>
                   </NavLink>
                   <NavLink to="/admin/reporting/etats-decisionnels" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    États Décisionnels
+                    <BarChart3 size={14} className="nav-icon" />
+                    <span>États Décisionnels</span>
                   </NavLink>
                 </div>
               )}
@@ -405,13 +450,16 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.users && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/admin/users" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Comptes Collaborateurs
+                    <Users size={14} className="nav-icon" />
+                    <span>Comptes Collaborateurs</span>
                   </NavLink>
                   <NavLink to="/admin/profiles" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    8 Profils CIMA & Droits
+                    <UserCog size={14} className="nav-icon" />
+                    <span>8 Profils CIMA & Droits</span>
                   </NavLink>
                   <NavLink to="/admin/roles-permissions" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Matrice des Habilitations
+                    <KeyRound size={14} className="nav-icon" />
+                    <span>Matrice des Habilitations</span>
                   </NavLink>
                 </div>
               )}
@@ -455,13 +503,16 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.crm && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/user/crm" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Pipeline Commercial
+                    <TrendingUp size={14} className="nav-icon" />
+                    <span>Pipeline Commercial</span>
                   </NavLink>
                   <NavLink to="/user/crm/360" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Fiche Client 360°
+                    <Contact size={14} className="nav-icon" />
+                    <span>Fiche Client 360°</span>
                   </NavLink>
                   <NavLink to="/user/clients" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Clientèle
+                    <Users size={14} className="nav-icon" />
+                    <span>Clientèle</span>
                   </NavLink>
                 </div>
               )}
@@ -495,25 +546,32 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.quotes && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/user/quotes" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Registre des Devis
+                    <ClipboardList size={14} className="nav-icon" />
+                    <span>Registre des Devis</span>
                   </NavLink>
                   <NavLink to="/user/quotes/auto" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Automobile
+                    <Car size={14} className="nav-icon" />
+                    <span>Automobile</span>
                   </NavLink>
                   <NavLink to="/user/quotes/mrh" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Habitation (MRH)
+                    <House size={14} className="nav-icon" />
+                    <span>Habitation (MRH)</span>
                   </NavLink>
                   <NavLink to="/user/quotes/sante" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Santé
+                    <HeartPulse size={14} className="nav-icon" />
+                    <span>Santé</span>
                   </NavLink>
                   <NavLink to="/user/quotes/ia" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Accidents Corporels
+                    <Activity size={14} className="nav-icon" />
+                    <span>Accidents Corporels</span>
                   </NavLink>
                   <NavLink to="/user/quotes/voyage" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Voyage & Schengen
+                    <Plane size={14} className="nav-icon" />
+                    <span>Voyage & Schengen</span>
                   </NavLink>
                   <NavLink to="/user/quotes/transport" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Transport (Facultés)
+                    <Ship size={14} className="nav-icon" />
+                    <span>Transport (Facultés)</span>
                   </NavLink>
                 </div>
               )}
@@ -562,10 +620,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
               {openSubmenus.cash && (
                 <div className="sidebar-submenu-tree">
                   <NavLink to="/user/cash" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Encaisser Primes (Quittances)
+                    <Wallet size={14} className="nav-icon" />
+                    <span>Encaisser Primes (Quittances)</span>
                   </NavLink>
                   <NavLink to="/user/cheques" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    Portefeuille Chèques
+                    <Banknote size={14} className="nav-icon" />
+                    <span>Portefeuille Chèques</span>
                   </NavLink>
                 </div>
               )}

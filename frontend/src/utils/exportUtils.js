@@ -760,26 +760,106 @@ const buildConditionsParticulieresAuto = (quote) => {
   const d = quote.details || {};
   const raw = quote.raw || {};
   const garanties = raw.garanties || d.garanties || [];
-  const bns = quote.bonus_malus || d.bonusMalus || 0;
-  const dureeJours = quote.raw?.duree_terme_jours
+  const bnsDefaut = quote.bonus_malus || d.bonusMalus || 0;
+  const dash = (v) => (v === undefined || v === null || v === '' ? '—' : v);
+  const num = (v) => (v === undefined || v === null || v === '' ? 0 : Number(v) || 0);
+  const dureeJours = raw.duree_terme_jours
     ?? (quote.date_effet && quote.date_expiration
       ? Math.round((new Date(quote.date_expiration) - new Date(quote.date_effet)) / 86400000) + 1
       : '—');
 
-  const garantieRow = (g) => `
+  // Mouvement / avenant (Affaire nouvelle, Renouvellement, ...) : le titre
+  // devient « Avenant de RENOUVELLEMENT » comme sur l'exemplaire courtier.
+  const mouvement = String(raw.libelle_avenant || d.libelleAvenant || d.mouvement || quote.libelle_avenant || 'AFFAIRE NOUVELLE').toUpperCase();
+  const numeroAvenant = raw.numeroavenant || d.numeroAvenant || quote.numeroavenant || 0;
+  const titreAvenant = /^AFFAIRE\s+NOUVELLE/.test(mouvement) ? '' : `Avenant de ${mouvement.replace(/^AVENANT\s+(DE\s+)?/, '')}`;
+  const offre = d.offreSelectionnee || raw.libelle_offre || quote.libelle_offre || quote.produit || '';
+  const adresse = d.adresseClient || raw.adresse || raw.adressegeoclient || '—';
+  const nomAssure = (quote.nomassure || quote.client_nom || '').toUpperCase();
+  const conducteur = (d.conducteurHabituel || raw.conducteur_habituel || nomAssure || '').toUpperCase();
+
+  const franchiseTxt = (g) => {
+    if (g.libelle_franchise) return g.libelle_franchise;
+    const taux = g.taux_franchise ?? g.tauxfranchise;
+    const min = g.min_franchise ?? g.minfranchise;
+    const fixe = g.montant_franchise || g.franchise;
+    if (taux && Number(taux) > 0) return `${taux}% minimum ${min ? money(min) : 0}`;
+    if (fixe && Number(fixe) > 0) return money(fixe);
+    return 'NEANT';
+  };
+
+  const lignes = garanties.map((g) => {
+    const primeAnnuelle = num(g.prime_annuelle);
+    const primeNette = num(g.prime_nette);
+    const comptant = num(g.prime_comptant ?? g.prime_nette_comptant ?? g.prime_nette);
+    return {
+      libelle: g.libelle || g.nom_garantie || g.id_garantie || '—',
+      acquise: (g.acquise ?? g.souscrite) ? 'OUI' : 'NON',
+      capital: g.capital && Number(g.capital) > 0 ? money(g.capital) : '',
+      franchise: franchiseTxt(g),
+      primeAnnuelle: g.prime_annuelle === undefined || g.prime_annuelle === null ? '' : money(primeAnnuelle),
+      bns: `${g.taux_reduction_bns ?? bnsDefaut ?? 0}%`,
+      autres: `${g.taux_reduction_commerciale ?? d.reductionCommerciale ?? 0} %`,
+      nette: money(primeNette),
+      comptant: money(comptant),
+      primeAnnuelleNum: primeAnnuelle,
+      netteNum: primeNette,
+      comptantNum: comptant,
+    };
+  });
+  const totalAnnuelle = lignes.reduce((t, l) => t + l.primeAnnuelleNum, 0);
+  const totalNette = lignes.reduce((t, l) => t + l.netteNum, 0);
+  const totalComptant = lignes.reduce((t, l) => t + l.comptantNum, 0);
+
+  const garantieRow = (l) => `
     <tr>
-      <td style="text-align:left;">${(g.libelle || g.nom_garantie || g.id_garantie || '—')}</td>
-      <td>${g.acquise ?? g.souscrite ? 'OUI' : 'NON'}</td>
-      <td>${g.capital ? money(g.capital) : 'NEANT'}</td>
-      <td>${g.montant_franchise || g.franchise ? money(g.montant_franchise || g.franchise) : 'NEANT'}</td>
-      <td>${money(g.prime_annuelle)}</td>
-      <td>${g.taux_reduction_bns ?? (bns || 0)}%</td>
-      <td>${g.taux_reduction_commerciale ?? (d.reductionCommerciale ?? 0)}%</td>
-      <td>${money(g.prime_nette)}</td>
+      <td class="g-lib">${l.libelle}</td>
+      <td>${l.acquise}</td>
+      <td class="g-num">${l.capital}</td>
+      <td class="g-lib">${l.franchise}</td>
+      <td class="g-num">${l.primeAnnuelle}</td>
+      <td>${l.bns}</td>
+      <td>${l.autres}</td>
+      <td class="g-num">${l.nette}</td>
+      <td class="g-num">${l.comptant}</td>
     </tr>`;
 
+  const sr = raw.securite_routiere || d.securiteRoutiere || {};
+  const srLine = sr.deces || sr.ipt || sr.ft
+    ? `Décès : ${money(sr.deces)} / IPT : ${money(sr.ipt)} / FT : ${money(sr.ft)}`
+    : (garanties.some((g) => /s[ée]curit[ée] routi[èe]re/i.test(g.libelle || g.nom_garantie || ''))
+      ? 'Garantie souscrite (capitaux selon la formule choisie)'
+      : 'Non souscrite');
+
   return `
-    ${printDocHeader(quote, '')}
+    <div class="cp-entete">
+      <div class="cp-entete-logos">
+        ${printDocHeader(quote, titreAvenant)}
+      </div>
+      <div class="cp-tampon">EXEMPLAIRE<br/>COURTIER</div>
+    </div>
+
+    <div class="cp-deux-blocs">
+      <table class="cadre-unique cp-bloc-client">
+        <tr><td class="label">Numéro</td><td>${dash(quote.client_id)}</td></tr>
+        <tr><td class="label">Nom</td><td><strong>${(quote.souscripteur || quote.client_nom || '').toUpperCase()}</strong></td></tr>
+        <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
+        <tr><td class="label">Téléphone</td><td>${dash(d.telephoneClient || raw.telephoneclient || raw.numerotelephoneassure)}</td></tr>
+        <tr><td class="label">Profession</td><td>${dash(d.profession || raw.profession)}</td></tr>
+        <tr><td class="label">Réseau</td><td>${dash(d.reseau || raw.libelle_intermediaire || 'OREOLE')}</td></tr>
+      </table>
+      <table class="cadre-unique cp-bloc-police">
+        <tr><td class="label">Quittance</td><td>${dash(raw.numero_quittance || d.numeroQuittance)}</td></tr>
+        <tr><td class="label">N° Police</td><td><strong>${dash(numero)}</strong> &nbsp; Avenant <strong>${numeroAvenant}</strong></td></tr>
+        <tr><td class="label">Assuré(e)</td><td>${nomAssure}</td></tr>
+        <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
+        <tr><td class="label">Mouvement</td><td>${mouvement}</td></tr>
+        <tr><td class="label">Offre</td><td>${String(offre).toUpperCase()}</td></tr>
+        <tr><td class="label">Effet</td><td>${formatFrDate(quote.date_effet)} &nbsp; Expiration : ${formatFrDate(quote.date_expiration)} &nbsp; Durée : <strong>${dureeJours}</strong></td></tr>
+        <tr><td class="label">Émission</td><td>${formatFrDate(quote.date_emission)} &nbsp; Compagnie : <strong>${(quote.compagnie || '').toUpperCase()}</strong></td></tr>
+      </table>
+    </div>
+
     <div class="titre-cp">
       <div>CONDITIONS PARTICULIÈRES</div>
       <div>ASSURANCE ${(quote.produit || 'AUTOMOBILE').toUpperCase()}</div>
@@ -787,73 +867,83 @@ const buildConditionsParticulieresAuto = (quote) => {
 
     <table class="cadre-unique cp-info">
       <tr>
-        <td class="label">Compagnie</td><td><strong>${(quote.compagnie || '').toUpperCase()}</strong></td>
-        <td class="label">Numéro Police</td><td><strong>${numero}</strong></td>
+        <td class="label">N° Immatriculation</td><td>${dash(d.immatriculation)}</td>
+        <td class="label">1ère mise en circulation</td><td>${d.dateMec ? formatFrDate(d.dateMec) : '—'}</td>
+        <td class="label">Énergie</td><td>${dash(d.energie)}</td>
       </tr>
       <tr>
-        <td class="label">Souscripteur</td><td colspan="3">${(quote.souscripteur || quote.client_nom || '').toUpperCase()}</td>
+        <td class="label">Marque</td><td>${dash(d.marqueVehicule)}</td>
+        <td class="label">Genre</td><td>${dash(d.genreVehicule)}</td>
+        <td class="label">Carrosserie</td><td>${dash(d.carrosserie)}</td>
       </tr>
       <tr>
-        <td class="label">Assuré</td><td>${(quote.nomassure || quote.client_nom || '').toUpperCase()}</td>
-        <td class="label">Produit</td><td>${(d.offreSelectionnee || quote.produit || '').toUpperCase()}</td>
+        <td class="label">Nbre de Place</td><td>${dash(d.nombrePlace)}</td>
+        <td class="label">Puissance</td><td>${dash(d.puissanceFiscale)}</td>
+        <td class="label">Puissance Réelle</td><td>${dash(d.puissanceReelle ?? 0)}</td>
       </tr>
       <tr>
-        <td class="label">Adresse</td><td>${d.lieuHabitation || raw.adresse || '—'}</td>
-        <td class="label">Effet</td><td>${formatFrDate(quote.date_effet)} &nbsp;&nbsp; Expiration : ${formatFrDate(quote.date_expiration)}</td>
+        <td class="label">Poids vide</td><td>${dash(d.poidsVide ?? 0)}</td>
+        <td class="label">Charge Utile</td><td>${dash(d.chargeUtile ?? 0)}</td>
+        <td class="label">PTAC</td><td>${dash(d.ptac ?? 0)}</td>
       </tr>
       <tr>
-        <td class="label"></td><td></td>
-        <td class="label">Durée</td><td>${dureeJours} jours &nbsp;&nbsp; Émission : ${formatFrDate(quote.date_emission)}</td>
+        <td class="label">Type</td><td>${dash(d.typeVehicule || d.genreVehicule)}</td>
+        <td class="label">N° de série / châssis</td><td>${dash(d.numeroChassis)}</td>
+        <td class="label">Valeur Neuve</td><td>${d.valeurNeuf ? money(d.valeurNeuf) : '—'}</td>
+      </tr>
+      <tr>
+        <td class="label">Valeur Vénale</td><td>${d.valeurVenale ? money(d.valeurVenale) : '—'}</td>
+        <td class="label">Bonus / Malus</td><td>${bnsDefaut}%</td>
+        <td class="label">Couleur</td><td>${dash(d.couleur)}</td>
       </tr>
     </table>
 
-    <table class="cadre-unique cp-info">
+    <table class="cadre-unique cp-offre">
       <tr>
-        <td class="label">N° Immatriculation</td><td>${d.immatriculation || '—'}</td>
-        <td class="label">1ère mise en circulation</td><td>${d.dateMec ? formatFrDate(d.dateMec) : '—'}</td>
-        <td class="label">Énergie</td><td>${d.energie || '—'}</td>
-      </tr>
-      <tr>
-        <td class="label">Marque</td><td>${d.marqueVehicule || '—'}</td>
-        <td class="label">Carrosserie</td><td>${d.carrosserie || '—'}</td>
-        <td class="label">Nbre de Place</td><td>${d.nombrePlace || '—'}</td>
-      </tr>
-      <tr>
-        <td class="label">Puissance</td><td>${d.puissanceFiscale || '—'}</td>
-        <td class="label">Valeur Neuve</td><td>${d.valeurNeuf ? money(d.valeurNeuf) : '—'}</td>
-        <td class="label">Charge Utile</td><td>${d.chargeUtile || '—'}</td>
-      </tr>
-      <tr>
-        <td class="label">Type véhicule</td><td>${d.genreVehicule || '—'}</td>
-        <td class="label">N° châssis</td><td>${d.numeroChassis || '—'}</td>
-        <td class="label">Valeur Vénale</td><td>${d.valeurVenale ? money(d.valeurVenale) : '—'}</td>
+        <td class="label">Offre</td><td><strong>${String(offre).toUpperCase()}</strong></td>
+        <td class="label">Conducteur habituel</td><td><strong>${conducteur}</strong></td>
       </tr>
     </table>
 
     <table class="tableau-garanties cp-garanties">
       <tr class="ligne-labels">
-        <td>Garantie</td><td>Acquise</td><td>Plafonds Garanties</td><td>Franchise</td>
-        <td>Prime Annuelle</td><td>Réd. BNS</td><td>Réd. CCIAL</td><td>Prime Nette à Payer</td>
+        <td>Garanties</td><td>États</td><td>Sommes Garanties</td><td>Franchise</td>
+        <td>Prime Annuelle</td><td>BNS</td><td>Autres</td><td>Nette Annuelle</td><td>Prime Comptant</td>
       </tr>
-      ${garanties.length > 0
-        ? garanties.map(garantieRow).join('')
-        : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;">Aucune garantie enregistrée sur ce devis</td></tr>'}
+      ${lignes.length > 0
+        ? lignes.map(garantieRow).join('')
+        : '<tr><td colspan="9" style="text-align:center;color:#64748b;">Aucune garantie enregistrée sur ce devis</td></tr>'}
+      <tr class="ligne-total">
+        <td class="g-lib" colspan="4">TOTAL VÉHICULE : ${dash(d.immatriculation)}</td>
+        <td class="g-num">${money(totalAnnuelle)}</td><td></td><td></td>
+        <td class="g-num">${money(totalNette)}</td><td class="g-num">${money(totalComptant)}</td>
+      </tr>
     </table>
 
-    <table class="cadre-unique cp-recap">
-      <tr><td class="label">Prime Nette</td><td>${money(quote.prime_nette)}</td></tr>
-      <tr><td class="label">Fga</td><td>${money(quote.fga)}</td></tr>
-      <tr><td class="label">Accessoire</td><td>${money(quote.accessoires)}</td></tr>
-      <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes)}</td></tr>
-      <tr class="ligne-total"><td class="label">Prime Totale</td><td><strong>${money(quote.prime_totale)} FCFA</strong></td></tr>
-    </table>
+    <div class="cp-securite"><strong>SÉCURITÉ ROUTIÈRE :</strong> ${srLine}</div>
+    <div class="cp-securite"><strong>Individuelle Chauffeur :</strong> ${dash(raw.individuelle_chauffeur || d.individuelleChauffeur || '')}</div>
+
+    <div class="cp-bas">
+      <div class="cp-mentions">
+        <p>Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraires.</p>
+        <p class="cp-visa">Visa : MEF/DGTCP/DA N°736 DU 31 DÉCEMBRE 1999</p>
+      </div>
+      <table class="cadre-unique cp-recap">
+        <tr><td class="label">Prime Nette</td><td>${money(quote.prime_nette)}</td></tr>
+        <tr><td class="label">Accessoire</td><td>${money(quote.accessoires)}</td></tr>
+        <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes)}</td></tr>
+        <tr><td class="label">FGA</td><td>${money(quote.fga)}</td></tr>
+        <tr><td class="label">Prime TTC</td><td>${money(quote.prime_totale)}</td></tr>
+        <tr class="ligne-total"><td class="label">Total net à payer</td><td><strong>${money(quote.prime_totale)} FCFA</strong></td></tr>
+      </table>
+    </div>
 
     <div class="bloc-signature-droite">
       <div>Fait à Abidjan, le <strong>${formatFrDate(new Date())}</strong>.</div>
     </div>
     <div class="signatures-deux-colonnes" style="margin-top:30px;">
-      <div>L'ASSURE</div>
-      <div>POUR LA SOCIETE</div>
+      <div><em>L'assuré</em></div>
+      <div><em>Pour la compagnie</em></div>
     </div>
 
     ${printDocFooter(true)}
@@ -1051,7 +1141,20 @@ const PRINT_STYLES = `
   .titre-cp { text-align: center; font-weight: 800; font-size: 12pt; text-transform: uppercase; margin-bottom: 10px; line-height: 1.5; }
   table.cp-info td.label { font-weight: 600; color: #475569; background: #f8fafc; white-space: nowrap; }
   table.cp-garanties td { font-size: 7.5pt; }
-  table.cp-recap { width: 260px; margin-top: 4px; }
+  table.cp-recap { width: 290px; margin-top: 4px; }
+  .cp-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .cp-entete-logos { flex: 1; }
+  .cp-tampon { border: 2px solid #4338ca; color: #4338ca; font-weight: 800; font-size: 10pt; text-align: center; padding: 4px 10px; line-height: 1.25; letter-spacing: 0.04em; }
+  .cp-deux-blocs { display: flex; gap: 10px; align-items: stretch; }
+  .cp-deux-blocs table { flex: 1; margin-bottom: 8px; }
+  table.cp-bloc-client td.label, table.cp-bloc-police td.label { width: 78px; }
+  table.cp-garanties td.g-lib { text-align: left; }
+  table.cp-garanties td.g-num { text-align: right; white-space: nowrap; }
+  table.cp-garanties tr.ligne-total td { background: #f1f5f9; }
+  .cp-securite { font-size: 9pt; margin: 4px 0; }
+  .cp-bas { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-top: 10px; }
+  .cp-mentions { flex: 1; font-size: 9pt; }
+  .cp-visa { color: #475569; margin-top: 6px; }
   table.cp-recap td.label { font-weight: 600; }
   @media print { .no-print { display: none !important; } }
 `;

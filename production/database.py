@@ -2573,6 +2573,31 @@ def get_extended_quotation_info(
     return ("", results, total_count)
 
 
+def get_quotation_counts(idproduit):
+    """Compte exact des devis (en attente) et contrats (confirmés) d'un produit.
+
+    Même périmètre que fn_get_devis (non archivés, émis sur les 3 dernières
+    années) mais sans pagination, pour alimenter les cartes de synthèse.
+    """
+    sql_query = """
+        SELECT
+            COUNT(*) FILTER (WHERE confirme IS NOT TRUE) AS nb_devis,
+            COUNT(*) FILTER (WHERE confirme IS TRUE) AS nb_contrats
+        FROM public.vue_devis
+        WHERE idproduit = %s
+            AND NOT archive
+            AND dateemission::date BETWEEN CURRENT_DATE - INTERVAL '3 years' AND CURRENT_DATE
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(sql_query, [idproduit])
+            nb_devis, nb_contrats = cursor.fetchone()
+    except Exception as error:
+        print(f"Erreur SQL/DB Connection: {error}")
+        return (str(error), 0, 0)
+    return ("", nb_devis or 0, nb_contrats or 0)
+
+
 #####################################################################
 # Save premium collection
 def save_premium_collection(user, input_data):

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import moment from "moment";
 // methods
-import { getDevisInfo, reset } from "features/Devis/devisSlice";
+import { getDevisInfo, getDevisCounts, reset } from "features/Devis/devisSlice";
 // components
 import Spinner from "partials/Utils/Spinner/Spinner";
 import WelcomeBanner from "partials/UI/Banner/WelcomeBanner";
@@ -28,7 +28,7 @@ const Automobile = () => {
   const [hasSearched, setHasSearched] = useState(false);
 
   // get devis
-  const { devisinfos, isLoading, isError, message } = useSelector(
+  const { devisinfos, devisCounts, isLoading, isError, message } = useSelector(
     (state) => state.devis
   );
 
@@ -38,6 +38,7 @@ const Automobile = () => {
     }
 
     dispatch(getDevisInfo(1));
+    dispatch(getDevisCounts(1));
 
     return () => {
       dispatch(reset());
@@ -334,20 +335,8 @@ const Automobile = () => {
       {/* CONTRAT AUTO */}
       <div className="mb-4">
         <DashboardCard01
-          numbDevis={
-            devisinfos && Array.isArray(devisinfos)
-              ? devisinfos.filter((n) => {
-                return n.id_produit === 1 && n.confirme === false;
-              }).length
-              : 0
-          }
-          numbContrat={
-            devisinfos && Array.isArray(devisinfos)
-              ? devisinfos.filter((n) => {
-                return n.id_produit === 1 && n.confirme === true;
-              }).length
-              : 0
-          }
+          numbDevis={devisCounts?.nb_devis ?? 0}
+          numbContrat={devisCounts?.nb_contrats ?? 0}
         />
       </div>
 

@@ -19,6 +19,7 @@ const initialState = {
     savedDevisSante: [],
     savedDevisDommages: [],
     devisinfos: [],
+    devisCounts: { nb_devis: 0, nb_contrats: 0 },
     finalisationdevisauto: [],
     devisVoyageSaved: null,
     devisMrhSaved: null,
@@ -306,6 +307,16 @@ export const getOneDevis = createAsyncThunk('devis/getOne', async (_, thunkAPI) 
     }
 })
 
+// get Devis counts
+export const getDevisCounts = createAsyncThunk('devisinfo/getCounts', async (id, thunkAPI) => {
+    try {
+        const token = thunkAPI.getState().auth.token
+        return await devisService.getDevisCounts(id, token)
+    } catch (error) {
+        return thunkAPI.rejectWithValue(error?.response?.data?.data ?? error.message)
+    }
+})
+
 // get Devis Infos
 export const getDevisInfo = createAsyncThunk('devisinfo/getAll', async (id, thunkAPI) => {
     try {
@@ -372,6 +383,10 @@ export const devisSlice = createSlice({
                 state.isError = true
                 state.isLoading = false
                 state.message = action.payload
+            })
+            // get devis counts
+            .addCase(getDevisCounts.fulfilled, (state, action) => {
+                state.devisCounts = action.payload?.data ?? state.devisCounts
             })
             // save devis
             .addCase(saveDevis.pending, (state) => {

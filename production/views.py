@@ -78,6 +78,7 @@ from .database import (
     get_contract_premium_remittance,
     get_encaissement_recherche,
     get_extended_quotation_info,
+    get_quotation_counts,
     get_garantie_souscrite,
     get_info_encaissement,
     get_info_reversement,
@@ -2639,6 +2640,25 @@ class ExtendedQuotationInfoView(APIView):
                 {"status": "Echec", "data": msg},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class QuotationCountsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, idproduit):
+        msg, nb_devis, nb_contrats = get_quotation_counts(idproduit)
+        if msg:
+            return Response(
+                {"status": "Echec", "data": msg},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {
+                "status": "succès",
+                "data": {"nb_devis": nb_devis, "nb_contrats": nb_contrats},
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ExtendedQuotationInfoRechercheView(APIView):

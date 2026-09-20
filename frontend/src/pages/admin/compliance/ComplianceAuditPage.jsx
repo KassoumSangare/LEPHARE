@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { complianceApi } from '../../../api/endpoints';
+import { mockCompliance } from '../../../api/mockData';
 import { MetricCard } from '../../../components/common/MetricCard';
 import { Modal } from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';

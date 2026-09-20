@@ -4,6 +4,7 @@
    ========================================================================== */
 
 :root, [data-theme="dark"] {
+  color-scheme: dark;  /* contrôles natifs (date, select, scrollbars) lisibles */
   /* Color Palette - Premium High-End Dark */
   --bg-main: #0b1120;
   --bg-surface: #111827;
@@ -19,8 +20,8 @@
   --border-focus: #3b82f6;
 
   --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-secondary: #b8c4d6;  /* ~9:1 sur --bg-surface */
+  --text-muted: #94a3b8;      /* ~6.5:1 sur --bg-surface (AA) */
   --text-invert: #0f172a;
 
   /* Accent Colors */
@@ -63,6 +64,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   /* Color Palette - Crisp Modern Light Fintech */
   --bg-main: #f8fafc;
   --bg-surface: #ffffff;
@@ -78,8 +80,8 @@
   --border-focus: #2563eb;
 
   --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
+  --text-secondary: #3b4a5f;  /* ~9:1 sur blanc */
+  --text-muted: #55647a;      /* ~6:1 sur blanc, >4.5:1 sur --bg-surface-elevated */
   --text-invert: #f8fafc;
 
   /* Accent Colors */
@@ -88,12 +90,12 @@
   --primary-700: #1e40af;
   --primary-glow: rgba(37, 99, 235, 0.12);
 
-  --accent-cyan: #0891b2;
-  --accent-emerald: #059669;
-  --accent-amber: #d97706;
-  --accent-rose: #e11d48;
-  --accent-purple: #7c3aed;
-  --accent-indigo: #4f46e5;
+  --accent-cyan: #0e7490;
+  --accent-emerald: #047857;
+  --accent-amber: #b45309;
+  --accent-rose: #be123c;
+  --accent-purple: #6d28d9;
+  --accent-indigo: #4338ca;
 
   /* Elevation Shadows */
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06);
@@ -860,6 +862,12 @@ select:focus > option:checked {
   text-decoration: none;
   transition: all 0.15s ease;
   position: relative;
+  gap: 0.55rem;
+}
+
+.sidebar-sublink-item .nav-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
 }
 
 .sidebar-sublink-item:hover {
@@ -1004,6 +1012,104 @@ body,
 [data-theme="light"] div[style*="color: white"]:not(.btn *):not(.nav-space-btn *):not([style*="background"]):not(.metric-card-icon *),
 [data-theme="light"] span[style*="color: #fff"]:not(.badge):not(.btn *):not(.nav-space-btn *) {
   color: var(--text-primary) !important;
+}
+
+/* ==========================================================================
+   LISIBILITÉ DU TEXTE - MODE CLAIR
+   Les couleurs pastel écrites en dur dans les composants (#60a5fa, #34d399...)
+   sont pensées pour le fond sombre. Le navigateur les sérialise en rgb() dans
+   l'attribut style : on les recolore ici avec des teintes à fort contraste.
+   ========================================================================== */
+[data-theme="light"] [style*="color: rgb(255, 255, 255)"]:not(.btn):not(.btn *):not(.badge):not(.nav-space-btn *):not([style*="background"]):not(.metric-card-icon *),
+[data-theme="light"] [style*="color: rgb(248, 250, 252)"]:not(.btn):not(.btn *):not(.badge):not(.nav-space-btn *):not([style*="background"]):not(.metric-card-icon *) {
+  color: var(--text-primary) !important;
+}
+[data-theme="light"] [style*="color: rgb(226, 232, 240)"],
+[data-theme="light"] [style*="color: rgb(203, 213, 225)"] {
+  color: var(--text-secondary) !important;
+}
+[data-theme="light"] [style*="color: rgb(148, 163, 184)"],
+[data-theme="light"] [style*="color: rgb(100, 116, 139)"] {
+  color: var(--text-muted) !important;
+}
+[data-theme="light"] [style*="color: rgb(96, 165, 250)"],
+[data-theme="light"] [style*="color: rgb(147, 197, 253)"] {
+  color: #1d4ed8 !important;
+}
+[data-theme="light"] [style*="color: rgb(52, 211, 153)"] {
+  color: #047857 !important;
+}
+[data-theme="light"] [style*="color: rgb(251, 191, 36)"] {
+  color: #b45309 !important;
+}
+[data-theme="light"] [style*="color: rgb(251, 113, 133)"] {
+  color: #be123c !important;
+}
+[data-theme="light"] [style*="color: rgb(192, 132, 252)"] {
+  color: #7e22ce !important;
+}
+[data-theme="light"] [style*="color: rgb(165, 180, 252)"] {
+  color: #4338ca !important;
+}
+
+[data-theme="light"] [style*="color: rgb(56, 189, 248)"],
+[data-theme="light"] [style*="color: rgb(14, 165, 233)"]:not(.btn):not(.btn *) {
+  color: #0369a1 !important;
+}
+[data-theme="light"] [style*="color: rgb(248, 113, 113)"] {
+  color: #b91c1c !important;
+}
+[data-theme="light"] [style*="color: rgb(239, 68, 68)"] {
+  color: #b91c1c !important;
+}
+[data-theme="light"] [style*="color: rgb(167, 139, 250)"] {
+  color: #6d28d9 !important;
+}
+[data-theme="light"] [style*="color: rgb(129, 140, 248)"] {
+  color: #4338ca !important;
+}
+[data-theme="light"] [style*="color: rgb(251, 146, 60)"],
+[data-theme="light"] [style*="color: rgb(249, 115, 22)"] {
+  color: #c2410c !important;
+}
+[data-theme="light"] [style*="color: rgb(245, 158, 11)"] {
+  color: #b45309 !important;
+}
+[data-theme="light"] [style*="color: rgb(16, 185, 129)"] {
+  color: #047857 !important;
+}
+[data-theme="light"] .btn-danger {
+  color: #be123c;
+}
+[data-theme="light"] .btn-outline-primary {
+  color: #1d4ed8;
+}
+
+/* Bouton lien : pas de fond de bouton par défaut du navigateur */
+.btn.btn-link {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Sidebar : sous-liens plus lisibles (secondaire au lieu de muted) */
+.sidebar-sublink-item {
+  color: var(--text-secondary);
+}
+[data-theme="light"] .sidebar-nav-item.active,
+[data-theme="light"] .sidebar-sublink-item.active {
+  color: #1d4ed8;
+}
+[data-theme="light"] .sidebar-nav-item.active .nav-icon {
+  color: #1d4ed8;
+}
+
+/* Placeholders et champs désactivés lisibles dans les deux thèmes */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+[data-theme="light"] .data-table th {
+  color: var(--text-secondary);
 }
 
 /* Maintain bright white text on primary gradient buttons and active space pills */

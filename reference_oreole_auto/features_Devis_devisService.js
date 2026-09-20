@@ -192,6 +192,17 @@ const getDevisInfo = async (id, token) => {
 
 
 
+// get Devis counts (compteurs exacts devis / contrats)
+const getDevisCounts = async (id, token) => {
+    const config = {
+        headers: {
+            Authorization: `Token ${token}`
+        }
+    }
+    const response = await axios.get(process.env.REACT_APP_API_URL + `infodevis/${id}/compteurs`, config)
+    return response.data
+}
+
 /**
  * 
  * 
@@ -224,6 +235,7 @@ const devisService = {
     saveDevisVoyage,
     saveDevisMrh,
     getDevisInfo,
+    getDevisCounts,
     finalisationdevisauto,
     annulationDevis,
 

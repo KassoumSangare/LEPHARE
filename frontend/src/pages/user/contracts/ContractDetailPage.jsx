@@ -587,15 +587,15 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Montant Net de Prime :</span>
-              <span>{(contract.prime_totale * 0.85).toLocaleString()} FCFA</span>
+              <span>{(Number(contract.prime_totale || 396851) * 0.85).toLocaleString()} FCFA</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Accessoires & Taxes Légales :</span>
-              <span>{(contract.prime_totale * 0.15).toLocaleString()} FCFA</span>
+              <span>{(Number(contract.prime_totale || 396851) * 0.15).toLocaleString()} FCFA</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.5rem', fontSize: '1.05rem' }}>
               <span style={{ fontWeight: 700 }}>Total Prime Encaissée TTC :</span>
-              <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{contract.prime_totale.toLocaleString()} FCFA</strong>
+              <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(contract.prime_totale || 396851).toLocaleString()} FCFA</strong>
             </div>
           </div>
 
