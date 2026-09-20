@@ -306,16 +306,53 @@ class PieceJointeViewSet(viewsets.ModelViewSet):
 
 
 class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
-    queryset = (
-        Devis.objects.prefetch_related("piece_jointe")
-        .annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre")))
-        .all()
-    )
     serializer_class = DevisSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        queryset = (
+            Devis.objects.prefetch_related("piece_jointe")
+            .annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre")))
+            .all()
+        )
+
+        # Filtre par défaut : 3 dernières années
+        three_years_ago = timezone.now() - timedelta(days=365 * 3)
+        queryset = queryset.filter(dateemission__gte=three_years_ago)
+
+        # Filtre par produit
+        idproduit = self.request.query_params.get("idproduit")
+        if idproduit:
+            if "," in str(idproduit):
+                ids = [int(x) for x in str(idproduit).split(",") if x.isdigit()]
+                queryset = queryset.filter(produit_id__in=ids)
+            elif str(idproduit).isdigit():
+                queryset = queryset.filter(produit_id=int(idproduit))
+
+        # Filtre par archive
+        archive = self.request.query_params.get("archive")
+        if archive is not None:
+            if str(archive).lower() in ["true", "1"]:
+                queryset = queryset.filter(archive=True)
+            elif str(archive).lower() in ["false", "0"]:
+                queryset = queryset.filter(archive=False)
+
+        # Filtre par confirmation
+        confirme = self.request.query_params.get("confirme")
+        if confirme is not None:
+            if str(confirme).lower() in ["true", "1"]:
+                queryset = queryset.filter(confirme=True)
+            elif str(confirme).lower() in ["false", "0"]:
+                queryset = queryset.filter(confirme=False)
+
+        # Les devis les plus récents en premier
+        return queryset.order_by("-dateemission", "-iddevis")
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):
@@ -5468,3 +5505,372 @@ class DetailMaisonView(APIView):
             "motif": None,
             "duree_jours": None,
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPORT EXCEL REVERSEMENTS
+# ─────────────────────────────────────────────────────────────────────────────
+import io
+from openpyxl import Workbook
+from openpyxl.styles import (
+    Font, Alignment, PatternFill, Border, Side, numbers
+)
+from openpyxl.utils import get_column_letter
+from django.http import HttpResponse
+
+
+def _thin_border():
+    thin = Side(style="thin")
+    return Border(left=thin, right=thin, top=thin, bottom=thin)
+
+
+def _apply_header_cell(ws, row, col, value, size=14):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font = Font(bold=True, size=size)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.border = _thin_border()
+    return cell
+
+
+def _apply_data_cell(ws, row, col, value, bold=False, size=14, number_format=None):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font = Font(bold=bold, size=size)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.border = _thin_border()
+    if number_format:
+        cell.number_format = number_format
+    return cell
+
+
+class ExportTableauReversementView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from production.database import get_info_reversement
+
+        compagnie_id = request.query_params.get("compagnie_id")
+        date_debut = request.query_params.get("date_debut")
+        date_fin = request.query_params.get("date_fin")
+        statut = request.query_params.get("statut", "")
+
+        # Récupère les reversements selon les filtres
+        qs = ReversementCompagnie.objects.select_related(
+            "compagnie", "mode_reversement", "banque"
+        ).filter(piece_annulee=False)
+
+        if compagnie_id:
+            qs = qs.filter(compagnie__IdCompagnie=compagnie_id)
+        if date_debut:
+            qs = qs.filter(date_reversement__gte=date_debut)
+        if date_fin:
+            qs = qs.filter(date_reversement__lte=date_fin)
+        if statut == "valide":
+            qs = qs.filter(valide=True)
+        elif statut == "en_attente":
+            qs = qs.filter(valide=False)
+
+        qs = qs.order_by("-date_reversement")
+
+        compagnie_name = "TOUTES COMPAGNIES"
+        if compagnie_id:
+            first = qs.first()
+            if first:
+                compagnie_name = first.compagnie.RaisonSociale
+
+        # ── Création du classeur ──────────────────────────────────────────────
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "COMMI-MOIS"
+
+        # Largeurs colonnes (identiques au fichier de référence)
+        col_widths = {
+            1: 35.5, 2: 33.0, 3: 18.7, 4: 19.7, 5: 18.4,
+            6: 23.3, 7: 25.5, 8: 18.4, 9: 19.5, 10: 18.4,
+            11: 18.4, 12: 20.1, 13: 21.3, 14: 31.1, 15: 15.1,
+            16: 17.1, 17: 19.4, 18: 21.1, 19: 20.1, 20: 31.5,
+            21: 23.4,
+        }
+        for col_idx, width in col_widths.items():
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+        ws.row_dimensions[4].height = 30
+        ws.row_dimensions[10].height = 40
+
+        # ── Titre (ligne 4, colonnes G–P fusionnées) ──────────────────────────
+        ws.merge_cells("G4:P4")
+        title_cell = ws["G4"]
+        title_cell.value = f"TABLEAU DE REVERSEMENT {compagnie_name}"
+        title_cell.font = Font(bold=True, size=16)
+        title_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # ── Période (ligne 9) ─────────────────────────────────────────────────
+        periode = ""
+        if date_debut and date_fin:
+            periode = f"{date_debut} au {date_fin}"
+        elif date_debut:
+            periode = f"À partir du {date_debut}"
+        elif date_fin:
+            periode = f"Jusqu'au {date_fin}"
+        else:
+            periode = str(date.today().year)
+
+        ws["A9"] = periode
+        ws["A9"].font = Font(bold=True, size=14)
+        ws["A9"].alignment = Alignment(horizontal="center", vertical="center")
+
+        # ── En-têtes colonnes (ligne 10) ──────────────────────────────────────
+        headers = [
+            "NOM DU CLIENT", "STRUCTURE / SOUSCRIPTEUR", "DATE DU COURRIER",
+            "DATE DE DECHARGE DE LA CIE", "N° DU BORDEREAU", "ASSURANCE",
+            "N° POLICE", "EFFET", "EXPIRATION", "PRIME HT", "PRIME TTC",
+            "ENCAISSEMENT", "MONTANT REVERSE", "NATURE DU REVERSEMENT",
+            "ACC. COURTIER", "TAUX COM %", "COMMISSION A PERCEVOIR",
+            "COMMISSION PERCUE", "SOLDE", "CHEQUE DE COMMISSION",
+            "OBSERVATION",
+        ]
+        for col_idx, header in enumerate(headers, start=1):
+            _apply_header_cell(ws, 10, col_idx, header, size=14)
+
+        # ── Lignes de données ─────────────────────────────────────────────────
+        NUM_FMT = '#,##0'
+        PCT_FMT = '0.00%'
+        row_num = 11
+
+        totals = {k: 0 for k in range(10, 20)}  # colonnes J(10)–S(19)
+
+        for rev in qs:
+            (msg, items) = get_info_reversement(reversement=rev.pk)
+            if msg or not items:
+                continue
+
+            mode = rev.mode_reversement.libellemodepaiement if rev.mode_reversement else ""
+            cheque = ""
+            if rev.numero_cheque:
+                banque = rev.banque.libelle if rev.banque else ""
+                cheque = f"CHQ {banque} N°{rev.numero_cheque}"
+
+            for idx, item in enumerate(items):
+                commission = float(item.Commission or 0)
+                comm_percue = float(item.CommissionDeduite or 0)
+                solde = commission - comm_percue
+
+                _apply_data_cell(ws, row_num, 1, item.NomClient)
+                _apply_data_cell(ws, row_num, 2, rev.compagnie.RaisonSociale if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 3, rev.date_reversement if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 4, rev.date_validation if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 5, rev.numero_reversement if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 6, item.LibelleProduit)
+                _apply_data_cell(ws, row_num, 7, item.NumeroPolice)
+                _apply_data_cell(ws, row_num, 8, item.DateEffet)
+                _apply_data_cell(ws, row_num, 9, item.DateExpiration)
+                _apply_data_cell(ws, row_num, 10, float(item.PrimeHT or 0), bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 11, float(item.PrimeTTC or 0), bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 12, float(item.MontantEncaissement or 0), bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 13, float(item.MontantReversement or 0), bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 14, mode if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 15, float(item.AccessoireIntermediaire or 0), bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 16, float(item.TauxCommission or 0) / 100, number_format=PCT_FMT)
+                _apply_data_cell(ws, row_num, 17, commission, bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 18, comm_percue, bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 19, solde, bold=True, number_format=NUM_FMT)
+                _apply_data_cell(ws, row_num, 20, cheque if idx == 0 else "")
+                _apply_data_cell(ws, row_num, 21, "")
+
+                # Cumul totaux
+                totals[10] += float(item.PrimeHT or 0)
+                totals[11] += float(item.PrimeTTC or 0)
+                totals[12] += float(item.MontantEncaissement or 0)
+                totals[13] += float(item.MontantReversement or 0)
+                totals[15] += float(item.AccessoireIntermediaire or 0)
+                totals[17] += commission
+                totals[18] += comm_percue
+                totals[19] += solde
+
+                row_num += 1
+
+        # ── Ligne TOTAL ───────────────────────────────────────────────────────
+        if row_num > 11:
+            ws.merge_cells(f"A{row_num}:I{row_num}")
+            total_label = ws[f"A{row_num}"]
+            total_label.value = "TOTAL"
+            total_label.font = Font(bold=True, size=14)
+            total_label.alignment = Alignment(horizontal="center", vertical="center")
+            total_label.border = _thin_border()
+
+            for col_idx in range(10, 20):
+                val = totals.get(col_idx, "")
+                fmt = NUM_FMT if col_idx != 16 else PCT_FMT
+                _apply_data_cell(ws, row_num, col_idx, val if val != 0 else "", bold=True, number_format=NUM_FMT)
+            _apply_data_cell(ws, row_num, 20, "")
+            _apply_data_cell(ws, row_num, 21, "")
+
+        # ── Retour du fichier ─────────────────────────────────────────────────
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        filename = f"Tableau_Reversement_{compagnie_name}_{date.today().strftime('%Y%m%d')}.xlsx"
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class ExportBordereauReversementView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, idreversement):
+        from production.database import get_info_reversement
+
+        try:
+            rev = ReversementCompagnie.objects.select_related(
+                "compagnie", "mode_reversement", "banque"
+            ).get(pk=idreversement)
+        except ReversementCompagnie.DoesNotExist:
+            return Response({"error": "Reversement introuvable"}, status=404)
+
+        (msg, items) = get_info_reversement(reversement=idreversement)
+        if msg:
+            return Response({"error": msg}, status=400)
+
+        compagnie_name = rev.compagnie.RaisonSociale
+
+        # ── Création du classeur ──────────────────────────────────────────────
+        wb = Workbook()
+        ws = wb.active
+        ws.title = compagnie_name[:31]
+
+        # Largeurs colonnes (référence BORDEREAU CI-ENERGIEES)
+        col_widths = {
+            1: 36.2, 2: 32.3, 3: 42.3, 4: 15.7, 5: 24.5, 6: 24.5,
+            7: 22.5, 8: 27.5, 9: 27.8, 10: 22.3, 11: 19.3,
+            12: 24.2, 13: 22.3, 14: 22.3, 15: 22.3, 16: 23.0,
+        }
+        for col_idx, width in col_widths.items():
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+        FONT_SIZE = 14  # taille adaptée pour A4 paysage
+
+        # ── Titre (ligne 2, D2:K2 fusionnées) ────────────────────────────────
+        ws.merge_cells("D2:K2")
+        t = ws["D2"]
+        t.value = "BORDEREAU DE RECLAMATION DE COMMISSION"
+        t.font = Font(bold=True, size=FONT_SIZE + 4)
+        t.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[2].height = 30
+
+        # ── Compagnie (ligne 5, F5:I5 fusionnées) ────────────────────────────
+        ws.merge_cells("F5:I5")
+        c = ws["F5"]
+        c.value = compagnie_name
+        c.font = Font(bold=True, size=FONT_SIZE + 2)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+        # ── Bordereau N° / date ───────────────────────────────────────────────
+        ws["A6"] = "Bordereau N°"
+        ws["A6"].font = Font(size=FONT_SIZE)
+        ws["B6"] = rev.numero_reversement
+        ws["B6"].font = Font(bold=True, size=FONT_SIZE)
+        ws["B6"].alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("D7:E7")
+        ws["D7"] = f"du  {rev.date_reversement.strftime('%d/%m/%Y') if rev.date_reversement else ''}"
+        ws["D7"].font = Font(size=FONT_SIZE)
+        ws["D7"].alignment = Alignment(horizontal="center")
+
+        # ── Montant à reverser ────────────────────────────────────────────────
+        ws["A8"] = "Montant à reverser"
+        ws["A8"].font = Font(size=FONT_SIZE)
+        ws["B8"] = float(rev.montant_reversement or 0)
+        ws["B8"].font = Font(bold=True, size=FONT_SIZE)
+        ws["B8"].number_format = '#,##0'
+        ws["B8"].alignment = Alignment(horizontal="center")
+
+        # ── En-têtes (ligne 11) ───────────────────────────────────────────────
+        headers = [
+            "Nom du client", "Assurance", "N°Police", "Avt",
+            "Effet", "Expiration", "Prime HT", "Prime TTC",
+            "Encaissement", "Acc. Courtier", "Taux com.(%)",
+            "Commission", "Frais gestion", "Com. Déduite",
+            "Acc. déduits", "Montant Reversé",
+        ]
+        ws.row_dimensions[11].height = 30
+        for col_idx, header in enumerate(headers, start=1):
+            _apply_header_cell(ws, 11, col_idx, header, size=FONT_SIZE)
+
+        # ── Lignes de données ─────────────────────────────────────────────────
+        NUM_FMT = '#,##0'
+        row_num = 12
+        totals = {k: 0.0 for k in range(7, 17)}
+
+        for item in items:
+            data = [
+                item.NomClient,
+                item.LibelleProduit,
+                item.NumeroPolice,
+                item.NumeroAvenant,
+                item.DateEffet,
+                item.DateExpiration,
+                float(item.PrimeHT or 0),
+                float(item.PrimeTTC or 0),
+                float(item.MontantEncaissement or 0),
+                float(item.AccessoireIntermediaire or 0),
+                float(item.TauxCommission or 0),
+                float(item.Commission or 0),
+                float(item.FraisGestion or 0),
+                float(item.CommissionDeduite or 0),
+                float(item.AccessoireDeduit or 0),
+                float(item.MontantReversement or 0),
+            ]
+            for col_idx, value in enumerate(data, start=1):
+                num_cols = set(range(7, 17))
+                fmt = NUM_FMT if col_idx in num_cols else None
+                _apply_data_cell(ws, row_num, col_idx, value, number_format=fmt, size=FONT_SIZE)
+
+            for k in range(7, 17):
+                totals[k] += data[k - 1]
+
+            row_num += 1
+
+        # ── Ligne TOTAL ───────────────────────────────────────────────────────
+        ws.merge_cells(f"E{row_num}:F{row_num}")
+        tl = ws[f"E{row_num}"]
+        tl.value = "TOTAL"
+        tl.font = Font(bold=True, size=FONT_SIZE)
+        tl.alignment = Alignment(horizontal="center", vertical="center")
+        tl.border = _thin_border()
+
+        for col_idx in range(1, 5):
+            _apply_data_cell(ws, row_num, col_idx, "", size=FONT_SIZE)
+
+        for k in range(7, 17):
+            _apply_data_cell(ws, row_num, k, totals[k], bold=True, number_format=NUM_FMT, size=FONT_SIZE)
+
+        # ── Signatures ────────────────────────────────────────────────────────
+        sig_row = row_num + 5
+        ws.merge_cells(f"A{sig_row}:C{sig_row}")
+        sig_left = ws[f"A{sig_row}"]
+        sig_left.value = "POUR OREOLE ASSURANCES"
+        sig_left.font = Font(bold=True, size=FONT_SIZE)
+        sig_left.alignment = Alignment(horizontal="left")
+
+        ws.merge_cells(f"L{sig_row}:O{sig_row}")
+        sig_right = ws[f"L{sig_row}"]
+        sig_right.value = f"POUR {compagnie_name}"
+        sig_right.font = Font(bold=True, size=FONT_SIZE)
+        sig_right.alignment = Alignment(horizontal="right")
+
+        # ── Retour du fichier ─────────────────────────────────────────────────
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+
+        filename = f"Bordereau_{rev.numero_reversement}_{date.today().strftime('%Y%m%d')}.xlsx"
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

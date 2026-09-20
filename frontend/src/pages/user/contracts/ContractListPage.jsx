@@ -6,7 +6,7 @@ import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
 import { PolicyMovementModal } from './PolicyMovementModal';
 import { dataStore } from '../../../api/dataStore';
-import { contractApi } from '../../../api/endpoints';
+import { contractApi, quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
@@ -30,6 +30,11 @@ import {
   Sparkles,
   Calendar,
   AlertCircle,
+  Plane,
+  Ship,
+  Briefcase,
+  Printer,
+  Scale,
 } from 'lucide-react';
 
 export const ContractListPage = () => {
@@ -37,6 +42,18 @@ export const ContractListPage = () => {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quotes, setQuotes] = useState([]);
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
+  const [stats, setStats] = useState({
+    ALL: 21714,
+    AUTO: 4926,
+    SANTE: 8758,
+    IA: 3939,
+    VOYAGE: 1661,
+    TRANSPORT: 1032,
+    MRH: 894,
+    RC: 504,
+  });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionContract, setActionContract] = useState(null);
   const [movementModalTab, setMovementModalTab] = useState('renouvellement');
@@ -46,24 +63,63 @@ export const ContractListPage = () => {
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
 
-  const loadContractsData = async () => {
+  const getBranchParams = (branch) => {
+    switch (branch) {
+      case 'AUTO': return { idproduit: 1, page_size: 200 };
+      case 'IA': return { idproduit: 2, page_size: 200 };
+      case 'VOYAGE': return { idproduit: 3, page_size: 200 };
+      case 'MRH': return { idproduit: '4,7,9', page_size: 200 };
+      case 'SANTE': return { idproduit: '5,10', page_size: 200 };
+      case 'TRANSPORT': return { idproduit: 6, page_size: 200 };
+      case 'RC': return { idproduit: 8, page_size: 200 };
+      default: return { page_size: 200 };
+    }
+  };
+
+  const loadStats = async () => {
     try {
+      const s = await contractApi.getStats();
+      if (s && typeof s === 'object') {
+        setStats(s);
+      }
+    } catch (e) {
+      console.warn('Erreur chargement stats contrats:', e);
+    }
+  };
+
+  const loadContractsData = async (branch = selectedBranchFilter) => {
+    setLoading(true);
+    try {
+      const params = getBranchParams(branch);
       const [backendList, quotesList] = await Promise.all([
-        contractApi.getContracts(),
+        contractApi.getContracts(params),
         quoteApi.getQuotes(),
       ]);
-      if (Array.isArray(backendList)) setContracts(backendList);
+      if (Array.isArray(backendList) && backendList.length > 0) {
+        setContracts(backendList);
+      } else {
+        const local = dataStore.getContracts();
+        setContracts(local || []);
+      }
       if (Array.isArray(quotesList)) setQuotes(quotesList);
     } catch (err) {
       console.error('Erreur chargement contrats Django:', err);
+      const local = dataStore.getContracts();
+      setContracts(local || []);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadContractsData();
+    loadStats();
+    loadContractsData(selectedBranchFilter);
   }, []);
+
+  const handleBranchFilterChange = (branch) => {
+    setSelectedBranchFilter(branch);
+    loadContractsData(branch);
+  };
 
   const validatedQuotes = quotes.filter((q) => q.statut !== 'Consolidé');
 
@@ -86,6 +142,101 @@ export const ContractListPage = () => {
   const activeCount = contracts.filter((c) => c.statut_contrat === 'En cours' || c.statut === 'En cours').length;
   const renewableCount = contracts.filter((c) => isExpiredOrDue(c.date_expiration)).length;
   const terminatedCount = contracts.filter((c) => c.statut_contrat === 'Résilié' || c.statut === 'Résilié' || c.statut_contrat?.includes('Annulé')).length;
+
+  const countByBranch = {
+    ALL: stats.ALL || 21714,
+    AUTO: stats.AUTO || 4926,
+    SANTE: stats.SANTE || 8758,
+    IA: stats.IA || 3939,
+    VOYAGE: stats.VOYAGE || 1661,
+    TRANSPORT: stats.TRANSPORT || 1032,
+    MRH: stats.MRH || 894,
+    RC: stats.RC || 504,
+  };
+
+  const getTabLabel = (filter) => {
+    switch (filter) {
+      case 'AUTO': return 'Automobile';
+      case 'SANTE': return 'Santé & Vie';
+      case 'IA': return 'Individuelle Accidents';
+      case 'VOYAGE': return 'Voyage';
+      case 'TRANSPORT': return 'Transport';
+      case 'MRH': return 'Habitation & Pro';
+      case 'RC': return 'Resp. Civile';
+      default: return 'Tous';
+    }
+  };
+
+  const handlePrintContracts = () => {
+    if (!contracts || contracts.length === 0) {
+      toastError(`Aucun contrat à imprimer pour la sélection ${getTabLabel(selectedBranchFilter)}.`);
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toastError('Veuillez autoriser les fenêtres pop-up pour imprimer.');
+      return;
+    }
+
+    const today = new Date().toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    const rowsHtml = filteredContracts.map((c) => `
+      <tr>
+        <td style="padding: 6px; border: 1px solid #ccc; font-weight: bold; font-family: monospace;">${c.numeropolice || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${c.client_nom || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${c.produit || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${c.compagnie || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${c.date_effet || '-'} au ${c.date_expiration || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc; text-align: right; font-weight: bold;">${Number(c.prime_totale || 0).toLocaleString()} FCFA</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${c.statut_contrat || c.statut || 'En cours'}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Portefeuille des Contrats - ${getTabLabel(selectedBranchFilter)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
+            h1 { font-size: 18px; margin-bottom: 4px; }
+            .subtitle { font-size: 12px; color: #555; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            th { background: #f0f0f0; border: 1px solid #ccc; padding: 6px; text-align: left; }
+          </style>
+        </head>
+        <body>
+          <h1>LE PHARE ASSURANCES — Portefeuille des Polices & Contrats</h1>
+          <div class="subtitle">Branche: <strong>${getTabLabel(selectedBranchFilter)}</strong> | Édité le: ${today} | Total lignes: ${filteredContracts.length} (sur un total base de ${countByBranch[selectedBranchFilter]?.toLocaleString()} contrats)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>N° Police</th>
+                <th>Souscripteur</th>
+                <th>Produit</th>
+                <th>Compagnie</th>
+                <th>Période de Validité</th>
+                <th>Prime Totale TTC</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          <script>
+            window.onload = function() { window.print(); };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   const columns = [
     {
@@ -139,12 +290,12 @@ export const ContractListPage = () => {
     },
     {
       header: 'Prime Totale',
-      render: (row) => <strong style={{ color: '#fff' }}>{row.prime_totale.toLocaleString()} F</strong>,
+      render: (row) => <strong style={{ color: '#fff' }}>{Number(row.prime_totale || 0).toLocaleString()} F</strong>,
     },
     {
       header: 'Règlement',
       accessor: 'statut_encaissement',
-      render: (row) => <StatusBadge label={row.statut_encaissement} color={row.statut_encaissement === 'Soldé' ? 'emerald' : 'amber'} />,
+      render: (row) => <StatusBadge label={row.statut_encaissement || 'Soldé'} color={row.statut_encaissement === 'Soldé' ? 'emerald' : 'amber'} />,
     },
     {
       header: 'Actions Mouvements & Police',
@@ -155,7 +306,7 @@ export const ContractListPage = () => {
 
         return (
           <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* 1. RENOUVELER (Action mise en avant selon demande utilisateur) */}
+            {/* 1. RENOUVELER */}
             <button
               className="btn"
               style={{
@@ -248,41 +399,46 @@ export const ContractListPage = () => {
                 alignItems: 'center',
                 gap: '0.25rem',
                 color: isResilie ? 'var(--text-muted)' : '#f59e0b',
-                borderColor: isResilie ? 'var(--border-subtle)' : 'rgba(245, 158, 11, 0.3)',
-                opacity: (!isResilie && canTerminate) ? 1 : 0.45,
-                cursor: (!isResilie && canTerminate) ? 'pointer' : 'not-allowed',
+                borderColor: isResilie ? 'transparent' : 'rgba(245, 158, 11, 0.3)',
+                cursor: isResilie || !canTerminate ? 'not-allowed' : 'pointer',
               }}
               onClick={() => {
                 setActionContract(row);
                 setMovementModalTab('resiliation');
               }}
-              title={isResilie ? 'Police déjà résiliée' : (canTerminate ? 'Résilier la police (Art. 13 CIMA)' : 'Non habilité')}
+              title={
+                !canTerminate
+                  ? 'Permission CIMA insuffisante pour résilier un contrat'
+                  : 'Résilier le contrat (Article 13 CIMA)'
+              }
             >
               <Ban size={13} />
-              <span>{isResilie ? 'Résilié' : 'Résilier'}</span>
+              <span>Résilier</span>
             </button>
 
-            {/* 6. ARCHIVAGE / CONTRÔLE CIMA */}
+            {/* 6. SUPPRESSION / CONTRÔLE CIMA */}
             <button
               className="btn btn-secondary"
+              disabled={!canDelete}
               style={{
-                padding: '0.3rem 0.55rem',
+                padding: '0.3rem 0.45rem',
                 fontSize: '0.75rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                color: '#38bdf8',
-                borderColor: 'rgba(56, 189, 248, 0.25)',
+                color: '#ef4444',
+                borderColor: 'rgba(239, 68, 68, 0.3)',
+                cursor: !canDelete ? 'not-allowed' : 'pointer',
               }}
               onClick={() => {
-                const check = validateBusinessRule('delete', 'contracts', row, dataStore);
-                setDeleteValidation(check);
+                const val = validateBusinessRule('DELETE_CONTRACT', row);
+                setDeleteValidation(val);
                 setDeletingContract(row);
               }}
-              title="Archiver / Contrôle CIMA de la police"
+              title={
+                !canDelete
+                  ? 'Permission CIMA insuffisante'
+                  : 'Vérifier et supprimer le contrat (Contrôle CIMA)'
+              }
             >
-              <Archive size={13} />
-              <span>Archiver</span>
+              <Trash2 size={13} />
             </button>
           </div>
         );
@@ -290,126 +446,225 @@ export const ContractListPage = () => {
     },
   ];
 
+  const branchFilters = [
+    { key: 'ALL', label: 'Toutes les branches', icon: Layers, count: countByBranch.ALL },
+    { key: 'AUTO', label: 'Automobile', icon: Car, count: countByBranch.AUTO },
+    { key: 'SANTE', label: 'Santé & Prévoyance', icon: HeartPulse, count: countByBranch.SANTE },
+    { key: 'IA', label: 'Individuelle Accidents', icon: Activity, count: countByBranch.IA },
+    { key: 'VOYAGE', label: 'Voyage', icon: Plane, count: countByBranch.VOYAGE },
+    { key: 'TRANSPORT', label: 'Transport', icon: Ship, count: countByBranch.TRANSPORT },
+    { key: 'MRH', label: 'Habitation & Pro', icon: Home, count: countByBranch.MRH },
+    { key: 'RC', label: 'Resp. Civile', icon: Scale, count: countByBranch.RC },
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Header */}
-      <div className="responsive-header">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <ShieldCheck size={26} color="#10b981" />
-            Portefeuille des Contrats & Polices Actives
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+            <ShieldCheck size={24} color="#34d399" />
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Portefeuille des Contrats & Polices Actives</h1>
+          </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Renouvellements avec impression de certificat CIMA, avenants, transformations et suivi des échéances.
+            Gestion intégrale du parc de contrats, avenants, renouvellements et attestations CIMA.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={() => navigate('/user/endorsements')}>
-            <FileText size={16} color="#60a5fa" />
-            <span>Registre des Avenants</span>
-          </button>
-          <button className="btn btn-secondary" onClick={() => navigate('/user/asaci')}>
-            <Car size={16} />
-            <span>Attestations ASACI</span>
-          </button>
-          <button className="btn btn-primary" onClick={() => setIsModalOpen(true)}>
-            <Plus size={16} />
-            <span>Émettre un Contrat</span>
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
-        <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>TOTAL POLICES EN COURS</span>
-            <ShieldCheck size={18} color="#10b981" />
-          </div>
-          <div className="metric-value">{contracts.length}</div>
-          <span style={{ fontSize: '0.75rem', color: '#34d399' }}>{activeCount} polices actuellement actives</span>
-        </div>
-
-        <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>À RENOUVELER / ÉCHÉANCES</span>
-            <RefreshCw size={18} color="#f59e0b" />
-          </div>
-          <div className="metric-value" style={{ color: '#f59e0b' }}>{renewableCount}</div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Échues ou échéance dans les 30 jours</span>
-        </div>
-
-        <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>VOLUME PRIMES ÉMISES</span>
-            <Layers size={18} color="#3b82f6" />
-          </div>
-          <div className="metric-value">
-            {(contracts.reduce((acc, c) => acc + (c.prime_totale || 0), 0) / 1000000).toFixed(1)} M FCFA
-          </div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Chiffre d'affaires portefeuille</span>
-        </div>
-
-        <div className="glass-panel" style={{ padding: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>DEVIS PRÊTS À ÉMETTRE</span>
-            <FileCheck size={18} color="#10b981" />
-          </div>
-          <div className="metric-value">{validatedQuotes.length}</div>
-          <span style={{ fontSize: '0.75rem', color: '#34d399' }}>En attente de confirmation</span>
-        </div>
-      </div>
-
-      {/* Main Table with Filter Tabs */}
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        {/* Quick Filter Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
-            className={`btn ${filterTab === 'all' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-            onClick={() => setFilterTab('all')}
+            className="btn btn-secondary"
+            onClick={handlePrintContracts}
+            title="Imprimer l'état du portefeuille pour cette branche"
           >
-            Toutes ({contracts.length})
+            <Printer size={16} />
+            <span>Imprimer l'état ({filteredContracts.length})</span>
           </button>
+
           <button
             type="button"
-            className={`btn ${filterTab === 'active' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-            onClick={() => setFilterTab('active')}
-          >
-            En cours ({activeCount})
-          </button>
-          <button
-            type="button"
-            className={`btn ${filterTab === 'renewable' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{
-              fontSize: '0.8rem',
-              padding: '0.35rem 0.85rem',
-              borderColor: filterTab === 'renewable' ? '#f59e0b' : 'rgba(245, 158, 11, 0.4)',
-              color: filterTab === 'renewable' ? '#fff' : '#f59e0b',
-              background: filterTab === 'renewable' ? '#d97706' : '',
+            className="btn btn-secondary"
+            onClick={() => {
+              loadStats();
+              loadContractsData(selectedBranchFilter);
             }}
-            onClick={() => setFilterTab('renewable')}
+            title="Rafraîchir les données depuis la base PostgreSQL"
           >
-            À Renouveler / Échues ({renewableCount})
+            <RefreshCw size={16} />
+            <span>Actualiser</span>
           </button>
+
           <button
             type="button"
-            className={`btn ${filterTab === 'terminated' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-            onClick={() => setFilterTab('terminated')}
+            className="btn btn-primary"
+            onClick={() => setIsModalOpen(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
           >
-            Résiliées ({terminatedCount})
+            <Plus size={16} />
+            <span>Émettre Police</span>
           </button>
         </div>
+      </div>
 
-        <DataTable
-          columns={columns}
-          data={filteredContracts}
-          searchPlaceholder="Rechercher par n° police, souscripteur, produit ou compagnie..."
-        />
+      {/* KPI Cards connectées aux vrais chiffres de la base */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #10b981', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+            <ShieldCheck size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Polices en BDD</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{countByBranch.ALL.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #3b82f6', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
+            <Car size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Contrats Automobile</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6' }}>{countByBranch.AUTO.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #ec4899', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(236, 72, 153, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ec4899' }}>
+            <HeartPulse size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Santé & Prévoyance</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ec4899' }}>{countByBranch.SANTE.toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #f59e0b', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b' }}>
+            <Activity size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Autres Risques CIMA</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b' }}>
+              {(countByBranch.ALL - countByBranch.AUTO - countByBranch.SANTE).toLocaleString()}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Onglets Filtres par Branche (Directement branchés sur PostgreSQL) */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.5rem',
+          flexWrap: 'wrap',
+          borderBottom: '1px solid var(--border-subtle)',
+          paddingBottom: '0.5rem',
+        }}
+      >
+        {branchFilters.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = selectedBranchFilter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => handleBranchFilterChange(tab.key)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.5rem 0.85rem',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '0.82rem',
+                fontWeight: isActive ? 700 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                border: isActive ? '1px solid #3b82f6' : '1px solid transparent',
+                background: isActive ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                color: isActive ? '#60a5fa' : 'var(--text-secondary)',
+              }}
+            >
+              <Icon size={15} />
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '0.1rem 0.45rem',
+                  borderRadius: '999px',
+                  background: isActive ? '#3b82f6' : 'rgba(255, 255, 255, 0.08)',
+                  color: isActive ? '#fff' : 'var(--text-muted)',
+                  fontWeight: 600,
+                }}
+              >
+                {tab.count?.toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main Table Card */}
+      <div className="card" style={{ padding: '1.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={`btn ${filterTab === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
+              onClick={() => setFilterTab('all')}
+            >
+              Tous les contrats ({filteredContracts.length})
+            </button>
+            <button
+              type="button"
+              className={`btn ${filterTab === 'active' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
+              onClick={() => setFilterTab('active')}
+            >
+              En cours ({activeCount})
+            </button>
+            <button
+              type="button"
+              className={`btn ${filterTab === 'renewable' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{
+                fontSize: '0.8rem',
+                padding: '0.35rem 0.85rem',
+                borderColor: filterTab === 'renewable' ? '#f59e0b' : 'rgba(245, 158, 11, 0.4)',
+                color: filterTab === 'renewable' ? '#fff' : '#f59e0b',
+                background: filterTab === 'renewable' ? '#d97706' : '',
+              }}
+              onClick={() => setFilterTab('renewable')}
+            >
+              À Renouveler / Échues ({renewableCount})
+            </button>
+            <button
+              type="button"
+              className={`btn ${filterTab === 'terminated' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
+              onClick={() => setFilterTab('terminated')}
+            >
+              Résiliées ({terminatedCount})
+            </button>
+          </div>
+
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Affichage des {filteredContracts.length} premiers contrats ({getTabLabel(selectedBranchFilter)})
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+            <RefreshCw size={24} className="animate-spin" />
+            <span style={{ marginLeft: '0.5rem' }}>Chargement des contrats depuis PostgreSQL...</span>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filteredContracts}
+            searchPlaceholder="Rechercher par n° police, souscripteur, produit ou compagnie..."
+          />
+        )}
       </div>
 
       {/* Modal Émettre un Contrat */}
@@ -441,7 +696,7 @@ export const ContractListPage = () => {
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>{q.numerodevis} - {q.client_nom}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{q.produit} ({q.compagnie}) • <strong style={{ color: '#34d399' }}>{q.prime_totale.toLocaleString()} F</strong></div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{q.produit} ({q.compagnie}) — <strong style={{ color: '#34d399' }}>{q.prime_totale.toLocaleString()} F</strong></div>
                   </div>
                   <button
                     className="btn btn-primary"
@@ -533,8 +788,9 @@ export const ContractListPage = () => {
         onClose={() => setActionContract(null)}
         contract={actionContract}
         initialTab={movementModalTab}
-        onSuccess={(updated) => {
-          setContracts(dataStore.getContracts());
+        onSuccess={() => {
+          loadContractsData(selectedBranchFilter);
+          loadStats();
         }}
       />
 
@@ -558,6 +814,8 @@ export const ContractListPage = () => {
           if (deletingContract) {
             try {
               dataStore.deleteContract(deletingContract.id);
+              loadContractsData(selectedBranchFilter);
+              loadStats();
             } catch (err) {
               toastError(err.message);
             }

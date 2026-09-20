@@ -469,9 +469,19 @@ export const formatAutoQuoteForApi = (raw) => {
 };
 
 export const quoteApi = {
+  // GET /api/devis/stats/ (Totaux réels par branche en BDD)
+  getStats: async () => {
+    try {
+      const res = await apiClient.get('/devis/stats/');
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
   // GET /api/devis/ (178 Devis réels en BDD)
-  getQuotes: async () => {
-    const res = await apiClient.get('/devis/');
+  // GET /api/devis/ (178 Devis réels en BDD)
+  getQuotes: async (params = {}) => {
+    const res = await apiClient.get('/devis/', { params });
     const list = extractData(res);
     return list.map(normalizeDevis);
   },
@@ -739,9 +749,18 @@ export const normalizeContrat = (bc) => {
 };
 
 export const contractApi = {
-  // GET /api/contrat/ (39 Contrats réels en BDD)
-  getContracts: async () => {
-    const res = await apiClient.get('/contrat/');
+  // GET /api/contrat/stats/ (Totaux réels par branche en BDD)
+  getStats: async () => {
+    try {
+      const res = await apiClient.get('/contrat/stats/');
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+  // GET /api/contrat/ (21 714 Contrats réels en BDD)
+  getContracts: async (params = {}) => {
+    const res = await apiClient.get('/contrat/', { params });
     const list = extractData(res);
     return list.map(normalizeContrat);
   },
@@ -912,13 +931,27 @@ export const reportingApi = {
   // POST /api/etatdecisionnel/
   createDecisionnel: (data) => apiClient.post('/etatdecisionnel/', data),
   // PUT /api/etatdecisionnel/{id}/
-  updateDecisionnel: (id, data) => apiClient.put(`/etatdecisionnel/${id}/`, data),
+  updateDecisionnel: (id, data) => {
+    const validId = id?.id_etat ?? id?.idetat ?? id?.id ?? id;
+    return apiClient.put(`/etatdecisionnel/${validId}/`, data);
+  },
   // DELETE /api/etatdecisionnel/{id}/
-  deleteDecisionnel: (id) => apiClient.delete(`/etatdecisionnel/${id}/`),
+  deleteDecisionnel: (id) => {
+    const validId = id?.id_etat ?? id?.idetat ?? id?.id ?? id;
+    return apiClient.delete(`/etatdecisionnel/${validId}/`);
+  },
   // GET /api/etatdecisionnel/{id}/contenu?date_debut=&date_fin=
-  getDecisionnelContenu: async (id, dateDebut, dateFin) => {
-    const res = await apiClient.get(`/etatdecisionnel/${id}/contenu`, {
-      params: { date_debut: dateDebut, date_fin: dateFin },
+  getDecisionnelContenu: async (id, dateDebut, dateFin, typeEtat) => {
+    const validId = id?.id_etat ?? id?.idetat ?? id?.id ?? id;
+    if (!validId || validId === 'undefined') {
+      return { Status: 'Echec', Data: [] };
+    }
+    const res = await apiClient.get(`/etatdecisionnel/${validId}/contenu/`, {
+      params: {
+        date_debut: dateDebut,
+        date_fin: dateFin,
+        ...(typeEtat ? { type_etat: typeEtat } : {}),
+      },
     });
     return res?.data || res;
   },

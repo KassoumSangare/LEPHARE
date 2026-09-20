@@ -1,11 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { reportingApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { exportToPdf, exportToExcel } from '../../../utils/exportUtils';
-import { GitBranch, Plus, Edit2, Trash2, RefreshCw, CheckCircle2, XCircle, Download, Eye, Printer, Calendar, Loader2 } from 'lucide-react';
+import { exportToPdf, exportToExcel, printEtatDecisionnelDocument } from '../../../utils/exportUtils';
+import {
+  GitBranch,
+  Plus,
+  Edit2,
+  Trash2,
+  RefreshCw,
+  Download,
+  Eye,
+  Printer,
+  Calendar,
+  Loader2,
+  Search,
+  Layers,
+  Table as TableIcon,
+  ChevronDown,
+  ChevronRight,
+  FileSpreadsheet,
+  FileText
+} from 'lucide-react';
 
 const URL_OPTIONS = ['DETAIL', 'LISTE', 'VALIDATION', 'REJET', 'CLOTURE'];
 
@@ -36,14 +54,18 @@ export const DecisionalStatesPage = () => {
   const [exportFormat, setExportFormat] = useState('PDF');
   const [exportScope, setExportScope] = useState('ALL');
 
-  // Modal Contenu (dossiers rattachés à un état, sur une période)
+  // Modal Contenu (Bordereau / Récapitulatif)
   const [isContenuOpen, setIsContenuOpen] = useState(false);
   const [contenuTarget, setContenuTarget] = useState(null);
   const [contenuDateDebut, setContenuDateDebut] = useState(defaultDateDebut);
   const [contenuDateFin, setContenuDateFin] = useState(defaultDateFin);
+  const [contenuTypeEtat, setContenuTypeEtat] = useState(2); // 1 = Bordereau, 2 = Récap
   const [contenuLoading, setContenuLoading] = useState(false);
   const [contenuDossiers, setContenuDossiers] = useState([]);
-  const [contenuFormat, setContenuFormat] = useState('PDF');
+  const [contenuFormat, setContenuFormat] = useState('XLSX');
+  const [contenuSearch, setContenuSearch] = useState('');
+  const [contenuViewMode, setContenuViewMode] = useState('flat'); // 'flat' | 'grouped'
+  const [expandedCompagnies, setExpandedCompagnies] = useState({});
 
   const loadEtats = async () => {
     setLoading(true);
@@ -101,9 +123,11 @@ export const DecisionalStatesPage = () => {
   const handleEdit = async (e) => {
     e.preventDefault();
     if (!editTarget || !editForm.code_etat.trim() || !editForm.libelle_etat.trim()) return;
+    const id = editTarget?.id_etat ?? editTarget?.idetat ?? editTarget?.id;
+    if (!id) return;
     setIsSaving(true);
     try {
-      await reportingApi.updateDecisionnel(editTarget.id_etat, {
+      await reportingApi.updateDecisionnel(id, {
         code_etat: editForm.code_etat.trim().toUpperCase(),
         libelle_etat: editForm.libelle_etat.trim(),
         url: editForm.url,
@@ -127,9 +151,11 @@ export const DecisionalStatesPage = () => {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    const id = deleteTarget?.id_etat ?? deleteTarget?.idetat ?? deleteTarget?.id;
+    if (!id) return;
     setIsDeleting(true);
     try {
-      await reportingApi.deleteDecisionnel(deleteTarget.id_etat);
+      await reportingApi.deleteDecisionnel(id);
       setIsDeleteOpen(false);
       setDeleteTarget(null);
       success('État décisionnel supprimé avec succès.');
@@ -165,7 +191,7 @@ export const DecisionalStatesPage = () => {
       'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
       'Périmètre': exportScope === 'ACTIFS' ? 'États actifs uniquement' : exportScope === 'INACTIFS' ? 'États inactifs uniquement' : 'Tous les états',
       'Total États': String(filteredData.length),
-      'Date d\'Édition': new Date().toLocaleDateString('fr-FR'),
+      'Date d\'édition': new Date().toLocaleDateString('fr-FR'),
     };
 
     if (exportFormat === 'XLSX') {
@@ -182,18 +208,27 @@ export const DecisionalStatesPage = () => {
     setContenuTarget(etat);
     setContenuDateDebut(defaultDateDebut);
     setContenuDateFin(defaultDateFin);
+    // Déterminer automatiquement le type d'état
+    const code = (etat?.code_etat || '').toUpperCase();
+    const isDetail = code.startsWith('D') || (etat?.libelle_etat || '').toLowerCase().includes('détail');
+    const initialType = isDetail ? 1 : 2;
+    setContenuTypeEtat(initialType);
     setContenuDossiers([]);
+    setContenuSearch('');
     setIsContenuOpen(true);
+    loadContenu(etat, defaultDateDebut, defaultDateFin, initialType);
   };
 
-  const loadContenu = async (etat, dateDebut, dateFin) => {
+  const loadContenu = async (etat, dateDebut, dateFin, typeEtat) => {
     if (!etat) return;
+    const id = etat?.id_etat ?? etat?.idetat ?? etat?.id;
+    if (!id) return;
     setContenuLoading(true);
     try {
-      const result = await reportingApi.getDecisionnelContenu(etat.id_etat, dateDebut, dateFin);
+      const result = await reportingApi.getDecisionnelContenu(id, dateDebut, dateFin, typeEtat);
       const dossiers = Array.isArray(result?.Data) ? result.Data : [];
       setContenuDossiers(dossiers);
-      if (result?.Status && result.Status !== 'Succès') {
+      if (result?.Status && result.Status !== 'Succès' && result.Status !== 'Succes') {
         toastError(result?.Data || 'Erreur lors du chargement du contenu.');
       }
     } catch (err) {
@@ -204,51 +239,190 @@ export const DecisionalStatesPage = () => {
     }
   };
 
-  useEffect(() => {
-    if (isContenuOpen && contenuTarget) {
-      loadContenu(contenuTarget, contenuDateDebut, contenuDateFin);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isContenuOpen, contenuTarget, contenuDateDebut, contenuDateFin]);
+  // Filtrage local pour la recherche dans le modal
+  const filteredContenuDossiers = useMemo(() => {
+    if (!contenuSearch.trim()) return contenuDossiers;
+    const s = contenuSearch.toLowerCase().trim();
+    return contenuDossiers.filter((d) => {
+      const police = (d.numero_police || '').toLowerCase();
+      const quittance = (d.numero_quittance || '').toLowerCase();
+      const client = (d.nom_client || '').toLowerCase();
+      const compagnie = (d.nom_compagnie || '').toLowerCase();
+      const produit = (d.libelle_produit || d.produit || '').toLowerCase();
+      return police.includes(s) || quittance.includes(s) || client.includes(s) || compagnie.includes(s) || produit.includes(s);
+    });
+  }, [contenuDossiers, contenuSearch]);
 
-  const buildContenuDoc = () => {
-    const headers = ['N° Devis', 'Client', 'Produit', 'Statut', 'Date Émission', 'Prime TTC (FCFA)'];
-    const rows = contenuDossiers.map((d) => [
-      d.numero_devis || '-',
-      d.nom_client || '-',
-      d.produit || '-',
-      d.statut || '-',
-      d.date_emission ? new Date(d.date_emission).toLocaleDateString('fr-FR') : '-',
-      `${Number(d.prime_ttc || 0).toLocaleString()} FCFA`,
-    ]);
-    const totPrime = contenuDossiers.reduce((acc, d) => acc + Number(d.prime_ttc || 0), 0);
-    const totals = ['TOTAL', `${contenuDossiers.length} dossier(s)`, '', '', '', `${totPrime.toLocaleString()} FCFA`];
-    const filename = `Etat_Decisionnel_${contenuTarget?.code_etat}_${contenuDateDebut}_${contenuDateFin}`;
-    const title = `CONTENU DE L'ÉTAT DÉCISIONNEL : ${contenuTarget?.libelle_etat || ''}`;
-    const subtitle = `Code ${contenuTarget?.code_etat || ''} — Période du ${contenuDateDebut} au ${contenuDateFin}`;
-    const metadata = {
-      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
-      'État Décisionnel': `${contenuTarget?.code_etat} — ${contenuTarget?.libelle_etat}`,
-      'Période': `${contenuDateDebut} au ${contenuDateFin}`,
-      'Total Dossiers': String(contenuDossiers.length),
-      'Date d\'Édition': new Date().toLocaleDateString('fr-FR'),
-    };
-    return { filename, title, subtitle, metadata, headers, rows, totals };
+  // Calcul des totaux financiers
+  const totals = useMemo(() => {
+    let primeNette = 0;
+    let accessoire = 0;
+    let taxe = 0;
+    let primeTtc = 0;
+    let commission = 0;
+
+    filteredContenuDossiers.forEach((d) => {
+      primeNette += Number(d.prime_nette || 0);
+      accessoire += Number(d.accessoire || 0);
+      taxe += Number(d.taxe || 0);
+      primeTtc += Number(d.prime_ttc || 0);
+      commission += Number(d.commission_intermediaire || 0);
+    });
+
+    return { primeNette, accessoire, taxe, primeTtc, commission };
+  }, [filteredContenuDossiers]);
+
+  // Groupement hiérarchique : Compagnie > Client > Branche
+  const groupedData = useMemo(() => {
+    const groups = {};
+    filteredContenuDossiers.forEach((d) => {
+      const cie = d.nom_compagnie || 'Compagnie non spécifiée';
+      const cli = d.nom_client || 'Client Inconnu';
+      const prod = d.libelle_produit || d.produit || 'Branche Principale';
+
+      if (!groups[cie]) {
+        groups[cie] = {
+          nom_compagnie: cie,
+          clients: {},
+          totals: { primeNette: 0, accessoire: 0, taxe: 0, primeTtc: 0, commission: 0 },
+        };
+      }
+
+      if (!groups[cie].clients[cli]) {
+        groups[cie].clients[cli] = {
+          nom_client: cli,
+          produits: {},
+          totals: { primeNette: 0, accessoire: 0, taxe: 0, primeTtc: 0, commission: 0 },
+        };
+      }
+
+      if (!groups[cie].clients[cli].produits[prod]) {
+        groups[cie].clients[cli].produits[prod] = {
+          libelle_produit: prod,
+          items: [],
+          totals: { primeNette: 0, accessoire: 0, taxe: 0, primeTtc: 0, commission: 0 },
+        };
+      }
+
+      const pNette = Number(d.prime_nette || 0);
+      const acc = Number(d.accessoire || 0);
+      const tx = Number(d.taxe || 0);
+      const pTtc = Number(d.prime_ttc || 0);
+      const com = Number(d.commission_intermediaire || 0);
+
+      groups[cie].totals.primeNette += pNette;
+      groups[cie].totals.accessoire += acc;
+      groups[cie].totals.taxe += tx;
+      groups[cie].totals.primeTtc += pTtc;
+      groups[cie].totals.commission += com;
+
+      groups[cie].clients[cli].totals.primeNette += pNette;
+      groups[cie].clients[cli].totals.accessoire += acc;
+      groups[cie].clients[cli].totals.taxe += tx;
+      groups[cie].clients[cli].totals.primeTtc += pTtc;
+      groups[cie].clients[cli].totals.commission += com;
+
+      groups[cie].clients[cli].produits[prod].totals.primeNette += pNette;
+      groups[cie].clients[cli].produits[prod].totals.accessoire += acc;
+      groups[cie].clients[cli].produits[prod].totals.taxe += tx;
+      groups[cie].clients[cli].produits[prod].totals.primeTtc += pTtc;
+      groups[cie].clients[cli].produits[prod].totals.commission += com;
+
+      groups[cie].clients[cli].produits[prod].items.push(d);
+    });
+
+    return groups;
+  }, [filteredContenuDossiers]);
+
+  const toggleCompagnie = (cie) => {
+    setExpandedCompagnies((prev) => ({ ...prev, [cie]: !prev[cie] }));
   };
 
   const handlePrintContenu = () => {
-    window.print();
+    printEtatDecisionnelDocument({
+      etat: contenuTarget,
+      dateDebut: contenuDateDebut,
+      dateFin: contenuDateFin,
+      typeEtat: contenuTypeEtat,
+      dossiers: filteredContenuDossiers,
+    });
   };
 
   const handleExportContenu = (e) => {
-    e.preventDefault();
-    const doc = buildContenuDoc();
+    e?.preventDefault();
+    const typeLabel = Number(contenuTypeEtat) === 1 ? 'Bordereau_Detail' : 'Recapitulatif';
+    const filename = `${typeLabel}_Emissions_${contenuTarget?.code_etat || 'C01'}_${contenuDateDebut}_${contenuDateFin}`;
+    const title = `${Number(contenuTypeEtat) === 1 ? 'BORDEREAU DES ÉMISSIONS' : 'RÉCAPITULATIF DES ÉMISSIONS'} : ${contenuTarget?.libelle_etat || ''}`;
+    const subtitle = `Période du ${contenuDateDebut} au ${contenuDateFin} • Type : ${Number(contenuTypeEtat) === 1 ? 'Détail' : 'Récapitulatif'}`;
+
+    const metadata = {
+      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
+      'État Décisionnel': `${contenuTarget?.code_etat} - ${contenuTarget?.libelle_etat}`,
+      'Période': `Du ${contenuDateDebut} au ${contenuDateFin}`,
+      'Total Lignes': String(filteredContenuDossiers.length),
+      'Prime TTC Totale': `${totals.primeTtc.toLocaleString('fr-FR')} FCFA`,
+      'Commissions Totales': `${totals.commission.toLocaleString('fr-FR')} FCFA`,
+      'Date d\'édition': new Date().toLocaleDateString('fr-FR'),
+    };
+
+    const headers = [
+      'Compagnie',
+      'Client',
+      'Branche',
+      'N° Police',
+      'N° Quittance',
+      'N° Avenant',
+      'Date Émission',
+      'Date Effet',
+      'Date Exp.',
+      'Prime Nette (F)',
+      'Accessoire (F)',
+      'Taxe (F)',
+      'Prime TTC (F)',
+      'Comm. Interm. (F)',
+    ];
+
+    const rows = filteredContenuDossiers.map((d) => [
+      d.nom_compagnie || '-',
+      d.nom_client || '-',
+      d.libelle_produit || d.produit || '-',
+      d.numero_police || '-',
+      d.numero_quittance || '-',
+      d.numero_avenant || '-',
+      d.date_emission ? new Date(d.date_emission).toLocaleDateString('fr-FR') : '-',
+      d.date_effet ? new Date(d.date_effet).toLocaleDateString('fr-FR') : '-',
+      d.date_expiration ? new Date(d.date_expiration).toLocaleDateString('fr-FR') : '-',
+      Number(d.prime_nette || 0).toLocaleString('fr-FR'),
+      Number(d.accessoire || 0).toLocaleString('fr-FR'),
+      Number(d.taxe || 0).toLocaleString('fr-FR'),
+      Number(d.prime_ttc || 0).toLocaleString('fr-FR'),
+      Number(d.commission_intermediaire || 0).toLocaleString('fr-FR'),
+    ]);
+
+    const totalsRow = [
+      'TOTAL GÉNÉRAL',
+      `${filteredContenuDossiers.length} lignes`,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      Number(totals.primeNette).toLocaleString('fr-FR'),
+      Number(totals.accessoire).toLocaleString('fr-FR'),
+      Number(totals.taxe).toLocaleString('fr-FR'),
+      Number(totals.primeTtc).toLocaleString('fr-FR'),
+      Number(totals.commission).toLocaleString('fr-FR'),
+    ];
+
     if (contenuFormat === 'XLSX') {
-      exportToExcel(doc);
+      exportToExcel({ filename, title, subtitle, metadata, headers, rows });
     } else {
-      exportToPdf(doc);
+      exportToPdf({ filename, title, subtitle, metadata, headers, rows, totals: totalsRow });
     }
-    success(`Contenu de l'état "${contenuTarget?.libelle_etat}" (${contenuFormat}) téléchargé avec succès.`);
+
+    success(`Document (${contenuFormat}) téléchargé avec succès.`);
   };
 
   const columns = [
@@ -295,11 +469,11 @@ export const DecisionalStatesPage = () => {
       render: (r) => (
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <button
-            className="btn btn-secondary"
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+            className="btn btn-primary"
+            style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)', color: '#fff', border: 'none' }}
             onClick={() => openContenu(r)}
           >
-            <Eye size={13} /> Contenu
+            <Eye size={13} /> Contenu / Bordereau
           </button>
           <button
             className="btn btn-secondary"
@@ -331,14 +505,14 @@ export const DecisionalStatesPage = () => {
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <GitBranch size={22} color="#a78bfa" />
-            États Décisionnels
+            États Décisionnels & Reporting
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem', margin: '0.3rem 0 0 0' }}>
             Table{' '}
             <code style={{ background: 'rgba(99,102,241,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
               stdetatdecisionnel
             </code>{' '}
-            — Référentiel des états du cycle décisionnel (souscription, contrats, sinistres)
+            — Bordereaux d'émissions, commissions, encaissements et états réglementaires CIMA
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.65rem' }}>
@@ -391,223 +565,319 @@ export const DecisionalStatesPage = () => {
           data={etats}
           searchable
           searchPlaceholder="Rechercher un état décisionnel…"
-          emptyMessage="Aucun état décisionnel enregistré. Cliquez sur «+ Nouveau» pour commencer."
+          emptyMessage="Aucun état décisionnel enregistré. Cliquez sur « + Nouveau » pour commencer."
         />
       )}
 
-      {/* Modal Création */}
-      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Nouvel État Décisionnel" maxWidth="480px">
-        <form onSubmit={handleCreate}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Code de l'état * (3 caractères max)
-            </label>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Ex: ATT, VAL, REJ…"
-              value={createForm.code_etat}
-              maxLength={3}
-              onChange={(e) => setCreateForm({ ...createForm, code_etat: e.target.value.toUpperCase() })}
-              autoFocus
-              required
-              style={{ textTransform: 'uppercase' }}
-            />
-          </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Libellé de l'état *
-            </label>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Ex: En attente de validation"
-              value={createForm.libelle_etat}
-              onChange={(e) => setCreateForm({ ...createForm, libelle_etat: e.target.value })}
-              required
-            />
-          </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Destination / Action associée
-            </label>
-            <select
-              className="form-control"
-              value={createForm.url}
-              onChange={(e) => setCreateForm({ ...createForm, url: e.target.value })}
-            >
-              {URL_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <input
-              type="checkbox"
-              id="create-actif"
-              checked={createForm.actif}
-              onChange={(e) => setCreateForm({ ...createForm, actif: e.target.checked })}
-            />
-            <label htmlFor="create-actif" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              État actif (visible dans les workflows)
-            </label>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsCreateOpen(false)} disabled={isSaving}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={isSaving || !createForm.code_etat.trim() || !createForm.libelle_etat.trim()}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              {isSaving ? 'Enregistrement…' : <><Plus size={14} /> Créer l'État</>}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal Édition */}
-      <Modal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} title={`Modifier — ${editTarget?.libelle_etat || ''}`} maxWidth="480px">
-        <form onSubmit={handleEdit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Code de l'état *
-            </label>
-            <input
-              type="text"
-              className="form-control"
-              value={editForm.code_etat}
-              maxLength={3}
-              onChange={(e) => setEditForm({ ...editForm, code_etat: e.target.value.toUpperCase() })}
-              required
-              style={{ textTransform: 'uppercase' }}
-            />
-          </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Libellé de l'état *
-            </label>
-            <input
-              type="text"
-              className="form-control"
-              value={editForm.libelle_etat}
-              onChange={(e) => setEditForm({ ...editForm, libelle_etat: e.target.value })}
-              required
-            />
-          </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>
-              Destination / Action associée
-            </label>
-            <select
-              className="form-control"
-              value={editForm.url}
-              onChange={(e) => setEditForm({ ...editForm, url: e.target.value })}
-            >
-              {URL_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <input
-              type="checkbox"
-              id="edit-actif"
-              checked={editForm.actif}
-              onChange={(e) => setEditForm({ ...editForm, actif: e.target.checked })}
-            />
-            <label htmlFor="edit-actif" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              {editForm.actif ? <CheckCircle2 size={13} color="#34d399" /> : <XCircle size={13} color="#94a3b8" />}
-              État actif (visible dans les workflows)
-            </label>
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsEditOpen(false)} disabled={isSaving}>Annuler</button>
-            <button type="submit" className="btn btn-primary" disabled={isSaving || !editForm.code_etat.trim() || !editForm.libelle_etat.trim()}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              {isSaving ? 'Enregistrement…' : <><Edit2 size={14} /> Enregistrer</>}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal Contenu de l'état décisionnel (avec choix de période) */}
+      {/* Modal Contenu / Bordereau (Conforme OREOLE) */}
       <Modal
         isOpen={isContenuOpen}
         onClose={() => setIsContenuOpen(false)}
         title={`Contenu de l'État : ${contenuTarget?.libelle_etat || ''}`}
-        subtitle={`Code ${contenuTarget?.code_etat || ''} — Dossiers rattachés sur la période sélectionnée`}
-        maxWidth="820px"
+        subtitle={`Code : ${contenuTarget?.code_etat || ''} • Procédure Postgres : fn_bordereau_recap_emission`}
+        maxWidth="1280px"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Sélecteur de période */}
-          <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', background: 'var(--bg-surface)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Calendar size={15} color="var(--text-muted)" />
-              <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Du :</span>
-              <input
-                type="date"
-                className="form-control"
-                style={{ padding: '0.3rem 0.55rem', fontSize: '0.82rem', width: 'auto' }}
-                value={contenuDateDebut}
-                onChange={(e) => setContenuDateDebut(e.target.value)}
-              />
+          {/* Barre de Recherche et Filtres */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              background: 'var(--bg-muted, rgba(255,255,255,0.03))',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '10px',
+              padding: '0.85rem 1rem',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Calendar size={15} style={{ color: '#a78bfa' }} />
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Du :</span>
+                <input
+                  type="date"
+                  className="form-control"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.82rem', width: 'auto' }}
+                  value={contenuDateDebut}
+                  onChange={(e) => setContenuDateDebut(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Au :</span>
+                <input
+                  type="date"
+                  className="form-control"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.82rem', width: 'auto' }}
+                  value={contenuDateFin}
+                  onChange={(e) => setContenuDateFin(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Type :</span>
+                <select
+                  className="form-control"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.82rem', width: 'auto' }}
+                  value={contenuTypeEtat}
+                  onChange={(e) => setContenuTypeEtat(Number(e.target.value))}
+                >
+                  <option value={1}>Bordereau (Détail)</option>
+                  <option value={2}>Récapitulatif</option>
+                </select>
+              </div>
+
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: '0.8rem', padding: '0.32rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                onClick={() => loadContenu(contenuTarget, contenuDateDebut, contenuDateFin, contenuTypeEtat)}
+                disabled={contenuLoading}
+              >
+                {contenuLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Actualiser
+              </button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Au :</span>
-              <input
-                type="date"
-                className="form-control"
-                style={{ padding: '0.3rem 0.55rem', fontSize: '0.82rem', width: 'auto' }}
-                value={contenuDateFin}
-                onChange={(e) => setContenuDateFin(e.target.value)}
-              />
-            </div>
-            <div style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Total : <strong style={{ color: '#60a5fa' }}>{contenuDossiers.length}</strong> dossier(s)
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: '2rem', fontSize: '0.8rem', padding: '0.3rem 0.55rem 0.3rem 2rem' }}
+                  placeholder="Filtrer client, police…"
+                  value={contenuSearch}
+                  onChange={(e) => setContenuSearch(e.target.value)}
+                />
+              </div>
+
+              {/* Bouton de bascule de vue */}
+              <div style={{ display: 'inline-flex', borderRadius: '8px', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+                <button
+                  type="button"
+                  className={`btn ${contenuViewMode === 'flat' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 0 }}
+                  onClick={() => setContenuViewMode('flat')}
+                  title="Vue Tableau Détaillé"
+                >
+                  <TableIcon size={14} /> Tableau
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${contenuViewMode === 'grouped' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 0 }}
+                  onClick={() => setContenuViewMode('grouped')}
+                  title="Vue Hiérarchique (Compagnie > Client > Branche)"
+                >
+                  <Layers size={14} /> Hiérarchique
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Liste des dossiers */}
+          {/* Cartes Totaux / KPIs Financiers (Conforme OREOLE) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem' }}>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Total Lignes</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#60a5fa', marginTop: '0.15rem' }}>
+                {filteredContenuDossiers.length.toLocaleString('fr-FR')}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Total Prime Nette</div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                {totals.primeNette.toLocaleString('fr-FR')} F
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Total Accessoires</div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                {totals.accessoire.toLocaleString('fr-FR')} F
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Total Taxes</div>
+              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                {totals.taxe.toLocaleString('fr-FR')} F
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.75rem 1rem', background: 'rgba(52,211,153,0.05)' }}>
+              <div style={{ fontSize: '0.7rem', color: '#34d399', fontWeight: 700, textTransform: 'uppercase' }}>Total Prime TTC</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#34d399', marginTop: '0.15rem' }}>
+                {totals.primeTtc.toLocaleString('fr-FR')} F
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '0.75rem 1rem', background: 'rgba(167,139,250,0.05)' }}>
+              <div style={{ fontSize: '0.7rem', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>Comm. Intermédiaire</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#a78bfa', marginTop: '0.15rem' }}>
+                {totals.commission.toLocaleString('fr-FR')} F
+              </div>
+            </div>
+          </div>
+
+          {/* Affichage des Données */}
           {contenuLoading ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem', gap: '0.75rem', color: 'var(--text-muted)' }}>
-              <Loader2 size={20} className="animate-spin" />
-              <span>Chargement des dossiers rattachés à cet état…</span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem', gap: '0.75rem', color: 'var(--text-muted)' }}>
+              <Loader2 size={28} className="animate-spin" color="#60a5fa" />
+              <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Extraction des données de l'état décisionnel via Postgres…</span>
+            </div>
+          ) : contenuViewMode === 'grouped' ? (
+            /* Vue Hiérarchique (Compagnie > Client > Branche) - TableauBordereaux OREOLE */
+            <div style={{ maxHeight: '55vh', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+              {Object.keys(groupedData).length === 0 ? (
+                <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Aucun enregistrement trouvé pour la période sélectionnée.
+                </div>
+              ) : (
+                Object.keys(groupedData).map((cieName) => {
+                  const cie = groupedData[cieName];
+                  const isExpanded = expandedCompagnies[cieName] !== false; // Par défaut développé
+                  return (
+                    <div key={cieName} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      {/* En-tête Compagnie */}
+                      <div
+                        onClick={() => toggleCompagnie(cieName)}
+                        style={{
+                          background: 'rgba(99,102,241,0.12)',
+                          padding: '0.65rem 1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          color: 'var(--text-primary)',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          <span>COMPAGNIE : <strong style={{ color: '#818cf8' }}>{cie.nom_compagnie}</strong></span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '1.25rem', fontSize: '0.8rem' }}>
+                          <span>TTC : <strong style={{ color: '#34d399' }}>{cie.totals.primeTtc.toLocaleString('fr-FR')} F</strong></span>
+                          <span>Commissions : <strong style={{ color: '#a78bfa' }}>{cie.totals.commission.toLocaleString('fr-FR')} F</strong></span>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div style={{ padding: '0.5rem 1rem' }}>
+                          {Object.keys(cie.clients).map((cliName) => {
+                            const cli = cie.clients[cliName];
+                            return (
+                              <div key={cliName} style={{ marginBottom: '0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '6px', overflow: 'hidden' }}>
+                                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 600 }}>
+                                  <span>CLIENT : <strong style={{ color: '#60a5fa' }}>{cli.nom_client}</strong></span>
+                                  <span>Total Client TTC : <strong>{cli.totals.primeTtc.toLocaleString('fr-FR')} F</strong></span>
+                                </div>
+
+                                {Object.keys(cli.produits).map((prodName) => {
+                                  const prod = cli.produits[prodName];
+                                  return (
+                                    <div key={prodName} style={{ padding: '0.4rem 0.75rem' }}>
+                                      <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                                        BRANCHE : <span style={{ color: 'var(--text-primary)' }}>{prod.libelle_produit}</span> ({prod.items.length} quittance(s))
+                                      </div>
+
+                                      <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                        <thead>
+                                          <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+                                            <th style={{ padding: '4px 8px' }}>N° Police</th>
+                                            <th style={{ padding: '4px 8px' }}>N° Quittance</th>
+                                            <th style={{ padding: '4px 8px' }}>N° Avenant</th>
+                                            <th style={{ padding: '4px 8px' }}>Date Émis.</th>
+                                            <th style={{ padding: '4px 8px' }}>Date Effet</th>
+                                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Prime Nette</th>
+                                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Prime TTC</th>
+                                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Commission</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {prod.items.map((it, itIdx) => (
+                                            <tr key={itIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                              <td style={{ padding: '4px 8px', fontFamily: 'var(--font-mono)' }}>{it.numero_police}</td>
+                                              <td style={{ padding: '4px 8px', fontFamily: 'var(--font-mono)' }}>{it.numero_quittance}</td>
+                                              <td style={{ padding: '4px 8px' }}>{it.numero_avenant}</td>
+                                              <td style={{ padding: '4px 8px' }}>{it.date_emission ? new Date(it.date_emission).toLocaleDateString('fr-FR') : '-'}</td>
+                                              <td style={{ padding: '4px 8px' }}>{it.date_effet ? new Date(it.date_effet).toLocaleDateString('fr-FR') : '-'}</td>
+                                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{Number(it.prime_nette || 0).toLocaleString('fr-FR')} F</td>
+                                              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{Number(it.prime_ttc || 0).toLocaleString('fr-FR')} F</td>
+                                              <td style={{ padding: '4px 8px', textAlign: 'right', color: '#a78bfa' }}>{Number(it.commission_intermediaire || 0).toLocaleString('fr-FR')} F</td>
+                                            </tr>
+                                          ))}
+                                          <tr style={{ background: 'rgba(99,102,241,0.05)', fontWeight: 700 }}>
+                                            <td colSpan={5} style={{ padding: '4px 8px' }}>TOTAL {prod.libelle_produit}</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right' }}>{prod.totals.primeNette.toLocaleString('fr-FR')} F</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right', color: '#34d399' }}>{prod.totals.primeTtc.toLocaleString('fr-FR')} F</td>
+                                            <td style={{ padding: '4px 8px', textAlign: 'right', color: '#a78bfa' }}>{prod.totals.commission.toLocaleString('fr-FR')} F</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           ) : (
-            <DataTable
-              columns={[
-                { header: 'N° Devis', accessor: 'numero_devis', render: (d) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{d.numero_devis || '-'}</span> },
-                { header: 'Client', accessor: 'nom_client' },
-                { header: 'Produit', accessor: 'produit' },
-                { header: 'Statut', accessor: 'statut' },
-                { header: 'Date Émission', render: (d) => d.date_emission ? new Date(d.date_emission).toLocaleDateString('fr-FR') : '-' },
-                { header: 'Prime TTC (FCFA)', render: (d) => <strong>{Number(d.prime_ttc || 0).toLocaleString()} F</strong> },
-              ]}
-              data={contenuDossiers}
-              searchPlaceholder="Filtrer un dossier…"
-              emptyMessage="Aucun dossier rattaché à cet état sur la période sélectionnée."
-            />
+            /* Vue Tableau Détaillé - DataTable */
+            <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
+              <DataTable
+                columns={[
+                  { header: 'Compagnie', accessor: 'nom_compagnie', sortable: true },
+                  { header: 'Client', accessor: 'nom_client', sortable: true },
+                  { header: 'Branche', accessor: 'libelle_produit', render: (d) => d.libelle_produit || d.produit || '-' },
+                  { header: 'N° Police', accessor: 'numero_police', render: (d) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{d.numero_police || '-'}</span> },
+                  { header: 'N° Quittance', accessor: 'numero_quittance', render: (d) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{d.numero_quittance || '-'}</span> },
+                  { header: 'Date Émis.', accessor: 'date_emission', render: (d) => d.date_emission ? new Date(d.date_emission).toLocaleDateString('fr-FR') : '-' },
+                  { header: 'Prime Nette (F)', align: 'right', render: (d) => Number(d.prime_nette || 0).toLocaleString('fr-FR') },
+                  { header: 'Prime TTC (F)', align: 'right', render: (d) => <strong>{Number(d.prime_ttc || 0).toLocaleString('fr-FR')}</strong> },
+                  { header: 'Commission (F)', align: 'right', render: (d) => <span style={{ color: '#a78bfa', fontWeight: 600 }}>{Number(d.commission_intermediaire || 0).toLocaleString('fr-FR')}</span> },
+                ]}
+                data={filteredContenuDossiers}
+                searchPlaceholder="Filtrer un dossier…"
+                emptyMessage="Aucun enregistrement trouvé pour cet état sur la période sélectionnée."
+              />
+            </div>
           )}
 
           {/* Actions d'impression / export */}
-          <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem' }}>
-            <select
-              className="form-control"
-              style={{ width: 'auto', fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
-              value={contenuFormat}
-              onChange={(e) => setContenuFormat(e.target.value)}
-            >
-              <option value="PDF">PDF</option>
-              <option value="XLSX">Excel (.xlsx)</option>
-            </select>
-            <button className="btn btn-secondary" onClick={handleExportContenu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Download size={15} /> Télécharger
-            </button>
-            <button className="btn btn-primary" onClick={handlePrintContenu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Printer size={15} /> Imprimer
-            </button>
+          <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Affichage de <strong style={{ color: '#60a5fa' }}>{filteredContenuDossiers.length}</strong> ligne(s) sur <strong>{contenuDossiers.length}</strong>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <select
+                className="form-control"
+                style={{ width: 'auto', fontSize: '0.82rem', padding: '0.35rem 0.6rem' }}
+                value={contenuFormat}
+                onChange={(e) => setContenuFormat(e.target.value)}
+              >
+                <option value="XLSX">Classeur Excel (.xlsx)</option>
+                <option value="PDF">Document PDF (.pdf)</option>
+              </select>
+              <button className="btn btn-secondary" onClick={handleExportContenu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
+                {contenuFormat === 'XLSX' ? <FileSpreadsheet size={15} color="#34d399" /> : <FileText size={15} color="#f87171" />}
+                Télécharger ({contenuFormat})
+              </button>
+              <button className="btn btn-primary" onClick={handlePrintContenu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
+                <Printer size={15} /> Imprimer
+              </button>
+            </div>
           </div>
         </div>
       </Modal>
 
-      {/* Modal Export */}
+      {/* Modal Export Référentiel */}
       <Modal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}

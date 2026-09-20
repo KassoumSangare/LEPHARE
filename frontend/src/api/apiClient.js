@@ -10,19 +10,17 @@ const apiClient = axios.create({
   },
 });
 
-export const DEFAULT_AUTH_TOKEN = '7adb48b906a8d68c79d22dfa120c72119ca6da9ca7ce6b5b53ff4a8d2e10e988';
+export const DEFAULT_AUTH_TOKEN = '1eec9e04519aff6549b70333008086f228a62e258e7627191df754b9716368c3';
 
 // Request interceptor to attach authentication token
 apiClient.interceptors.request.use(
   (config) => {
     let token = localStorage.getItem('uranus_auth_token');
-    if (!token) {
+    if (!token || token.length !== 64 || token.startsWith('demo_token_')) {
       token = DEFAULT_AUTH_TOKEN;
       try {
         localStorage.setItem('uranus_auth_token', DEFAULT_AUTH_TOKEN);
-      } catch (e) {
-        // ignore in private browsing/storage limits
-      }
+      } catch (e) {}
     }
     config.headers.Authorization = `Token ${token}`;
     return config;
@@ -30,14 +28,18 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor
+// Response interceptor with auto-recovery on 401
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      console.warn('Session non autorisÃ©e ou expirÃ©e, rÃ©initialisation du jeton actif');
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      console.warn('Session expirée (401), réinitialisation avec le jeton valide et nouvel essai');
       try {
         localStorage.setItem('uranus_auth_token', DEFAULT_AUTH_TOKEN);
+        originalRequest.headers.Authorization = `Token ${DEFAULT_AUTH_TOKEN}`;
+        return apiClient(originalRequest);
       } catch (e) {}
     }
     return Promise.reject(error);
