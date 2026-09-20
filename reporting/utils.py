@@ -1,77 +1,24 @@
 from django.db import connection
+import re
 from itertools import chain
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from .models import BordereauEmissionResultSet, EtatCimaE1Emissions, EtatCimaE2Arrieres
 
 
 def parse_date(date_val):
     if not date_val:
-        return datetime.now().date()
-    if hasattr(date_val, 'date'):
-        return date_val.date()
-    if hasattr(date_val, 'strftime'):
+        return date.today()
+    if isinstance(date_val, date) and not isinstance(date_val, datetime):
         return date_val
+    if isinstance(date_val, datetime):
+        return date_val.date()
     for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d"):
         try:
-            return datetime.strptime(str(date_val), fmt).date()
+            return datetime.strptime(str(date_val).strip(), fmt).date()
         except ValueError:
             pass
-    return datetime.now().date()
-
-
-def get_etat_decisionnel_contenu(code_etat, libelle_etat, date_debut, date_fin):
-    """
-    Retourne les dossiers (devis) rattachés à un état décisionnel donné
-    (par correspondance sur le code ou le libellé de l'état), sur une période.
-    """
-    from django.db.models import Q
-
-    date_debut = parse_date(date_debut)
-    date_fin = parse_date(date_fin)
-
-    try:
-        from production.models import Devis
-    except Exception as e:
-        return (str(e), [])
-
-    try:
-        qs = (
-            Devis.objects.select_related("client", "produit")
-            .filter(
-                Q(statut__iexact=code_etat)
-                | Q(statut__iexact=libelle_etat)
-                | Q(statut__icontains=code_etat)
-            )
-            .filter(dateemission__date__gte=date_debut, dateemission__date__lte=date_fin)
-            .order_by("-dateemission")
-        )
-
-        dossiers = []
-        for d in qs:
-            nom_client = "Client Inconnu"
-            if d.client:
-                nom = getattr(d.client, "Nom", "")
-                prenoms = getattr(d.client, "Prenoms", "")
-                nom_client = f"{nom or ''} {prenoms or ''}".strip() or "Client"
-
-            produit_libelle = getattr(d.produit, "libelle_produit", "") if d.produit else ""
-
-            dossiers.append(
-                {
-                    "id_devis": d.iddevis,
-                    "numero_devis": d.numerodevis,
-                    "nom_client": nom_client,
-                    "produit": produit_libelle,
-                    "statut": d.statut,
-                    "date_emission": d.dateemission,
-                    "date_effet": d.dateeffet,
-                    "prime_ttc": d.primettc,
-                }
-            )
-        return ("", dossiers)
-    except Exception as error:
-        return (str(error), [])
+    return date.today()
 
 
 def get_bordereau_recap_emission(input_data):
@@ -81,217 +28,236 @@ def get_bordereau_recap_emission(input_data):
     date_fin = parse_date(input_data.get("date_fin"))
     type_etat = int(input_data.get("type_etat", 1))
     emission_list = []
-
-    if connection.vendor == 'postgresql':
-        try:
-            with connection.cursor() as cursor:
-                cursor.callproc(
-                    "fn_bordereau_recap_emission",
-                    [
-                        date_debut,
-                        date_fin,
-                        type_etat,
-                    ],
-                )
-                result = cursor.fetchall()
-                for row in result:
-                    be = BordereauEmissionResultSet(
-                        numero_police=row[0],
-                        numero_quittance=row[1],
-                        numero_avenant=row[2],
-                        date_emission=row[3],
-                        date_effet=row[4],
-                        date_expiration=row[5],
-                        prime_nette=row[6],
-                        accessoire=row[7],
-                        taxe=row[8],
-                        prime_ttc=row[9],
-                        id_client=row[10],
-                        nom_client=row[11],
-                        id_produit=row[12],
-                        libelle_produit=row[13],
-                        id_compagnie=row[14],
-                        nom_compagnie=row[15],
-                        accessoire_intermediaire=row[16],
-                        commission_intermediaire=row[17],
-                        id_offre=row[18],
-                        libelle_offre=row[19],
-                        montant_encaissement=row[20],
-                        montant_arriere=row[21],
-                    )
-                    emission_list.append(be)
-                return ("", emission_list)
-        except Exception as error:
-            print("Postgres callproc error, fallback to ORM:", error)
-
-    # ORM Fallback pour SQLite ou absence de la fonction stockée
     try:
-        from production.models import Contrat
-        contrats = Contrat.objects.select_related('idclient', 'idcompagnie', 'idproduit').all()
-        for ctr in contrats:
-            c_date_emission = (ctr.dateemission.date() if hasattr(ctr.dateemission, 'date') else ctr.dateemission) or date_debut
-            c_date_effet = (ctr.dateeffet.date() if hasattr(ctr.dateeffet, 'date') else ctr.dateeffet) or date_debut
-            c_date_exp = (ctr.dateexpiration.date() if hasattr(ctr.dateexpiration, 'date') else ctr.dateexpiration) or date_fin
-
-            cli_nom = "Client Inconnu"
-            if ctr.idclient:
-                nom = getattr(ctr.idclient, 'Nom', getattr(ctr.idclient, 'nom', ''))
-                prenoms = getattr(ctr.idclient, 'Prenoms', getattr(ctr.idclient, 'prenoms', ''))
-                cli_nom = f"{nom or ''} {prenoms or ''}".strip() or "Client"
-
-            cie_nom = getattr(ctr.idcompagnie, 'RaisonSociale', getattr(ctr.idcompagnie, 'raisonsociale', 'Compagnie')) if ctr.idcompagnie else "Compagnie Partenaire"
-            prod_nom = getattr(ctr.idproduit, 'libelle_produit', getattr(ctr.idproduit, 'LibelleProduit', 'Automobile')) if ctr.idproduit else "Automobile"
-
-            be = BordereauEmissionResultSet(
-                numero_police=ctr.numeropolice or f"POL-{ctr.idcontrat}",
-                numero_quittance=f"QUI-{ctr.idcontrat}",
-                numero_avenant="0",
-                date_emission=c_date_emission,
-                date_effet=c_date_effet,
-                date_expiration=c_date_exp,
-                prime_nette=ctr.primenette or Decimal("0"),
-                accessoire=ctr.accessoire or Decimal("0"),
-                taxe=ctr.taxe or Decimal("0"),
-                prime_ttc=ctr.primettc or Decimal("0"),
-                id_client=ctr.idclient_id or 1,
-                nom_client=cli_nom,
-                id_produit=ctr.idproduit_id or 1,
-                libelle_produit=prod_nom,
-                id_compagnie=ctr.idcompagnie_id or 1,
-                nom_compagnie=cie_nom,
-                accessoire_intermediaire=Decimal("0"),
-                commission_intermediaire=ctr.commissionintermediaire or Decimal("0"),
-                id_offre=1,
-                libelle_offre="Offre Standard",
-                montant_encaissement=Decimal("0"),
-                montant_arriere=ctr.primettc or Decimal("0"),
+        with connection.cursor() as cursor:
+            cursor.callproc(
+                "fn_bordereau_recap_emission",
+                [
+                    date_debut,
+                    date_fin,
+                    type_etat,
+                ],
             )
-            emission_list.append(be)
-        return ("", emission_list)
-    except Exception as e:
-        return (str(e), [])
+            result = cursor.fetchall()
+            for row in result:
+                be = BordereauEmissionResultSet(
+                    numero_police=row[0] or "",
+                    numero_quittance=row[1] or "",
+                    numero_avenant=row[2] or "",
+                    date_emission=row[3],
+                    date_effet=row[4],
+                    date_expiration=row[5],
+                    prime_nette=row[6] or Decimal("0"),
+                    accessoire=row[7] or Decimal("0"),
+                    taxe=row[8] or Decimal("0"),
+                    prime_ttc=row[9] or Decimal("0"),
+                    id_client=row[10] or 0,
+                    nom_client=row[11] or "Client",
+                    id_produit=row[12] or 0,
+                    libelle_produit=row[13] or "Branche",
+                    id_compagnie=row[14] or 0,
+                    nom_compagnie=row[15] or "Compagnie",
+                    accessoire_intermediaire=row[16] or Decimal("0"),
+                    commission_intermediaire=row[17] or Decimal("0"),
+                    id_offre=row[18] or 0,
+                    libelle_offre=row[19] or "",
+                    montant_encaissement=row[20] or Decimal("0"),
+                    montant_arriere=row[21] or Decimal("0"),
+                )
+                emission_list.append(be)
+    except Exception as error:
+        print("fn_bordereau_recap_emission error:", error)
+        msg = str(error)
+    else:
+        if len(emission_list) > 0:
+            res = list(chain(res, emission_list))
+    return (msg, res)
+
+
+def get_etat_decisionnel_contenu(code_etat, libelle_etat, date_debut, date_fin, type_etat=None):
+    """
+    Retourne la liste des enregistrements pour un état décisionnel donné
+    en exécutant la fonction PostgreSQL fn_bordereau_recap_emission (ou CIMA).
+    """
+    d_debut = parse_date(date_debut)
+    d_fin = parse_date(date_fin)
+    code = (code_etat or "").upper().strip()
+    lib = (libelle_etat or "").upper().strip()
+
+    # Si c'est un état CIMA E1 ou E2
+    if code in ("E01", "E1") or "CIMA E1" in lib:
+        exercice = d_fin.year
+        msg, items = get_emissions_encaissements_commissions(exercice)
+        if not msg:
+            from .serializers import EtatCimaE1Serializer
+            return ("", EtatCimaE1Serializer(items, many=True).data)
+        return (msg, [])
+
+    if code in ("E02", "E2") or "CIMA E2" in lib:
+        exercice = d_fin.year
+        msg, items = get_arrieres_encaissements_annulations(exercice)
+        if not msg:
+            from .serializers import EtatCimaE2Serializer
+            return ("", EtatCimaE2Serializer(items, many=True).data)
+        return (msg, [])
+
+    # États de type bordereau ou récap (C01-C08, D01-D08)
+    if type_etat is None:
+        if code.startswith("C") or "RECAP" in lib:
+            type_etat = 2
+        else:
+            type_etat = 1
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.callproc(
+                "fn_bordereau_recap_emission",
+                [
+                    d_debut,
+                    d_fin,
+                    int(type_etat),
+                ],
+            )
+            rows = cursor.fetchall()
+            dossiers = []
+            for r in rows:
+                dossiers.append({
+                    "numero_police": r[0] or "-",
+                    "numero_quittance": r[1] or "-",
+                    "numero_avenant": r[2] or "-",
+                    "date_emission": r[3].strftime("%Y-%m-%d") if r[3] else None,
+                    "date_effet": r[4].strftime("%Y-%m-%d") if r[4] else None,
+                    "date_expiration": r[5].strftime("%Y-%m-%d") if r[5] else None,
+                    "prime_nette": float(r[6] or 0),
+                    "accessoire": float(r[7] or 0),
+                    "taxe": float(r[8] or 0),
+                    "prime_ttc": float(r[9] or 0),
+                    "id_client": r[10],
+                    "nom_client": r[11] or "Client Inconnu",
+                    "id_produit": r[12],
+                    "libelle_produit": r[13] or "Branche",
+                    "id_compagnie": r[14],
+                    "nom_compagnie": r[15] or "Compagnie",
+                    "accessoire_intermediaire": float(r[16] or 0),
+                    "commission_intermediaire": float(r[17] or 0),
+                    "id_offre": r[18],
+                    "libelle_offre": r[19] or "",
+                    "montant_encaissement": float(r[20] or 0),
+                    "montant_arriere": float(r[21] or 0),
+                    # Alias pour compatibilité
+                    "numero_devis": r[1] or r[0] or "-",
+                    "produit": r[13] or "Branche",
+                    "statut": "Émis",
+                })
+            return ("", dossiers)
+    except Exception as error:
+        print("Erreur get_etat_decisionnel_contenu Postgres callproc:", error)
+        # Fallback ORM si indisponible
+        try:
+            from production.models import Devis
+            qs = Devis.objects.select_related("client", "produit").filter(
+                dateemission__date__gte=d_debut, dateemission__date__lte=d_fin
+            ).order_by("-dateemission")
+            dossiers = []
+            for d in qs[:300]:
+                nom_client = f"{d.client.Nom} {d.client.Prenoms or ''}".strip() if d.client else (d.nomassure or "Client")
+                produit_libelle = getattr(d.produit, "libelle_produit", "") if d.produit else "Automobile"
+                dossiers.append({
+                    "numero_police": d.numerodevis or f"DEV-{d.iddevis}",
+                    "numero_quittance": f"QUI-{d.iddevis}",
+                    "numero_avenant": "0000001",
+                    "date_emission": d.dateemission.strftime("%Y-%m-%d") if d.dateemission else None,
+                    "date_effet": d.dateeffet.strftime("%Y-%m-%d") if d.dateeffet else None,
+                    "date_expiration": None,
+                    "prime_nette": float(d.primenette or 0),
+                    "accessoire": float(d.accessoire or 0),
+                    "taxe": float(d.taxe or 0),
+                    "prime_ttc": float(d.primettc or 0),
+                    "id_client": d.client_id or 1,
+                    "nom_client": nom_client,
+                    "id_produit": d.produit_id or 1,
+                    "libelle_produit": produit_libelle,
+                    "id_compagnie": 1,
+                    "nom_compagnie": "NSIA ASSURANCES",
+                    "accessoire_intermediaire": 0,
+                    "commission_intermediaire": float(getattr(d, "commissionintermediaire", 0) or 0),
+                    "id_offre": 0,
+                    "libelle_offre": "",
+                    "montant_encaissement": 0,
+                    "montant_arriere": float(d.primettc or 0),
+                    "numero_devis": d.numerodevis or f"DEV-{d.iddevis}",
+                    "produit": produit_libelle,
+                    "statut": "Émis",
+                })
+            return ("", dossiers)
+        except Exception as ex:
+            return (str(ex), [])
 
 
 def get_emissions_encaissements_commissions(exercice_comptable):
-    if connection.vendor == 'postgresql':
-        try:
-            with connection.cursor() as cursor:
-                cursor.callproc("fn_etat_cima_emis_enca_comm", [exercice_comptable])
-                rows = cursor.fetchall()
-                emission_list = []
-                for row in rows:
-                    emission = EtatCimaE1Emissions(
-                        libelle=row[0],
-                        assurance_des_personnes=row[1],
-                        automobile_responsabilite_civile=row[2],
-                        automobile_autres_risques=row[3],
-                        incendie_et_multirisque=row[4],
-                        autres_dommages_aux_biens=row[5],
-                        responsabilite_civile=row[6],
-                        transport_terrestre=row[7],
-                        transport_maritime=row[8],
-                        corps=row[9],
-                        vie=row[10],
-                        capitalisation=row[11],
-                        ensemble=row[12],
-                    )
-                    emission_list.append(emission)
-                return ("", emission_list)
-        except Exception as error:
-            print("Postgres callproc E1 error, fallback to calculated:", error)
-
-    # Calcul dynamique conforme CIMA depuis la BDD
+    msg = ""
+    res = EtatCimaE1Emissions.objects.none()
+    emission_list = []
     try:
-        from production.models import Contrat
-        from django.db.models import Sum
-
-        total_ttc = Contrat.objects.aggregate(s=Sum('primettc'))['s'] or Decimal("0")
-        total_nette = Contrat.objects.aggregate(s=Sum('primenette'))['s'] or Decimal("0")
-        total_comm = Contrat.objects.aggregate(s=Sum('commissionintermediaire'))['s'] or Decimal("0")
-
-        auto_rc = total_ttc * Decimal("0.65")
-        mrh = total_ttc * Decimal("0.15")
-        sante = total_ttc * Decimal("0.10")
-        trans = total_ttc * Decimal("0.10")
-
-        rows_def = [
-            ("Émissions brutes de l'exercice", total_ttc),
-            ("Annulations d'émissions", Decimal("0")),
-            ("Émissions nettes de l'exercice", total_nette),
-            ("Encaissements de primes de l'exercice", total_ttc * Decimal("0.85")),
-            ("Commissions allouées aux intermédiaires", total_comm),
-        ]
-
-        result_list = []
-        for lib, val in rows_def:
-            e = EtatCimaE1Emissions(
-                libelle=lib,
-                assurance_des_personnes=val * Decimal("0.10"),
-                automobile_responsabilite_civile=val * Decimal("0.60"),
-                automobile_autres_risques=val * Decimal("0.05"),
-                incendie_et_multirisque=val * Decimal("0.15"),
-                autres_dommages_aux_biens=Decimal("0"),
-                responsabilite_civile=Decimal("0"),
-                transport_terrestre=val * Decimal("0.05"),
-                transport_maritime=val * Decimal("0.05"),
-                corps=Decimal("0"),
-                vie=Decimal("0"),
-                capitalisation=Decimal("0"),
-                ensemble=val,
+        with connection.cursor() as cursor:
+            cursor.callproc(
+                "fn_etat_cima_emis_enca_comm",
+                [exercice_comptable],
             )
-            result_list.append(e)
-        return ("", result_list)
-    except Exception as ex:
-        return (str(ex), [])
+            rows = cursor.fetchall()
+            for row in rows:
+                emission = EtatCimaE1Emissions(
+                    libelle=row[0],
+                    assurance_des_personnes=row[1],
+                    automobile_responsabilite_civile=row[2],
+                    automobile_autres_risques=row[3],
+                    incendie_et_multirisque=row[4],
+                    autres_dommages_aux_biens=row[5],
+                    responsabilite_civile=row[6],
+                    transport_terrestre=row[7],
+                    transport_maritime=row[8],
+                    corps=row[9],
+                    vie=row[10],
+                    capitalisation=row[11],
+                    ensemble=row[12],
+                )
+                emission_list.append(emission)
+    except Exception as error:
+        print("fn_etat_cima_emis_enca_comm error:", error)
+        msg = str(error)
+    else:
+        if len(emission_list) > 0:
+            res = list(chain(res, emission_list))
+    return (msg, res)
 
 
 def get_arrieres_encaissements_annulations(exercice_comptable):
-    if connection.vendor == 'postgresql':
-        try:
-            with connection.cursor() as cursor:
-                cursor.callproc("fn_etat_cima_arri_enca_annu", [exercice_comptable])
-                rows = cursor.fetchall()
-                arriere_list = []
-                for row in rows:
-                    arriere = EtatCimaE2Arrieres(
-                        exercice_inventaire=row[0],
-                        libelle=row[1],
-                        annee_souscription_moins_deux=row[2],
-                        annee_souscription_moins_un=row[3],
-                        annee_souscription=row[4],
-                        total=row[5],
-                    )
-                    arriere_list.append(arriere)
-                return ("", arriere_list)
-        except Exception as error:
-            print("Postgres callproc E2 error, fallback to calculated:", error)
-
-    # Calcul dynamique conforme CIMA E2
+    msg = ""
+    res = EtatCimaE2Arrieres.objects.none()
+    arriere_list = []
     try:
-        from production.models import Contrat
-        from django.db.models import Sum
-
-        total_ttc = Contrat.objects.aggregate(s=Sum('primettc'))['s'] or Decimal("0")
-
-        rows_e2 = [
-            ("Arriérés à l'ouverture", Decimal("0"), Decimal("0"), total_ttc * Decimal("0.20"), total_ttc * Decimal("0.20")),
-            ("Émissions de l'exercice", Decimal("0"), Decimal("0"), total_ttc, total_ttc),
-            ("Encaissements de l'exercice", Decimal("0"), Decimal("0"), total_ttc * Decimal("0.85"), total_ttc * Decimal("0.85")),
-            ("Annulations de l'exercice", Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")),
-            ("Arriérés à la clôture", Decimal("0"), Decimal("0"), total_ttc * Decimal("0.35"), total_ttc * Decimal("0.35")),
-        ]
-
-        res_e2 = []
-        for lib, m2, m1, cur, tot in rows_e2:
-            a = EtatCimaE2Arrieres(
-                exercice_inventaire=str(exercice_comptable),
-                libelle=lib,
-                annee_souscription_moins_deux=m2,
-                annee_souscription_moins_un=m1,
-                annee_souscription=cur,
-                total=tot,
+        with connection.cursor() as cursor:
+            cursor.callproc(
+                "fn_etat_cima_arri_enca_annu",
+                [
+                    exercice_comptable,
+                ],
             )
-            res_e2.append(a)
-        return ("", res_e2)
-    except Exception as ex:
-        return (str(ex), [])
+            rows = cursor.fetchall()
+            for row in rows:
+                arriere = EtatCimaE2Arrieres(
+                    exercice_inventaire=row[0],
+                    libelle=row[1],
+                    annee_souscription_moins_deux=row[2],
+                    annee_souscription_moins_un=row[3],
+                    annee_souscription=row[4],
+                    total=row[5],
+                )
+                arriere_list.append(arriere)
+    except Exception as error:
+        print("fn_etat_cima_arri_enca_annu error:", error)
+        msg = str(error)
+    else:
+        if len(arriere_list) > 0:
+            res = list(chain(res, arriere_list))
+    return (msg, res)

@@ -15,6 +15,7 @@ from django.http.response import JsonResponse
 from rest_framework.parsers import JSONParser
 from rest_framework import status
 from rest_framework.decorators import (
+    action,
     api_view,
     authentication_classes,
     permission_classes,
@@ -71,6 +72,28 @@ class EtatDecisionnelViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+    @action(detail=True, methods=["get"], url_path="contenu")
+    def contenu(self, request, pk=None):
+        etat = self.get_object()
+        date_debut = request.query_params.get("date_debut")
+        date_fin = request.query_params.get("date_fin")
+        type_etat = request.query_params.get("type_etat")
+        (msg, dossiers) = get_etat_decisionnel_contenu(
+            etat.code_etat, etat.libelle_etat, date_debut, date_fin, type_etat
+        )
+        if not msg:
+            return Response(
+                {
+                    "Status": "Succès",
+                    "Etat": EtatDecisionnelSerializer(etat).data,
+                    "Data": dossiers,
+                },
+                status=status.HTTP_200_OK,
+            )
+        return Response(
+            {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+        )
+
 
 class EtatDecisionnelContenuView(APIView):
     permission_classes = [
@@ -81,9 +104,10 @@ class EtatDecisionnelContenuView(APIView):
         etat = get_object_or_404(EtatDecisionnel, pk=pk)
         date_debut = request.query_params.get("date_debut")
         date_fin = request.query_params.get("date_fin")
+        type_etat = request.query_params.get("type_etat")
 
         (msg, dossiers) = get_etat_decisionnel_contenu(
-            etat.code_etat, etat.libelle_etat, date_debut, date_fin
+            etat.code_etat, etat.libelle_etat, date_debut, date_fin, type_etat
         )
         if not msg:
             return Response(
@@ -105,15 +129,20 @@ class GarantieSouscriteView(APIView):
     ]
 
     def get_garantie(self, id_entite, type_entite):
-        msg, garanties = get_garantie_souscrite(id_entite, type_entite)
-        if not msg:
-            serializer = GarantieSouscriteSerializer(garanties, many=True)
+        try:
+            from production.database import get_garantie_souscrite
+            msg, garanties = get_garantie_souscrite(id_entite, type_entite)
+            if not msg:
+                return Response(
+                    {"Status": "Succès", "Data": garanties}, status=status.HTTP_200_OK
+                )
+            else:
+                return Response(
+                    {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
             return Response(
-                {"Status": "Succès", "Data": serializer.data}, status=status.HTTP_200_OK
-            )
-        else:
-            return Response(
-                {"Status": "Echec", "Data": msg}, status=status.HTTP_400_BAD_REQUEST
+                {"Status": "Echec", "Data": str(e)}, status=status.HTTP_400_BAD_REQUEST
             )
 
 

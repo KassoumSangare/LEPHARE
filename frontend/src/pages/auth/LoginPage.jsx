@@ -6,19 +6,25 @@ import { useToast } from '../../context/ToastContext';
 
 export const LoginPage = () => {
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('password');
+  const [password, setPassword] = useState('admin');
   const { login } = useAuth();
   const navigate = useNavigate();
   const { success } = useToast();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const user = login(username, password);
-    success(`Bienvenue, ${user.first_name || user.username} ! Connexion réussie.`);
-    if (user.role === 'ADMIN') {
-      navigate('/admin/dashboard');
-    } else {
-      navigate('/user/dashboard');
+    try {
+      const user = await login(username, password);
+      if (user) {
+        success(`Bienvenue, ${user.first_name || user.name || user.username || 'Utilisateur'} ! Connexion réussie.`);
+        if (user.role === 'ADMIN' || user.is_admin) {
+          navigate('/admin/dashboard');
+        } else {
+          navigate('/user/dashboard');
+        }
+      }
+    } catch (err) {
+      console.warn('Erreur connexion:', err);
     }
   };
 
