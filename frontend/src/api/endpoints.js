@@ -26,6 +26,10 @@ const extractData = (res) => {
   if (!res) return [];
   if (Array.isArray(res.data)) return res.data;
   if (res.data && Array.isArray(res.data.results)) return res.data.results;
+  // Beaucoup d'endpoints APIView du backend renvoient une enveloppe
+  // { status: 'succès'|'Echec', data: [...] } au lieu d'un tableau brut
+  // ou de la pagination DRF standard ({ results: [...] }).
+  if (res.data && Array.isArray(res.data.data)) return res.data.data;
   return res.data;
 };
 
@@ -341,7 +345,12 @@ export const normalizeDevis = (bq) => {
 
   let statutLabel = bq.statut;
   let statutBadge = 'amber';
-  if (bq.archive) {
+  if (bq.devis_consolide) {
+    // Ce devis a été fusionné dans un devis consolidé (sp_consolidation_devis) :
+    // il est scellé et ne doit plus être modifié ni confirmé individuellement.
+    statutLabel = 'Consolidé';
+    statutBadge = 'purple';
+  } else if (bq.archive) {
     statutLabel = 'Archivé';
     statutBadge = 'rose';
   } else if (bq.confirme) {
@@ -378,6 +387,7 @@ export const normalizeDevis = (bq) => {
     coassurance: Boolean(bq.coassurance),
     confirme: Boolean(bq.confirme),
     archive: Boolean(bq.archive),
+    devis_consolide: Boolean(bq.devis_consolide),
     statut: statutLabel,
     statut_badge: statutBadge,
     numero_police_compagnie: bq.numero_police_compagnie || null,

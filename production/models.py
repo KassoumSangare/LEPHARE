@@ -453,6 +453,17 @@ class Devis(models.Model):
         """
         return self.primenette if self.prime_imposee else None
 
+    @property
+    def duree_terme_jours(self):
+        """
+        Nombre de jours entre dateeffet et dateexpiration.
+        Utilisé notamment quand idterme=3 (Autre), où la durée n'est pas
+        déduite d'une durée standard (idduree) mais des dates saisies.
+        """
+        if self.dateeffet and self.dateexpiration:
+            return (self.dateexpiration - self.dateeffet).days
+        return None
+
 
 class HistoriqueConsolidation(models.Model):
     id = models.AutoField(
@@ -973,7 +984,7 @@ class Contrat(models.Model):
         db_column="oldnumerodevis", max_length=50, default=""
     )  # Field name made lowercase.
     auteur = models.BooleanField(
-        max_length=1, db_column="auteur", default=False
+        db_column="auteur", default=False
     )  # Field name made lowercase.
     primeannuelle = models.DecimalField(
         db_column="primeannuelle", max_digits=19, decimal_places=4, default=0
@@ -1111,6 +1122,17 @@ class Contrat(models.Model):
                 name="contrat_date_expiration_plus_grande_date_effet",
             ),
         ]
+
+    @property
+    def duree_terme_jours(self):
+        """
+        Nombre de jours entre dateeffet et dateexpiration.
+        Utilisé notamment quand idterme=3 (Autre), où la durée n'est pas
+        déduite d'une durée standard (idduree) mais des dates saisies.
+        """
+        if self.dateeffet and self.dateexpiration:
+            return (self.dateexpiration - self.dateeffet).days
+        return None
 
 
 class ContratDetail(models.Model):
@@ -1275,7 +1297,7 @@ class ContratDetail(models.Model):
         db_column="oldattestation", max_length=50, default=""
     )  # Field name made lowercase.
     oldmarque = models.IntegerField(
-        db_column="oldmarque", default=""
+        db_column="oldmarque", default=0
     )  # Field name made lowercase.
     oldtypevehicule = models.CharField(
         db_column="oldtypevehicule", max_length=50, default=""
@@ -1911,7 +1933,7 @@ class DetailEncaissement(models.Model):
     )
     dedtaxecommission = models.BooleanField(db_column="dedtaxecommission")
     dedtaxeaccessoire = models.BooleanField(
-        max_length=1, blank=True, null=True, db_column="dedtaxeaccessoire"
+        blank=True, null=True, db_column="dedtaxeaccessoire"
     )
     comintermediaire = models.DecimalField(
         max_digits=19,
@@ -2150,7 +2172,7 @@ class DetailReversement(models.Model):
     )
     ded_taxe_commission = models.BooleanField(db_column="dedtaxecommission")
     ded_taxe_accessoire = models.BooleanField(
-        max_length=1, blank=True, null=True, db_column="dedtaxeaccessoire"
+        blank=True, null=True, db_column="dedtaxeaccessoire"
     )
     com_intermediaire = models.DecimalField(
         max_digits=19,

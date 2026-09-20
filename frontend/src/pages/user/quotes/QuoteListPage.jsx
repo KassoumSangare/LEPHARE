@@ -53,8 +53,51 @@ export const QuoteListPage = () => {
   const [editingQuote, setEditingQuote] = useState(null);
   const [deletingQuote, setDeletingQuote] = useState(null);
   const [deleteValidation, setDeleteValidation] = useState({ allowed: true });
+  const [selectedForConsolidation, setSelectedForConsolidation] = useState([]);
+  const [consolidating, setConsolidating] = useState(false);
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
+
+  // Un devis n'est éligible à la consolidation (fusion en un seul devis, cf.
+  // sp_consolidation_devis) que s'il est Mono, non confirmé et non archivé,
+  // et pas déjà lui-même issu d'une consolidation précédente. Le contrôle
+  // définitif (même client/produit/compagnie/intermédiaire/assuré/avenant/
+  // dates) reste fait côté serveur par ConsolidationDevisView.
+  const isEligibleForConsolidation = (q) =>
+    !q.flotte && !q.confirme && !q.archive && !q.devis_consolide;
+
+  const toggleConsolidationSelection = (quote) => {
+    setSelectedForConsolidation((prev) => {
+      const exists = prev.some((q) => q.iddevis === quote.iddevis);
+      if (exists) return prev.filter((q) => q.iddevis !== quote.iddevis);
+      return [...prev, quote];
+    });
+  };
+
+  const handleConsolidateSelected = async () => {
+    if (selectedForConsolidation.length < 2) {
+      toastError('Sélectionnez au moins 2 devis Mono du même client à consolider.');
+      return;
+    }
+    setConsolidating(true);
+    try {
+      const payload = selectedForConsolidation.map((q) => ({ iddevis: q.iddevis }));
+      const res = await quoteApi.consolidateQuote(payload);
+      const newId = res?.data?.iddevis;
+      success(
+        `${selectedForConsolidation.length} devis consolidés avec succès` +
+          (newId ? ` (nouveau devis n°${newId})` : '') +
+          ' !'
+      );
+      setSelectedForConsolidation([]);
+      await loadQuotes();
+    } catch (err) {
+      const apiError = err.response?.data?.erreur || err.response?.data?.detail;
+      toastError(apiError || 'Erreur lors de la consolidation des devis.');
+    } finally {
+      setConsolidating(false);
+    }
+  };
 
   const loadQuotes = async () => {
     setLoading(true);
@@ -236,6 +279,36 @@ export const QuoteListPage = () => {
   };
 
   const columns = [
+    {
+      header: (
+        <span title="Sélection pour consolidation de devis">
+          <Layers size={14} />
+        </span>
+      ),
+      width: '40px',
+      align: 'center',
+      render: (row) => {
+        if (!isEligibleForConsolidation(row)) {
+          return (
+            <span
+              title="Non éligible à la consolidation (Flotte, déjà confirmé/archivé/consolidé)"
+              style={{ opacity: 0.25, cursor: 'not-allowed', display: 'inline-block' }}
+            >
+              <input type="checkbox" disabled />
+            </span>
+          );
+        }
+        const checked = selectedForConsolidation.some((q) => q.iddevis === row.iddevis);
+        return (
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => toggleConsolidationSelection(row)}
+            title="Sélectionner pour consolidation"
+          />
+        );
+      },
+    },
     {
       header: 'N° Devis',
       accessor: 'numerodevis',
@@ -613,28 +686,58 @@ export const QuoteListPage = () => {
           loadingText="Chargement des devis..." 
           searchPlaceholder="Rechercher par n° devis, assuré, compagnie ou branche..."
           actions={
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => handlePrintQuotes()}
-              disabled={loading || filteredQuotes.length === 0}
-              title={`Imprimer les propositions de l'onglet actif (${getTabLabel(selectedBranchFilter)})`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                padding: '0.45rem 0.9rem',
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                color: '#38bdf8',
-                borderColor: 'rgba(56, 189, 248, 0.4)',
-                background: 'rgba(56, 189, 248, 0.1)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <Printer size={15} />
-              <span>Imprimer {getTabLabel(selectedBranchFilter)} ({filteredQuotes.length})</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleConsolidateSelected}
+                disabled={consolidating || selectedForConsolidation.length < 2}
+                title="Fusionner les devis Mono sélectionnés (même client, produit, compagnie, intermédiaire, assuré, avenant et dates) en un seul devis consolidé"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.45rem 0.9rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: '#a78bfa',
+                  borderColor: 'rgba(167, 139, 250, 0.4)',
+                  background: 'rgba(167, 139, 250, 0.1)',
+                  whiteSpace: 'nowrap',
+                  opacity: selectedForConsolidation.length < 2 ? 0.5 : 1,
+                  cursor: selectedForConsolidation.length < 2 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <Layers size={15} />
+                <span>
+                  {consolidating
+                    ? 'Consolidation...'
+                    : `Consolider (${selectedForConsolidation.length})`}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => handlePrintQuotes()}
+                disabled={loading || filteredQuotes.length === 0}
+                title={`Imprimer les propositions de l'onglet actif (${getTabLabel(selectedBranchFilter)})`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  padding: '0.45rem 0.9rem',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  color: '#38bdf8',
+                  borderColor: 'rgba(56, 189, 248, 0.4)',
+                  background: 'rgba(56, 189, 248, 0.1)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Printer size={15} />
+                <span>Imprimer {getTabLabel(selectedBranchFilter)} ({filteredQuotes.length})</span>
+              </button>
+            </>
           }
         />
       </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
+import { printQuoteFacture, printConditionsParticulieres } from '../../../utils/exportUtils';
 import {
   FileText,
   Printer,
@@ -361,11 +362,22 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => window.print()}
+              onClick={() => printQuoteFacture(quote)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <Printer size={15} />
-              <span>Imprimer Proposition</span>
+              <span>Imprimer Facture Proforma</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => printConditionsParticulieres(quote)}
+              title="Échéancier de police détaillé (véhicule + tableau des garanties)"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <FileText size={15} />
+              <span>Imprimer Conditions Particulières</span>
             </button>
 
             {!isConsolidated && onConvertToContract && (

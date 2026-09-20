@@ -679,8 +679,12 @@ export const NewAutoQuotePage = () => {
             setFormulesAssistance([
               { id: 0, libelle: 'AUCUNE OPTION' },
               ...assistRes.map((a) => ({
-                id: a.IdOptionAssistance || a.id,
-                libelle: a.LibelleOption || a.LibelleAssistance || `Assistance ${a.id}`,
+                id: a.id_option ?? a.IdOptionAssistance ?? a.id,
+                libelle:
+                  a.libelle_option ||
+                  a.LibelleOption ||
+                  a.LibelleAssistance ||
+                  `Assistance ${a.id_option ?? a.id}`,
               })),
             ]);
           }
@@ -688,8 +692,11 @@ export const NewAutoQuotePage = () => {
             setFormulesSecurite([
               { code: 'AUCUNE', libelle: 'AUCUNE FORMULE' },
               ...secRes.map((s) => ({
-                code: s.CodeFormuleSecuriteRoutiere || s.code,
-                libelle: s.LibelleFormuleSecuriteRoutiere || s.libelle,
+                code: s.codeformule || s.CodeFormuleSecuriteRoutiere || s.code,
+                libelle:
+                  s.libellelongformule ||
+                  s.LibelleFormuleSecuriteRoutiere ||
+                  s.libelle,
               })),
             ]);
           }
@@ -1211,10 +1218,18 @@ export const NewAutoQuotePage = () => {
               <input
                 type="number"
                 min="0"
-                max="50"
+                max="35"
                 className="form-control"
                 value={reductionCommerciale}
-                onChange={(e) => setReductionCommerciale(e.target.value)}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === '') {
+                    setReductionCommerciale('');
+                    return;
+                  }
+                  const clamped = Math.max(0, Math.min(35, Number(raw)));
+                  setReductionCommerciale(clamped);
+                }}
               />
             </div>
 

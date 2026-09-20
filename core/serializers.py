@@ -116,5 +116,20 @@ class EnregistrementDevisBaseSerializer(serializers.Serializer):
         ),
     )
 
+    def validate_TauxReduction(self, value):
+        """
+        Plafond métier OREOLE : la réduction commerciale ne peut jamais
+        dépasser 35%, quel que soit le produit. Ce contrôle ne s'applique
+        qu'à la création d'un nouveau devis (ce serializer n'est pas
+        utilisé pour modifier des devis/contrats déjà existants), donc il
+        n'affecte pas les enregistrements historiques qui dépasseraient
+        déjà ce seuil.
+        """
+        if value is not None and value > 35:
+            raise serializers.ValidationError(
+                "Le taux de réduction commerciale ne peut pas dépasser 35%."
+            )
+        return value
+
     def validate(self, data):
         return validate_contrat_validity_period(data)
