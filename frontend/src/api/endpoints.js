@@ -353,10 +353,10 @@ export const normalizeDevis = (bq) => {
   } else if (bq.archive) {
     statutLabel = 'Archivé';
     statutBadge = 'rose';
-  } else if (bq.confirme) {
-    statutLabel = 'Confirmé / Contrat';
+  } else if (bq.confirme || ['CONFIRME', 'CONFIRMÉ', 'CONFIRME / CONTRAT', 'CONFIRMÉ / CONTRAT'].includes(String(bq.statut || '').toUpperCase())) {
+    statutLabel = 'Confirmé';
     statutBadge = 'emerald';
-  } else if (bq.statut === '1' || !bq.statut) {
+  } else if (bq.statut === '1' || !bq.statut || String(bq.statut).toUpperCase() === 'ACTIVE') {
     statutLabel = 'En attente';
     statutBadge = 'amber';
   }

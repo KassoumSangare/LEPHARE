@@ -341,6 +341,23 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
           </div>
         )}
 
+        {/* Document preview scope mirrors the official proforma and CP templates. */}
+        <div className="glass-panel" style={{ padding: '1rem', border: '1px solid rgba(96, 165, 250, 0.25)' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#93c5fd', marginBottom: '0.6rem', textTransform: 'uppercase' }}>
+            Documents du devis
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <div>
+              <strong style={{ color: '#fff' }}>Facture proforma</strong>
+              <div>Souscripteur, assuré, période, référence, détail prime nette, accessoires, taxes, FGA/CEDEAO et total TTC.</div>
+            </div>
+            <div>
+              <strong style={{ color: '#fff' }}>Conditions particulières</strong>
+              <div>Risque assuré, caractéristiques techniques, garanties, plafonds, franchises, réductions, prime comptant et signatures.</div>
+            </div>
+          </div>
+        </div>
+
         {/* Modal Actions */}
         <div
           className="no-print"

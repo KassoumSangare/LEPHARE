@@ -136,7 +136,7 @@ export const QuoteListPage = () => {
       const params = getBranchParams(branch);
       const backendQuotes = await quoteApi.getQuotes(params);
       if (Array.isArray(backendQuotes) && backendQuotes.length > 0) {
-        // Tri syst�matique : les devis les plus r�cents en premier (3 derni�res ann�es)
+        // Tri syst�matique : les devis les plus r�cents en premier (3 derni�res ann�es)
         const sorted = [...backendQuotes].sort((a, b) => {
           const dateA = new Date(a.dateemission || a.date_emission || a.dateeffet || 0).getTime();
           const dateB = new Date(b.dateemission || b.date_emission || b.dateeffet || 0).getTime();
@@ -385,11 +385,16 @@ export const QuoteListPage = () => {
       render: (row) => {
         let color = 'amber';
         const s = (row.statut || '').toLowerCase();
+        const label = row.archive
+          ? 'Archivé / Annulé'
+          : (row.confirme || s.includes('confirm') || s.includes('contrat'))
+            ? 'Confirmé'
+            : (s === 'active' || !row.statut ? 'Attente' : row.statut);
         if (row.archive) color = 'slate';
         else if (s.includes('confirm') || s.includes('contrat') || row.confirme) color = 'emerald';
         else if (s.includes('consolid')) color = 'blue';
         else if (s.includes('expir')) color = 'red';
-        return <StatusBadge label={row.archive ? 'Archivé / Annulé' : (row.statut || 'En cours')} color={color} />;
+        return <StatusBadge label={label} color={color} />;
       },
     },
     {
@@ -479,11 +484,11 @@ export const QuoteListPage = () => {
                       ? 'Devis expiré : conversion bloquée (CA-07.3)'
                       : isPendingApproval
                       ? 'Visa Direction Requis avant émission (CA-07.4)'
-                      : 'Souscrire & Émettre la police définitive (E08)'
+                      : 'Confirmer le devis et émettre la police définitive (E08)'
                   }
                 >
                   <CheckCircle size={13} />
-                  <span>{isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Émettre'}</span>
+                  <span>{isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Confirmé'}</span>
                 </button>
               );
             })()}
