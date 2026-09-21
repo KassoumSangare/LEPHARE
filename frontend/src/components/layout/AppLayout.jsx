@@ -5,11 +5,26 @@ import Sidebar from './Sidebar';
 
 export const AppLayout = () => {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebarCollapsed') === '1'; } catch { return false; }
+  });
+
+  const handleToggleSidebar = () => {
+    if (window.innerWidth <= 1024) {
+      setMobileSidebarOpen((prev) => !prev);
+      return;
+    }
+    setDesktopCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('sidebarCollapsed', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${desktopCollapsed ? 'sidebar-collapsed' : ''}`}>
       <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-        <Navbar onToggleMobileSidebar={() => setMobileSidebarOpen((prev) => !prev)} />
+        <Navbar onToggleMobileSidebar={handleToggleSidebar} />
         <div style={{ display: 'flex', flex: 1, position: 'relative' }}>
           {mobileSidebarOpen && (
             <div

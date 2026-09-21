@@ -579,7 +579,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             <NavLink to="/user/contracts" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <ShieldCheck size={16} className="nav-icon" />
-              <span>Polices & Contrats</span>
+              <span>Contrats</span>
             </NavLink>
 
             <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>

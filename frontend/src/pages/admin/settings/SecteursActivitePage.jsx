@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { DataTable } from '../../../components/common/DataTable';
@@ -247,9 +248,7 @@ export const SecteursActivitePage = () => {
 
       {/* Table */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          Chargement des secteurs d'activité…
-        </div>
+        <LoadingSpinner />
       ) : (
         <DataTable
           columns={columns}

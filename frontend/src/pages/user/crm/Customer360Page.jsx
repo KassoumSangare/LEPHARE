@@ -1,3 +1,4 @@
+import { isRegistryQuote } from '../../../utils/quoteRegistry';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -103,7 +104,7 @@ export const Customer360Page = () => {
       (cl.police_num && clientContracts.some((c) => c.numeropolice === cl.police_num)) ||
       (clientNameLower && String(cl.assure_nom || cl.nom_assure || '').toLowerCase().includes(clientNameLower))
   );
-  const clientQuotes = quotesList.filter((q) =>
+  const clientQuotes = quotesList.filter(isRegistryQuote).filter((q) =>
     (q.client_id && String(q.client_id) === String(client.id)) ||
     (clientNameLower && String(q.client_nom || '').toLowerCase().includes(clientNameLower)) ||
     (clientNameLower && clientNameLower.includes(String(q.client_nom || '').toLowerCase()))
@@ -193,7 +194,7 @@ export const Customer360Page = () => {
   if (loading) {
     return (
       <div style={{ padding: "5rem 1rem", display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <LoadingSpinner text="Chargement des donn?es du client et de ses polices..." size={42} />
+        <LoadingSpinner size={42} />
       </div>
     );
   }

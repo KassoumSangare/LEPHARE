@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { DataTable } from '../../../components/common/DataTable';
@@ -192,7 +193,7 @@ export const TypeSouscripteurPage = () => {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>Chargement…</div>
+        <LoadingSpinner />
       ) : (
         <DataTable columns={columns} data={types} searchable searchPlaceholder="Rechercher un type de souscripteur…" emptyMessage="Aucun type de souscripteur enregistré." />
       )}

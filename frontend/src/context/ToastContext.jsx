@@ -55,7 +55,7 @@ export const ToastProvider = ({ children }) => {
             <span style={{ flex: 1 }}>{toast.message}</span>
             <button
               onClick={() => removeToast(toast.id)}
-              style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              style={{ background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
             >
               <X size={14} />
             </button>

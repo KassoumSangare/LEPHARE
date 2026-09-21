@@ -5,6 +5,9 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
 import { PolicyMovementModal } from './PolicyMovementModal';
+import { ViewQuoteModal } from '../quotes/ViewQuoteModal';
+import { isRegistryQuote, isExpiredQuote } from '../../../utils/quoteRegistry';
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { dataStore } from '../../../api/dataStore';
 import { contractApi, quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -42,16 +45,13 @@ export const ContractListPage = () => {
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [quotes, setQuotes] = useState([]);
+  const [devisRows, setDevisRows] = useState([]);
+  const [viewingQuote, setViewingQuote] = useState(null);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
-  const [stats, setStats] = useState({
-    ALL: 21714,
-    AUTO: 4926,
-    SANTE: 8758,
-    IA: 3939,
-    VOYAGE: 1661,
-    TRANSPORT: 1032,
-    MRH: 894,
-    RC: 504,
+  // Décompte réel des contrats par branche (calculé sur les contrats chargés)
+  const [stats, setStats] = useState(() => {
+    const empty = { ALL: 0, AUTO: 0, SANTE: 0, IA: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, RC: 0 };
+    try { return { ...empty, ...JSON.parse(sessionStorage.getItem('contractStats') || '{}') }; } catch { return empty; }
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -76,14 +76,20 @@ export const ContractListPage = () => {
     }
   };
 
+  // D�compte par branche : le serveur renvoie `count`. Requ�tes une par une, mises en cache.
   const loadStats = async () => {
-    try {
-      const s = await contractApi.getStats();
-      if (s && typeof s === 'object') {
-        setStats(s);
+    const branches = ['ALL', 'AUTO', 'SANTE', 'IA', 'VOYAGE', 'TRANSPORT', 'MRH', 'RC'];
+    for (const b of branches) {
+      try {
+        const n = await contractApi.getContractsCount(getBranchParams(b));
+        setStats((prev) => {
+          const next = { ...prev, [b]: n };
+          try { sessionStorage.setItem('contractStats', JSON.stringify(next)); } catch { /* ignore */ }
+          return next;
+        });
+      } catch (e) {
+        console.warn('Erreur chargement stats contrats:', e);
       }
-    } catch (e) {
-      console.warn('Erreur chargement stats contrats:', e);
     }
   };
 
@@ -91,9 +97,24 @@ export const ContractListPage = () => {
     setLoading(true);
     try {
       const params = getBranchParams(branch);
-      const [backendList, quotesList] = await Promise.all([
+      // Devis du portefeuille : confirmés + expirés à renouveler (non archivés), même filtre de branche
+      const quoteBase = { ...params, archive: 'false', page_size: 200 };
+      const [backendList, quotesList, confirmedQuotes] = await Promise.all([
         contractApi.getContracts(params),
-        quoteApi.getQuotes(),
+        quoteApi.getQuotes({ ...quoteBase, confirme: 'false' }).catch(() => []),
+        quoteApi.getQuotes({ ...quoteBase, confirme: 'true' }).catch(() => []),
+      ]);
+      const toRow = (q, kind) => ({
+        ...q,
+        id: `devis-${q.iddevis}`,
+        _kind: kind,
+        numeropolice: q.numerodevis,
+        statut_contrat: kind === 'devis_confirme' ? 'Devis confirmé' : 'À renouveler',
+        statut_encaissement: kind === 'devis_confirme' ? 'À émettre' : 'Expiré',
+      });
+      setDevisRows([
+        ...(Array.isArray(confirmedQuotes) ? confirmedQuotes.filter((q) => !q.archive).map((q) => toRow(q, 'devis_confirme')) : []),
+        ...(Array.isArray(quotesList) ? quotesList.filter((q) => !q.archive && isExpiredQuote(q)).map((q) => toRow(q, 'devis_renouveler')) : []),
       ]);
       if (Array.isArray(backendList) && backendList.length > 0) {
         setContracts(backendList);
@@ -121,7 +142,7 @@ export const ContractListPage = () => {
     loadContractsData(branch);
   };
 
-  const validatedQuotes = quotes.filter((q) => q.statut !== 'Consolidé');
+  const validatedQuotes = quotes.filter((q) => isRegistryQuote(q) && q.statut !== 'Consolidé');
 
   const isExpiredOrDue = (dateStr) => {
     if (!dateStr) return false;
@@ -132,26 +153,25 @@ export const ContractListPage = () => {
     return diffDays <= 30; // Expired or expiring in 30 days
   };
 
-  const filteredContracts = contracts.filter((c) => {
-    if (filterTab === 'active') return c.statut_contrat === 'En cours' || c.statut === 'En cours';
+  const portfolio = [...devisRows, ...contracts];
+
+  const filteredContracts = portfolio.filter((c) => {
+    if (filterTab === 'active') return c.statut_contrat === 'En cours' || c.statut === 'En cours' || c._kind === 'devis_confirme';
     if (filterTab === 'renewable') return isExpiredOrDue(c.date_expiration);
     if (filterTab === 'terminated') return c.statut_contrat === 'Résilié' || c.statut === 'Résilié' || c.statut_contrat?.includes('Annulé');
     return true;
   });
 
-  const activeCount = contracts.filter((c) => c.statut_contrat === 'En cours' || c.statut === 'En cours').length;
-  const renewableCount = contracts.filter((c) => isExpiredOrDue(c.date_expiration)).length;
+  const activeCount = portfolio.filter((c) => c.statut_contrat === 'En cours' || c.statut === 'En cours' || c._kind === 'devis_confirme').length;
+  const renewableCount = portfolio.filter((c) => isExpiredOrDue(c.date_expiration)).length;
   const terminatedCount = contracts.filter((c) => c.statut_contrat === 'Résilié' || c.statut === 'Résilié' || c.statut_contrat?.includes('Annulé')).length;
 
+  // Pour l'onglet affiché, le nombre de lignes chargées fait foi dès que la liste n'est pas plafonnée
+  const LIST_PAGE_SIZE = 200;
+  const listComplete = !loading && contracts.length < LIST_PAGE_SIZE;
   const countByBranch = {
-    ALL: stats.ALL || 21714,
-    AUTO: stats.AUTO || 4926,
-    SANTE: stats.SANTE || 8758,
-    IA: stats.IA || 3939,
-    VOYAGE: stats.VOYAGE || 1661,
-    TRANSPORT: stats.TRANSPORT || 1032,
-    MRH: stats.MRH || 894,
-    RC: stats.RC || 504,
+    ...stats,
+    ...(listComplete && stats[selectedBranchFilter] !== undefined ? { [selectedBranchFilter]: contracts.length } : {}),
   };
 
   const getTabLabel = (filter) => {
@@ -245,6 +265,11 @@ export const ContractListPage = () => {
       render: (row) => (
         <div>
           <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>
+          {row._kind && (
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: row._kind === 'devis_confirme' ? '#60a5fa' : '#f59e0b' }}>
+              {row._kind === 'devis_confirme' ? 'Devis confirmé' : 'Devis expiré à renouveler'}
+            </div>
+          )}
           {row.dernier_avenant && (
             <div style={{ fontSize: '0.7rem', color: '#60a5fa' }}>{row.dernier_avenant}</div>
           )}
@@ -300,6 +325,19 @@ export const ContractListPage = () => {
     {
       header: 'Actions Mouvements & Police',
       render: (row) => {
+        if (row._kind) {
+          return (
+            <button
+              className="btn btn-secondary"
+              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              onClick={() => setViewingQuote(row)}
+              title="Consulter le devis"
+            >
+              <Eye size={13} />
+              <span>Consulter le devis</span>
+            </button>
+          );
+        }
         const canTerminate = canUser(user, 'terminate', 'contracts');
         const canDelete = canUser(user, 'delete', 'contracts');
         const isResilie = row.statut_contrat === 'Résilié' || row.statut === 'Résilié';
@@ -464,7 +502,7 @@ export const ContractListPage = () => {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
             <ShieldCheck size={24} color="#34d399" />
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Portefeuille des Contrats & Polices Actives</h1>
+            <h1 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Portefeuille des Contrats</h1>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             Gestion intégrale du parc de contrats, avenants, renouvellements et attestations CIMA.
@@ -489,7 +527,7 @@ export const ContractListPage = () => {
               loadStats();
               loadContractsData(selectedBranchFilter);
             }}
-            title="Rafraîchir les données depuis la base PostgreSQL"
+            title="Actualiser la liste"
           >
             <RefreshCw size={16} />
             <span>Actualiser</span>
@@ -654,10 +692,7 @@ export const ContractListPage = () => {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-            <RefreshCw size={24} className="animate-spin" />
-            <span style={{ marginLeft: '0.5rem' }}>Chargement des contrats depuis PostgreSQL...</span>
-          </div>
+          <LoadingSpinner />
         ) : (
           <DataTable
             columns={columns}
@@ -822,6 +857,10 @@ export const ContractListPage = () => {
           }
         }}
       />
+
+      {viewingQuote && (
+        <ViewQuoteModal isOpen={!!viewingQuote} onClose={() => setViewingQuote(null)} quote={viewingQuote} />
+      )}
     </div>
   );
 };

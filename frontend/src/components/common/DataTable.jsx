@@ -6,7 +6,7 @@ export const DataTable = ({
   columns = [],
   data = [],
   loading = false,
-  loadingText = 'Chargement des donn?es en cours...',
+  loadingText = undefined,
   searchable = true,
   searchPlaceholder = 'Rechercher un élément...',
   itemsPerPage = 10,
@@ -147,7 +147,7 @@ export const DataTable = ({
             {loading ? (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                  <LoadingSpinner text={loadingText} size={32} />
+                  <LoadingSpinner {...(loadingText ? { text: loadingText } : {})} size={32} />
                 </td>
               </tr>
             ) : paginatedData.length > 0 ? (

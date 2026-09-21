@@ -481,9 +481,24 @@ export const quoteApi = {
   // GET /api/devis/ (178 Devis réels en BDD)
   // GET /api/devis/ (178 Devis réels en BDD)
   getQuotes: async (params = {}) => {
-    const res = await apiClient.get('/devis/', { params });
+    const res = await apiClient.get('/devis/', { params, timeout: 120000 });
     const list = extractData(res);
     return list.map(normalizeDevis);
+  },
+  // Tous les devis d'un filtre (parcourt les pages serveur, plafonnées à 200 lignes)
+  getAllQuotes: async (params = {}, maxPages = 30) => {
+    const all = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+      const res = await apiClient.get('/devis/', { params: { ...params, page_size: 200, page } });
+      all.push(...extractData(res).map(normalizeDevis));
+      if (!res?.data?.next) break;
+    }
+    return all;
+  },
+  // Nombre total de devis pour un filtre donné (pagination serveur : champ `count`)
+  getQuotesCount: async (params = {}) => {
+    const res = await apiClient.get('/devis/', { params: { ...params, page_size: 1 }, timeout: 120000 });
+    return Number(res?.data?.count ?? 0);
   },
   // GET /api/devis/:id/
   getQuoteDetail: async (id) => {
@@ -757,6 +772,11 @@ export const contractApi = {
     } catch {
       return null;
     }
+  },
+  // Nombre total de contrats pour un filtre donné (pagination serveur : champ `count`)
+  getContractsCount: async (params = {}) => {
+    const res = await apiClient.get('/contrat/', { params: { ...params, page_size: 1 } });
+    return Number(res?.data?.count ?? 0);
   },
   // GET /api/contrat/ (21 714 Contrats réels en BDD)
   getContracts: async (params = {}) => {

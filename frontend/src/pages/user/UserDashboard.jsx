@@ -16,6 +16,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 
+import { isRegistryQuote } from '../../utils/quoteRegistry';
 export const UserDashboard = () => {
   const navigate = useNavigate();
 
@@ -31,7 +32,7 @@ export const UserDashboard = () => {
           contractApi.getContracts(),
         ]);
         if (isMounted) {
-          if (Array.isArray(qList)) setQuotes(qList);
+          if (Array.isArray(qList)) setQuotes(qList.filter(isRegistryQuote));
           if (Array.isArray(cList)) setContracts(cList);
         }
       } catch (err) {
@@ -139,7 +140,7 @@ export const UserDashboard = () => {
         <MetricCard
           title="Devis En Cours"
           value={quotes.length}
-          subtext="En attente de consolidation"
+          subtext="À confirmer"
           trend="+12% cette semaine"
           icon={FileText}
           color="blue"

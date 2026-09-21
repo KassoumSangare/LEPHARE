@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { DataTable } from '../../../components/common/DataTable';
@@ -556,9 +557,7 @@ export const DecisionalStatesPage = () => {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          Chargement des états décisionnels…
-        </div>
+        <LoadingSpinner />
       ) : (
         <DataTable
           columns={columns}
@@ -719,10 +718,7 @@ export const DecisionalStatesPage = () => {
 
           {/* Affichage des Données */}
           {contenuLoading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem', gap: '0.75rem', color: 'var(--text-muted)' }}>
-              <Loader2 size={28} className="animate-spin" color="#60a5fa" />
-              <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Extraction des données de l'état décisionnel via Postgres…</span>
-            </div>
+            <LoadingSpinner />
           ) : contenuViewMode === 'grouped' ? (
             /* Vue Hiérarchique (Compagnie > Client > Branche) - TableauBordereaux OREOLE */
             <div style={{ maxHeight: '55vh', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>

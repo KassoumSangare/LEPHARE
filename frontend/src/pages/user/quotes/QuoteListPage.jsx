@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
+import { isRegistryQuote } from '../../../utils/quoteRegistry';
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
+import { RowActions } from '../../../components/common/RowActions';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
@@ -40,7 +43,16 @@ const formatDateTime = (value) => {
   const d = new Date(value);
   if (isNaN(d.getTime())) return String(value);
   const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}:${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
+// Seuls les devis émis durant les 3 dernières années sont affichés
+const isWithinLastThreeYears = (q) => {
+  const d = new Date(q.date_emission || q.dateemission);
+  if (isNaN(d.getTime())) return true;
+  const limit = new Date();
+  limit.setFullYear(limit.getFullYear() - 3);
+  return d >= limit;
 };
 
 export const QuoteListPage = () => {
@@ -48,16 +60,9 @@ export const QuoteListPage = () => {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
-  const [stats, setStats] = useState({
-    ALL: 24757,
-    AUTO: 6570,
-    VOYAGE: 1829,
-    TRANSPORT: 1040,
-    MRH: 1060,
-    SANTE: 9432,
-    IA: 4218,
-    CONSOLIDATED: 26,
-    ARCHIVED: 379,
+  // Décompte du registre par branche, calculé sur les devis à confirmer réellement chargés
+  const [stats, setStats] = useState(() => {
+    return { ALL: 0, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, AUTRES: 0, CONSOLIDATED: 0 };
   });
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [viewingQuote, setViewingQuote] = useState(null);
@@ -107,67 +112,63 @@ export const QuoteListPage = () => {
     }
   };
 
-  const loadStats = async () => {
-    try {
-      const s = await quoteApi.getStats();
-      if (s && typeof s === 'object') setStats(s);
-    } catch (e) {
-      console.warn('Erreur chargement stats devis:', e);
-    }
+  // Un seul chargement du registre complet (non archivés, non confirmés) : le serveur ne sait pas
+  // filtrer les devis expirés ni compter par branche, donc tout est calculé ici pour que
+  // compteurs, onglets et liste soient toujours identiques.
+  const [registry, setRegistry] = useState(null);
+
+  const getBranchOf = (q) => {
+    const p = q.raw?.produit;
+    const id = Number(p && typeof p === 'object' ? (p.id_produit ?? p.IdProduit ?? p.idproduit) : (q.raw?.idproduit ?? p));
+    if (id === 1) return 'AUTO';
+    if (id === 2) return 'IA';
+    if (id === 3) return 'VOYAGE';
+    if ([4, 7, 9].includes(id)) return 'MRH';
+    if ([5, 10].includes(id)) return 'SANTE';
+    if (id === 6) return 'TRANSPORT';
+    return 'AUTRES';
   };
 
-  const getBranchParams = (branch) => {
-    switch (branch) {
-      case 'AUTO': return { idproduit: 1, page_size: 200 };
-      case 'IA': return { idproduit: 2, page_size: 200 };
-      case 'VOYAGE': return { idproduit: 3, page_size: 200 };
-      case 'MRH': return { idproduit: '4,7,9', page_size: 200 };
-      case 'SANTE': return { idproduit: '5,10', page_size: 200 };
-      case 'TRANSPORT': return { idproduit: 6, page_size: 200 };
-      case 'CONSOLIDATED': return { consolide: 'true', page_size: 200 };
-      case 'ARCHIVED': return { archive: 'true', page_size: 200 };
-      default: return { page_size: 200 };
-    }
-  };
+  const sortRecent = (list) => [...list].sort((a, b) => {
+    const dateA = new Date(a.dateemission || a.date_emission || a.dateeffet || 0).getTime();
+    const dateB = new Date(b.dateemission || b.date_emission || b.dateeffet || 0).getTime();
+    return dateB - dateA || (b.iddevis || b.id || 0) - (a.iddevis || a.id || 0);
+  });
 
-  const loadQuotes = async (branch = selectedBranchFilter) => {
+  const loadQuotes = async () => {
     setLoading(true);
     try {
-      const params = getBranchParams(branch);
-      const backendQuotes = await quoteApi.getQuotes(params);
-      if (Array.isArray(backendQuotes) && backendQuotes.length > 0) {
-        // Tri syst�matique : les devis les plus r�cents en premier (3 derni�res ann�es)
-        const sorted = [...backendQuotes].sort((a, b) => {
-          const dateA = new Date(a.dateemission || a.date_emission || a.dateeffet || 0).getTime();
-          const dateB = new Date(b.dateemission || b.date_emission || b.dateeffet || 0).getTime();
-          return dateB - dateA || (b.iddevis || b.id || 0) - (a.iddevis || a.id || 0);
-        });
-        setQuotes(sorted);
-      } else {
-        const local = dataStore.getQuotes();
-        const sortedLocal = [...(local || [])].sort((a, b) => {
-          const dateA = new Date(a.dateemission || a.date_emission || a.dateeffet || 0).getTime();
-          const dateB = new Date(b.dateemission || b.date_emission || b.dateeffet || 0).getTime();
-          return dateB - dateA || (b.iddevis || b.id || 0) - (a.iddevis || a.id || 0);
-        });
-        setQuotes(sortedLocal);
-      }
+      const all = await quoteApi.getAllQuotes({ archive: 'false', confirme: 'false' });
+      setRegistry(sortRecent(all.filter(isRegistryQuote).filter(isWithinLastThreeYears)));
     } catch (err) {
       console.error('Erreur chargement devis Django:', err);
-      const local = dataStore.getQuotes();
-      setQuotes(local || []);
+      setRegistry(sortRecent((dataStore.getQuotes() || []).filter(isRegistryQuote).filter(isWithinLastThreeYears)));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  const loadStats = () => {};
 
   useEffect(() => {
-    loadQuotes(selectedBranchFilter);
-  }, [selectedBranchFilter]);
+    loadQuotes();
+  }, []);
+
+  // Liste affichée + compteurs, tous dérivés du même registre
+  useEffect(() => {
+    if (!registry) return;
+    const counts = { ALL: registry.length, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, AUTRES: 0, CONSOLIDATED: 0 };
+    registry.forEach((q) => {
+      counts[getBranchOf(q)] += 1;
+      if (q.devis_consolide) counts.CONSOLIDATED += 1;
+    });
+    setStats(counts);
+    setQuotes(
+      selectedBranchFilter === 'ALL' ? registry
+        : selectedBranchFilter === 'CONSOLIDATED' ? registry.filter((q) => q.devis_consolide)
+        : registry.filter((q) => getBranchOf(q) === selectedBranchFilter)
+    );
+  }, [registry, selectedBranchFilter]);
 
   const handleConvertContract = (quote) => {
     setSelectedQuote(quote);
@@ -190,25 +191,14 @@ export const QuoteListPage = () => {
   // Dynamic KPI Metrics
   const totalDevis = quotes.length;
   const totalPrimesCotees = quotes.reduce((acc, q) => acc + Number(q.prime_totale || 0), 0);
-  const totalConsolides = quotes.filter((q) => {
-    const s = (q.statut || '').toLowerCase();
-    return s.includes('consolid') || s.includes('confirm') || q.confirme;
-  }).length;
-  const totalEnAttente = Math.max(0, totalDevis - totalConsolides);
-  const tauxConversion = totalDevis > 0 ? Math.round((totalConsolides / totalDevis) * 100) : 0;
+  // Registre = devis à confirmer uniquement (les confirmés vont dans les contrats, les archivés sont masqués).
+  // En attente de validation = devis en attente du visa de la Direction (circuit d'approbation).
+  const totalEnAttente = quotes.filter(
+    (q) => q.circuit_approbation && q.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION'
+  ).length;
 
-  // Exact Counts per branch from Database
-  const countByBranch = {
-    AUTO: stats.AUTO || 6570,
-    VOYAGE: stats.VOYAGE || 1829,
-    TRANSPORT: stats.TRANSPORT || 1040,
-    MRH: stats.MRH || 1060,
-    SANTE: stats.SANTE || 9432,
-    IA: stats.IA || 4218,
-    CONSOLIDATED: stats.CONSOLIDATED || 26,
-    ARCHIVED: stats.ARCHIVED || 379,
-    ALL: stats.ALL || 24757,
-  };
+  const countByBranch = stats;
+  const totalConsolides = countByBranch.CONSOLIDATED;
 
   const getTabLabel = (filter) => {
     switch (filter) {
@@ -389,7 +379,8 @@ export const QuoteListPage = () => {
         else if (s.includes('confirm') || s.includes('contrat') || row.confirme) color = 'emerald';
         else if (s.includes('consolid')) color = 'blue';
         else if (s.includes('expir')) color = 'red';
-        return <StatusBadge label={row.archive ? 'Archivé / Annulé' : (row.statut || 'En cours')} color={color} />;
+        const label = color === 'emerald' ? 'Confirmé' : (color === 'blue' ? (row.statut || 'Consolidé') : (color === 'red' ? (row.statut || 'Expiré') : 'Attente'));
+        return <StatusBadge label={label} color={color} />;
       },
     },
     {
@@ -398,144 +389,40 @@ export const QuoteListPage = () => {
         const canEdit = canUser(user, 'edit', 'quotes');
         const canDelete = canUser(user, 'delete', 'quotes');
         const isConsolidated = !!row.devis_consolide;
-        const isArchived = row.archive || selectedBranchFilter === 'ARCHIVED';
-
-        if (isArchived) {
-          return (
-            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-              <button
-                className="btn btn-secondary"
-                style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                onClick={() => setViewingQuote(row)}
-                title="Consulter l'archive"
-              >
-                <Eye size={13} />
-                <span>Consulter</span>
-              </button>
-              <button
-                className="btn btn-secondary"
-                style={{
-                  padding: '0.3rem 0.55rem',
-                  fontSize: '0.75rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.25rem',
-                  color: '#34d399',
-                  borderColor: 'rgba(52, 211, 153, 0.3)',
-                }}
-                onClick={async () => {
-                  try {
-                    await quoteApi.unarchiveQuote(row.iddevis || row.id);
-                    success(`Devis ${row.numerodevis} restauré et désarchivé avec succès !`);
-                    loadQuotes();
-                    loadStats();
-                  } catch (err) {
-                    toastError(err.response?.data?.message || err.message || 'Erreur lors du désarchivage');
-                  }
-                }}
-                title="Restaurer ce devis dans les devis actifs"
-              >
-                <RefreshCw size={13} />
-                <span>Désarchiver</span>
-              </button>
-            </div>
-          );
-        }
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
+        const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
 
         return (
-          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              onClick={() => setViewingQuote(row)}
-              title="Consulter l'intégralité du devis et imprimer la proposition"
-            >
-              <Eye size={13} />
-              <span>Consulter</span>
-            </button>
-
-            {!isConsolidated && (() => {
-              const todayStr = new Date().toISOString().split('T')[0];
-              const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
-              const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
-
-              return (
-                <button
-                  className="btn btn-primary"
-                  disabled={isExpired || isPendingApproval}
-                  style={{
-                    padding: '0.3rem 0.6rem',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    background: (isExpired || isPendingApproval) ? '#475569' : '#059669',
-                    borderColor: (isExpired || isPendingApproval) ? '#475569' : '#059669',
-                    cursor: (isExpired || isPendingApproval) ? 'not-allowed' : 'pointer',
-                  }}
-                  onClick={() => handleConvertContract(row)}
-                  title={
-                    isExpired
-                      ? 'Devis expiré : conversion bloquée (CA-07.3)'
-                      : isPendingApproval
-                      ? 'Visa Direction Requis avant émission (CA-07.4)'
-                      : 'Souscrire & Émettre la police définitive (E08)'
-                  }
-                >
-                  <CheckCircle size={13} />
-                  <span>{isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Émettre'}</span>
-                </button>
-              );
-            })()}
-
-            <button
-              className="btn btn-secondary"
-              disabled={isConsolidated || !canEdit}
-              style={{
-                padding: '0.3rem 0.55rem',
-                fontSize: '0.75rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                opacity: (!isConsolidated && canEdit) ? 1 : 0.45,
-                cursor: (!isConsolidated && canEdit) ? 'pointer' : 'not-allowed',
-              }}
-              onClick={() => setEditingQuote(row)}
-              title={
-                isConsolidated
-                  ? 'Devis consolidé scellé (non modifiable)'
-                  : (canEdit ? 'Ajuster le devis' : 'Non habilité pour la modification')
-              }
-            >
-              <Edit2 size={13} color="#60a5fa" />
-              <span>Ajuster</span>
-            </button>
-
-            <button
-              className="btn btn-secondary"
-              disabled={!canDelete}
-              style={{
-                padding: '0.3rem 0.55rem',
-                fontSize: '0.75rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                color: canDelete ? '#38bdf8' : 'var(--text-muted)',
-                borderColor: canDelete ? 'rgba(56, 189, 248, 0.3)' : 'var(--border-subtle)',
-                opacity: canDelete ? 1 : 0.45,
-                cursor: canDelete ? 'pointer' : 'not-allowed',
-              }}
-              onClick={() => {
-                const check = validateBusinessRule('delete', 'quotes', row, dataStore);
-                setDeleteValidation(check);
-                setDeletingQuote(row);
-              }}
-              title={canDelete ? 'Archiver la proposition (Conformité CIMA)' : "Non habilité pour l'archivage"}
-            >
-              <Archive size={13} />
-              <span>Archiver</span>
-            </button>
-          </div>
+          <RowActions
+            onView={() => setViewingQuote(row)}
+            viewTitle="Consulter l'intégralité du devis et imprimer la proposition"
+            showConfirm={!isConsolidated}
+            confirmLabel={isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Confirmer'}
+            confirmDisabled={isExpired || isPendingApproval}
+            confirmTitle={
+              isExpired
+                ? 'Devis expiré : conversion bloquée (CA-07.3)'
+                : isPendingApproval
+                ? 'Visa Direction Requis avant confirmation (CA-07.4)'
+                : 'Confirmer le devis et générer le contrat (E08)'
+            }
+            onConfirm={() => handleConvertContract(row)}
+            onEdit={() => setEditingQuote(row)}
+            editDisabled={isConsolidated || !canEdit}
+            editTitle={
+              isConsolidated
+                ? 'Devis consolidé scellé (non modifiable)'
+                : (canEdit ? 'Ajuster le devis' : 'Non habilité pour la modification')
+            }
+            onArchive={() => {
+              const check = validateBusinessRule('delete', 'quotes', row, dataStore);
+              setDeleteValidation(check);
+              setDeletingQuote(row);
+            }}
+            archiveDisabled={!canDelete}
+            archiveTitle={canDelete ? 'Archiver la proposition (Conformité CIMA)' : "Non habilité pour l'archivage"}
+          />
         );
       },
     },
@@ -633,7 +520,7 @@ export const QuoteListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Consolidés en Contrat</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#a5b4fc', fontFamily: 'var(--font-mono)' }}>{countByBranch.CONSOLIDATED.toLocaleString()}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#a5b4fc', fontFamily: 'var(--font-mono)' }}>{totalConsolides.toLocaleString()}</div>
           </div>
         </div>
       </div>
@@ -648,8 +535,8 @@ export const QuoteListPage = () => {
           { id: 'MRH', label: 'MRH', count: countByBranch.MRH, icon: <Home size={13} /> },
           { id: 'SANTE', label: 'Santé', count: countByBranch.SANTE, icon: <HeartPulse size={13} /> },
           { id: 'IA', label: 'IA', count: countByBranch.IA, icon: <UserPlus size={13} /> },
+          { id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: <Layers size={13} /> },
           { id: 'CONSOLIDATED', label: 'Consolidés', count: countByBranch.CONSOLIDATED, icon: <CheckCircle size={13} color="#34d399" /> },
-          { id: 'ARCHIVED', label: 'Archivés', count: countByBranch.ARCHIVED, icon: <Archive size={13} color="#f87171" /> },
         ].map((tab) => {
           const isActive = selectedBranchFilter === tab.id;
           return (
@@ -777,7 +664,7 @@ export const QuoteListPage = () => {
       <div className="card" style={{ padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Affichage des {quotes.length} devis {selectedBranchFilter === 'ARCHIVED' ? 'archivés' : 'actifs'} ({getTabLabel(selectedBranchFilter)}) sur un total de <strong>{countByBranch[selectedBranchFilter]?.toLocaleString()}</strong> en base
+            Affichage des {quotes.length} devis à confirmer ({getTabLabel(selectedBranchFilter)}) sur un total de <strong>{countByBranch[selectedBranchFilter]?.toLocaleString()}</strong> dans le registre
           </div>
           <button
             type="button"
@@ -786,7 +673,7 @@ export const QuoteListPage = () => {
               loadStats();
               loadQuotes(selectedBranchFilter);
             }}
-            title="Rafraîchir depuis la base PostgreSQL"
+            title="Actualiser la liste"
             style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
           >
             <RefreshCw size={13} />
@@ -795,10 +682,7 @@ export const QuoteListPage = () => {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-            <RefreshCw size={24} className="animate-spin" />
-            <span style={{ marginLeft: '0.5rem' }}>Chargement des devis depuis PostgreSQL...</span>
-          </div>
+          <LoadingSpinner />
         ) : (
           <DataTable
             columns={columns}

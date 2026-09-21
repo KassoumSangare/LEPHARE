@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, Download, Calendar, Printer, Loader2, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
@@ -225,10 +226,7 @@ export const EmissionSummaryPage = () => {
         </div>
 
         {loading ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3rem', gap: '0.75rem', color: 'var(--text-muted)' }}>
-            <Loader2 size={24} className="animate-spin" />
-            <span>Calcul du bordereau des émissions en direct...</span>
-          </div>
+          <LoadingSpinner />
         ) : groups.compagnies.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
             Aucune émission sur la période sélectionnée.

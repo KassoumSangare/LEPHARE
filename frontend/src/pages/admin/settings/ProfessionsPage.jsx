@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { DataTable } from '../../../components/common/DataTable';
@@ -370,10 +371,7 @@ export const ProfessionsPage = () => {
 
       {/* Table */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-          <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 0.75rem' }} />
-          Chargement du référentiel des professions...
-        </div>
+        <LoadingSpinner />
       ) : (
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
           <DataTable

@@ -637,7 +637,6 @@ export const ClientListPage = () => {
           columns={columns}
           data={clients}
           loading={loading}
-          loadingText="Chargement de la base clientèle..."
           searchPlaceholder="Rechercher par nom, matricule, téléphone, pièce ou profession..."
         />
       </div>

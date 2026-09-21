@@ -194,7 +194,7 @@ export const ContractActionModal = ({
               </button>
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn btn-warning"
                 disabled={!codeJeton}
                 style={{ backgroundColor: '#f59e0b', borderColor: '#f59e0b', color: '#000', fontWeight: 600 }}
               >

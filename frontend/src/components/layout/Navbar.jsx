@@ -85,9 +85,10 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         {/* Mobile Sidebar Hamburger Toggle */}
         <button
-          className="mobile-toggle-btn"
+          className="mobile-toggle-btn sidebar-toggle-btn"
           onClick={onToggleMobileSidebar}
-          aria-label="Ouvrir le menu"
+          aria-label="Afficher / masquer le menu"
+          title="Afficher / masquer le menu"
         >
           <Menu size={22} />
         </button>

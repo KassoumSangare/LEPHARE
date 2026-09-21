@@ -1,3 +1,4 @@
+import { isRegistryQuote } from '../../../utils/quoteRegistry';
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { customerApi, contractApi, quoteApi } from '../../../api/endpoints';
@@ -27,7 +28,7 @@ export const ClientDetailPage = () => {
           setClientData(cData);
           const clientNameLower = String(cData?.nom || cData?.nomcomplet || '').toLowerCase();
           setContracts(cList.filter((c) => (clientNameLower && String(c.client_nom || '').toLowerCase().includes(clientNameLower)) || String(c.client_id) === String(cData?.id)));
-          setQuotes(qList.filter((q) => String(q.client_id) === String(cData?.id) || (clientNameLower && String(q.client_nom || '').toLowerCase().includes(clientNameLower))));
+          setQuotes(qList.filter(isRegistryQuote).filter((q) => String(q.client_id) === String(cData?.id) || (clientNameLower && String(q.client_nom || '').toLowerCase().includes(clientNameLower))));
         }
       } catch (err) {
         console.error('Erreur chargement détail client:', err);
@@ -54,7 +55,7 @@ export const ClientDetailPage = () => {
           Retour
         </button>
         <div>
-          <h1 className="title-xl">{client.nomcomplet || (loading ? 'Chargement...' : 'Client non trouvé')}</h1>
+          <h1 className="title-xl">{client.nomcomplet || (loading ? '' : 'Client non trouvé')}</h1>
           <span style={{ fontSize: '0.8rem', color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
             Code: {client.codeclient || id} • {client.typeclient || ''}
           </span>
