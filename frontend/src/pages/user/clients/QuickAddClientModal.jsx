@@ -790,7 +790,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
                 disabled={isSubmitting}
               >
                 <Save size={16} />
-                {isSubmitting ? "Enregistrement..." : "Créer & Sélectionner le Client"}
+                {isSubmitting ? "Enregistrement en cours…" : "Créer & Sélectionner le Client"}
               </button>
             )}
           </div>

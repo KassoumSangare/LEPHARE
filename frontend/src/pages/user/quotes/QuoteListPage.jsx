@@ -62,7 +62,7 @@ export const QuoteListPage = () => {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
   // Décompte du registre par branche, calculé sur les devis à confirmer réellement chargés
   const [stats, setStats] = useState(() => {
-    return { ALL: 0, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, AUTRES: 0, CONSOLIDATED: 0 };
+    return { ALL: 0, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, CONSOLIDATED: 0 };
   });
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [viewingQuote, setViewingQuote] = useState(null);
@@ -126,7 +126,27 @@ export const QuoteListPage = () => {
     if ([4, 7, 9].includes(id)) return 'MRH';
     if ([5, 10].includes(id)) return 'SANTE';
     if (id === 6) return 'TRANSPORT';
-    return 'AUTRES';
+    // Identifiant produit non répertorié : on rattache le devis à sa branche d'après le libellé du produit
+    // (ex. « Auto Flotte », « Santé Groupe ») plutôt que de le laisser dans « Autres ».
+    const libelle = String(
+      (p && typeof p === 'object' ? (p.LibelleProduit ?? p.libelle_produit) : p) ||
+      (typeof q.produit === 'string' ? q.produit : '') ||
+      ''
+    ).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (/auto|vehicule|automobile/.test(libelle)) return 'AUTO';
+    if (/sante|maladie|medical/.test(libelle)) return 'SANTE';
+    if (/individuelle|accident|\bia\b/.test(libelle)) return 'IA';
+    if (/voyage/.test(libelle)) return 'VOYAGE';
+    if (/transport|marchandise|facultes/.test(libelle)) return 'TRANSPORT';
+    if (/habitation|\bmrh\b|multirisque/.test(libelle)) return 'MRH';
+    // Branche affichée dans la colonne « Branche / Produit » du registre (Auto par défaut)
+    const br = String(q.branche || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    if (/sante/.test(br)) return 'SANTE';
+    if (/voyage/.test(br)) return 'VOYAGE';
+    if (/transport/.test(br)) return 'TRANSPORT';
+    if (/mrh|habitation/.test(br)) return 'MRH';
+    if (/^ia$|accident|individuelle/.test(br)) return 'IA';
+    return 'AUTO';
   };
 
   const sortRecent = (list) => [...list].sort((a, b) => {
@@ -157,7 +177,7 @@ export const QuoteListPage = () => {
   // Liste affichée + compteurs, tous dérivés du même registre
   useEffect(() => {
     if (!registry) return;
-    const counts = { ALL: registry.length, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, AUTRES: 0, CONSOLIDATED: 0 };
+    const counts = { ALL: registry.length, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, CONSOLIDATED: 0 };
     registry.forEach((q) => {
       counts[getBranchOf(q)] += 1;
       if (q.devis_consolide) counts.CONSOLIDATED += 1;
@@ -179,11 +199,11 @@ export const QuoteListPage = () => {
     if (!selectedQuote) return;
     try {
       const res = await contractApi.createContractFromQuote(selectedQuote.id);
-      success(`Devis ${selectedQuote.numerodevis} converti avec succès en contrat définitif dans Django !`);
+      success(`Devis ${selectedQuote.numerodevis} confirmé : le contrat a bien été créé.`);
       setIsConfirmModalOpen(false);
       navigate('/user/contracts');
     } catch (err) {
-      toastError(err.response?.data?.detail || err.response?.data?.message || 'Erreur lors de la confirmation du devis sur Django');
+      toastError(err.response?.data?.detail || err.response?.data?.message || 'Le devis n\'a pas pu être confirmé. Veuillez réessayer.');
       setIsConfirmModalOpen(false);
     }
   };
@@ -535,7 +555,6 @@ export const QuoteListPage = () => {
           { id: 'MRH', label: 'MRH', count: countByBranch.MRH, icon: <Home size={13} /> },
           { id: 'SANTE', label: 'Santé', count: countByBranch.SANTE, icon: <HeartPulse size={13} /> },
           { id: 'IA', label: 'IA', count: countByBranch.IA, icon: <UserPlus size={13} /> },
-          { id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: <Layers size={13} /> },
           { id: 'CONSOLIDATED', label: 'Consolidés', count: countByBranch.CONSOLIDATED, icon: <CheckCircle size={13} color="#34d399" /> },
         ].map((tab) => {
           const isActive = selectedBranchFilter === tab.id;
@@ -664,7 +683,9 @@ export const QuoteListPage = () => {
       <div className="card" style={{ padding: '1.25rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Affichage des {quotes.length} devis à confirmer ({getTabLabel(selectedBranchFilter)}) sur un total de <strong>{countByBranch[selectedBranchFilter]?.toLocaleString()}</strong> dans le registre
+            {quotes.length === 0
+              ? 'Aucun devis en attente de confirmation'
+              : <><strong>{quotes.length.toLocaleString()}</strong> devis en attente de confirmation{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}</>}
           </div>
           <button
             type="button"
@@ -682,7 +703,7 @@ export const QuoteListPage = () => {
         </div>
 
         {loading ? (
-          <LoadingSpinner />
+          <LoadingSpinner text="Chargement des devis en cours…" />
         ) : (
           <DataTable
             columns={columns}
@@ -753,7 +774,7 @@ export const QuoteListPage = () => {
               loadQuotes();
               loadStats();
             } catch (err) {
-              toastError(err.response?.data?.message || err.message || 'Erreur lors de l\'archivage sur Django');
+              toastError(err.response?.data?.message || err.message || 'Le devis n\'a pas pu être archivé. Veuillez réessayer.');
             }
           }
         }}

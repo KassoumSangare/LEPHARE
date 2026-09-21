@@ -74,7 +74,7 @@ export const DecisionalStatesPage = () => {
       const data = await reportingApi.getDecisionnel();
       setEtats(Array.isArray(data) ? data : []);
     } catch (err) {
-      toastError('Erreur lors du chargement des états décisionnels.');
+      toastError('Impossible de charger les états décisionnels. Veuillez réessayer.');
     } finally {
       setLoading(false);
     }
@@ -230,10 +230,10 @@ export const DecisionalStatesPage = () => {
       const dossiers = Array.isArray(result?.Data) ? result.Data : [];
       setContenuDossiers(dossiers);
       if (result?.Status && result.Status !== 'Succès' && result.Status !== 'Succes') {
-        toastError(result?.Data || 'Erreur lors du chargement du contenu.');
+        toastError(result?.Data || 'Impossible de charger le contenu. Veuillez réessayer.');
       }
     } catch (err) {
-      toastError(err?.response?.data?.Data || 'Erreur lors du chargement du contenu de cet état.');
+      toastError(err?.response?.data?.Data || 'Impossible de charger le contenu de cet état. Veuillez réessayer.');
       setContenuDossiers([]);
     } finally {
       setContenuLoading(false);
@@ -724,7 +724,7 @@ export const DecisionalStatesPage = () => {
             <div style={{ maxHeight: '55vh', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
               {Object.keys(groupedData).length === 0 ? (
                 <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  Aucun enregistrement trouvé pour la période sélectionnée.
+                  Aucun dossier disponible pour la période sélectionnée.
                 </div>
               ) : (
                 Object.keys(groupedData).map((cieName) => {
@@ -840,7 +840,7 @@ export const DecisionalStatesPage = () => {
                 ]}
                 data={filteredContenuDossiers}
                 searchPlaceholder="Filtrer un dossier…"
-                emptyMessage="Aucun enregistrement trouvé pour cet état sur la période sélectionnée."
+                emptyMessage="Aucun dossier disponible pour cet état sur la période sélectionnée."
               />
             </div>
           )}
@@ -848,7 +848,7 @@ export const DecisionalStatesPage = () => {
           {/* Actions d'impression / export */}
           <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Affichage de <strong style={{ color: '#60a5fa' }}>{filteredContenuDossiers.length}</strong> ligne(s) sur <strong>{contenuDossiers.length}</strong>
+              <strong style={{ color: '#60a5fa' }}>{filteredContenuDossiers.length}</strong> dossier{filteredContenuDossiers.length > 1 ? 's' : ''} sur <strong>{contenuDossiers.length}</strong> au total
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>

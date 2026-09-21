@@ -406,13 +406,13 @@ export const ClientListPage = () => {
       const res = await customerApi.createClient(newClientPayload);
       const savedClient = res.data || {};
       const matricule = savedClient.Matricule || savedClient.codeclient || newClientPayload.codeclient;
-      success(`Client [${matricule}] ${newClientPayload.nomcomplet} créé et enregistré avec succès dans Django !`);
+      success(`Client [${matricule}] ${newClientPayload.nomcomplet} a été créé avec succès.`);
       setIsModalOpen(false);
       setFormData(initialFormState);
       setModalTab('identite');
       loadClients();
     } catch (err) {
-      toastError(err.response?.data?.detail || err.response?.data?.message || 'Erreur lors de la création du client sur Django');
+      toastError(err.response?.data?.detail || err.response?.data?.message || 'Le client n\'a pas pu être créé. Veuillez réessayer.');
     }
   };
 

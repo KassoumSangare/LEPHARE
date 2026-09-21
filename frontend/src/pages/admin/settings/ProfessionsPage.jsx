@@ -35,7 +35,7 @@ export const ProfessionsPage = () => {
       const data = await professionApi.getAll();
       setProfessions(Array.isArray(data) ? data : []);
     } catch {
-      toastError('Erreur lors du chargement des professions.');
+      toastError('Impossible de charger les professions. Veuillez réessayer.');
     } finally {
       setLoading(false);
     }
@@ -371,13 +371,13 @@ export const ProfessionsPage = () => {
 
       {/* Table */}
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner text="Chargement des professions en cours…" />
       ) : (
         <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden' }}>
           <DataTable
             columns={columns}
             data={filteredProfessions}
-            emptyMessage="Aucune profession trouvée dans le référentiel."
+            emptyMessage="Aucune profession disponible."
           />
         </div>
       )}

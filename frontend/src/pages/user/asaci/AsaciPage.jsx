@@ -167,7 +167,7 @@ export const AsaciPage = () => {
     try {
       const res = await asaciApi.checkApplicationStatus(referenceToCheck.trim());
       setCheckResult(res.data || res);
-      success("Interrogation de l'API ASACI effectuée avec succès.");
+      success("Interrogation d'ASACI effectuée avec succès.");
     } catch (err) {
       const errMsg = err.response?.data?.detail || err.message;
       setCheckResult({
@@ -471,7 +471,7 @@ export const AsaciPage = () => {
           <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                Attestations Automobiles Enregistrées dans PostgreSQL
+                Attestations Automobiles Enregistrées
               </h2>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Les enregistrements ci-dessous proviennent de la table réelle <code>stddetailretourdemattestation</code>.

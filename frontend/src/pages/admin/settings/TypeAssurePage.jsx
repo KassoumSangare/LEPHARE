@@ -192,9 +192,9 @@ export const TypeAssurePage = () => {
       </div>
 
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner text="Chargement des types d'assuré en cours…" />
       ) : (
-        <DataTable columns={columns} data={types} searchable searchPlaceholder="Rechercher un type d'assuré…" emptyMessage="Aucun type d'assuré enregistré." />
+        <DataTable columns={columns} data={types} searchable searchPlaceholder="Rechercher un type d'assuré…" emptyMessage="Aucun type d'assuré disponible." />
       )}
 
       {/* Modal Création */}

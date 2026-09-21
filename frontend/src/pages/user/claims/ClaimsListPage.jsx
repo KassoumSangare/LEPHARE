@@ -312,7 +312,7 @@ export const ClaimsListPage = () => {
               {filteredClaims.length === 0 ? (
                 <tr>
                   <td colSpan="10" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-                    Aucun sinistre trouvé selon les filtres sélectionnés.
+                    Aucun sinistre ne correspond aux filtres sélectionnés.
                   </td>
                 </tr>
               ) : (

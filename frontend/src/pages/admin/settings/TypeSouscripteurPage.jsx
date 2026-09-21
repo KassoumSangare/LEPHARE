@@ -193,7 +193,7 @@ export const TypeSouscripteurPage = () => {
       </div>
 
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner text="Chargement des types de souscripteur en cours…" />
       ) : (
         <DataTable columns={columns} data={types} searchable searchPlaceholder="Rechercher un type de souscripteur…" emptyMessage="Aucun type de souscripteur enregistré." />
       )}

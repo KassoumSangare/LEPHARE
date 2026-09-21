@@ -687,12 +687,12 @@ export const ContractListPage = () => {
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Affichage des {filteredContracts.length} premiers contrats ({getTabLabel(selectedBranchFilter)})
+            {filteredContracts.length === 0 ? 'Aucun contrat disponible' : `${filteredContracts.length.toLocaleString()} contrat${filteredContracts.length > 1 ? 's' : ''} (${getTabLabel(selectedBranchFilter)})`}
           </div>
         </div>
 
         {loading ? (
-          <LoadingSpinner />
+          <LoadingSpinner text="Chargement des contrats en cours…" />
         ) : (
           <DataTable
             columns={columns}

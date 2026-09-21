@@ -165,9 +165,9 @@ export const DataTable = ({
                 <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3.5rem 1rem' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                     <Inbox size={36} color="var(--text-muted)" />
-                    <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Aucun enregistrement trouvé</p>
+                    <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{searchTerm ? 'Aucun résultat ne correspond à votre recherche.' : 'Aucun élément disponible.'}</p>
                     <p style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>
-                      {searchTerm ? 'Essayez de modifier votre terme de recherche' : 'Cette section ne contient pas encore de données'}
+                      {searchTerm ? 'Essayez de modifier votre terme de recherche' : 'Rien à afficher pour le moment.'}
                     </p>
                   </div>
                 </td>
@@ -181,9 +181,9 @@ export const DataTable = ({
       {sortedData.length > itemsPerPage && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.825rem', color: 'var(--text-secondary)' }}>
           <span>
-            Affichage de <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> à{' '}
+            <strong>{(currentPage - 1) * itemsPerPage + 1}</strong> à{' '}
             <strong>{Math.min(currentPage * itemsPerPage, sortedData.length)}</strong> sur{' '}
-            <strong>{sortedData.length}</strong> lignes
+            <strong>{sortedData.length}</strong> au total
           </span>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

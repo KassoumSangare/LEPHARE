@@ -64,7 +64,7 @@ export const MyDerogationsPage = () => {
         model_name: 'encaissement',
         object_id: 1,
       });
-      success("Demande d'autorisation transmise avec succès au routeur Django.");
+      success("Votre demande d'autorisation a été transmise avec succès.");
       await loadData();
     } catch (err) {
       console.error('Erreur création dérogation Django:', err);
@@ -83,7 +83,7 @@ export const MyDerogationsPage = () => {
       };
       dataStore.saveDerogation(newDemande);
       setDerogations((prev) => [newDemande, ...prev]);
-      if (toastError) toastError("Erreur lors de l'enregistrement de la demande sur Django.");
+      if (toastError) toastError("Votre demande n'a pas pu être enregistrée. Veuillez réessayer.");
     }
 
     setIsModalOpen(false);

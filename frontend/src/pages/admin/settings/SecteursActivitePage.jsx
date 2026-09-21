@@ -248,7 +248,7 @@ export const SecteursActivitePage = () => {
 
       {/* Table */}
       {loading ? (
-        <LoadingSpinner />
+        <LoadingSpinner text="Chargement des secteurs d'activité en cours…" />
       ) : (
         <DataTable
           columns={columns}

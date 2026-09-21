@@ -103,7 +103,7 @@ export const EmissionSummaryPage = () => {
       setRawRecords(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Erreur chargement bordereau recap emission:', err);
-      toastError?.('Erreur lors du chargement des émissions réelles.');
+      toastError?.('Impossible de charger les émissions. Veuillez réessayer.');
       setRawRecords([]);
     } finally {
       setLoading(false);
@@ -153,7 +153,7 @@ export const EmissionSummaryPage = () => {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
             <span className="badge badge-success">Production & Émissions Réelles</span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Conformité Fiscale & CIMA (Django Backend)</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Conformité Fiscale & CIMA</span>
           </div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <TrendingUp size={26} color="#34d399" />
