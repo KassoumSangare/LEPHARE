@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { printQuoteFacture, printConditionsParticulieres } from '../../../utils/exportUtils';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   FileText,
   Printer,
@@ -29,6 +30,9 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
 
   const isConsolidated = quote.statut === 'Consolidé';
   const details = quote.details || {};
+  const raw = quote.raw || {};
+  const telephone = details.telephoneClient || raw.numerotelephoneassure || raw.telephoneclient || '—';
+  const numeroActe = raw.numeroavenant || details.numeroAvenant || '0000001';
 
   const getBranchIcon = (branche) => {
     const b = String(branche || '').toLowerCase();
@@ -44,7 +48,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Fiche Proposition & Devis [${quote.numerodevis}]`}
+      title={`Fiche Devis [${quote.numerodevis}]`}
       size="large"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -81,7 +85,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 {quote.numerodevis}
               </div>
               <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Branche : <strong>{quote.branche || 'Général'}</strong> • Émis le {quote.date_emission}
+                Branche : <strong>{quote.branche || 'Général'}</strong> • Émis le {formatDate(quote.date_emission)}
                 {(quote.date_derniere_modification || quote.DateMaj || quote.date_maj) && (
                   <span style={{ marginLeft: '0.5rem', color: '#93c5fd' }}>
                     • Modifié le : <strong>{quote.date_derniere_modification || quote.DateMaj || quote.date_maj}</strong>
@@ -106,8 +110,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 }}
               >
                 {new Date(quote.date_expiration) < new Date()
-                  ? `Expiré le ${quote.date_expiration}`
-                  : `Valide jusqu'au ${quote.date_expiration}`}
+                  ? `Expiré le ${formatDate(quote.date_expiration)}`
+                  : `Valide jusqu'au ${formatDate(quote.date_expiration)}`}
               </span>
             )}
             {isConsolidated && quote.police_associee && (
@@ -154,6 +158,9 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
               <MapPin size={13} color="#94a3b8" />
               <span>{quote.adresse || quote.details?.adresse || 'Abidjan, Côte d\'Ivoire'}</span>
             </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+              Téléphone : <strong style={{ color: 'var(--text-secondary)' }}>{telephone}</strong>
+            </div>
             {quote.client_id && (
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                 ID Client : CLI-{String(quote.client_id).padStart(3, '0')}
@@ -178,6 +185,40 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
           </div>
         </div>
 
+        {/* Références de la police / du devis, comme sur la facture proforma */}
+        <div className="glass-panel" style={{ padding: '1.25rem' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <FileText size={15} color="#60a5fa" />
+            Références
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', fontSize: '0.82rem' }}>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Id. Devis</div>
+              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{quote.iddevis || '—'}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>N° Devis</div>
+              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{quote.numerodevis || '—'}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Effet</div>
+              <strong style={{ color: '#fff' }}>{formatDate(quote.date_effet)}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>N° Acte</div>
+              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{numeroActe}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Effect Acte</div>
+              <strong style={{ color: '#fff' }}>{formatDate(quote.date_effet)}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Expiration</div>
+              <strong style={{ color: '#fff' }}>{formatDate(quote.date_expiration)}</strong>
+            </div>
+          </div>
+        </div>
+
         {/* Actuarial Financial Breakdown */}
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -185,7 +226,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             Décompte Actuariel CIMA & Quittance
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Prime Nette</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
@@ -194,45 +235,44 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Frais Accessoires</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Accessoire</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
                 {Number(quote.accessoires || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Taxes d'Assurance (TCA)</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Taxes</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
                 {Number(quote.taxes || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 
+            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>FDG</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
+                {Number(quote.fga || 0).toLocaleString('fr-FR')} FCFA
+              </div>
+            </div>
+
+            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Cedeao</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
+                {Number(quote.cedeao || 0).toLocaleString('fr-FR')} FCFA
+              </div>
+            </div>
+
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-              <div style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>Total TTC à Payer</div>
+              <div style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>Prime TTC</div>
               <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
                 {Number(quote.prime_totale || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
           </div>
 
-          {/* CIMA Regulatory Breakdown: FGA, CEDEAO, Commission & Dates */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginTop: '0.75rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
-            <div>
-              <span style={{ color: 'var(--text-muted)' }}>Date d'Effet :</span>{' '}
-              <strong style={{ color: '#fff' }}>{quote.date_effet || 'N/A'}</strong>
-            </div>
-            <div>
-              <span style={{ color: 'var(--text-muted)' }}>Date d'Expiration :</span>{' '}
-              <strong style={{ color: '#fff' }}>{quote.date_expiration || 'N/A'}</strong>
-            </div>
-            <div>
-              <span style={{ color: 'var(--text-muted)' }}>FGA + CEDEAO :</span>{' '}
-              <strong style={{ color: '#fff' }}>{(Number(quote.fga || 0) + Number(quote.cedeao || 0)).toLocaleString('fr-FR')} FCFA</strong>
-            </div>
-            <div>
-              <span style={{ color: 'var(--text-muted)' }}>Commission Apporteur :</span>{' '}
-              <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString('fr-FR')} FCFA</strong>
-            </div>
+          <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Commission Apporteur :</span>{' '}
+            <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString('fr-FR')} FCFA</strong>
           </div>
         </div>
 

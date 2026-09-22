@@ -4,6 +4,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { dataStore } from '../../../api/dataStore';
 import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   ShieldCheck,
   RefreshCw,
@@ -155,7 +156,7 @@ export const PolicyMovementModal = ({
         contract: result.contract,
       });
 
-      success(`Police ${contract.numeropolice} renouvelée jusqu’au ${result.contract.date_expiration} !`);
+      success(`Police ${contract.numeropolice} renouvelée jusqu’au ${formatDate(result.contract.date_expiration)} !`);
       if (onSuccess) onSuccess(result.contract);
     } catch (err) {
       toastError(err.message || 'Erreur lors du renouvellement');
@@ -291,7 +292,7 @@ export const PolicyMovementModal = ({
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Échéance actuelle :</div>
             <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
-              {contract.date_expiration}
+              {formatDate(contract.date_expiration)}
             </div>
           </div>
         </div>

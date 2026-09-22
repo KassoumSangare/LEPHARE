@@ -32,8 +32,6 @@ import {
   Eye,
   TrendingUp,
   Layers,
-  Clock,
-  CheckCheck,
   Printer,
   RefreshCw,
 } from 'lucide-react';
@@ -211,14 +209,8 @@ export const QuoteListPage = () => {
   // Dynamic KPI Metrics
   const totalDevis = quotes.length;
   const totalPrimesCotees = quotes.reduce((acc, q) => acc + Number(q.prime_totale || 0), 0);
-  // Registre = devis à confirmer uniquement (les confirmés vont dans les contrats, les archivés sont masqués).
-  // En attente de validation = devis en attente du visa de la Direction (circuit d'approbation).
-  const totalEnAttente = quotes.filter(
-    (q) => q.circuit_approbation && q.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION'
-  ).length;
 
   const countByBranch = stats;
-  const totalConsolides = countByBranch.CONSOLIDATED;
 
   const getTabLabel = (filter) => {
     switch (filter) {
@@ -260,7 +252,7 @@ export const QuoteListPage = () => {
       'Type',
       'Date Émission',
       'Prime Nette',
-      'Prime Totale',
+      'Prime TTC',
       'Statut',
     ];
 
@@ -307,8 +299,9 @@ export const QuoteListPage = () => {
 
   const columns = [
     {
-      header: 'Réf. Proposition / Devis',
+      header: 'Réf. Devis',
       accessor: 'numerodevis',
+      sortable: true,
       render: (row) => {
         const eligible = isEligibleForConsolidation(row);
         const isSelected = selectedForConsolidation.some((q) => q.iddevis === row.iddevis);
@@ -370,6 +363,7 @@ export const QuoteListPage = () => {
     {
       header: 'Branche / Produit',
       accessor: 'produit',
+      sortable: true,
       render: (row) => (
         <div>
           <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{row.branche ? row.branche.toUpperCase() : 'AUTOMOBILE'}</span>
@@ -380,16 +374,19 @@ export const QuoteListPage = () => {
     {
       header: 'Compagnie',
       accessor: 'compagnie',
+      sortable: true,
       render: (row) => <div style={{ fontSize: '0.85rem' }}>{row.compagnie || 'NSIA ASSURANCES'}</div>,
     },
     {
       header: 'Avenant',
       accessor: 'avenant',
+      sortable: true,
       render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{row.avenant || '—'}</div>,
     },
     {
       header: 'Type',
       accessor: 'flotte',
+      sortable: true,
       render: (row) => (
         <span
           style={{
@@ -408,11 +405,13 @@ export const QuoteListPage = () => {
     {
       header: 'Émission',
       accessor: 'date_emission',
+      sortable: true,
       render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatDateTime(row.date_emission)}</div>,
     },
     {
       header: 'Prime Nette',
       accessor: 'prime_nette',
+      sortable: true,
       render: (row) => (
         <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
           {Number(row.prime_nette || 0).toLocaleString('fr-FR')} FCFA
@@ -420,8 +419,9 @@ export const QuoteListPage = () => {
       ),
     },
     {
-      header: 'Prime Totale',
+      header: 'Prime TTC',
       accessor: 'prime_totale',
+      sortable: true,
       render: (row) => (
         <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>
           {Number(row.prime_totale || 0).toLocaleString('fr-FR')} FCFA
@@ -431,6 +431,7 @@ export const QuoteListPage = () => {
     {
       header: 'Statut',
       accessor: 'statut',
+      sortable: true,
       render: (row) => {
         let color = 'amber';
         const s = (row.statut || '').toLowerCase();
@@ -467,7 +468,16 @@ export const QuoteListPage = () => {
                 : 'Confirmer le devis et générer le contrat (E08)'
             }
             onConfirm={() => handleConvertContract(row)}
-            onEdit={() => setEditingQuote(row)}
+            onEdit={() => {
+              // Auto : édition complète (véhicule + garanties), réutilise le formulaire de
+              // création préchargé avec le devis existant. Autres branches : primes seulement
+              // (aucune page d'édition complète construite pour elles pour l'instant).
+              if (getBranchOf(row) === 'AUTO') {
+                navigate(`/user/quotes/auto?edit=${row.iddevis}`);
+              } else {
+                setEditingQuote(row);
+              }
+            }}
             editDisabled={isConsolidated || !canEdit}
             editTitle={
               isConsolidated
@@ -494,7 +504,7 @@ export const QuoteListPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <FileText size={26} color="#3b82f6" />
-            Gestion des Devis & Propositions
+            Gestion des Devis
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             Centralisation, consultation et transformation des devis toutes branches (Auto, Voyage, Transport, MRH, Santé, IA).
@@ -562,26 +572,6 @@ export const QuoteListPage = () => {
             <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>{totalPrimesCotees.toLocaleString('fr-FR')} F</div>
           </div>
         </div>
-
-        <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Clock size={20} color="#f59e0b" />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>En Attente Validation (Page)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>{totalEnAttente}</div>
-          </div>
-        </div>
-
-        <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <CheckCheck size={20} color="#818cf8" />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Consolidés en Contrat</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#a5b4fc', fontFamily: 'var(--font-mono)' }}>{totalConsolides.toLocaleString('fr-FR')}</div>
-          </div>
-        </div>
       </div>
 
       {/* Branch Filter Tabs with Direct Print Button on Each Tab */}
@@ -594,7 +584,6 @@ export const QuoteListPage = () => {
           { id: 'MRH', label: 'MRH', count: countByBranch.MRH, icon: <Home size={13} /> },
           { id: 'SANTE', label: 'Santé', count: countByBranch.SANTE, icon: <HeartPulse size={13} /> },
           { id: 'IA', label: 'IA', count: countByBranch.IA, icon: <UserPlus size={13} /> },
-          { id: 'CONSOLIDATED', label: 'Consolidés', count: countByBranch.CONSOLIDATED, icon: <CheckCircle size={13} color="#34d399" /> },
         ].map((tab) => {
           const isActive = selectedBranchFilter === tab.id;
           return (

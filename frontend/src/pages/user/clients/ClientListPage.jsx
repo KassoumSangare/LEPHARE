@@ -8,8 +8,8 @@ import { customerApi, configRefApi, secteurActiviteApi, professionApi } from '..
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser } from '../../../utils/rbac';
-import { Users, Plus, Phone, Mail, MapPin, Building, User, Eye, Edit2, Archive, Printer } from 'lucide-react';
-import { exportToPdf } from '../../../utils/exportUtils';
+import { Users, Plus, Phone, Mail, MapPin, Building, User, Eye, Edit2, Archive, Printer, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { exportToPdf, printFicheClient } from '../../../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
 
 export const ClientListPage = () => {
@@ -213,6 +213,9 @@ export const ClientListPage = () => {
   });
 
   const [modalTab, setModalTab] = useState('identite');
+  const modalTabOrder = ['identite', 'coordonnees', 'professionnel', 'courtage', 'banque'];
+  // Client venant d'être créé : bascule le modal sur l'écran de confirmation + impression
+  const [createdClient, setCreatedClient] = useState(null);
 
   // Form State Exhaustif (41 champs réels de stdclient)
   const initialFormState = {
@@ -407,14 +410,50 @@ export const ClientListPage = () => {
       const savedClient = res.data || {};
       const matricule = savedClient.Matricule || savedClient.codeclient || newClientPayload.codeclient;
       success(`Client [${matricule}] ${newClientPayload.nomcomplet} a été créé avec succès.`);
-      setIsModalOpen(false);
-      setFormData(initialFormState);
-      setModalTab('identite');
+      // Fusionne les données saisies avec la réponse de l'API pour disposer de toutes les
+      // informations sur la fiche imprimable (matricule, IdClient, etc.)
+      setCreatedClient({ ...newClientPayload, ...savedClient, Matricule: matricule, codeclient: matricule });
       loadClients();
     } catch (err) {
       toastError(err.response?.data?.detail || err.response?.data?.message || 'Le client n\'a pas pu être créé. Veuillez réessayer.');
     }
   };
+
+  // Ferme et réinitialise complètement le modal de création (Annuler / Fermer après impression)
+  const closeCreateModal = () => {
+    setIsModalOpen(false);
+    setCreatedClient(null);
+    setFormData(initialFormState);
+    setModalTab('identite');
+  };
+
+  // Navigation "Suivant" avec validation minimale de l'étape en cours
+  const handleNextTab = () => {
+    const isEntreprise = formData.typeclient === 'Entreprise';
+    if (modalTab === 'identite' && !formData.nom.trim()) {
+      toastError(isEntreprise ? 'La raison sociale est requise.' : 'Le nom de famille est requis.');
+      return;
+    }
+    if (modalTab === 'coordonnees' && !formData.telephone.trim()) {
+      toastError('Le numéro de téléphone principal est obligatoire.');
+      return;
+    }
+    const idx = modalTabOrder.indexOf(modalTab);
+    if (idx < modalTabOrder.length - 1) {
+      setModalTab(modalTabOrder[idx + 1]);
+    }
+  };
+
+  // Navigation "Précédent"
+  const handlePrevTab = () => {
+    const idx = modalTabOrder.indexOf(modalTab);
+    if (idx > 0) {
+      setModalTab(modalTabOrder[idx - 1]);
+    }
+  };
+
+  const isFirstModalTab = modalTab === modalTabOrder[0];
+  const isLastModalTab = modalTab === modalTabOrder[modalTabOrder.length - 1];
 
   const columns = [
     {
@@ -544,6 +583,16 @@ export const ClientListPage = () => {
 
             <button
               className="btn btn-secondary"
+              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              onClick={() => printFicheClient(row)}
+              title="Imprimer la fiche client"
+            >
+              <Printer size={13} color="#60a5fa" />
+              <span>Fiche</span>
+            </button>
+
+            <button
+              className="btn btn-secondary"
               disabled={!canEdit}
               style={{
                 padding: '0.3rem 0.55rem',
@@ -624,7 +673,7 @@ export const ClientListPage = () => {
             <span>Imprimer la Liste</span>
           </button>
 
-          <button className="btn btn-primary" onClick={() => { setFormData(initialFormState); setModalTab('identite'); setIsModalOpen(true); }}>
+          <button className="btn btn-primary" onClick={() => { setFormData(initialFormState); setModalTab('identite'); setCreatedClient(null); setIsModalOpen(true); }}>
             <Plus size={16} />
             <span>Nouveau Client</span>
           </button>
@@ -642,9 +691,36 @@ export const ClientListPage = () => {
       </div>
 
       {/* New Client Modal Exhaustif */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Enregistrement d'un Nouveau Client" size="large">
+      <Modal isOpen={isModalOpen} onClose={closeCreateModal} title="Enregistrement d'un Nouveau Client" size="large">
+        {createdClient ? (
+          /* ÉCRAN DE CONFIRMATION : client créé, proposition d'impression de la fiche */
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', padding: '1.5rem 1rem', textAlign: 'center' }}>
+            <CheckCircle2 size={48} color="#34d399" />
+            <div>
+              <h3 style={{ margin: 0, color: '#fff' }}>Client enregistré avec succès</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.35rem' }}>
+                <strong>{createdClient.nomcomplet}</strong> ({createdClient.Matricule || createdClient.codeclient}) a bien été créé.
+                Vous pouvez imprimer sa fiche client dès maintenant ou plus tard depuis la liste.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={closeCreateModal}>
+                Fermer
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                onClick={() => printFicheClient(createdClient)}
+              >
+                <Printer size={16} />
+                <span>Imprimer la fiche client</span>
+              </button>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          
+
           {/* Navigation par Onglets */}
           <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem', overflowX: 'auto' }}>
             {[
@@ -1126,21 +1202,38 @@ export const ClientListPage = () => {
             </div>
           )}
 
-          {/* Footer Modal */}
+          {/* Footer Modal : navigation Précédent / Suivant puis Créer sur la dernière étape */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              * Champs obligatoires selon le Code CIMA.
-            </span>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>
-                Annuler
-              </button>
-              <button type="submit" className="btn btn-primary">
-                Créer & Enregistrer le Client
-              </button>
+            <div>
+              {isFirstModalTab ? (
+                <button type="button" className="btn btn-secondary" onClick={closeCreateModal}>
+                  Annuler
+                </button>
+              ) : (
+                <button type="button" className="btn btn-secondary" onClick={handlePrevTab} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <ArrowLeft size={16} /> Précédent
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Étape {modalTabOrder.indexOf(modalTab) + 1} sur {modalTabOrder.length}
+              </span>
+
+              {isLastModalTab ? (
+                <button type="submit" className="btn btn-primary">
+                  Créer & Enregistrer le Client
+                </button>
+              ) : (
+                <button type="button" className="btn btn-primary" onClick={handleNextTab} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <span>Suivant</span> <ArrowRight size={16} />
+                </button>
+              )}
             </div>
           </div>
         </form>
+        )}
       </Modal>
 
       {/* Modal Modification Client */}

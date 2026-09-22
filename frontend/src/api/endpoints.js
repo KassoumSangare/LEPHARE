@@ -508,6 +508,13 @@ export const quoteApi = {
     const res = await apiClient.get(`/devis/${id}/`);
     return normalizeDevis(res.data);
   },
+  // GET /api/devisdetail/:iddevis (détail véhicule + devis imbriqué, pour préremplir
+  // le formulaire d'édition Auto — cf. bouton « Ajuster » du Registre des Devis)
+  getDevisDetailAuto: async (iddevis) => {
+    const res = await apiClient.get(`/devisdetail/${iddevis}`);
+    const list = Array.isArray(res.data) ? res.data : [];
+    return list[0] || null;
+  },
   // POST /api/enregistrementdevis (Auto CIMA)
   createAutoQuote: (data) => {
     const payload = formatAutoQuoteForApi(data);
@@ -517,6 +524,9 @@ export const quoteApi = {
   calculateOffreGarantie: (payload) => apiClient.post('/offregarantie', payload),
   // POST /api/correctiondevis/ (Enregistrement des primes & garanties imposées / modifiées)
   correctQuote: (payload) => apiClient.post('/correctiondevis/', payload),
+  // POST /api/majrecapprimes/ (Mise à jour manuelle du récapitulatif des primes d'un devis
+  // déjà enregistré, via sp_maj_manuelle_primes — utilisé par « Ajuster » sur le Registre des Devis)
+  updateQuotePrimes: (payload) => apiClient.post('/majrecapprimes/', payload),
   // POST /api/finalisationdevisauto (Finalisation devis flotte)
   finalizeFlotteQuote: (payload) => apiClient.post('/finalisationdevisauto', payload),
   // POST /api/annulationsaisievehicule (Suppression d'un véhicule de flotte)

@@ -49,6 +49,7 @@ import {
   UserCog,
   UserPlus,
   Wallet,
+  Archive,
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, onClose }) => {
@@ -374,6 +375,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>GED & Pièces Probantes</span>
             </NavLink>
 
+            <NavLink to="/user/archives" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <Archive size={16} className="nav-icon" />
+              <span>Archives</span>
+            </NavLink>
+
             <div>
               <div
                 onClick={() => toggleSubmenu('compliance')}
@@ -520,7 +526,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             {/* 2. PRODUCTION & SOUSCRIPTION */}
             <div className="sidebar-section-header">
-              <span>Production & Souscription</span>
+              <span>Production</span>
             </div>
 
             <div>
@@ -649,6 +655,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
             <NavLink to="/user/derogations" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <KeyRound size={16} className="nav-icon" />
               <span>Workflows & Dérogations</span>
+            </NavLink>
+
+            <NavLink to="/user/archives" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <Archive size={16} className="nav-icon" />
+              <span>Archives</span>
             </NavLink>
           </>
         )}

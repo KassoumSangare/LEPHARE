@@ -10,6 +10,7 @@ import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   AlertTriangle,
   ShieldCheck,
@@ -322,7 +323,7 @@ export const ClaimsListPage = () => {
                     <td>
                       <strong style={{ color: '#f87171' }}>{claim.numero_sinistre}</strong>
                     </td>
-                    <td>{claim.date_survenance}</td>
+                    <td>{formatDate(claim.date_survenance)}</td>
                     <td>
                       <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{claim.assure_nom}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{claim.police_num}</div>

@@ -6,6 +6,7 @@ import { dataStore } from '../../../api/dataStore';
 import { cashApi, contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { CreditCard, Check, DollarSign, Smartphone, Landmark, Receipt } from 'lucide-react';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const CashCollectionPage = () => {
   const [contracts, setContracts] = useState([]);
@@ -397,7 +398,7 @@ export const CashCollectionPage = () => {
                 <div style={{ textAlign: 'right' }}>
                   <span className="badge badge-success">{currentQuittance.numero_quittance}</span>
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                    {currentQuittance.date_encaissement}
+                    {formatDate(currentQuittance.date_encaissement)}
                   </div>
                 </div>
               </div>

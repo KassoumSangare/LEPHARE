@@ -7,6 +7,7 @@ import { Sliders, Plus, Edit2, FileText, Check, Trash2 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { dataStore } from '../../../api/dataStore';
 import { settingsApi } from '../../../api/endpoints';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const CatalogTarifsPage = () => {
   const { success } = useToast();
@@ -78,7 +79,7 @@ export const CatalogTarifsPage = () => {
     { header: 'Produit Assurantiel', accessor: 'produit', render: (r) => <span style={{ color: '#60a5fa' }}>{r.produit}</span> },
     { header: 'Taux Taxe Assurance', accessor: 'taux_taxe', render: (r) => <span style={{ fontFamily: 'var(--font-mono)' }}>{r.taux_taxe}</span> },
     { header: 'Accessoires Courtier', accessor: 'frais_accessoires', render: (r) => <span style={{ color: '#34d399' }}>{r.frais_accessoires}</span> },
-    { header: 'Date Application', accessor: 'date_effet' },
+    { header: 'Date Application', accessor: 'date_effet', render: (r) => formatDate(r.date_effet) },
     { header: 'Statut', accessor: 'statut', render: (r) => <StatusBadge label={r.statut} color="emerald" /> },
     {
       header: 'Actions',

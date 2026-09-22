@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -590,6 +590,119 @@ export const NewAutoQuotePage = () => {
   const [lieuHabitation, setLieuHabitation] = useState('');
   const [numeroConducteur, setNumeroConducteur] = useState('+225 ');
 
+  // ----------------------------------------------------
+  // MODE ÉDITION : préremplissage depuis un devis existant
+  // (bouton « Ajuster » du Registre des Devis, /user/quotes/auto?edit=<iddevis>)
+  // ----------------------------------------------------
+  const [searchParams] = useSearchParams();
+  const editIddevisParam = searchParams.get('edit');
+  const [editIddevis, setEditIddevis] = useState(null);
+  const [editIdDevisDetail, setEditIdDevisDetail] = useState(null);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
+
+  const toIsoDate = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+  };
+
+  useEffect(() => {
+    if (!editIddevisParam || clients.length === 0) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const dd = await quoteApi.getDevisDetailAuto(editIddevisParam);
+        if (!isMounted || !dd) return;
+        const d = dd.iddevis || {};
+
+        if (d.confirme) {
+          toastError('Ce devis est déjà confirmé (converti en police) : il ne peut plus être ajusté ici.');
+          navigate('/user/quotes');
+          return;
+        }
+
+        setEditIddevis(d.iddevis || Number(editIddevisParam));
+        setEditIdDevisDetail(dd.iddevisdetail || null);
+
+        // Contrat & tarification
+        setNumeroPoliceCompagnie(d.numero_police_compagnie || '');
+        if (d.compagnie) setCompagnieId(Number(d.compagnie));
+        if (dd.idtarif) setCategorieId(Number(dd.idtarif));
+        if (dd.idusage?.IdUsage !== undefined) {
+          setUsageId(Number(dd.idusage.IdUsage));
+          setUsageVehicule(dd.idusage.LibelleUsage || '');
+        }
+        if (dd.idcarrosserie !== undefined) setCarrosserieId(Number(dd.idcarrosserie));
+        setReductionCommerciale(Number(dd.taux_reduction || 0));
+        setBonusMalus(Number(dd.bns || d.bonus_malus || 0));
+        if (d.idduree) setDureeId(Number(d.idduree));
+        if (d.idterme) setTermeId(Number(d.idterme));
+        setDateEmission(toIsoDate(d.dateemission) || dateEmission);
+        setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
+        setCustomDateExpiration(toIsoDate(d.dateexpiration));
+
+        // Véhicule
+        if (dd.essence?.IdEnergie !== undefined) {
+          setEnergieId(Number(dd.essence.IdEnergie));
+          setEnergie(dd.essence.Libelle || '');
+        }
+        if (dd.securite?.IdSystemeSecurite !== undefined) {
+          setSystemeSecuriteId(Number(dd.securite.IdSystemeSecurite));
+          setSystemeSecurite(dd.securite.LibelleSystemeSecurite || '');
+        }
+        setFormuleSecuriteCode(dd.formule_securite_routiere || 'AUCUNE');
+        setFormuleAssistanceId(Number(dd.assistance_automobie || 0));
+        if (dd.idmarque?.IdMarque !== undefined) {
+          setMarqueId(Number(dd.idmarque.IdMarque));
+          setMarqueVehicule(dd.idmarque.LibelleMarque || '');
+        }
+        if (dd.idgenrevehicule?.IdGenre !== undefined) {
+          setGenreId(Number(dd.idgenrevehicule.IdGenre));
+          setGenreVehicule(dd.idgenrevehicule.LibelleGenre || '');
+        }
+        setRemorqueAttelee(Boolean(dd.remorque));
+        setModeleVehicule(dd.modelevehicule || '');
+        setPuissanceFiscale(Number(dd.puissancefiscale || 0));
+        setChargeUtile(Number(dd.chargeutile || 0));
+        setNombrePlace(Number(dd.nombreplace || 0));
+        setValeurNeuf(Number(dd.valeurneuve || 0));
+        setValeurVenale(Number(dd.valeurvenale || 0));
+        setValeurAccessoire(Number(dd.valeuraccessoire || 0));
+        setImmatriculation(dd.matricule || '');
+        setNumeroCarteBrune(dd.numcarteverte || '');
+        setNumeroChassis(dd.numchassis || '');
+        setNumeroMoteur(dd.nummoteur || '');
+        setDateMec(toIsoDate(dd.datemec) || dateMec);
+        setCarburantAutreMatiere(Boolean(dd.carburant_autre_matiere));
+        setTransportEleves(Boolean(dd.transport_eleves));
+        setTransportEmployes(Boolean(dd.transport_employes));
+        setTransportPassagerSupplementaire(Boolean(dd.transport_passager_supplementaire));
+        if (dd.idoffre) setOffreId(Number(dd.idoffre));
+
+        // Souscripteur / conducteur
+        const client = clients.find((c) => String(c.id) === String(d.client));
+        if (client) {
+          setSouscripteurId(client.id);
+          setSearchSouscripteur(client.nomcomplet || '');
+          setTelephoneClient(client.telephone || '+225 ');
+        }
+        setNomConducteur(dd.conducteur || '');
+        setAdresseConducteur(dd.adressecnd || '');
+        setNumeroPermis(dd.permis || '');
+
+        success(`Devis ${d.numerodevis} chargé pour ajustement.`);
+      } catch (err) {
+        console.error('Erreur chargement devis pour édition:', err);
+        toastError("Impossible de charger ce devis pour l'ajuster.");
+        navigate('/user/quotes');
+      } finally {
+        if (isMounted) setIsLoadingEdit(false);
+      }
+    })();
+    return () => { isMounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editIddevisParam, clients]);
+
   // Chargement des données réelles Django au montage
   useEffect(() => {
     let isMounted = true;
@@ -846,6 +959,9 @@ export const NewAutoQuotePage = () => {
     const needsDerogation = Number(reductionCommerciale) > 0;
 
     const newQuote = {
+      // En mode édition (Ajuster), on repasse le vrai id du devis existant : save_quotation
+      // (Django) le détecte et met à jour ce devis/véhicule au lieu d'en créer un nouveau.
+      id: editIddevis || undefined,
       client_nom: selectedClient?.nomcomplet || nomAssure || 'Assuré Uranus',
       client_id: selectedClient?.id,
       produit: typeContrat === 'FLOTTE'
@@ -937,6 +1053,7 @@ export const NewAutoQuotePage = () => {
         numeroPermis,
         lieuHabitation,
         numeroConducteur,
+        idDevisDetail: editIdDevisDetail || undefined,
       },
     };
 
@@ -1039,6 +1156,15 @@ export const NewAutoQuotePage = () => {
     navigate(`/user/contracts/${newContract.id || newContract.numeropolice}`);
   };
 
+  if (isLoadingEdit) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem', gap: '1rem', color: 'var(--text-muted)' }}>
+        <Car size={32} color="#3b82f6" />
+        <span>Chargement du devis à ajuster…</span>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1240px', margin: '0 auto', paddingBottom: '3rem' }}>
       {/* Header avec lien Annuler et Stepper visuel */}
@@ -1054,7 +1180,7 @@ export const NewAutoQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Car size={26} color="#3b82f6" />
-            Nouveau Devis Automobile & Flotte
+            {editIddevis ? `Ajuster le Devis Automobile [${numeroPoliceCompagnie || editIddevis}]` : 'Nouveau Devis Automobile & Flotte'}
           </h1>
         </div>
 

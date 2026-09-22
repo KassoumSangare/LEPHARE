@@ -1,28 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { dataStore } from '../../../api/dataStore';
+import { quoteApi } from '../../../api/endpoints';
+import { useToast } from '../../../context/ToastContext';
 import { FileText, DollarSign, Building2, Save, Clock } from 'lucide-react';
-import { sortUniqueBy } from '../../../utils/sortUtils';
 
-export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
+export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
+  const { success, error: toastError } = useToast();
   const [formData, setFormData] = useState({
-    client_nom: '',
-    produit: '',
-    compagnie: '',
     prime_nette: 0,
     accessoires: 15000,
     taxes: 0,
     prime_totale: 0,
   });
-
-  const [activeCompanies, setActiveCompanies] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [taxRate, setTaxRate] = useState(0.145);
 
   useEffect(() => {
     if (quote) {
       const tarif = dataStore.getTarifForBranch(quote.branche);
-      const companies = dataStore.getActiveCompanies(quote.branche);
-      setActiveCompanies(companies);
       setTaxRate(tarif.taxRate || 0.145);
 
       const pNette = Number(quote.prime_nette || 0);
@@ -30,15 +26,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
       const taxes = Number(quote.taxes ?? Math.round(pNette * (tarif.taxRate || 0.145)));
       const pTotale = Number(quote.prime_totale || pNette + acc + taxes);
 
-      setFormData({
-        client_nom: quote.client_nom || '',
-        produit: quote.produit || 'Automobile Tous Risques',
-        compagnie: quote.compagnie || (companies[0]?.nom || 'NSIA Assurances'),
-        prime_nette: pNette,
-        accessoires: acc,
-        taxes: taxes,
-        prime_totale: pTotale,
-      });
+      setFormData({ prime_nette: pNette, accessoires: acc, taxes, prime_totale: pTotale });
     }
   }, [quote]);
 
@@ -48,18 +36,38 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
     const pNette = Number(val) || 0;
     const taxes = Math.round(pNette * taxRate);
     const pTotale = pNette + formData.accessoires + taxes;
-    setFormData({
-      ...formData,
-      prime_nette: pNette,
-      taxes,
-      prime_totale: pTotale,
-    });
+    setFormData({ ...formData, prime_nette: pNette, taxes, prime_totale: pTotale });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave(quote.id, formData);
-    onClose();
+    if (!quote.numerodevis) {
+      toastError("Ce devis n'a pas de numéro : l'ajustement ne peut pas être enregistré.");
+      return;
+    }
+    setIsSaving(true);
+    try {
+      // sp_maj_manuelle_primes recalcule la prime nette à partir de la prime annuelle
+      // (proratisation selon la durée réelle de la police) : on ne touche donc pas à
+      // la prime annuelle d'origine, seuls l'accessoire, la taxe et le TTC sont ajustés.
+      await quoteApi.updateQuotePrimes({
+        numero_devis: quote.numerodevis,
+        prime_annuelle: quote.raw?.primeannuelle || formData.prime_nette,
+        prime_nette: formData.prime_nette,
+        accessoire: formData.accessoires,
+        taxe: formData.taxes,
+        fga: quote.fga || 0,
+        cedeao: quote.cedeao || 0,
+        prime_ttc: formData.prime_totale,
+      });
+      success(`Devis ${quote.numerodevis} ajusté avec succès.`);
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      toastError(err.response?.data?.message || err.response?.data?.detail || "L'ajustement n'a pas pu être enregistré.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -94,47 +102,31 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
             <span>Dernière modification : <strong style={{ color: '#38bdf8' }}>{quote.date_derniere_modification || quote.DateMaj || quote.date_maj || 'Enregistrement initial'}</strong></span>
           </div>
         </div>
+
+        {/* Souscripteur / compagnie / produit : identité du devis, non modifiable ici (le
+            backend ne permet pas de réassigner un devis existant à un autre client, une
+            autre compagnie ou un autre produit — seule la décomposition actuarielle l'est,
+            via sp_maj_manuelle_primes). */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
           <div>
-            <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Souscripteur / Assuré</label>
-            <input
-              type="text"
-              className="form-control"
-              value={formData.client_nom}
-              onChange={(e) => setFormData({ ...formData, client_nom: e.target.value })}
-              required
-            />
+            <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+              <FileText size={13} style={{ verticalAlign: '-2px', marginRight: '0.3rem' }} />
+              Souscripteur / Assuré
+            </label>
+            <input type="text" className="form-control" value={quote.client_nom || ''} readOnly disabled />
           </div>
           <div>
-            <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Compagnie Partenaire</label>
-            <select
-              className="form-control"
-              value={formData.compagnie}
-              onChange={(e) => setFormData({ ...formData, compagnie: e.target.value })}
-            >
-              {sortUniqueBy(activeCompanies, (c) => c.nom).map((c) => (
-                <option key={c.id || c.nom} value={c.nom}>{c.nom}</option>
-              ))}
-              {!activeCompanies.some((c) => c.nom === formData.compagnie) && formData.compagnie && (
-                <option value={formData.compagnie}>{formData.compagnie}</option>
-              )}
-            </select>
+            <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+              <Building2 size={13} style={{ verticalAlign: '-2px', marginRight: '0.3rem' }} />
+              Compagnie Partenaire
+            </label>
+            <input type="text" className="form-control" value={quote.compagnie || ''} readOnly disabled />
           </div>
-        </div>
-
-        <div>
-          <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Produit / Formule</label>
-          <input
-            type="text"
-            className="form-control"
-            value={formData.produit}
-            onChange={(e) => setFormData({ ...formData, produit: e.target.value })}
-            required
-          />
         </div>
 
         <div style={{ backgroundColor: 'var(--surface-sunken)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <DollarSign size={14} />
             Décomposition Actuarielle CIMA ({quote.branche || 'Général'})
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
@@ -181,7 +173,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
             </div>
           </div>
           <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: '1px solid var(--border-subtle)' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Prime Totale TTC :</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Prime TTC :</span>
             <strong style={{ fontSize: '1.1rem', color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
               {formData.prime_totale.toLocaleString('fr-FR')} FCFA
             </strong>
@@ -197,16 +189,17 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
             borderTop: '1px solid var(--border-subtle)',
           }}
         >
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSaving}>
             Annuler
           </button>
           <button
             type="submit"
             className="btn btn-primary"
+            disabled={isSaving}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', backgroundColor: '#2563eb' }}
           >
             <Save size={15} />
-            <span>Mettre à Jour la Proposition</span>
+            <span>{isSaving ? 'Enregistrement…' : 'Enregistrer les Primes'}</span>
           </button>
         </div>
       </form>

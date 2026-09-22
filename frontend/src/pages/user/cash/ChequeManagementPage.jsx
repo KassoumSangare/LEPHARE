@@ -4,6 +4,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Receipt, CheckCircle, AlertTriangle } from 'lucide-react';
 import { cashApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const ChequeManagementPage = () => {
   const { success, error } = useToast();
@@ -53,7 +54,7 @@ export const ChequeManagementPage = () => {
     { header: 'N° Chèque', accessor: 'numero', render: (row) => <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{row.numero}</strong> },
     { header: 'Banque', accessor: 'banque' },
     { header: 'Tireur / Émetteur', accessor: 'tireur' },
-    { header: 'Date Dépôt', accessor: 'date_reception' },
+    { header: 'Date Dépôt', accessor: 'date_reception', render: (r) => formatDate(r.date_reception) },
     {
       header: 'Montant',
       accessor: 'montant',

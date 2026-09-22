@@ -6,6 +6,7 @@ import { dataStore } from '../../../api/dataStore';
 import { remittanceApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { Building2, Check, Download, Send, AlertTriangle, ShieldCheck, Clock, FileText, Printer } from 'lucide-react';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const CompanyRemittancePage = () => {
   const { success, info } = useToast();
@@ -317,7 +318,7 @@ export const CompanyRemittancePage = () => {
                 LE PHARE – BORDEREAU DE COMPENSATION & REVERSEMENT
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Établi le {selectedBordereau.date_generation} • Échéance légale 30 jours : <strong>{selectedBordereau.date_echeance_30j}</strong>
+                Établi le {formatDate(selectedBordereau.date_generation)} • Échéance légale 30 jours : <strong>{selectedBordereau.date_echeance_30j}</strong>
               </div>
             </div>
 

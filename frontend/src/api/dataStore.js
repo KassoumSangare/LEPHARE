@@ -582,6 +582,16 @@ export const dataStore = {
       date_archivage: new Date().toISOString().split('T')[0],
     });
   },
+  // Restauration d'une fiche client archivée (module Archives)
+  unarchiveClient: (id) => {
+    return dataStore.updateClient(id, {
+      Statut: 'V',
+      statut: 'Actif',
+      statut_badge: 'emerald',
+      archive: false,
+      date_archivage: null,
+    });
+  },
 
   /* =========================================================================
      2. DEVIS (QUOTES)
@@ -709,6 +719,18 @@ export const dataStore = {
       archive: true,
       date_archivage: new Date().toISOString().split('T')[0],
       motif_archivage: motif,
+    });
+  },
+  // Restauration d'un devis archivé (module Archives)
+  unarchiveQuote: (id) => {
+    const list = dataStore.getQuotes();
+    const quote = list.find((q) => String(q.id) === String(id) || q.numerodevis === id);
+    if (!quote) throw new Error('Devis introuvable');
+    return dataStore.updateQuote(quote.id, {
+      statut: 'En attente',
+      statut_badge: 'amber',
+      archive: false,
+      date_archivage: null,
     });
   },
   // Convert Quote into a Legal Insurance Policy (Contract)
@@ -885,6 +907,16 @@ export const dataStore = {
       archive: true,
       date_archivage: new Date().toISOString().split('T')[0],
       motif_archivage: motif,
+    });
+  },
+  // Restauration d'un contrat archivé (module Archives)
+  unarchiveContract: (id) => {
+    return dataStore.updateContract(id, {
+      statut_contrat: 'En cours',
+      statut: 'En cours',
+      statut_badge: 'emerald',
+      archive: false,
+      date_archivage: null,
     });
   },
   terminateContract: (id, { motif, date_resiliation, motif_label } = {}) => {
@@ -1273,6 +1305,18 @@ export const dataStore = {
       archive: true,
       date_archivage: new Date().toISOString().split('T')[0],
       motif_archivage: motif,
+    });
+  },
+  // Restauration d'un dossier sinistre archivé (module Archives)
+  unarchiveClaim: (id) => {
+    const list = dataStore.getClaims();
+    const claim = list.find((c) => String(c.id) === String(id) || c.numero_sinistre === id);
+    if (!claim) throw new Error('Dossier sinistre introuvable');
+    return dataStore.updateClaim(claim.id, {
+      statut: 'En cours d\'instruction',
+      statut_badge: 'amber',
+      archive: false,
+      date_archivage: null,
     });
   },
   closeClaimWithoutAction: (id, { motif } = {}) => {

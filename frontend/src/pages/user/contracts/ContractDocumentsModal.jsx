@@ -13,6 +13,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onSaveContract }) => {
   const { success } = useToast();
@@ -103,7 +104,7 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
                 <strong style={{ display: 'block', color: '#334155', marginBottom: '0.25rem' }}>COMPAGNIE PORTEUSE :</strong>
                 <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{contract.compagnie}</div>
                 <div style={{ color: '#64748b' }}>Branche : {contract.branche || 'Automobile'}</div>
-                <div style={{ color: '#64748b' }}>Période : Du {contract.date_effet} au {contract.date_expiration}</div>
+                <div style={{ color: '#64748b' }}>Période : Du {formatDate(contract.date_effet)} au {formatDate(contract.date_expiration)}</div>
               </div>
             </div>
 
@@ -175,8 +176,8 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 <div><strong>Branche :</strong> {contract.branche || 'Automobile'}</div>
                 <div><strong>Compagnie Porteuse :</strong> {contract.compagnie}</div>
-                <div><strong>Date de prise d'effet :</strong> {contract.date_effet}</div>
-                <div><strong>Date d'échéance :</strong> {contract.date_expiration}</div>
+                <div><strong>Date de prise d'effet :</strong> {formatDate(contract.date_effet)}</div>
+                <div><strong>Date d'échéance :</strong> {formatDate(contract.date_expiration)}</div>
                 {contract.details?.immatriculation && (
                   <div><strong>Immatriculation :</strong> {contract.details.immatriculation}</div>
                 )}
@@ -274,8 +275,8 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
                 <div><strong>Immatriculation :</strong> <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{immat}</span></div>
                 <div><strong>Assuré :</strong> {contract.client_nom}</div>
                 <div><strong>Compagnie :</strong> {contract.compagnie}</div>
-                <div><strong>Date d'Effet :</strong> {contract.date_effet}</div>
-                <div><strong>Date d'Échéance :</strong> {contract.date_expiration}</div>
+                <div><strong>Date d'Effet :</strong> {formatDate(contract.date_effet)}</div>
+                <div><strong>Date d'Échéance :</strong> {formatDate(contract.date_expiration)}</div>
               </div>
             </div>
           </div>
@@ -308,7 +309,7 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
               <div style={{ background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: '6px' }}>
                 <div><strong>Bureau National Émetteur :</strong> Bureau National CI</div>
                 <div><strong>Compagnie Garante :</strong> {contract.compagnie}</div>
-                <div><strong>Validité :</strong> Du {contract.date_effet} au {contract.date_expiration}</div>
+                <div><strong>Validité :</strong> Du {formatDate(contract.date_effet)} au {formatDate(contract.date_expiration)}</div>
               </div>
             </div>
 

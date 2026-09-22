@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 
 import { isRegistryQuote } from '../../utils/quoteRegistry';
+import { formatDate } from '../../utils/dateUtils';
 export const UserDashboard = () => {
   const navigate = useNavigate();
 
@@ -78,7 +79,7 @@ export const UserDashboard = () => {
     { header: 'N° Police', accessor: 'numeropolice', render: (row) => <strong style={{ color: '#34d399' }}>{row.numeropolice}</strong> },
     { header: 'Client', accessor: 'client_nom' },
     { header: 'Compagnie', accessor: 'compagnie' },
-    { header: 'Période', render: (row) => `${row.date_effet} au ${row.date_expiration}` },
+    { header: 'Période', render: (row) => `${formatDate(row.date_effet)} au ${formatDate(row.date_expiration)}` },
     {
       header: 'Prime',
       accessor: 'prime_totale',

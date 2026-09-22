@@ -341,6 +341,161 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   downloadBlob(blob, cleanName);
 };
 
+/**
+ * Impression de la Fiche Client Officielle (Personne physique ou morale)
+ * Génère une page A4 avec toutes les informations saisies lors de la création/modification du client
+ * et déclenche directement la boîte de dialogue d'impression du navigateur.
+ */
+export const printFicheClient = (client) => {
+  if (!client) return;
+
+  const isEntreprise = client.typeclient === 'Entreprise' || client.Particulier === 'F' || client.Particulier === '0';
+  const nomComplet = client.nomcomplet || [client.Nom || client.nom, client.Prenoms || client.prenom].filter(Boolean).join(' ') || 'Client';
+  const matricule = client.Matricule || client.codeclient || client.numero_assure || '—';
+
+  const field = (label, value) => `
+    <div style="display:flex;padding:5px 0;border-bottom:1px dashed #e2e8f0;">
+      <div style="width:42%;color:#64748b;font-weight:600;font-size:8.5pt;">${label}</div>
+      <div style="width:58%;color:#0f172a;font-weight:600;font-size:9pt;">${value || value === 0 ? value : '—'}</div>
+    </div>
+  `;
+
+  const sectionTitle = (label) => `
+    <div style="background:#1e293b;color:#fff;font-weight:700;font-size:8.5pt;text-transform:uppercase;letter-spacing:0.5px;padding:6px 10px;border-radius:4px;margin:16px 0 6px;">
+      ${label}
+    </div>
+  `;
+
+  const identiteFields = isEntreprise
+    ? [
+        field('Raison Sociale', nomComplet),
+        field('N° RCCM / Patente', client.CniPat),
+        field('Date de Création', fmtDate(client.DateNaissance)),
+        field('Siège Social', client.LieuNaissance),
+        field('Nationalité', client.Nationalite),
+      ]
+    : [
+        field('Civilité', client.civilite),
+        field('Nom & Prénoms', nomComplet),
+        field('N° Pièce d\'Identité', client.CniPat),
+        field('Date de Naissance', fmtDate(client.DateNaissance)),
+        field('Lieu de Naissance', client.LieuNaissance),
+        field('Nationalité', client.Nationalite),
+        field('Situation Matrimoniale', client.SituationMatrimoniale),
+      ];
+
+  const docHtml = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Fiche Client - ${nomComplet}</title>
+  <style>
+    @page { size: A4 portrait; margin: 14mm 16mm; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a; background: #ffffff; margin: 0; padding: 10px; font-size: 10pt; line-height: 1.4;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .header-box {
+      border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .republic-tag { font-size: 7.5pt; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #475569; }
+    .company-title { font-size: 14pt; font-weight: 900; color: #0f172a; margin-top: 3px; }
+    .doc-badge { text-align: right; font-size: 8pt; color: #64748b; }
+    .doc-badge-status { font-weight: 800; color: #0284c7; margin-top: 2px; letter-spacing: 0.5px; }
+    .id-band {
+      display: flex; justify-content: space-between; align-items: center;
+      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;
+    }
+    .signatures {
+      display: flex; justify-content: space-between; margin-top: 30px; padding-top: 14px;
+      border-top: 1px dashed #cbd5e1; font-size: 8.5pt;
+    }
+    .sig-col { width: 45%; }
+    .sig-space { height: 48px; display: flex; align-items: flex-end; color: #94a3b8; font-style: italic; }
+    @media print { .no-print { display: none !important; } body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <div>
+      <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
+      <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
+      <div style="font-size: 11.5pt; font-weight: 800; color: #0284c7; margin-top: 3px;">FICHE CLIENT ${isEntreprise ? '— PERSONNE MORALE' : '— PERSONNE PHYSIQUE'}</div>
+    </div>
+    <div class="doc-badge">
+      <div>Édité le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</div>
+      <div class="doc-badge-status">DOCUMENT OFFICIEL CERTIFIÉ</div>
+    </div>
+  </div>
+
+  <div class="id-band">
+    <div>
+      <div style="font-size:13pt;font-weight:800;color:#0f172a;">${nomComplet}</div>
+      <div style="font-size:8.5pt;color:#475569;">${isEntreprise ? 'Entreprise / Personne morale' : 'Particulier / Personne physique'}${client.Vip === 'V' ? ' • Client VIP' : ''}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:8pt;color:#64748b;">Matricule Client</div>
+      <div style="font-size:12pt;font-weight:800;color:#0284c7;font-family:monospace;">${matricule}</div>
+    </div>
+  </div>
+
+  ${sectionTitle(isEntreprise ? '1. Identité de l\'Entreprise' : '1. État Civil & Identité')}
+  ${identiteFields.join('')}
+
+  ${sectionTitle('2. Coordonnées & Adresse')}
+  ${field('Téléphone Principal', client.Telephone || client.telephone)}
+  ${field('Mobile', client.Mobile || client.mobile)}
+  ${field('Email', client.Email || client.email)}
+  ${field('Ville', client.Ville || client.ville)}
+  ${field('Commune', client.Commune)}
+  ${field('Quartier', client.Quartier)}
+  ${field('Adresse', client.Adresse1 || client.adresse)}
+  ${field('Boîte Postale', client.BoitePostale)}
+
+  ${sectionTitle(isEntreprise ? '3. Activité de l\'Entreprise' : '3. Activité Professionnelle')}
+  ${field('Profession / Secteur', client.libelleprofession || client.profession)}
+  ${field('Secteur d\'Activité', client.secteur_activite)}
+  ${isEntreprise ? field('Compte Contribuable', client.CompteContribuable) : field('Employeur', client.Employeur)}
+  ${field(isEntreprise ? 'Interlocuteur / Contact' : 'Poste Occupé', isEntreprise ? client.NomContact : client.Fonction)}
+
+  ${sectionTitle('4. Courtage, CIMA & Banque')}
+  ${field('Statut VIP', client.Vip === 'V' ? 'Oui (Client VIP)' : 'Non (Standard)')}
+  ${field('RIB', client.Rib)}
+  ${field('N° Compte Client', client.NumeroCompte)}
+  ${field('Exonéré de Taxe d\'Assurance', client.ExonereDeTaxes ? 'Oui' : 'Non')}
+  ${field('Exonéré d\'Accessoires de Police', client.ExonereDeAccess ? 'Oui' : 'Non')}
+
+  <div class="signatures">
+    <div class="sig-col">
+      <div style="font-weight: 700; color: #334155;">Le Souscripteur / Représentant :</div>
+      <div class="sig-space">Signature</div>
+    </div>
+    <div class="sig-col" style="text-align: right;">
+      <div style="font-weight: 700; color: #334155;">Pour LE PHARE Courtage :</div>
+      <div class="sig-space" style="justify-content: flex-end; color: #0284c7; font-weight: 700;">[ Cachet Officiel ]</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 350);
+    };
+  </script>
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(docHtml);
+    printWindow.document.close();
+  }
+};
+
 const BORDEREAU_COLUMNS = [
   'Numéro Police', 'Numéro quittance', 'Numéro Avenant', 'Date Emission',
   'Date Effet', 'Date Expiration', 'Prime Nette', 'Accessoire', 'Taxe',
@@ -867,9 +1022,10 @@ const buildConditionsParticulieresAuto = (quote) => {
       <div>ASSURANCE ${(quote.produit || 'AUTOMOBILE').toUpperCase()}</div>
     </div>
 
+    <div class="cp-section-bar">VÉHICULE ASSURÉ</div>
     <table class="cadre-unique cp-info">
       <tr>
-        <td class="label">N° Immatriculation</td><td>${dash(d.immatriculation)}</td>
+        <td class="label">N° Immatriculation</td><td><strong>${dash(d.immatriculation)}</strong></td>
         <td class="label">1ère mise en circulation</td><td>${d.dateMec ? formatFrDate(d.dateMec) : '—'}</td>
         <td class="label">Énergie</td><td>${dash(d.energie)}</td>
       </tr>
@@ -898,15 +1054,13 @@ const buildConditionsParticulieresAuto = (quote) => {
         <td class="label">Bonus / Malus</td><td>${bnsDefaut}%</td>
         <td class="label">Couleur</td><td>${dash(d.couleur)}</td>
       </tr>
-    </table>
-
-    <table class="cadre-unique cp-offre">
       <tr>
-        <td class="label">Offre</td><td><strong>${String(offre).toUpperCase()}</strong></td>
+        <td class="label">Offre</td><td colspan="3"><strong>${String(offre).toUpperCase()}</strong></td>
         <td class="label">Conducteur habituel</td><td><strong>${conducteur}</strong></td>
       </tr>
     </table>
 
+    <div class="cp-section-bar">GARANTIES SOUSCRITES</div>
     <table class="tableau-garanties cp-garanties">
       <tr class="ligne-labels">
         <td>Garanties</td><td>États</td><td>Sommes Garanties</td><td>Franchise</td>
@@ -925,6 +1079,7 @@ const buildConditionsParticulieresAuto = (quote) => {
     <div class="cp-securite"><strong>SÉCURITÉ ROUTIÈRE :</strong> ${srLine}</div>
     <div class="cp-securite"><strong>Individuelle Chauffeur :</strong> ${dash(raw.individuelle_chauffeur || d.individuelleChauffeur || '')}</div>
 
+    <div class="cp-section-bar">RÉCAPITULATIF DE LA PRIME</div>
     <div class="cp-bas">
       <div class="cp-mentions">
         <p>Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraires.</p>
@@ -945,7 +1100,14 @@ const buildConditionsParticulieresAuto = (quote) => {
     </div>
     <div class="signatures-deux-colonnes" style="margin-top:30px;">
       <div><em>L'assuré</em></div>
-      <div><em>Pour la compagnie</em></div>
+      <div style="text-align:right;">
+        <em>Pour la compagnie</em>
+        <div class="cp-courtier-contact">
+          OREOLE Assurances<br/>
+          27 B.P. 112 Abidjan 27 — Cocody Cité des Arts, Bd Latrille, face SODEMI<br/>
+          Tél. 27 22 487 686 / 01 02 938 259 / 27 22 437 345 — www.oreole-ci.com
+        </div>
+      </div>
     </div>
 
     ${printDocFooter(true)}
@@ -1218,10 +1380,14 @@ const PRINT_STYLES = `
   body {
     font-family: Arial, Helvetica, sans-serif;
     color: #0f172a;
-    font-size: 10pt;
-    line-height: 1.45;
-    margin: 0;
+    font-size: 9.5pt;
+    line-height: 1.4;
+    margin: 0 auto;
     padding: 10px;
+    /* Aperçu à l'écran calé sur la largeur réelle d'une page A4 (moins les marges) :
+       sans ça, la fenêtre d'impression affiche les tableaux étirés sur toute la largeur
+       du navigateur, bien plus grands qu'à l'impression réelle. */
+    max-width: 182mm;
   }
   .facture-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .header-logo-oreole { height: 46px; }
@@ -1230,18 +1396,18 @@ const PRINT_STYLES = `
   .facture-title { text-align: center; font-weight: 800; font-size: 12pt; text-transform: uppercase; margin-bottom: 4px; }
   .sous-titre { font-weight: 700; margin-bottom: 10px; }
   .titre-mrh { text-align: center; font-size: 13pt; margin-bottom: 10px; }
-  table.cadre-unique { width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a; margin-bottom: 14px; }
-  table.cadre-unique td { border: 1px solid #64748b; padding: 6px 8px; font-size: 9pt; }
-  .ligne-compagnie { font-size: 9.5pt; }
+  table.cadre-unique { width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a; margin-bottom: 12px; }
+  table.cadre-unique td { border: 1px solid #64748b; padding: 4px 6px; font-size: 8.3pt; }
+  .ligne-compagnie { font-size: 8.8pt; }
   .entete-bloc { font-weight: 700; background: #f1f5f9; }
-  .ligne-labels td { font-weight: 600; text-align: center; background: #f8fafc; font-size: 8.3pt; text-transform: uppercase; }
+  .ligne-labels td { font-weight: 600; text-align: center; background: #f8fafc; font-size: 7.6pt; text-transform: uppercase; }
   .ligne-valeurs td { text-align: center; }
   .texte-politesse { font-size: 8.8pt; margin: 4px 0; }
   .bloc-signature-droite { text-align: right; margin-top: 20px; font-size: 9.5pt; }
   .bloc-titre { font-weight: 700; background: #eef2ff; border: 1px solid #c7d2fe; padding: 4px 8px; margin-top: 12px; font-size: 9pt; }
   table.bloc-cadre { width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; margin-bottom: 4px; }
-  table.bloc-cadre td { border-bottom: 1px solid #e2e8f0; padding: 5px 8px; font-size: 9pt; }
-  table.bloc-cadre td.label { font-weight: 600; color: #475569; width: 220px; }
+  table.bloc-cadre td { border-bottom: 1px solid #e2e8f0; padding: 3px 6px; font-size: 8.3pt; }
+  table.bloc-cadre td.label { font-weight: 600; color: #475569; width: 190px; }
   table.bloc-tableau td { text-align: center; }
   .ligne-total td { font-weight: 800; border-top: 2px solid #0f172a !important; }
   .mention-cima { border: 1px solid #cbd5e1; padding: 8px 10px; font-size: 7.6pt; text-align: justify; color: #334155; margin: 14px 0; background: #f8fafc; }
@@ -1253,15 +1419,18 @@ const PRINT_STYLES = `
   table.bloc-libre td { padding: 3px 4px; vertical-align: top; }
   .ligne-dates { font-size: 9pt; margin-bottom: 10px; font-weight: 600; }
   table.tableau-garanties { width: 100%; border-collapse: collapse; border: 1px solid #64748b; margin-bottom: 14px; }
-  table.tableau-garanties td { border: 1px solid #cbd5e1; padding: 4px 6px; font-size: 7.8pt; text-align: center; }
-  table.recap-vertical { border: 1px solid #64748b; padding: 4px; font-size: 9.5pt; }
-  table.recap-vertical td { padding: 3px 10px; }
+  table.tableau-garanties td { border: 1px solid #cbd5e1; padding: 3px 5px; font-size: 7.4pt; text-align: center; }
+  table.recap-vertical { border: 1px solid #64748b; padding: 3px; font-size: 8.8pt; }
+  table.recap-vertical td { padding: 3px 8px; }
   table.recap-vertical td.label { font-weight: 700; }
   .facture-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; }
   .barcode-block img { height: 46px; }
   .barcode-ref { font-size: 7.5pt; color: #475569; margin-top: 2px; }
   .footer-logo-oreole { height: 22px; opacity: 0.85; }
   .titre-cp { text-align: center; font-weight: 800; font-size: 12pt; text-transform: uppercase; margin-bottom: 10px; line-height: 1.5; }
+  .cp-section-bar { background: #eef2ff; border: 1px solid #c7d2fe; border-bottom: none; color: #3730a3; font-weight: 700; font-size: 7.6pt; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 8px; }
+  .cp-section-bar + table { margin-top: 0; }
+  .cp-courtier-contact { font-size: 6.8pt; color: #64748b; margin-top: 4px; line-height: 1.5; }
   table.cp-info td.label { font-weight: 600; color: #475569; background: #f8fafc; white-space: nowrap; }
   table.cp-garanties td { font-size: 7.5pt; }
   table.cp-recap { width: 290px; margin-top: 4px; }

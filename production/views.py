@@ -14,6 +14,7 @@ from django.http.response import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from knox.auth import TokenAuthentication
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.authentication import BasicAuthentication
@@ -351,6 +352,22 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset = queryset.filter(confirme=True)
             elif str(confirme).lower() in ["false", "0"]:
                 queryset = queryset.filter(confirme=False)
+
+        # Un devis confirmé donne systématiquement lieu à un Contrat (créés ensemble
+        # à la confirmation) : sans ce filtre, un devis confirmé est compté une
+        # deuxième fois en plus de son contrat déjà émis (Portefeuille des Contrats,
+        # onglet « En cours »). sans_contrat=true ne garde que les devis confirmés
+        # réellement encore en attente d'émission d'un contrat.
+        sans_contrat = self.request.query_params.get("sans_contrat")
+        if sans_contrat is not None and str(sans_contrat).lower() in ["true", "1"]:
+            queryset = queryset.filter(contrat__isnull=True)
+
+        # Filtre « expiré avant » (Portefeuille des Contrats : devis non confirmés
+        # dont l'échéance est dépassée, à faire figurer dans l'onglet « À
+        # Renouveler / Échues »). Date ISO (AAAA-MM-JJ).
+        dateexpiration_avant = self.request.query_params.get("dateexpiration_avant")
+        if dateexpiration_avant:
+            queryset = queryset.filter(dateexpiration__date__lt=dateexpiration_avant)
 
         # Les devis les plus récents en premier
         return queryset.order_by("-dateemission", "-iddevis")
@@ -692,6 +709,50 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         permissions.IsAuthenticated,
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Statut du contrat (Portefeuille des Contrats : onglets « En cours »,
+        # « À Renouveler / Échues », « Résiliées »). Par défaut (aucun statut
+        # demandé), on garde le comportement historique : contrats non résiliés,
+        # quelle que soit leur échéance.
+        statut = self.request.query_params.get("statut")
+        if statut == "resilie":
+            # Les résiliés/annulés sont exclus du queryset de base : on repart
+            # d'une requête neuve plutôt que d'essayer de retirer ce filtre.
+            queryset = Contrat.objects.prefetch_related("piece_jointe").filter(
+                ~Q(idcontratannulation=0)
+            )
+        else:
+            queryset = super().get_queryset()
+            if statut in ("actif", "echeance"):
+                seuil = timezone.now() + timedelta(days=30)
+                if statut == "echeance":
+                    queryset = queryset.filter(dateexpiration__lte=seuil)
+                else:
+                    queryset = queryset.filter(
+                        Q(dateexpiration__isnull=True) | Q(dateexpiration__gt=seuil)
+                    )
+
+        # Portefeuille des Contrats : seuls les contrats émis durant les 3 dernières
+        # années sont affichés (même fenêtre que le Registre des Devis).
+        three_years_ago = timezone.now() - timedelta(days=365 * 3)
+        queryset = queryset.filter(dateemission__gte=three_years_ago)
+
+        # Filtre par produit (Portefeuille des Contrats : onglets par branche).
+        # Le paramètre idproduit peut être un identifiant unique ou une liste
+        # séparée par des virgules (ex. "4,7,9" pour MRH/MRP/Tous Dommages).
+        idproduit = self.request.query_params.get("idproduit")
+        if idproduit:
+            if "," in str(idproduit):
+                ids = [int(x) for x in str(idproduit).split(",") if x.isdigit()]
+                queryset = queryset.filter(idproduit_id__in=ids)
+            elif str(idproduit).isdigit():
+                queryset = queryset.filter(idproduit_id=int(idproduit))
+
+        return queryset
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):
@@ -1884,7 +1945,7 @@ def finalize_quotation_flotte(request):
 
 # Cancel_car_fleet_input
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def quote_archival(request):
     inputcancelation_data = JSONParser().parse(request)
@@ -1909,7 +1970,7 @@ def quote_archival(request):
 
 # Unarchive Quote
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def quote_unarchival(request):
     input_data = JSONParser().parse(request)

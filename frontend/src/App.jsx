@@ -28,6 +28,7 @@ import CashCollectionPage from './pages/user/cash/CashCollectionPage';
 import ChequeManagementPage from './pages/user/cash/ChequeManagementPage';
 import AsaciPage from './pages/user/asaci/AsaciPage';
 import MyDerogationsPage from './pages/user/derogations/MyDerogationsPage';
+import ArchivesPage from './pages/user/archives/ArchivesPage';
 
 // Admin Space Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -152,6 +153,9 @@ function App() {
                 {/* ===== MODULE J – GED & WORKFLOWS ===== */}
                 <Route path="/user/documents" element={<DocumentManagementPage />} />
                 <Route path="/user/derogations" element={<MyDerogationsPage />} />
+
+                {/* ===== MODULE K – ARCHIVES (CONSERVATION CIMA) ===== */}
+                <Route path="/user/archives" element={<ArchivesPage />} />
 
                 {/* ===== ESPACE ADMINISTRATION / DIRECTION (DIRECTEUR & ADMIN SEULEMENT) ===== */}
                 <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />

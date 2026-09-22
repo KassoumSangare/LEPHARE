@@ -4,6 +4,7 @@ import { MetricCard } from '../../../components/common/MetricCard';
 import { Modal } from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';
 import { exportToPdf } from '../../../utils/exportUtils';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   FolderOpen,
   FileText,
@@ -242,7 +243,7 @@ export const DocumentManagementPage = () => {
           ['Dossier Métier Associé', doc.entite_rattachee],
           ['Format & Encodage Numérique', doc.type],
           ['Volume & Poids du Fichier', doc.taille],
-          ['Horodatage & Scellement', `${doc.date_depot} (Certifié UTC+0)`],
+          ['Horodatage & Scellement', `${formatDate(doc.date_depot)} (Certifié UTC+0)`],
           ['Valeur Probante & Opposabilité', 'Validé conforme aux exigences du Code CIMA'],
         ],
       });
@@ -375,7 +376,7 @@ export const DocumentManagementPage = () => {
                   <td><span className="badge badge-neutral">{doc.categorie}</span></td>
                   <td><strong style={{ color: 'var(--text-primary)' }}>{doc.entite_rattachee}</strong></td>
                   <td><span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{doc.type} • {doc.taille}</span></td>
-                  <td><span style={{ fontSize: '0.8rem' }}>{doc.date_depot}</span></td>
+                  <td><span style={{ fontSize: '0.8rem' }}>{formatDate(doc.date_depot)}</span></td>
                   <td>
                     <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>
                       {doc.statut}
@@ -691,7 +692,7 @@ export const DocumentManagementPage = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Date & Heure d'Archivage :</span>
-                <span>{previewDoc.date_depot} (Horodatage Certifié)</span>
+                <span>{formatDate(previewDoc.date_depot)} (Horodatage Certifié)</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Format & Poids :</span>

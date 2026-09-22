@@ -26,6 +26,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const ContractDetailPage = () => {
   const { id } = useParams();
@@ -184,11 +185,11 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Date d'effet :</span>
-              <strong style={{ color: '#34d399' }}>{contract.date_effet}</strong>
+              <strong style={{ color: '#34d399' }}>{formatDate(contract.date_effet)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Date d'expiration :</span>
-              <strong style={{ color: '#60a5fa' }}>{contract.date_expiration}</strong>
+              <strong style={{ color: '#60a5fa' }}>{formatDate(contract.date_expiration)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span className="text-muted">Dernière modification :</span>
@@ -398,7 +399,7 @@ export const ContractDetailPage = () => {
             <div><strong>N° Attestation :</strong> <span style={{ color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>{attestation.numero_attestation}</span></div>
             <div><strong>Immatriculation :</strong> {attestation.immatriculation}</div>
             <div><strong>Code de Sécurité :</strong> {attestation.code_securite}</div>
-            <div><strong>Expiration ASACI :</strong> {attestation.date_expiration}</div>
+            <div><strong>Expiration ASACI :</strong> {formatDate(attestation.date_expiration)}</div>
           </div>
         </div>
       )}
@@ -498,7 +499,7 @@ export const ContractDetailPage = () => {
                       {m.nature || m.details?.motif || 'Avenant de police'}
                     </td>
                     <td style={{ padding: '0.65rem' }}>
-                      {m.date_effet ? `Du ${m.date_effet} au ${m.date_expiration || '31/12/2026'}` : m.date_avenant}
+                      {m.date_effet ? `Du ${formatDate(m.date_effet)} au ${m.date_expiration || '31/12/2026'}` : m.date_avenant}
                     </td>
                     <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
                       {Number(m.prime_totale || 0).toLocaleString('fr-FR')} FCFA
@@ -583,7 +584,7 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Période d'Assurance :</span>
-              <span>Du {contract.date_effet} au {contract.date_expiration}</span>
+              <span>Du {formatDate(contract.date_effet)} au {formatDate(contract.date_expiration)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Montant Net de Prime :</span>

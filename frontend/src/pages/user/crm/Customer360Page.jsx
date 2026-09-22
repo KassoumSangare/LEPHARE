@@ -9,6 +9,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   User,
   Building2,
@@ -441,7 +442,7 @@ export const Customer360Page = () => {
                       <td><strong style={{ color: '#34d399' }}>{ctr.numeropolice}</strong></td>
                       <td><strong>{ctr.branche || 'Automobile'}</strong></td>
                       <td>{ctr.compagnie}</td>
-                      <td>{ctr.date_effet} au {ctr.date_expiration}</td>
+                      <td>{formatDate(ctr.date_effet)} au {formatDate(ctr.date_expiration)}</td>
                       <td><strong>{ctr.prime_totale?.toLocaleString('fr-FR')} FCFA</strong></td>
                       <td>
                         <StatusBadge
@@ -511,7 +512,7 @@ export const Customer360Page = () => {
                   clientClaims.map((claim) => (
                     <tr key={claim.id}>
                       <td><strong style={{ color: '#f87171' }}>{claim.numero_sinistre}</strong></td>
-                      <td>{claim.date_survenance}</td>
+                      <td>{formatDate(claim.date_survenance)}</td>
                       <td>{claim.police_num}</td>
                       <td>{claim.nature}</td>
                       <td>{claim.montant_reclame?.toLocaleString('fr-FR')} FCFA</td>

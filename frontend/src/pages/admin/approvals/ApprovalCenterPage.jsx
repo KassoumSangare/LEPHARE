@@ -6,6 +6,7 @@ import { approvalApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { CheckCheck, Check, X, ShieldAlert, Key } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 
 const normalizeDemande = (d) => {
   const isApproved = d.statut === 'APPROUVEE' || d.statut === 'VALIDEE' || d.statut === 'APPROVED';
@@ -98,7 +99,7 @@ export const ApprovalCenterPage = () => {
     { header: "Type d'Opération", accessor: 'type_label', render: (r) => <strong style={{ color: '#fff' }}>{r.type_label}</strong> },
     { header: 'Objet', accessor: 'objet' },
     { header: 'Demandeur (Opérateur)', accessor: 'demandeur_nom', render: (r) => <span style={{ color: '#60a5fa' }}>{r.demandeur_nom}</span> },
-    { header: 'Date Soumission', accessor: 'date_demande' },
+    { header: 'Date Soumission', accessor: 'date_demande', render: (r) => formatDate(r.date_demande) },
     { header: 'Statut', accessor: 'statut_label', render: (r) => <StatusBadge label={r.statut_label} color={r.statut_badge} /> },
     {
       header: 'Jeton Attribué',

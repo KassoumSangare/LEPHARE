@@ -6,6 +6,7 @@ import { PolicyMovementModal } from '../contracts/PolicyMovementModal';
 import { dataStore } from '../../../api/dataStore';
 import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   RefreshCw,
   FileText,
@@ -172,10 +173,10 @@ export const EndorsementPage = () => {
         <div style={{ fontSize: '0.78rem' }}>
           {row.date_effet ? (
             <>
-              Du {row.date_effet} au <span style={{ color: '#60a5fa' }}>{row.date_expiration || '31/12/2026'}</span>
+              Du {formatDate(row.date_effet)} au <span style={{ color: '#60a5fa' }}>{row.date_expiration || '31/12/2026'}</span>
             </>
           ) : (
-            <span>Date d'effet : {row.date_avenant}</span>
+            <span>Date d'effet : {formatDate(row.date_avenant)}</span>
           )}
         </div>
       ),

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { claimsApi, conventionsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';
+import { formatDate } from '../../../utils/dateUtils';
 import {
   Shield,
   FileText,
@@ -268,7 +269,7 @@ export const ClaimDetailPage = () => {
               Compagnie Mandante : <strong style={{ color: '#34d399' }}>{claim.compagnie}</strong>
             </div>
             <div>
-              Survenance : <strong>{claim.date_survenance}</strong>
+              Survenance : <strong>{formatDate(claim.date_survenance)}</strong>
             </div>
           </div>
         </div>
@@ -562,7 +563,7 @@ export const ClaimDetailPage = () => {
                 ACTE DE QUITTANCE SUBROGATIVE D'INDEMNITÉ
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Réf : {quittanceData.numero_quittance || 'QT-SUB-2026-001'} • Date : {quittanceData.date_reglement}
+                Réf : {quittanceData.numero_quittance || 'QT-SUB-2026-001'} • Date : {formatDate(quittanceData.date_reglement)}
               </div>
             </div>
 

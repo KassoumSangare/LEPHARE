@@ -6,6 +6,7 @@ import { approvalApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { useToast } from '../../../context/ToastContext';
 import { KeyRound, Plus, ShieldCheck, Copy, Loader2 } from 'lucide-react';
+import { formatDate } from '../../../utils/dateUtils';
 
 const normalizeDemande = (d) => {
   const isApproved = d.statut === 'APPROUVEE' || d.statut === 'VALIDEE';
@@ -103,7 +104,7 @@ export const MyDerogationsPage = () => {
       render: (row) => <strong style={{ color: '#fff' }}>{row.type_label}</strong>,
     },
     { header: 'Objet de la Dérogation', accessor: 'objet' },
-    { header: 'Date Soumission', accessor: 'date_demande' },
+    { header: 'Date Soumission', accessor: 'date_demande', render: (r) => formatDate(r.date_demande) },
     { header: 'Approbateur Attitré', accessor: 'approbateur_nom' },
     {
       header: 'Statut',

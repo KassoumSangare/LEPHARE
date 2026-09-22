@@ -37,8 +37,27 @@ import {
   Ship,
   Briefcase,
   Printer,
-  Scale,
 } from 'lucide-react';
+
+// Formate une date en jj/mm/aaaa, quel que soit le format reçu du backend (ISO, etc.)
+const formatFrDate = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
+// Nombre de jours restants avant l'expiration (négatif si déjà expiré)
+const daysUntil = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / (1000 * 60 * 60 * 24));
+};
 
 export const ContractListPage = () => {
   const { user } = useAuth();
@@ -50,9 +69,13 @@ export const ContractListPage = () => {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
   // Décompte réel des contrats par branche (calculé sur les contrats chargés)
   const [stats, setStats] = useState(() => {
-    const empty = { ALL: 0, AUTO: 0, SANTE: 0, IA: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, RC: 0 };
+    const empty = { ALL: 0, AUTO: 0, SANTE: 0, IA: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0 };
     try { return { ...empty, ...JSON.parse(sessionStorage.getItem('contractStats') || '{}') }; } catch { return empty; }
   });
+
+  // Vrais compteurs (base entière, pas seulement les lignes chargées) pour les onglets
+  // En cours / À Renouveler / Résiliées, recalculés à chaque changement de branche.
+  const [subStats, setSubStats] = useState({ active: 0, renewable: 0, terminated: 0 });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionContract, setActionContract] = useState(null);
@@ -65,20 +88,22 @@ export const ContractListPage = () => {
 
   const getBranchParams = (branch) => {
     switch (branch) {
-      case 'AUTO': return { idproduit: 1, page_size: 200 };
+      // Resp. Civile (idproduit 8) est en réalité de l'assurance automobile (garantie au tiers) :
+      // même fiche véhicule (matricule, marque, modèle...) que les devis Automobile classiques,
+      // simplement enregistrée sous un autre code produit historique. Fusionnée avec Automobile.
+      case 'AUTO': return { idproduit: '1,8', page_size: 200 };
       case 'IA': return { idproduit: 2, page_size: 200 };
       case 'VOYAGE': return { idproduit: 3, page_size: 200 };
       case 'MRH': return { idproduit: '4,7,9', page_size: 200 };
       case 'SANTE': return { idproduit: '5,10', page_size: 200 };
       case 'TRANSPORT': return { idproduit: 6, page_size: 200 };
-      case 'RC': return { idproduit: 8, page_size: 200 };
       default: return { page_size: 200 };
     }
   };
 
-  // D�compte par branche : le serveur renvoie `count`. Requ�tes une par une, mises en cache.
+  // D�compte par branche : le serveur renvoie `count`. Requ�tes une par une, mises en cache.
   const loadStats = async () => {
-    const branches = ['ALL', 'AUTO', 'SANTE', 'IA', 'VOYAGE', 'TRANSPORT', 'MRH', 'RC'];
+    const branches = ['ALL', 'AUTO', 'SANTE', 'IA', 'VOYAGE', 'TRANSPORT', 'MRH'];
     for (const b of branches) {
       try {
         const n = await contractApi.getContractsCount(getBranchParams(b));
@@ -93,16 +118,52 @@ export const ContractListPage = () => {
     }
   };
 
-  const loadContractsData = async (branch = selectedBranchFilter) => {
+  // Vrais totaux (base entière) des onglets En cours / À Renouveler / Résiliées :
+  // contrats réels (via le statut serveur) + devis confirmés ou à renouveler de la branche.
+  const loadSubStats = async (branch = selectedBranchFilter) => {
+    const params = getBranchParams(branch);
+    const quoteBase = { ...params, archive: 'false', page_size: 1 };
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const [activeContracts, echeanceContracts, terminatedContracts, confirmedDevis, renouvelerDevis] = await Promise.all([
+        contractApi.getContractsCount({ ...params, statut: 'actif' }),
+        contractApi.getContractsCount({ ...params, statut: 'echeance' }),
+        contractApi.getContractsCount({ ...params, statut: 'resilie' }),
+        quoteApi.getQuotesCount({ ...quoteBase, confirme: 'true', sans_contrat: 'true' }),
+        quoteApi.getQuotesCount({ ...quoteBase, confirme: 'false', dateexpiration_avant: today }),
+      ]);
+      setSubStats({
+        active: activeContracts + confirmedDevis,
+        renewable: echeanceContracts + renouvelerDevis,
+        terminated: terminatedContracts,
+      });
+    } catch (e) {
+      console.warn('Erreur chargement des sous-compteurs contrats:', e);
+    }
+  };
+
+  // Statut serveur correspondant à chaque onglet (même définition que loadSubStats,
+  // pour que le nombre affiché sur l'onglet et les lignes du tableau soient cohérents).
+  const STATUT_PAR_ONGLET = { active: 'actif', renewable: 'echeance', terminated: 'resilie' };
+
+  const loadContractsData = async (branch = selectedBranchFilter, tab = filterTab) => {
     setLoading(true);
     try {
       const params = getBranchParams(branch);
-      // Devis du portefeuille : confirmés + expirés à renouveler (non archivés), même filtre de branche
+      const statut = STATUT_PAR_ONGLET[tab];
+      const contractParams = statut ? { ...params, statut } : params;
+      // Devis du portefeuille : un devis confirmé sans contrat émis (« à émettre »)
+      // n'a de sens que sur les onglets Tous/En cours ; un devis expiré non confirmé
+      // (« à renouveler ») n'a de sens que sur les onglets Tous/À Renouveler. L'onglet
+      // Résiliées n'a pas d'équivalent côté devis.
+      const includeConfirmedDevis = tab === 'all' || tab === 'active';
+      const includeExpiredDevis = tab === 'all' || tab === 'renewable';
       const quoteBase = { ...params, archive: 'false', page_size: 200 };
+
       const [backendList, quotesList, confirmedQuotes] = await Promise.all([
-        contractApi.getContracts(params),
-        quoteApi.getQuotes({ ...quoteBase, confirme: 'false' }).catch(() => []),
-        quoteApi.getQuotes({ ...quoteBase, confirme: 'true' }).catch(() => []),
+        contractApi.getContracts(contractParams),
+        includeExpiredDevis ? quoteApi.getQuotes({ ...quoteBase, confirme: 'false' }).catch(() => []) : Promise.resolve([]),
+        includeConfirmedDevis ? quoteApi.getQuotes({ ...quoteBase, confirme: 'true', sans_contrat: 'true' }).catch(() => []) : Promise.resolve([]),
       ]);
       const toRow = (q, kind) => ({
         ...q,
@@ -119,8 +180,7 @@ export const ContractListPage = () => {
       if (Array.isArray(backendList) && backendList.length > 0) {
         setContracts(backendList);
       } else {
-        const local = dataStore.getContracts();
-        setContracts(local || []);
+        setContracts([]);
       }
       if (Array.isArray(quotesList)) setQuotes(quotesList);
     } catch (err) {
@@ -134,12 +194,19 @@ export const ContractListPage = () => {
 
   useEffect(() => {
     loadStats();
-    loadContractsData(selectedBranchFilter);
+    loadSubStats(selectedBranchFilter);
+    loadContractsData(selectedBranchFilter, filterTab);
   }, []);
 
   const handleBranchFilterChange = (branch) => {
     setSelectedBranchFilter(branch);
-    loadContractsData(branch);
+    loadSubStats(branch);
+    loadContractsData(branch, filterTab);
+  };
+
+  const handleFilterTabChange = (tab) => {
+    setFilterTab(tab);
+    loadContractsData(selectedBranchFilter, tab);
   };
 
   const validatedQuotes = quotes.filter((q) => isRegistryQuote(q) && q.statut !== 'Consolidé');
@@ -153,18 +220,24 @@ export const ContractListPage = () => {
     return diffDays <= 30; // Expired or expiring in 30 days
   };
 
-  const portfolio = [...devisRows, ...contracts];
-
-  const filteredContracts = portfolio.filter((c) => {
-    if (filterTab === 'active') return c.statut_contrat === 'En cours' || c.statut === 'En cours' || c._kind === 'devis_confirme';
-    if (filterTab === 'renewable') return isExpiredOrDue(c.date_expiration);
-    if (filterTab === 'terminated') return c.statut_contrat === 'Résilié' || c.statut === 'Résilié' || c.statut_contrat?.includes('Annulé');
-    return true;
+  // Les devis confirmés (statut « À émettre ») sont ajoutés devant les contrats réels dans les
+  // deux listes sources : sans tri, ils occupaient systématiquement toute la première page du
+  // tableau, donnant l'impression à tort que « tous » les contrats étaient en attente d'émission.
+  // Trié par date d'effet décroissante pour mélanger naturellement devis en attente et contrats.
+  const portfolio = [...devisRows, ...contracts].sort((a, b) => {
+    const dateA = new Date(a.date_effet || a.date_emission || 0).getTime();
+    const dateB = new Date(b.date_effet || b.date_emission || 0).getTime();
+    return dateB - dateA;
   });
 
-  const activeCount = portfolio.filter((c) => c.statut_contrat === 'En cours' || c.statut === 'En cours' || c._kind === 'devis_confirme').length;
-  const renewableCount = portfolio.filter((c) => isExpiredOrDue(c.date_expiration)).length;
-  const terminatedCount = contracts.filter((c) => c.statut_contrat === 'Résilié' || c.statut === 'Résilié' || c.statut_contrat?.includes('Annulé')).length;
+  // Le tri par statut (En cours / À Renouveler / Résiliées) est déjà fait côté serveur
+  // (voir STATUT_PAR_ONGLET dans loadContractsData) : le portefeuille chargé correspond
+  // toujours à l'onglet actif, pas besoin de le refiltrer ici.
+  const filteredContracts = portfolio;
+
+  const activeCount = subStats.active;
+  const renewableCount = subStats.renewable;
+  const terminatedCount = subStats.terminated;
 
   // Pour l'onglet affiché, le nombre de lignes chargées fait foi dès que la liste n'est pas plafonnée
   const LIST_PAGE_SIZE = 200;
@@ -177,12 +250,11 @@ export const ContractListPage = () => {
   const getTabLabel = (filter) => {
     switch (filter) {
       case 'AUTO': return 'Automobile';
-      case 'SANTE': return 'Santé & Vie';
+      case 'SANTE': return 'Santé';
       case 'IA': return 'Individuelle Accidents';
       case 'VOYAGE': return 'Voyage';
       case 'TRANSPORT': return 'Transport';
-      case 'MRH': return 'Habitation & Pro';
-      case 'RC': return 'Resp. Civile';
+      case 'MRH': return 'Multirisque Habitation';
       default: return 'Tous';
     }
   };
@@ -211,7 +283,8 @@ export const ContractListPage = () => {
         <td style="padding: 6px; border: 1px solid #ccc;">${c.client_nom || '-'}</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.produit || '-'}</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.compagnie || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${c.date_effet || '-'} au ${c.date_expiration || '-'}</td>
+        <td style="padding: 6px; border: 1px solid #ccc;">${formatFrDate(c.date_effet)} au ${formatFrDate(c.date_expiration)}</td>
+        <td style="padding: 6px; border: 1px solid #ccc; text-align: right;">${Number(c.prime_nette || 0).toLocaleString('fr-FR')} FCFA</td>
         <td style="padding: 6px; border: 1px solid #ccc; text-align: right; font-weight: bold;">${Number(c.prime_totale || 0).toLocaleString('fr-FR')} FCFA</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.statut_contrat || c.statut || 'En cours'}</td>
       </tr>
@@ -241,7 +314,8 @@ export const ContractListPage = () => {
                 <th>Produit</th>
                 <th>Compagnie</th>
                 <th>Période de Validité</th>
-                <th>Prime Totale TTC</th>
+                <th>Prime Nette</th>
+                <th>Prime TTC</th>
                 <th>Statut</th>
               </tr>
             </thead>
@@ -287,34 +361,66 @@ export const ContractListPage = () => {
       header: 'Période de Validité',
       render: (row) => {
         const isNearDue = isExpiredOrDue(row.date_expiration);
+        const remaining = daysUntil(row.date_expiration);
+        const isPast = remaining !== null && remaining < 0;
         return (
-          <div style={{ fontSize: '0.8rem' }}>
-            Du {row.date_effet} au{' '}
-            <span style={{ color: isNearDue ? '#f59e0b' : '#60a5fa', fontWeight: isNearDue ? 700 : 400 }}>
-              {row.date_expiration}
-            </span>
-            {isNearDue && (
+          <div style={{ fontSize: '0.8rem', lineHeight: 1.5 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text-secondary)' }}>
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{formatFrDate(row.date_effet)}</span>
+              <ArrowRight size={12} color="var(--text-muted)" />
               <span
                 style={{
-                  display: 'inline-block',
-                  marginLeft: '0.35rem',
-                  padding: '0.1rem 0.35rem',
-                  fontSize: '0.65rem',
-                  borderRadius: '4px',
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  color: '#f59e0b',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  fontFamily: 'var(--font-mono)',
+                  color: isNearDue ? '#f59e0b' : '#60a5fa',
+                  fontWeight: isNearDue ? 700 : 500,
                 }}
               >
-                Échéance
+                {formatFrDate(row.date_expiration)}
               </span>
+            </div>
+            {remaining !== null && (
+              <div style={{ fontSize: '0.72rem', marginTop: '0.15rem' }}>
+                {isPast ? (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.05rem 0.4rem',
+                      borderRadius: '4px',
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      color: '#f87171',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                    }}
+                  >
+                    Expiré depuis {Math.abs(remaining)} j
+                  </span>
+                ) : isNearDue ? (
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '0.05rem 0.4rem',
+                      borderRadius: '4px',
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      color: '#f59e0b',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                    }}
+                  >
+                    Échéance dans {remaining} j
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)' }}>{remaining} jours restants</span>
+                )}
+              </div>
             )}
           </div>
         );
       },
     },
     {
-      header: 'Prime Totale',
+      header: 'Prime Nette',
+      render: (row) => <span style={{ color: 'var(--text-secondary)' }}>{Number(row.prime_nette || 0).toLocaleString('fr-FR')} F</span>,
+    },
+    {
+      header: 'Prime TTC',
       render: (row) => <strong style={{ color: '#fff' }}>{Number(row.prime_totale || 0).toLocaleString('fr-FR')} F</strong>,
     },
     {
@@ -331,10 +437,10 @@ export const ContractListPage = () => {
               className="btn btn-secondary"
               style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
               onClick={() => setViewingQuote(row)}
-              title="Consulter le devis"
+              title="Consulter"
             >
               <Eye size={13} />
-              <span>Consulter le devis</span>
+              <span>Consulter</span>
             </button>
           );
         }
@@ -487,12 +593,11 @@ export const ContractListPage = () => {
   const branchFilters = [
     { key: 'ALL', label: 'Toutes les branches', icon: Layers, count: countByBranch.ALL },
     { key: 'AUTO', label: 'Automobile', icon: Car, count: countByBranch.AUTO },
-    { key: 'SANTE', label: 'Santé & Prévoyance', icon: HeartPulse, count: countByBranch.SANTE },
+    { key: 'SANTE', label: 'Santé', icon: HeartPulse, count: countByBranch.SANTE },
     { key: 'IA', label: 'Individuelle Accidents', icon: Activity, count: countByBranch.IA },
     { key: 'VOYAGE', label: 'Voyage', icon: Plane, count: countByBranch.VOYAGE },
     { key: 'TRANSPORT', label: 'Transport', icon: Ship, count: countByBranch.TRANSPORT },
-    { key: 'MRH', label: 'Habitation & Pro', icon: Home, count: countByBranch.MRH },
-    { key: 'RC', label: 'Resp. Civile', icon: Scale, count: countByBranch.RC },
+    { key: 'MRH', label: 'Multirisque Habitation', icon: Home, count: countByBranch.MRH },
   ];
 
   return (
@@ -525,6 +630,7 @@ export const ContractListPage = () => {
             className="btn btn-secondary"
             onClick={() => {
               loadStats();
+              loadSubStats(selectedBranchFilter);
               loadContractsData(selectedBranchFilter);
             }}
             title="Actualiser la liste"
@@ -545,14 +651,14 @@ export const ContractListPage = () => {
         </div>
       </div>
 
-      {/* KPI Cards connectées aux vrais chiffres de la base */}
+      {/* Contrats par type de produit */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
         <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #10b981', display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
             <ShieldCheck size={24} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Polices en BDD</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total des Contrats</div>
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{countByBranch.ALL.toLocaleString('fr-FR')}</div>
           </div>
         </div>
@@ -562,7 +668,7 @@ export const ContractListPage = () => {
             <Car size={24} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Contrats Automobile</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Automobile</div>
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6' }}>{countByBranch.AUTO.toLocaleString('fr-FR')}</div>
           </div>
         </div>
@@ -572,7 +678,7 @@ export const ContractListPage = () => {
             <HeartPulse size={24} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Santé & Prévoyance</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Santé</div>
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ec4899' }}>{countByBranch.SANTE.toLocaleString('fr-FR')}</div>
           </div>
         </div>
@@ -582,10 +688,38 @@ export const ContractListPage = () => {
             <Activity size={24} />
           </div>
           <div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Autres Risques CIMA</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b' }}>
-              {(countByBranch.ALL - countByBranch.AUTO - countByBranch.SANTE).toLocaleString('fr-FR')}
-            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Individuelle Accidents</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b' }}>{countByBranch.IA.toLocaleString('fr-FR')}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #38bdf8', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+            <Plane size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Voyage</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38bdf8' }}>{countByBranch.VOYAGE.toLocaleString('fr-FR')}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #0284c7', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(2, 132, 199, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7' }}>
+            <Ship size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Transport</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0284c7' }}>{countByBranch.TRANSPORT.toLocaleString('fr-FR')}</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: '1.25rem', borderLeft: '4px solid #a78bfa', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'rgba(167, 139, 250, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
+            <Home size={24} />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Multirisque Habitation</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#a78bfa' }}>{countByBranch.MRH.toLocaleString('fr-FR')}</div>
           </div>
         </div>
       </div>
@@ -650,15 +784,15 @@ export const ContractListPage = () => {
               type="button"
               className={`btn ${filterTab === 'all' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-              onClick={() => setFilterTab('all')}
+              onClick={() => handleFilterTabChange('all')}
             >
-              Tous les contrats ({filteredContracts.length})
+              Tous les contrats ({Number(countByBranch[selectedBranchFilter] || 0).toLocaleString('fr-FR')})
             </button>
             <button
               type="button"
               className={`btn ${filterTab === 'active' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-              onClick={() => setFilterTab('active')}
+              onClick={() => handleFilterTabChange('active')}
             >
               En cours ({activeCount})
             </button>
@@ -672,7 +806,7 @@ export const ContractListPage = () => {
                 color: filterTab === 'renewable' ? '#fff' : '#f59e0b',
                 background: filterTab === 'renewable' ? '#d97706' : '',
               }}
-              onClick={() => setFilterTab('renewable')}
+              onClick={() => handleFilterTabChange('renewable')}
             >
               À Renouveler / Échues ({renewableCount})
             </button>
@@ -680,14 +814,16 @@ export const ContractListPage = () => {
               type="button"
               className={`btn ${filterTab === 'terminated' ? 'btn-primary' : 'btn-secondary'}`}
               style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
-              onClick={() => setFilterTab('terminated')}
+              onClick={() => handleFilterTabChange('terminated')}
             >
               Résiliées ({terminatedCount})
             </button>
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {filteredContracts.length === 0 ? 'Aucun contrat disponible' : `${filteredContracts.length.toLocaleString('fr-FR')} contrat${filteredContracts.length > 1 ? 's' : ''} (${getTabLabel(selectedBranchFilter)})`}
+            {filteredContracts.length === 0
+              ? 'Aucun contrat disponible'
+              : `${filteredContracts.length.toLocaleString('fr-FR')} ligne${filteredContracts.length > 1 ? 's' : ''} chargée${filteredContracts.length > 1 ? 's' : ''} sur ${Number(countByBranch[selectedBranchFilter] || filteredContracts.length).toLocaleString('fr-FR')} au total (${getTabLabel(selectedBranchFilter)})`}
           </div>
         </div>
 
@@ -826,6 +962,7 @@ export const ContractListPage = () => {
         onSuccess={() => {
           loadContractsData(selectedBranchFilter);
           loadStats();
+          loadSubStats(selectedBranchFilter);
         }}
       />
 
@@ -851,6 +988,7 @@ export const ContractListPage = () => {
               dataStore.deleteContract(deletingContract.id);
               loadContractsData(selectedBranchFilter);
               loadStats();
+              loadSubStats(selectedBranchFilter);
             } catch (err) {
               toastError(err.message);
             }

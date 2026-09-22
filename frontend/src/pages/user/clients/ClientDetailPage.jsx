@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { customerApi, contractApi, quoteApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { ArrowLeft, User, Phone, Mail, MapPin, Building, Shield, FileText, CreditCard } from 'lucide-react';
+import { formatDate } from '../../../utils/dateUtils';
 
 export const ClientDetailPage = () => {
   const { id } = useParams();
@@ -252,7 +253,7 @@ export const ClientDetailPage = () => {
                 <div>
                   <div style={{ fontWeight: 700, color: '#fff' }}>{ctr.numeropolice} - {ctr.produit}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    {ctr.compagnie} • Du {ctr.date_effet} au {ctr.date_expiration}
+                    {ctr.compagnie} • Du {formatDate(ctr.date_effet)} au {formatDate(ctr.date_expiration)}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -292,7 +293,7 @@ export const ClientDetailPage = () => {
               >
                 <div>
                   <div style={{ fontWeight: 700, color: '#fff' }}>{q.numerodevis} - {q.produit}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Émis le {q.date_emission} • {q.compagnie}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Émis le {formatDate(q.date_emission)} • {q.compagnie}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 700, color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
