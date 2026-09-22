@@ -8,6 +8,7 @@ import { MetricCard } from '../../../components/common/MetricCard';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { useToast } from '../../../context/ToastContext';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 import {
   User,
   Building2,
@@ -232,7 +233,7 @@ export const Customer360Page = () => {
               onChange={(e) => setSelectedClientId(e.target.value)}
               style={{ fontWeight: 600, flex: 1 }}
             >
-              {displayedClients.map((c) => (
+              {sortUniqueBy(displayedClients, (c) => c.nomcomplet || `${c.nom} ${c.prenom || ''}`.trim()).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nomcomplet || `${c.nom} ${c.prenom || ''}`.trim()} ({c.codeclient || c.id})
                 </option>
@@ -349,14 +350,14 @@ export const Customer360Page = () => {
           <div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Primes Annuelle Émises</div>
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#34d399' }}>
-              {totalPrimes.toLocaleString()} FCFA
+              {totalPrimes.toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Impayés / En attente</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: totalImpayes > 0 ? '#fbbf24' : '#34d399' }}>
-                {totalImpayes.toLocaleString()} FCFA
+                {totalImpayes.toLocaleString('fr-FR')} FCFA
               </div>
             </div>
             <div>
@@ -441,7 +442,7 @@ export const Customer360Page = () => {
                       <td><strong>{ctr.branche || 'Automobile'}</strong></td>
                       <td>{ctr.compagnie}</td>
                       <td>{ctr.date_effet} au {ctr.date_expiration}</td>
-                      <td><strong>{ctr.prime_totale?.toLocaleString()} FCFA</strong></td>
+                      <td><strong>{ctr.prime_totale?.toLocaleString('fr-FR')} FCFA</strong></td>
                       <td>
                         <StatusBadge
                           label={ctr.statut_encaissement}
@@ -513,8 +514,8 @@ export const Customer360Page = () => {
                       <td>{claim.date_survenance}</td>
                       <td>{claim.police_num}</td>
                       <td>{claim.nature}</td>
-                      <td>{claim.montant_reclame?.toLocaleString()} FCFA</td>
-                      <td><strong style={{ color: '#34d399' }}>{claim.montant_indemnise?.toLocaleString()} FCFA</strong></td>
+                      <td>{claim.montant_reclame?.toLocaleString('fr-FR')} FCFA</td>
+                      <td><strong style={{ color: '#34d399' }}>{claim.montant_indemnise?.toLocaleString('fr-FR')} FCFA</strong></td>
                       <td>
                         <span className={`badge ${claim.delegation_respectee ? 'badge-success' : 'badge-warning'}`}>
                           {claim.delegation_respectee ? 'Conforme Mandat' : 'Accord Cie Requis'}
@@ -570,7 +571,7 @@ export const Customer360Page = () => {
                     <td>{q.produit}</td>
                     <td>{q.compagnie}</td>
                     <td>{q.date_emission || q.date_creation || '-'}</td>
-                    <td><strong>{Number(q.prime_totale || 0).toLocaleString()} FCFA</strong></td>
+                    <td><strong>{Number(q.prime_totale || 0).toLocaleString('fr-FR')} FCFA</strong></td>
                     <td><StatusBadge label={q.statut} color={q.statut_badge} /></td>
                     <td>
                       <button
@@ -611,7 +612,7 @@ export const Customer360Page = () => {
                     <td><strong style={{ color: '#fbbf24' }}>{rcpt.receipt_number}</strong></td>
                     <td>{rcpt.police_number}</td>
                     <td>{rcpt.payment_date}</td>
-                    <td><strong>{rcpt.amount?.toLocaleString()} FCFA</strong></td>
+                    <td><strong>{rcpt.amount?.toLocaleString('fr-FR')} FCFA</strong></td>
                     <td><span className="badge badge-neutral">{rcpt.payment_method}</span></td>
                     <td>
                       <span className="badge badge-success">Reversé sous 30 jours (CIMA)</span>

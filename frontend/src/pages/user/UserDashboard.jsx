@@ -53,7 +53,7 @@ export const UserDashboard = () => {
     {
       header: 'Prime Totale',
       accessor: 'prime_totale',
-      render: (row) => <span>{Number(row.prime_totale || 0).toLocaleString()} FCFA</span>,
+      render: (row) => <span>{Number(row.prime_totale || 0).toLocaleString('fr-FR')} FCFA</span>,
     },
     {
       header: 'Statut',
@@ -82,7 +82,7 @@ export const UserDashboard = () => {
     {
       header: 'Prime',
       accessor: 'prime_totale',
-      render: (row) => <span>{Number(row.prime_totale || 0).toLocaleString()} FCFA</span>,
+      render: (row) => <span>{Number(row.prime_totale || 0).toLocaleString('fr-FR')} FCFA</span>,
     },
     {
       header: 'Règlement',
@@ -155,7 +155,7 @@ export const UserDashboard = () => {
         />
         <MetricCard
           title="Primes Émises"
-          value={`${Number(totalPrimes || 0).toLocaleString()} F`}
+          value={`${Number(totalPrimes || 0).toLocaleString('fr-FR')} F`}
           subtext="Total production courante"
           trend="+18.4%"
           icon={TrendingUp}

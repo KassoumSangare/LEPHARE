@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 const formatFcfa = (val) => {
   const num = typeof val === 'string' ? parseFloat(val.replace(/\s/g, '')) || 0 : Number(val) || 0;
@@ -484,7 +485,7 @@ export const NewSanteQuotePage = () => {
                   if (c) setCompagnieNom(c.nom);
                 }}
               >
-                {companies.map((c) => (
+                {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nom}
                   </option>

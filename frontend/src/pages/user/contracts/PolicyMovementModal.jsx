@@ -357,7 +357,7 @@ export const PolicyMovementModal = ({
                     </div>
                   </div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#15803d', fontFamily: 'monospace' }}>
-                    {Number(completedOperation.endorsement?.prime_totale ?? completedOperation.contract?.prime_totale ?? contract.prime_totale ?? 0).toLocaleString()} FCFA
+                    {Number(completedOperation.endorsement?.prime_totale ?? completedOperation.contract?.prime_totale ?? contract.prime_totale ?? 0).toLocaleString('fr-FR')} FCFA
                   </div>
                 </div>
               </div>
@@ -553,7 +553,7 @@ export const PolicyMovementModal = ({
                     <div>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Prime Nette :</span>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'monospace' }}>
-                        {Math.round(renewalPrimeTotale * 0.85).toLocaleString()} F
+                        {Math.round(renewalPrimeTotale * 0.85).toLocaleString('fr-FR')} F
                       </div>
                     </div>
                     <div>
@@ -565,7 +565,7 @@ export const PolicyMovementModal = ({
                     <div>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Taxes Réglementaires :</span>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>
-                        {Math.round(renewalPrimeTotale * 0.145).toLocaleString()} F
+                        {Math.round(renewalPrimeTotale * 0.145).toLocaleString('fr-FR')} F
                       </div>
                     </div>
                   </div>

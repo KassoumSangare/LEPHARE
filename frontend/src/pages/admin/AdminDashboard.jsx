@@ -52,9 +52,9 @@ export const AdminDashboard = () => {
   const cimaColumns = [
     { header: 'Code CIMA', accessor: 'code_branche', render: (r) => <strong style={{ color: '#60a5fa' }}>{r.code_branche}</strong> },
     { header: 'Branche Réglementaire', accessor: 'branche' },
-    { header: 'Émissions Brutes (FCFA)', render: (r) => <strong>{Number(r.emissions || 0).toLocaleString()} F</strong> },
-    { header: 'Encaissements (FCFA)', render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements || 0).toLocaleString()} F</span> },
-    { header: 'Commissions Dues (FCFA)', render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions || 0).toLocaleString()} F</span> },
+    { header: 'Émissions Brutes (FCFA)', render: (r) => <strong>{Number(r.emissions || 0).toLocaleString('fr-FR')} F</strong> },
+    { header: 'Encaissements (FCFA)', render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements || 0).toLocaleString('fr-FR')} F</span> },
+    { header: 'Commissions Dues (FCFA)', render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions || 0).toLocaleString('fr-FR')} F</span> },
   ];
 
   return (

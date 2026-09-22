@@ -8,6 +8,7 @@ import { UserCheck, Plus, Key, Shield, ShieldCheck } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { getProfiles, updateProfile } from '../../../api/profileService';
 import { settingsApi } from '../../../api/endpoints';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 export const UserManagementPage = () => {
   const [users, setUsers] = useState(() => dataStore.getUsers());
@@ -221,7 +222,7 @@ export const UserManagementPage = () => {
                 });
               }}
             >
-              {profiles.map((p) => (
+              {sortUniqueBy(profiles, (p) => p.name).map((p) => (
                 <option key={p.id} value={p.code}>
                   {p.name} ({p.space === 'ALL' ? 'Accès Global' : p.space === 'ADMIN' ? 'Espace Admin' : 'Espace Opérateur'})
                 </option>

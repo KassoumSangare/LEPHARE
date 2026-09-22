@@ -90,8 +90,8 @@ export const ComplianceAuditPage = () => {
           ? apiData.etat_c1.lignes.map((l) => [
               l.branche,
               l.compagnie,
-              `${Number(l.primes_emises).toLocaleString()} FCFA`,
-              `${Number(l.primes_encaissees).toLocaleString()} FCFA`,
+              `${Number(l.primes_emises).toLocaleString('fr-FR')} FCFA`,
+              `${Number(l.primes_encaissees).toLocaleString('fr-FR')} FCFA`,
               l.taux_recouvrement,
               l.statut,
             ])
@@ -113,7 +113,7 @@ export const ComplianceAuditPage = () => {
               l.numero,
               l.assure,
               l.compagnie,
-              `${Number(l.montant).toLocaleString()} FCFA`,
+              `${Number(l.montant).toLocaleString('fr-FR')} FCFA`,
               l.quittance_subrogative,
               l.statut,
             ])
@@ -133,9 +133,9 @@ export const ComplianceAuditPage = () => {
           ? apiData.etat_c3.lignes.map((l) => [
               l.compagnie,
               l.reference,
-              `${Number(l.primes_encaissees).toLocaleString()} FCFA`,
-              `${Number(l.courtage).toLocaleString()} FCFA`,
-              `${Number(l.net_reverse).toLocaleString()} FCFA`,
+              `${Number(l.primes_encaissees).toLocaleString('fr-FR')} FCFA`,
+              `${Number(l.courtage).toLocaleString('fr-FR')} FCFA`,
+              `${Number(l.net_reverse).toLocaleString('fr-FR')} FCFA`,
               `${l.delai_jours} jours`,
               l.statut_cima,
             ])
@@ -243,7 +243,7 @@ export const ComplianceAuditPage = () => {
           <div>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Caution SGCI</div>
             <div style={{ fontWeight: 700, color: '#10b981' }}>
-              {(mockCompliance?.garantie_financiere?.montant_caution || mockCompliance?.garantie_financiere?.montant)?.toLocaleString()} FCFA
+              {(mockCompliance?.garantie_financiere?.montant_caution || mockCompliance?.garantie_financiere?.montant)?.toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div>
@@ -440,7 +440,7 @@ export const ComplianceAuditPage = () => {
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Montant de la Caution Déposée : </span>
                 <strong style={{ color: '#10b981', fontSize: '1.1rem' }}>
-                  {(mockCompliance?.garantie_financiere?.montant_caution || mockCompliance?.garantie_financiere?.montant)?.toLocaleString()} FCFA
+                  {(mockCompliance?.garantie_financiere?.montant_caution || mockCompliance?.garantie_financiere?.montant)?.toLocaleString('fr-FR')} FCFA
                 </strong>
               </div>
               <div>

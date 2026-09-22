@@ -132,7 +132,7 @@ export const CatalogTarifsPage = () => {
       ...standardProducts,
       ...products.map((p) => p.nom || p.code_produit),
     ])
-  );
+  ).sort((a, b) => String(a).localeCompare(String(b), 'fr-FR', { sensitivity: 'base' }));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

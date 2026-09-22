@@ -261,7 +261,7 @@ export const validateBusinessRule = (action, resource, entity, dataStore) => {
         return {
           allowed: false,
           isBlockedByLaw: true,
-          reason: `Règle CIMA & Comptable : La police ${entity.numeropolice} a déjà fait l'objet d'un encaissement de prime validé (${Number(entity.montant_encaisse).toLocaleString()} FCFA). Toute modification des garanties ou de la prime doit impérativement faire l'objet d'un Avenant CIMA.`,
+          reason: `Règle CIMA & Comptable : La police ${entity.numeropolice} a déjà fait l'objet d'un encaissement de prime validé (${Number(entity.montant_encaisse).toLocaleString('fr-FR')} FCFA). Toute modification des garanties ou de la prime doit impérativement faire l'objet d'un Avenant CIMA.`,
           suggestion: 'Créer un Avenant de modification dans le module Avenants.',
         };
       }
@@ -276,7 +276,7 @@ export const validateBusinessRule = (action, resource, entity, dataStore) => {
         return {
           allowed: false,
           isBlockedByLaw: true,
-          reason: `Règle de gestion CIMA : Le dossier sinistre ${entity.numero_sinistre} a fait l'objet d'une indemnisation financière (${Number(entity.montant_indemnise).toLocaleString()} FCFA). Il ne peut pas être supprimé.`,
+          reason: `Règle de gestion CIMA : Le dossier sinistre ${entity.numero_sinistre} a fait l'objet d'une indemnisation financière (${Number(entity.montant_indemnise).toLocaleString('fr-FR')} FCFA). Il ne peut pas être supprimé.`,
           suggestion: 'Clôturer le dossier avec le statut « Archivé » ou « Sans suite ».',
         };
       }

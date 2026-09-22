@@ -836,12 +836,12 @@ const buildConditionsParticulieresAuto = (quote) => {
       <div class="cp-entete-logos">
         ${printDocHeader(quote, titreAvenant)}
       </div>
-      <div class="cp-tampon">EXEMPLAIRE<br/>COURTIER</div>
     </div>
 
     <div class="cp-deux-blocs">
       <table class="cadre-unique cp-bloc-client">
         <tr><td class="label">Numéro</td><td>${dash(quote.client_id)}</td></tr>
+        <tr><td class="label">Titre</td><td>${dash(d.titreClient || raw.titre)}</td></tr>
         <tr><td class="label">Nom</td><td><strong>${(quote.souscripteur || quote.client_nom || '').toUpperCase()}</strong></td></tr>
         <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
         <tr><td class="label">Téléphone</td><td>${dash(d.telephoneClient || raw.telephoneclient || raw.numerotelephoneassure)}</td></tr>
@@ -853,9 +853,11 @@ const buildConditionsParticulieresAuto = (quote) => {
         <tr><td class="label">N° Police</td><td><strong>${dash(numero)}</strong> &nbsp; Avenant <strong>${numeroAvenant}</strong></td></tr>
         <tr><td class="label">Assuré(e)</td><td>${nomAssure}</td></tr>
         <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
-        <tr><td class="label">Mouvement</td><td>${mouvement}</td></tr>
+        <tr><td class="label">Effet</td><td>${formatFrDate(quote.date_effet)} &nbsp; Expiration : ${formatFrDate(quote.date_expiration)}</td></tr>
         <tr><td class="label">Offre</td><td>${String(offre).toUpperCase()}</td></tr>
-        <tr><td class="label">Effet</td><td>${formatFrDate(quote.date_effet)} &nbsp; Expiration : ${formatFrDate(quote.date_expiration)} &nbsp; Durée : <strong>${dureeJours}</strong></td></tr>
+        <tr><td class="label">Mouvement</td><td>${mouvement}</td></tr>
+        <tr><td class="label">Ecriture</td><td>${dash(raw.ecriture || d.ecriture)}</td></tr>
+        <tr><td class="label">Durée</td><td><strong>${dureeJours}</strong> Jours</td></tr>
         <tr><td class="label">Émission</td><td>${formatFrDate(quote.date_emission)} &nbsp; Compagnie : <strong>${(quote.compagnie || '').toUpperCase()}</strong></td></tr>
       </table>
     </div>
@@ -933,6 +935,127 @@ const buildConditionsParticulieresAuto = (quote) => {
         <tr><td class="label">Accessoire</td><td>${money(quote.accessoires)}</td></tr>
         <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes)}</td></tr>
         <tr><td class="label">FGA</td><td>${money(quote.fga)}</td></tr>
+        <tr><td class="label">Prime TTC</td><td>${money(quote.prime_totale)}</td></tr>
+        <tr class="ligne-total"><td class="label">Total net à payer</td><td><strong>${money(quote.prime_totale)} FCFA</strong></td></tr>
+      </table>
+    </div>
+
+    <div class="bloc-signature-droite">
+      <div>Fait à Abidjan, le <strong>${formatFrDate(new Date())}</strong>.</div>
+    </div>
+    <div class="signatures-deux-colonnes" style="margin-top:30px;">
+      <div><em>L'assuré</em></div>
+      <div><em>Pour la compagnie</em></div>
+    </div>
+
+    ${printDocFooter(true)}
+  `;
+};
+
+// --- CONDITIONS PARTICULIÈRES — FLOTTE AUTOMOBILE (synthèse par nature de risque,
+// sans détail véhicule par véhicule) — d'après ASSURANCE AUTO FLOTTE CONDITIONS
+// PART..pdf (police NSIA n°1186201263196A, offre FLOTTE AUTOMOBILE). Les garanties
+// d'une flotte sont regroupées par nature de risque et la prime nette est cumulée
+// sur l'ensemble des véhicules, sans détail immatriculation/marque/modèle.
+const buildConditionsParticulieresFlotte = (quote) => {
+  const numero = quote.numero_police_compagnie || quote.numerodevis;
+  const d = quote.details || {};
+  const raw = quote.raw || {};
+  const garanties = raw.garanties || d.garanties || [];
+  const dash = (v) => (v === undefined || v === null || v === '' ? '—' : v);
+  const num = (v) => (v === undefined || v === null || v === '' ? 0 : Number(v) || 0);
+  const dureeJours = raw.duree_terme_jours
+    ?? (quote.date_effet && quote.date_expiration
+      ? Math.round((new Date(quote.date_expiration) - new Date(quote.date_effet)) / 86400000) + 1
+      : '—');
+
+  const mouvement = String(raw.libelle_avenant || d.libelleAvenant || d.mouvement || quote.libelle_avenant || 'AFFAIRE NOUVELLE').toUpperCase();
+  const numeroAvenant = raw.numeroavenant || d.numeroAvenant || quote.numeroavenant || 0;
+  const titreAvenant = /^AFFAIRE\s+NOUVELLE/.test(mouvement) ? '' : `Avenant de ${mouvement.replace(/^AVENANT\s+(DE\s+)?/, '')}`;
+  const offre = d.offreSelectionnee || raw.libelle_offre || quote.libelle_offre || quote.produit || 'FLOTTE AUTOMOBILE';
+  const adresse = d.adresseClient || raw.adresse || raw.adressegeoclient || '—';
+  const nomAssure = (quote.nomassure || quote.client_nom || '').toUpperCase();
+
+  // Regroupement des garanties par nature de risque (cumul de la prime nette sur
+  // l'ensemble des véhicules de la flotte), classé par ordre alphabétique comme
+  // sur l'exemplaire de référence.
+  const parNature = {};
+  garanties.forEach((g) => {
+    const nature = String(g.libelle || g.nom_garantie || g.id_garantie || '—').toUpperCase();
+    if (!parNature[nature]) {
+      parNature[nature] = { nature, capital: 0, nette: 0 };
+    }
+    parNature[nature].capital = Math.max(parNature[nature].capital, num(g.capital));
+    parNature[nature].nette += num(g.prime_nette);
+  });
+  const lignes = Object.values(parNature).sort((a, b) => a.nature.localeCompare(b.nature, 'fr-FR'));
+  const totalNette = lignes.reduce((t, l) => t + l.nette, 0);
+
+  const garantieRow = (l) => `
+    <tr>
+      <td class="g-lib">${l.nature}</td>
+      <td>Voir Annexes</td>
+      <td class="g-num">${l.capital > 0 ? money(l.capital) : 'Voir Annexes'}</td>
+      <td>Convention</td>
+      <td class="g-num">${money(l.nette)}</td>
+    </tr>`;
+
+  return `
+    <div class="cp-entete">
+      <div class="cp-entete-logos">
+        ${printDocHeader(quote, titreAvenant)}
+      </div>
+    </div>
+
+    <div class="cp-deux-blocs">
+      <table class="cadre-unique cp-bloc-client">
+        <tr><td class="label">Numéro</td><td>${dash(quote.client_id)}</td></tr>
+        <tr><td class="label">Titre</td><td>${dash(d.titreClient || raw.titre)}</td></tr>
+        <tr><td class="label">Nom</td><td><strong>${(quote.souscripteur || quote.client_nom || '').toUpperCase()}</strong></td></tr>
+        <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
+        <tr><td class="label">Téléphone</td><td>${dash(d.telephoneClient || raw.telephoneclient || raw.numerotelephoneassure)}</td></tr>
+        <tr><td class="label">Profession</td><td>${dash(d.profession || raw.profession)}</td></tr>
+        <tr><td class="label">Réseau</td><td>${dash(d.reseau || raw.libelle_intermediaire || 'OREOLE')}</td></tr>
+      </table>
+      <table class="cadre-unique cp-bloc-police">
+        <tr><td class="label">Quittance</td><td>${dash(raw.numero_quittance || d.numeroQuittance)}</td></tr>
+        <tr><td class="label">N° Police</td><td><strong>${dash(numero)}</strong> &nbsp; Avenant <strong>${numeroAvenant}</strong></td></tr>
+        <tr><td class="label">Assuré(e)</td><td>${nomAssure}</td></tr>
+        <tr><td class="label">Adresse</td><td>${adresse}</td></tr>
+        <tr><td class="label">Effet</td><td>${formatFrDate(quote.date_effet)} &nbsp; Expiration : ${formatFrDate(quote.date_expiration)}</td></tr>
+        <tr><td class="label">Offre</td><td>${String(offre).toUpperCase()}</td></tr>
+        <tr><td class="label">Mouvement</td><td>${mouvement}</td></tr>
+        <tr><td class="label">Ecriture</td><td>${dash(raw.ecriture || d.ecriture)}</td></tr>
+        <tr><td class="label">Durée</td><td><strong>${dureeJours}</strong> Jours</td></tr>
+        <tr><td class="label">Émission</td><td>${formatFrDate(quote.date_emission)} &nbsp; Compagnie : <strong>${(quote.compagnie || '').toUpperCase()}</strong></td></tr>
+      </table>
+    </div>
+
+    <div class="titre-cp">
+      <div>CONDITIONS PARTICULIÈRES</div>
+      <div>ASSURANCE ${(quote.produit || 'AUTOMOBILE').toUpperCase()}</div>
+    </div>
+
+    <table class="tableau-garanties cp-garanties">
+      <tr class="ligne-labels">
+        <td>Nature du risque</td><td>Garantie</td><td>Sommes max. garanties</td><td>Franchise</td><td>Prime Nette</td>
+      </tr>
+      ${lignes.length > 0
+        ? lignes.map(garantieRow).join('')
+        : '<tr><td colspan="5" style="text-align:center;color:#64748b;">Aucune garantie enregistrée sur ce devis</td></tr>'}
+    </table>
+
+    <div class="cp-bas">
+      <div class="cp-mentions">
+        <p>Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraires.</p>
+        <p class="cp-visa">Visa : MEF/DGTCP/DA N°736 DU 31 DÉCEMBRE 1999</p>
+      </div>
+      <table class="cadre-unique cp-recap">
+        <tr><td class="label">Prime Nette</td><td>${money(totalNette || quote.prime_nette)}</td></tr>
+        <tr><td class="label">Accessoire</td><td>${money(quote.accessoires)}</td></tr>
+        <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes)}</td></tr>
+        <tr><td class="label">FGA</td><td>${money(quote.fga)}</td></tr>
+        <tr><td class="label">CEDEAO</td><td>${money(quote.cedeao)}</td></tr>
         <tr><td class="label">Prime TTC</td><td>${money(quote.prime_totale)}</td></tr>
         <tr class="ligne-total"><td class="label">Total net à payer</td><td><strong>${money(quote.prime_totale)} FCFA</strong></td></tr>
       </table>
@@ -1144,7 +1267,6 @@ const PRINT_STYLES = `
   table.cp-recap { width: 290px; margin-top: 4px; }
   .cp-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .cp-entete-logos { flex: 1; }
-  .cp-tampon { border: 2px solid #4338ca; color: #4338ca; font-weight: 800; font-size: 10pt; text-align: center; padding: 4px 10px; line-height: 1.25; letter-spacing: 0.04em; }
   .cp-deux-blocs { display: flex; gap: 10px; align-items: stretch; }
   .cp-deux-blocs table { flex: 1; margin-bottom: 8px; }
   table.cp-bloc-client td.label, table.cp-bloc-police td.label { width: 78px; }
@@ -1215,10 +1337,13 @@ export const printQuoteFacture = (quote) => {
  */
 export const printConditionsParticulieres = (quote) => {
   if (!quote) return;
-  // Un seul gabarit vérifié (Auto) pour l'instant ; réutilisé pour les autres
-  // branches en l'absence d'un exemplaire de référence Conditions
-  // Particulières lisible pour IA/Voyage/MRH/Transport/Santé.
-  const bodyHtml = buildConditionsParticulieresAuto(quote);
+  // Gabarit Flotte (synthèse par nature de risque) si le devis porte plusieurs
+  // véhicules ; gabarit Mono (détail véhicule + tableau garanties) sinon.
+  // Réutilisés tels quels pour les autres branches en l'absence d'un exemplaire
+  // de référence Conditions Particulières lisible pour IA/Voyage/MRH/Transport/Santé.
+  const bodyHtml = quote.flotte
+    ? buildConditionsParticulieresFlotte(quote)
+    : buildConditionsParticulieresAuto(quote);
   openPrintWindow(`CP-${quote.numerodevis || 'Devis'}`, bodyHtml);
 };
 

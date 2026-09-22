@@ -6,6 +6,7 @@ import { useToast } from '../../../context/ToastContext';
 import { Modal } from '../../../components/common/Modal';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 import {
   Ship,
   Truck,
@@ -440,7 +441,7 @@ export const NewTransportQuotePage = () => {
                     value={compagnie}
                     onChange={(e) => setCompagnie(e.target.value)}
                   >
-                    {companies.map((cp) => (
+                    {sortUniqueBy(companies, (cp) => cp.nom).map((cp) => (
                       <option key={cp.id || cp.nom} value={cp.nom}>{cp.nom}</option>
                     ))}
                   </select>
@@ -616,7 +617,7 @@ export const NewTransportQuotePage = () => {
                     value={natureMarchandise}
                     onChange={(e) => setNatureMarchandise(e.target.value)}
                   >
-                    {natures.map((n) => (
+                    {sortUniqueBy(natures, (n) => n.label).map((n) => (
                       <option key={n.id || n.code} value={n.id || n.code}>{n.label}</option>
                     ))}
                   </select>
@@ -664,7 +665,7 @@ export const NewTransportQuotePage = () => {
                       style={{ width: '18px', height: '18px', accentColor: '#0284c7' }}
                     />
                     <span style={{ fontSize: '0.85rem', fontWeight: 600, color: includeProfit10 ? '#38bdf8' : 'var(--text-secondary)' }}>
-                      +10% pour profit espéré (Somme : {totals.sommeAssuree.toLocaleString()} FCFA)
+                      +10% pour profit espéré (Somme : {totals.sommeAssuree.toLocaleString('fr-FR')} FCFA)
                     </span>
                   </label>
                 </div>
@@ -896,19 +897,19 @@ export const NewTransportQuotePage = () => {
                 <div style={{ display: 'flex', gap: '1.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Prime Nette</span>
-                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.primeNette.toLocaleString()} FCFA</strong>
+                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.primeNette.toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Accessoires</span>
-                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.accessoires.toLocaleString()} FCFA</strong>
+                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.accessoires.toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                   <div>
                     <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Taxes CIMA</span>
-                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.taxes.toLocaleString()} FCFA</strong>
+                    <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{totals.taxes.toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                   <div style={{ paddingLeft: '1.25rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)' }}>
                     <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>Prime Totale TTC</span>
-                    <strong style={{ fontSize: '1.35rem', color: '#38bdf8' }}>{totals.primeTotale.toLocaleString()} FCFA</strong>
+                    <strong style={{ fontSize: '1.35rem', color: '#38bdf8' }}>{totals.primeTotale.toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                 </div>
               </div>
@@ -1063,7 +1064,7 @@ export const NewTransportQuotePage = () => {
             <div><strong>N° B/L ou LTA :</strong> {numeroBlLta || 'EN COURS D\'ÉMISSION'}</div>
             <div><strong>Navire / Transporteur :</strong> {nomNavireVol}</div>
             <div><strong>Trajet Garanti :</strong> De {portDepart} vers {portArrivee}</div>
-            <div><strong>Valeur Totale Assurée :</strong> <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{totals.sommeAssuree.toLocaleString()} FCFA</span> (Incoterm: {incoterm})</div>
+            <div><strong>Valeur Totale Assurée :</strong> <span style={{ color: '#0284c7', fontWeight: 'bold' }}>{totals.sommeAssuree.toLocaleString('fr-FR')} FCFA</span> (Incoterm: {incoterm})</div>
           </div>
 
           <div style={{ fontSize: '0.8rem', lineHeight: '1.4' }}>

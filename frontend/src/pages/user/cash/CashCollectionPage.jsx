@@ -110,7 +110,7 @@ export const CashCollectionPage = () => {
     setIsModalOpen(false);
     setCurrentQuittance(result.quittance);
     setIsQuittanceModalOpen(true);
-    success(`Règlement de ${montantEncaisse.toLocaleString()} FCFA validé ! Quittance CIMA ${result.quittance.numero_quittance} enregistrée.`);
+    success(`Règlement de ${montantEncaisse.toLocaleString('fr-FR')} FCFA validé ! Quittance CIMA ${result.quittance.numero_quittance} enregistrée.`);
   };
 
   const columns = [
@@ -123,11 +123,11 @@ export const CashCollectionPage = () => {
     { header: 'Compagnie', accessor: 'compagnie' },
     {
       header: 'Prime Totale',
-      render: (row) => <span>{row.prime_totale.toLocaleString()} F</span>,
+      render: (row) => <span>{row.prime_totale.toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Déjà Encaissé',
-      render: (row) => <span style={{ color: '#34d399' }}>{row.montant_encaisse.toLocaleString()} F</span>,
+      render: (row) => <span style={{ color: '#34d399' }}>{row.montant_encaisse.toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Reste à Encaisser',
@@ -135,7 +135,7 @@ export const CashCollectionPage = () => {
         const reste = row.prime_totale - row.montant_encaisse;
         return (
           <strong style={{ color: reste > 0 ? '#fb7185' : '#34d399', fontFamily: 'var(--font-mono)' }}>
-            {reste.toLocaleString()} F
+            {reste.toLocaleString('fr-FR')} F
           </strong>
         );
       },
@@ -244,8 +244,8 @@ export const CashCollectionPage = () => {
                 <span>Assuré: <strong>{selectedContract.client_nom}</strong></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginTop: '0.35rem' }}>
-                <span>Prime globale: {selectedContract.prime_totale.toLocaleString()} F</span>
-                <span>Reste dû: <strong style={{ color: '#fb7185' }}>{(selectedContract.prime_totale - selectedContract.montant_encaisse).toLocaleString()} F</strong></span>
+                <span>Prime globale: {selectedContract.prime_totale.toLocaleString('fr-FR')} F</span>
+                <span>Reste dû: <strong style={{ color: '#fb7185' }}>{(selectedContract.prime_totale - selectedContract.montant_encaisse).toLocaleString('fr-FR')} F</strong></span>
               </div>
             </div>
 
@@ -434,7 +434,7 @@ export const CashCollectionPage = () => {
               >
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>MONTANT ENCAISSÉ ET VALIDÉ</div>
                 <div style={{ fontSize: '1.6rem', fontWeight: 900, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                  {Number(currentQuittance.montant_encaisse).toLocaleString()} FCFA
+                  {Number(currentQuittance.montant_encaisse).toLocaleString('fr-FR')} FCFA
                 </div>
               </div>
 

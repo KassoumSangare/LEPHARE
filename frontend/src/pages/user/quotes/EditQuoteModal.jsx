@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { dataStore } from '../../../api/dataStore';
 import { FileText, DollarSign, Building2, Save, Clock } from 'lucide-react';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
   const [formData, setFormData] = useState({
@@ -111,7 +112,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
               value={formData.compagnie}
               onChange={(e) => setFormData({ ...formData, compagnie: e.target.value })}
             >
-              {activeCompanies.map((c) => (
+              {sortUniqueBy(activeCompanies, (c) => c.nom).map((c) => (
                 <option key={c.id || c.nom} value={c.nom}>{c.nom}</option>
               ))}
               {!activeCompanies.some((c) => c.nom === formData.compagnie) && formData.compagnie && (
@@ -173,7 +174,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
               <input
                 type="text"
                 className="form-control"
-                value={`${formData.taxes.toLocaleString()} FCFA`}
+                value={`${formData.taxes.toLocaleString('fr-FR')} FCFA`}
                 readOnly
                 disabled
               />
@@ -182,7 +183,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSave }) => {
           <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', borderTop: '1px solid var(--border-subtle)' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Prime Totale TTC :</span>
             <strong style={{ fontSize: '1.1rem', color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
-              {formData.prime_totale.toLocaleString()} FCFA
+              {formData.prime_totale.toLocaleString('fr-FR')} FCFA
             </strong>
           </div>
         </div>

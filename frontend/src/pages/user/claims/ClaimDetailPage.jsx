@@ -116,7 +116,7 @@ export const ClaimDetailPage = () => {
 
   const handleValidateSettlement = async () => {
     if (!canDirectSettle) {
-      error(`Règlement direct impossible : le montant réclamé dépasse le plafond de délégation de ${plafondDelegation.toLocaleString()} FCFA (Code CIMA).`);
+      error(`Règlement direct impossible : le montant réclamé dépasse le plafond de délégation de ${plafondDelegation.toLocaleString('fr-FR')} FCFA (Code CIMA).`);
       return;
     }
 
@@ -142,7 +142,7 @@ export const ClaimDetailPage = () => {
 
     // Auto open Quittance Subrogative
     handleOpenQuittance(updatedClaim);
-    success(`Règlement direct de ${amount.toLocaleString()} FCFA validé. Quittance subrogative CIMA (Art. 54) émise.`);
+    success(`Règlement direct de ${amount.toLocaleString('fr-FR')} FCFA validé. Quittance subrogative CIMA (Art. 54) émise.`);
   };
 
   const handleOpenQuittance = async (currentClaim = claim) => {
@@ -169,7 +169,7 @@ export const ClaimDetailPage = () => {
       nature: currentClaim.nature,
       expert_assigne: currentClaim.expert_assigne,
       mention_legale: "Quittance subrogative établie conformément aux dispositions impératives de l'Article 54 du Code des Assurances CIMA.",
-      subrogation_text: `Je soussigné(e), ${currentClaim.assure_nom}, reconnais avoir reçu ce jour du cabinet de courtage LE PHARE, agissant au nom et pour le compte de la compagnie ${currentClaim.compagnie}, la somme de ${(currentClaim.montant_indemnise || currentClaim.montant_reclame).toLocaleString()} FCFA pour indemnisation intégrale et définitive du sinistre référencé ci-dessus. En contrepartie de ce règlement, je subroge expressément ladite compagnie d'assurances dans tous mes droits et actions contre tout tiers responsable conformément à l'article 54 du Code CIMA.`
+      subrogation_text: `Je soussigné(e), ${currentClaim.assure_nom}, reconnais avoir reçu ce jour du cabinet de courtage LE PHARE, agissant au nom et pour le compte de la compagnie ${currentClaim.compagnie}, la somme de ${(currentClaim.montant_indemnise || currentClaim.montant_reclame).toLocaleString('fr-FR')} FCFA pour indemnisation intégrale et définitive du sinistre référencé ci-dessus. En contrepartie de ce règlement, je subroge expressément ladite compagnie d'assurances dans tous mes droits et actions contre tout tiers responsable conformément à l'article 54 du Code CIMA.`
     });
     setQuittanceModalOpen(true);
   };
@@ -227,7 +227,7 @@ export const ClaimDetailPage = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <Shield size={20} color="#3b82f6" />
           <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            <strong>Réglementation CIMA (Livre V) :</strong> Tout règlement par mandat délégué de courtage est soumis au respect des pièces probantes obligatoires et au plafond conventionnel de {plafondDelegation.toLocaleString()} FCFA.
+            <strong>Réglementation CIMA (Livre V) :</strong> Tout règlement par mandat délégué de courtage est soumis au respect des pièces probantes obligatoires et au plafond conventionnel de {plafondDelegation.toLocaleString('fr-FR')} FCFA.
           </span>
         </div>
         <span className="badge badge-info">Délégation CIMA</span>
@@ -288,7 +288,7 @@ export const ClaimDetailPage = () => {
             {isWithinDelegation ? 'Délégation Directe LE PHARE' : 'Dépassement de Plafond CIMA'}
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-            Plafond convention {claim.compagnie} : {plafondDelegation.toLocaleString()} FCFA
+            Plafond convention {claim.compagnie} : {plafondDelegation.toLocaleString('fr-FR')} FCFA
           </div>
         </div>
       </div>
@@ -315,7 +315,7 @@ export const ClaimDetailPage = () => {
                 Blocage Réglementaire CIMA – Plafond de Règlement Direct Dépassé
               </div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Le montant réclamé ({claim.montant_reclame?.toLocaleString()} FCFA) excède le plafond conventionnel autorisé de {plafondDelegation.toLocaleString()} FCFA. Conformément à la convention et au Code CIMA, le courtier ne peut exécuter le règlement sans l'accord préalable écrit de la compagnie.
+                Le montant réclamé ({claim.montant_reclame?.toLocaleString('fr-FR')} FCFA) excède le plafond conventionnel autorisé de {plafondDelegation.toLocaleString('fr-FR')} FCFA. Conformément à la convention et au Code CIMA, le courtier ne peut exécuter le règlement sans l'accord préalable écrit de la compagnie.
               </div>
             </div>
           </div>
@@ -355,7 +355,7 @@ export const ClaimDetailPage = () => {
                     Recours Subrogatoire Inter-Compagnies (Art. 54 CIMA)
                   </div>
                   <div>Compagnie Adverse : <strong>{claim.recours_compagnie_adverse.compagnie}</strong></div>
-                  <div>Montant réclamé en recours : <strong style={{ color: '#34d399' }}>{claim.recours_compagnie_adverse.montant.toLocaleString()} FCFA</strong></div>
+                  <div>Montant réclamé en recours : <strong style={{ color: '#34d399' }}>{claim.recours_compagnie_adverse.montant.toLocaleString('fr-FR')} FCFA</strong></div>
                   <div>Statut du recours : <span className="badge badge-info">{claim.recours_compagnie_adverse.statut}</span></div>
                 </div>
               )}
@@ -508,7 +508,7 @@ export const ClaimDetailPage = () => {
       >
         <form onSubmit={handleRequestPriorApproval} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div style={{ padding: '0.75rem', background: 'rgba(239, 68, 68, 0.08)', borderRadius: 'var(--radius-md)', fontSize: '0.85rem' }}>
-            Montant sollicité : <strong style={{ color: '#f87171' }}>{claim.montant_reclame?.toLocaleString()} FCFA</strong> (Plafond de convention : {plafondDelegation.toLocaleString()} FCFA)
+            Montant sollicité : <strong style={{ color: '#f87171' }}>{claim.montant_reclame?.toLocaleString('fr-FR')} FCFA</strong> (Plafond de convention : {plafondDelegation.toLocaleString('fr-FR')} FCFA)
           </div>
 
           <div className="form-group">
@@ -598,7 +598,7 @@ export const ClaimDetailPage = () => {
             >
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Montant Indemnitaire Total Réglé</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                {Number(quittanceData.montant_indemnise).toLocaleString()} FCFA
+                {Number(quittanceData.montant_indemnise).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 

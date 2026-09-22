@@ -206,7 +206,7 @@ export const ParametrageTaxesPage = () => {
           <div style={{ paddingLeft: '1rem', borderLeft: '1px solid var(--border-medium)' }}>
             <label className="form-label">Montant Taxe Exigible</label>
             <div style={{ fontSize: '1.35rem', fontWeight: 800, color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
-              {Math.round(impactCalcule).toLocaleString()} FCFA
+              {Math.round(impactCalcule).toLocaleString('fr-FR')} FCFA
             </div>
           </div>
         </div>

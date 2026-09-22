@@ -117,19 +117,19 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
               <tbody>
                 <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '0.65rem' }}>Prime Pure / Nette ({contract.produit})</td>
-                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{primeNette.toLocaleString()} FCFA</td>
+                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{primeNette.toLocaleString('fr-FR')} FCFA</td>
                 </tr>
                 <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '0.65rem' }}>Accessoires de Police & Frais Courtier</td>
-                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{accessoire.toLocaleString()} FCFA</td>
+                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{accessoire.toLocaleString('fr-FR')} FCFA</td>
                 </tr>
                 <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                   <td style={{ padding: '0.65rem' }}>Taxe Légale sur Conventions d'Assurance (TCA 14.5%)</td>
-                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{taxe.toLocaleString()} FCFA</td>
+                  <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600 }}>{taxe.toLocaleString('fr-FR')} FCFA</td>
                 </tr>
                 <tr style={{ background: '#f8fafc', borderTop: '2px solid #0f172a', fontWeight: 800, fontSize: '1rem' }}>
                   <td style={{ padding: '0.75rem', color: '#0f172a' }}>TOTAL TTC À PAYER</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#059669' }}>{primeTtc.toLocaleString()} FCFA</td>
+                  <td style={{ padding: '0.75rem', textAlign: 'right', color: '#059669' }}>{primeTtc.toLocaleString('fr-FR')} FCFA</td>
                 </tr>
               </tbody>
             </table>
@@ -192,19 +192,19 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
               </h4>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #cbd5e1' }}>
                 <span>Prime Nette :</span>
-                <strong>{primeNette.toLocaleString()} FCFA</strong>
+                <strong>{primeNette.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #cbd5e1' }}>
                 <span>Accessoire de gestion :</span>
-                <strong>{accessoire.toLocaleString()} FCFA</strong>
+                <strong>{accessoire.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #cbd5e1' }}>
                 <span>Taxes Réglementaires (TCA) :</span>
-                <strong>{taxe.toLocaleString()} FCFA</strong>
+                <strong>{taxe.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', fontWeight: 800, fontSize: '0.95rem', color: '#059669' }}>
                 <span>Prime Totale TTC :</span>
-                <span>{primeTtc.toLocaleString()} FCFA</span>
+                <span>{primeTtc.toLocaleString('fr-FR')} FCFA</span>
               </div>
             </div>
 

@@ -184,7 +184,7 @@ export const EndorsementPage = () => {
       header: 'Prime Totale TTC',
       render: (row) => (
         <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-          {Number(row.prime_totale || 0).toLocaleString()} FCFA
+          {Number(row.prime_totale || 0).toLocaleString('fr-FR')} FCFA
         </strong>
       ),
     },

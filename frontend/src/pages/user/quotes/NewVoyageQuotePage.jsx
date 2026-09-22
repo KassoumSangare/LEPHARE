@@ -5,6 +5,7 @@ import { customerApi, settingsApi, contractApi, voyageApi } from '../../../api/e
 import { useToast } from '../../../context/ToastContext';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 import {
   Plane,
   Shield,
@@ -110,12 +111,17 @@ export const NewVoyageQuotePage = () => {
   const [dureeJours, setDureeJours] = useState(30);
 
   // Step 2: Offres & Garanties
+  // Catalogue d'offres et garanties réellement paramétré en base (StdOffre / StdOffreGarantie / StdSousGarantie),
+  // interrogé via fn_liste_offre_voyage et fn_garantie_offre_voyage. OREOLE_OFFRES_DEFAULT ne sert plus que de
+  // secours hors-ligne si l'API est indisponible.
   const [selectedOffreId, setSelectedOffreId] = useState(1);
   const [offresList, setOffresList] = useState(OREOLE_OFFRES_DEFAULT);
+  const [usingCatalogueReel, setUsingCatalogueReel] = useState(false);
   const currentOffre = useMemo(() => {
     return offresList.find(o => o.IdOffre === parseInt(selectedOffreId)) || offresList[0];
   }, [offresList, selectedOffreId]);
 
+  const [offreGaranties, setOffreGaranties] = useState(OREOLE_OFFRES_DEFAULT[0].garanties);
   const [checkedGaranties, setCheckedGaranties] = useState(() => {
     const init = {};
     OREOLE_OFFRES_DEFAULT[0].garanties.forEach(g => { init[g.id] = true; });
@@ -181,6 +187,75 @@ export const NewVoyageQuotePage = () => {
     return () => { isMounted = false; };
   }, []);
 
+  const toDmy = (isoDate) => {
+    if (!isoDate) return '01-01-2026';
+    const parts = isoDate.split('-');
+    return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : isoDate;
+  };
+
+  // Offres réellement paramétrées pour cette compagnie / ce tarif / cette zone de destination
+  // (fn_liste_offre_voyage). Remplace le catalogue par défaut dès que l'API répond.
+  useEffect(() => {
+    if (!compagnieId || !categorieTarif) return;
+    let isMounted = true;
+    const destObj = paysList.find(p => p.id_pays === parseInt(paysDestinationId));
+    const idZone = destObj?.id_zone || 1;
+    voyageApi.getOffresVoyage(compagnieId, categorieTarif, idZone).then((res) => {
+      if (!isMounted || !Array.isArray(res) || res.length === 0) return;
+      const mapped = res.map((o) => ({
+        IdOffre: Number(o.IdOffre ?? o.id_offre),
+        LibelleOffre: o.LibelleOffre ?? o.libelle_offre ?? 'Offre Voyage',
+      }));
+      setOffresList(mapped);
+      setUsingCatalogueReel(true);
+      setSelectedOffreId(mapped[0].IdOffre);
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [compagnieId, categorieTarif, paysDestinationId, paysList]);
+
+  // Garanties réellement rattachées à l'offre sélectionnée, avec capitaux et primes calculés par le
+  // moteur de tarification (fn_garantie_offre_voyage), selon la zone, la réduction et les dates saisies.
+  useEffect(() => {
+    if (!currentOffre) return;
+    if (!usingCatalogueReel) {
+      // Catalogue de secours (hors-ligne) : garanties déjà embarquées dans l'offre.
+      setOffreGaranties(currentOffre.garanties || []);
+      const init = {};
+      (currentOffre.garanties || []).forEach((g) => { init[g.id] = true; });
+      setCheckedGaranties(init);
+      return;
+    }
+    let isMounted = true;
+    const destObj = paysList.find(p => p.id_pays === parseInt(paysDestinationId));
+    const idZone = destObj?.id_zone || 1;
+    voyageApi.getGarantiesVoyage({
+      IdCompagnie: compagnieId,
+      IdTarif: categorieTarif,
+      IdOffre: currentOffre.IdOffre,
+      IdZoneVoyage: idZone,
+      TauxReduction: Number(reduction) || 0,
+      DateEffet: toDmy(dateEffet),
+      DateExpiration: toDmy(dateExpiration),
+      DateNaissance: toDmy(dateNaissance),
+    }).then((res) => {
+      if (!isMounted || !Array.isArray(res)) return;
+      const mapped = res.map((r) => ({
+        id: r.IdSousGarantie,
+        LibelleSousGarantie: r.LibelleSousGarantie,
+        Capital: Number(r.Capital || 0),
+        Franchise: r.MontantAccessoire ? `${Number(r.MontantAccessoire).toLocaleString('fr-FR')} FCFA` : 'Selon Conditions Générales',
+        PrimeAnnuelle: Number(r.PrimeAnnuelle || 0),
+        PrimeNette: Number(r.PrimeNette || 0),
+        acquiseParDefaut: !!r.Acquise,
+      }));
+      setOffreGaranties(mapped);
+      const init = {};
+      mapped.forEach((g) => { init[g.id] = g.acquiseParDefaut; });
+      setCheckedGaranties(init);
+    }).catch(() => {});
+    return () => { isMounted = false; };
+  }, [currentOffre, usingCatalogueReel, compagnieId, categorieTarif, paysDestinationId, paysList, reduction, dateEffet, dateExpiration, dateNaissance]);
+
   // Update duration
   useEffect(() => {
     if (dateEffet && dateExpiration) {
@@ -194,14 +269,14 @@ export const NewVoyageQuotePage = () => {
 
   // Financial calculations conforming to OREOLE
   const financialTotals = useMemo(() => {
-    if (!currentOffre || !currentOffre.garanties) {
+    if (!offreGaranties || offreGaranties.length === 0) {
       return { totalPAnnuelle: 0, totalPNette: 0, primeTtc: 0, accessoires: 2500, taxe: 0 };
     }
 
     let sumPAnnuelle = 0;
     let sumPNette = 0;
 
-    currentOffre.garanties.forEach(g => {
+    offreGaranties.forEach(g => {
       if (checkedGaranties[g.id]) {
         sumPAnnuelle += Number(g.PrimeAnnuelle || 0);
         sumPNette += Number(g.PrimeNette || 0);
@@ -227,7 +302,7 @@ export const NewVoyageQuotePage = () => {
       taxe,
       primeTtc
     };
-  }, [currentOffre, checkedGaranties, dureeJours, reduction]);
+  }, [offreGaranties, checkedGaranties, dureeJours, reduction]);
 
   // Search client handler
   const handleClientSearch = (val) => {
@@ -330,7 +405,7 @@ export const NewVoyageQuotePage = () => {
           adresse: adresseAssure,
           adresseGeo
         },
-        garantiesAcquises: currentOffre.garanties.filter(g => checkedGaranties[g.id])
+        garantiesAcquises: offreGaranties.filter(g => checkedGaranties[g.id])
       }
     };
 
@@ -473,7 +548,7 @@ export const NewVoyageQuotePage = () => {
                   if (found) setCompagnieNom(found.nom);
                 }}
               >
-                {companies.map((c) => (
+                {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id} value={c.id}>{c.nom}</option>
                 ))}
               </select>
@@ -509,7 +584,7 @@ export const NewVoyageQuotePage = () => {
                 value={nationaliteId}
                 onChange={(e) => setNationaliteId(parseInt(e.target.value))}
               >
-                {paysList.map((p) => (
+                {sortUniqueBy(paysList, (p) => p.nationalite || p.libelle_pays).map((p) => (
                   <option key={p.id_pays} value={p.id_pays}>{p.nationalite || p.libelle_pays}</option>
                 ))}
               </select>
@@ -530,7 +605,7 @@ export const NewVoyageQuotePage = () => {
                   }
                 }}
               >
-                {paysList.map((p) => (
+                {sortUniqueBy(paysList, (p) => p.libelle_pays).map((p) => (
                   <option key={p.id_pays} value={p.id_pays}>{p.libelle_pays}</option>
                 ))}
               </select>
@@ -689,7 +764,7 @@ export const NewVoyageQuotePage = () => {
                 onChange={(e) => setSelectedOffreId(parseInt(e.target.value))}
                 style={{ fontWeight: 700 }}
               >
-                {offresList.map((o) => (
+                {sortUniqueBy(offresList, (o) => o.LibelleOffre).map((o) => (
                   <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>
                 ))}
               </select>
@@ -714,7 +789,7 @@ export const NewVoyageQuotePage = () => {
                 </tr>
               </thead>
               <tbody>
-                {currentOffre.garanties.map((g) => {
+                {offreGaranties.map((g) => {
                   const isAcquise = !!checkedGaranties[g.id];
                   return (
                     <tr key={g.id} style={{ opacity: isAcquise ? 1 : 0.5 }}>
@@ -732,10 +807,10 @@ export const NewVoyageQuotePage = () => {
                           style={{ width: '16px', height: '16px', accentColor: '#2563eb', cursor: 'pointer' }}
                         />
                       </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{Number(g.Capital).toLocaleString()} FCFA</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{Number(g.Capital).toLocaleString('fr-FR')} FCFA</td>
                       <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{g.Franchise}</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{Number(g.PrimeAnnuelle).toLocaleString()} FCFA</td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#38bdf8' }}>{Number(g.PrimeNette).toLocaleString()} FCFA</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{Number(g.PrimeAnnuelle).toLocaleString('fr-FR')} FCFA</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#38bdf8' }}>{Number(g.PrimeNette).toLocaleString('fr-FR')} FCFA</td>
                     </tr>
                   );
                 })}
@@ -760,19 +835,19 @@ export const NewVoyageQuotePage = () => {
             <div style={{ display: 'flex', gap: '1.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <div>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Prime Nette</span>
-                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.totalPNette.toLocaleString()} FCFA</strong>
+                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.totalPNette.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Accessoires</span>
-                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.accessoires.toLocaleString()} FCFA</strong>
+                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.accessoires.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Taxes CIMA</span>
-                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.taxe.toLocaleString()} FCFA</strong>
+                <strong style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>{financialTotals.taxe.toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ paddingLeft: '1.25rem', borderLeft: '1px solid rgba(255, 255, 255, 0.1)' }}>
                 <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', display: 'block' }}>Prime Totale TTC</span>
-                <strong style={{ fontSize: '1.35rem', color: '#38bdf8' }}>{financialTotals.primeTtc.toLocaleString()} FCFA</strong>
+                <strong style={{ fontSize: '1.35rem', color: '#38bdf8' }}>{financialTotals.primeTtc.toLocaleString('fr-FR')} FCFA</strong>
               </div>
             </div>
           </div>
@@ -919,7 +994,7 @@ export const NewVoyageQuotePage = () => {
             </div>
             <div style={{ textAlign: 'right' }}>
               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Montant TTC à Régler</span>
-              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8' }}>{financialTotals.primeTtc.toLocaleString()} FCFA</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8' }}>{financialTotals.primeTtc.toLocaleString('fr-FR')} FCFA</div>
             </div>
           </div>
 

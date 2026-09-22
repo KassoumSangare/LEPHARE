@@ -5,6 +5,7 @@ import { Shield, User, LogOut, Bell, Compass, Settings, Menu, Sun, Moon, Users }
 import { useNavigate } from 'react-router-dom';
 import { dataStore } from '../../api/dataStore';
 import { authApi } from '../../api/endpoints';
+import { sortUniqueBy } from '../../utils/sortUtils';
 
 export const Navbar = ({ onToggleMobileSidebar }) => {
   const { user, activeSpace, switchSpace, logout, isDirectorOrAdmin, canSwitchSpace, switchUser } = useAuth();
@@ -267,7 +268,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
               maxWidth: '180px',
             }}
           >
-            {availableUsers.map((u) => (
+            {sortUniqueBy(availableUsers, (u) => u.first_name || u.username || '').map((u) => (
               <option key={u.username || u.id} value={u.username || u.email}>
                 👤 {u.first_name} ({u.role_code || u.role || 'Utilisateur'})
               </option>

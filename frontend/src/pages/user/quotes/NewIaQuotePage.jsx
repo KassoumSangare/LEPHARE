@@ -6,6 +6,7 @@ import { useToast } from '../../../context/ToastContext';
 import { UserPlus, ArrowLeft, Check, Shield, Plus } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 export const NewIaQuotePage = () => {
   const navigate = useNavigate();
@@ -139,7 +140,7 @@ export const NewIaQuotePage = () => {
               </label>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <select className="form-control" value={clientId} onChange={(e) => setClientId(parseInt(e.target.value))} style={{ flex: 1 }}>
-                  {clients.map((c) => (
+                  {sortUniqueBy(clients, (c) => c.nomcomplet).map((c) => (
                     <option key={c.id} value={c.id}>{c.nomcomplet} ({c.profession})</option>
                   ))}
                 </select>
@@ -168,7 +169,7 @@ export const NewIaQuotePage = () => {
           <div className="form-group">
             <label className="form-label">Compagnie d'Assurance</label>
             <select className="form-control" value={compagnie} onChange={(e) => setCompagnie(e.target.value)}>
-              {companies.map((c) => (
+              {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                 <option key={c.id || c.code} value={c.nom}>
                   {c.nom}
                 </option>
@@ -205,15 +206,15 @@ export const NewIaQuotePage = () => {
         <div style={{ marginTop: '1.5rem', padding: '1.25rem', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
             <span className="text-muted">Prime Nette :</span>
-            <strong style={{ color: '#60a5fa' }}>{totals.primeNette.toLocaleString()} FCFA</strong>
+            <strong style={{ color: '#60a5fa' }}>{totals.primeNette.toLocaleString('fr-FR')} FCFA</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
             <span className="text-muted">Accessoires & Taxes :</span>
-            <span>{(totals.accessoires + totals.taxes).toLocaleString()} FCFA</span>
+            <span>{(totals.accessoires + totals.taxes).toLocaleString('fr-FR')} FCFA</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', fontWeight: 800, color: '#34d399', paddingTop: '0.5rem', borderTop: '1px solid var(--border-subtle)' }}>
             <span>Prime Globale TTC :</span>
-            <span>{totals.primeTotale.toLocaleString()} FCFA</span>
+            <span>{totals.primeTotale.toLocaleString('fr-FR')} FCFA</span>
           </div>
         </div>
 

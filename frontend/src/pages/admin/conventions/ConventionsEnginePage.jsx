@@ -252,7 +252,7 @@ export const ConventionsEnginePage = () => {
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Plafond Gestion Sinistres :</span>
                 <strong style={{ color: '#60a5fa' }}>
-                  {Number(cnv.plafond_delegation_sinistre || 0).toLocaleString()} FCFA
+                  {Number(cnv.plafond_delegation_sinistre || 0).toLocaleString('fr-FR')} FCFA
                 </strong>
               </div>
 
@@ -492,7 +492,7 @@ export const ConventionsEnginePage = () => {
               </div>
               <div style={{ padding: '0.75rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>PLAFOND RÈGLEMENT SINISTRES (ART. 54)</span>
-                <strong style={{ color: '#60a5fa' }}>{Number(selectedConvention.plafond_delegation_sinistre || 0).toLocaleString()} FCFA</strong>
+                <strong style={{ color: '#60a5fa' }}>{Number(selectedConvention.plafond_delegation_sinistre || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ padding: '0.75rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>PARTICIPATION BÉNÉFICIAIRE</span>

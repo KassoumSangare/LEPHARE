@@ -256,20 +256,27 @@ export const QuoteListPage = () => {
       'Client / Souscripteur',
       'Branche / Produit',
       'Compagnie',
+      'Avenant',
+      'Type',
       'Date Émission',
-      'Prime Totale TTC',
+      'Prime Nette',
+      'Prime Totale',
       'Statut',
     ];
 
     const rows = listToPrint.map((q) => {
       const branchProd = [q.branche, q.produit].filter(Boolean).join(' - ') || (q.produit || 'Auto');
-      const prime = `${Number(q.prime_totale || 0).toLocaleString()} FCFA`;
+      const primeNette = `${Number(q.prime_nette || 0).toLocaleString('fr-FR')} FCFA`;
+      const prime = `${Number(q.prime_totale || 0).toLocaleString('fr-FR')} FCFA`;
       return [
         q.numerodevis || `DEV-${q.id}`,
         q.client_nom || q.nomcomplet || 'Client Particulier',
         branchProd,
         q.compagnie || 'LE PHARE',
+        q.avenant || '—',
+        q.flotte ? 'Flotte' : 'Mono',
         formatDateTime(q.date_emission),
+        primeNette,
         prime,
         q.statut || 'En cours',
       ];
@@ -286,14 +293,14 @@ export const QuoteListPage = () => {
         'Date d\'édition': today,
         'Édité par': user?.nom ? `${user.nom} (${user.email || ''})` : (user?.email || 'Gestionnaire'),
         'Périmètre': `Filtre actif : ${tabName}`,
-        'Volume coté': `${listToPrint.length} propositions (${Number(countByBranch[branchToUse] || listToPrint.length).toLocaleString()} en base)`,
-        'Total Primes TTC': `${totalMontant.toLocaleString()} FCFA`,
+        'Volume coté': `${listToPrint.length} propositions (${Number(countByBranch[branchToUse] || listToPrint.length).toLocaleString('fr-FR')} en base)`,
+        'Total Primes TTC': `${totalMontant.toLocaleString('fr-FR')} FCFA`,
       },
       headers,
       rows,
       tableSummary: {
         'Nombre total de devis cotés': String(listToPrint.length),
-        'Montant global des primes TTC': `${totalMontant.toLocaleString()} FCFA`,
+        'Montant global des primes TTC': `${totalMontant.toLocaleString('fr-FR')} FCFA`,
       },
     });
   };
@@ -376,16 +383,48 @@ export const QuoteListPage = () => {
       render: (row) => <div style={{ fontSize: '0.85rem' }}>{row.compagnie || 'NSIA ASSURANCES'}</div>,
     },
     {
+      header: 'Avenant',
+      accessor: 'avenant',
+      render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{row.avenant || '—'}</div>,
+    },
+    {
+      header: 'Type',
+      accessor: 'flotte',
+      render: (row) => (
+        <span
+          style={{
+            fontSize: '0.72rem',
+            padding: '0.1rem 0.45rem',
+            borderRadius: '4px',
+            fontWeight: 600,
+            background: row.flotte ? 'rgba(168, 85, 247, 0.15)' : 'rgba(148, 163, 184, 0.15)',
+            color: row.flotte ? '#c084fc' : '#94a3b8',
+          }}
+        >
+          {row.flotte ? 'Flotte' : 'Mono'}
+        </span>
+      ),
+    },
+    {
       header: 'Émission',
       accessor: 'date_emission',
       render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatDateTime(row.date_emission)}</div>,
     },
     {
-      header: 'Prime Totale TTC',
+      header: 'Prime Nette',
+      accessor: 'prime_nette',
+      render: (row) => (
+        <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+          {Number(row.prime_nette || 0).toLocaleString('fr-FR')} FCFA
+        </span>
+      ),
+    },
+    {
+      header: 'Prime Totale',
       accessor: 'prime_totale',
       render: (row) => (
         <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-          {Number(row.prime_totale || 0).toLocaleString()} FCFA
+          {Number(row.prime_totale || 0).toLocaleString('fr-FR')} FCFA
         </strong>
       ),
     },
@@ -510,7 +549,7 @@ export const QuoteListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Total Devis Actifs</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>{countByBranch.ALL.toLocaleString()}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>{countByBranch.ALL.toLocaleString('fr-FR')}</div>
           </div>
         </div>
 
@@ -520,7 +559,7 @@ export const QuoteListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Primes Totales Cotées (Page)</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>{totalPrimesCotees.toLocaleString()} F</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>{totalPrimesCotees.toLocaleString('fr-FR')} F</div>
           </div>
         </div>
 
@@ -540,7 +579,7 @@ export const QuoteListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Consolidés en Contrat</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#a5b4fc', fontFamily: 'var(--font-mono)' }}>{totalConsolides.toLocaleString()}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#a5b4fc', fontFamily: 'var(--font-mono)' }}>{totalConsolides.toLocaleString('fr-FR')}</div>
           </div>
         </div>
       </div>
@@ -601,7 +640,7 @@ export const QuoteListPage = () => {
                     marginLeft: '0.2rem',
                   }}
                 >
-                  {Number(tab.count || 0).toLocaleString()}
+                  {Number(tab.count || 0).toLocaleString('fr-FR')}
                 </span>
               </button>
 
@@ -685,7 +724,7 @@ export const QuoteListPage = () => {
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             {quotes.length === 0
               ? 'Aucun devis en attente de confirmation'
-              : <><strong>{quotes.length.toLocaleString()}</strong> devis en attente de confirmation{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}</>}
+              : <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis en attente de confirmation{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}</>}
           </div>
           <button
             type="button"

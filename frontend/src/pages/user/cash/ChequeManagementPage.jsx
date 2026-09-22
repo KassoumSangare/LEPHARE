@@ -57,7 +57,7 @@ export const ChequeManagementPage = () => {
     {
       header: 'Montant',
       accessor: 'montant',
-      render: (row) => <strong style={{ color: '#34d399' }}>{row.montant.toLocaleString()} FCFA</strong>,
+      render: (row) => <strong style={{ color: '#34d399' }}>{row.montant.toLocaleString('fr-FR')} FCFA</strong>,
     },
     {
       header: 'Statut Bancaire',

@@ -349,7 +349,7 @@ export const CrmPipelinePage = () => {
                     </span>
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                    {(stageTotal / 1000).toLocaleString()} k
+                    {(stageTotal / 1000).toLocaleString('fr-FR')} k
                   </span>
                 </div>
 
@@ -403,7 +403,7 @@ export const CrmPipelinePage = () => {
                           <div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Prime</div>
                             <div style={{ fontWeight: 700, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                              {parseAmount(lead.prime_estimee).toLocaleString()} FCFA
+                              {parseAmount(lead.prime_estimee).toLocaleString('fr-FR')} FCFA
                             </div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
@@ -519,7 +519,7 @@ export const CrmPipelinePage = () => {
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{lead.telephone}</div>
                     </td>
                     <td><span className="badge badge-neutral">{lead.branche}</span></td>
-                    <td><strong>{lead.prime_estimee.toLocaleString()} FCFA</strong></td>
+                    <td><strong>{lead.prime_estimee.toLocaleString('fr-FR')} FCFA</strong></td>
                     <td>
                       <span className={`badge ${lead.statut === 'Gagné' ? 'badge-success' : lead.statut === 'Proposition' ? 'badge-warning' : 'badge-info'}`}>
                         {lead.statut}

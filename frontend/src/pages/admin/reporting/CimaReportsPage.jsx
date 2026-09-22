@@ -64,13 +64,13 @@ export const CimaReportsPage = () => {
     const rows = allData.map((b) => [
       b.code_branche || '-',
       b.branche || '-',
-      `${Number(b.emissions || 0).toLocaleString()} FCFA`,
-      `${Number(b.encaissements || 0).toLocaleString()} FCFA`,
-      `${Number(b.commissions || 0).toLocaleString()} FCFA`,
-      `${Number(b.arrieres_debut || 0).toLocaleString()} FCFA`,
-      `${Number(b.encaissements_arrieres || 0).toLocaleString()} FCFA`,
-      `${Number(b.annulations || 0).toLocaleString()} FCFA`,
-      `${Number(b.arrieres_fin || 0).toLocaleString()} FCFA`,
+      `${Number(b.emissions || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.encaissements || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.commissions || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.arrieres_debut || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.encaissements_arrieres || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.annulations || 0).toLocaleString('fr-FR')} FCFA`,
+      `${Number(b.arrieres_fin || 0).toLocaleString('fr-FR')} FCFA`,
     ]);
 
     const totEmissions = allData.reduce((a, b) => a + Number(b.emissions || 0), 0);
@@ -81,13 +81,13 @@ export const CimaReportsPage = () => {
     const totals = [
       'TOTAL CONSOLIDÉ',
       `${allData.length} Branches CIMA`,
-      `${totEmissions.toLocaleString()} FCFA`,
-      `${totEncaissements.toLocaleString()} FCFA`,
-      `${totCommissions.toLocaleString()} FCFA`,
+      `${totEmissions.toLocaleString('fr-FR')} FCFA`,
+      `${totEncaissements.toLocaleString('fr-FR')} FCFA`,
+      `${totCommissions.toLocaleString('fr-FR')} FCFA`,
       '-',
       '-',
       '-',
-      `${totArrieresFin.toLocaleString()} FCFA`,
+      `${totArrieresFin.toLocaleString('fr-FR')} FCFA`,
     ];
 
     const filename = `Etats_CIMA_${exportConfig.etat}_${exercice}`;
@@ -118,15 +118,15 @@ export const CimaReportsPage = () => {
     { header: 'Branche CIMA', accessor: 'branche', render: (r) => r.branche || '-' },
     {
       header: 'Émissions Brutes (FCFA)',
-      render: (r) => <strong>{Number(r.emissions || 0).toLocaleString()} F</strong>,
+      render: (r) => <strong>{Number(r.emissions || 0).toLocaleString('fr-FR')} F</strong>,
     },
     {
       header: 'Encaissements Effectifs (FCFA)',
-      render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements || 0).toLocaleString()} F</span>,
+      render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements || 0).toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Commissions Dues (FCFA)',
-      render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions || 0).toLocaleString()} F</span>,
+      render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions || 0).toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Taux Recouvrement',
@@ -166,10 +166,10 @@ export const CimaReportsPage = () => {
   const e2Columns = [
     { header: 'Code', accessor: 'code_branche', render: (r) => <strong style={{ color: '#60a5fa' }}>{r.code_branche || '-'}</strong> },
     { header: 'Branche CIMA', accessor: 'branche', render: (r) => r.branche || r.assureur || '-' },
-    { header: 'Arriérés Début Exercice', render: (r) => <span>{Number(r.arrieres_debut ?? r.arrieresdebut ?? 0).toLocaleString()} F</span> },
-    { header: 'Encaissements Arriérés', render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements_arrieres ?? r.encaissements ?? 0).toLocaleString()} F</span> },
-    { header: 'Annulations / Pertes', render: (r) => <span style={{ color: '#fb7185' }}>{Number(r.annulations ?? 0).toLocaleString()} F</span> },
-    { header: 'Arriérés Fin Exercice', render: (r) => <strong style={{ color: '#fbbf24' }}>{Number(r.arrieres_fin ?? r.arrieresfin ?? 0).toLocaleString()} F</strong> },
+    { header: 'Arriérés Début Exercice', render: (r) => <span>{Number(r.arrieres_debut ?? r.arrieresdebut ?? 0).toLocaleString('fr-FR')} F</span> },
+    { header: 'Encaissements Arriérés', render: (r) => <span style={{ color: '#34d399' }}>{Number(r.encaissements_arrieres ?? r.encaissements ?? 0).toLocaleString('fr-FR')} F</span> },
+    { header: 'Annulations / Pertes', render: (r) => <span style={{ color: '#fb7185' }}>{Number(r.annulations ?? 0).toLocaleString('fr-FR')} F</span> },
+    { header: 'Arriérés Fin Exercice', render: (r) => <strong style={{ color: '#fbbf24' }}>{Number(r.arrieres_fin ?? r.arrieresfin ?? 0).toLocaleString('fr-FR')} F</strong> },
     {
       header: 'Actions',
       render: (r) => (
@@ -279,15 +279,15 @@ export const CimaReportsPage = () => {
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Total Émissions Brutes (Art. 13) :</span>
-                    <strong>{Number(selectedBranch.emissions || 0).toLocaleString()} FCFA</strong>
+                    <strong>{Number(selectedBranch.emissions || 0).toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Encaissements Réalisés :</span>
-                    <span style={{ color: '#34d399', fontWeight: 700 }}>{Number(selectedBranch.encaissements || 0).toLocaleString()} FCFA</span>
+                    <span style={{ color: '#34d399', fontWeight: 700 }}>{Number(selectedBranch.encaissements || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Commissions Dues au Courtier :</span>
-                    <span style={{ color: '#fbbf24' }}>{Number(selectedBranch.commissions || 0).toLocaleString()} FCFA</span>
+                    <span style={{ color: '#fbbf24' }}>{Number(selectedBranch.commissions || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
                     <span style={{ fontWeight: 700 }}>Ratio Recouvrement Légal :</span>
@@ -300,19 +300,19 @@ export const CimaReportsPage = () => {
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Arriérés Début Exercice :</span>
-                    <span>{Number(selectedBranch.arrieres_debut || 0).toLocaleString()} FCFA</span>
+                    <span>{Number(selectedBranch.arrieres_debut || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Recouvrements sur Arriérés :</span>
-                    <span style={{ color: '#34d399' }}>{Number(selectedBranch.encaissements_arrieres || 0).toLocaleString()} FCFA</span>
+                    <span style={{ color: '#34d399' }}>{Number(selectedBranch.encaissements_arrieres || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-muted)' }}>Annulations Primes & Pertes :</span>
-                    <span style={{ color: '#fb7185' }}>{Number(selectedBranch.annulations || 0).toLocaleString()} FCFA</span>
+                    <span style={{ color: '#fb7185' }}>{Number(selectedBranch.annulations || 0).toLocaleString('fr-FR')} FCFA</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
                     <span style={{ fontWeight: 700 }}>Solde Arriérés Fin Exercice :</span>
-                    <strong style={{ color: '#fbbf24' }}>{Number(selectedBranch.arrieres_fin || 0).toLocaleString()} FCFA</strong>
+                    <strong style={{ color: '#fbbf24' }}>{Number(selectedBranch.arrieres_fin || 0).toLocaleString('fr-FR')} FCFA</strong>
                   </div>
                 </>
               )}

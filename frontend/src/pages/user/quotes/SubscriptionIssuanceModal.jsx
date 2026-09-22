@@ -179,7 +179,7 @@ export const SubscriptionIssuanceModal = ({
             <div>
               <span style={{ color: 'var(--text-muted)' }}>Prime Totale TTC :</span>
               <div style={{ fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.prime_totale || 0).toLocaleString()} FCFA
+                {Number(quote.prime_totale || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
           </div>

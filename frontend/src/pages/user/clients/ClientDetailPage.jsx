@@ -257,7 +257,7 @@ export const ClientDetailPage = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 700, color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
-                    {ctr.prime_totale.toLocaleString()} FCFA
+                    {ctr.prime_totale.toLocaleString('fr-FR')} FCFA
                   </div>
                   <StatusBadge label={ctr.statut_encaissement} color={ctr.statut_encaissement === 'Soldé' ? 'emerald' : 'amber'} />
                 </div>
@@ -296,7 +296,7 @@ export const ClientDetailPage = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontWeight: 700, color: '#f8fafc', fontFamily: 'var(--font-mono)' }}>
-                    {Number(q.prime_totale || 0).toLocaleString()} FCFA
+                    {Number(q.prime_totale || 0).toLocaleString('fr-FR')} FCFA
                   </div>
                   <StatusBadge label={q.statut} color={q.statut_badge} />
                 </div>

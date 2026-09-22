@@ -73,7 +73,7 @@ export const ParametrageSecuritePage = () => {
       header: 'Capital Décès / Invalidité',
       render: (r) => (
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-          {Number(r.CapitalDeces).toLocaleString()} FCFA
+          {Number(r.CapitalDeces).toLocaleString('fr-FR')} FCFA
         </span>
       )
     },
@@ -81,7 +81,7 @@ export const ParametrageSecuritePage = () => {
       header: 'Frais Médicaux Plafond',
       render: (r) => (
         <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-          {Number(r.FraisMedicaux).toLocaleString()} FCFA
+          {Number(r.FraisMedicaux).toLocaleString('fr-FR')} FCFA
         </span>
       )
     },
@@ -89,7 +89,7 @@ export const ParametrageSecuritePage = () => {
       header: 'Prime / Place / An',
       render: (r) => (
         <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)', fontWeight: 800 }}>
-          {Number(r.PrimeParPlace).toLocaleString()} FCFA
+          {Number(r.PrimeParPlace).toLocaleString('fr-FR')} FCFA
         </span>
       )
     },

@@ -9,6 +9,7 @@ import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModa
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 import {
   AlertTriangle,
   ShieldCheck,
@@ -330,10 +331,10 @@ export const ClaimsListPage = () => {
                       <span className="badge badge-neutral">{claim.compagnie}</span>
                     </td>
                     <td>{claim.nature}</td>
-                    <td>{claim.montant_reclame?.toLocaleString()} FCFA</td>
+                    <td>{claim.montant_reclame?.toLocaleString('fr-FR')} FCFA</td>
                     <td>
                       <strong style={{ color: claim.montant_indemnise > 0 ? '#34d399' : 'var(--text-muted)' }}>
-                        {claim.montant_indemnise > 0 ? `${claim.montant_indemnise.toLocaleString()} FCFA` : 'En chiffrage'}
+                        {claim.montant_indemnise > 0 ? `${claim.montant_indemnise.toLocaleString('fr-FR')} FCFA` : 'En chiffrage'}
                       </strong>
                     </td>
                     <td>
@@ -414,7 +415,7 @@ export const ClaimsListPage = () => {
               onChange={(e) => setNewClaim({ ...newClaim, police_num: e.target.value })}
               required
             >
-              {contracts.map((c) => (
+              {sortUniqueBy(contracts, (c) => c.client_nom || c.numeropolice).map((c) => (
                 <option key={c.id} value={c.numeropolice}>
                   {c.numeropolice} – {c.client_nom} ({c.compagnie})
                 </option>

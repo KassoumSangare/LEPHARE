@@ -136,15 +136,15 @@ export const CompanyRemittancePage = () => {
     { header: 'Compagnie Mandante', accessor: 'compagnie' },
     {
       header: 'Primes Recouvrées',
-      render: (r) => <span>{Number(r.montant_primes || 0).toLocaleString()} FCFA</span>,
+      render: (r) => <span>{Number(r.montant_primes || 0).toLocaleString('fr-FR')} FCFA</span>,
     },
     {
       header: 'Courtage Retenu',
-      render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions_deduites || 0).toLocaleString()} FCFA</span>,
+      render: (r) => <span style={{ color: '#fbbf24' }}>{Number(r.commissions_deduites || 0).toLocaleString('fr-FR')} FCFA</span>,
     },
     {
       header: 'Net à Reverser (CIMA)',
-      render: (r) => <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(r.net_a_reverser || 0).toLocaleString()} FCFA</strong>,
+      render: (r) => <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(r.net_a_reverser || 0).toLocaleString('fr-FR')} FCFA</strong>,
     },
     {
       header: 'Délai CIMA 30 Jours',
@@ -271,7 +271,7 @@ export const CompanyRemittancePage = () => {
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Primes Encaissées (Art. 13)</div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
-            {totalPrimes.toLocaleString()} FCFA
+            {totalPrimes.toLocaleString('fr-FR')} FCFA
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Total collecté pour les assureurs</div>
         </div>
@@ -279,7 +279,7 @@ export const CompanyRemittancePage = () => {
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Courtage LE PHARE Retenu</div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fbbf24', marginTop: '0.25rem' }}>
-            {totalCommissions.toLocaleString()} FCFA
+            {totalCommissions.toLocaleString('fr-FR')} FCFA
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Commissions acquises sur primes</div>
         </div>
@@ -287,7 +287,7 @@ export const CompanyRemittancePage = () => {
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Net à Reverser aux Assureurs</div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399', marginTop: '0.25rem' }}>
-            {totalNet.toLocaleString()} FCFA
+            {totalNet.toLocaleString('fr-FR')} FCFA
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Virements bancaires sous 30j</div>
         </div>
@@ -333,15 +333,15 @@ export const CompanyRemittancePage = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
                 <span>Total Primes Brutes Encaissées (Art. 13 CIMA) :</span>
-                <strong style={{ color: 'var(--text-primary)' }}>{Number(selectedBordereau.montant_primes || 0).toLocaleString()} FCFA</strong>
+                <strong style={{ color: 'var(--text-primary)' }}>{Number(selectedBordereau.montant_primes || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Commissions de Courtage Contractuelles Déduites :</span>
-                <strong style={{ color: '#fbbf24' }}>- {Number(selectedBordereau.commissions_deduites || 0).toLocaleString()} FCFA</strong>
+                <strong style={{ color: '#fbbf24' }}>- {Number(selectedBordereau.commissions_deduites || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.75rem', fontSize: '1.1rem' }}>
                 <span style={{ fontWeight: 700 }}>Montant Net de l'Ordre de Virement :</span>
-                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(selectedBordereau.net_a_reverser || 0).toLocaleString()} FCFA</strong>
+                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(selectedBordereau.net_a_reverser || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
             </div>
 
@@ -465,7 +465,7 @@ export const CompanyRemittancePage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>Commissions Déduites ({createForm.taux_commission}%) :</span>
               <strong style={{ color: '#fbbf24' }}>
-                {Math.round((Number(createForm.montant_primes) || 0) * ((Number(createForm.taux_commission) || 0) / 100)).toLocaleString()} FCFA
+                {Math.round((Number(createForm.montant_primes) || 0) * ((Number(createForm.taux_commission) || 0) / 100)).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.4rem' }}>
@@ -474,7 +474,7 @@ export const CompanyRemittancePage = () => {
                 {(
                   (Number(createForm.montant_primes) || 0) -
                   Math.round((Number(createForm.montant_primes) || 0) * ((Number(createForm.taux_commission) || 0) / 100))
-                ).toLocaleString()} FCFA
+                ).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-muted)' }}>

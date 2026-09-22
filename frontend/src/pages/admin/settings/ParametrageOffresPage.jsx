@@ -19,6 +19,7 @@ import {
 import { settingsApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { useToast } from '../../../context/ToastContext';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 export const ParametrageOffresPage = () => {
   const { success, error: toastError } = useToast();
@@ -383,7 +384,7 @@ export const ParametrageOffresPage = () => {
                 value={offreForm.id_produit}
                 onChange={(e) => setOffreForm({ ...offreForm, id_produit: Number(e.target.value) })}
               >
-                {products.map((p) => (
+                {sortUniqueBy(products, (p) => p.nom || p.code_produit).map((p) => (
                   <option key={p.id} value={p.id}>{p.nom || p.code_produit}</option>
                 ))}
               </select>
@@ -435,7 +436,7 @@ export const ParametrageOffresPage = () => {
               value={matriceForm.id_offre}
               onChange={(e) => setMatriceForm({ ...matriceForm, id_offre: Number(e.target.value) })}
             >
-              {offres.map((o) => (
+              {sortUniqueBy(offres, (o) => o.LibelleOffre).map((o) => (
                 <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre} ({o.ProduitNom})</option>
               ))}
             </select>
@@ -448,7 +449,7 @@ export const ParametrageOffresPage = () => {
               value={matriceForm.id_garantie}
               onChange={(e) => setMatriceForm({ ...matriceForm, id_garantie: Number(e.target.value) })}
             >
-              {guarantees.map((g) => (
+              {sortUniqueBy(guarantees, (g) => g.libelle).map((g) => (
                 <option key={g.id} value={g.id}>{g.libelle} ({g.branche})</option>
               ))}
             </select>

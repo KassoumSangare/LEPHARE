@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
 const DEFAULT_CATEGORIES = [
@@ -554,7 +555,7 @@ export const NewAutoQuotePage = () => {
             code: `GAR_${item.IdSousGarantie || item.IdGarantie}`,
             nom: item.LibelleSousGarantie,
             acquise: Boolean(item.Acquise ?? true),
-            capital: item.Capital ? `${Number(item.Capital).toLocaleString()} F` : 'Néant',
+            capital: item.Capital ? `${Number(item.Capital).toLocaleString('fr-FR')} F` : 'Néant',
             franchise: item.TexteFranchise || (item.Franchise ? `${item.Franchise} F` : 'Néant'),
             formule: item.Formule || 'CIMA Standard',
             place: item.NombrePlace || nombrePlace || 5,
@@ -1136,7 +1137,7 @@ export const NewAutoQuotePage = () => {
                   if (selectedCie) setCompagnieId(selectedCie.id);
                 }}
               >
-                {companies.map((c) => (
+                {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id || c.nom} value={c.nom}>
                     {c.nom}
                   </option>
@@ -1158,7 +1159,7 @@ export const NewAutoQuotePage = () => {
                       if (c) setCategorieId(c.id);
                     }}
                   >
-                    {categories.map((cat) => (
+                    {sortUniqueBy(categories, (cat) => cat.libelle).map((cat) => (
                       <option key={cat.id} value={cat.libelle}>
                         {cat.libelle}
                       </option>
@@ -1179,7 +1180,7 @@ export const NewAutoQuotePage = () => {
                       if (u) setUsageId(u.id);
                     }}
                   >
-                    {usages.map((u) => (
+                    {sortUniqueBy(usages, (u) => u.libelle).map((u) => (
                       <option key={u.id} value={u.libelle}>
                         {u.libelle}
                       </option>
@@ -1204,7 +1205,7 @@ export const NewAutoQuotePage = () => {
                     if (car) setCarrosserieId(car.id);
                   }}
                 >
-                  {carrosseries.map((car) => (
+                  {sortUniqueBy(carrosseries, (car) => car.libelle).map((car) => (
                     <option key={car.id} value={car.libelle}>
                       {car.libelle}
                     </option>
@@ -1468,7 +1469,7 @@ export const NewAutoQuotePage = () => {
                       if (o) setOffreId(o.id);
                     }}
                   >
-                    {offresList.map((o) => (
+                    {sortUniqueBy(offresList, (o) => o.libelle).map((o) => (
                       <option key={o.id} value={o.libelle}>
                         {o.libelle}
                       </option>
@@ -1510,7 +1511,7 @@ export const NewAutoQuotePage = () => {
                   if (s) setSystemeSecuriteId(s.id);
                 }}
               >
-                {systemesSecurite.map((s) => (
+                {sortUniqueBy(systemesSecurite, (s) => s.libelle).map((s) => (
                   <option key={s.id} value={s.libelle}>
                     {s.libelle}
                   </option>
@@ -1525,7 +1526,7 @@ export const NewAutoQuotePage = () => {
                 value={formuleSecuriteCode}
                 onChange={(e) => setFormuleSecuriteCode(e.target.value)}
               >
-                {formulesSecurite.map((f) => (
+                {sortUniqueBy(formulesSecurite, (f) => f.libelle).map((f) => (
                   <option key={f.code} value={f.code}>
                     {f.libelle}
                   </option>
@@ -1540,7 +1541,7 @@ export const NewAutoQuotePage = () => {
                 value={formuleAssistanceId}
                 onChange={(e) => setFormuleAssistanceId(Number(e.target.value))}
               >
-                {formulesAssistance.map((a) => (
+                {sortUniqueBy(formulesAssistance, (a) => a.libelle).map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.libelle}
                   </option>
@@ -1564,7 +1565,7 @@ export const NewAutoQuotePage = () => {
                   }}
                   style={{ flex: 1 }}
                 >
-                  {marques.map((m) => (
+                  {sortUniqueBy(marques, (m) => m.libelle).map((m) => (
                     <option key={m.id} value={m.libelle}>
                       {m.libelle}
                     </option>
@@ -1593,7 +1594,7 @@ export const NewAutoQuotePage = () => {
                   if (g) setGenreId(g.id);
                 }}
               >
-                {genres.map((g) => (
+                {sortUniqueBy(genres, (g) => g.libelle).map((g) => (
                   <option key={g.id} value={g.libelle}>
                     {g.libelle}
                   </option>
@@ -1604,7 +1605,7 @@ export const NewAutoQuotePage = () => {
             <div className="form-group">
               <label className="form-label">Type commercial du véhicule</label>
               <select className="form-control" value={typeCommercial} onChange={(e) => setTypeCommercial(e.target.value)}>
-                {typesVehicules.map((tc) => (
+                {sortUniqueBy(typesVehicules, (tc) => tc.libelle).map((tc) => (
                   <option key={tc.id || tc.libelle} value={tc.libelle}>
                     {tc.libelle}
                   </option>
@@ -1866,7 +1867,7 @@ export const NewAutoQuotePage = () => {
                         <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>{veh.genre}</td>
                         <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center', color: '#cbd5e1' }}>{veh.puissanceFiscale} CV</td>
                         <td style={{ padding: '0.65rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#fff' }}>
-                          {Number(veh.valeurVenale || 0).toLocaleString()} F
+                          {Number(veh.valeurVenale || 0).toLocaleString('fr-FR')} F
                         </td>
                         <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center' }}>
                           <button
@@ -2108,7 +2109,7 @@ export const NewAutoQuotePage = () => {
                           onChange={(e) => handleUpdateGarantieField(idx, 'primeAnnuelle', Number(e.target.value) || 0)}
                         />
                       ) : (
-                        `${(g.acquise ? Number(g.primeAnnuelle) : 0).toLocaleString()} F`
+                        `${(g.acquise ? Number(g.primeAnnuelle) : 0).toLocaleString('fr-FR')} F`
                       )}
                     </td>
 
@@ -2122,7 +2123,7 @@ export const NewAutoQuotePage = () => {
                           onChange={(e) => handleUpdateGarantieField(idx, 'primeNette', Number(e.target.value) || 0)}
                         />
                       ) : (
-                        `${(g.acquise ? Number(g.primeNette) : 0).toLocaleString()} F`
+                        `${(g.acquise ? Number(g.primeNette) : 0).toLocaleString('fr-FR')} F`
                       )}
                     </td>
 
@@ -2165,7 +2166,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.taxeEnregistrement.toLocaleString()} FCFA
+                  {calculFinancier.taxeEnregistrement.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2186,7 +2187,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.fga.toLocaleString()} FCFA
+                  {calculFinancier.fga.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2207,7 +2208,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.accessoire.toLocaleString()} FCFA
+                  {calculFinancier.accessoire.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2229,7 +2230,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.cedeao.toLocaleString()} FCFA
+                  {calculFinancier.cedeao.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2250,7 +2251,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.primeAnnuelle.toLocaleString()} FCFA
+                  {calculFinancier.primeAnnuelle.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2271,7 +2272,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#60a5fa', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.primeNette.toLocaleString()} FCFA
+                  {calculFinancier.primeNette.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2292,7 +2293,7 @@ export const NewAutoQuotePage = () => {
                 />
               ) : (
                 <div style={{ fontSize: '1.85rem', fontWeight: 900, color: '#38bdf8', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.primeTtc.toLocaleString()} FCFA
+                  {calculFinancier.primeTtc.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
@@ -2432,7 +2433,7 @@ export const NewAutoQuotePage = () => {
             <div className="form-group">
               <label className="form-label">Catégorie de permis</label>
               <select className="form-control" value={categoriePermis} onChange={(e) => setCategoriePermis(e.target.value)}>
-                {categoriesPermis.map((cp) => (
+                {sortUniqueBy(categoriesPermis, (cp) => cp.libelle).map((cp) => (
                   <option key={cp.id} value={cp.libelle}>
                     {cp.libelle}
                   </option>

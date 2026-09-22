@@ -555,7 +555,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   </NavLink>
                   <NavLink to="/user/quotes/mrh" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <House size={14} className="nav-icon" />
-                    <span>Habitation (MRH)</span>
+                    <span>Multirisques Habitation</span>
                   </NavLink>
                   <NavLink to="/user/quotes/sante" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <HeartPulse size={14} className="nav-icon" />
@@ -563,15 +563,15 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   </NavLink>
                   <NavLink to="/user/quotes/ia" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Activity size={14} className="nav-icon" />
-                    <span>Accidents Corporels</span>
+                    <span>Individuelle Accidents</span>
                   </NavLink>
                   <NavLink to="/user/quotes/voyage" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Plane size={14} className="nav-icon" />
-                    <span>Voyage & Schengen</span>
+                    <span>Voyage</span>
                   </NavLink>
                   <NavLink to="/user/quotes/transport" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Ship size={14} className="nav-icon" />
-                    <span>Transport (Facultés)</span>
+                    <span>Transport</span>
                   </NavLink>
                 </div>
               )}

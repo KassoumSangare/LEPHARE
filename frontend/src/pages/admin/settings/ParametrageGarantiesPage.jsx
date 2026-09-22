@@ -19,6 +19,7 @@ import {
 import { settingsApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { useToast } from '../../../context/ToastContext';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 export const ParametrageGarantiesPage = () => {
   const { success, error: toastError } = useToast();
@@ -254,7 +255,7 @@ export const ParametrageGarantiesPage = () => {
       header: 'Capital Garanti',
       render: (r) => (
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-          {Number(r.Capital || 0).toLocaleString()} FCFA
+          {Number(r.Capital || 0).toLocaleString('fr-FR')} FCFA
         </span>
       )
     },
@@ -266,7 +267,7 @@ export const ParametrageGarantiesPage = () => {
       header: 'Prime de Base',
       render: (r) => (
         <span style={{ color: '#34d399', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-          {Number(r.Prime || 0).toLocaleString()} FCFA
+          {Number(r.Prime || 0).toLocaleString('fr-FR')} FCFA
         </span>
       )
     },
@@ -551,7 +552,7 @@ export const ParametrageGarantiesPage = () => {
               value={sousGarantieForm.id_garantie}
               onChange={(e) => setSousGarantieForm({ ...sousGarantieForm, id_garantie: Number(e.target.value) })}
             >
-              {garanties.map((g) => (
+              {sortUniqueBy(garanties, (g) => g.libelle).map((g) => (
                 <option key={g.id} value={g.id}>{g.libelle} ({g.branche})</option>
               ))}
             </select>

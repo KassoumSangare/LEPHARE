@@ -800,7 +800,7 @@ export const DocumentManagementPage = () => {
               </div>
               {selectedTemplate.code === 'MOD-SIN-01' && (
                 <p style={{ margin: 0 }}>
-                  Par la présente quittance, le bénéficiaire reconnaît avoir reçu de la société LE PHARE, agissant au nom et pour le compte de <strong>{templateCustomData.compagnie}</strong>, la somme de <strong>{Number(templateCustomData.montant).toLocaleString()} FCFA</strong> en règlement définitif et libératoire du sinistre référencé {templateCustomData.reference_dossier}.
+                  Par la présente quittance, le bénéficiaire reconnaît avoir reçu de la société LE PHARE, agissant au nom et pour le compte de <strong>{templateCustomData.compagnie}</strong>, la somme de <strong>{Number(templateCustomData.montant).toLocaleString('fr-FR')} FCFA</strong> en règlement définitif et libératoire du sinistre référencé {templateCustomData.reference_dossier}.
                 </p>
               )}
               {selectedTemplate.code === 'MOD-AUTO-02' && (

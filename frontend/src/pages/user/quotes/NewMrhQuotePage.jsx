@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { sortUniqueBy } from '../../../utils/sortUtils';
 
 // Formattage monétaire FCFA
 const formatFcfa = (val) => {
@@ -606,7 +607,7 @@ export const NewMrhQuotePage = () => {
                   if (c) setCompagnieNom(c.nom);
                 }}
               >
-                {companies.map((c) => (
+                {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.nom}
                   </option>
@@ -622,7 +623,7 @@ export const NewMrhQuotePage = () => {
                 value={categorieId}
                 onChange={(e) => setCategorieId(Number(e.target.value))}
               >
-                {tarifs.map((t) => (
+                {sortUniqueBy(tarifs, (t) => t.LibelleTarif || t.Libelle).map((t) => (
                   <option key={t.IdTarif} value={t.IdTarif}>
                     {t.LibelleTarif || t.Libelle}
                   </option>

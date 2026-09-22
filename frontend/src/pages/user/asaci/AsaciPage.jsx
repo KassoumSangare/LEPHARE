@@ -630,7 +630,7 @@ export const AsaciPage = () => {
                 <strong style={{ fontSize: '0.85rem', color: isContractPaid ? '#34d399' : '#f87171' }}>
                   {isContractPaid
                     ? '✓ Prime Intégralement Réglée (Délivrance Autorisée)'
-                    : `⚠️ Reste à Encaisser : ${(Number(selectedContract.prime_totale || selectedContract.primettc || 0) - Number(selectedContract.montant_encaisse || 0)).toLocaleString()} FCFA`}
+                    : `⚠️ Reste à Encaisser : ${(Number(selectedContract.prime_totale || selectedContract.primettc || 0) - Number(selectedContract.montant_encaisse || 0)).toLocaleString('fr-FR')} FCFA`}
                 </strong>
               </div>
               <span className={`badge ${isContractPaid ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
@@ -644,8 +644,8 @@ export const AsaciPage = () => {
             <div style={{ padding: '0.85rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
               <div><strong>Souscripteur :</strong> {selectedContract.client_nom || selectedContract.souscripteur}</div>
               <div><strong>Compagnie :</strong> {selectedContract.compagnie}</div>
-              <div><strong>Prime Totale :</strong> {Number(selectedContract.prime_totale || selectedContract.primettc || 0).toLocaleString()} FCFA</div>
-              <div><strong>Encaissé :</strong> {Number(selectedContract.montant_encaisse || 0).toLocaleString()} FCFA</div>
+              <div><strong>Prime Totale :</strong> {Number(selectedContract.prime_totale || selectedContract.primettc || 0).toLocaleString('fr-FR')} FCFA</div>
+              <div><strong>Encaissé :</strong> {Number(selectedContract.montant_encaisse || 0).toLocaleString('fr-FR')} FCFA</div>
             </div>
           )}
 

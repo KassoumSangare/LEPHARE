@@ -48,7 +48,7 @@ export const CommissionDashboardPage = () => {
     }
     dataStore.updateCommission(affaire.id, { statut: 'Payé', statut_badge: 'emerald' });
     setAffaires(dataStore.getCommissions());
-    success(`Commission de ${Number(affaire.montant_commission || 0).toLocaleString()} FCFA réglée à ${affaire.apporteur}.`);
+    success(`Commission de ${Number(affaire.montant_commission || 0).toLocaleString('fr-FR')} FCFA réglée à ${affaire.apporteur}.`);
   };
 
   const handleOpenBordereau = (a) => {
@@ -78,7 +78,7 @@ export const CommissionDashboardPage = () => {
     },
     {
       header: 'Prime Nette',
-      render: (r) => <span>{Number(r.prime_nette || 0).toLocaleString()} FCFA</span>,
+      render: (r) => <span>{Number(r.prime_nette || 0).toLocaleString('fr-FR')} FCFA</span>,
     },
     {
       header: 'Contrôle Art. 13 (Encaissement)',
@@ -94,7 +94,7 @@ export const CommissionDashboardPage = () => {
         <div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Taux : {r.taux_commission}</div>
           <strong style={{ color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
-            {Number(r.montant_commission || 0).toLocaleString()} FCFA
+            {Number(r.montant_commission || 0).toLocaleString('fr-FR')} FCFA
           </strong>
         </div>
       ),
@@ -228,7 +228,7 @@ export const CommissionDashboardPage = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
                 <span>Prime Nette Encaissée (Art. 13) :</span>
-                <strong>{Number(selectedBordereau.prime_nette || 0).toLocaleString()} FCFA</strong>
+                <strong>{Number(selectedBordereau.prime_nette || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Taux de rétrocession appliqué :</span>
@@ -236,7 +236,7 @@ export const CommissionDashboardPage = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.5rem', fontSize: '1.1rem' }}>
                 <span style={{ fontWeight: 700 }}>Net Réglé à l'Apporteur :</span>
-                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(selectedBordereau.montant_commission || 0).toLocaleString()} FCFA</strong>
+                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(selectedBordereau.montant_commission || 0).toLocaleString('fr-FR')} FCFA</strong>
               </div>
             </div>
 

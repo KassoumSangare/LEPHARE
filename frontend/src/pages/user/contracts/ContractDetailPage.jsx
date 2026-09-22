@@ -252,25 +252,25 @@ export const ContractDetailPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Prime nette</span>
               <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.prime_nette || (contract.prime_totale ? Math.round(contract.prime_totale * 0.85) : 337137)).toLocaleString()} FCFA
+                {Number(contract.prime_nette || (contract.prime_totale ? Math.round(contract.prime_totale * 0.85) : 337137)).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Accessoire</span>
               <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.accessoire || 9000).toLocaleString()} FCFA
+                {Number(contract.accessoire || 9000).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
               <span style={{ color: 'var(--text-secondary)' }}>Taxe</span>
               <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.taxe || (contract.prime_totale ? Math.max(0, contract.prime_totale - (contract.prime_nette || Math.round(contract.prime_totale * 0.85)) - (contract.accessoire || 9000)) : 49714)).toLocaleString()} FCFA
+                {Number(contract.taxe || (contract.prime_totale ? Math.max(0, contract.prime_totale - (contract.prime_nette || Math.round(contract.prime_totale * 0.85)) - (contract.accessoire || 9000)) : 49714)).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem', fontSize: '1.05rem' }}>
               <span style={{ fontWeight: 700, color: '#fff' }}>Prime TTC</span>
               <strong style={{ color: '#34d399', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.prime_totale || 396851).toLocaleString()} FCFA
+                {Number(contract.prime_totale || 396851).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
           </div>
@@ -356,19 +356,19 @@ export const ContractDetailPage = () => {
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Prime Totale TTC</div>
             <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-              {Number(contract.prime_totale || 396851).toLocaleString()} FCFA
+              {Number(contract.prime_totale || 396851).toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Montant Encaissé</div>
             <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-              {Number(contract.montant_encaisse || 0).toLocaleString()} FCFA
+              {Number(contract.montant_encaisse || 0).toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reste à Recouvrer</div>
             <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (Number(contract.prime_totale || 396851) - Number(contract.montant_encaisse || 0)) > 0 ? '#fb7185' : '#34d399', fontFamily: 'var(--font-mono)' }}>
-              {Math.max(0, Number(contract.prime_totale || 396851) - Number(contract.montant_encaisse || 0)).toLocaleString()} FCFA
+              {Math.max(0, Number(contract.prime_totale || 396851) - Number(contract.montant_encaisse || 0)).toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -501,7 +501,7 @@ export const ContractDetailPage = () => {
                       {m.date_effet ? `Du ${m.date_effet} au ${m.date_expiration || '31/12/2026'}` : m.date_avenant}
                     </td>
                     <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                      {Number(m.prime_totale || 0).toLocaleString()} FCFA
+                      {Number(m.prime_totale || 0).toLocaleString('fr-FR')} FCFA
                     </td>
                     <td style={{ padding: '0.65rem', textAlign: 'center' }}>
                       <button
@@ -587,15 +587,15 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Montant Net de Prime :</span>
-              <span>{(Number(contract.prime_totale || 396851) * 0.85).toLocaleString()} FCFA</span>
+              <span>{(Number(contract.prime_totale || 396851) * 0.85).toLocaleString('fr-FR')} FCFA</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Accessoires & Taxes Légales :</span>
-              <span>{(Number(contract.prime_totale || 396851) * 0.15).toLocaleString()} FCFA</span>
+              <span>{(Number(contract.prime_totale || 396851) * 0.15).toLocaleString('fr-FR')} FCFA</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.5rem', fontSize: '1.05rem' }}>
               <span style={{ fontWeight: 700 }}>Total Prime Encaissée TTC :</span>
-              <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(contract.prime_totale || 396851).toLocaleString()} FCFA</strong>
+              <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(contract.prime_totale || 396851).toLocaleString('fr-FR')} FCFA</strong>
             </div>
           </div>
 

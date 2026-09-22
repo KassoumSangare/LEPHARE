@@ -383,6 +383,9 @@ export const normalizeDevis = (bq) => {
     cedeao,
     commission,
     bonus_malus: bq.bonus_malus || 0,
+    avenant: (bq.avenant && typeof bq.avenant === 'object')
+      ? (bq.avenant.LibelleAvenant || bq.avenant.CodeAvenant)
+      : (bq.avenant_libelle || null),
     flotte: Boolean(bq.flotte),
     coassurance: Boolean(bq.coassurance),
     confirme: Boolean(bq.confirme),

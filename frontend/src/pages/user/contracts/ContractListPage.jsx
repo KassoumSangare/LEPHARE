@@ -212,7 +212,7 @@ export const ContractListPage = () => {
         <td style="padding: 6px; border: 1px solid #ccc;">${c.produit || '-'}</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.compagnie || '-'}</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.date_effet || '-'} au ${c.date_expiration || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc; text-align: right; font-weight: bold;">${Number(c.prime_totale || 0).toLocaleString()} FCFA</td>
+        <td style="padding: 6px; border: 1px solid #ccc; text-align: right; font-weight: bold;">${Number(c.prime_totale || 0).toLocaleString('fr-FR')} FCFA</td>
         <td style="padding: 6px; border: 1px solid #ccc;">${c.statut_contrat || c.statut || 'En cours'}</td>
       </tr>
     `).join('');
@@ -232,7 +232,7 @@ export const ContractListPage = () => {
         </head>
         <body>
           <h1>LE PHARE ASSURANCES — Portefeuille des Polices & Contrats</h1>
-          <div class="subtitle">Branche: <strong>${getTabLabel(selectedBranchFilter)}</strong> | Édité le: ${today} | Total lignes: ${filteredContracts.length} (sur un total base de ${countByBranch[selectedBranchFilter]?.toLocaleString()} contrats)</div>
+          <div class="subtitle">Branche: <strong>${getTabLabel(selectedBranchFilter)}</strong> | Édité le: ${today} | Total lignes: ${filteredContracts.length} (sur un total base de ${countByBranch[selectedBranchFilter]?.toLocaleString('fr-FR')} contrats)</div>
           <table>
             <thead>
               <tr>
@@ -315,7 +315,7 @@ export const ContractListPage = () => {
     },
     {
       header: 'Prime Totale',
-      render: (row) => <strong style={{ color: '#fff' }}>{Number(row.prime_totale || 0).toLocaleString()} F</strong>,
+      render: (row) => <strong style={{ color: '#fff' }}>{Number(row.prime_totale || 0).toLocaleString('fr-FR')} F</strong>,
     },
     {
       header: 'Règlement',
@@ -553,7 +553,7 @@ export const ContractListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Polices en BDD</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{countByBranch.ALL.toLocaleString()}</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981' }}>{countByBranch.ALL.toLocaleString('fr-FR')}</div>
           </div>
         </div>
 
@@ -563,7 +563,7 @@ export const ContractListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Contrats Automobile</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6' }}>{countByBranch.AUTO.toLocaleString()}</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#3b82f6' }}>{countByBranch.AUTO.toLocaleString('fr-FR')}</div>
           </div>
         </div>
 
@@ -573,7 +573,7 @@ export const ContractListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Santé & Prévoyance</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ec4899' }}>{countByBranch.SANTE.toLocaleString()}</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ec4899' }}>{countByBranch.SANTE.toLocaleString('fr-FR')}</div>
           </div>
         </div>
 
@@ -584,7 +584,7 @@ export const ContractListPage = () => {
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Autres Risques CIMA</div>
             <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f59e0b' }}>
-              {(countByBranch.ALL - countByBranch.AUTO - countByBranch.SANTE).toLocaleString()}
+              {(countByBranch.ALL - countByBranch.AUTO - countByBranch.SANTE).toLocaleString('fr-FR')}
             </div>
           </div>
         </div>
@@ -635,7 +635,7 @@ export const ContractListPage = () => {
                   fontWeight: 600,
                 }}
               >
-                {tab.count?.toLocaleString()}
+                {tab.count?.toLocaleString('fr-FR')}
               </span>
             </button>
           );
@@ -687,7 +687,7 @@ export const ContractListPage = () => {
           </div>
 
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {filteredContracts.length === 0 ? 'Aucun contrat disponible' : `${filteredContracts.length.toLocaleString()} contrat${filteredContracts.length > 1 ? 's' : ''} (${getTabLabel(selectedBranchFilter)})`}
+            {filteredContracts.length === 0 ? 'Aucun contrat disponible' : `${filteredContracts.length.toLocaleString('fr-FR')} contrat${filteredContracts.length > 1 ? 's' : ''} (${getTabLabel(selectedBranchFilter)})`}
           </div>
         </div>
 
@@ -731,7 +731,7 @@ export const ContractListPage = () => {
                 >
                   <div>
                     <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.85rem' }}>{q.numerodevis} - {q.client_nom}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{q.produit} ({q.compagnie}) — <strong style={{ color: '#34d399' }}>{q.prime_totale.toLocaleString()} F</strong></div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{q.produit} ({q.compagnie}) — <strong style={{ color: '#34d399' }}>{q.prime_totale.toLocaleString('fr-FR')} F</strong></div>
                   </div>
                   <button
                     className="btn btn-primary"

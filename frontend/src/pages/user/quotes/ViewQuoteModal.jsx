@@ -189,28 +189,28 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Prime Nette</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.prime_nette || 0).toLocaleString()} FCFA
+                {Number(quote.prime_nette || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Frais Accessoires</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.accessoires || 0).toLocaleString()} FCFA
+                {Number(quote.accessoires || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Taxes d'Assurance (TCA)</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.taxes || 0).toLocaleString()} FCFA
+                {Number(quote.taxes || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
 
             <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
               <div style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>Total TTC à Payer</div>
               <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.prime_totale || 0).toLocaleString()} FCFA
+                {Number(quote.prime_totale || 0).toLocaleString('fr-FR')} FCFA
               </div>
             </div>
           </div>
@@ -227,11 +227,11 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             </div>
             <div>
               <span style={{ color: 'var(--text-muted)' }}>FGA + CEDEAO :</span>{' '}
-              <strong style={{ color: '#fff' }}>{(Number(quote.fga || 0) + Number(quote.cedeao || 0)).toLocaleString()} FCFA</strong>
+              <strong style={{ color: '#fff' }}>{(Number(quote.fga || 0) + Number(quote.cedeao || 0)).toLocaleString('fr-FR')} FCFA</strong>
             </div>
             <div>
               <span style={{ color: 'var(--text-muted)' }}>Commission Apporteur :</span>{' '}
-              <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString()} FCFA</strong>
+              <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString('fr-FR')} FCFA</strong>
             </div>
           </div>
         </div>
@@ -250,7 +250,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 <div><strong>Genre / Usage :</strong> {details.genre || 'Véhicule Particulier'}</div>
                 <div><strong>Marque & Modèle :</strong> {details.marque} {details.modele}</div>
                 <div><strong>Puissance Fiscale :</strong> {details.puissanceFiscale} CV ({details.energie})</div>
-                <div><strong>Valeur Vénale :</strong> {Number(details.valeurVenale || 0).toLocaleString()} FCFA</div>
+                <div><strong>Valeur Vénale :</strong> {Number(details.valeurVenale || 0).toLocaleString('fr-FR')} FCFA</div>
                 <div><strong>Durée de contrat :</strong> {details.dureeMois || 12} Mois</div>
                 {details.guarantees && (
                   <div style={{ gridColumn: 'span 2', marginTop: '0.5rem' }}>
@@ -275,8 +275,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 {details.maisons.map((m, idx) => (
                   <div key={idx} style={{ padding: '0.65rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
                     <strong>Logement #{idx + 1} - {m.description}</strong> ({m.code_usage}) :
-                    Bâtiment : {Number(m.valeur_batiment || 0).toLocaleString()} FCFA •
-                    Contenu : {Number(m.valeur_contenu || 0).toLocaleString()} FCFA
+                    Bâtiment : {Number(m.valeur_batiment || 0).toLocaleString('fr-FR')} FCFA •
+                    Contenu : {Number(m.valeur_contenu || 0).toLocaleString('fr-FR')} FCFA
                     {m.presence_gardien && ' • Gardiennage (-5%)'}
                   </div>
                 ))}
@@ -289,7 +289,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 <div><strong>Nombre total de bénéficiaires :</strong> {details.totalAssures || 0} personnes</div>
                 {details.colleges && details.colleges.map((c, idx) => (
                   <div key={idx} style={{ padding: '0.6rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-                    <strong>{c.nom}</strong> : {c.effectif} assurés • Taux de couverture : {c.taux_couverture} • Prime/tête : {Number(c.prime_par_tete || 0).toLocaleString()} FCFA
+                    <strong>{c.nom}</strong> : {c.effectif} assurés • Taux de couverture : {c.taux_couverture} • Prime/tête : {Number(c.prime_par_tete || 0).toLocaleString('fr-FR')} FCFA
                   </div>
                 ))}
               </div>
@@ -299,9 +299,9 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             {quote.branche === 'IA' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
                 <div><strong>Classe Professionnelle :</strong> {details.classeProfessionnelle}</div>
-                <div><strong>Capital Décès :</strong> {Number(details.capitalDeces || 0).toLocaleString()} FCFA</div>
-                <div><strong>Capital Invalidité (IPT) :</strong> {Number(details.capitalIpt || 0).toLocaleString()} FCFA</div>
-                <div><strong>Frais Médicaux :</strong> {Number(details.fraisMedicaux || 0).toLocaleString()} FCFA</div>
+                <div><strong>Capital Décès :</strong> {Number(details.capitalDeces || 0).toLocaleString('fr-FR')} FCFA</div>
+                <div><strong>Capital Invalidité (IPT) :</strong> {Number(details.capitalIpt || 0).toLocaleString('fr-FR')} FCFA</div>
+                <div><strong>Frais Médicaux :</strong> {Number(details.fraisMedicaux || 0).toLocaleString('fr-FR')} FCFA</div>
               </div>
             )}
 
@@ -335,7 +335,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 <div><strong>Trajet :</strong> De {details.portDepart} à {details.portArrivee}</div>
                 <div><strong>N° Connaissement / B/L :</strong> {details.numeroBlLta || 'En cours'}</div>
                 <div><strong>Navire / Vol :</strong> {details.nomNavireVol}</div>
-                <div><strong>Somme Totale Assurée :</strong> {Number(details.sommeAssuree || 0).toLocaleString()} FCFA</div>
+                <div><strong>Somme Totale Assurée :</strong> {Number(details.sommeAssuree || 0).toLocaleString('fr-FR')} FCFA</div>
               </div>
             )}
           </div>
