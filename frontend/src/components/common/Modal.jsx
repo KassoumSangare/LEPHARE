@@ -2,7 +2,12 @@ import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { X } from 'lucide-react';
 
-export const Modal = ({ isOpen, onClose, title, subtitle, children, maxWidth = '620px' }) => {
+// Largeurs associées à la prop `size` (utilisée par de nombreux écrans) ; `maxWidth` reste prioritaire
+const SIZE_WIDTHS = { small: '480px', medium: '720px', large: '960px' };
+
+export const Modal = ({ isOpen, onClose, title, subtitle, children, size, maxWidth }) => {
+  const width = maxWidth || SIZE_WIDTHS[size] || '620px';
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
@@ -25,7 +30,7 @@ export const Modal = ({ isOpen, onClose, title, subtitle, children, maxWidth = '
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
         className="modal-content"
-        style={{ maxWidth }}
+        style={{ maxWidth: width }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Official CIMA / Institutional Print Header */}

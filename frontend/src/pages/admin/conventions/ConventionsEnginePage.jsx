@@ -15,7 +15,7 @@ import {
   Plus,
   Edit2,
   Clock,
-  DollarSign,
+  Banknote,
   Layers,
   CheckCircle,
   HelpCircle,

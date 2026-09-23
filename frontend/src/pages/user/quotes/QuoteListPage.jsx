@@ -251,6 +251,7 @@ export const QuoteListPage = () => {
       'Avenant',
       'Type',
       'Date Émission',
+      'Date Expiration',
       'Prime Nette',
       'Prime TTC',
       'Statut',
@@ -268,6 +269,7 @@ export const QuoteListPage = () => {
         q.avenant || '—',
         q.flotte ? 'Flotte' : 'Mono',
         formatDateTime(q.date_emission),
+        formatDateTime(q.date_expiration),
         primeNette,
         prime,
         q.statut || 'En cours',
@@ -352,23 +354,29 @@ export const QuoteListPage = () => {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                {row.client_nom || row.nomcomplet || 'Client Inconnu'}
-              </div>
             </div>
           </div>
         );
       },
     },
     {
-      header: 'Branche / Produit',
-      accessor: 'produit',
+      header: 'Nom et Prénoms',
+      accessor: 'client_nom',
       sortable: true,
       render: (row) => (
-        <div>
-          <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{row.branche ? row.branche.toUpperCase() : 'AUTOMOBILE'}</span>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{row.produit || 'Auto Standard'}</div>
-        </div>
+        <span style={{ fontWeight: 600, color: '#e2e8f0' }}>
+          {row.client_nom || row.nomcomplet || 'Client Inconnu'}
+        </span>
+      ),
+    },
+    {
+      header: 'Catégorie',
+      accessor: 'categorie',
+      sortable: true,
+      render: (row) => (
+        row.categorie
+          ? <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{row.categorie}</span>
+          : <span style={{ color: 'var(--text-muted)' }}>—</span>
       ),
     },
     {
@@ -407,6 +415,20 @@ export const QuoteListPage = () => {
       accessor: 'date_emission',
       sortable: true,
       render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{formatDateTime(row.date_emission)}</div>,
+    },
+    {
+      header: 'Expiration',
+      accessor: 'date_expiration',
+      sortable: true,
+      render: (row) => {
+        // Devis dont la date d'expiration est dépassée : affichée en rouge
+        const expire = row.date_expiration && new Date(row.date_expiration) < new Date(new Date().toDateString());
+        return (
+          <div style={{ fontSize: '0.8rem', color: expire ? '#f87171' : 'var(--text-secondary)' }} title={expire ? 'Devis expiré' : undefined}>
+            {formatDateTime(row.date_expiration)}
+          </div>
+        );
+      },
     },
     {
       header: 'Prime Nette',

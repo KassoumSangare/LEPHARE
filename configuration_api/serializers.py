@@ -274,9 +274,12 @@ class OffreDetailSerializer(serializers.ModelSerializer):
 
 
 class CarrosserieSerializer(serializers.ModelSerializer):
+    # Ids des usages autorisés pour la carrosserie (stdcarrosserie_Usages), utilisés pour filtrer le formulaire devis
+    Usages = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+
     class Meta:
         model = Carrosserie
-        fields = ["IdCarrosserie", "LibelleCarrosserie"]  # fields = "__all__"
+        fields = ["IdCarrosserie", "LibelleCarrosserie", "Usages"]  # fields = "__all__"
 
 
 class TypeVehiculeSerializer(serializers.ModelSerializer):

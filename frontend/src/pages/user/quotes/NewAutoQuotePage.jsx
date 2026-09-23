@@ -33,12 +33,15 @@ import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy } from '../../../utils/sortUtils';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
+// Code branche CIMA (stdbranche) du produit Automobile : seules les catégories 2xx sont proposées
+const BRANCHE_AUTOMOBILE = '200';
+
 const DEFAULT_CATEGORIES = [
-  { id: 1, code: '101', libelle: 'PROMENADE ET AFFAIRES' },
-  { id: 2, code: '102', libelle: 'AFFAIRES COMMERCIALES' },
-  { id: 3, code: '103', libelle: 'TRANSPORT PUBLIC DE MARCHANDISES (TPM)' },
-  { id: 4, code: '104', libelle: 'TRANSPORT PUBLIC DE VOYAGEURS (TPV)' },
-  { id: 5, code: '105', libelle: 'VEHICULES SPECIAUX & ENGINS' },
+  { id: 13, code: '201', libelle: 'PROMENADE & AFFAIRES' },
+  { id: 14, code: '202', libelle: 'TRANSPORT POUR PROPRE COMPTE' },
+  { id: 15, code: '203', libelle: 'TRANSPORT PUBLIC DE MARCHANDISES' },
+  { id: 16, code: '204', libelle: 'TRANSPORT PUBLIC DE VOYAGEURS' },
+  { id: 22, code: '210', libelle: 'VÉHICULES SPÉCIAUX' },
 ];
 
 const DEFAULT_USAGES = [
@@ -600,6 +603,52 @@ export const NewAutoQuotePage = () => {
   const [editIdDevisDetail, setEditIdDevisDetail] = useState(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
 
+  // Garde la catégorie sélectionnée cohérente avec la liste filtrée par branche :
+  // aligne le libellé sur l'id (ex: devis rechargé en édition), sinon bascule sur la 1re catégorie disponible
+  useEffect(() => {
+    if (categories.length === 0) return;
+    const byId = categories.find((cat) => Number(cat.id) === Number(categorieId));
+    if (byId) {
+      if (byId.libelle !== categorieContrat) setCategorieContrat(byId.libelle);
+      return;
+    }
+    const byLibelle = categories.find((cat) => cat.libelle === categorieContrat);
+    if (byLibelle) {
+      setCategorieId(byLibelle.id);
+      return;
+    }
+    if (!editIddevisParam) {
+      setCategorieId(categories[0].id);
+      setCategorieContrat(categories[0].libelle);
+    }
+  }, [categories, categorieId, categorieContrat, editIddevisParam]);
+
+  // Carrosseries filtrées selon l'usage sélectionné (liaison stdcarrosserie_Usages).
+  // Si aucune carrosserie n'est paramétrée pour cet usage, toutes restent proposées.
+  const carrosseriesFiltrees = useMemo(() => {
+    const liees = carrosseries.filter((car) => (car.usages || []).includes(Number(usageId)));
+    return liees.length > 0 ? liees : carrosseries;
+  }, [carrosseries, usageId]);
+
+  // Même logique de cohérence que pour la catégorie : la carrosserie choisie doit appartenir à la liste filtrée
+  useEffect(() => {
+    if (carrosseriesFiltrees.length === 0) return;
+    const byId = carrosseriesFiltrees.find((car) => Number(car.id) === Number(carrosserieId));
+    if (byId) {
+      if (byId.libelle !== carrosserie) setCarrosserie(byId.libelle);
+      return;
+    }
+    const byLibelle = carrosseriesFiltrees.find((car) => car.libelle === carrosserie);
+    if (byLibelle) {
+      setCarrosserieId(byLibelle.id);
+      return;
+    }
+    if (!editIddevisParam) {
+      setCarrosserieId(carrosseriesFiltrees[0].id);
+      setCarrosserie(carrosseriesFiltrees[0].libelle);
+    }
+  }, [carrosseriesFiltrees, carrosserieId, carrosserie, editIddevisParam]);
+
   const toIsoDate = (v) => {
     if (!v) return '';
     const d = new Date(v);
@@ -715,7 +764,7 @@ export const NewAutoQuotePage = () => {
           settingsApi.getMarques().catch(() => []),
           settingsApi.getCarrosseries().catch(() => []),
           settingsApi.getUsages().catch(() => []),
-          settingsApi.getCategories().catch(() => []),
+          settingsApi.getCategories(BRANCHE_AUTOMOBILE).catch(() => []),
           settingsApi.getSystemesSecurite().catch(() => []),
           settingsApi.getCategoriesPermis().catch(() => []),
           settingsApi.getOffres().catch(() => []),
@@ -744,13 +793,17 @@ export const NewAutoQuotePage = () => {
             setMarques(mrqs.map((m) => ({ id: m.id || m.IdMarque, libelle: m.LibelleMarque || m.libelle })));
           }
           if (crs && crs.length > 0) {
-            setCarrosseries(crs.map((c) => ({ id: c.id || c.IdCarrosserie, libelle: c.LibelleCarrosserie || c.libelle })));
+            setCarrosseries(crs.map((c) => ({ id: c.id || c.IdCarrosserie, libelle: c.LibelleCarrosserie || c.libelle, usages: (c.Usages || []).map(Number) })));
           }
           if (usgs && usgs.length > 0) {
             setUsages(usgs.map((u) => ({ id: u.id || u.IdUsage, code: u.CodeUsage || '', libelle: u.LibelleUsage || u.libelle })));
           }
           if (cats && cats.length > 0) {
-            setCategories(cats.map((cat) => ({ id: cat.id || cat.IdCategorie, code: cat.CodeCategorie || '', libelle: cat.LibelleCategorie || cat.libelle })));
+            const mappedCats = cats
+              .map((cat) => ({ id: cat.id || cat.IdCategorie, code: cat.CodeCategorie || '', libelle: cat.LibelleCategorie || cat.libelle }))
+              // Garde-fou si l'API ignore le filtre : on ne conserve que les catégories de la branche Automobile
+              .filter((cat) => !cat.code || cat.code.startsWith(BRANCHE_AUTOMOBILE[0]));
+            if (mappedCats.length > 0) setCategories(mappedCats);
           }
           if (secr && secr.length > 0) {
             setSystemesSecurite(secr.map((s) => ({ id: s.id || s.IdSystemeSecurite, libelle: s.LibelleSystemeSecurite || s.libelle })));
@@ -1327,11 +1380,11 @@ export const NewAutoQuotePage = () => {
                   value={carrosserie}
                   onChange={(e) => {
                     setCarrosserie(e.target.value);
-                    const car = carrosseries.find((c) => c.libelle === e.target.value);
+                    const car = carrosseriesFiltrees.find((c) => c.libelle === e.target.value);
                     if (car) setCarrosserieId(car.id);
                   }}
                 >
-                  {sortUniqueBy(carrosseries, (car) => car.libelle).map((car) => (
+                  {sortUniqueBy(carrosseriesFiltrees, (car) => car.libelle).map((car) => (
                     <option key={car.id} value={car.libelle}>
                       {car.libelle}
                     </option>
@@ -1572,11 +1625,11 @@ export const NewAutoQuotePage = () => {
                     value={carrosserie}
                     onChange={(e) => {
                       setCarrosserie(e.target.value);
-                      const car = carrosseries.find((c) => c.libelle === e.target.value);
+                      const car = carrosseriesFiltrees.find((c) => c.libelle === e.target.value);
                       if (car) setCarrosserieId(car.id);
                     }}
                   >
-                    {carrosseries.map((car) => (
+                    {carrosseriesFiltrees.map((car) => (
                       <option key={car.id} value={car.libelle}>
                         {car.libelle}
                       </option>
@@ -2165,8 +2218,6 @@ export const NewAutoQuotePage = () => {
                   <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>ACQUISE</th>
                   <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>CAPITAL</th>
                   <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>FRANCHISE</th>
-                  <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>FORMULE</th>
-                  <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>PLACE</th>
                   <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>PRIME ANNUELLE</th>
                   <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>PRIME NETTE</th>
                   {isEditingPrimes && <th style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>ACTIONS</th>}
@@ -2222,8 +2273,6 @@ export const NewAutoQuotePage = () => {
                       )}
                     </td>
 
-                    <td style={{ padding: '0.85rem 1rem', color: '#cbd5e1' }}>{g.formule}</td>
-                    <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center', color: '#cbd5e1' }}>{g.place}</td>
 
                     <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#fff' }}>
                       {isEditingPrimes ? (

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { ShieldCheck, Plus, Edit2, Trash2, HeartHandshake, DollarSign, Users } from 'lucide-react';
+import { ShieldCheck, Plus, Edit2, Trash2, HeartHandshake, Banknote, Users } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 
 export const ParametrageSecuritePage = () => {

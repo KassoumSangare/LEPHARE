@@ -13,6 +13,7 @@ import { contractApi, quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
+import { exportToPdf } from '../../../utils/exportUtils';
 import {
   ShieldCheck,
   Eye,
@@ -259,15 +260,29 @@ export const ContractListPage = () => {
     }
   };
 
-  const handlePrintContracts = () => {
-    if (!contracts || contracts.length === 0) {
-      toastError(`Aucun contrat à imprimer pour la sélection ${getTabLabel(selectedBranchFilter)}.`);
-      return;
+  const LIBELLES_ONGLET_STATUT = { all: 'Tous les contrats', active: 'En cours', renewable: 'À renouveler', terminated: 'Résiliées' };
+
+  // Registre imprimable du portefeuille, même gabarit que le registre des devis (exportToPdf).
+  // Onglet de branche affiché : lignes du tableau (contrats + devis du portefeuille) ;
+  // autre branche : ses contrats sont chargés à la volée avec le même filtre de statut.
+  const handlePrintContracts = async (specificBranch = null) => {
+    const branchToUse = specificBranch || selectedBranchFilter;
+    let listToPrint = filteredContracts;
+    if (branchToUse !== selectedBranchFilter) {
+      try {
+        const statut = STATUT_PAR_ONGLET[filterTab];
+        const params = getBranchParams(branchToUse);
+        const list = await contractApi.getContracts(statut ? { ...params, statut } : params);
+        listToPrint = Array.isArray(list) ? list : [];
+      } catch (err) {
+        console.error('Erreur chargement contrats pour impression:', err);
+        toastError(`Impossible de charger les contrats ${getTabLabel(branchToUse)} pour l'impression.`);
+        return;
+      }
     }
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toastError('Veuillez autoriser les fenêtres pop-up pour imprimer.');
+    if (!listToPrint || listToPrint.length === 0) {
+      toastError(`Aucun contrat à imprimer pour ${getTabLabel(branchToUse)}.`);
       return;
     }
 
@@ -275,67 +290,64 @@ export const ContractListPage = () => {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
+    const fcfa = (v) => `${Number(v || 0).toLocaleString('fr-FR')} FCFA`;
 
-    const rowsHtml = filteredContracts.map((c) => `
-      <tr>
-        <td style="padding: 6px; border: 1px solid #ccc; font-weight: bold; font-family: monospace;">${c.numeropolice || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${c.client_nom || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${c.produit || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${c.compagnie || '-'}</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${formatFrDate(c.date_effet)} au ${formatFrDate(c.date_expiration)}</td>
-        <td style="padding: 6px; border: 1px solid #ccc; text-align: right;">${Number(c.prime_nette || 0).toLocaleString('fr-FR')} FCFA</td>
-        <td style="padding: 6px; border: 1px solid #ccc; text-align: right; font-weight: bold;">${Number(c.prime_totale || 0).toLocaleString('fr-FR')} FCFA</td>
-        <td style="padding: 6px; border: 1px solid #ccc;">${c.statut_contrat || c.statut || 'En cours'}</td>
-      </tr>
-    `).join('');
+    const headers = [
+      'N° Police',
+      'Client / Souscripteur',
+      'Branche / Produit',
+      'Compagnie',
+      'Intermédiaire',
+      'Date Effet',
+      'Date Expiration',
+      'Prime Nette',
+      'Prime TTC',
+      'Statut',
+    ];
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Portefeuille des Contrats - ${getTabLabel(selectedBranchFilter)}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
-            h1 { font-size: 18px; margin-bottom: 4px; }
-            .subtitle { font-size: 12px; color: #555; margin-bottom: 15px; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; }
-            th { background: #f0f0f0; border: 1px solid #ccc; padding: 6px; text-align: left; }
-          </style>
-        </head>
-        <body>
-          <h1>LE PHARE ASSURANCES — Portefeuille des Polices & Contrats</h1>
-          <div class="subtitle">Branche: <strong>${getTabLabel(selectedBranchFilter)}</strong> | Édité le: ${today} | Total lignes: ${filteredContracts.length} (sur un total base de ${countByBranch[selectedBranchFilter]?.toLocaleString('fr-FR')} contrats)</div>
-          <table>
-            <thead>
-              <tr>
-                <th>N° Police</th>
-                <th>Souscripteur</th>
-                <th>Produit</th>
-                <th>Compagnie</th>
-                <th>Période de Validité</th>
-                <th>Prime Nette</th>
-                <th>Prime TTC</th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-          <script>
-            window.onload = function() { window.print(); };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const rows = listToPrint.map((c) => [
+      c.numeropolice || c.numerodevis || '-',
+      c.client_nom || c.souscripteur || '-',
+      [c.branche, c.produit].filter(Boolean).join(' - ') || '-',
+      c.compagnie || '-',
+      c.intermediaire || 'OREOLE ASSURANCES',
+      formatFrDate(c.date_effet),
+      formatFrDate(c.date_expiration),
+      fcfa(c.prime_nette),
+      fcfa(c.prime_totale),
+      c.statut_contrat || c.statut || 'En cours',
+    ]);
+
+    const totalNette = listToPrint.reduce((acc, c) => acc + Number(c.prime_nette || 0), 0);
+    const totalTtc = listToPrint.reduce((acc, c) => acc + Number(c.prime_totale || 0), 0);
+    const tabName = getTabLabel(branchToUse);
+    const statutLabel = LIBELLES_ONGLET_STATUT[filterTab] || 'Tous les contrats';
+
+    exportToPdf({
+      filename: `Registre_Contrats_${tabName}_LE_PHARE_${new Date().toISOString().slice(0, 10)}.pdf`,
+      title: `REGISTRE OFFICIEL DU PORTEFEUILLE DES CONTRATS [${tabName.toUpperCase()}]`,
+      subtitle: branchToUse !== 'ALL' ? `Branche / Catégorie : ${tabName} — Conforme aux normes d'audit CIMA` : 'État global du portefeuille conforme aux normes CIMA',
+      metadata: {
+        "Date d'édition": today,
+        'Édité par': user?.nom ? `${user.nom} (${user.email || ''})` : (user?.email || 'Gestionnaire'),
+        'Périmètre': `Branche : ${tabName} — ${statutLabel}`,
+        'Volume': `${listToPrint.length} lignes (${Number(countByBranch[branchToUse] || listToPrint.length).toLocaleString('fr-FR')} contrats en base)`,
+        'Total Primes TTC': fcfa(totalTtc),
+      },
+      headers,
+      rows,
+      totals: ['TOTAL', `${listToPrint.length} lignes`, '', '', '', '', '', fcfa(totalNette), fcfa(totalTtc), ''],
+    });
   };
 
   const columns = [
     {
       header: 'N° Police',
       accessor: 'numeropolice',
+      sortable: true,
       render: (row) => (
         <div>
           <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>
@@ -353,12 +365,16 @@ export const ContractListPage = () => {
     {
       header: 'Souscripteur',
       accessor: 'client_nom',
+      sortable: true,
       render: (row) => <div style={{ fontWeight: 600, color: '#fff' }}>{row.client_nom}</div>,
     },
-    { header: 'Produit', accessor: 'produit' },
-    { header: 'Compagnie', accessor: 'compagnie' },
+    { header: 'Produit', accessor: 'produit', sortable: true },
+    { header: 'Compagnie', accessor: 'compagnie', sortable: true },
     {
       header: 'Période de Validité',
+      sortable: true,
+      // Tri chronologique sur la date d'effet (la cellule affiche « effet au expiration »)
+      sortAccessor: (row) => new Date(row.date_effet || 0).getTime() || 0,
       render: (row) => {
         const isNearDue = isExpiredOrDue(row.date_expiration);
         const remaining = daysUntil(row.date_expiration);
@@ -417,16 +433,25 @@ export const ContractListPage = () => {
     },
     {
       header: 'Prime Nette',
+      sortable: true,
+      sortAccessor: (row) => Number(row.prime_nette || 0),
       render: (row) => <span style={{ color: 'var(--text-secondary)' }}>{Number(row.prime_nette || 0).toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Prime TTC',
+      sortable: true,
+      sortAccessor: (row) => Number(row.prime_totale || 0),
       render: (row) => <strong style={{ color: '#fff' }}>{Number(row.prime_totale || 0).toLocaleString('fr-FR')} F</strong>,
     },
     {
-      header: 'Règlement',
-      accessor: 'statut_encaissement',
-      render: (row) => <StatusBadge label={row.statut_encaissement || 'Soldé'} color={row.statut_encaissement === 'Soldé' ? 'emerald' : 'amber'} />,
+      header: 'Statut',
+      accessor: 'statut_contrat',
+      sortable: true,
+      render: (row) => {
+        const statut = row.statut_contrat || row.statut || 'En cours';
+        const couleurs = { 'En cours': 'emerald', 'Expiré': 'amber', 'À renouveler': 'amber', 'Résilié': 'rose', 'Devis confirmé': 'blue' };
+        return <StatusBadge label={statut} color={couleurs[statut] || 'blue'} />;
+      },
     },
     {
       header: 'Actions Mouvements & Police',
@@ -618,7 +643,7 @@ export const ContractListPage = () => {
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={handlePrintContracts}
+            onClick={() => handlePrintContracts()}
             title="Imprimer l'état du portefeuille pour cette branche"
           >
             <Printer size={16} />
@@ -738,8 +763,19 @@ export const ContractListPage = () => {
           const Icon = tab.icon;
           const isActive = selectedBranchFilter === tab.key;
           return (
-            <button
+            <div
               key={tab.key}
+              style={{
+                display: 'flex',
+                alignItems: 'stretch',
+                borderRadius: 'var(--radius-md)',
+                overflow: 'hidden',
+                transition: 'all 0.2s ease',
+                border: isActive ? '1px solid #3b82f6' : '1px solid transparent',
+                background: isActive ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+              }}
+            >
+            <button
               type="button"
               onClick={() => handleBranchFilterChange(tab.key)}
               style={{
@@ -747,13 +783,11 @@ export const ContractListPage = () => {
                 alignItems: 'center',
                 gap: '0.4rem',
                 padding: '0.5rem 0.85rem',
-                borderRadius: 'var(--radius-md)',
                 fontSize: '0.82rem',
                 fontWeight: isActive ? 700 : 500,
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                border: isActive ? '1px solid #3b82f6' : '1px solid transparent',
-                background: isActive ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                border: 'none',
+                background: 'transparent',
                 color: isActive ? '#60a5fa' : 'var(--text-secondary)',
               }}
             >
@@ -772,6 +806,25 @@ export const ContractListPage = () => {
                 {tab.count?.toLocaleString('fr-FR')}
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => handlePrintContracts(tab.key)}
+              title={`Imprimer directement le registre : ${tab.label}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0.4rem 0.5rem',
+                border: 'none',
+                borderLeft: isActive ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid var(--border-subtle)',
+                background: 'transparent',
+                color: isActive ? '#60a5fa' : 'var(--text-muted)',
+                cursor: 'pointer',
+              }}
+            >
+              <Printer size={12} />
+            </button>
+            </div>
           );
         })}
       </div>

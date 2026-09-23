@@ -12,7 +12,7 @@ import {
   ArrowLeft,
   Calendar,
   Building,
-  DollarSign,
+  Banknote,
   User,
   Clock,
   Printer,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
-import { Users, Phone, Mail, DollarSign, Calendar, Briefcase, Award, Save } from 'lucide-react';
+import { Users, Phone, Mail, Banknote, Calendar, Briefcase, Award, Save } from 'lucide-react';
 
 const BRANCHES = [
   'Automobile',
@@ -164,7 +164,7 @@ export const EditLeadModal = ({ isOpen, onClose, lead, onSave }) => {
           <div>
             <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Prime Estimée (FCFA)</label>
             <div style={{ position: 'relative' }}>
-              <DollarSign size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <Banknote size={15} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 type="number"
                 min="0"

@@ -9,6 +9,7 @@ from django.contrib import messages
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection, transaction
 from django.db.models import F, Prefetch, Q
+from django.db.models.expressions import RawSQL
 from django.http import FileResponse, Http404
 from django.http.response import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -307,6 +308,190 @@ class PieceJointeViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+# Catégorie(s) CIMA d'un devis : via le tarif de chaque ligne de détail
+# (stddevisdetail.idtarif -> stdtarif.idcategorie) ; une flotte peut en porter plusieurs
+DEVIS_CATEGORIE_SQL = """
+    SELECT string_agg(DISTINCT cat.libellecategorie, ' / ')
+    FROM stddevisdetail dd
+    JOIN stdtarif t ON t.idtarif = dd.idtarif AND t.idtarif <> 0
+    JOIN stdcategorie cat ON cat.idcategorie = t.idcategorie AND cat.idcategorie <> 0
+    WHERE dd.iddevis = stddevis.iddevis
+"""
+
+
+# Tables des Conditions Particulières : un contrat émis a ses propres tables de détail et
+# de garanties, de même structure que celles du devis
+TABLES_CONDITIONS_PARTICULIERES = {
+    False: {"entete": "stddevis", "cle": "iddevis", "offre_entete": "d.idoffre",
+            "detail": "stddevisdetail", "detail_pk": "iddevisdetail",
+            "garantie": "stddevisdetgarantie", "garantie_fk": "iddevisdet"},
+    True: {"entete": "stdcontrat", "cle": "idcontrat", "offre_entete": "NULL",
+           "detail": "stdcontratdetail", "detail_pk": "idcontratdetail",
+           "garantie": "stdcontratdetgarantie", "garantie_fk": "idcontratdetail"},
+}
+
+
+def donnees_conditions_particulieres(objet, contrat=False):
+    """
+    Données des Conditions Particulières Automobile (modèle NSIA/OREOLE) d'un devis ou d'un
+    contrat : références client / quittance avec libellés résolus, et garanties acquises
+    regroupées par nature de risque (prime nette cumulée sur tous les véhicules pour une
+    flotte). Les valeurs absentes sont renvoyées à null : le document laisse alors la case
+    vide au lieu d'inventer une donnée.
+    """
+    t = TABLES_CONDITIONS_PARTICULIERES[contrat]
+
+    def clean(value):
+        # Les fiches importées contiennent des adresses « - » en guise de vide
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value and value != "-" else None
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT c.nom, c.prenoms, c.adresse1, c.adresse2, c.mobile, c.telephone, c.fixe,
+                   q.libelle, p.libelle,
+                   a.nom, a.prenoms, a.adresse1, a.adresse2,
+                   i.libelleintermediaire, o.idoffre, o.libelleoffre, av.libelleavenant
+            FROM {t['entete']} d
+            LEFT JOIN stdclient c ON c.idclient = d.idclient
+            LEFT JOIN stdqualite q ON q.idqualite = c.idqualite
+            LEFT JOIN stdprofession p ON p.idprofession = c.idprofession
+            LEFT JOIN stdclient a ON a.idclient = d.idassure
+            LEFT JOIN stdintermediaire i ON i.idintermediaire = d.idintermediaire
+            LEFT JOIN stdoffre o ON o.idoffre = {t['offre_entete']}
+            LEFT JOIN stdavenant av ON av.idavenant = d.idavenant
+            WHERE d.{t['cle']} = %s
+            """,
+            [objet.pk],
+        )
+        (
+            c_nom, c_prenoms, c_adr1, c_adr2, c_mobile, c_tel, c_fixe,
+            titre, profession,
+            a_nom, a_prenoms, a_adr1, a_adr2,
+            intermediaire, idoffre, libelle_offre, mouvement,
+        ) = cursor.fetchone()
+
+        # Offre non spécifiée au niveau du devis (idoffre 0) : on reprend celle
+        # des véhicules si elle est unique
+        if not idoffre:
+            cursor.execute(
+                f"""
+                SELECT DISTINCT o.libelleoffre FROM {t['detail']} dd
+                JOIN stdoffre o ON o.idoffre = dd.idoffre
+                WHERE dd.{t['cle']} = %s AND dd.idoffre <> 0
+                """,
+                [objet.pk],
+            )
+            offres = [r[0] for r in cursor.fetchall()]
+            libelle_offre = offres[0] if len(offres) == 1 else None
+
+        cursor.execute(
+            f"""
+            SELECT sg.idsousgarantie, sg.libellesousgarantie, dg.capital, dg.franchise,
+                   dg.textefranchise, dg.tauxfranchise, dg.minfranchise, dg.maxfranchise,
+                   dg.primenette
+            FROM {t['detail']} dd
+            JOIN {t['garantie']} dg ON dg.{t['garantie_fk']} = dd.{t['detail_pk']}
+            -- idgarantie référence une SOUS-garantie (FK vers stdsousgarantie)
+            JOIN stdsousgarantie sg ON sg.idsousgarantie = dg.idgarantie
+            WHERE dd.{t['cle']} = %s AND dg.idgarantie <> 0 AND dg.acquise
+            """,
+            [objet.pk],
+        )
+        lignes = cursor.fetchall()
+
+        cursor.execute(
+            f"SELECT count(*) FROM {t['detail']} WHERE {t['cle']} = %s", [objet.pk]
+        )
+        nb_vehicules = cursor.fetchone()[0]
+
+    def montant(value):
+        return f"{int(value):,}".replace(",", " ")
+
+    def texte_franchise(fixe, texte, taux, mini, maxi):
+        if clean(texte):
+            return clean(texte)
+        if taux and taux > 0:
+            parts = [f"{taux.normalize():f}%"]
+            if mini and mini > 0:
+                parts.append(f"minimum {montant(mini)}")
+            if maxi and maxi > 0:
+                parts.append(f"maximum {montant(maxi)}")
+            return " ".join(parts)
+        if fixe and fixe > 0:
+            return montant(fixe)
+        return None
+
+    garanties = {}
+    for idg, libelle, capital, fixe, texte, taux, mini, maxi, prime in lignes:
+        g = garanties.setdefault(
+            idg,
+            {
+                "id_garantie": idg,
+                "nature": libelle,
+                "capitaux": set(),
+                "franchises": set(),
+                "prime_nette": Decimal(0),
+                "nb_vehicules": 0,
+            },
+        )
+        g["capitaux"].add(int(capital or 0))
+        g["franchises"].add(texte_franchise(fixe, texte, taux, mini, maxi))
+        g["prime_nette"] += prime or 0
+        g["nb_vehicules"] += 1
+
+    def nom_complet(nom, prenoms):
+        return clean(f"{nom or ''} {prenoms or ''}")
+
+    def adresse(adr1, adr2):
+        return clean(" ".join(filter(None, [clean(adr1), clean(adr2)])))
+
+    return {
+            "client": {
+                "titre": clean(titre),
+                "nom": nom_complet(c_nom, c_prenoms),
+                "adresse": adresse(c_adr1, c_adr2),
+                "telephone": clean(c_mobile) or clean(c_tel) or clean(c_fixe),
+                "profession": clean(profession),
+            },
+            "intermediaire": clean(intermediaire),
+            "quittance": {
+                "numero_police": clean(objet.numeropolice if contrat else objet.numerodevis),
+                "assure": nom_complet(a_nom, a_prenoms) or clean(getattr(objet, "nomassure", None)),
+                "adresse_assure": adresse(a_adr1, a_adr2),
+                "date_effet": objet.dateeffet,
+                "date_expiration": objet.dateexpiration,
+                "offre": clean(libelle_offre),
+                "mouvement": clean(mouvement),
+                "duree_jours": objet.duree_terme_jours,
+                "date_emission": objet.dateemission,
+            },
+            "flotte": bool(objet.flotte),
+            "nb_vehicules": nb_vehicules,
+            # Capitaux / franchises distincts entre véhicules (1 seule valeur en mono) ;
+            # 0 et null signifient « non renseigné »
+            "garanties": [
+                {
+                    **g,
+                    "capitaux": sorted(g["capitaux"]),
+                    "franchises": sorted(g["franchises"], key=lambda f: f or ""),
+                    "prime_nette": int(g["prime_nette"]),
+                }
+                for g in sorted(garanties.values(), key=lambda g: g["nature"])
+            ],
+            "montants": {
+                "accessoire": int(objet.accessoire or 0),
+                "taxe": int(objet.taxe or 0),
+                "fga": int(objet.fga or 0),
+                "cedeao": int(objet.cedeao or 0),
+                "prime_ttc_enregistree": int(objet.primettc or 0),
+            },
+        }
+
+
 class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     serializer_class = DevisSerializer
     permission_classes = [
@@ -320,7 +505,10 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
 
         queryset = (
             Devis.objects.prefetch_related("piece_jointe")
-            .annotate(offreboisee=OffreAutomobileBoisee(F("offre__IdOffre")))
+            .annotate(
+                offreboisee=OffreAutomobileBoisee(F("offre__IdOffre")),
+                libelle_categorie=RawSQL(DEVIS_CATEGORIE_SQL, []),
+            )
             .all()
         )
 
@@ -383,6 +571,12 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         ).distinct("IdGarantie_id")
         serializer = DevisDetailGarantieSerializer(garanties, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="conditions-particulieres")
+    def conditions_particulieres(self, request, pk=None):
+        """Données des Conditions Particulières du devis (voir donnees_conditions_particulieres)."""
+        devis = cast(Devis, self.get_object())
+        return Response(donnees_conditions_particulieres(devis, contrat=False), status=status.HTTP_200_OK)
 
     @action(
         detail=True,
@@ -710,6 +904,12 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     ]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
+    @action(detail=True, methods=["get"], url_path="conditions-particulieres")
+    def conditions_particulieres(self, request, pk=None):
+        """Données des Conditions Particulières du contrat (voir donnees_conditions_particulieres)."""
+        contrat = cast(Contrat, self.get_object())
+        return Response(donnees_conditions_particulieres(contrat, contrat=True), status=status.HTTP_200_OK)
+
     def get_queryset(self):
         from django.utils import timezone
         from datetime import timedelta
@@ -752,7 +952,12 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             elif str(idproduit).isdigit():
                 queryset = queryset.filter(idproduit_id=int(idproduit))
 
-        return queryset
+        # Relations sérialisées (depth=1) et offre boisée chargées dans la même requête :
+        # évite 8 à 10 requêtes par contrat sur les listes de 200 lignes
+        return queryset.select_related(
+            "iddevis", "idcompagnie", "idintermediaire", "idproduit",
+            "idclient", "idavenant", "idquittance", "piece_jointe",
+        ).annotate(offreboisee_annotee=OffreAutomobileBoisee(F("iddevis__offre__IdOffre")))
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):

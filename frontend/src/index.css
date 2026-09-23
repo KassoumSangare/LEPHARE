@@ -423,8 +423,12 @@ p {
 .form-group {
   display: flex;
   flex-direction: column;
+  /* Dans une ligne (grid/flex), les champs s'alignent en bas : un libellé sur 2 lignes
+     ou accompagné d'un bouton ne décale plus son champ par rapport aux voisins */
+  justify-content: flex-end;
   gap: 0.25rem;
   margin-bottom: 0.75rem;
+  min-width: 0;
 }
 
 .form-label {
@@ -466,6 +470,12 @@ select:focus > option:checked {
 
 .form-control::placeholder {
   color: var(--text-muted);
+}
+
+/* Hauteur identique pour input texte/date/nombre et select (le rendu natif des select et dates varie) */
+input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+select.form-control {
+  height: 2.1rem;
 }
 
 /* Cards & Widgets */

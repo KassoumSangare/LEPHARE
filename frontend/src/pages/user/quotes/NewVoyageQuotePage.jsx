@@ -14,7 +14,7 @@ import {
   Plus,
   FileCheck,
   CheckCircle2,
-  DollarSign,
+  Banknote,
   Search,
   ChevronRight,
   ChevronLeft,
@@ -822,7 +822,7 @@ export const NewVoyageQuotePage = () => {
           <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid var(--border-medium)', padding: '1.25rem 1.5rem', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <div style={{ padding: '0.5rem', borderRadius: '8px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa' }}>
-                <DollarSign size={22} />
+                <Banknote size={22} />
               </div>
               <div>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Décompte de la Cotisation</span>

@@ -6,7 +6,7 @@ import { Modal } from '../../../components/common/Modal';
 import { commissionApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { mockCommissions } from '../../../api/mockData';
-import { Coins, CheckCircle, ArrowUpRight, DollarSign, ShieldAlert, Lock, Printer, FileText } from 'lucide-react';
+import { Coins, CheckCircle, ArrowUpRight, Banknote, ShieldAlert, Lock, Printer, FileText } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 
 export const CommissionDashboardPage = () => {
@@ -180,7 +180,7 @@ export const CommissionDashboardPage = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
         <MetricCard title="Total Commissions Générées" value={mockCommissions.kpis.total_commissions_dues} icon={Coins} color="blue" />
         <MetricCard title="Total Déjà Réglé" value={mockCommissions.kpis.total_paye} icon={CheckCircle} color="emerald" />
-        <MetricCard title="Reste à Payer aux Apporteurs" value={mockCommissions.kpis.reste_a_payer} icon={DollarSign} color="amber" />
+        <MetricCard title="Reste à Payer aux Apporteurs" value={mockCommissions.kpis.reste_a_payer} icon={Banknote} color="amber" />
         <MetricCard title="Apporteurs Partenaires" value={`${mockCommissions.kpis.nombre_apporteurs_actifs} cabinets`} icon={Coins} color="purple" />
       </div>
 

@@ -3,7 +3,7 @@ import { Modal } from '../../../components/common/Modal';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { FileText, DollarSign, Building2, Save, Clock } from 'lucide-react';
+import { FileText, Banknote, Building2, Save, Clock } from 'lucide-react';
 
 export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
   const { success, error: toastError } = useToast();
@@ -126,7 +126,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
 
         <div style={{ backgroundColor: 'var(--surface-sunken)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.6rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <DollarSign size={14} />
+            <Banknote size={14} />
             Décomposition Actuarielle CIMA ({quote.branche || 'Général'})
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>

@@ -13,7 +13,7 @@ import {
   Search,
   Filter,
   Calendar,
-  DollarSign,
+  Banknote,
   CheckCircle,
   Phone,
   Mail,
@@ -238,7 +238,7 @@ export const CrmPipelinePage = () => {
           title="Volume Pipeline Estimé"
           value={`${((totalPipelineVal || 0) / 1000000).toFixed(1)} M FCFA`}
           subtitle="Primes annuelles potentielles"
-          icon={<DollarSign size={22} color="#fbbf24" />}
+          icon={<Banknote size={22} color="#fbbf24" />}
         />
         <MetricCard
           title="Affaires Clôturées (Gagnées)"

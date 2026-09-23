@@ -146,7 +146,7 @@ REST_FRAMEWORK = {
     #    "rest_framework.permissions.IsAuthenticated",
     # ],
     # "DEFAULT_MODEL_SERIALIZER_CLASS": "drf_toolbox.serializers.ModelSerializer",
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "core.views.StandardPagination",
     "PAGE_SIZE": 200,
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",

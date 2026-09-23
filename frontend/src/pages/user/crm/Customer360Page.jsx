@@ -24,7 +24,7 @@ import {
   FolderOpen,
   Plus,
   Calendar,
-  DollarSign,
+  Banknote,
   CheckCircle,
   Clock,
   ArrowRight,

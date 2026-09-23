@@ -320,6 +320,70 @@ export const professionApi = {
 /* =========================================================================
    4. DEVIS & TARIFICATION MULTI-BRANCHES (production)
    ========================================================================= */
+// Intermédiaire par défaut quand le devis/contrat n'en porte pas
+export const INTERMEDIAIRE_PAR_DEFAUT = 'OREOLE ASSURANCES';
+
+// Libellé de l'intermédiaire : objet imbriqué (serializers depth=1 : `intermediaire` pour les devis,
+// `idintermediaire` pour les contrats) ou simple chaîne ; intermédiaire de paramétrage (id 0) ignoré
+export const libelleIntermediaire = (...sources) => {
+  for (const src of sources) {
+    if (!src) continue;
+    if (typeof src === 'object') {
+      const id = src.IdIntermediaire ?? src.idintermediaire;
+      const libelle = src.LibelleIntermediaire || src.libelleintermediaire || src.libelle;
+      if (Number(id) !== 0 && libelle && String(libelle).trim()) return String(libelle).trim();
+    } else if (typeof src === 'string' && src.trim()) {
+      return src.trim();
+    }
+  }
+  return INTERMEDIAIRE_PAR_DEFAUT;
+};
+
+// Données des Conditions Particulières Auto mono (mêmes sources qu'Uranus) : récapitulatif de
+// quittance, garanties souscrites et fiche véhicule, pour un contrat ou un devis
+const donneesEntete = (res) => {
+  const d = res.data;
+  const liste = d?.data ?? d?.Data ?? d;
+  return Array.isArray(liste) ? (liste[0] || null) : liste;
+};
+const donneesListe = (res) => {
+  const d = res.data;
+  const liste = d?.Data ?? d?.data ?? d;
+  return Array.isArray(liste) ? liste : [];
+};
+export const conditionsParticulieresMonoApi = {
+  get: async (id, { contrat = false } = {}) => {
+    if (contrat) {
+      const [q, g, v] = await Promise.all([
+        apiClient.get(`/quittancecontrat/${id}`),
+        apiClient.get(`/garantiesouscritecontrat/${id}`),
+        apiClient.get(`/contratdetail/${id}`),
+      ]);
+      return { quittance: donneesEntete(q), garanties: donneesListe(g), vehicule: donneesListe(v)[0] || null };
+    }
+    const [q, g, v, l] = await Promise.all([
+      apiClient.get(`/quittanceproposition/${id}`),
+      apiClient.get(`/garantiesouscritedevis/${id}`),
+      apiClient.get(`/devisdetail/${id}`),
+      apiClient.get(`/listevehiculedevis/${id}`).catch(() => ({ data: [] })),
+    ]);
+    // Le détail devis imbrique marque / genre / type (objets) là où le détail contrat donne des libellés
+    const vehicule = donneesListe(v)[0] || null;
+    const infos = donneesListe(l)[0] || {};
+    const libelle = (x, ...cles) => (x && typeof x === 'object' ? cles.map((c) => x[c]).find(Boolean) : null);
+    return {
+      quittance: donneesEntete(q),
+      garanties: donneesListe(g),
+      vehicule: vehicule && {
+        ...vehicule,
+        libellemarque: vehicule.libellemarque || libelle(vehicule.idmarque, 'LibelleMarque') || infos.LibelleMarque,
+        libelletypevehicule: vehicule.libelletypevehicule || libelle(vehicule.idtypevehicule, 'libelle_type', 'LibelleType') || infos.LibelleTypeVehicule,
+        libellegenrevehicule: vehicule.libellegenrevehicule || libelle(vehicule.idgenrevehicule, 'LibelleGenre', 'libelle_genre'),
+      },
+    };
+  },
+};
+
 export const normalizeDevis = (bq) => {
   if (!bq) return null;
   const id = bq.iddevis || bq.id;
@@ -394,6 +458,9 @@ export const normalizeDevis = (bq) => {
     statut: statutLabel,
     statut_badge: statutBadge,
     numero_police_compagnie: bq.numero_police_compagnie || null,
+    intermediaire: libelleIntermediaire(bq.intermediaire, bq.idintermediaire),
+    // Catégorie(s) CIMA issues des tarifs du détail (plusieurs possibles pour une flotte, séparées par « / »)
+    categorie: bq.libelle_categorie || null,
     raw: bq,
   };
 };
@@ -503,6 +570,8 @@ export const quoteApi = {
     const res = await apiClient.get('/devis/', { params: { ...params, page_size: 1 }, timeout: 120000 });
     return Number(res?.data?.count ?? 0);
   },
+  // GET /api/devis/:id/conditions-particulieres/ (données du document Conditions Particulières)
+  getConditionsParticulieres: async (id) => (await apiClient.get(`/devis/${id}/conditions-particulieres/`)).data,
   // GET /api/devis/:id/
   getQuoteDetail: async (id) => {
     const res = await apiClient.get(`/devis/${id}/`);
@@ -769,7 +838,7 @@ export const normalizeContrat = (bc) => {
     attestation_badge: 'emerald',
     numero_police_compagnie: bc.numero_police_compagnie || null,
     adresse: bc.adresse || bc.idclient?.Adresse || bc.idclient?.adresse || 'Abidjan, Côte d\'Ivoire',
-    intermediaire: bc.intermediaire || 'LE PHARE COURTAGES & SINISTRES',
+    intermediaire: libelleIntermediaire(bc.idintermediaire, bc.intermediaire),
     branche: bc.branche || (produitNom.toLowerCase().includes('auto') ? 'Auto' : produitNom.toLowerCase().includes('mrh') || produitNom.toLowerCase().includes('habit') ? 'MRH' : 'Auto'),
     details: bc.details || {},
     raw: bc,
@@ -798,6 +867,8 @@ export const contractApi = {
     return list.map(normalizeContrat);
   },
   // GET /api/contrat/:id/
+  // GET /api/contrat/:id/conditions-particulieres/ (mêmes données que pour un devis, tables du contrat)
+  getConditionsParticulieres: async (id) => (await apiClient.get(`/contrat/${id}/conditions-particulieres/`)).data,
   getContractDetail: async (id) => {
     const res = await apiClient.get(`/contrat/${id}/`);
     return normalizeContrat(res.data);
@@ -1016,8 +1087,8 @@ export const settingsApi = {
   getProducts: async () => extractData(await apiClient.get('/produit/')),
   // GET /api/garantie/ (17 garanties en BDD)
   getGuarantees: async () => extractData(await apiClient.get('/garantie/')),
-  // GET /api/categorie/ (catégories CIMA en BDD)
-  getCategories: async () => extractData(await apiClient.get('/categorie/')),
+  // GET /api/categorie/ (catégories CIMA en BDD) — branche optionnelle (code stdbranche, ex: '200' = Automobile)
+  getCategories: async (branche) => extractData(await apiClient.get('/categorie/', { params: branche ? { branche } : undefined })),
   // GET /api/tarif/ (26 grilles tarifaires en BDD)
   getTarifs: async () => extractData(await apiClient.get('/tarif/')),
   // GET /api/genrevehicule/ (13 genres en BDD)

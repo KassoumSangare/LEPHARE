@@ -10,24 +10,25 @@ import {
   Calendar,
   Save,
   Globe,
-  DollarSign,
+  Banknote,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
 
 export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onSaveContract }) => {
   const { success } = useToast();
-  if (!isOpen || !contract) return null;
-
+  // Les hooks doivent être appelés à chaque rendu, avant tout retour anticipé (règles des hooks)
   const [attestationNum, setAttestationNum] = useState(
-    contract.attestation_asaci_num || `ASACI-2026-${String(contract.id || 101).padStart(5, '0')}`
+    contract?.attestation_asaci_num || `ASACI-2026-${String(contract?.id || 101).padStart(5, '0')}`
   );
   const [immat, setImmat] = useState(
-    contract.details?.immatriculation || contract.immatriculation || '1234 AB 01'
+    contract?.details?.immatriculation || contract?.immatriculation || '1234 AB 01'
   );
   const [carteBruneNum, setCarteBruneNum] = useState(
-    contract.carte_brune_num || `CB-CEDEAO-CI-2026-${String(contract.id || 101).padStart(4, '0')}`
+    contract?.carte_brune_num || `CB-CEDEAO-CI-2026-${String(contract?.id || 101).padStart(4, '0')}`
   );
+
+  if (!isOpen || !contract) return null;
 
   const getModalTitle = () => {
     switch (docType) {

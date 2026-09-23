@@ -17,7 +17,7 @@ import {
   CheckCircle2,
   ShieldAlert,
   Building,
-  DollarSign,
+  Banknote,
   FileText,
   Percent,
 } from 'lucide-react';

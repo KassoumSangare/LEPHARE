@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { configRefApi, professionApi } from '../../../api/endpoints';
-import { User, Phone, Mail, MapPin, Briefcase, Building2, Save, ShieldCheck, CreditCard, Plus } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Briefcase, Building2, Save, ShieldCheck, CreditCard, Plus, ArrowLeft, ArrowRight } from 'lucide-react';
 
 export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
   const [modalTab, setModalTab] = useState('identite');
+  const modalTabOrder = ['identite', 'coordonnees', 'professionnel', 'courtage', 'banque'];
   const [refData, setRefData] = useState({
     qualites: [],
     villes: [],
@@ -218,11 +219,23 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
     onClose();
   };
 
+  // Navigation Précédent / Suivant entre les étapes
+  const tabIndex = modalTabOrder.indexOf(modalTab);
+  const isFirstTab = tabIndex === 0;
+  const isLastTab = tabIndex === modalTabOrder.length - 1;
+  const handlePrevTab = () => { if (!isFirstTab) setModalTab(modalTabOrder[tabIndex - 1]); };
+  const handleNextTab = () => { if (!isLastTab) setModalTab(modalTabOrder[tabIndex + 1]); };
+
+  const clientNomComplet =
+    client.nomcomplet ||
+    `${client.Nom || client.nom || ''} ${client.Prenoms || client.prenom || ''}`.trim() ||
+    client.codeclient || client.Matricule || client.id;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Modifier la Fiche Client [${client.codeclient || client.Matricule || client.id}]`}
+      title={`Modifier la Fiche Client : ${clientNomComplet}`}
       size="large"
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -674,14 +687,32 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
         )}
 
         {/* Footer */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Annuler
-          </button>
-          <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Save size={15} />
-            <span>Enregistrer Modifications</span>
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>
+              Annuler
+            </button>
+            {!isFirstTab && (
+              <button type="button" className="btn btn-secondary" onClick={handlePrevTab} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <ArrowLeft size={16} /> Précédent
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Étape {tabIndex + 1} sur {modalTabOrder.length}
+            </span>
+            {!isLastTab && (
+              <button type="button" className="btn btn-secondary" onClick={handleNextTab} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>Suivant</span> <ArrowRight size={16} />
+              </button>
+            )}
+            <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Save size={15} />
+              <span>Enregistrer Modifications</span>
+            </button>
+          </div>
         </div>
       </form>
 

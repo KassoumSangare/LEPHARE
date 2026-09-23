@@ -513,6 +513,7 @@ class DevisSerializer(serializers.ModelSerializer):
         source="piece_jointe", read_only=True
     )
     duree_terme_jours = serializers.ReadOnlyField()
+    libelle_categorie = serializers.SerializerMethodField()
 
     class Meta:
         model = Devis
@@ -525,6 +526,22 @@ class DevisSerializer(serializers.ModelSerializer):
             "duree_terme_jours",
         ]
         depth = 1
+
+    def get_libelle_categorie(self, obj):
+        # Annoté par DevisViewSet.get_queryset ; calculé à la demande sinon
+        if hasattr(obj, "libelle_categorie"):
+            return obj.libelle_categorie
+        from django.db import connection
+
+        from .views import DEVIS_CATEGORIE_SQL
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT ({DEVIS_CATEGORIE_SQL}) FROM stddevis WHERE iddevis = %s",
+                [obj.pk],
+            )
+            row = cursor.fetchone()
+        return row[0] if row else None
 
     def get_offreboisee(self, obj):
         try:
@@ -585,6 +602,9 @@ class ContratSerializer(serializers.ModelSerializer):
         ]
 
     def get_offreboisee(self, obj):
+        # Valeur précalculée par ContratViewSet.get_queryset (une seule requête pour la liste)
+        if hasattr(obj, "offreboisee_annotee"):
+            return bool(obj.offreboisee_annotee)
         try:
             if hasattr(obj, "iddevis"):
                 devis = Devis.objects.annotate(

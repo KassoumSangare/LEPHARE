@@ -104,7 +104,6 @@ def assure_existe_deja(cle_unique: str):
         logger.error(f"PLUSIEURS assurés avec cle_unique={cle_unique}")
         return Client.objects.filter(cle_unique=cle_unique).first()
 
-
 def verifier_fichier_deja_importe(hash_fichier: str):
     """Vérifie si un fichier a déjà été importé"""
     from ..models import ImportsHistorique

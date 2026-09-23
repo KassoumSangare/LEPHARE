@@ -10,7 +10,7 @@ import {
   RefreshCw,
   Printer,
   Calendar,
-  DollarSign,
+  Banknote,
   Building2,
   User,
   Car,

@@ -16,7 +16,6 @@ import {
   HeartPulse,
   Plane,
   Ship,
-  DollarSign,
   Package,
   MapPin,
   Clock,
@@ -48,7 +47,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Fiche Devis [${quote.numerodevis}]`}
+      title="Fiche Devis"
       size="large"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -177,7 +176,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
               {quote.compagnie}
             </div>
             <div style={{ fontSize: '0.8rem', color: '#60a5fa', marginTop: '0.35rem' }}>
-              Intermédiaire : <strong>{quote.intermediaire || 'LE PHARE - Courtage & Sinistres Délégués'}</strong>
+              Intermédiaire : <strong>{quote.intermediaire || 'OREOLE ASSURANCES'}</strong>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
               Produit : {quote.produit}
@@ -222,7 +221,6 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
         {/* Actuarial Financial Breakdown */}
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
           <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <DollarSign size={15} color="#38bdf8" />
             Décompte Actuariel CIMA & Quittance
           </div>
 
@@ -413,7 +411,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
               type="button"
               className="btn btn-secondary"
               onClick={() => printConditionsParticulieres(quote)}
-              title="Échéancier de police détaillé (véhicule + tableau des garanties)"
+              title="Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF"
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <FileText size={15} />

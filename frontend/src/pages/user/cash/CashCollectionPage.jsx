@@ -5,7 +5,7 @@ import { Modal } from '../../../components/common/Modal';
 import { dataStore } from '../../../api/dataStore';
 import { cashApi, contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { CreditCard, Check, DollarSign, Smartphone, Landmark, Receipt } from 'lucide-react';
+import { CreditCard, Check, Banknote, Smartphone, Landmark, Receipt } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
 
 export const CashCollectionPage = () => {
@@ -265,7 +265,7 @@ export const CashCollectionPage = () => {
               <label className="form-label">Mode de Règlement</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '0.5rem' }}>
                 {[
-                  { id: 'ESPECES', label: 'Espèces', icon: DollarSign },
+                  { id: 'ESPECES', label: 'Espèces', icon: Banknote },
                   { id: 'CHEQUE', label: 'Chèque', icon: Receipt },
                   { id: 'VIREMENT', label: 'Virement', icon: Landmark },
                   { id: 'DISTRIPAY', label: 'Mobile Money', icon: Smartphone },

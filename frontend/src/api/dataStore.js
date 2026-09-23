@@ -772,7 +772,7 @@ export const dataStore = {
       client_nom: quote.client_nom,
       client_id: quote.client_id || matchedClient?.id || null,
       adresse: clientAdresse,
-      intermediaire: quote.intermediaire || 'LE PHARE COURTAGES & SINISTRES',
+      intermediaire: quote.intermediaire || 'OREOLE ASSURANCES',
       produit: quote.produit || 'Automobile Tous Risques',
       branche: quote.branche || 'Auto',
       compagnie: quote.compagnie || 'AXA ASSURANCES',

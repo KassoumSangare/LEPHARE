@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { Percent, Plus, Edit2, Trash2, ShieldAlert, Calculator, DollarSign, RefreshCw } from 'lucide-react';
+import { Percent, Plus, Edit2, Trash2, ShieldAlert, Calculator, Banknote, RefreshCw } from 'lucide-react';
 import { settingsApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { useToast } from '../../../context/ToastContext';

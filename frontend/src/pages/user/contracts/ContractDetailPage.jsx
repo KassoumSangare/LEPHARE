@@ -23,10 +23,11 @@ import {
   MapPin,
   User,
   Building2,
-  DollarSign,
+  Banknote,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
+import { printContratFacture, printContratConditionsParticulieres } from '../../../utils/exportUtils';
 
 export const ContractDetailPage = () => {
   const { id } = useParams();
@@ -173,7 +174,7 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Intermédiaire :</span>
-              <strong style={{ color: '#38bdf8' }}>{contract.intermediaire || 'LE PHARE COURTAGES & SINISTRES'}</strong>
+              <strong style={{ color: '#38bdf8' }}>{contract.intermediaire || 'OREOLE ASSURANCES'}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Compagnie d'assurance :</span>
@@ -246,7 +247,7 @@ export const ContractDetailPage = () => {
         {/* Décompte Financier */}
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <h3 className="title-md" style={{ color: '#fff', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <DollarSign size={18} color="#38bdf8" />
+            <Banknote size={18} color="#38bdf8" />
             Décompte financier
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
@@ -293,7 +294,7 @@ export const ContractDetailPage = () => {
                 type="button"
                 className="btn-link"
                 style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => { setActiveDoc('facture'); setIsDocModalOpen(true); }}
+                onClick={() => printContratFacture(contract)}
               >
                 Imprimer
               </button>
@@ -308,7 +309,7 @@ export const ContractDetailPage = () => {
                 type="button"
                 className="btn-link"
                 style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => { setActiveDoc('conditions_particulieres'); setIsDocModalOpen(true); }}
+                onClick={() => printContratConditionsParticulieres(contract)}
               >
                 Imprimer
               </button>

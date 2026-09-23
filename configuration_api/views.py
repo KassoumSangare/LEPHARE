@@ -404,6 +404,17 @@ class CategorieViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # ?branche=200 : ne garde que les catégories de la branche CIMA (le 1er chiffre
+        # du code catégorie correspond à celui du code branche de stdbranche, ex: 201..213 -> 200)
+        branche = self.request.query_params.get("branche")
+        if branche and self.action == "list":
+            queryset = queryset.filter(CodeCategorie__startswith=branche.strip()[:1]).exclude(
+                CodeCategorie="000"
+            )
+        return queryset.order_by("CodeCategorie")
+
 
 class TarifViewSet(viewsets.ModelViewSet):
     queryset = Tarif.objects.filter(~Q(IdTarif=0))
