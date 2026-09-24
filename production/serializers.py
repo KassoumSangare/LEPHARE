@@ -256,6 +256,12 @@ class DevisDetailSerializer(serializers.ModelSerializer):
         representation = super().to_representation(instance)
         representation["codecategorie"] = ""
         representation["libellecategorie"] = ""
+        # Détail des garanties réellement enregistrées pour ce devis (stddevisdetgarantie) :
+        # sans ça, rouvrir un devis en édition n'a aucun moyen de retrouver les garanties/primes
+        # telles qu'elles ont été acquises/imposées à l'origine, et ne peut que recalculer à neuf.
+        representation["garanties_enregistrees"] = DevisDetailGarantieSerializer(
+            instance.garanties.all(), many=True
+        ).data
         devis = instance.iddevis
         if devis:
             if devis.produit.id_produit == 1:  # Automobile

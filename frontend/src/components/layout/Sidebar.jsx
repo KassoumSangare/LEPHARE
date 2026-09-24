@@ -64,6 +64,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
     conventions: true,
     compliance: true,
     users: true,
+    oreole: true,
   });
 
   useEffect(() => {

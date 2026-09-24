@@ -31,6 +31,7 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { AmountInput } from '../../../components/common/AmountInput';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
 // Code branche CIMA (stdbranche) du produit Automobile : seules les catégories 2xx sont proposées
@@ -323,10 +324,18 @@ export const NewAutoQuotePage = () => {
   // ----------------------------------------------------
   // ÉCRAN 3 : OFFRE, GARANTIES & IMPOSITION DES PRIMES
   // ----------------------------------------------------
-  const [offreId, setOffreId] = useState(1);
+  // idoffre=1 n'existe pas en base (idoffre=2 = "OFFRE AUTOMOBILE TOUS RISQUES") :
+  // ce décalage entre l'id et le libellé par défaut faisait que le calcul partait
+  // toujours sur une offre inexistante tant que l'utilisateur ne rouvrait pas
+  // manuellement le menu déroulant pour resélectionner la même offre affichée.
+  const [offreId, setOffreId] = useState(2);
   const [offreSelectionnee, setOffreSelectionnee] = useState('OFFRE AUTOMOBILE TOUS RISQUES');
   const [isEditingPrimes, setIsEditingPrimes] = useState(false); // Mode "Imposer la prime"
   const [deletedGaranties, setDeletedGaranties] = useState([]);
+  // true dès que les garanties réellement enregistrées d'un devis existant (stddevisdetgarantie)
+  // ont été chargées : empêche le recalcul automatique silencieux d'écraser ces valeurs
+  // (l'utilisateur reste libre de forcer un recalcul via le bouton "Recalculer CIMA").
+  const garantiesChargeesDuDevisRef = useRef(false);
 
   // Tableau des garanties interactives avec inline editing et suppressions
   const [garanties, setGaranties] = useState([
@@ -518,14 +527,22 @@ export const NewAutoQuotePage = () => {
   }, [offreSelectionnee]);
 
   // Appel dynamique au backend /api/offregarantie si disponible
-  const handleRecalculateApi = async () => {
+  const handleRecalculateApi = async (silent = false) => {
     setLoadingCalculation(true);
     try {
+      // fn_garantie_offre a besoin du VRAI IdTarif (stdtarif) rattaché à l'offre
+      // sélectionnée (stdoffre.idtarif) — "categorieId" n'est que la catégorie
+      // véhicule (stdcategorie) choisie à l'écran Contrat, un concept différent.
+      // Sans ce fallback sur l'idtarif propre à l'offre, le calcul renvoyait
+      // toujours une liste vide (mauvais idtarif transmis).
+      const offreSelectionneeObj = offresList.find((o) => o.id === Number(offreId));
+      const idTarifCalcul = offreSelectionneeObj?.idTarif || categorieId || 1;
+
       const payload = {
         CodeCarburant: Number(energieId || 1),
         CodeAlarme: Number(systemeSecuriteId || 0),
         IdOffre: Number(offreId || 1),
-        IdTarif: Number(categorieId || 1),
+        IdTarif: Number(idTarifCalcul),
         NsiaAutoPlus: Boolean(nsiaAutoPlus),
         IdCompagnie: Number(compagnieId || 1),
         ValNeuve: Number(valeurNeuf || 0),
@@ -550,7 +567,11 @@ export const NewAutoQuotePage = () => {
       };
 
       const res = await quoteApi.calculateOffreGarantie(payload);
-      if (res && Array.isArray(res.data) && res.data.length > 0) {
+      if (res && Array.isArray(res.data)) {
+        // Le tableau doit toujours refléter l'offre sélectionnée, y compris quand
+        // elle n'a aucune garantie configurée pour cette compagnie (résultat vide) :
+        // ne rien faire ici laissait affichées les garanties de l'offre précédente,
+        // donnant l'impression que le tableau ne changeait jamais.
         const mapped = res.data
           .filter((item) => item.IdGarantie !== 0 && item.LibelleSousGarantie)
           .map((item) => ({
@@ -567,9 +588,13 @@ export const NewAutoQuotePage = () => {
             is_new_garantie: false,
           }));
 
-        if (mapped.length > 0) {
-          setGaranties(mapped);
-          info('Garanties et primes mises à jour depuis le moteur de tarification CIMA !');
+        setGaranties(mapped);
+        if (!silent) {
+          if (mapped.length > 0) {
+            info('Garanties et primes mises à jour depuis le moteur de tarification CIMA !');
+          } else {
+            toastError("Aucune garantie n'est configurée pour cette offre avec cette compagnie (à paramétrer dans Offres & Garanties).");
+          }
         }
       }
     } catch (err) {
@@ -602,6 +627,24 @@ export const NewAutoQuotePage = () => {
   const [editIddevis, setEditIddevis] = useState(null);
   const [editIdDevisDetail, setEditIdDevisDetail] = useState(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
+
+  // Chargement automatique des garanties réellement liées à l'offre (stdoffregarantie)
+  // dès que l'offre, le tarif ou la compagnie changent, sans attendre un clic manuel.
+  // Dépend aussi de offresList : la liste réelle (avec le vrai idTarif de chaque offre)
+  // arrive souvent APRÈS le chargement du devis en édition — sans cette dépendance,
+  // le premier calcul partait avec le mauvais idTarif (categorieId générique) et ne se
+  // relançait jamais une fois la vraie liste disponible, laissant les garanties par défaut.
+  useEffect(() => {
+    // Pendant le chargement d'un devis existant, on attend que ses garanties
+    // réellement enregistrées soient chargées avant d'envisager un recalcul —
+    // sinon un appel lancé avec les valeurs par défaut (avant l'arrivée des
+    // vraies données) pourrait, selon le timing réseau, écraser ces garanties.
+    if (isLoadingEdit || garantiesChargeesDuDevisRef.current) return;
+    if (offreId && categorieId && compagnieId) {
+      handleRecalculateApi(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offreId, categorieId, compagnieId, offresList, isLoadingEdit]);
 
   // Garde la catégorie sélectionnée cohérente avec la liste filtrée par branche :
   // aligne le libellé sur l'id (ex: devis rechargé en édition), sinon bascule sur la 1re catégorie disponible
@@ -675,7 +718,13 @@ export const NewAutoQuotePage = () => {
 
         // Contrat & tarification
         setNumeroPoliceCompagnie(d.numero_police_compagnie || '');
-        if (d.compagnie) setCompagnieId(Number(d.compagnie));
+        // d.compagnie peut être soit un id simple, soit l'objet compagnie complet
+        // selon le point d'API — gérer les deux pour ne jamais obtenir NaN
+        // (NaN est falsy et empêcherait silencieusement le calcul des garanties).
+        const compagnieIdFromDevis = d.compagnie?.IdCompagnie ?? d.compagnie;
+        if (compagnieIdFromDevis !== undefined && compagnieIdFromDevis !== null) {
+          setCompagnieId(Number(compagnieIdFromDevis));
+        }
         if (dd.idtarif) setCategorieId(Number(dd.idtarif));
         if (dd.idusage?.IdUsage !== undefined) {
           setUsageId(Number(dd.idusage.IdUsage));
@@ -728,8 +777,32 @@ export const NewAutoQuotePage = () => {
         setTransportPassagerSupplementaire(Boolean(dd.transport_passager_supplementaire));
         if (dd.idoffre) setOffreId(Number(dd.idoffre));
 
-        // Souscripteur / conducteur
-        const client = clients.find((c) => String(c.id) === String(d.client));
+        // Garanties réellement enregistrées pour ce devis (stddevisdetgarantie) : sans
+        // ça, l'écran ne peut qu'afficher les 6 garanties par défaut ou recalculer à
+        // neuf via le moteur CIMA, écrasant silencieusement primes imposées/acquises
+        // telles qu'elles ont été réellement enregistrées à la création du devis.
+        if (Array.isArray(dd.garanties_enregistrees) && dd.garanties_enregistrees.length > 0) {
+          setGaranties(dd.garanties_enregistrees.map((g) => ({
+            id_garantie: g.IdGarantie,
+            code: `GAR_${g.IdGarantie}`,
+            nom: g.libellegarantie || `Garantie #${g.IdGarantie}`,
+            acquise: Boolean(g.Acquise),
+            capital: g.Capital ? `${Number(g.Capital).toLocaleString('fr-FR')} F` : 'Néant',
+            franchise: g.TexteFranchise || 'Néant',
+            formule: 'CIMA Standard',
+            place: nombrePlace || 5,
+            primeAnnuelle: Number(g.primeannuelle || 0),
+            primeNette: Number(g.PrimeNette || 0),
+            is_new_garantie: false,
+          })));
+          garantiesChargeesDuDevisRef.current = true;
+        }
+
+        // Souscripteur / conducteur — d.client peut être un id simple ou l'objet
+        // client complet ({IdClient, Nom, ...}) selon le point d'API : gérer les
+        // deux, sinon la comparaison vaut "[object Object]" et ne matche jamais,
+        // laissant le client du devis sur la valeur par défaut au lieu de la vraie.
+        const client = clients.find((c) => String(c.id) === String(d.client?.IdClient ?? d.client));
         if (client) {
           setSouscripteurId(client.id);
           setSearchSouscripteur(client.nomcomplet || '');
@@ -764,7 +837,7 @@ export const NewAutoQuotePage = () => {
           settingsApi.getMarques().catch(() => []),
           settingsApi.getCarrosseries().catch(() => []),
           settingsApi.getUsages().catch(() => []),
-          settingsApi.getCategories(BRANCHE_AUTOMOBILE).catch(() => []),
+          settingsApi.getTarifs().catch(() => []),
           settingsApi.getSystemesSecurite().catch(() => []),
           settingsApi.getCategoriesPermis().catch(() => []),
           settingsApi.getOffres().catch(() => []),
@@ -799,10 +872,14 @@ export const NewAutoQuotePage = () => {
             setUsages(usgs.map((u) => ({ id: u.id || u.IdUsage, code: u.CodeUsage || '', libelle: u.LibelleUsage || u.libelle })));
           }
           if (cats && cats.length > 0) {
+            // Ce menu doit lister les vraies grilles tarifaires (stdtarif), pas les
+            // catégories CIMA génériques (stdcategorie, seulement 13 lignes) : Uranus
+            // y affiche aussi les tarifs commerciaux nommés (TARIF TECK, ACCACIA,
+            // BAOBAB, EBENE, EBENE PRISME, VTC...) absents de stdcategorie. On garde
+            // "categorieId" = IdTarif, exactement l'id attendu par le calcul CIMA.
             const mappedCats = cats
-              .map((cat) => ({ id: cat.id || cat.IdCategorie, code: cat.CodeCategorie || '', libelle: cat.LibelleCategorie || cat.libelle }))
-              // Garde-fou si l'API ignore le filtre : on ne conserve que les catégories de la branche Automobile
-              .filter((cat) => !cat.code || cat.code.startsWith(BRANCHE_AUTOMOBILE[0]));
+              .map((t) => ({ id: t.id || t.IdTarif, code: t.CodeCategorie || '', libelle: t.Libelle || t.libelle }))
+              .filter((t) => !t.code || t.code.startsWith(BRANCHE_AUTOMOBILE[0]));
             if (mappedCats.length > 0) setCategories(mappedCats);
           }
           if (secr && secr.length > 0) {
@@ -812,7 +889,18 @@ export const NewAutoQuotePage = () => {
             setCategoriesPermis(prms.map((p) => ({ id: p.id || p.IdCategoriePermis, code: p.code || p.CodeCategoriePermis || '', libelle: p.libelle || p.LibelleCategoriePermis || p.libelle_type || p.code })));
           }
           if (ofrs && ofrs.length > 0) {
-            setOffresList(ofrs.map((o) => ({ id: o.id || o.IdOffre, code: o.CodeOffre || '', libelle: o.LibelleOffre || o.libelle })));
+            const mappedOffres = ofrs.map((o) => ({ id: o.id || o.IdOffre, code: o.CodeOffre || '', libelle: o.LibelleOffre || o.libelle, idTarif: o.TarifOffre || null, nbGaranties: o.NbGaranties ?? null }));
+            setOffresList(mappedOffres);
+            // Filet de sécurité : sur une nouvelle offre (pas en édition), si l'id par
+            // défaut ne correspond pas réellement au libellé affiché dans le menu
+            // (décalage id/libellé codé en dur), on recale sur le vrai id — sinon le
+            // calcul partirait silencieusement sur une offre inexistante ou différente.
+            if (!editIddevisParam) {
+              const matching = mappedOffres.find((o) => o.libelle === offreSelectionnee);
+              if (matching && matching.id !== offreId) {
+                setOffreId(matching.id);
+              }
+            }
           }
           if (sgs && sgs.length > 0) {
             setSousGarantiesAll(sgs);
@@ -1881,36 +1969,18 @@ export const NewAutoQuotePage = () => {
           {/* Ligne 4 : Valeur à neuf | Valeur vénale | Valeur Accessoire | Immatriculation du véhicule */}
           <div className="responsive-form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.25rem' }}>
             <div className="form-group">
-              <label className="form-label">Valeur à neuf (FCFA)</label>
-              <input
-                type="number"
-                min="0"
-                className="form-control"
-                value={valeurNeuf}
-                onChange={(e) => setValeurNeuf(parseInt(e.target.value) || 0)}
-              />
+              <label className="form-label">Valeur à neuf</label>
+              <AmountInput value={valeurNeuf} onChange={setValeurNeuf} />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Valeur vénale (FCFA)</label>
-              <input
-                type="number"
-                min="0"
-                className="form-control"
-                value={valeurVenale}
-                onChange={(e) => setValeurVenale(parseInt(e.target.value) || 0)}
-              />
+              <label className="form-label">Valeur vénale</label>
+              <AmountInput value={valeurVenale} onChange={setValeurVenale} />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Valeur Accessoire (FCFA)</label>
-              <input
-                type="number"
-                min="0"
-                className="form-control"
-                value={valeurAccessoire}
-                onChange={(e) => setValeurAccessoire(parseInt(e.target.value) || 0)}
-              />
+              <label className="form-label">Valeur Accessoire</label>
+              <AmountInput value={valeurAccessoire} onChange={setValeurAccessoire} />
             </div>
 
             <div className="form-group">
@@ -2161,7 +2231,7 @@ export const NewAutoQuotePage = () => {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={handleRecalculateApi}
+                onClick={() => handleRecalculateApi(false)}
                 disabled={loadingCalculation}
                 style={{
                   padding: '0.65rem 1.25rem',
@@ -2203,10 +2273,18 @@ export const NewAutoQuotePage = () => {
             >
               {offresList.map((o) => (
                 <option key={o.id} value={o.libelle}>
-                  {o.libelle}
+                  {o.libelle}{o.nbGaranties === 0 ? ' — ⚠ non configurée' : ''}
                 </option>
               ))}
             </select>
+            {(() => {
+              const offreCourante = offresList.find((o) => o.id === Number(offreId));
+              return offreCourante && offreCourante.nbGaranties === 0 ? (
+                <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                  ⚠ Cette offre n'a aucune garantie configurée en base (table Offres &amp; Garanties à compléter par un administrateur).
+                </p>
+              ) : null;
+            })()}
           </div>
 
           {/* Tableau des Garanties : GARANTIE | ACQUISE | CAPITAL | FRANCHISE | FORMULE | PLACE | PRIME ANNUELLE | PRIME NETTE | ACTIONS */}
@@ -2224,6 +2302,13 @@ export const NewAutoQuotePage = () => {
                 </tr>
               </thead>
               <tbody>
+                {garanties.length === 0 && (
+                  <tr>
+                    <td colSpan={isEditingPrimes ? 7 : 6} style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      Aucune garantie configurée pour cette offre avec cette compagnie. Paramétrez-la dans « Offres & Garanties ».
+                    </td>
+                  </tr>
+                )}
                 {garanties.map((g, idx) => (
                   <tr key={g.code || idx} style={{ borderTop: '1px solid var(--border-subtle)', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
                     <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: '#fff' }}>

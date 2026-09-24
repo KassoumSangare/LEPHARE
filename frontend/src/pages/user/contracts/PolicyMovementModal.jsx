@@ -5,6 +5,7 @@ import { dataStore } from '../../../api/dataStore';
 import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
+import { AmountInput } from '../../../components/common/AmountInput';
 import {
   ShieldCheck,
   RefreshCw,
@@ -572,14 +573,8 @@ export const PolicyMovementModal = ({
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.75rem' }}>
-                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Prime Totale TTC à Régler (FCFA)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={renewalPrimeTotale}
-                      onChange={(e) => setRenewalPrimeTotale(e.target.value)}
-                      required
-                    />
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Prime Totale TTC à Régler</label>
+                    <AmountInput value={renewalPrimeTotale} onChange={setRenewalPrimeTotale} required />
                   </div>
                 </div>
 
@@ -692,14 +687,8 @@ export const PolicyMovementModal = ({
                     />
                   </div>
                   <div>
-                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Prime Additionnelle / Ristourne (FCFA)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={primeAdditionnelle}
-                      onChange={(e) => setPrimeAdditionnelle(e.target.value)}
-                      placeholder="0 si sans incidence financière"
-                    />
+                    <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Prime Additionnelle / Ristourne</label>
+                    <AmountInput value={primeAdditionnelle} onChange={setPrimeAdditionnelle} placeholder="0 si sans incidence financière" allowNegative />
                   </div>
                 </div>
 
@@ -770,14 +759,8 @@ export const PolicyMovementModal = ({
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Nouvelle Prime Totale Annuelle (FCFA)</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={nouvellePrime}
-                    onChange={(e) => setNouvellePrime(e.target.value)}
-                    required
-                  />
+                  <label className="form-label" style={{ fontSize: '0.8rem', fontWeight: 600 }}>Nouvelle Prime Totale Annuelle</label>
+                  <AmountInput value={nouvellePrime} onChange={setNouvellePrime} required />
                 </div>
 
                 <div>

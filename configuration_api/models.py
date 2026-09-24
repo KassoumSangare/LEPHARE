@@ -661,7 +661,7 @@ class TarifDetail(models.Model):
     PrimeMin = models.DecimalField(
         default=0,
         verbose_name="Prime Minimum",
-        db_column="primein",
+        db_column="primemin",
         max_digits=19,
         decimal_places=4,
     )

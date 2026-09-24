@@ -7,6 +7,7 @@ import { UserPlus, ArrowLeft, Check, Shield, Plus } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { AmountInput } from '../../../components/common/AmountInput';
 
 export const NewIaQuotePage = () => {
   const navigate = useNavigate();
@@ -190,15 +191,15 @@ export const NewIaQuotePage = () => {
         <div className="responsive-form-row-3" style={{ marginTop: '1rem' }}>
           <div className="form-group">
             <label className="form-label">Capital Décès Accidentel</label>
-            <input type="number" className="form-control" value={capitalDeces} onChange={(e) => setCapitalDeces(parseInt(e.target.value) || 0)} />
+            <AmountInput value={capitalDeces} onChange={setCapitalDeces} />
           </div>
           <div className="form-group">
             <label className="form-label">Capital Invalidité (IPT)</label>
-            <input type="number" className="form-control" value={capitalIpt} onChange={(e) => setCapitalIpt(parseInt(e.target.value) || 0)} />
+            <AmountInput value={capitalIpt} onChange={setCapitalIpt} />
           </div>
           <div className="form-group">
             <label className="form-label">Remboursement Frais Médicaux</label>
-            <input type="number" className="form-control" value={fraisMedicaux} onChange={(e) => setFraisMedicaux(parseInt(e.target.value) || 0)} />
+            <AmountInput value={fraisMedicaux} onChange={setFraisMedicaux} />
           </div>
         </div>
 

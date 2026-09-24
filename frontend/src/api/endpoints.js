@@ -1087,10 +1087,24 @@ export const settingsApi = {
   getProducts: async () => extractData(await apiClient.get('/produit/')),
   // GET /api/garantie/ (17 garanties en BDD)
   getGuarantees: async () => extractData(await apiClient.get('/garantie/')),
+  // POST /api/garantie/
+  createGuarantee: (data) => apiClient.post('/garantie/', data),
+  // PUT /api/garantie/{id}/
+  updateGuarantee: (id, data) => apiClient.put(`/garantie/${id}/`, data),
+  // DELETE /api/garantie/{id}/
+  deleteGuarantee: (id) => apiClient.delete(`/garantie/${id}/`),
+  // PUT /api/sousgarantie/{id}/
+  updateSousGarantie: (id, data) => apiClient.put(`/sousgarantie/${id}/`, data),
+  // DELETE /api/sousgarantie/{id}/
+  deleteSousGarantie: (id) => apiClient.delete(`/sousgarantie/${id}/`),
   // GET /api/categorie/ (catégories CIMA en BDD) — branche optionnelle (code stdbranche, ex: '200' = Automobile)
   getCategories: async (branche) => extractData(await apiClient.get('/categorie/', { params: branche ? { branche } : undefined })),
   // GET /api/tarif/ (26 grilles tarifaires en BDD)
   getTarifs: async () => extractData(await apiClient.get('/tarif/')),
+  // GET /api/tarifdetail/?IdTarif={id} — montants réels (taux, prime forfaitaire,
+  // capital min/max) par grille tarifaire + sous-garantie (stdtarifdetail)
+  getTarifDetailsParTarif: async (idTarif) =>
+    extractData(await apiClient.get('/tarifdetail/', { params: { IdTarif: idTarif, page_size: 1000 } })),
   // GET /api/genrevehicule/ (13 genres en BDD)
   getGenres: async () => extractData(await apiClient.get('/genrevehicule/')),
   // GET /api/marque/ (58 marques en BDD)
@@ -1129,18 +1143,33 @@ export const settingsApi = {
     });
     return res?.data;
   },
-  // GET /api/offre/
-  getOffres: async () => extractData(await apiClient.get('/offre/')),
+  // GET /api/offre/ — idCompagnie optionnel : ne garde que les offres ayant au
+  // moins une garantie liée à cette compagnie (stdoffregarantie)
+  getOffres: async (idCompagnie) =>
+    extractData(await apiClient.get('/offre/', { params: idCompagnie ? { idcompagnie: idCompagnie } : undefined })),
   // POST /api/offre/
   createOffre: (data) => apiClient.post('/offre/', data),
+  // PUT /api/offre/{id}/
+  updateOffre: (id, data) => apiClient.put(`/offre/${id}/`, data),
+  // DELETE /api/offre/{id}/
+  deleteOffre: (id) => apiClient.delete(`/offre/${id}/`),
+  // GET /api/branche/
+  getBranches: async () => extractData(await apiClient.get('/branche/')),
   // GET /api/sousgarantie/
-  getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/')),
+  getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/', { params: { page_size: 1000 } })),
   // POST /api/sousgarantie/
   createSousGarantie: (data) => apiClient.post('/sousgarantie/', data),
   // GET /api/offregarantie/
   getOffreGaranties: async () => extractData(await apiClient.get('/offregarantie/')),
+  // GET /api/offregarantie/?IdOffre={id} (liaisons d'une offre précise, évite de charger les 1700+ lignes)
+  getOffreGarantiesParOffre: async (idOffre) =>
+    extractData(await apiClient.get('/offregarantie/', { params: { IdOffre: idOffre, page_size: 1000 } })),
   // POST /api/offregarantie/
   createOffreGarantie: (data) => apiClient.post('/offregarantie/', data),
+  // PUT /api/offregarantie/{id}/
+  updateOffreGarantie: (id, data) => apiClient.put(`/offregarantie/${id}/`, data),
+  // DELETE /api/offregarantie/{id}/
+  deleteOffreGarantie: (id) => apiClient.delete(`/offregarantie/${id}/`),
   // GET /api/reductionflotte/
   getReductionsFlotte: async () => extractData(await apiClient.get('/reductionflotte/')),
   // POST /api/reductionflotte/

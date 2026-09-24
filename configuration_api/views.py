@@ -1,5 +1,5 @@
 from django.db import connection
-from django.db.models import F, Q, Subquery
+from django.db.models import Count, F, Q, Subquery
 from django.http.response import JsonResponse
 from django_celery_beat.models import (
     ClockedSchedule,
@@ -8,7 +8,7 @@ from django_celery_beat.models import (
     PeriodicTask,
     SolarSchedule,
 )
-from knox.auth import TokenAuthentication
+from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from rest_framework import permissions, status, viewsets
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.decorators import (
@@ -435,6 +435,7 @@ class QualiteSouscripteurMrhViewSet(viewsets.ModelViewSet):
 class TarifDetailViewSet(viewsets.ModelViewSet):
     queryset = TarifDetail.objects.all()
     serializer_class = TarifDetailSerializer
+    filterset_fields = ["IdTarif", "IdGarantie"]
     permission_classes = [
         permissions.IsAuthenticated,
     ]
@@ -474,12 +475,31 @@ class OffreDetailViewSet(viewsets.ModelViewSet):
 
 class OffreViewSet(viewsets.ModelViewSet):
     queryset = Offre.objects.annotate(
-        OffreBoisee=OffreAutomobileBoisee(F("IdOffre"))
+        OffreBoisee=OffreAutomobileBoisee(F("IdOffre")),
+        NbGaranties=Count("offregarantie", distinct=True),
     ).filter(~Q(IdOffre=0))
     serializer_class = OffreSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # ?idcompagnie=<id> : ne garde que les offres ayant au moins une garantie
+        # liée à cette compagnie (stdoffregarantie), et recompte NbGaranties pour
+        # cette compagnie uniquement plutôt que toutes compagnies confondues.
+        idcompagnie = self.request.query_params.get("idcompagnie")
+        if idcompagnie and self.action == "list":
+            queryset = queryset.filter(
+                offregarantie__IdCompagnie=idcompagnie
+            ).annotate(
+                NbGaranties=Count(
+                    "offregarantie",
+                    filter=Q(offregarantie__IdCompagnie=idcompagnie),
+                    distinct=True,
+                )
+            ).distinct()
+        return queryset
 
 
 class OffreGarantieViewSet(viewsets.ModelViewSet):
@@ -487,6 +507,7 @@ class OffreGarantieViewSet(viewsets.ModelViewSet):
         ~Q(IdOffre=0) & ~Q(IdSousGarantie=0) & ~Q(IdCompagnie=0)
     )
     serializer_class = OffreGarantieSerializer
+    filterset_fields = ["IdOffre", "IdCompagnie", "IdSousGarantie"]
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
@@ -1103,7 +1124,7 @@ class OffreCollegeSanteViewSet(viewsets.ModelViewSet):
 
 
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie(request):
     garantiedemandee_data = JSONParser().parse(request)
@@ -1126,7 +1147,7 @@ def get_garantie(request):
 
 
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_ia(request):
     garantiedemandee_data = JSONParser().parse(request)
@@ -1149,7 +1170,7 @@ def get_garantie_ia(request):
 
 
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_voyage(request):
     garantiedemandee_data = JSONParser().parse(request)
@@ -1175,7 +1196,7 @@ def get_garantie_voyage(request):
 
 ##########################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
 def create_offre_garantie(request):
     enregistrementoffregarantie_data = JSONParser().parse(request)
@@ -1206,7 +1227,7 @@ def create_offre_garantie(request):
 ##################################################################################
 ##########################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
 def get_garantie_par_produit(request):
     demandegarantie_data = JSONParser().parse(request)
@@ -1226,7 +1247,7 @@ def get_garantie_par_produit(request):
 
 ##################################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_mrh(request):
     garantiedemandee_data = JSONParser().parse(request)
@@ -1251,7 +1272,7 @@ def get_garantie_mrh(request):
 
 ##################################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_rc(request):
     return get_garantie_risques_divers(id_produit=8, request=request)
@@ -1259,7 +1280,7 @@ def get_garantie_rc(request):
 
 ##################################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_garantie_mrp(request):
     return get_garantie_risques_divers(id_produit=7, request=request)
@@ -1289,7 +1310,7 @@ def get_garantie_risques_divers(id_produit, request):
 
 #####################################################################################
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def get_liste_avenant(request):
     avenantdemande_data = JSONParser().parse(request)

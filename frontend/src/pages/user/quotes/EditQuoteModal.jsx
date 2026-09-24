@@ -4,6 +4,7 @@ import { dataStore } from '../../../api/dataStore';
 import { quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { FileText, Banknote, Building2, Save, Clock } from 'lucide-react';
+import { AmountInput } from '../../../components/common/AmountInput';
 
 export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
   const { success, error: toastError } = useToast();
@@ -131,32 +132,20 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
             <div>
-              <label className="form-label" style={{ fontSize: '0.75rem' }}>Prime Nette (FCFA)</label>
-              <input
-                type="number"
-                className="form-control"
-                value={formData.prime_nette}
-                onChange={(e) => handlePrimeNetteChange(e.target.value)}
-                min="0"
-                step="5000"
-                required
-              />
+              <label className="form-label" style={{ fontSize: '0.75rem' }}>Prime Nette</label>
+              <AmountInput value={formData.prime_nette} onChange={handlePrimeNetteChange} required />
             </div>
             <div>
-              <label className="form-label" style={{ fontSize: '0.75rem' }}>Accessoires (FCFA)</label>
-              <input
-                type="number"
-                className="form-control"
+              <label className="form-label" style={{ fontSize: '0.75rem' }}>Accessoires</label>
+              <AmountInput
                 value={formData.accessoires}
-                onChange={(e) => {
-                  const acc = Number(e.target.value) || 0;
+                onChange={(acc) => {
                   setFormData({
                     ...formData,
                     accessoires: acc,
                     prime_totale: formData.prime_nette + acc + formData.taxes,
                   });
                 }}
-                min="0"
               />
             </div>
             <div>

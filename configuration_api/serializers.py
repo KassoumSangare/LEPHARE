@@ -254,11 +254,36 @@ class CompagnieSerializer(serializers.ModelSerializer):
 
 
 class OffreSerializer(serializers.ModelSerializer):
-    OffreBoisee = serializers.IntegerField(read_only=True)
+    OffreBoisee = serializers.IntegerField(read_only=True, required=False)
+    # Nombre de lignes stdoffregarantie liées à cette offre (toutes compagnies confondues) :
+    # 0 signale une offre "coquille vide" qui ne renverra jamais de garantie au calcul de devis.
+    NbGaranties = serializers.IntegerField(read_only=True, required=False)
 
     class Meta:
         model = Offre
-        fields = ("IdOffre", "LibelleOffre", "OffreBoisee")
+        fields = (
+            "IdOffre",
+            "LibelleOffre",
+            "ZoneCouverture",
+            "TarifOffre",
+            "Payement",
+            "JPaiement",
+            "Entreprise",
+            "Echeance",
+            "Renouvelable",
+            "MajFract",
+            "Visibilite",
+            "Flotte",
+            "Anticipation",
+            "Differe",
+            "Ppr",
+            "Actif",
+            "Gestion",
+            "ExoneredeTaxes",
+            "ExoneredeAccess",
+            "OffreBoisee",
+            "NbGaranties",
+        )
 
 
 class OffreGarantieSerializer(serializers.ModelSerializer):

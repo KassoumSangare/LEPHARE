@@ -7,6 +7,7 @@ import { Modal } from '../../../components/common/Modal';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { AmountInput } from '../../../components/common/AmountInput';
 import {
   Ship,
   Truck,
@@ -642,16 +643,8 @@ export const NewTransportQuotePage = () => {
 
                 {/* Valeur Facture */}
                 <div className="form-group">
-                  <label className="form-label">Valeur Facture d'Achat (FCFA)</label>
-                  <input
-                    type="number"
-                    min="100000"
-                    step="500000"
-                    className="form-control"
-                    value={valeurFacture}
-                    onChange={(e) => setValeurFacture(Number(e.target.value))}
-                    style={{ fontSize: '1rem', fontWeight: 700, fontFamily: 'var(--font-mono)' }}
-                  />
+                  <label className="form-label">Valeur Facture d'Achat</label>
+                  <AmountInput value={valeurFacture} onChange={setValeurFacture} />
                 </div>
 
                 {/* Majoration Profit +10% */}

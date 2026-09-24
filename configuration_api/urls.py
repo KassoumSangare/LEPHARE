@@ -162,8 +162,13 @@ router.register(r"periodictaskschedule", PeriodicTaskViewSet)
 router.register(r"typecontratsante", TypeContratSanteViewSet)
 
 urlpatterns = [
-    path("", include(router.urls)),
+    # Doit précéder include(router.urls) : le routeur enregistre aussi
+    # "offregarantie" (CRUD OffreGarantieViewSet) sur le même préfixe, et
+    # comme Django résout les URLs dans l'ordre, le router masquerait
+    # sinon cette vue de calcul (POST /api/offregarantie) derrière le
+    # ViewSet réservé aux admins, causant un 401 systématique.
     path(r"offregarantie", get_garantie, name="offre_garantie_auto"),
+    path("", include(router.urls)),
     path(r"offregarantieia", get_garantie_ia, name="offre_garantie_ia"),
     path(
         r"offregarantievoyage",
