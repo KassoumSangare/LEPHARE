@@ -455,9 +455,9 @@ export const NewSanteQuotePage = () => {
                 value={typeContrat}
                 onChange={(e) => setTypeContrat(e.target.value)}
               >
+                <option value="INDIVIDUEL">Individuel Mono-Bénéficiaire</option>
                 <option value="GROUPE">Santé Entreprise / Groupe d'Affiliés</option>
                 <option value="FAMILLE">Santé Familiale / Particulier</option>
-                <option value="INDIVIDUEL">Individuel Mono-Bénéficiaire</option>
               </select>
             </div>
 
@@ -502,8 +502,8 @@ export const NewSanteQuotePage = () => {
                 onChange={(e) => setOffreCommerciale(e.target.value)}
               >
                 <option value="SANTE CONFORT PLUS">SANTE CONFORT PLUS (100% Réseau Premium)</option>
-                <option value="SANTE ESSENTIEL">SANTE ESSENTIEL (80% Hospitalisation & Consultations)</option>
                 <option value="SANTE ELITE MONDE">SANTE ELITE MONDE (Évacuation sanitaire incluse)</option>
+                <option value="SANTE ESSENTIEL">SANTE ESSENTIEL (80% Hospitalisation & Consultations)</option>
               </select>
             </div>
 
@@ -517,8 +517,8 @@ export const NewSanteQuotePage = () => {
               >
                 <option value="ASCOMA / OLEAPHARMA">ASCOMA / OLEAPHARMA</option>
                 <option value="GRAS SAVOYE CI">GRAS SAVOYE CI</option>
-                <option value="SUNU SANTE">SUNU GESTION SANTE</option>
                 <option value="NSIA HEALTH">NSIA ASSISTANCE SANTE</option>
+                <option value="SUNU SANTE">SUNU GESTION SANTE</option>
               </select>
             </div>
 
@@ -602,8 +602,8 @@ export const NewSanteQuotePage = () => {
                   value={zoneCouverture}
                   onChange={(e) => setZoneCouverture(e.target.value)}
                 >
-                  <option value="COTE D'IVOIRE">Côte d'Ivoire (Réseau National)</option>
                   <option value="COTE D'IVOIRE & ZONE CIMA">Côte d'Ivoire & Zone CIMA (UEMOA / CEMAC)</option>
+                  <option value="COTE D'IVOIRE">Côte d'Ivoire (Réseau National)</option>
                   <option value="MONDE ENTIER">Monde Entier (Incluant Évacuation Sanitaire)</option>
                 </select>
               </div>
@@ -615,8 +615,8 @@ export const NewSanteQuotePage = () => {
                   value={formuleCouverture}
                   onChange={(e) => setFormuleCouverture(e.target.value)}
                 >
-                  <option value="100% FRAIS REELS / TIERS PAYANT">100% Frais Réels / Tiers Payant Intégral</option>
                   <option value="80% TICKET MODERATEUR 20%">80% Remboursement (Ticket modérateur 20%)</option>
+                  <option value="100% FRAIS REELS / TIERS PAYANT">100% Frais Réels / Tiers Payant Intégral</option>
                   <option value="100% PLAFONNE BAREME CONVENTIONNE">100% Plafonné au Barème Conventionné</option>
                 </select>
               </div>
@@ -647,10 +647,10 @@ export const NewSanteQuotePage = () => {
                     value={currTauxCouverture}
                     onChange={(e) => setCurrTauxCouverture(e.target.value)}
                   >
-                    <option value="100%">100%</option>
-                    <option value="90%">90%</option>
-                    <option value="80%">80%</option>
                     <option value="70%">70%</option>
+                    <option value="80%">80%</option>
+                    <option value="90%">90%</option>
+                    <option value="100%">100%</option>
                   </select>
                 </div>
 

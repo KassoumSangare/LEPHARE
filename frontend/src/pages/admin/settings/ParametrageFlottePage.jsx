@@ -121,10 +121,10 @@ export const ParametrageFlottePage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <TrendingDown size={28} color="#38bdf8" />
-            Paramétrage des Réductions Flotte Automobile (OREOLE)
+            Réductions flotte
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Grille des taux de remise et réductions commerciales applicables automatiquement sur les parcs et flottes de véhicules d'entreprises.
+            Remise accordée automatiquement selon le nombre de véhicules d'un même client.
           </p>
         </div>
 

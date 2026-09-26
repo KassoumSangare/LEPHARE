@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, mrhApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -19,11 +19,10 @@ import {
   Building,
   Banknote,
   FileText,
-  Percent,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 
 // Formattage monétaire FCFA
 const formatFcfa = (val) => {
@@ -45,9 +44,27 @@ const DEFAULT_DUREES = [
   { id: 5, duree: 'Divers / Période Spécifique' },
 ];
 
+// Message lisible d'une erreur renvoyée par l'API ({error}, {erreur}, {message} ou erreurs par champ)
+const messageErreurApi = (err) => {
+  const data = err?.response?.data;
+  if (!data) return err?.message || 'serveur injoignable';
+  if (typeof data === 'string') return data.slice(0, 200);
+  const direct = data.message || data.error || data.erreur || data.detail;
+  if (direct) return typeof direct === 'string' ? direct : JSON.stringify(direct);
+  return Object.entries(data)
+    .map(([champ, v]) => `${champ} : ${Array.isArray(v) ? v.join(' ') : typeof v === 'object' ? JSON.stringify(v) : v}`)
+    .join(' ; ');
+};
+
 export const NewMrhQuotePage = () => {
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
+
+  // « Modifier » depuis le registre des devis : /user/quotes/mrh?edit=<iddevis>
+  const [searchParams] = useSearchParams();
+  const editIddevisParam = searchParams.get('edit');
+  const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
+  const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
 
   // Étape du formulaire (1: Contrat, 2: Habitations, 3: Récapitulatif/Imposition, 4: Souscripteur/Assuré)
   const [step, setStep] = useState(1);
@@ -61,8 +78,9 @@ export const NewMrhQuotePage = () => {
   // -------------------------------------------------------------
   const [clients, setClients] = useState([]);
   const [companies, setCompanies] = useState(() => dataStore.getActiveCompanies('MRH'));
-  const [tarifs, setTarifs] = useState([
-    { IdTarif: 401, LibelleTarif: 'MULTIRISQUES HABITATION STANDARD', Libelle: 'MULTIRISQUES HABITATION STANDARD' }
+  // Tarif MRH de la base (stdtarif 81), celui qu'URANUS enregistre sur chaque maison
+  const [tarifs] = useState([
+    { IdTarif: 81, LibelleTarif: 'MULTIRISQUE HABITATION', Libelle: 'MULTIRISQUE HABITATION' }
   ]);
   const [termes, setTermes] = useState([
     { IdTerme: 1, Libelle: 'Tacite reconduction' },
@@ -80,8 +98,7 @@ export const NewMrhQuotePage = () => {
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [compagnieId, setCompagnieId] = useState(1);
   const [compagnieNom, setCompagnieNom] = useState('NSIA ASSURANCES CI');
-  const [categorieId, setCategorieId] = useState(401);
-  const [reductionCommerciale, setReductionCommerciale] = useState(0);
+  const [categorieId, setCategorieId] = useState(81);
   const [termeId, setTermeId] = useState(1);
   const [dureeId, setDureeId] = useState(4); // 4 = 12 Mois
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -109,25 +126,7 @@ export const NewMrhQuotePage = () => {
   // -------------------------------------------------------------
   // ÉTAPE 2 : HABITATIONS & MAISONS ASSURÉES (B2 dans OREOLE)
   // -------------------------------------------------------------
-  const [maisons, setMaisons] = useState([
-    {
-      id: 1,
-      maison_id: 1,
-      code_usage: 'proprietaire_occupant_total',
-      usage_libelle: 'Propriétaire occupant total',
-      adresse: 'Cocody Riviera 3, Abidjan',
-      valeur_batiment: 45000000,
-      valeur_contenu: 15000000,
-      loyer_mensuel: 0,
-      capital_rvt: 0,
-      options: ['rc_chef_famille', 'degats_eaux'],
-      sous_garanties_optionnelles: ['vol_effraction'],
-      prime_nette: 85000,
-      taxe: 12325,
-      accessoire: 5000,
-      prime_ttc: 102325,
-    }
-  ]);
+  const [maisons, setMaisons] = useState([]);
 
   // Formulaire courant pour ajouter / modifier une maison
   const [editingMaisonId, setEditingMaisonId] = useState(null);
@@ -153,7 +152,7 @@ export const NewMrhQuotePage = () => {
   const [isImpositionActive, setIsImpositionActive] = useState(false);
   const [imposedPrimesParMaison, setImposedPrimesParMaison] = useState({});
   const [imposedTaxe, setImposedTaxe] = useState('0');
-  const [imposedAccessoire, setImposedAccessoire] = useState('5000');
+  const [imposedAccessoire, setImposedAccessoire] = useState(''); // vide = accessoire du barème
   const [impositionMotif, setImpositionMotif] = useState('');
 
   // -------------------------------------------------------------
@@ -185,8 +184,11 @@ export const NewMrhQuotePage = () => {
 
         if (!isMounted) return;
 
+        // En modification, souscripteur, compagnie et terme viennent du devis (pas des 1ers de liste)
         if (cls && cls.length > 0) {
-          setClients(cls);
+          setClients((prev) => [...prev.filter((p) => !cls.some((c) => String(c.id) === String(p.id))), ...cls]);
+        }
+        if (cls && cls.length > 0 && !editIddevisParam) {
           setSouscripteurId(cls[0].id);
           setAssureId(cls[0].id);
           setTelephoneAssure(cls[0].telephone || cls[0].mobile || '+225 ');
@@ -200,8 +202,12 @@ export const NewMrhQuotePage = () => {
             nom: c.RaisonSociale || c.nom,
           }));
           setCompanies(mapped);
-          setCompagnieId(mapped[0].id);
-          setCompagnieNom(mapped[0].nom);
+          if (!editIddevisParam) {
+            // NSIA (1) reste la compagnie par défaut, comme à l'ouverture du formulaire
+            const defaut = mapped.find((c) => Number(c.id) === 1) || mapped[0];
+            setCompagnieId(defaut.id);
+            setCompagnieNom(defaut.nom);
+          }
         }
 
         if (usgList && usgList.length > 0) {
@@ -211,7 +217,7 @@ export const NewMrhQuotePage = () => {
 
         if (termList && termList.length > 0) {
           setTermes(termList);
-          setTermeId(termList[0].IdTerme || 1);
+          if (!editIddevisParam) setTermeId(termList[0].IdTerme || 1);
         }
       } catch (err) {
         console.error('Erreur chargement référentiels MRH:', err);
@@ -243,40 +249,62 @@ export const NewMrhQuotePage = () => {
     return () => { isMounted = false; };
   }, [currentUsageCode]);
 
-  // Synchronisation des totaux financiers calculés
+  // Prime nette de chaque maison (imposée si l'imposition est active)
+  const primeNetteMaison = (m) => (
+    isImpositionActive && imposedPrimesParMaison[m.id] !== undefined
+      ? cleanNum(imposedPrimesParMaison[m.id])
+      : Number(m.prime_nette) || 0
+  );
+  const primeNetteMaisons = maisons.reduce((s, m) => s + primeNetteMaison(m), 0);
+
+  // Accessoire du barème (stdaccessoire) pour cette prime nette, lu au serveur
+  const [accessoireBareme, setAccessoireBareme] = useState({ accessoire: 0, taxe: 0 });
+  useEffect(() => {
+    let actif = true;
+    if (!primeNetteMaisons) {
+      setAccessoireBareme({ accessoire: 0, taxe: 0 });
+      return undefined;
+    }
+    mrhApi.getAccessoire({ idcompagnie: Number(compagnieId), prime_nette: primeNetteMaisons })
+      .then((r) => {
+        if (actif) setAccessoireBareme({ accessoire: Number(r?.accessoire) || 0, taxe: Number(r?.taxe_accessoire) || 0 });
+      })
+      .catch(() => {
+        if (actif) setAccessoireBareme({ accessoire: 0, taxe: 0 });
+      });
+    return () => { actif = false; };
+  }, [primeNetteMaisons, compagnieId]);
+
+  // Totaux calculés avec les règles du serveur : ce qui s'affiche est ce qui sera enregistré
   const totalsFinanciers = useMemo(() => {
     let primeNette = 0;
     let taxes = 0;
-    let accessoires = 0;
-
     maisons.forEach((m) => {
-      const pNetteMaison = isImpositionActive && imposedPrimesParMaison[m.id] !== undefined
-        ? cleanNum(imposedPrimesParMaison[m.id])
-        : Number(m.prime_nette) || 0;
-      primeNette += pNetteMaison;
-      taxes += Number(m.taxe) || Math.round(pNetteMaison * 0.145);
-      accessoires += Number(m.accessoire) || 5000;
+      const pnCalculee = Number(m.prime_nette) || 0;
+      const taxeCalculee = Number(m.taxe) || 0;
+      const pn = primeNetteMaison(m);
+      primeNette += pn;
+      // Prime imposée : la taxe de la maison suit son ratio taxe / prime (imposer_prime_devis)
+      taxes += pn !== pnCalculee && pnCalculee ? Math.round((taxeCalculee * pn) / pnCalculee) : taxeCalculee;
     });
 
-    if (isImpositionActive) {
-      if (cleanNum(imposedTaxe) > 0) taxes = cleanNum(imposedTaxe);
-      if (cleanNum(imposedAccessoire) > 0) accessoires = cleanNum(imposedAccessoire);
+    let accessoires = accessoireBareme.accessoire;
+    let taxeAccessoire = accessoireBareme.taxe;
+    if (isImpositionActive && imposedAccessoire !== '') {
+      accessoires = cleanNum(imposedAccessoire);
+      taxeAccessoire = Math.round(accessoires * 0.145);
     }
-
-    // Réduction commerciale
-    const redRate = Math.min(Math.max(Number(reductionCommerciale) || 0, 0), 35) / 100;
-    const primeNetteApresReduction = Math.round(primeNette * (1 - redRate));
-    const primeTtc = primeNetteApresReduction + taxes + accessoires;
+    taxes += taxeAccessoire;
+    if (isImpositionActive && cleanNum(imposedTaxe) > 0) taxes = cleanNum(imposedTaxe);
 
     return {
       primeNette,
-      reductionMontant: Math.round(primeNette * redRate),
-      primeNetteApresReduction,
       taxes,
       accessoires,
-      primeTtc,
+      primeTtc: primeNette + taxes + accessoires,
     };
-  }, [maisons, isImpositionActive, imposedPrimesParMaison, imposedTaxe, imposedAccessoire, reductionCommerciale]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maisons, isImpositionActive, imposedPrimesParMaison, imposedTaxe, imposedAccessoire, accessoireBareme]);
 
   // -------------------------------------------------------------
   // ACTIONS : GESTION DES MAISONS
@@ -295,11 +323,13 @@ export const NewMrhQuotePage = () => {
     const usageObj = usages.find((u) => u.code === currentUsageCode);
     const libelleUsage = usageObj?.libelle || currentUsageCode;
 
-    // Calcul de simulation de prime (ou via API /api/mrh/calcul/maison/)
-    let primeNetteCalc = 0;
+    // Prime calculée par le moteur MRH du serveur, celui-là même qui enregistre le devis
+    let calcRes;
     try {
-      const calcRes = await mrhApi.calculerPrimeMaison({
+      calcRes = await mrhApi.calculerPrimeMaison({
         code_usage: currentUsageCode,
+        id_tarif: Number(categorieId),
+        id_offre: Number(usageObj?.offre) || 0,
         valeur_batiment: valBat,
         valeur_contenu: valCont,
         loyer_mensuel: loyer,
@@ -307,23 +337,14 @@ export const NewMrhQuotePage = () => {
         options: selectedOptions.map((o) => ({ code_option: o })),
         sous_garanties_optionnelles: selectedGaranties.map((g) => ({ code_sous_garantie: g })),
       });
-      if (calcRes && (calcRes.prime_nette || calcRes.prime_nette_totale)) {
-        primeNetteCalc = Number(calcRes.prime_nette || calcRes.prime_nette_totale);
-      }
-    } catch (_) {
-      // Fallback formule standard OREOLE CIMA
-      const batPrime = valBat * 0.0018;
-      const contPrime = valCont * 0.0032;
-      const loyerPrime = loyer * 12 * 0.0025;
-      const rvtPrime = rvt * 0.0015;
-      const optsPrime = selectedOptions.length * 8000;
-      const garsPrime = selectedGaranties.length * 12000;
-      primeNetteCalc = Math.max(Math.round(batPrime + contPrime + loyerPrime + rvtPrime + optsPrime + garsPrime), 25000);
+    } catch (err) {
+      toastError(`Calcul de la prime impossible : ${messageErreurApi(err)}`);
+      return;
     }
 
-    const taxeCalc = Math.round(primeNetteCalc * 0.145);
-    const accessoireCalc = 5000;
-    const ttcCalc = primeNetteCalc + taxeCalc + accessoireCalc;
+    const primeNetteCalc = Math.round(Number(calcRes?.prime_nette_totale) || 0);
+    const taxeCalc = Math.round(Number(calcRes?.taxe_totale) || 0);
+    const ttcCalc = primeNetteCalc + taxeCalc;
 
     if (editingMaisonId) {
       // Modification maison existante
@@ -343,7 +364,6 @@ export const NewMrhQuotePage = () => {
                 sous_garanties_optionnelles: selectedGaranties,
                 prime_nette: primeNetteCalc,
                 taxe: taxeCalc,
-                accessoire: accessoireCalc,
                 prime_ttc: ttcCalc,
               }
             : m
@@ -367,7 +387,6 @@ export const NewMrhQuotePage = () => {
         sous_garanties_optionnelles: selectedGaranties,
         prime_nette: primeNetteCalc,
         taxe: taxeCalc,
-        accessoire: accessoireCalc,
         prime_ttc: ttcCalc,
       };
       setMaisons((prev) => [...prev, newMaison]);
@@ -415,8 +434,13 @@ export const NewMrhQuotePage = () => {
       setStep(2);
       return;
     }
+    if (!souscripteurId) {
+      toastError('Veuillez choisir le souscripteur.');
+      setStep(4);
+      return;
+    }
 
-    const selectedClient = clients.find((c) => String(c.id) === String(souscripteurId)) || clients[0];
+    const selectedClient = clients.find((c) => String(c.id) === String(souscripteurId));
     const selectedAssure = clients.find((c) => String(c.id) === String(assureId)) || selectedClient;
 
     setIsSubmitting(true);
@@ -433,17 +457,16 @@ export const NewMrhQuotePage = () => {
         compagnie: compagnieNom,
         id_compagnie: Number(compagnieId),
         numero_police_compagnie: numeroPoliceCompagnie,
-        categorie: 'MULTIRISQUES HABITATION STANDARD',
+        categorie: 'MULTIRISQUE HABITATION',
         id_tarif: Number(categorieId),
         id_terme: Number(termeId),
         id_duree: Number(dureeId),
         date_emission: dateEmission,
         date_effet: dateEffet,
         date_expiration: calculatedDateExpiration,
-        taux_reduction: Number(reductionCommerciale) || 0,
         is_prime_imposee: isImpositionActive,
         motif_imposition: impositionMotif,
-        prime_nette: totalsFinanciers.primeNetteApresReduction,
+        prime_nette: totalsFinanciers.primeNette,
         taxe: totalsFinanciers.taxes,
         accessoire: totalsFinanciers.accessoires,
         prime_ttc: totalsFinanciers.primeTtc,
@@ -462,57 +485,216 @@ export const NewMrhQuotePage = () => {
         })),
       };
 
-      // 1. Sauvegarde locale dataStore pour consultation immédiate et hors ligne
-      const savedLocal = dataStore.saveQuote(quotePayload);
+      // Devis complet (en-tête + maisons + imposition) enregistré d'un bloc au serveur :
+      // création, ou modification du même devis quand on vient de « Modifier ».
+      const telephoneSaisi = String(telephoneAssure || '').trim();
+      const payloadApi = {
+        idintermediaire: 1,
+        idcompagnie: Number(compagnieId),
+        idproduit: 4, // 4 = MRH
+        idtarif: Number(categorieId),
+        idoffre: Number(usages.find((u) => u.code === maisons[0].code_usage)?.offre) || 10,
+        idclient: Number(souscripteurId),
+        idassure: Number(assureId || souscripteurId),
+        dateeffet: `${dateEffet}T00:00:00Z`,
+        dateemission: `${dateEmission}T00:00:00Z`,
+        dateexpiration: `${calculatedDateExpiration}T00:00:00Z`,
+        numeropolicecompagnie: numeroPoliceCompagnie || '',
+        numerotelephoneassure: telephoneSaisi.replace(/\D/g, '').length >= 8 ? telephoneSaisi : '',
+        idterme: Number(termeId),
+        idduree: Number(dureeId),
+        maisons: maisons.map((m) => ({
+          code_usage: m.code_usage,
+          adresse: m.adresse,
+          valeur_batiment: m.valeur_batiment,
+          valeur_contenu: m.valeur_contenu,
+          loyer_mensuel: m.loyer_mensuel,
+          capital_rvt: m.capital_rvt,
+          options: m.options || [],
+          sous_garanties_optionnelles: m.sous_garanties_optionnelles || [],
+        })),
+        imposition: isImpositionActive
+          ? {
+              montants_maisons: maisons.map((m) => primeNetteMaison(m)),
+              montant_taxe: cleanNum(imposedTaxe) > 0 ? cleanNum(imposedTaxe) : null,
+              montant_accessoire: imposedAccessoire === '' ? null : cleanNum(imposedAccessoire),
+              motif: impositionMotif,
+            }
+          : null,
+      };
 
-      // 2. Appel au backend Django OREOLE (/api/mrh/devis/ ou /api/enregistrementdevismrh)
-      let backendId = savedLocal.id;
+      let res;
       try {
-        const res = await mrhApi.creerDevis({
-          idintermediaire: 1,
-          idcompagnie: Number(compagnieId),
-          idproduit: 4, // 4 = MRH
-          idtarif: Number(categorieId),
-          idoffre: 10,
-          idclient: Number(selectedClient?.id || 1),
-          idassure: Number(selectedAssure?.id || selectedClient?.id || 1),
-          dateeffet: `${dateEffet}T00:00:00Z`,
-          dateemission: `${dateEmission}T00:00:00Z`,
-          dateexpiration: `${calculatedDateExpiration}T23:59:59Z`,
-          numeropoliciecompagnie: numeroPoliceCompagnie ? Number(numeroPoliceCompagnie) : 0,
-          idterme: Number(termeId),
-          idduree: Number(dureeId),
-          reductioncommerciale: Number(reductionCommerciale) || 0,
-        });
-        if (res && (res.id || res.iddevis || res.ObjectId)) {
-          backendId = res.id || res.iddevis || res.ObjectId;
-          // Ajout des maisons au devis backend
-          for (const m of maisons) {
-            await mrhApi.ajouterMaison(backendId, {
-              code_usage: m.code_usage,
-              adresse: m.adresse,
-              valeur_batiment: m.valeur_batiment,
-              valeur_contenu: m.valeur_contenu,
-              loyer_mensuel: m.loyer_mensuel,
-              capital_rvt: m.capital_rvt,
-              id_tarif: Number(categorieId),
-              options: (m.options || []).map((o) => ({ code_option: o })),
-              sous_garanties_optionnelles: (m.sous_garanties_optionnelles || []).map((g) => ({ code_sous_garantie: g })),
-            });
-          }
-        }
+        res = idDevisActuel
+          ? await mrhApi.modifierDevis(idDevisActuel, payloadApi)
+          : await mrhApi.creerDevis(payloadApi);
       } catch (errApi) {
-        console.warn('Appel API mrh fallback local:', errApi);
+        toastError(`Devis MRH non enregistré : ${messageErreurApi(errApi)}`);
+        return;
+      }
+      const devisId = res?.devis_id;
+      if (!devisId) {
+        toastError('Devis MRH non enregistré : le serveur n\'a pas renvoyé de numéro de devis.');
+        return;
       }
 
-      success(`Devis Multirisques Habitation N° ${savedLocal.numerodevis} créé avec succès !`);
-      setCreatedQuote(savedLocal);
+      const totaux = res.totaux || {};
+      const saved = dataStore.saveQuote({
+        ...quotePayload,
+        id: devisId,
+        iddevis: devisId,
+        numerodevis: res.numero_devis,
+        prime_nette: totaux.prime_nette_totale ?? quotePayload.prime_nette,
+        taxe: totaux.taxe_totale ?? quotePayload.taxe,
+        accessoire: totaux.accessoire ?? quotePayload.accessoire,
+        prime_ttc: totaux.primettc ?? quotePayload.prime_ttc,
+      });
+      let devisEnregistre = null;
+      try {
+        devisEnregistre = await quoteApi.getQuote(devisId);
+      } catch {
+        // l'aperçu utilisera la copie locale ci-dessus
+      }
+
+      success(
+        idDevisActuel
+          ? `Devis Multirisques Habitation N° ${res.numero_devis} modifié.`
+          : `Devis Multirisques Habitation N° ${res.numero_devis} enregistré.`
+      );
+      setCreatedQuote(devisEnregistre || saved);
     } catch (err) {
-      toastError('Erreur lors de la création du devis MRH.');
+      toastError(`Erreur lors de l'enregistrement du devis MRH : ${messageErreurApi(err)}`);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // -------------------------------------------------------------
+  // « MODIFIER » : REPRISE DE TOUTES LES VALEURS DU DEVIS ENREGISTRÉ
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (!editIddevisParam) return undefined;
+    let actif = true;
+    const jour = (v) => (v ? String(v).slice(0, 10) : '');
+
+    const chargerDevis = async () => {
+      setIsLoadingEdit(true);
+      try {
+        const [devis, detail] = await Promise.all([
+          quoteApi.getQuote(editIddevisParam),
+          mrhApi.getMaisons(editIddevisParam),
+        ]);
+        if (!actif) return;
+        const raw = devis?.raw || {};
+        if (raw.confirme) {
+          toastError('Ce devis est confirmé (déjà en contrat) : il ne peut plus être modifié.');
+          navigate('/user/quotes');
+          return;
+        }
+
+        // Contrat
+        setIdDevisActuel(Number(editIddevisParam));
+        setNumeroDevisEdite(raw.numerodevis || '');
+        setNumeroPoliceCompagnie(raw.numero_police_compagnie || '');
+        if (raw.compagnie?.IdCompagnie) {
+          setCompagnieId(Number(raw.compagnie.IdCompagnie));
+          setCompagnieNom(raw.compagnie.RaisonSociale || '');
+        }
+        if (raw.idterme) setTermeId(Number(raw.idterme));
+        if (raw.idduree) setDureeId(Number(raw.idduree));
+        setDateEmission(jour(raw.dateemission) || todayStr);
+        setDateEffet(jour(raw.dateeffet) || todayStr);
+        setCustomExpiration(jour(raw.dateexpiration));
+
+        // Souscripteur / assuré
+        const idClient = raw.client?.IdClient ?? raw.client;
+        const idAssure = raw.assure?.IdClient ?? raw.assure ?? idClient;
+        const [souscripteur, assure] = await Promise.all([
+          idClient ? customerApi.getClientDetail(idClient).catch(() => null) : null,
+          idAssure && String(idAssure) !== String(idClient)
+            ? customerApi.getClientDetail(idAssure).catch(() => null)
+            : null,
+        ]);
+        if (!actif) return;
+        const assureFinal = assure || souscripteur;
+        setClients((prev) => {
+          const ajout = [souscripteur, assure].filter((c) => c && !prev.some((p) => String(p.id) === String(c.id)));
+          return [...ajout, ...prev];
+        });
+        if (idClient) {
+          setSouscripteurId(idClient);
+          setSearchSouscripteur(souscripteur?.nomcomplet || `Client n° ${idClient}`);
+        }
+        if (idAssure) {
+          setAssureId(idAssure);
+          setSearchAssure(assureFinal?.nomcomplet || `Client n° ${idAssure}`);
+        }
+        setTelephoneAssure(assureFinal?.telephone || assureFinal?.mobile || '+225 ');
+        setAdresseGeo(souscripteur?.adresse || '');
+
+        // Maisons : valeurs enregistrées ; la prime « calculée » est recalculée par le moteur
+        // (utile quand la prime du devis avait été imposée)
+        const maisonsDevis = detail?.maisons || [];
+        const maisonsChargees = await Promise.all(maisonsDevis.map(async (m) => {
+          const p = m.parametres || {};
+          const maison = {
+            id: m.maison_id,
+            maison_id: m.maison_id,
+            code_usage: m.code_usage,
+            usage_libelle: m.usage_libelle || m.code_usage,
+            adresse: m.adresse || '',
+            valeur_batiment: Number(p.valeur_batiment) || 0,
+            valeur_contenu: Number(p.valeur_contenu) || 0,
+            loyer_mensuel: Number(p.loyer_mensuel) || 0,
+            capital_rvt: Number(p.capital_rvt) || 0,
+            options: m.options || [],
+            sous_garanties_optionnelles: m.sous_garanties_optionnelles || [],
+            prime_nette: Number(m.prime_nette) || 0,
+            taxe: Number(m.taxe) || 0,
+            prime_ttc: Number(m.prime_ttc) || 0,
+          };
+          if (!raw.prime_imposee) return maison;
+          try {
+            const calc = await mrhApi.calculerPrimeMaison({
+              code_usage: maison.code_usage,
+              id_tarif: 81,
+              id_offre: 0,
+              valeur_batiment: maison.valeur_batiment,
+              valeur_contenu: maison.valeur_contenu,
+              loyer_mensuel: maison.loyer_mensuel,
+              capital_rvt: maison.capital_rvt,
+              options: maison.options.map((o) => ({ code_option: o })),
+              sous_garanties_optionnelles: maison.sous_garanties_optionnelles.map((g) => ({ code_sous_garantie: g })),
+            });
+            const pn = Math.round(Number(calc?.prime_nette_totale) || 0);
+            const tx = Math.round(Number(calc?.taxe_totale) || 0);
+            return { ...maison, prime_nette: pn, taxe: tx, prime_ttc: pn + tx };
+          } catch {
+            return maison;
+          }
+        }));
+        if (!actif) return;
+        setMaisons(maisonsChargees);
+
+        // Imposition enregistrée : reprise des montants imposés
+        if (raw.prime_imposee) {
+          setIsImpositionActive(true);
+          setImposedPrimesParMaison(Object.fromEntries(
+            maisonsDevis.map((m) => [m.maison_id, String(Math.round(Number(m.prime_nette) || 0))])
+          ));
+          setImposedTaxe(String(Math.round(Number(raw.taxe) || 0)));
+          setImposedAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
+        }
+      } catch (err) {
+        if (actif) toastError(`Impossible de charger le devis à modifier : ${messageErreurApi(err)}`);
+      } finally {
+        if (actif) setIsLoadingEdit(false);
+      }
+    };
+    chargerDevis();
+    return () => { actif = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editIddevisParam]);
 
   const handleConvertToContract = (q) => {
     const newContract = dataStore.convertQuoteToContract(q);
@@ -536,8 +718,13 @@ export const NewMrhQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Home size={28} color="#0ea5e9" />
-            Production de Contrat Multirisques Habitation (MRH)
+            {editIddevisParam
+              ? `Modifier le Devis Multirisques Habitation${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
+              : 'Production de Contrat Multirisques Habitation (MRH)'}
           </h1>
+          {isLoadingEdit && (
+            <p style={{ color: '#38bdf8', fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>
+          )}
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             Couverture complète CIMA : Incendie, Dégâts des eaux, Vol & Vandalisme, RC Chef de famille.
           </p>
@@ -639,29 +826,12 @@ export const NewMrhQuotePage = () => {
                 value={termeId}
                 onChange={(e) => setTermeId(Number(e.target.value))}
               >
-                {termes.map((t) => (
+                {trierParLibelle(termes, (t) => t.Libelle).map((t) => (
                   <option key={t.IdTerme} value={t.IdTerme}>
                     {t.Libelle}
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/* Réduction commerciale */}
-            <div className="form-group">
-              <label className="form-label">Réduction commerciale (%)</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="number"
-                  min="0"
-                  max="35"
-                  className="form-control"
-                  value={reductionCommerciale}
-                  onChange={(e) => setReductionCommerciale(Math.max(0, Math.min(35, Number(e.target.value) || 0)))}
-                />
-                <Percent size={16} style={{ position: 'absolute', right: '12px', top: '12px', color: '#94a3b8' }} />
-              </div>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Max. 35% sans dérogation</span>
             </div>
 
             {/* Durée du contrat */}
@@ -672,7 +842,7 @@ export const NewMrhQuotePage = () => {
                 value={dureeId}
                 onChange={(e) => setDureeId(Number(e.target.value))}
               >
-                {DEFAULT_DUREES.map((d) => (
+                {trierParLibelle(DEFAULT_DUREES, (d) => d.duree).map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.duree}
                   </option>
@@ -777,7 +947,7 @@ export const NewMrhQuotePage = () => {
                   onChange={(e) => setCurrentUsageCode(e.target.value)}
                 >
                   {usages.length > 0 ? (
-                    usages.map((u) => (
+                    trierParLibelle(usages, (u) => u.libelle).map((u) => (
                       <option key={u.code} value={u.code}>
                         {u.libelle}
                       </option>
@@ -1080,13 +1250,6 @@ export const NewMrhQuotePage = () => {
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Réduction ({reductionCommerciale}%)</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-mono)' }}>
-                - {formatFcfa(totalsFinanciers.reductionMontant)} FCFA
-              </div>
-            </div>
-
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
               <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Taxes d'Enregistrement</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
                 {formatFcfa(totalsFinanciers.taxes)} FCFA
@@ -1170,7 +1333,7 @@ export const NewMrhQuotePage = () => {
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="5000 par défaut"
+                    placeholder="Barème si vide"
                     value={imposedAccessoire ? formatFcfa(imposedAccessoire) : ''}
                     onChange={(e) => setImposedAccessoire(e.target.value.replace(/[^0-9]/g, ''))}
                   />
@@ -1383,12 +1546,16 @@ export const NewMrhQuotePage = () => {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingEdit}
               onClick={handleFinalSubmit}
               style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#0ea5e9', padding: '0.75rem 1.75rem', fontWeight: 800 }}
             >
               <Save size={18} />
-              {isSubmitting ? 'Enregistrement en cours...' : 'Enregistrer le Devis MRH'}
+              {isSubmitting
+                ? 'Enregistrement en cours...'
+                : idDevisActuel
+                ? 'Enregistrer les modifications'
+                : 'Enregistrer le Devis MRH'}
             </button>
           </div>
         </div>

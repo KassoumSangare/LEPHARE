@@ -1,7 +1,12 @@
 import React from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { printQuoteFacture, printConditionsParticulieres } from '../../../utils/exportUtils';
+import {
+  printQuoteFacture,
+  printConditionsParticulieres,
+  printAnnexeIa,
+  estDevisIaImprimable,
+} from '../../../utils/exportUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import {
   FileText,
@@ -22,6 +27,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   AlertTriangle,
+  Users,
 } from 'lucide-react';
 
 export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) => {
@@ -417,6 +423,19 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
               <FileText size={15} />
               <span>Imprimer Conditions Particulières</span>
             </button>
+
+            {estDevisIaImprimable(quote) && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => printAnnexeIa(quote)}
+                title="Annexe : liste des assurés du devis avec leurs capitaux et ayants droit — enregistrable en PDF"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Users size={15} />
+                <span>Imprimer Annexe</span>
+              </button>
+            )}
 
             {!isConsolidated && onConvertToContract && (
               (() => {

@@ -29,6 +29,7 @@ from core.validators import ErrorMessage, validate_contrat_validity_period
 from customer.models import Client
 
 from .models import (
+    Brouillon,
     AssistanceAutomobile,
     AssureIaInfo,
     AssureIaParDevisOuContrat,
@@ -5099,3 +5100,16 @@ class TransformerSanteEnIASerializer(serializers.Serializer):
     capital_ipp = serializers.DecimalField(max_digits=19, decimal_places=4)
     frais_traitement = serializers.DecimalField(max_digits=19, decimal_places=4)
     affilies_qualites = AffilieQualiteSerializer(many=True, required=False, default=list)
+
+
+class BrouillonSerializer(serializers.ModelSerializer):
+    utilisateur_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Brouillon
+        fields = "__all__"
+        read_only_fields = ["utilisateur", "date_creation", "date_modification"]
+
+    def get_utilisateur_nom(self, obj):
+        u = obj.utilisateur
+        return (getattr(u, "name", None) or getattr(u, "email", None)) if u else None

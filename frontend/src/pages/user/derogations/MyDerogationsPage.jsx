@@ -159,9 +159,9 @@ export const MyDerogationsPage = () => {
             <label className="form-label">Type d'opération exceptionnelle</label>
             <select className="form-control" value={typeOperation} onChange={(e) => setTypeOperation(e.target.value)}>
               <option value="ANNUL_ENC">Annulation d'un encaissement validé</option>
-              <option value="REMISE_FLOTTE">Remise commerciale &gt; 10% (Flotte / Particulier)</option>
               <option value="AVENANT_RETROACTIF">Avenant avec date d'effet rétroactive</option>
               <option value="DEROG_TARIF">Dérogation tarifaire hors barème CIMA</option>
+              <option value="REMISE_FLOTTE">Remise commerciale &gt; 10% (Flotte / Particulier)</option>
             </select>
           </div>
 

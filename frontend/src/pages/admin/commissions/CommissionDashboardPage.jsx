@@ -147,10 +147,10 @@ export const CommissionDashboardPage = () => {
         </div>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <Coins size={26} color="#fbbf24" />
-          Commissions & Rémunération des Apporteurs
+          Commissions & apporteurs
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          Calcul des rétrocessions réglementées, contrôle de l'encaissement préalable (Art. 13) et bordereaux de courtage.
+          Commissions gagnées par le cabinet et rétrocessions versées aux apporteurs.
         </p>
       </div>
 

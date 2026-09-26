@@ -139,9 +139,9 @@ export const ConventionsEnginePage = () => {
             <span className="badge badge-primary">Module I – Conventions & Partenaires</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Moteur Multi-Compagnies</span>
           </div>
-          <h1 className="title-xl">Moteur des Conventions Assureurs</h1>
+          <h1 className="title-xl">Conventions avec les compagnies</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Paramétrage institutionnel des mandats d'encaissement, délais de reversement CIMA 30j, barèmes et plafonds de délégation.
+            Les accords signés avec chaque compagnie : mandat d'encaissement, délais de reversement, plafonds de délégation.
           </p>
         </div>
 

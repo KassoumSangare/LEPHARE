@@ -8,6 +8,7 @@ import { useToast } from '../../../context/ToastContext';
 import { dataStore } from '../../../api/dataStore';
 import { settingsApi } from '../../../api/endpoints';
 import { formatDate } from '../../../utils/dateUtils';
+import { trierParLibelle } from '../../../utils/sortUtils';
 
 export const CatalogTarifsPage = () => {
   const { success } = useToast();
@@ -141,10 +142,10 @@ export const CatalogTarifsPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Sliders size={26} color="#fbbf24" />
-            Grilles Tarifaires, Accessoires & Taxes
+            Tarifs & accessoires
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Paramétrage des barèmes de calcul, coefficients de durée, frais de gestion et taxes CIMA.
+            Catégories tarifaires, barèmes de calcul, coefficients de durée et frais de gestion.
           </p>
         </div>
 
@@ -180,7 +181,7 @@ export const CatalogTarifsPage = () => {
                 value={newTarif.produit}
                 onChange={(e) => setNewTarif({ ...newTarif, produit: e.target.value })}
               >
-                {allProductOptions.map((opt) => (
+                {trierParLibelle(allProductOptions, (opt) => opt).map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
                   </option>
@@ -261,7 +262,7 @@ export const CatalogTarifsPage = () => {
                   value={selectedTarif.produit}
                   onChange={(e) => setSelectedTarif({ ...selectedTarif, produit: e.target.value })}
                 >
-                  {allProductOptions.map((opt) => (
+                  {trierParLibelle(allProductOptions, (opt) => opt).map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>

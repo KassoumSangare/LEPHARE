@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
-import { quoteApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
+import { quoteApi, customerApi, settingsApi, contractApi, brouillonApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
   Car,
@@ -30,8 +30,13 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
+import {
+  calculerTotauxDevisAuto,
+  estGarantieRc,
+  extraireLigneCumul,
+} from '../../../utils/tarificationAuto';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
 // Code branche CIMA (stdbranche) du produit Automobile : seules les catégories 2xx sont proposées
@@ -337,87 +342,10 @@ export const NewAutoQuotePage = () => {
   // (l'utilisateur reste libre de forcer un recalcul via le bouton "Recalculer CIMA").
   const garantiesChargeesDuDevisRef = useRef(false);
 
-  // Tableau des garanties interactives avec inline editing et suppressions
-  const [garanties, setGaranties] = useState([
-    {
-      id_garantie: 1,
-      code: 'RC',
-      nom: 'RESPONSABILITÉ CIVILE',
-      acquise: true,
-      capital: 'Illimité',
-      franchise: 'Néant',
-      formule: 'Légale CIMA',
-      place: 5,
-      primeAnnuelle: 85000,
-      primeNette: 85000,
-      is_new_garantie: false,
-    },
-    {
-      id_garantie: 2,
-      code: 'DEF_REC',
-      nom: 'DÉFENSE ET RECOURS',
-      acquise: true,
-      capital: '1 000 000',
-      franchise: 'Néant',
-      formule: 'Forfait CIMA',
-      place: 5,
-      primeAnnuelle: 15000,
-      primeNette: 15000,
-      is_new_garantie: false,
-    },
-    {
-      id_garantie: 3,
-      code: 'INCENDIE',
-      nom: 'INCENDIE & EXPLOSION',
-      acquise: true,
-      capital: 'Valeur Vénale',
-      franchise: '10% min 50 000',
-      formule: 'Taux Vénale',
-      place: 5,
-      primeAnnuelle: 35000,
-      primeNette: 35000,
-      is_new_garantie: false,
-    },
-    {
-      id_garantie: 4,
-      code: 'VOL',
-      nom: 'VOL & TENTATIVE DE VOL',
-      acquise: true,
-      capital: 'Valeur Vénale',
-      franchise: '15% min 75 000',
-      formule: 'Taux Vénale',
-      place: 5,
-      primeAnnuelle: 45000,
-      primeNette: 45000,
-      is_new_garantie: false,
-    },
-    {
-      id_garantie: 5,
-      code: 'BRIS_GLACES',
-      nom: 'BRIS DE GLACES',
-      acquise: true,
-      capital: 'Valeur à Neuf',
-      franchise: 'Néant',
-      formule: 'Plafond Réparation',
-      place: 5,
-      primeAnnuelle: 25000,
-      primeNette: 25000,
-      is_new_garantie: false,
-    },
-    {
-      id_garantie: 6,
-      code: 'TIERCE',
-      nom: 'DOMMAGES TOUS ACCIDENTS (TIERCE COMPLÈTE)',
-      acquise: true,
-      capital: 'Valeur Vénale',
-      franchise: '10% min 100 000',
-      formule: 'Tierce',
-      place: 5,
-      primeAnnuelle: 120000,
-      primeNette: 120000,
-      is_new_garantie: false,
-    },
-  ]);
+  // Tableau des garanties interactives avec inline editing et suppressions.
+  // Vide au départ : les garanties viennent uniquement de l'offre (moteur CIMA / stdoffregarantie)
+  // ou du devis rouvert — plus de liste figée avec des primes fictives.
+  const [garanties, setGaranties] = useState([]);
 
   // Tuiles financières éditables en mode Imposition
   const [editedExtras, setEditedExtras] = useState({
@@ -430,66 +358,37 @@ export const NewAutoQuotePage = () => {
     ttc: '',
   });
 
-  // Calcul financier de base ou calcul dynamique
+  // Ligne cumul (IdGarantie = 0) renvoyée par fn_garantie_offre : accessoire (fn_get_accessoire,
+  // fonction de la tranche de prime nette) et taxe sur accessoire — introuvables autrement côté écran.
+  const [ligneCumul, setLigneCumul] = useState(null);
+  // Totaux réellement enregistrés d'un devis rouvert en édition (stddevis) : URANUS affiche ces
+  // montants tels quels (primes imposées comprises) tant que les garanties ne sont pas modifiées.
+  const [totauxEnregistres, setTotauxEnregistres] = useState(null);
+  const garantiesEnregistreesRef = useRef(null);
+
+  // Calcul financier aligné sur URANUS (voir utils/tarificationAuto) : le moteur CIMA a déjà
+  // appliqué réduction commerciale, BNS, prorata et taxe par garantie.
   const calculFinancier = useMemo(() => {
     const vehiculesCount = typeContrat === 'FLOTTE' ? Math.max(1, flotteVehicules.length) : 1;
+    const imposer = (champ, valeurCalculee) => (
+      isEditingPrimes && editedExtras[champ] !== '' ? Number(editedExtras[champ]) : valeurCalculee
+    );
 
-    // Calcul du ratio selon la durée
-    let ratioDuree = 1.0;
-    if (Number(dureeId) === 1) ratioDuree = (1 / 12) * 1.15;
-    else if (Number(dureeId) === 2) ratioDuree = (3 / 12) * 1.10;
-    else if (Number(dureeId) === 3) ratioDuree = (6 / 12) * 1.05;
-    else if (Number(dureeId) === 5 && dateEffet && effectiveDateExpiration) {
-      const msDiff = new Date(effectiveDateExpiration) - new Date(dateEffet);
-      const days = Math.max(1, Math.round(msDiff / (1000 * 60 * 60 * 24)));
-      ratioDuree = Math.min(1.0, (days / 365) * 1.10);
-    }
+    // Devis rouvert et garanties intactes : on reprend exactement les totaux enregistrés
+    const base = totauxEnregistres && garanties === garantiesEnregistreesRef.current
+      ? totauxEnregistres
+      : calculerTotauxDevisAuto({ garanties, ligneCumul, vehiculesCount });
 
-    // Somme des garanties acquises non supprimées
-    let sumPA = 0;
-    let sumPN = 0;
-    let rcPrimeNette = 0;
+    const finalPA = imposer('pa', base.pa);
+    const finalPN = imposer('pn', base.pn);
+    const finalTaxe = imposer('taxe', base.taxe);
+    const finalFga = imposer('fga', base.fga);
+    const finalAccessoire = imposer('accessoire', base.accessoire);
+    const finalCedeao = isEditingPrimes && editedExtras.cedeao !== '' ? ensureCedeaoMin(editedExtras.cedeao) : base.cedeao;
 
-    garanties.forEach((g) => {
-      if (g.acquise) {
-        const pa = Number(g.primeAnnuelle) || 0;
-        const pn = Number(g.primeNette) || Math.round(pa * ratioDuree);
-        sumPA += pa;
-        sumPN += pn;
-        if (g.code === 'RC' || (g.nom && g.nom.includes('RESPONSABILITÉ CIVILE'))) {
-          rcPrimeNette = pn;
-        }
-      }
-    });
-
-    sumPA = sumPA * vehiculesCount;
-    sumPN = sumPN * vehiculesCount;
-
-    // Prise en compte de la réduction commerciale et bonus/malus
-    const remiseMt = Math.round(sumPN * (Number(reductionCommerciale) / 100));
-    const bnsMt = Math.round(sumPN * (Number(bonusMalus) / 100));
-    const basePnCalculated = Math.max(0, sumPN - remiseMt + bnsMt);
-
-    // Valeurs imposées vs calculées
-    const finalPA = isEditingPrimes && editedExtras.pa !== '' ? Number(editedExtras.pa) : sumPA;
-    const finalPN = isEditingPrimes && editedExtras.pn !== '' ? Number(editedExtras.pn) : basePnCalculated;
-
-    // Taxe CIMA 14.5%
-    const finalTaxe = isEditingPrimes && editedExtras.taxe !== '' ? Number(editedExtras.taxe) : Math.round(finalPN * 0.145);
-
-    // FGA: 2% de la Prime Nette RC (ou 2% de la prime nette totale CIMA)
-    const baseFga = rcPrimeNette > 0 ? Math.round(rcPrimeNette * 0.02) : Math.round(finalPN * 0.02);
-    const finalFga = isEditingPrimes && editedExtras.fga !== '' ? Number(editedExtras.fga) : baseFga;
-
-    // Accessoires (9000 standard ou échelonné flotte)
-    const baseAcc = 9000 * (typeContrat === 'FLOTTE' ? Math.min(vehiculesCount, 5) : 1);
-    const finalAccessoire = isEditingPrimes && editedExtras.accessoire !== '' ? Number(editedExtras.accessoire) : baseAcc;
-
-    // CEDEAO multiple de 1000
-    const finalCedeao = isEditingPrimes && editedExtras.cedeao !== '' ? ensureCedeaoMin(editedExtras.cedeao) : 1000;
-
-    // Prime TTC
-    const calculatedTtc = finalPN + finalTaxe + finalFga + finalAccessoire + finalCedeao;
+    const calculatedTtc = isEditingPrimes
+      ? finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire
+      : base.ttc;
     const finalTtc = isEditingPrimes && editedExtras.ttc !== '' ? Number(editedExtras.ttc) : calculatedTtc;
 
     return {
@@ -504,69 +403,73 @@ export const NewAutoQuotePage = () => {
     };
   }, [
     garanties,
-    dureeId,
-    dateEffet,
-    effectiveDateExpiration,
     typeContrat,
     flotteVehicules,
-    reductionCommerciale,
-    bonusMalus,
     isEditingPrimes,
     editedExtras,
+    ligneCumul,
+    totauxEnregistres,
   ]);
 
-  // Synchronisation des garanties avec l'offre
-  useEffect(() => {
-    if (offreSelectionnee.includes('TIERS SIMPLE')) {
-      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: g.code === 'RC' || g.code === 'DEF_REC' })));
-    } else if (offreSelectionnee.includes('TIERS COMPLET') || offreSelectionnee.includes('COLLISION')) {
-      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: g.code !== 'TIERCE' })));
-    } else {
-      setGaranties((prev) => prev.map((g) => ({ ...g, acquise: true })));
-    }
-  }, [offreSelectionnee]);
+  // Paramètres transmis au moteur CIMA (fn_garantie_offre). Mémorisés pour relancer le calcul
+  // dès qu'une donnée d'entrée change : auparavant seuls offre/tarif/compagnie déclenchaient
+  // le calcul, si bien que les garanties restaient calculées avec les valeurs par défaut
+  // (valeurs véhicule à 0, réduction/BNS initiaux…) saisies avant l'écran Véhicule.
+  const offreSelectionneeObj = offresList.find((o) => o.id === Number(offreId));
+  // Comme URANUS, le calcul utilise la catégorie (grille stdtarif) choisie à l'écran
+  // Contrat — c'est aussi celle transmise à l'enregistrement (details.idTarif). Calculer
+  // avec la grille de l'offre affichait un montant différent du montant enregistré, par
+  // exemple pour une société en catégorie 212 (RC +5 %) avec une offre paramétrée en 201.
+  // Tant que les vraies grilles ne sont pas chargées (DEFAULT_CATEGORIES contient des
+  // ids stdcategorie, pas stdtarif), on retombe sur la grille propre à l'offre.
+  const categorieSelectionnee = categories !== DEFAULT_CATEGORIES
+    ? categories.find((cat) => Number(cat.id) === Number(categorieId))
+    : null;
+  const idTarifCalcul = categorieSelectionnee?.id || offreSelectionneeObj?.idTarif || 1;
+  const grilleOffre = categories.find((cat) => Number(cat.id) === Number(offreSelectionneeObj?.idTarif));
+  const categoriePersonneMorale = categories.find((cat) => cat.code === '212');
+  const calculPayload = useMemo(() => ({
+    CodeCarburant: Number(energieId || 1),
+    CodeAlarme: Number(systemeSecuriteId || 0),
+    IdOffre: Number(offreId || 1),
+    IdTarif: Number(idTarifCalcul),
+    NsiaAutoPlus: Boolean(nsiaAutoPlus),
+    IdCompagnie: Number(compagnieId || 1),
+    ValNeuve: Number(valeurNeuf || 0),
+    ValVenale: Number(valeurVenale || 0),
+    ValAccessoire: Number(valeurAccessoire || 0),
+    Puissance: Number(puissanceFiscale || 7),
+    Tonnage: Number(chargeUtile || 0),
+    TauxReduction: Number(reductionCommerciale || 0),
+    DateEffet: toDmy(dateEffet),
+    DateExpiration: toDmy(effectiveDateExpiration),
+    DateMec: toDmy(dateMec),
+    Bns: Number(bonusMalus || 0),
+    RemorqueAttelee: Boolean(remorqueAttelee),
+    CodeFormuleSecuriteRoutiere: formuleSecuriteCode || '',
+    NombrePlace: Number(nombrePlace || 5),
+    CodeUsage: Number(usageId || 1),
+    CarburantAutreMatiere: Boolean(carburantAutreMatiere),
+    TransportEleves: Boolean(transportEleves),
+    TransportEmployes: Boolean(transportEmployes),
+    TansportPassagerSupplementaire: Boolean(transportPassagerSupplementaire),
+    IdOptionAssistance: Number(formuleAssistanceId || 0),
+  }), [
+    energieId, systemeSecuriteId, offreId, idTarifCalcul, nsiaAutoPlus, compagnieId, valeurNeuf,
+    valeurVenale, valeurAccessoire, puissanceFiscale, chargeUtile, reductionCommerciale, dateEffet,
+    effectiveDateExpiration, dateMec, bonusMalus, remorqueAttelee, formuleSecuriteCode, nombrePlace,
+    usageId, carburantAutreMatiere, transportEleves, transportEmployes, transportPassagerSupplementaire,
+    formuleAssistanceId,
+  ]);
 
   // Appel dynamique au backend /api/offregarantie si disponible
   const handleRecalculateApi = async (silent = false) => {
     setLoadingCalculation(true);
+    // Un recalcul demandé explicitement remplace les garanties enregistrées : les
+    // changements de saisie suivants doivent alors relancer le calcul automatiquement.
+    if (!silent) garantiesChargeesDuDevisRef.current = false;
     try {
-      // fn_garantie_offre a besoin du VRAI IdTarif (stdtarif) rattaché à l'offre
-      // sélectionnée (stdoffre.idtarif) — "categorieId" n'est que la catégorie
-      // véhicule (stdcategorie) choisie à l'écran Contrat, un concept différent.
-      // Sans ce fallback sur l'idtarif propre à l'offre, le calcul renvoyait
-      // toujours une liste vide (mauvais idtarif transmis).
-      const offreSelectionneeObj = offresList.find((o) => o.id === Number(offreId));
-      const idTarifCalcul = offreSelectionneeObj?.idTarif || categorieId || 1;
-
-      const payload = {
-        CodeCarburant: Number(energieId || 1),
-        CodeAlarme: Number(systemeSecuriteId || 0),
-        IdOffre: Number(offreId || 1),
-        IdTarif: Number(idTarifCalcul),
-        NsiaAutoPlus: Boolean(nsiaAutoPlus),
-        IdCompagnie: Number(compagnieId || 1),
-        ValNeuve: Number(valeurNeuf || 0),
-        ValVenale: Number(valeurVenale || 0),
-        ValAccessoire: Number(valeurAccessoire || 0),
-        Puissance: Number(puissanceFiscale || 7),
-        Tonnage: Number(chargeUtile || 0),
-        TauxReduction: Number(reductionCommerciale || 0),
-        DateEffet: toDmy(dateEffet),
-        DateExpiration: toDmy(effectiveDateExpiration),
-        DateMec: toDmy(dateMec),
-        Bns: Number(bonusMalus || 0),
-        RemorqueAttelee: Boolean(remorqueAttelee),
-        CodeFormuleSecuriteRoutiere: formuleSecuriteCode || '',
-        NombrePlace: Number(nombrePlace || 5),
-        CodeUsage: Number(usageId || 1),
-        CarburantAutreMatiere: Boolean(carburantAutreMatiere),
-        TransportEleves: Boolean(transportEleves),
-        TransportEmployes: Boolean(transportEmployes),
-        TansportPassagerSupplementaire: Boolean(transportPassagerSupplementaire),
-        IdOptionAssistance: Number(formuleAssistanceId || 0),
-      };
-
-      const res = await quoteApi.calculateOffreGarantie(payload);
+      const res = await quoteApi.calculateOffreGarantie(calculPayload);
       if (res && Array.isArray(res.data)) {
         // Le tableau doit toujours refléter l'offre sélectionnée, y compris quand
         // elle n'a aucune garantie configurée pour cette compagnie (résultat vide) :
@@ -585,9 +488,12 @@ export const NewAutoQuotePage = () => {
             place: item.NombrePlace || nombrePlace || 5,
             primeAnnuelle: Number(item.PrimeAnnuelle || 0),
             primeNette: Number(item.PrimeNette || 0),
+            taxe: Number(item.Taxe || 0),
+            primeNetteOrigine: Number(item.PrimeNette || 0),
             is_new_garantie: false,
           }));
 
+        setLigneCumul(extraireLigneCumul(res.data));
         setGaranties(mapped);
         if (!silent) {
           if (mapped.length > 0) {
@@ -618,33 +524,171 @@ export const NewAutoQuotePage = () => {
   const [lieuHabitation, setLieuHabitation] = useState('');
   const [numeroConducteur, setNumeroConducteur] = useState('+225 ');
 
+  // NSIA tarifie les véhicules de tourisme des sociétés en catégorie 212 (RC majorée de 5 %)
+  const souscripteurSelectionne = clients.find((c) => String(c.id) === String(souscripteurId));
+  const societeEnCategorie201 = souscripteurSelectionne?.typeclient === 'Entreprise'
+    && categorieSelectionnee?.code === '201' && Boolean(categoriePersonneMorale);
+  const passerEnCategoriePersonneMorale = () => {
+    setCategorieId(categoriePersonneMorale.id);
+    setCategorieContrat(categoriePersonneMorale.libelle);
+  };
+
   // ----------------------------------------------------
   // MODE ÉDITION : préremplissage depuis un devis existant
-  // (bouton « Ajuster » du Registre des Devis, /user/quotes/auto?edit=<iddevis>)
+  // (bouton « Modifier » du Registre des Devis, /user/quotes/auto?edit=<iddevis>)
   // ----------------------------------------------------
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
   const [editIddevis, setEditIddevis] = useState(null);
   const [editIdDevisDetail, setEditIdDevisDetail] = useState(null);
+  const [editIdAvenant, setEditIdAvenant] = useState(null);
+  const [editNumeroDevis, setEditNumeroDevis] = useState('');
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
 
-  // Chargement automatique des garanties réellement liées à l'offre (stdoffregarantie)
-  // dès que l'offre, le tarif ou la compagnie changent, sans attendre un clic manuel.
-  // Dépend aussi de offresList : la liste réelle (avec le vrai idTarif de chaque offre)
-  // arrive souvent APRÈS le chargement du devis en édition — sans cette dépendance,
-  // le premier calcul partait avec le mauvais idTarif (categorieId générique) et ne se
-  // relançait jamais une fois la vraie liste disponible, laissant les garanties par défaut.
+  // ----------------------------------------------------
+  // BROUILLON : saisie non terminée enregistrée en base (/api/brouillons/) pour être reprise
+  // plus tard depuis n'importe quel poste (registre des devis > Brouillons en cours,
+  // /user/quotes/auto?brouillon=<id>)
+  // ----------------------------------------------------
+  const brouillonParam = searchParams.get('brouillon');
+  const [brouillonId, setBrouillonId] = useState(null);
+  const [enregistrementBrouillon, setEnregistrementBrouillon] = useState(false);
+  // Champs du formulaire conservés dans le brouillon : [valeur courante, setter]
+  const champsBrouillon = {
+    typeContrat: [typeContrat, setTypeContrat],
+    numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie],
+    compagnieId: [compagnieId, setCompagnieId],
+    compagnie: [compagnie, setCompagnie],
+    categorieId: [categorieId, setCategorieId],
+    categorieContrat: [categorieContrat, setCategorieContrat],
+    usageId: [usageId, setUsageId],
+    usageVehicule: [usageVehicule, setUsageVehicule],
+    carrosserieId: [carrosserieId, setCarrosserieId],
+    carrosserie: [carrosserie, setCarrosserie],
+    reductionCommerciale: [reductionCommerciale, setReductionCommerciale],
+    bonusMalus: [bonusMalus, setBonusMalus],
+    termeContrat: [termeContrat, setTermeContrat],
+    termeId: [termeId, setTermeId],
+    dateEmission: [dateEmission, setDateEmission],
+    dateEffet: [dateEffet, setDateEffet],
+    dureeId: [dureeId, setDureeId],
+    dureeContrat: [dureeContrat, setDureeContrat],
+    customDateExpiration: [customDateExpiration, setCustomDateExpiration],
+    energieId: [energieId, setEnergieId],
+    energie: [energie, setEnergie],
+    systemeSecuriteId: [systemeSecuriteId, setSystemeSecuriteId],
+    systemeSecurite: [systemeSecurite, setSystemeSecurite],
+    formuleSecuriteCode: [formuleSecuriteCode, setFormuleSecuriteCode],
+    formuleAssistanceId: [formuleAssistanceId, setFormuleAssistanceId],
+    marqueId: [marqueId, setMarqueId],
+    marqueVehicule: [marqueVehicule, setMarqueVehicule],
+    genreId: [genreId, setGenreId],
+    genreVehicule: [genreVehicule, setGenreVehicule],
+    typeCommercial: [typeCommercial, setTypeCommercial],
+    remorqueAttelee: [remorqueAttelee, setRemorqueAttelee],
+    modeleVehicule: [modeleVehicule, setModeleVehicule],
+    puissanceFiscale: [puissanceFiscale, setPuissanceFiscale],
+    chargeUtile: [chargeUtile, setChargeUtile],
+    nombrePlace: [nombrePlace, setNombrePlace],
+    valeurNeuf: [valeurNeuf, setValeurNeuf],
+    valeurVenale: [valeurVenale, setValeurVenale],
+    valeurAccessoire: [valeurAccessoire, setValeurAccessoire],
+    immatriculation: [immatriculation, setImmatriculation],
+    numeroCarteBrune: [numeroCarteBrune, setNumeroCarteBrune],
+    numeroChassis: [numeroChassis, setNumeroChassis],
+    numeroMoteur: [numeroMoteur, setNumeroMoteur],
+    dateMec: [dateMec, setDateMec],
+    carburantAutreMatiere: [carburantAutreMatiere, setCarburantAutreMatiere],
+    transportEleves: [transportEleves, setTransportEleves],
+    transportEmployes: [transportEmployes, setTransportEmployes],
+    transportPassagerSupplementaire: [transportPassagerSupplementaire, setTransportPassagerSupplementaire],
+    nsiaAutoPlus: [nsiaAutoPlus, setNsiaAutoPlus],
+    flotteVehicules: [flotteVehicules, setFlotteVehicules],
+    offreId: [offreId, setOffreId],
+    offreSelectionnee: [offreSelectionnee, setOffreSelectionnee],
+    isEditingPrimes: [isEditingPrimes, setIsEditingPrimes],
+    deletedGaranties: [deletedGaranties, setDeletedGaranties],
+    garanties: [garanties, setGaranties],
+    editedExtras: [editedExtras, setEditedExtras],
+    ligneCumul: [ligneCumul, setLigneCumul],
+    souscripteurId: [souscripteurId, setSouscripteurId],
+    searchSouscripteur: [searchSouscripteur, setSearchSouscripteur],
+    nomAssure: [nomAssure, setNomAssure],
+    telephoneClient: [telephoneClient, setTelephoneClient],
+    nomConducteur: [nomConducteur, setNomConducteur],
+    adresseConducteur: [adresseConducteur, setAdresseConducteur],
+    categoriePermis: [categoriePermis, setCategoriePermis],
+    numeroPermis: [numeroPermis, setNumeroPermis],
+    lieuHabitation: [lieuHabitation, setLieuHabitation],
+    numeroConducteur: [numeroConducteur, setNumeroConducteur],
+    editIddevis: [editIddevis, setEditIddevis],
+    editIdDevisDetail: [editIdDevisDetail, setEditIdDevisDetail],
+    editIdAvenant: [editIdAvenant, setEditIdAvenant],
+  };
+
+  const handleSaveDraft = async () => {
+    setEnregistrementBrouillon(true);
+    const donnees = Object.fromEntries(Object.entries(champsBrouillon).map(([cle, [valeur]]) => [cle, valeur]));
+    const client = clients.find((c) => String(c.id) === String(souscripteurId));
+    const vehicule = [marqueVehicule, immatriculation].filter(Boolean).join(' ');
+    const libelle = [client?.nomcomplet || nomAssure, vehicule].filter(Boolean).join(' — ') || 'Devis automobile sans client';
+    const charge = { type_brouillon: 'DEVIS_AUTO', libelle, etape: step, donnees, iddevis: editIddevis || null };
+    try {
+      const res = brouillonId ? await brouillonApi.update(brouillonId, charge) : await brouillonApi.create(charge);
+      setBrouillonId(res.data.id);
+      success('Brouillon enregistré : vous pourrez le reprendre depuis le registre des devis (Brouillons en cours).');
+    } catch (e) {
+      console.error('Enregistrement du brouillon impossible', e);
+      toastError(`Le brouillon n'a pas été enregistré : ${e?.response?.data?.detail || e.message}.`);
+    } finally {
+      setEnregistrementBrouillon(false);
+    }
+  };
+
+  // Reprise d'un brouillon : restaure tout le formulaire et l'étape où la saisie s'était arrêtée
+  useEffect(() => {
+    if (!brouillonParam) return undefined;
+    let actif = true;
+    (async () => {
+      try {
+        const brouillon = await brouillonApi.get(brouillonParam);
+        if (!actif || !brouillon) return;
+        const donnees = brouillon.donnees || {};
+        Object.entries(champsBrouillon).forEach(([cle, [, setter]]) => {
+          if (Object.prototype.hasOwnProperty.call(donnees, cle)) setter(donnees[cle]);
+        });
+        // Garanties et primes du brouillon conservées telles quelles (comme un devis rouvert) :
+        // le bouton « Recalculer CIMA » reste disponible pour repartir du barème
+        garantiesChargeesDuDevisRef.current = Array.isArray(donnees.garanties) && donnees.garanties.length > 0;
+        setBrouillonId(brouillon.id);
+        setStep(Number(brouillon.etape) || 1);
+        info(`Brouillon « ${brouillon.libelle || brouillon.id} » repris.`);
+      } catch (e) {
+        console.error('Reprise du brouillon impossible', e);
+        toastError('Impossible de reprendre ce brouillon.');
+      }
+    })();
+    return () => { actif = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brouillonParam]);
+
+  // Chargement automatique des garanties réellement liées à l'offre (stdoffregarantie),
+  // relancé à chaque changement d'une donnée d'entrée du moteur (calculPayload), sans
+  // attendre un clic manuel. calculPayload dépend aussi de offresList via idTarifCalcul :
+  // la liste réelle (avec le vrai idTarif de chaque offre) arrive souvent APRÈS le
+  // chargement du devis en édition.
   useEffect(() => {
     // Pendant le chargement d'un devis existant, on attend que ses garanties
     // réellement enregistrées soient chargées avant d'envisager un recalcul —
     // sinon un appel lancé avec les valeurs par défaut (avant l'arrivée des
     // vraies données) pourrait, selon le timing réseau, écraser ces garanties.
-    if (isLoadingEdit || garantiesChargeesDuDevisRef.current) return;
-    if (offreId && categorieId && compagnieId) {
-      handleRecalculateApi(true);
-    }
+    // En mode "Imposer la prime", on ne réécrase pas non plus les primes saisies.
+    if (isLoadingEdit || garantiesChargeesDuDevisRef.current || isEditingPrimes) return undefined;
+    if (!(offreId && categorieId && compagnieId)) return undefined;
+    const timer = setTimeout(() => handleRecalculateApi(true), 400);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offreId, categorieId, compagnieId, offresList, isLoadingEdit]);
+  }, [calculPayload, categorieId, isLoadingEdit, isEditingPrimes]);
 
   // Garde la catégorie sélectionnée cohérente avec la liste filtrée par branche :
   // aligne le libellé sur l'id (ex: devis rechargé en édition), sinon bascule sur la 1re catégorie disponible
@@ -660,11 +704,11 @@ export const NewAutoQuotePage = () => {
       setCategorieId(byLibelle.id);
       return;
     }
-    if (!editIddevisParam) {
+    if (!editIddevisParam && !brouillonParam) {
       setCategorieId(categories[0].id);
       setCategorieContrat(categories[0].libelle);
     }
-  }, [categories, categorieId, categorieContrat, editIddevisParam]);
+  }, [categories, categorieId, categorieContrat, editIddevisParam, brouillonParam]);
 
   // Carrosseries filtrées selon l'usage sélectionné (liaison stdcarrosserie_Usages).
   // Si aucune carrosserie n'est paramétrée pour cet usage, toutes restent proposées.
@@ -686,11 +730,11 @@ export const NewAutoQuotePage = () => {
       setCarrosserieId(byLibelle.id);
       return;
     }
-    if (!editIddevisParam) {
+    if (!editIddevisParam && !brouillonParam) {
       setCarrosserieId(carrosseriesFiltrees[0].id);
       setCarrosserie(carrosseriesFiltrees[0].libelle);
     }
-  }, [carrosseriesFiltrees, carrosserieId, carrosserie, editIddevisParam]);
+  }, [carrosseriesFiltrees, carrosserieId, carrosserie, editIddevisParam, brouillonParam]);
 
   const toIsoDate = (v) => {
     if (!v) return '';
@@ -708,13 +752,15 @@ export const NewAutoQuotePage = () => {
         const d = dd.iddevis || {};
 
         if (d.confirme) {
-          toastError('Ce devis est déjà confirmé (converti en police) : il ne peut plus être ajusté ici.');
+          toastError('Ce devis est déjà confirmé (converti en police) : il ne peut plus être modifié ici.');
           navigate('/user/quotes');
           return;
         }
 
         setEditIddevis(d.iddevis || Number(editIddevisParam));
         setEditIdDevisDetail(dd.iddevisdetail || null);
+        setEditIdAvenant(Number(d.avenant?.IdAvenant ?? d.avenant) || null);
+        setEditNumeroDevis(d.numerodevis || '');
 
         // Contrat & tarification
         setNumeroPoliceCompagnie(d.numero_police_compagnie || '');
@@ -758,6 +804,8 @@ export const NewAutoQuotePage = () => {
           setGenreId(Number(dd.idgenrevehicule.IdGenre));
           setGenreVehicule(dd.idgenrevehicule.LibelleGenre || '');
         }
+        // Type de véhicule enregistré : sans lui, la mise à jour le remplaçait par le type par défaut
+        if (dd.idtypevehicule?.libelle_type) setTypeCommercial(dd.idtypevehicule.libelle_type);
         setRemorqueAttelee(Boolean(dd.remorque));
         setModeleVehicule(dd.modelevehicule || '');
         setPuissanceFiscale(Number(dd.puissancefiscale || 0));
@@ -782,7 +830,7 @@ export const NewAutoQuotePage = () => {
         // neuf via le moteur CIMA, écrasant silencieusement primes imposées/acquises
         // telles qu'elles ont été réellement enregistrées à la création du devis.
         if (Array.isArray(dd.garanties_enregistrees) && dd.garanties_enregistrees.length > 0) {
-          setGaranties(dd.garanties_enregistrees.map((g) => ({
+          const garantiesEnregistrees = dd.garanties_enregistrees.map((g) => ({
             id_garantie: g.IdGarantie,
             code: `GAR_${g.IdGarantie}`,
             nom: g.libellegarantie || `Garantie #${g.IdGarantie}`,
@@ -793,9 +841,26 @@ export const NewAutoQuotePage = () => {
             place: nombrePlace || 5,
             primeAnnuelle: Number(g.primeannuelle || 0),
             primeNette: Number(g.PrimeNette || 0),
+            taxe: Number(g.taxe || 0),
+            primeNetteOrigine: Number(g.PrimeNette || 0),
             is_new_garantie: false,
-          })));
+          }));
+          garantiesEnregistreesRef.current = garantiesEnregistrees;
+          setGaranties(garantiesEnregistrees);
           garantiesChargeesDuDevisRef.current = true;
+
+          // Totaux de l'en-tête (stddevis) tels qu'URANUS les affiche en édition :
+          // stddevis.primenette inclut le FGA (sp_finalisation_devis), d'où la soustraction.
+          const fgaEnregistre = Number(d.fga || 0);
+          setTotauxEnregistres({
+            pa: Number(d.primeannuelle || 0),
+            pn: Number(d.primenette || 0) - fgaEnregistre,
+            taxe: Number(d.taxe || 0),
+            fga: fgaEnregistre,
+            accessoire: Number(d.accessoire || 0),
+            cedeao: Number(d.cedeao || 0),
+            ttc: Number(d.primettc || 0),
+          });
         }
 
         // Souscripteur / conducteur — d.client peut être un id simple ou l'objet
@@ -815,7 +880,7 @@ export const NewAutoQuotePage = () => {
         success(`Devis ${d.numerodevis} chargé pour ajustement.`);
       } catch (err) {
         console.error('Erreur chargement devis pour édition:', err);
-        toastError("Impossible de charger ce devis pour l'ajuster.");
+        toastError("Impossible de charger ce devis pour le modifier.");
         navigate('/user/quotes');
       } finally {
         if (isMounted) setIsLoadingEdit(false);
@@ -895,7 +960,7 @@ export const NewAutoQuotePage = () => {
             // défaut ne correspond pas réellement au libellé affiché dans le menu
             // (décalage id/libellé codé en dur), on recale sur le vrai id — sinon le
             // calcul partirait silencieusement sur une offre inexistante ou différente.
-            if (!editIddevisParam) {
+            if (!editIddevisParam && !brouillonParam) {
               const matching = mappedOffres.find((o) => o.libelle === offreSelectionnee);
               if (matching && matching.id !== offreId) {
                 setOffreId(matching.id);
@@ -993,7 +1058,7 @@ export const NewAutoQuotePage = () => {
   const handleDeleteGarantie = (idx) => {
     const target = garanties[idx];
     if (!target) return;
-    if (target.code === 'RC') {
+    if (estGarantieRc(target)) {
       toastError('La Responsabilité Civile (RC) est légalement obligatoire selon le Code CIMA et ne peut être supprimée.');
       return;
     }
@@ -1006,7 +1071,7 @@ export const NewAutoQuotePage = () => {
 
   const handleToggleGarantie = (idx) => {
     const target = garanties[idx];
-    if (target.code === 'RC') return; // RC toujours obligatoire
+    if (estGarantieRc(target)) return; // RC toujours obligatoire
     setGaranties((prev) =>
       prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g))
     );
@@ -1079,11 +1144,21 @@ export const NewAutoQuotePage = () => {
       return;
     }
     const brandName = newMarqueInput.trim().toUpperCase();
+    // Identifiant réel de la marque enregistrée : un identifiant local (Date.now()) faisait ensuite
+    // échouer l'enregistrement du devis (marque inexistante en base)
+    let idMarqueApi = null;
     try {
-      await settingsApi.createMarque({ LibelleMarque: brandName });
-    } catch (_) {}
+      const res = await settingsApi.createMarque({ LibelleMarque: brandName });
+      idMarqueApi = res?.data?.IdMarque ?? res?.data?.id ?? null;
+    } catch (e) {
+      console.error('Création de la marque impossible', e);
+    }
+    if (!idMarqueApi) {
+      toastError(`La marque "${brandName}" n'a pas pu être enregistrée. Réessayez ou choisissez une marque existante.`);
+      return;
+    }
 
-    const newBrandObj = { id: Date.now(), libelle: brandName };
+    const newBrandObj = { id: idMarqueApi, libelle: brandName };
     setMarques((prev) => [newBrandObj, ...prev]);
     setMarqueVehicule(brandName);
     setMarqueId(newBrandObj.id);
@@ -1100,7 +1175,7 @@ export const NewAutoQuotePage = () => {
     const needsDerogation = Number(reductionCommerciale) > 0;
 
     const newQuote = {
-      // En mode édition (Ajuster), on repasse le vrai id du devis existant : save_quotation
+      // En mode édition (Modifier), on repasse le vrai id du devis existant : save_quotation
       // (Django) le détecte et met à jour ce devis/véhicule au lieu d'en créer un nouveau.
       id: editIddevis || undefined,
       client_nom: selectedClient?.nomcomplet || nomAssure || 'Assuré Uranus',
@@ -1183,6 +1258,10 @@ export const NewAutoQuotePage = () => {
         nsiaAutoPlus,
         flotteVehicules: typeContrat === 'FLOTTE' ? flotteVehicules : null,
         idOffre: Number(offreId),
+        // Création : IdDevis 0 et avenant 1 (affaire nouvelle) ; modification : le devis réel et son avenant
+        idDevis: editIddevis || 0,
+        idAvenant: editIdAvenant || 1,
+        idTypeVehicule: typesVehicules.find((tv) => tv.libelle === typeCommercial)?.id,
         offreSelectionnee,
         primeImposeeActive: isEditingPrimes,
         garanties,
@@ -1198,21 +1277,38 @@ export const NewAutoQuotePage = () => {
       },
     };
 
-    // 1. Sauvegarde locale immédiate (dataStore)
-    const saved = dataStore.saveQuote(newQuote);
-
-    // 2. Appel API Django POST /api/enregistrementdevis
-    let devisApiId = saved.id;
+    // 1. Enregistrement en base : POST /api/enregistrementdevis (sp_creation_devis). Le devis complet
+    // est transmis tel quel : le faire passer d'abord par dataStore.saveQuote perdait la compagnie, les
+    // dates et la réduction, et son identifiant local faisait répondre « Devis inexistant ».
+    let devisApiId = null;
     try {
-      const apiRes = await quoteApi.createAutoQuote(saved);
-      if (apiRes && apiRes.data) {
-        const obj = Array.isArray(apiRes.data) ? apiRes.data[0] : apiRes.data;
-        if (obj?.ObjectId || obj?.IdDevis || obj?.id) {
-          devisApiId = obj.ObjectId || obj.IdDevis || obj.id;
-        }
-      }
+      const apiRes = await quoteApi.createAutoQuote(newQuote);
+      const obj = Array.isArray(apiRes?.data) ? apiRes.data[0] : apiRes?.data;
+      devisApiId = obj?.IdDevis || null;
+      if (!devisApiId) throw new Error(obj?.OutputMessage || 'réponse inattendue du serveur');
     } catch (e) {
-      console.warn('API auto quote fallback to local database store', e);
+      const reponse = e?.response?.data;
+      const detail = Array.isArray(reponse)
+        ? reponse[0]?.OutputMessage
+        : (reponse?.OutputMessage || reponse?.detail || (reponse && typeof reponse === 'object' ? JSON.stringify(reponse) : null));
+      console.error('Enregistrement du devis impossible', e);
+      toastError(`Le devis n'a pas été enregistré : ${detail || e.message || 'erreur du serveur'}.`);
+      return;
+    }
+
+    // Relecture du devis enregistré (vrai numéro de devis) puis copie locale pour le registre
+    let devisEnregistre = null;
+    try {
+      devisEnregistre = await quoteApi.getQuote(devisApiId);
+    } catch (e) {
+      console.warn('Relecture du devis enregistré impossible', e);
+    }
+    const saved = dataStore.saveQuote({ ...newQuote, id: devisApiId, numerodevis: devisEnregistre?.numerodevis });
+
+    // Le devis est enregistré : son brouillon éventuel n'a plus lieu d'être
+    if (brouillonId) {
+      brouillonApi.remove(brouillonId).catch((e) => console.warn('Suppression du brouillon impossible', e));
+      setBrouillonId(null);
     }
 
     // 3. Si des primes ont été modifiées/imposées ou des garanties ajoutées/supprimées, appeler /api/correctiondevis/
@@ -1258,7 +1354,8 @@ export const NewAutoQuotePage = () => {
         };
         await quoteApi.correctQuote(correctionPayload);
       } catch (err) {
-        console.warn('API /api/correctiondevis non synchrone, persistance locale effective', err);
+        console.error('Correction du devis impossible', err);
+        toastError(`Devis ${saved.numerodevis} enregistré, mais les primes imposées ou les garanties modifiées n'ont pas pu être appliquées.`);
       }
     }
 
@@ -1272,17 +1369,18 @@ export const NewAutoQuotePage = () => {
           Flotte: true,
         });
       } catch (err) {
-        console.warn('Finalisation flotte API fallback local', err);
+        console.error('Finalisation du devis flotte impossible', err);
+        toastError(`Devis ${saved.numerodevis} enregistré, mais la finalisation de la flotte a échoué.`);
       }
     }
 
     if (needsDerogation) {
       success(`Devis ${saved.numerodevis} enregistré et transmis pour approbation de dérogation commerciale (${reductionCommerciale}%) !`);
     } else {
-      success(`Devis Automobile ${saved.numerodevis} créé avec succès !`);
+      success(`Devis Automobile ${saved.numerodevis} ${editIddevis ? 'mis à jour' : 'créé'} avec succès !`);
     }
 
-    setCreatedQuote(saved);
+    setCreatedQuote(devisEnregistre || saved);
   };
 
   const handleConvertToContract = async (quoteToConvert) => {
@@ -1301,7 +1399,7 @@ export const NewAutoQuotePage = () => {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem', gap: '1rem', color: 'var(--text-muted)' }}>
         <Car size={32} color="#3b82f6" />
-        <span>Chargement du devis à ajuster…</span>
+        <span>Chargement du devis à modifier…</span>
       </div>
     );
   }
@@ -1321,7 +1419,7 @@ export const NewAutoQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Car size={26} color="#3b82f6" />
-            {editIddevis ? `Ajuster le Devis Automobile [${numeroPoliceCompagnie || editIddevis}]` : 'Nouveau Devis Automobile & Flotte'}
+            {editIddevis ? `Modifier le Devis Automobile [${editNumeroDevis || editIddevis}]` : 'Nouveau Devis Automobile & Flotte'}
           </h1>
         </div>
 
@@ -1352,6 +1450,17 @@ export const NewAutoQuotePage = () => {
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleSaveDraft}
+            disabled={enregistrementBrouillon}
+            title="Enregistrer la saisie en cours pour la reprendre plus tard (registre des devis > Brouillons en cours)"
+            style={{ padding: '0.45rem 0.85rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <Save size={14} />
+            {enregistrementBrouillon ? 'Enregistrement…' : (brouillonId ? 'Mettre à jour le brouillon' : 'Enregistrer le brouillon')}
+          </button>
         </div>
       </div>
 
@@ -1375,8 +1484,8 @@ export const NewAutoQuotePage = () => {
               onChange={(e) => setTypeContrat(e.target.value)}
               style={{ fontWeight: 700, borderColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.08)' }}
             >
-              <option value="MONO">MONO-VÉHICULE</option>
               <option value="FLOTTE">FLOTTE (MULTI-VÉHICULES)</option>
+              <option value="MONO">MONO-VÉHICULE</option>
             </select>
           </div>
 
@@ -1523,7 +1632,7 @@ export const NewAutoQuotePage = () => {
                   setTermeId(e.target.value === 'Ferme / Non Renouvelable' ? 2 : 1);
                 }}
               >
-                {DEFAULT_TERMES.map((t) => (
+                {trierParLibelle(DEFAULT_TERMES, (t) => t.libelle).map((t) => (
                   <option key={t.id} value={t.libelle}>
                     {t.libelle}
                   </option>
@@ -1582,7 +1691,7 @@ export const NewAutoQuotePage = () => {
                   if (selectedD) setDureeContrat(selectedD.libelle.split(' ')[0]);
                 }}
               >
-                {DEFAULT_DUREES.map((d) => (
+                {trierParLibelle(DEFAULT_DUREES, (d) => d.libelle).map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.libelle}
                   </option>
@@ -1679,7 +1788,7 @@ export const NewAutoQuotePage = () => {
                       if (c) setCategorieId(c.id);
                     }}
                   >
-                    {categories.map((cat) => (
+                    {trierParLibelle(categories, (cat) => cat.libelle).map((cat) => (
                       <option key={cat.id} value={cat.libelle}>
                         {cat.libelle}
                       </option>
@@ -1698,7 +1807,7 @@ export const NewAutoQuotePage = () => {
                       if (u) setUsageId(u.id);
                     }}
                   >
-                    {usages.map((u) => (
+                    {trierParLibelle(usages, (u) => u.libelle).map((u) => (
                       <option key={u.id} value={u.libelle}>
                         {u.libelle}
                       </option>
@@ -1717,7 +1826,7 @@ export const NewAutoQuotePage = () => {
                       if (car) setCarrosserieId(car.id);
                     }}
                   >
-                    {carrosseriesFiltrees.map((car) => (
+                    {trierParLibelle(carrosseriesFiltrees, (car) => car.libelle).map((car) => (
                       <option key={car.id} value={car.libelle}>
                         {car.libelle}
                       </option>
@@ -1760,10 +1869,10 @@ export const NewAutoQuotePage = () => {
                   setEnergieId(mapEnergie[e.target.value] || 1);
                 }}
               >
-                <option value="Essence">Essence</option>
                 <option value="Diesel">Diesel</option>
-                <option value="Hybride">Hybride</option>
                 <option value="Électrique">Électrique</option>
+                <option value="Essence">Essence</option>
+                <option value="Hybride">Hybride</option>
               </select>
             </div>
 
@@ -2271,7 +2380,7 @@ export const NewAutoQuotePage = () => {
               }}
               style={{ fontWeight: 700, fontSize: '0.9rem' }}
             >
-              {offresList.map((o) => (
+              {trierParLibelle(offresList, (o) => o.libelle).map((o) => (
                 <option key={o.id} value={o.libelle}>
                   {o.libelle}{o.nbGaranties === 0 ? ' — ⚠ non configurée' : ''}
                 </option>
@@ -2285,6 +2394,12 @@ export const NewAutoQuotePage = () => {
                 </p>
               ) : null;
             })()}
+            {categorieSelectionnee && grilleOffre && grilleOffre.id !== categorieSelectionnee.id && (
+              <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                Offre paramétrée sur la grille « {grilleOffre.libelle} » : les primes sont calculées
+                avec la catégorie choisie « {categorieSelectionnee.libelle} ».
+              </p>
+            )}
           </div>
 
           {/* Tableau des Garanties : GARANTIE | ACQUISE | CAPITAL | FRANCHISE | FORMULE | PLACE | PRIME ANNUELLE | PRIME NETTE | ACTIONS */}
@@ -2324,9 +2439,9 @@ export const NewAutoQuotePage = () => {
                       <input
                         type="checkbox"
                         checked={g.acquise}
-                        disabled={g.code === 'RC'}
+                        disabled={estGarantieRc(g)}
                         onChange={() => handleToggleGarantie(idx)}
-                        style={{ width: '16px', height: '16px', cursor: g.code === 'RC' ? 'not-allowed' : 'pointer' }}
+                        style={{ width: '16px', height: '16px', cursor: estGarantieRc(g) ? 'not-allowed' : 'pointer' }}
                       />
                     </td>
 
@@ -2609,7 +2724,7 @@ export const NewAutoQuotePage = () => {
                   onChange={(e) => setSouscripteurId(parseInt(e.target.value))}
                   style={{ flex: 1 }}
                 >
-                  {filteredClients.map((c) => (
+                  {trierParLibelle(filteredClients, (c) => `${c.nomcomplet} (${c.codeclient})`).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.nomcomplet} ({c.codeclient})
                     </option>
@@ -2634,6 +2749,20 @@ export const NewAutoQuotePage = () => {
                   <Plus size={18} />
                 </button>
               </div>
+              {societeEnCategorie201 && (
+                <div style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.8rem' }}>
+                  Ce souscripteur est une société : NSIA tarifie ses véhicules de tourisme en
+                  catégorie 212 (personnes morales, RC majorée de 5 %), pas en 201.
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={passerEnCategoriePersonneMorale}
+                    style={{ marginTop: '0.4rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem', fontWeight: 700, borderRadius: '6px', display: 'block' }}
+                  >
+                    Passer en « {categoriePersonneMorale.libelle} »
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
@@ -2851,7 +2980,7 @@ export const NewAutoQuotePage = () => {
               >
                 <option value="">-- Choisir une garantie disponible --</option>
                 {sousGarantiesAll.length > 0 ? (
-                  sousGarantiesAll.map((sg) => (
+                  trierParLibelle(sousGarantiesAll, (sg) => sg.LibelleSousGarantie || sg.libelle).map((sg) => (
                     <option key={sg.IdSousGarantie || sg.id} value={sg.IdSousGarantie || sg.id}>
                       {sg.LibelleSousGarantie || sg.libelle}
                     </option>

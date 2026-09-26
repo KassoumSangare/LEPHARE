@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { formatMoney } from '../../../utils/formatUtils';
 
@@ -438,10 +438,10 @@ export const ParametrageOffresPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Tag size={28} color="#0284c7" />
-            Paramétrage des Offres & Formules Commerciales (OREOLE)
+            Offres
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Table <code>stdoffre</code> et matrice de liaison <code>stdoffregarantie</code> (Offre ↔ Garantie CIMA, franchises par compagnie) — données réelles, modifiables ici.
+            Les formules proposées par compagnie et par catégorie, avec les garanties comprises et leurs franchises.
           </p>
         </div>
 
@@ -486,7 +486,7 @@ export const ParametrageOffresPage = () => {
           }}
         >
           <option value="">Tous les produits</option>
-          {branches.map((b) => (
+          {trierParLibelle(branches, (b) => b.LibelleBranche).map((b) => (
             <option key={b.IdBranche} value={b.CodeBranche}>{b.LibelleBranche}</option>
           ))}
         </select>
@@ -654,8 +654,8 @@ export const ParametrageOffresPage = () => {
             <div className="form-group">
               <label className="form-label">Visibilité</label>
               <select className="form-control" value={offreForm.Visibilite} onChange={(e) => setOffreForm({ ...offreForm, Visibilite: e.target.value })}>
-                <option value="T">T - Totale</option>
                 <option value="P">P - Partielle</option>
+                <option value="T">T - Totale</option>
               </select>
             </div>
           </div>
@@ -664,8 +664,8 @@ export const ParametrageOffresPage = () => {
             <div className="form-group">
               <label className="form-label">Échéance</label>
               <select className="form-control" value={offreForm.Echeance} onChange={(e) => setOffreForm({ ...offreForm, Echeance: e.target.value })}>
-                <option value="L">L</option>
                 <option value="A">A</option>
+                <option value="L">L</option>
               </select>
             </div>
             <div className="form-group">

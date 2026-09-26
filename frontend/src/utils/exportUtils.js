@@ -2,7 +2,8 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import { conditionsParticulieresMonoApi, contractApi, quoteApi } from '../api/endpoints';
+import QRCode from 'qrcode';
+import { conditionsParticulieresMonoApi, contractApi, impressionIaApi, quoteApi } from '../api/endpoints';
 
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
@@ -1197,7 +1198,30 @@ const buildConditionsParticulieres = (quote, cp) => {
 // références compagnie / souscripteur / police, fiche véhicule, garanties souscrites avec
 // prime annuelle, réductions et prime nette, récapitulatif tel qu'enregistré sur la quittance.
 // Sources : quittancecontrat|quittanceproposition, garantiesouscrite*, contratdetail|devisdetail.
-const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) => {
+// Mentions légales NSIA ASSURANCES imprimées au pied de ses Conditions Particulières (texte d'URANUS)
+const MENTIONS_NSIA = "Visa : MEF/DGTCP/DA N°736 DU 31 DECEMBRE 1999 / NSIA ASSURANCES - Société Anonyme au capital de F. CFA 7 600 000 000 entièrement libéré. Entreprise régie par le code des Assurances CIMA. CI - ABJ - 183449 - Compte Contribuable - 9507932 W - Siège Social: Immeuble Manzi Avenue Noguès Rue A43 Plateau 01 BP 15 01 - Tél. : (225) 27 20 27 88 88 / (225) 27 20 31 75 00 - Fax: (225) 27 20 22 76 20 / 27 20 33 25 79 Centre d'Impots: D.G.E. Régime: Réel Normal - Site Web : : www.nsiaassurances.ci - email: nsiaassurancesci@nsiaassurances.com";
+
+// Code QR de la CP : références du document (le QR d'URANUS est une image fixe sans contenu utile)
+const qrCodeConditionsParticulieres = async (quote, cp, { contrat = false } = {}) => {
+  const q = cp.quittance || {};
+  const v = cp.vehicule || {};
+  const lignes = [
+    `${q.LibelleIntermediaire || 'OREOLE ASSURANCES'} - CONDITIONS PARTICULIERES AUTO`,
+    `Compagnie : ${q.RaisonSociale || quote.compagnie || ''}`,
+    contrat ? `Police : ${q.NumeroPolice || ''}` : `Devis : ${q.NumeroDevis || quote.numerodevis || ''}`,
+    `Client : ${q.NomClient || ''}`,
+    v.matricule ? `Immatriculation : ${v.matricule}` : null,
+    q.PrimeTtc !== undefined && q.PrimeTtc !== null ? `Prime TTC : ${fcfa(q.PrimeTtc)} F CFA` : null,
+    q.DateEmission ? `Emission : ${formatFrDate(q.DateEmission)}` : null,
+  ].filter(Boolean);
+  try {
+    return await QRCode.toString(lignes.join('\n'), { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
+  } catch {
+    return '';
+  }
+};
+
+const buildConditionsParticulieresMono = (quote, cp, { contrat = false, qrSvg = '' } = {}) => {
   const q = cp.quittance || {};
   const v = cp.vehicule || {};
   // Comme Uranus (calculateTotalPrimeNette / InvoiceCategTable) : le FGA figure au récapitulatif
@@ -1219,6 +1243,17 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
   const totalNette = garanties.reduce((t, g) => t + Math.round(Number(g.primenette) || 0), 0);
   const produit = String(q.LibelleProduit || quote.produit || 'AUTOMOBILE').toUpperCase();
 
+  const compagnie = q.RaisonSociale || quote.compagnie || '';
+  const logo = getCompagnieLogoUrl(compagnie);
+  const estNsia = /nsia/i.test(compagnie);
+  const telephone = [q.TelephoneClient, q.MobileClient].find((t) => t && String(t).trim() && String(t).trim() !== '-')
+    || q.TelephoneClient || q.MobileClient;
+  const reseau = [q.LibelleIntermediaire, q.CodeIntermediaire ? `( ${q.CodeIntermediaire} )` : ''].filter(Boolean).join(' ');
+  // Comme URANUS : prime nette du récapitulatif hors FGA (le FGA a sa propre ligne)
+  const primeNetteHorsFga = q.PrimeNetteHorsFga ?? (q.PrimeNette !== undefined && q.PrimeNette !== null
+    ? Number(q.PrimeNette) - Number(q.Fga || 0) : null);
+  const entier = (x) => Math.round(Number(x) || 0);
+
   const ligne = (g) => `
     <tr>
       <td class="g-lib">${txt(g.libellesousgarantie)}</td>
@@ -1233,6 +1268,7 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
 
   return `
     <div class="cpm">
+      ${logo ? `<img src="${logo}" alt="${compagnie}" class="cpm-logo" />` : ''}
       <div class="cpm-titre">
         <div>CONDITIONS PARTICULIÈRES</div>
         <div>ASSURANCE ${produit}</div>
@@ -1240,13 +1276,22 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
 
       <div class="cpm-entete">
         <table class="cpm-bloc">
-          <tr><td class="label">Compagnie</td><td class="val">${txt(q.RaisonSociale || quote.compagnie)}</td></tr>
+          <tr><td class="label">Compagnie</td><td class="val">${txt(compagnie)}</td></tr>
+          <tr><td class="label">Numéro client</td><td class="val">${txt(q.IdClient)}</td></tr>
           <tr><td class="label">Souscripteur</td><td class="val">${txt(q.NomClient)}</td></tr>
-          <tr><td class="label">Assuré</td><td class="val">${txt(q.NomAssure)}</td></tr>
           <tr><td class="label">Adresse</td><td class="val">${txt(q.AdresseClient)}</td></tr>
+          <tr><td class="label">Téléphone</td><td class="val">${telephone ? `(+225) ${txt(telephone)}` : VIDE}</td></tr>
+          <tr><td class="label">Profession</td><td class="val">${txt(q.ProfessionClient)}</td></tr>
+          <tr><td class="label">Réseau</td><td class="val">${txt(reseau)}</td></tr>
         </table>
         <table class="cpm-bloc">
           <tr><td class="label">${contrat ? 'Numéro Police' : 'Numéro Devis'}</td><td class="val" colspan="3">${txt(contrat ? q.NumeroPolice : q.NumeroDevis)}</td></tr>
+          <tr><td class="label">Quittance</td><td class="val" colspan="3">${txt(q.NumeroQuittance)}</td></tr>
+          <tr><td class="label">Avenant</td><td class="val" colspan="3">${txt(q.NumeroAvenant)}</td></tr>
+          <tr><td class="label">Assuré(e)</td><td class="val" colspan="3">${txt(q.NomAssure)}</td></tr>
+          <tr><td class="label">Adresse assuré</td><td class="val" colspan="3">${txt(q.AdresseAssure)}</td></tr>
+          <tr><td class="label">Mouvement</td><td class="val" colspan="3">${txt(q.LibelleMouvement)}</td></tr>
+          <tr><td class="label">Offre</td><td class="val" colspan="3">${txt(q.LibelleOffre)}</td></tr>
           <tr><td class="label">Produit</td><td class="val" colspan="3">${txt(q.LibelleCategorie)}</td></tr>
           <tr><td class="label">Effet</td><td class="val">${date(q.DateEffet)}</td><td class="label">Expiration</td><td class="val">${date(q.DateExpiration)}</td></tr>
           <tr><td class="label">Durée</td><td class="val">${txt(q.Duree)}</td><td class="label">Emission</td><td class="val">${date(q.DateEmission)}</td></tr>
@@ -1258,7 +1303,7 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
           <td class="label">N° Immatriculation</td><td>${txt(v.matricule)}</td>
           <td class="label">Date</td><td>${formatFrDate(new Date())}</td>
           <td class="label">1° mise en circulation</td><td>${date(v.datemec)}</td>
-          <td class="label">Energie</td><td></td>
+          <td class="label">Energie</td><td>${txt(v.libelleenergie)}</td>
         </tr>
         <tr>
           <td class="label">Marque</td><td>${txt(v.libellemarque)}</td>
@@ -1292,18 +1337,366 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
         </tr>
       </table>
 
-      <table class="cpm-recap">
-        <tr><td class="label">Prime Nette</td><td class="val">${nombre(q.PrimeNette)}</td></tr>
-        <tr><td class="label">Fga</td><td class="val">${nombre(q.Fga)}</td></tr>
-        <tr><td class="label">Accessoire</td><td class="val">${nombre(q.Accessoire)}</td></tr>
-        <tr><td class="label">Taxe d'enregistrement</td><td class="val">${nombre(q.TaxeEnregistrement)}</td></tr>
-        <tr><td class="label">Prime Totale</td><td class="val">${q.PrimeTtc !== undefined && q.PrimeTtc !== null ? `${fcfa(q.PrimeTtc)} FCFA` : VIDE}</td></tr>
+      <table class="cpm-synthese">
+        <tr>
+          <td class="cpm-qr">${qrSvg}</td>
+          <td class="cpm-reductions">
+            <div>Réduction BNS : ${entier(v.bns)} %</div>
+            <div>Réduction Flotte : 0%</div>
+            <div>Réduction Commerciale : ${entier(v.taux_reduction)} %</div>
+          </td>
+          <td class="cpm-montants">
+            <table>
+              <tr><td>Prime Nette</td><td>${nombre(primeNetteHorsFga)}</td></tr>
+              <tr><td>Accessoire</td><td>${nombre(q.Accessoire)}</td></tr>
+              <tr><td>Taxe d'enregistrement</td><td>${nombre(q.TaxeEnregistrement)}</td></tr>
+              <tr><td>FGA</td><td>${nombre(q.Fga)}</td></tr>
+              <tr><td>Prime TTC</td><td>${nombre(q.PrimeTtc)}</td></tr>
+            </table>
+          </td>
+        </tr>
       </table>
+      <div class="cpm-total">Prime totale à payer : ${q.PrimeTtc !== undefined && q.PrimeTtc !== null ? `${fcfa(q.PrimeTtc)} F CFA` : VIDE}</div>
+
+      <div class="cpm-nb">
+        <div>NB : Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraires.</div>
+        ${estNsia ? "<div>En cas de besoin d'assistance veuillez contacter le numéro suivant : 225 27 20 23 66 66</div>" : ''}
+      </div>
 
       <div class="cpm-fait">Fait à Abidjan, le ${date(q.DateEmission)}.</div>
       <div class="cpm-signatures"><div>L'ASSURE</div><div>POUR LA SOCIETE</div></div>
+      ${estNsia ? `<div class="cpm-mentions">${MENTIONS_NSIA}</div>` : ''}
     </div>
   `;
+};
+
+// --- GABARITS IA (Individuelle Accidents), repris d'URANUS -----------------------------------
+// Proposition « groupe » (devis flotte), Conditions Particulières individuelles et facture avec
+// la liste des assurés et de leurs ayants droit. Données : quittanceproposition, garanties
+// souscrites, assureiapardevis et ayantdroitia (voir impressionIaApi).
+
+// Devis IA enregistré en base (produit 2). Contrats et devis seulement locaux : gabarits habituels.
+const estDevisIa = (quote) => {
+  const raw = quote?.raw || {};
+  if (raw.idcontrat || !Number(quote?.iddevis || raw.iddevis)) return false;
+  const p = raw.produit;
+  const idProduit = Number(p && typeof p === 'object' ? (p.id_produit ?? p.IdProduit) : (raw.idproduit ?? p));
+  if (idProduit) return idProduit === 2;
+  return /individuelle|accident/i.test(String(quote.produit || quote.branche || ''));
+};
+
+// Quittance de la proposition ; si la base n'en renvoie pas, valeurs lues sur le devis lui-même
+const quittanceIa = (quote, q) => {
+  if (q && Object.keys(q).length > 0) return q;
+  const raw = quote.raw || {};
+  const client = raw.client && typeof raw.client === 'object' ? raw.client : {};
+  const jours = raw.dateeffet && raw.dateexpiration
+    ? Math.round((new Date(raw.dateexpiration) - new Date(raw.dateeffet)) / 86400000) + 1
+    : '';
+  const primeNette = Number(raw.primenette ?? quote.prime_nette ?? 0);
+  return {
+    NumeroDevis: raw.numerodevis || quote.numerodevis,
+    TitreClient: '',
+    NomClient: `${client.Nom || ''} ${client.Prenoms || ''}`.trim() || quote.client_nom,
+    AdresseClient: client.Adresse1 || '',
+    TelephoneClient: client.Telephone || '',
+    ProfessionClient: '',
+    IdClient: client.IdClient,
+    LibelleIntermediaire: raw.intermediaire?.LibelleIntermediaire || '',
+    LibelleOffre: raw.offre?.LibelleOffre || '',
+    LibelleBareme: '',
+    Duree: jours,
+    DateEffet: raw.dateeffet || quote.date_effet,
+    DateExpiration: raw.dateexpiration || quote.date_expiration,
+    DateEmission: raw.dateemission || quote.date_emission,
+    PrimeNette: primeNette,
+    PrimeNetteHorsFga: primeNette - Number(raw.fga || 0),
+    Accessoire: raw.accessoire ?? quote.accessoires,
+    TaxeEnregistrement: raw.taxe ?? quote.taxes,
+    PrimeTtc: raw.primettc ?? quote.prime_totale,
+    LibelleProduit: raw.produit?.libelle_produit || 'INDIVIDUELLE ACCIDENTS',
+    LibelleCategorie: quote.categorie || '',
+  };
+};
+
+// Montants avec une espace ordinaire : l'espace insécable s'imprime trop large en Arial Narrow gras
+const fcfaIa = (v) => fcfa(v).replace(/\u00a0/g, ' ');
+const dateTiret = (x) => (x ? formatFrDate(x).replace(/\//g, '-') : '');
+const dateBarre = (x) => (x ? formatFrDate(x) : '');
+const montantIa = (x) => (x !== undefined && x !== null && x !== '' && Number(x) ? fcfaIa(x) : '-');
+const texteIa = (x) => (x === undefined || x === null ? '' : String(x).trim());
+const categorieIa = (q) => texteIa(q.LibelleCategorie) || 'INDIVIDUELLE ACCIDENTS';
+const estCategorieGroupe = (q) => /^(PROPOSITION )?INDIVIDUELLE ACCIDENTS GROUPE$/.test(categorieIa(q).replace(/\s+/g, ' ').toUpperCase());
+
+// Références de la quittance (bloc de droite, commun aux deux documents)
+const blocQuittanceIa = (q) => `
+  <div class="ia-boite">
+    <div class="ia-boite-titre">Références de la Quittance</div>
+    <table class="ia-lignes">
+      <tr><td class="l">N° Proposition</td><td>${texteIa(q.NumeroDevis)}</td></tr>
+      <tr><td class="l">Adresse</td><td>${texteIa(q.AdresseClient)}</td></tr>
+      <tr><td class="l">Effet</td><td>${dateTiret(q.DateEffet)}<span class="ia-ecart"></span><b>Expiration</b>&nbsp; ${dateTiret(q.DateExpiration)}</td></tr>
+      <tr><td class="l">Offre</td><td>${texteIa(q.LibelleOffre)}</td></tr>
+      <tr><td class="l">Mouvement</td><td>Proposition</td></tr>
+      <tr><td class="l">Ecriture</td><td>${texteIa(q.LibelleBareme)}<span class="ia-ecart"></span><b>Durée(jours)</b> ${texteIa(q.Duree)}</td></tr>
+    </table>
+  </div>`;
+
+const paragrapheProposition = (q) => `
+  <div class="ia-proposition">
+    <div class="ia-proposition-titre">PROPOSITION</div>
+    <p>Nous avons l’avantage de vous faire connaître par la présente nos meilleures conditions de garantie et de prime pour la couverture des risques précisés dans l’annexe jointe.</p>
+    <p>Les capitaux garantis et la liste des assurés sont ceux mentionnés en annexe ci-joint.</p>
+    <p>Les garanties sont consenties pour la période du ${dateTiret(q.DateEffet)} au ${dateTiret(q.DateExpiration)} moyennant une prime de ${fcfaIa(q.PrimeTtc)} FCFA frais et taxes compris suivant décompte ci-dessous :</p>
+  </div>`;
+
+const tableauGarantiesIa = (garanties, { capitalTexte = false } = {}) => {
+  const nombre = (x) => {
+    const n = parseFloat(String(x ?? '').replace(/[^\d.-]/g, ''));
+    return Number.isNaN(n) ? '0' : fcfaIa(Math.abs(n));
+  };
+  const entier = (x) => {
+    const n = parseInt(String(x ?? '').replace(/[^\d]/g, ''), 10);
+    return Number.isNaN(n) ? '0' : String(n);
+  };
+  const libre = (x) => texteIa(x) || 'NON SPECIFIE';
+  const lignes = (garanties || []).length
+    ? garanties.map((g) => `
+      <tr>
+        <td class="g">${libre(g.libellesousgarantie)}</td>
+        <td>${capitalTexte ? (texteIa(g.textecapital) || nombre(g.capital)) : nombre(g.capital)}</td>
+        <td>${libre(g.textefranchise)}</td>
+        <td>${g.tauxfranchise ? `${parseFloat(g.tauxfranchise) || 0}%` : '0%'}</td>
+        <td>${entier(g.minimumfranchise)}</td>
+        <td>${entier(g.maximumfranchise)}</td>
+        <td class="n">${nombre(g.primenette)}</td>
+      </tr>`).join('')
+    : `<tr><td class="g">AUCUNE GARANTIE DISPONIBLE</td><td>0</td><td>NON SPECIFIE</td><td>0%</td><td>0</td><td>0</td><td class="n">0</td></tr>`;
+  return `
+    <div class="ia-garanties-titre">GARANTIES ACCORDEES</div>
+    <table class="ia-garanties">
+      <tr class="entete">
+        <td rowspan="2" style="width:22%">GARANTIES</td>
+        <td rowspan="2" style="width:15%">CAPITAUX</td>
+        <td colspan="4">FRANCHISES</td>
+        <td rowspan="2" style="width:15%">PRIMES NETTES</td>
+      </tr>
+      <tr class="entete"><td>NATURE</td><td>TAUX(%)</td><td>Minimum (jrs)</td><td>Maximum (jrs)</td></tr>
+      ${lignes}
+    </table>`;
+};
+
+const decompteIa = (q, primeNette) => `
+  <div class="ia-decompte">
+    <p>Par conséquent, le souscripteur s'engage à payer au comptant à la signature du présent avenant la somme de FCFA ${montantIa(q.PrimeTtc)} décomptée comme suit:</p>
+    <table class="ia-montants">
+      <tr><td>Prime nette:</td><td>${montantIa(primeNette)}</td></tr>
+      <tr><td>Accessoires:</td><td>${montantIa(q.Accessoire)}</td></tr>
+      <tr><td>Taxes d'enregistrement:</td><td>${montantIa(q.TaxeEnregistrement)}</td></tr>
+      <tr><td>Total à Payer:</td><td>${montantIa(q.PrimeTtc)}</td></tr>
+    </table>
+    <p>Il n'est pas autrement dérogé au terme du présent contrat</p>
+  </div>`;
+
+// Proposition IA « groupe » (devis flotte) — modèle URANUS « PROPOSITION INDIVIDUELLE ACCIDENTS GROUPE »
+const buildPropositionIaGroupe = (quote, donnees) => {
+  const q = quittanceIa(quote, donnees.quittance);
+  return `
+    <div class="ia">
+      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
+      <div class="ia-refs">
+        <div class="ia-boite">
+          <div class="ia-boite-titre">Références du Souscripteur</div>
+          <table class="ia-lignes">
+            <tr><td class="l">Titre</td><td>${texteIa(q.TitreClient)}</td></tr>
+            <tr><td class="l">Nom</td><td>${texteIa(q.NomClient)}</td></tr>
+            <tr><td class="l">Adresse</td><td>${texteIa(q.AdresseClient)}</td></tr>
+            <tr><td class="l">Téléphone</td><td>${texteIa(q.TelephoneClient)}</td></tr>
+            <tr><td class="l">Profession</td><td>${texteIa(q.ProfessionClient)}</td></tr>
+            <tr><td class="l">Intermédiaire</td><td>${texteIa(q.LibelleIntermediaire)}</td></tr>
+            <tr><td class="l">Réseau</td><td>Courtage</td></tr>
+          </table>
+        </div>
+        ${blocQuittanceIa(q)}
+      </div>
+      ${paragrapheProposition(q)}
+      ${estCategorieGroupe(q) ? '' : tableauGarantiesIa(donnees.garanties, { capitalTexte: true })}
+      ${decompteIa(q, q.PrimeNetteHorsFga)}
+      <div class="ia-fait">Fait à Abidjan, le ${dateTiret(q.DateEmission)}</div>
+      <div class="ia-signatures"><div>LE SOUSCRIPTEUR</div><div>POUR LA COMPAGNIE</div></div>
+    </div>`;
+};
+
+// Conditions Particulières IA individuelle — modèle URANUS (assuré, bénéficiaires, garanties)
+const buildConditionsParticulieresIa = (quote, donnees) => {
+  const q = quittanceIa(quote, donnees.quittance);
+  const groupe = estCategorieGroupe(q);
+  const assures = donnees.assures || [];
+  const beneficiaires = donnees.ayantsDroit || [];
+  const blocAssures = assures.map((a, i) => `
+    <table class="ia-lignes ia-assure">
+      <tr><td class="l">Nom</td><td>${texteIa(a.Nom)} ${texteIa(a.Prenoms)}</td></tr>
+      <tr><td class="l">Adresse</td><td>${texteIa(a.AdressePostale)}</td></tr>
+      <tr><td class="l">Profession</td><td>${texteIa(a.Profession)}</td></tr>
+      <tr><td class="l">Né(e) le</td><td>${dateBarre(a.DateNaissance)}</td></tr>
+      <tr><td class="l">A</td><td>${texteIa(a.LieuNaissance)}</td></tr>
+    </table>${i < assures.length - 1 ? '<div class="ia-separateur"></div>' : ''}`).join('');
+  const lignesBeneficiaires = beneficiaires.length
+    ? beneficiaires.map((b) => `<tr><td>${texteIa(b.nom_ayant_droit)}</td><td>${texteIa(b.prenoms_ayant_droit)}</td><td class="n">${b.part ? `${parseInt(b.part, 10)}%` : ''}</td></tr>`).join('')
+    : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
+  return `
+    <div class="ia">
+      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
+      <div class="ia-refs">
+        <div class="ia-boite">
+          <div class="ia-boite-titre">Références du Client</div>
+          <table class="ia-lignes">
+            <tr><td class="l">Numéro</td><td>${texteIa(q.IdClient)}<span class="ia-ecart"></span><b>Titre</b>&nbsp; ${texteIa(q.TitreClient)}</td></tr>
+            <tr><td class="l">Nom</td><td>${texteIa(q.NomClient)}</td></tr>
+            <tr><td class="l">Adresse</td><td>${texteIa(q.AdresseClient)}</td></tr>
+            <tr><td class="l">Téléphone</td><td>${texteIa(q.TelephoneClient)}</td></tr>
+            <tr><td class="l">Profession</td><td>${texteIa(q.ProfessionClient)}</td></tr>
+            <tr><td class="l">Intermédiaire</td><td>${texteIa(q.LibelleIntermediaire)}</td></tr>
+            <tr><td class="l">Réseau</td><td>Courtage</td></tr>
+          </table>
+        </div>
+        ${blocQuittanceIa(q)}
+      </div>
+      ${groupe ? paragrapheProposition(q) : `
+      <div class="ia-cp-titre">Conditions Particulières</div>
+      <div class="ia-refs">
+        <div class="ia-boite">
+          <div class="ia-rubrique">ASSURE</div>
+          ${blocAssures || '<table class="ia-lignes"><tr><td>&nbsp;</td></tr></table>'}
+        </div>
+        <div class="ia-boite">
+          <div class="ia-rubrique">BENEFICIAIRES EN CAS DE DECES</div>
+          <table class="ia-beneficiaires">
+            <tr class="entete"><td>Nom</td><td>Prénoms</td><td class="n">Part(%)</td></tr>
+            ${lignesBeneficiaires}
+          </table>
+        </div>
+      </div>
+      ${tableauGarantiesIa(donnees.garanties)}`}
+      ${decompteIa(q, q.PrimeNette)}
+      <div class="ia-fait">Fait à Abidjan le ${dateBarre(q.DateEmission)}</div>
+      <div class="ia-signatures"><div>Le Souscripteur</div><div>Pour la Compagnie</div></div>
+    </div>`;
+};
+
+// Facture IA — modèle URANUS « FACTURE N° … » avec assurés et ayants droit
+const buildFactureIa = (quote, donnees) => {
+  const q = quittanceIa(quote, donnees.quittance);
+  const ligneValeur = (libelle, valeur) => `
+    <div class="iaf-ligne"><div class="iaf-l">${libelle}</div><div class="iaf-v">${valeur}</div></div>`;
+  const assures = (donnees.assures || []).map((a) => `
+    <tr><td>${texteIa(a.Nom)}</td><td>${dateTiret(a.DateNaissance)}</td><td>${texteIa(a.Profession)}</td><td>${texteIa(a.AdresseGeographique)}</td><td>${texteIa(a.AdressePostale)}</td></tr>
+    <tr class="iaf-ad"><td></td><td>AYANTS DROIT</td><td>Nom et prénoms</td><td>Qualité</td><td>Part</td></tr>
+    ${(a.AyantsDroit || []).map((d) => `
+    <tr><td></td><td></td><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td><td>${parseInt(d.part, 10) || 0} %</td></tr>`).join('')}`).join('');
+  return `
+    <div class="iaf">
+      <div class="ia-titre">FACTURE N° ${texteIa(q.NumeroDevis)}</div>
+      <div class="iaf-rubrique">SOUSCRIPTEUR</div>
+      ${ligneValeur('Nom', texteIa(q.NomClient))}
+      ${ligneValeur('Adresse', texteIa(q.AdresseClient))}
+      <div class="iaf-rubrique">ASSURES, AYANTS DROIT</div>
+      <table class="iaf-assures">
+        <tr class="iaf-entete"><td>Nom</td><td>Date de naissance</td><td>Profession</td><td>Adresse géog.</td><td>Adresse Postale</td></tr>
+        ${assures}
+      </table>
+      <div class="iaf-rubrique">Référence police et périodicité</div>
+      ${ligneValeur('Au titre de la police', texteIa(q.LibelleProduit))}
+      ${ligneValeur('Numéro Devis', texteIa(q.NumeroDevis))}
+      ${ligneValeur('Pour la période allant du', `${dateBarre(q.DateEffet)} Au ${dateBarre(q.DateExpiration)}`)}
+      <div class="iaf-rubrique">Détail de la facture</div>
+      <div class="iaf-detail">
+        <div>Prime Nette : ${fcfaIa(q.PrimeNette)}</div>
+        <div>Accessoire : ${fcfaIa(q.Accessoire)}</div>
+        <div>Taxe d'enregistrement : ${fcfaIa(q.TaxeEnregistrement)}</div>
+        <div>PRIME TOTALE A PAYER: ${fcfaIa(q.PrimeTtc)}</div>
+      </div>
+      <div class="iaf-cima">Conformément aux dispositions de l’Article 13 et suivants du Code des Assurances (Code CIMA) « La prise d’effet du contrat est subordonnée au paiement intégral de la prime ». « Pour les polices des risques autres que la maladie, l’automobile et les marchandises transportées dont la prime est supérieure à 80 fois le SMIG annuel, un délai maximum du contrat peut être accordé au souscripteur » de paiement de 60 jours à compter de la date de prise d'effet ou de renouvellement « A défaut du paiement de la prime dans le délai convenu, le contrat est résilié de plein droit. La portion de prime courue reste acquise à l’assureur sans préjudice des éventuels frais de poursuite et de recouvrement » « Lorsqu’un chèque ou effet remis en paiement de la prime revient impayé, l’assuré est mis en demeure de régulariser le paiement dans un délai de 8 jours ouvrés à compter de la réception de l’acte ou de la lettre de mise en demeure. A l’expiration de ce délai, si la régularisation n’est pas effectuée, le contrat est résilié de plein droit La portion de prime courue reste acquise</div>
+      <div class="iaf-fait">Fait à Abidjan, le <b>${dateBarre(q.DateEmission)}.</b></div>
+      <div class="iaf-signatures"><div>LE SOUSCRIPTEUR</div><div>LA COMPAGNIE</div></div>
+    </div>`;
+};
+
+// Annexe IA — liste des assurés du devis avec capitaux et ayants droit (modèle URANUS)
+const buildAnnexeIa = (quote, donnees) => {
+  const q = quittanceIa(quote, donnees.quittance);
+  // Capitaux en nombre entier sans séparateur, comme sur l'annexe URANUS
+  const capital = (x) => {
+    if (x === undefined || x === null || x === '') return '';
+    const n = parseFloat(x);
+    return Number.isNaN(n) ? String(x) : String(Math.round(n));
+  };
+  const cartes = (donnees.assures || []).map((a) => {
+    const ayants = a.AyantsDroit || [];
+    const tableAyants = ayants.length
+      ? `<table class="iaa-table">
+          <tr class="entete"><td style="width:55%">Nom et prénoms</td><td style="width:27%">Qualité</td><td>Part</td></tr>
+          ${ayants.map((d, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td><td>${parseInt(d.part, 10) || 0} %</td></tr>`).join('')}
+        </table>`
+      : '<div class="iaa-vide">AUCUNE DONNEE</div>';
+    return `
+      <div class="iaa-carte">
+        <div class="iaa-carte-entete">
+          <div class="iaa-gauche">
+            <div class="iaa-nom">${texteIa(a.Nom)}&nbsp; ${texteIa(a.Prenoms)}</div>
+            <div class="iaa-sous">Né(e) le ${dateTiret(a.DateNaissance)}${a.Profession ? ` • ${texteIa(a.Profession)}` : ''}</div>
+          </div>
+          <div class="iaa-droite">
+            ${a.AdresseGeographique ? `<div>${texteIa(a.AdresseGeographique)}</div>` : ''}
+            ${a.AdressePostale ? `<div>${texteIa(a.AdressePostale)}</div>` : ''}
+          </div>
+        </div>
+        <div class="iaa-capitaux">
+          <b>Capital décès : </b>${capital(a.CapitalDeces)}&nbsp; •&nbsp; <b>Capital infirmité : </b>${capital(a.CapitalInfirmite)}&nbsp; •&nbsp; <b>Capital frais de traitement :</b>${capital(a.CapitalFraisTraitement)}
+        </div>
+        <div class="iaa-ayants">
+          <div class="iaa-ayants-titre">AYANTS DROIT</div>
+          ${tableAyants}
+        </div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="ia iaa">
+      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <div class="iaa-corps">
+        <div class="iaa-bandeau">
+          <div class="iaa-bandeau-titre">ANNEXE – LISTE DES ASSURES INDIVIDUELLE ACCIDENT</div>
+          <div class="iaa-badge">N° DEVIS : ${texteIa(q.NumeroDevis)}</div>
+        </div>
+        ${cartes || '<div class="iaa-carte"><div class="iaa-vide">AUCUN ASSURE ENREGISTRE POUR CE DEVIS</div></div>'}
+      </div>
+    </div>`;
+};
+
+// Ouvre la fenêtre tout de suite (sinon bloquée pendant l'appel API), puis la remplit
+const imprimerDocumentIa = async (quote, titre, construire) => {
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
+  try {
+    const donnees = await impressionIaApi.get(Number(quote.iddevis || quote.raw?.iddevis));
+    openPrintWindow(titre, construire(quote, donnees), fenetre);
+  } catch (err) {
+    console.error('Erreur impression IA:', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger les données du devis pour ce document. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
+};
+
+// Bouton « Imprimer Annexe » : réservé aux devis IA enregistrés en base
+export const estDevisIaImprimable = (quote) => Boolean(quote) && estDevisIa(quote);
+export const printAnnexeIa = (quote) => {
+  if (!quote) return undefined;
+  return imprimerDocumentIa(quote, `Annexe ${quote.numerodevis || ''}`.trim(), buildAnnexeIa);
 };
 
 // --- GABARIT B : IA / VOYAGE / TRANSPORT / SANTE (facture simple à blocs) ---
@@ -1525,25 +1918,104 @@ const PRINT_STYLES = `
   table.cp-bloc td.label { width: 96px; font-weight: 600; color: #475569; background: #f8fafc; white-space: nowrap; }
   table.cp-recap td.g-num { text-align: right; white-space: nowrap; }
   .cpm { font-size: 9pt; }
-  .cpm-titre { text-align: center; font-weight: 800; font-size: 11pt; line-height: 1.7; margin: 0 0 12px; }
-  .cpm-entete { display: flex; gap: 12px; margin-bottom: 14px; }
-  table.cpm-bloc { flex: 1; border-collapse: separate; border-spacing: 0 3px; }
-  table.cpm-bloc td { border: 1px solid #0f172a; padding: 4px 6px; font-weight: 700; font-size: 9pt; }
+  .cpm-titre { text-align: center; font-weight: 800; font-size: 11pt; line-height: 1.35; margin: 0 0 6px; }
+  .cpm-entete { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+  table.cpm-bloc { flex: 1; border-collapse: separate; border-spacing: 0 2px; }
+  /* Bloc de droite plus large : offre et catégorie tiennent sur une ligne */
+  table.cpm-bloc:last-child { flex: 1.35; }
+  table.cpm-bloc td { border: 1px solid #0f172a; padding: 2px 6px; font-weight: 700; font-size: 8.5pt; }
   table.cpm-bloc td.label { width: 34%; white-space: nowrap; }
-  table.cpm-vehicule { width: 100%; border: 1px solid #0f172a; border-radius: 8px; border-collapse: separate; padding: 6px; margin-bottom: 12px; }
-  table.cpm-vehicule td { font-size: 8pt; padding: 3px 4px; text-align: center; }
+  table.cpm-vehicule { width: 100%; border: 1px solid #0f172a; border-radius: 8px; border-collapse: separate; padding: 4px; margin-bottom: 6px; }
+  table.cpm-vehicule td { font-size: 8pt; padding: 2px 4px; text-align: center; }
   table.cpm-vehicule td.label { font-weight: 600; white-space: nowrap; }
-  table.cpm-garanties { width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a; margin-bottom: 14px; }
-  table.cpm-garanties td { border: 1px solid #0f172a; padding: 3px 5px; font-size: 8pt; }
+  table.cpm-garanties { width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a; margin-bottom: 8px; }
+  table.cpm-garanties td { border: 1px solid #0f172a; padding: 2px 5px; font-size: 8pt; }
   table.cpm-garanties tr.entete td { font-weight: 700; text-align: center; }
   table.cpm-garanties td.g-lib { text-align: left; }
   table.cpm-garanties tr:not(.entete):not(.total) td:nth-child(2) { text-align: left; }
   table.cpm-garanties tr.total td { font-weight: 700; }
-  table.cpm-recap { width: 46%; border-collapse: separate; border-spacing: 0 3px; margin-bottom: 14px; }
-  table.cpm-recap td { border: 1px solid #0f172a; padding: 4px 6px; font-weight: 700; font-size: 9pt; }
-  table.cpm-recap td.label { width: 45%; white-space: nowrap; }
-  .cpm-fait { text-align: right; font-size: 9pt; margin: 8px 0 28px; }
+  .cpm-logo { height: 30px; display: block; margin-bottom: 2px; }
+  table.cpm-synthese { width: 92%; margin: 0 auto 10px; border-collapse: collapse; border: 1px solid #0f172a; }
+  table.cpm-synthese > tbody > tr > td { border: 1px solid #0f172a; padding: 4px 12px; vertical-align: middle; font-size: 8.5pt; }
+  table.cpm-synthese td.cpm-qr { width: 24%; text-align: center; }
+  table.cpm-synthese td.cpm-qr svg { width: 74px; height: 74px; display: block; margin: 0 auto; }
+  table.cpm-synthese td.cpm-reductions div { margin: 3px 0; }
+  table.cpm-synthese td.cpm-montants { width: 36%; }
+  table.cpm-synthese td.cpm-montants table { width: 100%; border-collapse: collapse; }
+  table.cpm-synthese td.cpm-montants td { padding: 2px 0; font-size: 8.5pt; }
+  table.cpm-synthese td.cpm-montants td + td { text-align: right; }
+  .cpm-total { width: 92%; margin: 0 auto 8px; border: 1px solid #0f172a; border-radius: 6px; padding: 6px; text-align: center; font-weight: 700; font-size: 9pt; }
+  .cpm-nb { font-style: italic; font-size: 8.5pt; margin: 4px 0 2px; }
+  .cpm-nb div { margin-bottom: 3px; }
+  .cpm-mentions { margin-top: 8px; font-size: 6.5pt; color: #334155; text-align: center; line-height: 1.3; break-inside: avoid; }
+  .cpm-fait { text-align: right; font-size: 9pt; margin: 4px 0 12px; }
   .cpm-signatures { display: flex; justify-content: space-between; font-weight: 700; font-size: 9pt; }
+  /* IA (Individuelle Accidents) : proposition / CP / facture, modèles URANUS */
+  .ia, .iaf { font-family: 'Arial Narrow', Arial, Helvetica, sans-serif; font-size: 10pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ia-logo { width: 150px; display: block; margin-bottom: 10px; }
+  .ia-titre { text-align: center; font-weight: 700; font-size: 13pt; margin: 6px 0 14px; }
+  .ia-refs { display: flex; gap: 6px; margin-top: 8px; }
+  .ia-boite { flex: 1; border: 1px solid #000; border-radius: 12px; padding-bottom: 6px; }
+  .ia-boite-titre { font-weight: 700; font-size: 11pt; text-align: center; border-bottom: 0.8px solid #000; padding: 8px 0; }
+  table.ia-lignes { width: 100%; border-collapse: collapse; }
+  table.ia-lignes td { font-size: 9pt; padding: 4px; vertical-align: top; }
+  table.ia-lignes td.l { font-weight: 700; width: 35%; }
+  .ia-ecart { display: inline-block; width: 36px; }
+  .ia-proposition { margin-top: 18px; border: 1.2px solid #000; border-radius: 10px; padding: 12px 20px; }
+  .ia-proposition-titre { font-weight: 700; font-size: 12pt; text-align: center; margin-bottom: 4px; }
+  .ia-proposition p { font-size: 11pt; line-height: 1.4; margin: 8px 0 0; }
+  .ia-cp-titre { margin-top: 14px; border: 1px solid #000; border-radius: 8px; text-align: center; font-weight: 700; padding: 5px; }
+  .ia-rubrique { font-weight: 700; font-size: 9.5pt; text-align: center; border-bottom: 0.8px solid #000; padding: 6px 0; }
+  .ia-separateur { border-top: 1px dashed #64748b; margin: 2px 6px; }
+  table.ia-beneficiaires { width: 100%; border-collapse: collapse; }
+  table.ia-beneficiaires td { font-size: 9pt; padding: 3px 6px; }
+  table.ia-beneficiaires tr.entete td { font-weight: 700; border-bottom: 1px solid #000; }
+  table.ia-beneficiaires td.n { text-align: right; }
+  .ia-garanties-titre { margin-top: 18px; border: 1px solid #000; border-bottom: none; border-radius: 8px 8px 0 0; text-align: center; font-weight: 700; padding: 4px; }
+  table.ia-garanties { width: 100%; border-collapse: collapse; border: 1px solid #000; }
+  table.ia-garanties td { border: 1px solid #000; font-size: 8pt; padding: 4px 3px; text-align: center; }
+  table.ia-garanties tr.entete td { font-weight: 700; }
+  table.ia-garanties td.g { text-align: left; }
+  table.ia-garanties td.n { text-align: right; }
+  .ia-decompte { margin-top: 26px; font-size: 10pt; }
+  .ia-decompte p { margin: 0 0 12px; line-height: 1.4; }
+  table.ia-montants { margin: 18px 0 12px 90px; width: 55%; border-collapse: collapse; }
+  table.ia-montants td { font-size: 10pt; padding: 2px 0; }
+  table.ia-montants td:first-child { font-weight: 700; }
+  table.ia-montants td + td { text-align: right; }
+  .ia-fait { text-align: center; font-weight: 700; font-size: 9.5pt; margin: 24px 0 26px; }
+  .ia-signatures { display: flex; justify-content: space-between; font-weight: 700; font-size: 9.5pt; }
+  .iaf-rubrique { display: inline-block; min-width: 200px; margin-top: 18px; padding: 4px; border: 1px solid #000; border-radius: 4px; color: #204DA0; font-weight: 700; font-size: 9pt; }
+  .iaf-ligne { display: flex; gap: 0; margin-top: 4px; }
+  .iaf-l { width: 30%; border: 1px solid #000; border-radius: 4px; padding: 4px; font-size: 9pt; font-weight: 700; }
+  .iaf-v { width: 60%; border: 1px solid #000; border-radius: 4px; padding: 4px; font-size: 10pt; }
+  table.iaf-assures { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-top: 8px; }
+  table.iaf-assures td { font-size: 7pt; text-align: center; padding: 2px 3px; border-bottom: 1px solid #000; border-right: 1px solid #000; height: 12px; }
+  table.iaf-assures tr.iaf-entete td, table.iaf-assures tr.iaf-ad td { background: #D8D8D8; font-weight: 700; }
+  table.iaf-assures tr.iaf-ad td:first-child { background: #fff; }
+  .iaf-detail { margin-top: 4px; border: 1px solid #000; border-radius: 4px; padding: 4px; font-size: 9pt; font-weight: 700; line-height: 1.8; }
+  .iaf-cima { margin: 14px 0 0 60px; border: 1px solid #000; padding: 4px; font-size: 9pt; text-align: justify; break-inside: avoid; }
+  .iaf-fait { text-align: right; font-size: 10pt; margin-top: 10px; }
+  .iaf-signatures { display: flex; justify-content: space-between; margin: 45px 60px 0; font-weight: 700; font-size: 9pt; text-decoration: underline; }
+  .iaa-corps { margin: 12px 36px 0; }
+  .iaa-bandeau { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #74747b; border-radius: 3px; }
+  .iaa-bandeau-titre { font-size: 11pt; font-weight: 700; color: #fff; text-transform: uppercase; }
+  .iaa-badge { padding: 3px 8px; background: #fff; border-radius: 12px; font-size: 8pt; font-weight: 700; color: #74747b; }
+  .iaa-carte { margin: 4px 0 6px; padding: 10px; border: 1px solid #000; border-radius: 3px; break-inside: avoid; }
+  .iaa-carte-entete { display: flex; justify-content: space-between; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #000; }
+  .iaa-gauche { width: 60%; }
+  .iaa-droite { width: 40%; text-align: right; font-size: 8pt; color: #444; }
+  .iaa-nom { font-size: 13pt; font-weight: 700; color: #111; text-transform: uppercase; }
+  .iaa-sous { font-size: 9pt; color: #333; }
+  .iaa-capitaux { margin-top: 2px; font-size: 8pt; color: #111; text-align: center; }
+  .iaa-capitaux b { font-size: 9pt; }
+  .iaa-ayants { margin-top: 6px; border: 1px solid #000; border-radius: 3px; overflow: hidden; }
+  .iaa-ayants-titre { background: #222; color: #fff; font-size: 8pt; font-weight: 700; text-align: center; padding: 3px 6px; }
+  table.iaa-table { width: 100%; border-collapse: collapse; }
+  table.iaa-table td { font-size: 8pt; padding: 2px 4px; }
+  table.iaa-table tr.entete td { font-weight: 700; border-bottom: 1px solid #000; }
+  table.iaa-table tr.alt td { background: #f3f3f3; }
+  .iaa-vide { padding: 6px 4px; text-align: center; font-size: 8pt; color: #777; }
   .alerte-ecart { border: 2px solid #dc2626; background: #fef2f2; color: #7f1d1d; padding: 8px 12px; margin-bottom: 12px; font-size: 9pt; border-radius: 4px; }
   .facture-montants td { white-space: nowrap; }
   /* Facture proforma Auto : mise à l'échelle pour occuper la page A4 (le gabarit
@@ -1607,6 +2079,9 @@ const openPrintWindow = (title, bodyHtml, targetWindow = null) => {
  */
 export const printQuoteFacture = (quote) => {
   if (!quote) return;
+  if (estDevisIa(quote)) {
+    return imprimerDocumentIa(quote, `Facture ${quote.numerodevis || ''}`.trim(), buildFactureIa);
+  }
   const branche = String(quote.branche || quote.produit || '').toLowerCase();
   let bodyHtml;
   if (branche.includes('auto')) {
@@ -1670,6 +2145,12 @@ export const printContratConditionsParticulieres = (contract) => {
 export const printConditionsParticulieres = async (quote, { contrat = false } = {}) => {
   if (!quote) return;
   const title = `Conditions Particulieres ${quote.numerodevis || quote.iddevis || ''}`.trim();
+  // Devis IA : proposition « groupe » pour une flotte, sinon Conditions Particulières individuelles
+  if (!contrat && estDevisIa(quote)) {
+    const groupe = Boolean(quote.flotte ?? quote.raw?.flotte);
+    await imprimerDocumentIa(quote, title, groupe ? buildPropositionIaGroupe : buildConditionsParticulieresIa);
+    return;
+  }
   const printWindow = window.open('', '_blank');
   if (printWindow) {
     printWindow.document.write('<p style="font-family:Arial;padding:20px;">Préparation des Conditions Particulières…</p>');
@@ -1680,7 +2161,8 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
     const auto = /auto/i.test(String(quote.branche || quote.produit || ''));
     if (auto && !flotte) {
       const cp = await conditionsParticulieresMonoApi.get(id, { contrat });
-      openPrintWindow(title, buildConditionsParticulieresMono(quote, cp, { contrat }), printWindow);
+      const qrSvg = await qrCodeConditionsParticulieres(quote, cp, { contrat });
+      openPrintWindow(title, buildConditionsParticulieresMono(quote, cp, { contrat, qrSvg }), printWindow);
     } else {
       const cp = contrat
         ? await contractApi.getConditionsParticulieres(id)

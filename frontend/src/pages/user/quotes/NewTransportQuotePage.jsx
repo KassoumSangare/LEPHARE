@@ -6,7 +6,7 @@ import { useToast } from '../../../context/ToastContext';
 import { Modal } from '../../../components/common/Modal';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 import {
   Ship,
@@ -456,7 +456,7 @@ export const NewTransportQuotePage = () => {
                     value={modeTransport}
                     onChange={(e) => setModeTransport(e.target.value)}
                   >
-                    {modes.map((m) => (
+                    {trierParLibelle(modes, (m) => `${m.label} (${((m.baseRate || 0.003) * 100).toFixed(2)}%)`).map((m) => (
                       <option key={m.id || m.code} value={m.id || m.code}>
                         {m.label} ({((m.baseRate || 0.003) * 100).toFixed(2)}%)
                       </option>
@@ -472,12 +472,12 @@ export const NewTransportQuotePage = () => {
                     value={incoterm}
                     onChange={(e) => setIncoterm(e.target.value)}
                   >
-                    <option value="FOB (Free on Board)">FOB (Free on Board)</option>
                     <option value="CFR (Cost and Freight)">CFR (Cost and Freight)</option>
                     <option value="CIF / CIP (Cost, Insurance & Freight)">CIF / CIP (Coût, Assurance, Fret)</option>
+                    <option value="DAP (Delivered at Place)">DAP (Rendu Destination)</option>
                     <option value="EXW (Ex Works)">EXW (Départ Usine)</option>
                     <option value="FCA (Free Carrier)">FCA (Franco Transporteur)</option>
-                    <option value="DAP (Delivered at Place)">DAP (Rendu Destination)</option>
+                    <option value="FOB (Free on Board)">FOB (Free on Board)</option>
                   </select>
                 </div>
 
@@ -632,11 +632,11 @@ export const NewTransportQuotePage = () => {
                     value={conditionnement}
                     onChange={(e) => setConditionnement(e.target.value)}
                   >
+                    <option value="Caisses en bois sécurisées">Caisses en bois sécurisées</option>
                     <option value="Conteneur 20 pieds (FCL)">Conteneur 20 pieds (FCL)</option>
                     <option value="Conteneur 40 pieds (FCL)">Conteneur 40 pieds (FCL)</option>
                     <option value="Groupage Maritime (LCL)">Groupage Maritime (LCL)</option>
                     <option value="Palettes filmées & cerclées">Palettes filmées & cerclées</option>
-                    <option value="Caisses en bois sécurisées">Caisses en bois sécurisées</option>
                     <option value="Vrac liquide ou solide (Bulk)">Vrac liquide ou solide (Bulk)</option>
                   </select>
                 </div>

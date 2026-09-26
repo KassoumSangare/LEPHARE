@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { Users, Phone, Mail, Banknote, Calendar, Briefcase, Award, Save } from 'lucide-react';
+import { trierParLibelle } from '../../../utils/sortUtils';
 
 const BRANCHES = [
   'Automobile',
@@ -141,7 +142,7 @@ export const EditLeadModal = ({ isOpen, onClose, lead, onSave }) => {
               value={formData.branche}
               onChange={(e) => setFormData({ ...formData, branche: e.target.value })}
             >
-              {BRANCHES.map((b) => (
+              {trierParLibelle(BRANCHES, (b) => b).map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}
             </select>
@@ -153,7 +154,7 @@ export const EditLeadModal = ({ isOpen, onClose, lead, onSave }) => {
               value={formData.statut}
               onChange={(e) => setFormData({ ...formData, statut: e.target.value })}
             >
-              {STAGES.map((s) => (
+              {trierParLibelle(STAGES, (s) => s.label).map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
               ))}
             </select>
@@ -201,10 +202,10 @@ export const EditLeadModal = ({ isOpen, onClose, lead, onSave }) => {
               value={formData.commercial_attribue}
               onChange={(e) => setFormData({ ...formData, commercial_attribue: e.target.value })}
             >
-              <option value="Koffi Serge">Koffi Serge</option>
               <option value="Awa Kone">Awa Kone</option>
-              <option value="Mamadou Diarra">Mamadou Diarra</option>
               <option value="Franck Gnogouri">Franck Gnogouri</option>
+              <option value="Koffi Serge">Koffi Serge</option>
+              <option value="Mamadou Diarra">Mamadou Diarra</option>
             </select>
           </div>
           <div>

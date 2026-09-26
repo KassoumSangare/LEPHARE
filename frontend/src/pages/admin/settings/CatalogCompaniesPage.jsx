@@ -135,10 +135,10 @@ export const CatalogCompaniesPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Building2 size={26} color="#3b82f6" />
-            Compagnies d'Assurance Partenaires
+            Compagnies partenaires
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Gestion des agréments, codes passerelle ASACI et protocoles de reversement.
+            Les assureurs avec qui le cabinet travaille : agréments, codes ASACI, modalités de reversement.
           </p>
         </div>
 
@@ -264,8 +264,8 @@ export const CatalogCompaniesPage = () => {
                   value={selectedCompany.statut}
                   onChange={(e) => setSelectedCompany({ ...selectedCompany, statut: e.target.value })}
                 >
-                  <option value="Partenaire Actif">Partenaire Actif</option>
                   <option value="En Révision Convention">En Révision Convention</option>
+                  <option value="Partenaire Actif">Partenaire Actif</option>
                   <option value="Suspendu">Suspendu</option>
                 </select>
               </div>

@@ -5,7 +5,7 @@ import { customerApi, settingsApi, contractApi, voyageApi } from '../../../api/e
 import { useToast } from '../../../context/ToastContext';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import {
   Plane,
   Shield,
@@ -563,7 +563,7 @@ export const NewVoyageQuotePage = () => {
                 onChange={(e) => setCategorieTarif(parseInt(e.target.value))}
               >
                 {tarifsVoyage && tarifsVoyage.length > 0 ? (
-                  tarifsVoyage.map((t) => (
+                  trierParLibelle(tarifsVoyage, (t) => t.LibelleTarif || t.libelle).map((t) => (
                     <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif || t.libelle}</option>
                   ))
                 ) : (

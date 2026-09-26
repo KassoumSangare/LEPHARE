@@ -61,7 +61,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
         cedeao: quote.cedeao || 0,
         prime_ttc: formData.prime_totale,
       });
-      success(`Devis ${quote.numerodevis} ajusté avec succès.`);
+      success(`Devis ${quote.numerodevis} modifié avec succès.`);
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -75,7 +75,7 @@ export const EditQuoteModal = ({ isOpen, onClose, quote, onSuccess }) => {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Ajuster le Devis [${quote.numerodevis}]`}
+      title={`Modifier le Devis [${quote.numerodevis}]`}
       size="medium"
     >
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

@@ -162,14 +162,10 @@ export const TypeAssurePage = () => {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-            Types d'Assuré
+            Types d'assuré
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0.3rem 0 0 0' }}>
-            Table{' '}
-            <code style={{ background: 'rgba(251,146,60,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-              stdtypeassure
-            </code>{' '}
-            — Référentiel Assurance
+            Catégories de personnes ou de biens assurés.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.65rem' }}>

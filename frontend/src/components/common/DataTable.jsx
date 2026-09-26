@@ -2,6 +2,42 @@ import { LoadingSpinner } from './LoadingSpinner';
 import React, { useState, useMemo } from 'react';
 import { Search, ChevronLeft, ChevronRight, Inbox, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
+// Texte lisible d'un contenu de cellule (chaîne, nombre ou élément React) : sert à trier les
+// colonnes qui n'ont qu'un rendu (render) sans accessor
+const texteDe = (noeud) => {
+  if (noeud === null || noeud === undefined || typeof noeud === 'boolean') return '';
+  if (typeof noeud === 'string' || typeof noeud === 'number') return String(noeud);
+  if (Array.isArray(noeud)) return noeud.map(texteDe).join(' ').trim();
+  if (React.isValidElement(noeud)) {
+    const { children, status, label, value, text } = noeud.props || {};
+    if (children !== undefined) return texteDe(children);
+    return texteDe(status ?? label ?? value ?? text);
+  }
+  return '';
+};
+
+// Valeur comparable : date JJ/MM/AAAA -> AAAAMMJJ, montant « 1 234 567 FCFA » ou « 35 % » -> nombre
+const MOTIF_DATE = /^(\d{2})[/-](\d{2})[/-](\d{4})/;
+const MOTIF_MONTANT = /^-?[\d\s  ]+([.,]\d+)?\s*(F|FCFA|F CFA|XOF|%)?$/i;
+const normaliser = (v) => {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  const date = t.match(MOTIF_DATE);
+  if (date) return Number(`${date[3]}${date[2]}${date[1]}`);
+  if (t && MOTIF_MONTANT.test(t)) return Number(t.replace(/[^\d,.-]/g, '').replace(',', '.'));
+  return t;
+};
+
+// Comme dans le registre des devis, toute colonne portant une valeur se trie par un clic sur son
+// en-tête ; exceptions : sortable: false, colonnes d'actions et colonnes sans en-tête (cases à cocher)
+const estTriable = (col) => {
+  if (!col || col.sortable === false) return false;
+  if (col.sortable) return true;
+  const entete = texteDe(col.header).trim();
+  if (!entete || /^actions?$/i.test(entete)) return false;
+  return Boolean(col.sortAccessor || col.accessor || col.render);
+};
+
 export const DataTable = ({
   columns = [],
   data = [],
@@ -34,7 +70,8 @@ export const DataTable = ({
 
   const getSortValue = (col, row) => {
     if (col.sortAccessor) return col.sortAccessor(row);
-    if (col.accessor) return row[col.accessor];
+    if (col.accessor) return normaliser(row[col.accessor]);
+    if (col.render) return normaliser(texteDe(col.render(row)));
     return '';
   };
 
@@ -62,7 +99,7 @@ export const DataTable = ({
 
   const handleSort = (colIdx) => {
     const col = columns[colIdx];
-    if (!col || !col.sortable) return;
+    if (!estTriable(col)) return;
     setSortConfig((prev) => {
       if (prev.index === colIdx) {
         return { index: colIdx, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
@@ -122,15 +159,15 @@ export const DataTable = ({
                     style={{
                       textAlign: col.align || 'left',
                       width: col.width,
-                      cursor: col.sortable ? 'pointer' : 'default',
+                      cursor: estTriable(col) ? 'pointer' : 'default',
                       userSelect: 'none',
                     }}
                     onClick={() => handleSort(idx)}
-                    title={col.sortable ? 'Cliquer pour trier' : undefined}
+                    title={estTriable(col) ? 'Cliquer pour trier' : undefined}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
                       {col.header}
-                      {col.sortable && (
+                      {estTriable(col) && (
                         isSorted ? (
                           sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
                         ) : (

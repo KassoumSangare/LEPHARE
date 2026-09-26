@@ -202,14 +202,10 @@ export const SecteursActivitePage = () => {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
-            Secteurs d'Activité Économique
+            Secteurs d'activité
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem', margin: '0.3rem 0 0 0' }}>
-            Table{' '}
-            <code style={{ background: 'rgba(99,102,241,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-              stdsecteuractivite
-            </code>{' '}
-            — Référentiel CIMA
+            Secteurs d'activité des entreprises clientes.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.65rem' }}>
@@ -277,7 +273,7 @@ export const SecteursActivitePage = () => {
               style={{ textTransform: 'uppercase' }}
             />
             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-              Sera enregistré en majuscules dans la table stdsecteuractivite.
+              Sera enregistré en majuscules.
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>

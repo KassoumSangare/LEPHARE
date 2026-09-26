@@ -317,10 +317,10 @@ export const ProfileManagementPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <ShieldCheck size={26} color="#8b5cf6" />
-            Profils d'Habilitation & Rôles
+            Profils
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Définition des profils de souscription, des habilitations modulaires et des plafonds de dérogation.
+            Les profils types (direction, production, caisse…), leurs droits et leurs plafonds de dérogation.
           </p>
         </div>
 
@@ -453,9 +453,9 @@ export const ProfileManagementPage = () => {
                 value={formData.space}
                 onChange={(e) => setFormData({ ...formData, space: e.target.value })}
               >
-                <option value="USER">Espace Opérateur (Devis, Polices, ASACI, Caisse)</option>
-                <option value="ADMIN">Espace Administration (Direction, CIMA, Reversements)</option>
                 <option value="ALL">Accès Global (Opérateur + Administration)</option>
+                <option value="ADMIN">Espace Administration (Direction, CIMA, Reversements)</option>
+                <option value="USER">Espace Opérateur (Devis, Polices, ASACI, Caisse)</option>
               </select>
             </div>
 

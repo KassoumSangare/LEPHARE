@@ -1,6 +1,8 @@
 from django.urls import include, path
 from rest_framework import routers
 
+from .views_devis_ia import enregistrer_devis_ia_complet
+from .views_devis_risques_divers import lire_devis_risques_divers
 from .importation_views import (
     ImportAssuresAPIView,
     ImportsHistoriqueDetailAPIView,
@@ -64,6 +66,7 @@ from .views import (  # cancel_premium_collection,
     NumeroViewSet,
     OptionViewSet,
     PieceJointeViewSet,
+    BrouillonViewSet,
     PrimeUpdateAPIView,
     QuittanceContratView,
     QuittancePropositionView,
@@ -122,6 +125,7 @@ router.register(r"devisdetgarantie", DevisDetGarantieViewSet)
 router.register(r"tarifecran", TarifEcranViewSet)
 router.register(r"contrat", ContratViewSet)
 router.register(r"pieces-jointes", PieceJointeViewSet, basename="piecejointe")
+router.register(r"brouillons", BrouillonViewSet, basename="brouillon")
 router.register(r"contratdetgarantie", ContratDetGarantieViewSet)
 router.register(r"quittance", QuittanceViewSet)
 router.register(r"detailquittance", DetailQuittanceViewSet)
@@ -200,6 +204,18 @@ urlpatterns = [
         r"enregistrementdevisia",
         create_quotation_ia,
         name="enregistrement_devis_ia",
+    ),
+    # Devis RC / Multirisque professionnelle : valeurs saisies sur la ligne (« Modifier »)
+    path(
+        r"devisrisquesdivers/<int:iddevis>/",
+        lire_devis_risques_divers,
+        name="lecture_devis_risques_divers",
+    ),
+    # Devis IA complet (création / « Modifier ») en une transaction
+    path(
+        r"devisia/enregistrement/",
+        enregistrer_devis_ia_complet,
+        name="enregistrement_devis_ia_complet",
     ),
     path(
         r"enregistrementdevisvoyage",

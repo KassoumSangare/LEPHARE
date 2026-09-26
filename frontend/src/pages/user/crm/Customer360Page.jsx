@@ -210,9 +210,9 @@ export const Customer360Page = () => {
             <span className="badge badge-info">Module C – CRM Fiche 360°</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Vue Institutionnelle Unique</span>
           </div>
-          <h1 className="title-xl">Dossier Relation Client 360°</h1>
+          <h1 className="title-xl">Fiche client complète</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Centralisation intégrale des contrats, déclarations de sinistres, encaissements et historiques d'échanges.
+            Tout sur un client : devis, contrats, sinistres et paiements.
           </p>
         </div>
 
@@ -754,9 +754,9 @@ export const Customer360Page = () => {
             >
               <option value="Appel Téléphonique">Appel Téléphonique</option>
               <option value="Email">Email</option>
-              <option value="Visite Agence">Visite Agence</option>
-              <option value="Réunion Clientèle">Réunion Clientèle</option>
               <option value="Réclamation Écrite">Réclamation Écrite (SLA 48h)</option>
+              <option value="Réunion Clientèle">Réunion Clientèle</option>
+              <option value="Visite Agence">Visite Agence</option>
             </select>
           </div>
 

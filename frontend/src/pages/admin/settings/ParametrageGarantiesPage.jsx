@@ -289,10 +289,10 @@ export const ParametrageGarantiesPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Shield size={28} color="#3b82f6" />
-            Paramétrage des Garanties & Sous-Garanties (OREOLE)
+            Garanties & sous-garanties
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Tables <code>stdgarantie</code> et <code>stdsousgarantie</code> — référentiel réel, modifiable ici. Pour lier une garantie à une offre précise (franchises, compagnie), voir « Catalogue Offres &amp; Packages ».
+            La liste de toutes les garanties utilisables dans les offres ; pour en rattacher une à une offre, voir « Offres ».
           </p>
         </div>
 

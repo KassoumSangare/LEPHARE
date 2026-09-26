@@ -19,3 +19,15 @@ export const sortUniqueBy = (list, getKey) => {
     String(getKey(a) ?? '').localeCompare(String(getKey(b) ?? ''), 'fr-FR', { sensitivity: 'base' })
   );
 };
+
+/**
+ * Trie une liste de A à Z sur son libellé (locale FR, insensible à la casse/accents, ordre
+ * naturel des nombres : « 3 mois » avant « 12 mois ») sans retirer de doublons — deux clients
+ * homonymes restent deux lignes distinctes. Ne mute pas le tableau d'origine.
+ */
+export const trierParLibelle = (list, getLabel) => {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) =>
+    String(getLabel(a) ?? '').localeCompare(String(getLabel(b) ?? ''), 'fr-FR', { sensitivity: 'base', numeric: true })
+  );
+};

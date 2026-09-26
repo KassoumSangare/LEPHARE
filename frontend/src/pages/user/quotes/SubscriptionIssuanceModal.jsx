@@ -208,8 +208,8 @@ export const SubscriptionIssuanceModal = ({
               >
                 <option value="1_an">1 An ferme (365 jours)</option>
                 <option value="6_mois">Semestrielle (6 mois)</option>
-                <option value="3_mois">Trimestrielle (3 mois)</option>
                 <option value="1_mois">Temporaire (30 jours)</option>
+                <option value="3_mois">Trimestrielle (3 mois)</option>
               </select>
             </div>
 
@@ -222,8 +222,8 @@ export const SubscriptionIssuanceModal = ({
                 value={conventionVersion}
                 onChange={(e) => setConventionVersion(e.target.value)}
               >
-                <option value="CONV-2026-V2.1 (Avenant CIMA)">CONV-2026-V2.1 (Avenant CIMA)</option>
                 <option value="CONV-2025-V1.4 (Standard)">CONV-2025-V1.4 (Standard)</option>
+                <option value="CONV-2026-V2.1 (Avenant CIMA)">CONV-2026-V2.1 (Avenant CIMA)</option>
               </select>
             </div>
           </div>
@@ -238,10 +238,10 @@ export const SubscriptionIssuanceModal = ({
                 value={modeReglement}
                 onChange={(e) => setModeReglement(e.target.value)}
               >
-                <option value="ESPECES">Espèces (Guichet)</option>
                 <option value="CHEQUE">Chèque bancaire</option>
-                <option value="VIREMENT">Virement bancaire</option>
+                <option value="ESPECES">Espèces (Guichet)</option>
                 <option value="MOBILE_MONEY">Mobile Money (Wave / Orange / MTN)</option>
+                <option value="VIREMENT">Virement bancaire</option>
               </select>
             </div>
 

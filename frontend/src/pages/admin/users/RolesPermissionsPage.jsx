@@ -34,10 +34,10 @@ export const RolesPermissionsPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Lock size={26} color="#8b5cf6" />
-            Matrice des Habilitations & Permissions
+            Droits d'accès détaillés
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Contrôle d'accès basé sur les rôles (RBAC) pour chaque opération sensible de l'API.
+            Le tableau complet des droits, opération par opération.
           </p>
         </div>
 

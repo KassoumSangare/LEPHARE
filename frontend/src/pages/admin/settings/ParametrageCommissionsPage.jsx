@@ -128,10 +128,10 @@ export const ParametrageCommissionsPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Coins size={28} color="#34d399" />
-            Paramétrage des Taux de Commission CIMA (OREOLE)
+            Taux de commission
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Règles d'attribution des commissions de courtage et rétrocession commerciale par branche et compagnie mandataire.
+            Taux de commission du cabinet par branche et par compagnie.
           </p>
         </div>
 

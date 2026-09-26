@@ -364,10 +364,10 @@ export const VehicleGeoSettingsPage = () => {
           </div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Globe size={26} color="#3b82f6" />
-            Référentiels Véhicules, Territoires, Voyage & Transport
+            Véhicules, zones, voyage & transport
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Paramétrage complet des genres automobiles, zonages géographiques, grilles voyage et logistique transport.
+            Genres de véhicules, zones géographiques, grilles Voyage et Transport.
           </p>
         </div>
 

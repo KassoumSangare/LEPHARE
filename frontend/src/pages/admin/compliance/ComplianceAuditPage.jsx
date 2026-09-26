@@ -177,9 +177,9 @@ export const ComplianceAuditPage = () => {
             <span className="badge badge-success">Module K – Conformité & Audit</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Réglementation CIMA Livre V</span>
           </div>
-          <h1 className="title-xl">Gouvernance, Conformité & Audit Trail</h1>
+          <h1 className="title-xl">Conformité & audit</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Gestion de l'agrément ministériel, garantie financière bancaire de 50M FCFA et journal d'audit inviolable.
+            Agrément, garantie financière de 50 M FCFA et journal de toutes les opérations.
           </p>
         </div>
 
@@ -335,9 +335,9 @@ export const ComplianceAuditPage = () => {
                 onChange={(e) => setSelectedGravite(e.target.value)}
               >
                 <option value="ALL">Toutes gravités</option>
-                <option value="NORMALE">Normale</option>
-                <option value="ELEVEE">Élevée</option>
                 <option value="CRITIQUE">Critique</option>
+                <option value="ELEVEE">Élevée</option>
+                <option value="NORMALE">Normale</option>
               </select>
             </div>
 

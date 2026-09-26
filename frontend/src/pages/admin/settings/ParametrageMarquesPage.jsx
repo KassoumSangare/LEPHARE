@@ -157,10 +157,10 @@ export const ParametrageMarquesPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Car size={28} color="#38bdf8" />
-            Paramétrage des Marques de Véhicules (OREOLE)
+            Marques de véhicules
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Référentiel officiel des constructeurs et marques automobiles utilisé lors de la tarification et de l'immatriculation CIMA.
+            Liste des marques proposées lors de la saisie du véhicule.
           </p>
         </div>
 
@@ -235,11 +235,11 @@ export const ParametrageMarquesPage = () => {
               value={marqueForm.categorie}
               onChange={(e) => setMarqueForm({ ...marqueForm, categorie: e.target.value })}
             >
-              <option value="VP">Véhicules Particuliers (VP)</option>
-              <option value="VP / 4x4">VP / SUV / 4x4</option>
+              <option value="Deux-Roues">Deux-Roues & Motocyclettes</option>
               <option value="Pick-up / Utilitaire">Pick-up / Véhicules Utilitaires Légers</option>
               <option value="Poids Lourd / Camion">Poids Lourds & Transports de Marchandises</option>
-              <option value="Deux-Roues">Deux-Roues & Motocyclettes</option>
+              <option value="VP">Véhicules Particuliers (VP)</option>
+              <option value="VP / 4x4">VP / SUV / 4x4</option>
             </select>
           </div>
 

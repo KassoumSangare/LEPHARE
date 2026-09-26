@@ -599,10 +599,10 @@ export const PolicyMovementModal = ({
                           value={modePaiement}
                           onChange={(e) => setModePaiement(e.target.value)}
                         >
-                          <option value="ESPECES">Espèces / Caisse</option>
                           <option value="CHEQUE">Chèque Bancaire</option>
-                          <option value="VIREMENT">Virement Bancaire</option>
+                          <option value="ESPECES">Espèces / Caisse</option>
                           <option value="MOBILE_MONEY">Mobile Money (Wave / Orange)</option>
+                          <option value="VIREMENT">Virement Bancaire</option>
                         </select>
                       </div>
                       <div>
@@ -653,11 +653,11 @@ export const PolicyMovementModal = ({
                     value={avenantType}
                     onChange={(e) => setAvenantType(e.target.value)}
                   >
-                    <option value="immatriculation">Changement d'immatriculation / Numéro de plaque</option>
-                    <option value="garanties">Modification / Adjonction de garanties</option>
-                    <option value="adresse">Changement de zone géographique ou d'adresse</option>
-                    <option value="beneficiaire">Changement de bénéficiaire / Souscripteur</option>
                     <option value="autre">Autre modification des conditions particulières</option>
+                    <option value="immatriculation">Changement d'immatriculation / Numéro de plaque</option>
+                    <option value="beneficiaire">Changement de bénéficiaire / Souscripteur</option>
+                    <option value="adresse">Changement de zone géographique ou d'adresse</option>
+                    <option value="garanties">Modification / Adjonction de garanties</option>
                   </select>
                 </div>
 
@@ -822,14 +822,14 @@ export const PolicyMovementModal = ({
                     <option value="Défaut de paiement de la prime (Article 13 CIMA)">
                       Défaut de paiement de la prime (Article 13 CIMA)
                     </option>
-                    <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
-                      Vente ou cession du véhicule assuré (Art. 25 CIMA)
-                    </option>
                     <option value="Perte totale du véhicule ou sinistre destructeur">
                       Perte totale / Destruction suite à sinistre
                     </option>
                     <option value="Résiliation amiable contradictoire à échéance">
                       Résiliation amiable contradictoire
+                    </option>
+                    <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
+                      Vente ou cession du véhicule assuré (Art. 25 CIMA)
                     </option>
                   </select>
                 </div>

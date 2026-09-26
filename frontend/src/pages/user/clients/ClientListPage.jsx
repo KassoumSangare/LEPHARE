@@ -11,6 +11,7 @@ import { canUser } from '../../../utils/rbac';
 import { Users, Plus, Phone, Mail, MapPin, Building, User, Eye, Edit2, Archive, Printer, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { exportToPdf, printFicheClient } from '../../../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
+import { trierParLibelle } from '../../../utils/sortUtils';
 
 export const ClientListPage = () => {
   const { user } = useAuth();
@@ -779,7 +780,7 @@ export const ClientListPage = () => {
                     value={formData.IdQualite}
                     onChange={(e) => setFormData({ ...formData, IdQualite: Number(e.target.value) })}
                   >
-                    {refData.qualites.map((q) => (
+                    {trierParLibelle(refData.qualites, (q) => q.Libelle).map((q) => (
                       <option key={q.IdQualite} value={q.IdQualite}>
                         {q.Libelle}
                       </option>
@@ -946,7 +947,7 @@ export const ClientListPage = () => {
                       setFormData({ ...formData, IdVille: id, ville: selected ? selected.Libelle : 'Abidjan' });
                     }}
                   >
-                    {refData.villes.map((v) => (
+                    {trierParLibelle(refData.villes, (v) => v.Libelle).map((v) => (
                       <option key={v.IdVille} value={v.IdVille}>
                         {v.Libelle}
                       </option>
@@ -1028,7 +1029,7 @@ export const ClientListPage = () => {
                     }}
                   >
                     <option value="">-- Sélectionner une profession --</option>
-                    {refData.professions.map((p) => (
+                    {trierParLibelle(refData.professions, (p) => `${p.Libelle} ${p.CodeProfession ? `(${p.CodeProfession})` : ''}`).map((p) => (
                       <option key={p.IdProfession} value={p.IdProfession}>
                         {p.Libelle} {p.CodeProfession ? `(${p.CodeProfession})` : ''}
                       </option>
@@ -1062,7 +1063,7 @@ export const ClientListPage = () => {
                     onChange={(e) => setFormData({ ...formData, IdSecteurActivite: e.target.value ? Number(e.target.value) : '' })}
                   >
                     <option value="">-- Sélectionner un secteur --</option>
-                    {refData.secteurs.map((s) => (
+                    {trierParLibelle(refData.secteurs, (s) => s.Libelle || s.LibelleSecteurActivite || s.libelle).map((s) => (
                       <option key={s.IdSecteurActivite} value={s.IdSecteurActivite}>
                         {s.Libelle || s.LibelleSecteurActivite || s.libelle}
                       </option>
@@ -1084,7 +1085,7 @@ export const ClientListPage = () => {
                     value={formData.idtypeclient}
                     onChange={(e) => setFormData({ ...formData, idtypeclient: Number(e.target.value) })}
                   >
-                    {refData.typesSouscripteur.map((ts) => (
+                    {trierParLibelle(refData.typesSouscripteur, (ts) => `${ts.libelle_type} (${ts.code_type})`).map((ts) => (
                       <option key={ts.id} value={ts.id}>
                         {ts.libelle_type} ({ts.code_type})
                       </option>
@@ -1099,7 +1100,7 @@ export const ClientListPage = () => {
                     value={formData.idtypeassure}
                     onChange={(e) => setFormData({ ...formData, idtypeassure: Number(e.target.value) })}
                   >
-                    {refData.typesAssure.map((ta) => (
+                    {trierParLibelle(refData.typesAssure, (ta) => `${ta.libelle_type} (${ta.code_type})`).map((ta) => (
                       <option key={ta.id} value={ta.id}>
                         {ta.libelle_type} ({ta.code_type})
                       </option>
@@ -1129,8 +1130,8 @@ export const ClientListPage = () => {
                     onChange={(e) => setFormData({ ...formData, Statut: e.target.value })}
                   >
                     <option value="V">Actif (Validé)</option>
-                    <option value="S">Suspendu</option>
                     <option value="A">Archivé</option>
+                    <option value="S">Suspendu</option>
                   </select>
                 </div>
 

@@ -691,7 +691,7 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+                "CALL sp_creation_devis_tousrisquesinfo(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
                     IdIntermediaire,
                     IdCompagnie,
@@ -710,6 +710,9 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
                     CapitalMaterielInformatique,
                     CapitalFraisReconstitution,
                     CapitalFraisSupplementaire,
+                    # La procédure attend le capital cautionnement ici (25 paramètres) :
+                    # sans lui l'appel échouait (« procédure inexistante »)
+                    CapitalCautionnement,
                     MontantPrime,
                     IdDuree,
                     TelephoneAssure,

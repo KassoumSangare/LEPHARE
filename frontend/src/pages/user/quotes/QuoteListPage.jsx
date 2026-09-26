@@ -11,7 +11,7 @@ import { EditQuoteModal } from './EditQuoteModal';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { SubscriptionIssuanceModal } from './SubscriptionIssuanceModal';
 import { dataStore } from '../../../api/dataStore';
-import { quoteApi, contractApi } from '../../../api/endpoints';
+import { quoteApi, contractApi, brouillonApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
@@ -34,6 +34,8 @@ import {
   Layers,
   Printer,
   RefreshCw,
+  Shield,
+  Building2,
 } from 'lucide-react';
 
 const formatDateTime = (value) => {
@@ -72,6 +74,25 @@ export const QuoteListPage = () => {
   const [consolidating, setConsolidating] = useState(false);
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
+
+  // Devis auto non terminés, enregistrés en brouillon (table lephare_brouillon)
+  const [brouillons, setBrouillons] = useState([]);
+  useEffect(() => {
+    brouillonApi.list({ type_brouillon: 'DEVIS_AUTO' })
+      .then((liste) => setBrouillons(Array.isArray(liste) ? liste : []))
+      .catch((e) => console.warn('Chargement des brouillons impossible', e));
+  }, []);
+  const supprimerBrouillon = async (brouillon) => {
+    if (!window.confirm(`Supprimer définitivement le brouillon « ${brouillon.libelle || brouillon.id} » ?`)) return;
+    try {
+      await brouillonApi.remove(brouillon.id);
+      setBrouillons((prev) => prev.filter((b) => b.id !== brouillon.id));
+      success('Brouillon supprimé.');
+    } catch (e) {
+      toastError("Le brouillon n'a pas pu être supprimé.");
+    }
+  };
+  const ETAPES_DEVIS_AUTO = { 1: '1. Contrat', 2: '2. Véhicule', 3: '3. Offre & décompte', 4: '4. Client / conducteur' };
 
   const isEligibleForConsolidation = (q) =>
     !q.flotte && !q.confirme && !q.archive && !q.devis_consolide;
@@ -491,11 +512,23 @@ export const QuoteListPage = () => {
             }
             onConfirm={() => handleConvertContract(row)}
             onEdit={() => {
-              // Auto : édition complète (véhicule + garanties), réutilise le formulaire de
-              // création préchargé avec le devis existant. Autres branches : primes seulement
+              // Auto, MRH (4), IA (2), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire de création est
+              // rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
               // (aucune page d'édition complète construite pour elles pour l'instant).
+              const produit = row.raw?.produit;
+              const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
               if (getBranchOf(row) === 'AUTO') {
                 navigate(`/user/quotes/auto?edit=${row.iddevis}`);
+              } else if (idProduit === 4) {
+                navigate(`/user/quotes/mrh?edit=${row.iddevis}`);
+              } else if (idProduit === 2) {
+                navigate(`/user/quotes/ia?edit=${row.iddevis}`);
+              } else if (idProduit === 8) {
+                navigate(`/user/quotes/rc?edit=${row.iddevis}`);
+              } else if (idProduit === 7) {
+                navigate(`/user/quotes/mrp?edit=${row.iddevis}`);
+              } else if (idProduit === 9) {
+                navigate(`/user/quotes/tous-dommages?edit=${row.iddevis}`);
               } else {
                 setEditingQuote(row);
               }
@@ -504,7 +537,7 @@ export const QuoteListPage = () => {
             editTitle={
               isConsolidated
                 ? 'Devis consolidé scellé (non modifiable)'
-                : (canEdit ? 'Ajuster le devis' : 'Non habilité pour la modification')
+                : (canEdit ? 'Modifier le devis' : 'Non habilité pour la modification')
             }
             onArchive={() => {
               const check = validateBusinessRule('delete', 'quotes', row, dataStore);
@@ -570,6 +603,18 @@ export const QuoteListPage = () => {
             <UserPlus size={16} />
             <span>Devis IA</span>
           </button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/rc')}>
+            <Shield size={16} />
+            <span>Devis RC</span>
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/mrp')}>
+            <Building2 size={16} />
+            <span>Devis MRP</span>
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/tous-dommages')}>
+            <Layers size={16} />
+            <span>Devis Tous Dommages</span>
+          </button>
         </div>
       </div>
 
@@ -595,6 +640,40 @@ export const QuoteListPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Brouillons en cours : devis non terminés, à reprendre là où la saisie s'était arrêtée */}
+      {brouillons.length > 0 && (
+        <div className="glass-panel" style={{ padding: '1rem 1.25rem', borderRadius: '12px', borderLeft: '4px solid #f59e0b' }}>
+          <div style={{ fontWeight: 800, marginBottom: '0.75rem', color: '#f59e0b' }}>
+            Brouillons en cours ({brouillons.length})
+          </div>
+          <DataTable
+            searchable={false}
+            itemsPerPage={5}
+            data={brouillons}
+            columns={[
+              { header: 'Brouillon', accessor: 'libelle', render: (b) => <strong>{b.libelle || `Brouillon n°${b.id}`}</strong> },
+              { header: 'Étape atteinte', accessor: 'etape', render: (b) => ETAPES_DEVIS_AUTO[b.etape] || b.etape },
+              { header: 'Devis modifié', accessor: 'iddevis', render: (b) => (b.iddevis ? `Devis n°${b.iddevis}` : 'Nouveau devis') },
+              { header: 'Par', accessor: 'utilisateur_nom' },
+              { header: 'Dernière modification', accessor: 'date_modification', render: (b) => new Date(b.date_modification).toLocaleString('fr-FR') },
+              {
+                header: 'Actions',
+                render: (b) => (
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button type="button" className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => navigate(`/user/quotes/auto?brouillon=${b.id}`)}>
+                      Reprendre
+                    </button>
+                    <button type="button" className="btn btn-secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem', color: '#ef4444' }} onClick={() => supprimerBrouillon(b)}>
+                      Supprimer
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </div>
+      )}
 
       {/* Branch Filter Tabs with Direct Print Button on Each Tab */}
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>

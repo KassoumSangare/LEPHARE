@@ -200,9 +200,9 @@ export const CrmPipelinePage = () => {
             <span className="badge badge-info">Module C – CRM & Pipeline</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>LE PHARE V2</span>
           </div>
-          <h1 className="title-xl">Prospection & Pipeline Commercial</h1>
+          <h1 className="title-xl">Suivi commercial</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Suivi 360° du cycle d'acquisition, transformation de leads et relances commerciales.
+            Prospects et affaires en cours, étape par étape.
           </p>
         </div>
 
@@ -279,10 +279,10 @@ export const CrmPipelinePage = () => {
             >
               <option value="ALL">Toutes branches</option>
               <option value="Automobile">Automobile</option>
-              <option value="Flotte Auto">Flotte Auto</option>
-              <option value="Santé Groupe">Santé Groupe</option>
-              <option value="Multirisque Habitation">MRH</option>
               <option value="Multirisque Entreprise">Entreprise</option>
+              <option value="Flotte Auto">Flotte Auto</option>
+              <option value="Multirisque Habitation">MRH</option>
+              <option value="Santé Groupe">Santé Groupe</option>
             </select>
           </div>
         </div>
@@ -629,10 +629,10 @@ export const CrmPipelinePage = () => {
               >
                 <option value="Automobile">Automobile</option>
                 <option value="Flotte Auto">Flotte Auto</option>
-                <option value="Santé Groupe">Santé Groupe</option>
-                <option value="Multirisque Habitation">Multirisque Habitation</option>
                 <option value="Multirisque Entreprise">Multirisque Entreprise</option>
+                <option value="Multirisque Habitation">Multirisque Habitation</option>
                 <option value="Responsabilité Civile">Responsabilité Civile</option>
+                <option value="Santé Groupe">Santé Groupe</option>
               </select>
             </div>
             <div className="form-group">
@@ -654,10 +654,10 @@ export const CrmPipelinePage = () => {
                 value={newLead.commercial_attribue}
                 onChange={(e) => setNewLead({ ...newLead, commercial_attribue: e.target.value })}
               >
-                <option value="Koffi Serge">Koffi Serge (Direct)</option>
-                <option value="Yao Marc">Yao Marc (Grand Comptes)</option>
-                <option value="Kouadio Estelle">Kouadio Estelle (Courtage)</option>
                 <option value="Cabinet Alpha Courtage">Cabinet Alpha (Apporteur)</option>
+                <option value="Koffi Serge">Koffi Serge (Direct)</option>
+                <option value="Kouadio Estelle">Kouadio Estelle (Courtage)</option>
+                <option value="Yao Marc">Yao Marc (Grand Comptes)</option>
               </select>
             </div>
             <div className="form-group">

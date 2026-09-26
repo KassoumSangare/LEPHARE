@@ -145,10 +145,10 @@ export const ApprovalCenterPage = () => {
       <div>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <CheckCheck size={26} color="#8b5cf6" />
-          Centre d'Approbation des Dérogations
+          Demandes à valider
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          Validation des remises commerciales, annulations de quittances et génération des jetons sécurisés.
+          Remises commerciales, annulations de quittances et autres dérogations qui attendent votre accord.
         </p>
       </div>
 

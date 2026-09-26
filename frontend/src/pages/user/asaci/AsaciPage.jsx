@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   Printer,
 } from 'lucide-react';
+import { trierParLibelle } from '../../../utils/sortUtils';
 
 export const AsaciPage = () => {
   const [activeTab, setActiveTab] = useState('attestations'); // 'attestations' | 'demandes' | 'passerelle'
@@ -598,7 +599,7 @@ export const AsaciPage = () => {
               required
             >
               <option value="">-- Choisir une police d'assurance --</option>
-              {contracts.map((c) => {
+              {trierParLibelle(contracts, (c) => c.numeropolice || '').map((c) => {
                 const id = c.idcontrat || c.id;
                 const sold = Number(c.montant_encaisse || 0) >= Number(c.prime_totale || c.primettc || 0);
                 return (

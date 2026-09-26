@@ -224,10 +224,10 @@ export const CompanyRemittancePage = () => {
           </div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Building2 size={26} color="#3b82f6" />
-            Reversements aux Compagnies d'Assurance
+            Reversements aux compagnies
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Bordereaux de compensation légale, déduction des commissions de courtage et ordres de virement sous 30 jours (Art. 544 CIMA).
+            Primes encaissées à reverser aux compagnies, commissions déduites, sous 30 jours (règle CIMA).
           </p>
         </div>
 
@@ -411,13 +411,13 @@ export const CompanyRemittancePage = () => {
                 value={createForm.compagnie}
                 onChange={(e) => setCreateForm({ ...createForm, compagnie: e.target.value })}
               >
-                <option value="NSIA Assurances CI">NSIA Assurances CI</option>
-                <option value="SUNU Assurances CI">SUNU Assurances CI</option>
-                <option value="SANLAM Assurances CI">SANLAM Assurances CI</option>
                 <option value="ALLIANZ Côte d'Ivoire">ALLIANZ Côte d'Ivoire</option>
-                <option value="WAFA Assurance CI">WAFA Assurance CI</option>
                 <option value="ATLANTIQUE Assurances CI">ATLANTIQUE Assurances CI</option>
                 <option value="GNA Assurances">GNA Assurances</option>
+                <option value="NSIA Assurances CI">NSIA Assurances CI</option>
+                <option value="SANLAM Assurances CI">SANLAM Assurances CI</option>
+                <option value="SUNU Assurances CI">SUNU Assurances CI</option>
+                <option value="WAFA Assurance CI">WAFA Assurance CI</option>
               </select>
             </div>
           </div>

@@ -136,10 +136,10 @@ export const ParametrageTaxesPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Percent size={28} color="#fbbf24" />
-            Paramétrage des Taux de Taxes CIMA & Fiscalité (OREOLE)
+            Taxes
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Barème fiscal des taxes sur les conventions d'assurance (TCA), fonds de garantie (FGA) et exonérations selon le Code CIMA et CGI.
+            Taux de taxe sur les contrats d'assurance, fonds de garantie automobile (FGA) et exonérations.
           </p>
         </div>
 
@@ -256,10 +256,10 @@ export const ParametrageTaxesPage = () => {
               >
                 <option value="Automobile">Automobile</option>
                 <option value="Incendie (MRH)">Incendie (MRH)</option>
+                <option value="Individuelle Accident">Individuelle Accident</option>
                 <option value="Santé Groupe">Santé Groupe</option>
                 <option value="Transport">Transport</option>
                 <option value="Voyage">Voyage</option>
-                <option value="Individuelle Accident">Individuelle Accident</option>
               </select>
             </div>
           </div>

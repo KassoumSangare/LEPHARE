@@ -111,6 +111,7 @@ from .exceltopostgresql import export_excel
 from .import_assures import import_ia_insured, insert_new_assure
 from sante.models import Adherent, Affilie
 from .models import (
+    Brouillon,
     AyantDroitIa,
     CertificatTransport,
     Cheque,
@@ -134,6 +135,7 @@ from .models import (
     TarifEcran,
 )
 from .serializers import (  # Serializers requêtes; Serializers réponses
+    BrouillonSerializer,
     AssureIaInfoSerializer,
     AssureIaParDevisOuContratSerializer,
     AvenantAnlRenSerializer,
@@ -209,7 +211,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     TransformerSanteEnIASerializer,
     VehiculeContratSerializer,
 )
-from .services.mrh_calcul_service import MRHCalculService
+from .services.mrh_calcul_service import MRHCalculService, calculer_date_expiration
 from .services.resume_financier_devis import obtenir_resume_financier_devis
 from .tasks import send_sms_enregistrement_contrat
 
@@ -289,6 +291,28 @@ class EncaissementRechercheView(generics.ListCreateAPIView):
             else:
                 return Encaissement.objects.none()
         return super().get_queryset()
+
+
+class BrouillonViewSet(viewsets.ModelViewSet):
+    """
+    Brouillons de saisie (devis non terminés, modifications de contrat) enregistrés en base
+    pour être repris depuis n'importe quel poste. Filtres : ?type_brouillon=DEVIS_AUTO,
+    ?iddevis=…, ?idcontrat=…
+    """
+
+    serializer_class = BrouillonSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Brouillon.objects.select_related("utilisateur").all()
+        for champ in ("type_brouillon", "iddevis", "idcontrat"):
+            valeur = self.request.query_params.get(champ)
+            if valeur:
+                qs = qs.filter(**{champ: valeur})
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(utilisateur=self.request.user if self.request.user.is_authenticated else None)
 
 
 class PieceJointeViewSet(viewsets.ModelViewSet):
@@ -2098,7 +2122,7 @@ class NumeroViewSet(viewsets.ModelViewSet):
 
 # Create a new quotation (Car Insurance)
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def create_quotation(request):
     return stored_procedure_result(
@@ -2126,7 +2150,7 @@ def create_quotation(request):
 
 # Finalize a quotation (Car & Personal Accident Insurance)
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def finalize_quotation_flotte(request):
     finalisationdevis_data = JSONParser().parse(request)
@@ -2339,7 +2363,7 @@ def create_quotation_mrh(request):
 ###########################################################################
 # Create new quotation - IT Insurance
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def create_quotation_tousrisquesinfo(request):
     enregistrementdevis_tri_data = JSONParser().parse(request)
@@ -2370,7 +2394,7 @@ def create_quotation_tousrisquesinfo(request):
 ###########################################################################
 # Create new quotation - RC
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def create_quotation_risques_divers(request):
     enregistrementdevis_risques_divers_data = JSONParser().parse(request)
@@ -3195,7 +3219,7 @@ def validate_premium_remittance(request):
 ##################################################################################
 # Change Plate Number
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def change_plate_number(request):
     chgplatenumber_data = JSONParser().parse(request)
@@ -3223,7 +3247,7 @@ def change_plate_number(request):
 ##################################################################################
 # Cancel Policy, Renew Policy or Change Effective Date
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def modify_policy(request):
     cancelpolicy_data = JSONParser().parse(request)
@@ -3725,13 +3749,126 @@ class CalculMaisonView(APIView):
 
         except Exception as e:
             return Response(
-                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                {"error": _message_erreur_mrh(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
 
 # ============================================================================
 # SECTION 3 : ENDPOINTS DE GESTION DE DEVIS
 # ============================================================================
+
+# Tarif MRH enregistré par URANUS sur chaque maison (stddevisdetail.idtarif)
+ID_TARIF_MRH = 81
+
+
+def _message_erreur_mrh(exc):
+    """Message lisible d'une erreur de calcul/enregistrement MRH."""
+    detail = getattr(exc, "detail", None)
+    if detail is None:
+        detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None)
+    if isinstance(detail, dict):
+        return " ; ".join(
+            " ".join(str(m) for m in (v if isinstance(v, (list, tuple)) else [v]))
+            for v in detail.values()
+        )
+    if isinstance(detail, (list, tuple)):
+        return " ; ".join(str(m) for m in detail)
+    return str(detail if detail is not None else exc)
+
+
+def _montant_mrh(valeur):
+    if valeur in (None, ""):
+        return None
+    return Decimal(str(valeur))
+
+
+def _codes_mrh(liste, cle):
+    """Accepte ["code", ...] ou [{cle: "code"}, ...]."""
+    return [
+        (element.get(cle) if isinstance(element, dict) else element)
+        for element in (liste or [])
+        if element
+    ]
+
+
+def _enregistrer_maisons_mrh(devis, maisons, id_tarif=None):
+    """
+    Calcule et enregistre les maisons du formulaire dans le devis.
+    L'offre de chaque maison est celle de son usage (comme dans URANUS).
+    Retourne les totaux du devis mis à jour.
+    """
+    service = MRHCalculService()
+    totaux = None
+    for maison in maisons:
+        code_usage = maison.get("code_usage")
+        usage = UsageHabitation.objects.filter(code=code_usage).first()
+        if not usage or not usage.offre_id:
+            raise ValueError(f"Usage habitation inconnu ou sans offre : {code_usage}")
+        resultat = service.calculer_et_enregistrer_maison(
+            id_devis=devis.iddevis,
+            id_produit=devis.produit_id,
+            id_compagnie=devis.compagnie_id,
+            id_tarif=id_tarif or ID_TARIF_MRH,
+            id_offre=usage.offre_id,
+            code_usage=code_usage,
+            valeur_batiment=_montant_mrh(maison.get("valeur_batiment")),
+            valeur_contenu=_montant_mrh(maison.get("valeur_contenu")),
+            loyer_mensuel=_montant_mrh(maison.get("loyer_mensuel")),
+            capital_rvt=_montant_mrh(maison.get("capital_rvt")),
+            options=_codes_mrh(maison.get("options"), "code_option"),
+            sous_garanties_optionnelles=_codes_mrh(
+                maison.get("sous_garanties_optionnelles"), "code_sous_garantie"
+            ),
+            adresse=maison.get("adresse") or "",
+        )
+        totaux = resultat["totaux_devis"]
+    return totaux
+
+
+def _totaux_devis_mrh(devis):
+    """Montants enregistrés sur l'en-tête du devis (après imposition éventuelle)."""
+    return {
+        "prime_nette_totale": float(devis.primenette or 0),
+        "taxe_totale": float(devis.taxe or 0),
+        "accessoire": float(devis.accessoire or 0),
+        "primettc": float(devis.primettc or 0),
+        "prime_imposee": bool(devis.prime_imposee),
+    }
+
+
+def _imposer_mrh(devis, imposition, user):
+    """
+    Applique l'imposition saisie à l'étape « Récapitulatif » :
+    imposition = {"montants_maisons": [PN imposée par maison, dans l'ordre],
+                  "montant_taxe": ..., "montant_accessoire": ..., "motif": ...}
+    """
+    from .models import DevisDetail
+
+    ids_maisons = list(
+        DevisDetail.objects.filter(iddevis_id=devis.iddevis)
+        .order_by("iddevisdetail")
+        .values_list("iddevisdetail", flat=True)
+    )
+    montants = [_montant_mrh(m) or Decimal("0") for m in imposition.get("montants_maisons") or []]
+    if len(montants) != len(ids_maisons):
+        raise ValueError("Imposition : une prime imposée est attendue pour chaque maison.")
+    resultat = MRHCalculService().imposer_prime_devis(
+        id_devis=devis.iddevis,
+        montant_impose=sum(montants),
+        repartition_maisons=[
+            {"id_maison": id_maison, "montant": montant}
+            for id_maison, montant in zip(ids_maisons, montants)
+        ],
+        montant_accessoire=_montant_mrh(imposition.get("montant_accessoire")),
+        montant_taxe=_montant_mrh(imposition.get("montant_taxe")) or None,
+        user_id=getattr(user, "id", None),
+        user_nom=user.get_full_name() if hasattr(user, "get_full_name") else str(user),
+        motif=imposition.get("motif") or "",
+    )
+    if not resultat.get("success", False):
+        raise ValueError(resultat.get("message") or resultat.get("erreur") or "Imposition refusée")
+    return resultat
 
 
 class DevisMRHViewSet(viewsets.ViewSet):
@@ -3773,38 +3910,46 @@ class DevisMRHViewSet(viewsets.ViewSet):
 
         data = serializer.validated_data
         service = MRHCalculService()
+        # Maisons envoyées avec l'en-tête : devis complet enregistré d'un bloc
+        maisons = request.data.get("maisons") or []
 
         try:
-            # Créer le devis
-            id_devis = service.creer_devis(
-                idintermediaire=data["idintermediaire"],
-                idcompagnie=data["idcompagnie"],
-                idproduit=data["idproduit"],
-                idtarif=data["idtarif"],
-                idoffre=data["idoffre"],
-                idclient=data["idclient"],
-                dateeffet=data["dateeffet"],
-                **{
-                    k: v
-                    for k, v in data.items()
-                    if k
-                    not in [
-                        "idintermediaire",
-                        "idcompagnie",
-                        "idproduit",
-                        "idtarif",
-                        "idoffre",
-                        "idclient",
-                        "dateeffet",
-                    ]
-                },
-            )
+            with transaction.atomic():
+                # Créer le devis
+                id_devis = service.creer_devis(
+                    idintermediaire=data["idintermediaire"],
+                    idcompagnie=data["idcompagnie"],
+                    idproduit=data["idproduit"],
+                    idtarif=data["idtarif"],
+                    idoffre=data["idoffre"],
+                    idclient=data["idclient"],
+                    dateeffet=data["dateeffet"],
+                    **{
+                        k: v
+                        for k, v in data.items()
+                        if k
+                        not in [
+                            "idintermediaire",
+                            "idcompagnie",
+                            "idproduit",
+                            "idtarif",
+                            "idoffre",
+                            "idclient",
+                            "dateeffet",
+                        ]
+                    },
+                )
+
+                from .models import Devis  # Import local
+
+                devis = Devis.objects.get(iddevis=id_devis)
+                if maisons:
+                    _enregistrer_maisons_mrh(devis, maisons, data["idtarif"])
+                if maisons and request.data.get("imposition"):
+                    _imposer_mrh(devis, request.data["imposition"], request.user)
+                devis.refresh_from_db()
 
             # Retourner la réponse
-            from .models import Devis  # Import local
-
-            devis = Devis.objects.get(iddevis=id_devis)
-
             response_data = {
                 "devis_id": id_devis,
                 "numero_devis": devis.numerodevis or "",
@@ -3815,13 +3960,155 @@ class DevisMRHViewSet(viewsets.ViewSet):
 
             response_serializer = DevisMRHResponseSerializer(response_data)
             return Response(
-                response_serializer.data, status=status.HTTP_201_CREATED
+                {**response_serializer.data, "totaux": _totaux_devis_mrh(devis)},
+                status=status.HTTP_201_CREATED,
             )
 
         except Exception as e:
             return Response(
-                {"error": str(e)}, status=status.HTTP_400_BAD_REQUEST
+                {"error": _message_erreur_mrh(e)},
+                status=status.HTTP_400_BAD_REQUEST,
             )
+
+    def update(self, request, pk=None):
+        """
+        Modifie un devis MRH non confirmé avec toutes ses valeurs.
+
+        PUT /api/mrh/devis/{id}/
+
+        Body : mêmes champs d'en-tête que la création + "maisons" (liste
+        complète). Les maisons du devis sont recalculées et remplacées ;
+        tout est annulé si une maison ne peut pas être calculée.
+        """
+        from customer.models import Client
+
+        from .models import DevisDetail
+
+        devis = get_object_or_404(Devis, pk=pk)
+        if devis.confirme:
+            return Response(
+                {"error": "Ce devis est confirmé (déjà en contrat) : il ne peut plus être modifié."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = DevisMRHCreateRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors, status=status.HTTP_400_BAD_REQUEST
+            )
+        data = serializer.validated_data
+        maisons = request.data.get("maisons") or []
+        if not maisons:
+            return Response(
+                {"error": "Un devis MRH doit comporter au moins une maison."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            with transaction.atomic():
+                idduree = data.get("idduree") or devis.idduree
+                dateexpiration = data.get("dateexpiration") or calculer_date_expiration(
+                    date_effet=data["dateeffet"], id_duree=idduree, nombre_jours=0
+                )
+                devis.compagnie_id = data["idcompagnie"]
+                devis.client_id = data["idclient"]
+                devis.assure_id = data.get("idassure") or data["idclient"]
+                devis.dateeffet = data["dateeffet"]
+                devis.dateexpiration = dateexpiration
+                if data.get("dateemission"):
+                    devis.dateemission = data["dateemission"]
+                devis.idduree = idduree
+                devis.idterme = data.get("idterme") or devis.idterme
+                devis.numero_police_compagnie = data.get("numeropolicecompagnie", "")
+
+                # Impositions en cours closes : le devis est recalculé (une imposition
+                # saisie à l'écran est réappliquée plus bas)
+                anciennes_maisons = list(
+                    DevisDetail.objects.filter(iddevis_id=devis.iddevis).values_list(
+                        "iddevisdetail", flat=True
+                    )
+                )
+                user = request.user
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE stdmrh_imposition_prime
+                        SET actif = FALSE,
+                            date_levee = CURRENT_TIMESTAMP,
+                            levee_par_user_id = %s,
+                            levee_par_user_nom = %s,
+                            motif_levee = %s
+                        WHERE actif = TRUE
+                          AND ((type_imposition = 'DEVIS' AND id_cible = %s)
+                               OR (type_imposition = 'MAISON' AND id_cible = ANY(%s)))
+                        """,
+                        [
+                            getattr(user, "id", None),
+                            user.get_full_name() if hasattr(user, "get_full_name") else str(user),
+                            "Modification du devis",
+                            devis.iddevis,
+                            anciennes_maisons,
+                        ],
+                    )
+                devis.prime_imposee = False
+                devis.prime_imposee_date = None
+                devis.save()
+
+                numero_telephone_assure = data.get("numerotelephoneassure")
+                if numero_telephone_assure:
+                    Client.objects.filter(IdClient=devis.assure_id).update(
+                        Mobile=numero_telephone_assure
+                    )
+
+                # Remplace les maisons (garanties supprimées en cascade)
+                for ancienne in DevisDetail.objects.filter(iddevis_id=devis.iddevis):
+                    ancienne.delete()
+                _enregistrer_maisons_mrh(devis, maisons, data["idtarif"])
+                if request.data.get("imposition"):
+                    _imposer_mrh(devis, request.data["imposition"], request.user)
+                devis.refresh_from_db()
+
+            return Response(
+                {
+                    "devis_id": devis.iddevis,
+                    "numero_devis": devis.numerodevis or "",
+                    "statut": "success",
+                    "message": "Devis modifié avec succès",
+                    "totaux": _totaux_devis_mrh(devis),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"error": _message_erreur_mrh(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=["post"], url_path="accessoire")
+    def accessoire(self, request):
+        """
+        Accessoire du devis selon la prime nette totale (paliers stdaccessoire).
+
+        POST /api/mrh/devis/accessoire/  {"idcompagnie": 1, "prime_nette": 22563}
+        """
+        try:
+            prime_nette = Decimal(str(request.data.get("prime_nette") or 0))
+            idcompagnie = int(request.data.get("idcompagnie") or 0)
+            idproduit = int(request.data.get("idproduit") or 4)
+        except Exception:
+            return Response(
+                {"error": "prime_nette et idcompagnie sont requis"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        resultat = MRHCalculService().calculer_accessoire(
+            prime_nette_totale=prime_nette,
+            id_produit=idproduit,
+            id_compagnie=idcompagnie,
+        )
+        return Response(
+            {k: float(v) for k, v in resultat.items()},
+            status=status.HTTP_200_OK,
+        )
 
     def partial_update(self, request, pk=None):
         mrh_devis = get_object_or_404(Devis, pk=pk)
@@ -4059,7 +4346,8 @@ class MaisonViewSet(viewsets.ViewSet):
                     dd.taxeenregistrement,
                     dd.primeannuelle,
                     dd.primeimposee,
-                    u.libelle AS usage_libelle
+                    u.libelle AS usage_libelle,
+                    dd.conducteur
                 FROM stddevisdetail dd
                 LEFT JOIN stdmrh_usage_habitation u ON u.code = dd.modelevehicule
                 WHERE dd.iddevis = %s
@@ -4071,7 +4359,18 @@ class MaisonViewSet(viewsets.ViewSet):
                     iddevisdetail, code_usage, observation, adresse,
                     valeur_batiment, valeur_contenu, loyer_mensuel, capital_rvt,
                     primenette, taxe, primeannuelle, prime_imposee, usage_libelle,
+                    options_json,
                 ) = row
+
+                # Options appliquées (JSON stocké dans conducteur à l'enregistrement)
+                try:
+                    options = [
+                        o.get("code_option")
+                        for o in json.loads(options_json or "[]")
+                        if isinstance(o, dict) and o.get("code_option")
+                    ]
+                except (TypeError, ValueError):
+                    options = []
 
                 pn = float(primenette or 0)
                 tx = float(taxe or 0)
@@ -4085,7 +4384,8 @@ class MaisonViewSet(viewsets.ViewSet):
                         dg.primenette,
                         dg.taxe,
                         dg.primeannuelle,
-                        dg.acquise
+                        dg.acquise,
+                        dg.old_acquise
                     FROM stddevisdetgarantie dg
                     JOIN stdmrh_sous_garantie g ON dg.idgarantie = g.idsousgarantie
                     WHERE dg.iddevisdet = %s
@@ -4101,6 +4401,8 @@ class MaisonViewSet(viewsets.ViewSet):
                         "taxe": float(r[4] or 0),
                         "prime_ttc": float(r[5] or 0),
                         "acquise": bool(r[6]),
+                        # old_acquise = "0" : garantie optionnelle choisie
+                        "optionnelle": str(r[7]) == "0",
                     }
                     for r in cursor.fetchall()
                 ]
@@ -4122,6 +4424,12 @@ class MaisonViewSet(viewsets.ViewSet):
                     "prime_ttc": pn + tx,
                     "prime_imposee": bool(prime_imposee),
                     "garanties": garanties,
+                    "options": options,
+                    "sous_garanties_optionnelles": [
+                        g["code_sous_garantie"]
+                        for g in garanties
+                        if g["optionnelle"]
+                    ],
                 })
 
         return Response(

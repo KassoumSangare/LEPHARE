@@ -38,6 +38,37 @@ User = get_user_model()
 OPERATION_ARCHIVAGE = (("ARCHI", "ARCHIVAGE"), ("DESAR", "DESARCHIVAGE"))
 
 
+class Brouillon(models.Model):
+    """
+    Saisie non terminée (devis, avenant de contrat…) enregistrée pour être reprise plus tard,
+    depuis n'importe quel poste : l'état complet du formulaire est conservé tel quel en JSON.
+    """
+
+    TYPES = [
+        ("DEVIS_AUTO", "Devis automobile"),
+        ("AVENANT", "Modification de contrat"),
+    ]
+
+    type_brouillon = models.CharField(max_length=30, choices=TYPES, default="DEVIS_AUTO")
+    libelle = models.CharField(max_length=255, blank=True, default="")
+    etape = models.PositiveSmallIntegerField(default=1)
+    donnees = models.JSONField(default=dict)
+    iddevis = models.IntegerField(null=True, blank=True, help_text="Devis existant en cours de modification")
+    idcontrat = models.IntegerField(null=True, blank=True, help_text="Contrat en cours de modification")
+    utilisateur = models.ForeignKey(UranusUser, null=True, blank=True, on_delete=models.SET_NULL, related_name="brouillons")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "lephare_brouillon"
+        ordering = ["-date_modification"]
+        verbose_name = "Brouillon"
+        verbose_name_plural = "Brouillons"
+
+    def __str__(self):
+        return f"{self.get_type_brouillon_display()} - {self.libelle or self.pk}"
+
+
 class PieceJointe(models.Model):
     """
     Modèle pour stocker les pièces jointes (images ou PDFs).

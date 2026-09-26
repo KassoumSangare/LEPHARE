@@ -76,10 +76,10 @@ export const AdminDashboard = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <BarChart3 size={28} color="#c084fc" />
-            Direction & Pilotage Stratégique
+            Tableau de bord
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.35rem' }}>
-            Supervision globale, conformité CIMA, autorisations hiérarchiques et pilotage des résultats financiers.
+            Production, encaissements, résultats et alertes de conformité du cabinet.
           </p>
         </div>
 

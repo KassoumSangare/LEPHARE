@@ -161,10 +161,10 @@ export const UserManagementPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <UserCheck size={26} color="#3b82f6" />
-            Gestion des Utilisateurs & Collaborateurs
+            Comptes utilisateurs
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Création de comptes, attribution des profils de souscription et réinitialisation des accès.
+            Créer un compte, lui attribuer un profil, réinitialiser un mot de passe.
           </p>
         </div>
 

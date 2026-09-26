@@ -306,11 +306,11 @@ export const CashCollectionPage = () => {
                 <div className="form-group">
                   <label className="form-label">Banque Émettrice</label>
                   <select className="form-control" value={banque} onChange={(e) => setBanque(e.target.value)}>
-                    <option value="SGBCI">SGBCI</option>
                     <option value="BICICI">BICICI</option>
-                    <option value="NSIA BANQUE">NSIA BANQUE</option>
-                    <option value="ECOBANK">ECOBANK</option>
                     <option value="BOA">BOA</option>
+                    <option value="ECOBANK">ECOBANK</option>
+                    <option value="NSIA BANQUE">NSIA BANQUE</option>
+                    <option value="SGBCI">SGBCI</option>
                   </select>
                 </div>
                 <div className="form-group">

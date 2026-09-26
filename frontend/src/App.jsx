@@ -19,6 +19,8 @@ import NewAutoQuotePage from './pages/user/quotes/NewAutoQuotePage';
 import NewMrhQuotePage from './pages/user/quotes/NewMrhQuotePage';
 import NewSanteQuotePage from './pages/user/quotes/NewSanteQuotePage';
 import NewIaQuotePage from './pages/user/quotes/NewIaQuotePage';
+import NewRisquesDiversQuotePage from './pages/user/quotes/NewRisquesDiversQuotePage';
+import NewTousDommagesQuotePage from './pages/user/quotes/NewTousDommagesQuotePage';
 import NewVoyageQuotePage from './pages/user/quotes/NewVoyageQuotePage';
 import NewTransportQuotePage from './pages/user/quotes/NewTransportQuotePage';
 import ContractListPage from './pages/user/contracts/ContractListPage';
@@ -32,6 +34,7 @@ import ArchivesPage from './pages/user/archives/ArchivesPage';
 
 // Admin Space Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminGuidePage from './pages/admin/AdminGuidePage';
 import CimaReportsPage from './pages/admin/reporting/CimaReportsPage';
 import EmissionSummaryPage from './pages/admin/reporting/EmissionSummaryPage';
 import DecisionalStatesPage from './pages/admin/reporting/DecisionalStatesPage';
@@ -133,6 +136,9 @@ function App() {
                 <Route path="/user/quotes/mrh" element={<NewMrhQuotePage />} />
                 <Route path="/user/quotes/sante" element={<NewSanteQuotePage />} />
                 <Route path="/user/quotes/ia" element={<NewIaQuotePage />} />
+                <Route path="/user/quotes/rc" element={<NewRisquesDiversQuotePage key="rc" produit={8} />} />
+                <Route path="/user/quotes/mrp" element={<NewRisquesDiversQuotePage key="mrp" produit={7} />} />
+                <Route path="/user/quotes/tous-dommages" element={<NewTousDommagesQuotePage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/quotes/transport" element={<NewTransportQuotePage />} />
 
@@ -158,6 +164,7 @@ function App() {
                 <Route path="/user/archives" element={<ArchivesPage />} />
 
                 {/* ===== ESPACE ADMINISTRATION / DIRECTION (DIRECTEUR & ADMIN SEULEMENT) ===== */}
+                <Route path="/admin/guide" element={<AdminRoute><AdminGuidePage /></AdminRoute>} />
                 <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
                 <Route path="/admin/conventions" element={<AdminRoute><ConventionsEnginePage /></AdminRoute>} />
                 <Route path="/admin/compliance" element={<AdminRoute><ComplianceAuditPage /></AdminRoute>} />

@@ -157,10 +157,10 @@ export const EmissionSummaryPage = () => {
           </div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <TrendingUp size={26} color="#34d399" />
-            Bordereau des Émissions par Compagnie, par Branche et par Client
+            Bordereau des émissions
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Synthèse consolidée en temps réel depuis les contrats et quittances enregistrés dans Uranus.
+            Polices émises par compagnie, par branche et par client.
           </p>
         </div>
 

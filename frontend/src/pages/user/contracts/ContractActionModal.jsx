@@ -112,8 +112,8 @@ export const ContractActionModal = ({
                 <option value="Défaut de paiement de la prime (Article 13 CIMA)">
                   Défaut de paiement de la prime (Article 13 CIMA - « Pas de prime, pas d'assurance »)
                 </option>
-                <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
-                  Vente ou cession du véhicule assuré (Art. 25 CIMA)
+                <option value="Changement de profession ou aggravation de risque">
+                  Modification substantielle de l'usage ou du risque
                 </option>
                 <option value="Perte totale du véhicule ou sinistre destructeur">
                   Perte totale / Destruction suite à sinistre
@@ -121,8 +121,8 @@ export const ContractActionModal = ({
                 <option value="Résiliation amiable contradictoire à échéance">
                   Résiliation amiable contradictoire
                 </option>
-                <option value="Changement de profession ou aggravation de risque">
-                  Modification substantielle de l'usage ou du risque
+                <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
+                  Vente ou cession du véhicule assuré (Art. 25 CIMA)
                 </option>
               </select>
             </div>

@@ -131,10 +131,10 @@ export const ParametrageSecuritePage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <ShieldCheck size={28} color="#34d399" />
-            Paramétrage des Formules de Sécurité Routière (OREOLE)
+            Sécurité routière
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Gestion des capitaux garantis (Décès, Invalidité, Frais Médicaux) et primes par place pour la couverture des personnes transportées.
+            Formules de la garantie des personnes transportées : capitaux et prime par place.
           </p>
         </div>
 

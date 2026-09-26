@@ -195,10 +195,10 @@ export const CimaReportsPage = () => {
           </div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <FileSpreadsheet size={26} color="#c084fc" />
-            États Réglementaires CIMA
+            États réglementaires CIMA
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Rapports officiels normalisés pour l'Autorité de Régulation, la DGTCP et les Commissaires aux Comptes.
+            États officiels pour l'autorité de contrôle, la DGTCP et les commissaires aux comptes.
           </p>
         </div>
 
@@ -211,10 +211,10 @@ export const CimaReportsPage = () => {
               value={exercice}
               onChange={(e) => setExercice(e.target.value)}
             >
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
               <option value="2023">2023</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
             </select>
           </div>
 
@@ -354,9 +354,9 @@ export const CimaReportsPage = () => {
               value={exportConfig.etat}
               onChange={(e) => setExportConfig({ ...exportConfig, etat: e.target.value })}
             >
-              <option value="ALL">Pack Intégral : États E1 + E2 Consolidation</option>
               <option value="E1">État CIMA E1 : Émissions, Encaissements & Commissions</option>
               <option value="E2">État CIMA E2 : Suivi des Arriérés et Annulations</option>
+              <option value="ALL">Pack Intégral : États E1 + E2 Consolidation</option>
             </select>
           </div>
 
@@ -367,9 +367,9 @@ export const CimaReportsPage = () => {
               value={exportConfig.format}
               onChange={(e) => setExportConfig({ ...exportConfig, format: e.target.value })}
             >
+              <option value="XML">Format d'Échange Automatisé CRCA (XML)</option>
               <option value="PDF">Liasse PDF Officielle Numérotée et Paraphée</option>
               <option value="XLSX">Matrice Excel Normée CIMA (.xlsx)</option>
-              <option value="XML">Format d'Échange Automatisé CRCA (XML)</option>
             </select>
           </div>
 

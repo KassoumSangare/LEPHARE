@@ -54,7 +54,7 @@ const Divider = () => (
 export const RowActions = ({
   onView, viewTitle = 'Consulter', showView = true,
   onConfirm, confirmLabel = 'Confirmer', confirmTitle = 'Confirmer', confirmDisabled = false, showConfirm = true,
-  onEdit, editTitle = 'Ajuster', editDisabled = false, showEdit = true,
+  onEdit, editTitle = 'Modifier', editDisabled = false, showEdit = true,
   onArchive, archiveTitle = 'Archiver', archiveDisabled = false, showArchive = true,
   onRestore, restoreTitle = 'Désarchiver', showRestore = false,
 }) => (

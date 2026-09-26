@@ -9,7 +9,7 @@ import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModa
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
-import { sortUniqueBy } from '../../../utils/sortUtils';
+import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import {
   AlertTriangle,
@@ -167,9 +167,9 @@ export const ClaimsListPage = () => {
             <span className="badge badge-warning">Module H – Sinistres Délégués</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Conformité CIMA & Mandats Compagnies</span>
           </div>
-          <h1 className="title-xl">Gestion Déléguée des Sinistres</h1>
+          <h1 className="title-xl">Suivi des sinistres</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Instruction des dossiers, contrôle des pièces probantes, mandats de règlement direct et recours inter-compagnies.
+            Sinistres déclarés et gérés pour le compte des compagnies.
           </p>
         </div>
 
@@ -270,11 +270,11 @@ export const ClaimsListPage = () => {
               onChange={(e) => setSelectedStatus(e.target.value)}
             >
               <option value="ALL">Tous statuts</option>
+              <option value="Clos">Clos</option>
               <option value="Déclaré">Déclaré</option>
               <option value="En cours d instruction">En instruction</option>
               <option value="Expertise terminée">Expertise terminée</option>
               <option value="Règlement validé">Règlement validé</option>
-              <option value="Clos">Clos</option>
             </select>
           </div>
 
@@ -285,7 +285,7 @@ export const ClaimsListPage = () => {
               style={{ minWidth: '180px', fontSize: '0.875rem' }}
             >
               <option value="ALL">Toutes compagnies ({allCompanies.length > 0 ? allCompanies.length : 33})</option>
-              {(allCompanies.length > 0 ? allCompanies : [...new Set(claims.map((c) => c.compagnie).filter(Boolean))]).map((cie) => (
+              {trierParLibelle(allCompanies.length > 0 ? allCompanies : [...new Set(claims.map((c) => c.compagnie).filter(Boolean))], (cie) => cie).map((cie) => (
                 <option key={cie} value={cie}>{cie}</option>
               ))}
             </select>
@@ -455,12 +455,12 @@ export const ClaimsListPage = () => {
                 value={newClaim.nature}
                 onChange={(e) => setNewClaim({ ...newClaim, nature: e.target.value })}
               >
-                <option value="Collision matériel automobile">Collision matériel automobile</option>
-                <option value="Vol avec effraction">Vol avec effraction</option>
-                <option value="Incendie et explosion">Incendie et explosion</option>
-                <option value="Dégât des eaux">Dégât des eaux</option>
                 <option value="Bris de glace">Bris de glace</option>
+                <option value="Collision matériel automobile">Collision matériel automobile</option>
+                <option value="Dégât des eaux">Dégât des eaux</option>
+                <option value="Incendie et explosion">Incendie et explosion</option>
                 <option value="Responsabilité Civile Exploitation">RC Exploitation</option>
+                <option value="Vol avec effraction">Vol avec effraction</option>
               </select>
             </div>
             <div className="form-group">

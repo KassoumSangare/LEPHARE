@@ -269,9 +269,9 @@ export const DocumentManagementPage = () => {
             <span className="badge badge-info">Module J – GED & Documents</span>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Conservation Probante CIMA</span>
           </div>
-          <h1 className="title-xl">Gestion Électronique des Documents (GED)</h1>
+          <h1 className="title-xl">Documents (GED)</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Indexation centralisée, archivage probant des contrats, quittances d'encaissement et pièces de sinistres.
+            Pièces justificatives classées par client et par contrat.
           </p>
         </div>
 
@@ -337,11 +337,11 @@ export const DocumentManagementPage = () => {
               onChange={(e) => setSelectedCategory(e.target.value)}
             >
               <option value="ALL">Toutes catégories</option>
+              <option value="Conformité CIMA">Conformité CIMA</option>
               <option value="Contrats & Polices">Contrats & Polices</option>
-              <option value="Sinistres & Expertises">Sinistres & Expertises</option>
               <option value="Conventions Assureurs">Conventions Assureurs</option>
               <option value="Encaissements & Quittances">Encaissements & Quittances</option>
-              <option value="Conformité CIMA">Conformité CIMA</option>
+              <option value="Sinistres & Expertises">Sinistres & Expertises</option>
             </select>
           </div>
         </div>
@@ -494,11 +494,11 @@ export const DocumentManagementPage = () => {
               value={newDoc.categorie}
               onChange={(e) => setNewDoc({ ...newDoc, categorie: e.target.value })}
             >
+              <option value="Conformité CIMA">Conformité CIMA</option>
               <option value="Contrats & Polices">Contrats & Polices</option>
-              <option value="Sinistres & Expertises">Sinistres & Expertises</option>
               <option value="Conventions Assureurs">Conventions Assureurs</option>
               <option value="Encaissements & Quittances">Encaissements & Quittances</option>
-              <option value="Conformité CIMA">Conformité CIMA</option>
+              <option value="Sinistres & Expertises">Sinistres & Expertises</option>
             </select>
           </div>
 

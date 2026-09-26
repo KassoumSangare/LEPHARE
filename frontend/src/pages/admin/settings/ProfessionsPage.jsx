@@ -264,14 +264,10 @@ export const ProfessionsPage = () => {
       >
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
-            Professions & Métiers
+            Professions
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem', margin: '0.3rem 0 0 0' }}>
-            Table{' '}
-            <code style={{ background: 'rgba(99,102,241,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-              stdprofession
-            </code>{' '}
-            — Référentiel Métiers Clients (Code CIMA)
+            Professions proposées sur les fiches clients.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.65rem' }}>

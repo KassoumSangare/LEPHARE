@@ -187,7 +187,7 @@ export const DecisionalStatesPage = () => {
 
     const filename = `Etats_Decisionnels_${exportScope}`;
     const title = 'RÉFÉRENTIEL DES ÉTATS DÉCISIONNELS';
-    const subtitle = 'Table stdetatdecisionnel — Cycle décisionnel souscription, contrats et sinistres';
+    const subtitle = 'États de gestion : souscription, contrats et sinistres';
     const metadata = {
       'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
       'Périmètre': exportScope === 'ACTIFS' ? 'États actifs uniquement' : exportScope === 'INACTIFS' ? 'États inactifs uniquement' : 'Tous les états',
@@ -506,14 +506,10 @@ export const DecisionalStatesPage = () => {
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <GitBranch size={22} color="#a78bfa" />
-            États Décisionnels & Reporting
+            États de gestion
           </h1>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.3rem', margin: '0.3rem 0 0 0' }}>
-            Table{' '}
-            <code style={{ background: 'rgba(99,102,241,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-              stdetatdecisionnel
-            </code>{' '}
-            — Bordereaux d'émissions, commissions, encaissements et états réglementaires CIMA
+            Tableaux de suivi : émissions, commissions, encaissements.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.65rem' }}>
@@ -891,8 +887,8 @@ export const DecisionalStatesPage = () => {
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value)}
             >
-              <option value="PDF">Document PDF</option>
               <option value="XLSX">Classeur Microsoft Excel (.xlsx)</option>
+              <option value="PDF">Document PDF</option>
             </select>
           </div>
 

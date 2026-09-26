@@ -299,19 +299,19 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
             {activeTab === 'guarantees' ? (
               <>
                 <Shield size={26} color="#3b82f6" />
-                Paramétrage & Référentiel des Garanties
+                Garanties de référence des produits
               </>
             ) : (
               <>
                 <FolderTree size={26} color="#3b82f6" />
-                Branches & Produits Commerciaux
+                Produits (branches)
               </>
             )}
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             {activeTab === 'guarantees'
-              ? "Paramétrage des garanties d'assurance CIMA, des modes de tarification, franchises et taux de taxes applicables."
-              : "Catalogue des offres d'assurance, types de gestion (Individuel / Collectif) et composition des packs."}
+              ? "Les garanties de chaque produit, avec leur mode de tarification, leurs franchises et leurs taux de taxe."
+              : "Automobile, Santé, IA, MRH… ; l'onglet « Garanties » donne leurs garanties de référence."}
           </p>
         </div>
 
@@ -457,10 +457,10 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
               >
                 <option value="Automobile">Automobile</option>
                 <option value="Habitation MRH">Habitation MRH</option>
-                <option value="Santé Groupe">Santé & Maladie</option>
                 <option value="Individuelle Accident">Individuelle Accident</option>
-                <option value="Voyage">Voyage & Assistance</option>
+                <option value="Santé Groupe">Santé & Maladie</option>
                 <option value="Risques Divers">Tous Dommages & Risques Divers</option>
+                <option value="Voyage">Voyage & Assistance</option>
               </select>
             </div>
 
@@ -471,10 +471,10 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                 value={newGuaranteeForm.type}
                 onChange={(e) => setNewGuaranteeForm({ ...newGuaranteeForm, type: e.target.value })}
               >
-                <option value="Obligatoire CIMA">Obligatoire CIMA (ex: RC)</option>
                 <option value="Complémentaire">Complémentaire Standard</option>
-                <option value="Optionnelle">Optionnelle / À la carte</option>
                 <option value="Inclus d'office">Inclus d'office</option>
+                <option value="Obligatoire CIMA">Obligatoire CIMA (ex: RC)</option>
+                <option value="Optionnelle">Optionnelle / À la carte</option>
               </select>
             </div>
           </div>
@@ -487,9 +487,9 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                 value={newGuaranteeForm.tarification}
                 onChange={(e) => setNewGuaranteeForm({ ...newGuaranteeForm, tarification: e.target.value })}
               >
-                <option value="Forfait Annuel">Forfait Annuel Fixe</option>
                 <option value="% Valeur Vénale / Neuf">% sur Valeur Vénale ou Neuf</option>
                 <option value="Barème Puissance & Zone">Barème Tarifaire (Puissance / Zone)</option>
+                <option value="Forfait Annuel">Forfait Annuel Fixe</option>
                 <option value="Taux sur Capital Assuré">Taux proportionnel au Capital</option>
               </select>
             </div>
@@ -501,9 +501,9 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                 value={newGuaranteeForm.taxe_cima}
                 onChange={(e) => setNewGuaranteeForm({ ...newGuaranteeForm, taxe_cima: e.target.value })}
               >
-                <option value="14.5%">14.5% (Taux standard Dommages / Auto)</option>
                 <option value="0.0%">0.0% (Exonération Santé / Prévoyance)</option>
                 <option value="10.0%">10.0% (Régime dérogatoire)</option>
+                <option value="14.5%">14.5% (Taux standard Dommages / Auto)</option>
               </select>
             </div>
           </div>
@@ -541,13 +541,13 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                 value={newProductForm.branche}
                 onChange={(e) => setNewProductForm({ ...newProductForm, branche: e.target.value })}
               >
+                <option value="Accidents Corporels">Accidents Corporels (IA)</option>
                 <option value="Automobile">Automobile</option>
                 <option value="Incendie & Risques Divers">Incendie & Risques Divers</option>
-                <option value="Santé & Maladie">Santé & Maladie</option>
-                <option value="Accidents Corporels">Accidents Corporels (IA)</option>
-                <option value="Voyage">Voyage & Schengen</option>
                 <option value="Responsabilité Civile">Responsabilité Civile</option>
+                <option value="Santé & Maladie">Santé & Maladie</option>
                 <option value="Transport & Maritime">Transport & Maritime</option>
+                <option value="Voyage">Voyage & Schengen</option>
               </select>
             </div>
             <div className="form-group">
@@ -583,8 +583,8 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                 value={newProductForm.type_gestion}
                 onChange={(e) => setNewProductForm({ ...newProductForm, type_gestion: e.target.value })}
               >
-                <option value="Individuel">Individuel</option>
                 <option value="Collectif">Collectif / Groupe</option>
+                <option value="Individuel">Individuel</option>
                 <option value="Mixte">Mixte (Individuel & Flotte)</option>
               </select>
             </div>
@@ -634,12 +634,12 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                   value={selectedProduct.branche}
                   onChange={(e) => setSelectedProduct({ ...selectedProduct, branche: e.target.value })}
                 >
+                  <option value="Accidents Corporels">Accidents Corporels</option>
                   <option value="Automobile">Automobile</option>
                   <option value="Incendie & Risques Divers">Incendie & Risques Divers</option>
-                  <option value="Santé & Maladie">Santé & Maladie</option>
-                  <option value="Accidents Corporels">Accidents Corporels</option>
-                  <option value="Voyage">Voyage</option>
                   <option value="Responsabilité Civile">Responsabilité Civile</option>
+                  <option value="Santé & Maladie">Santé & Maladie</option>
+                  <option value="Voyage">Voyage</option>
                 </select>
               </div>
               <div className="form-group">
@@ -650,8 +650,8 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                   onChange={(e) => setSelectedProduct({ ...selectedProduct, statut: e.target.value })}
                 >
                   <option value="Actif">Actif</option>
-                  <option value="Inactif">Inactif</option>
                   <option value="En Révision">En Révision</option>
+                  <option value="Inactif">Inactif</option>
                 </select>
               </div>
             </div>
@@ -690,9 +690,9 @@ export const CatalogProductsPage = ({ initialTab = 'guarantees' }) => {
                   value={selectedGuarantee.tarification}
                   onChange={(e) => setSelectedGuarantee({ ...selectedGuarantee, tarification: e.target.value })}
                 >
-                  <option value="Forfait Annuel">Forfait Annuel</option>
                   <option value="% Valeur Vénale / Neuf">% Valeur Vénale / Neuf</option>
                   <option value="Barème Puissance & Zone">Barème Puissance & Zone</option>
+                  <option value="Forfait Annuel">Forfait Annuel</option>
                   <option value="Taux sur Capital Assuré">Taux sur Capital Assuré</option>
                 </select>
               </div>
