@@ -65,6 +65,8 @@ export const NewMrhQuotePage = () => {
   const editIddevisParam = searchParams.get('edit');
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
+  // Détail incomplet d'un devis repris d'URANUS (maisons absentes ou sans usage)
+  const [avertissementReprise, setAvertissementReprise] = useState('');
 
   // Étape du formulaire (1: Contrat, 2: Habitations, 3: Récapitulatif/Imposition, 4: Souscripteur/Assuré)
   const [step, setStep] = useState(1);
@@ -256,6 +258,14 @@ export const NewMrhQuotePage = () => {
       : Number(m.prime_nette) || 0
   );
   const primeNetteMaisons = maisons.reduce((s, m) => s + primeNetteMaison(m), 0);
+  // Taxe de chaque maison : prime imposée => même ratio taxe / prime que la prime calculée
+  // (imposer_prime_devis)
+  const taxeMaison = (m) => {
+    const pnCalculee = Number(m.prime_nette) || 0;
+    const taxeCalculee = Number(m.taxe) || 0;
+    const pn = primeNetteMaison(m);
+    return pn !== pnCalculee && pnCalculee ? Math.round((taxeCalculee * pn) / pnCalculee) : taxeCalculee;
+  };
 
   // Accessoire du barème (stdaccessoire) pour cette prime nette, lu au serveur
   const [accessoireBareme, setAccessoireBareme] = useState({ accessoire: 0, taxe: 0 });
@@ -280,12 +290,8 @@ export const NewMrhQuotePage = () => {
     let primeNette = 0;
     let taxes = 0;
     maisons.forEach((m) => {
-      const pnCalculee = Number(m.prime_nette) || 0;
-      const taxeCalculee = Number(m.taxe) || 0;
-      const pn = primeNetteMaison(m);
-      primeNette += pn;
-      // Prime imposée : la taxe de la maison suit son ratio taxe / prime (imposer_prime_devis)
-      taxes += pn !== pnCalculee && pnCalculee ? Math.round((taxeCalculee * pn) / pnCalculee) : taxeCalculee;
+      primeNette += primeNetteMaison(m);
+      taxes += taxeMaison(m);
     });
 
     let accessoires = accessoireBareme.accessoire;
@@ -685,6 +691,39 @@ export const NewMrhQuotePage = () => {
           setImposedTaxe(String(Math.round(Number(raw.taxe) || 0)));
           setImposedAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
         }
+
+        // Devis repris d'URANUS : ses maisons n'ont souvent ni usage ni prime, seul l'en-tête
+        // (stddevis) porte les montants. Ils sont repris en prime imposée, répartis au prorata
+        // des capitaux, pour que le décompte affiche les montants réellement enregistrés.
+        const pnEnTete = Math.round(Number(raw.primenette) || 0);
+        const pnMaisons = maisonsChargees.reduce((s, m) => s + m.prime_nette, 0);
+        if (!raw.prime_imposee && pnEnTete > 0 && pnMaisons === 0 && maisonsChargees.length > 0) {
+          const poids = maisonsChargees.map((m) => m.valeur_batiment + m.valeur_contenu);
+          const totalPoids = poids.reduce((a, b) => a + b, 0);
+          let reste = pnEnTete;
+          const parts = maisonsChargees.map((m, i) => {
+            if (i === maisonsChargees.length - 1) return reste;
+            const part = Math.round(totalPoids > 0 ? (pnEnTete * poids[i]) / totalPoids : pnEnTete / maisonsChargees.length);
+            reste -= part;
+            return part;
+          });
+          setIsImpositionActive(true);
+          setImposedPrimesParMaison(Object.fromEntries(maisonsChargees.map((m, i) => [m.id, String(parts[i])])));
+          setImposedTaxe(String(Math.round(Number(raw.taxe) || 0)));
+          setImposedAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
+        }
+        const alertes = [];
+        if (maisonsDevis.length === 0 && Number(raw.primettc) > 0) {
+          alertes.push(
+            `Aucune maison n'est enregistrée pour ce devis (repris d'URANUS). Montants enregistrés : prime nette ${formatFcfa(raw.primenette)} F, `
+            + `taxes ${formatFcfa(raw.taxe)} F, accessoires ${formatFcfa(raw.accessoire)} F, TTC ${formatFcfa(raw.primettc)} F. `
+            + 'Saisissez les maisons pour pouvoir l\'enregistrer à nouveau.',
+          );
+        }
+        if (maisonsDevis.some((m) => !m.code_usage)) {
+          alertes.push('Usage d\'occupation non renseigné en base pour une ou plusieurs maisons (devis repris d\'URANUS) : à choisir avant d\'enregistrer.');
+        }
+        setAvertissementReprise(alertes.join(' '));
       } catch (err) {
         if (actif) toastError(`Impossible de charger le devis à modifier : ${messageErreurApi(err)}`);
       } finally {
@@ -728,6 +767,11 @@ export const NewMrhQuotePage = () => {
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             Couverture complète CIMA : Incendie, Dégâts des eaux, Vol & Vandalisme, RC Chef de famille.
           </p>
+          {avertissementReprise && (
+            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
+              {avertissementReprise}
+            </p>
+          )}
         </div>
 
         {/* STEPPER OREOLE 4 ONGLETS */}
@@ -1149,11 +1193,12 @@ export const NewMrhQuotePage = () => {
                       <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
                         {formatFcfa(m.valeur_contenu)} FCFA
                       </td>
+                      {/* Prime retenue pour le devis : l'imposée quand l'imposition est active */}
                       <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#38bdf8', fontWeight: 700 }}>
-                        {formatFcfa(m.prime_nette)} FCFA
+                        {formatFcfa(primeNetteMaison(m))} FCFA
                       </td>
                       <td style={{ padding: '0.75rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#10b981', fontWeight: 700 }}>
-                        {formatFcfa(m.prime_ttc)} FCFA
+                        {formatFcfa(primeNetteMaison(m) + taxeMaison(m))} FCFA
                       </td>
                       <td style={{ padding: '0.75rem', textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>

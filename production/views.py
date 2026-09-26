@@ -536,9 +536,11 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             .all()
         )
 
-        # Filtre par défaut : 3 dernières années
-        three_years_ago = timezone.now() - timedelta(days=365 * 3)
-        queryset = queryset.filter(dateemission__gte=three_years_ago)
+        # Filtre par défaut de la liste : 3 dernières années. Un devis demandé par son id
+        # reste lisible quel que soit son âge (« Modifier », aperçu d'un devis plus ancien).
+        if self.action == "list":
+            three_years_ago = timezone.now() - timedelta(days=365 * 3)
+            queryset = queryset.filter(dateemission__gte=three_years_ago)
 
         # Filtre par produit
         idproduit = self.request.query_params.get("idproduit")
@@ -2222,7 +2224,9 @@ def quote_unarchival(request):
 
 # Car input cancelation
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+# Même authentification que l'enregistrement du devis : avec TokenAuthentication seule, le
+# jeton de l'application était refusé (401) et aucun véhicule de flotte n'était jamais retiré.
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def car_input_cancelation(request):
     inputcancelation_data = JSONParser().parse(request)
@@ -2588,7 +2592,8 @@ class DevisDetailInfoView(APIView):
         try:
             devis = Devis.objects.get(pk=iddevis)
             if devis:
-                devisdetail = DevisDetail.objects.filter(iddevis=devis)
+                # Ordre stable : le premier véhicule d'une flotte est celui repris en édition
+                devisdetail = DevisDetail.objects.filter(iddevis=devis).order_by("pk")
                 if not devisdetail.exists():
                     r_status = status.HTTP_404_NOT_FOUND
         except Devis.DoesNotExist as e_not_exists:

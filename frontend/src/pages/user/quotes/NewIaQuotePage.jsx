@@ -112,6 +112,8 @@ export const NewIaQuotePage = () => {
   const [primeImposee, setPrimeImposee] = useState(false);
   const [enteteOrigine, setEnteteOrigine] = useState(null);
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
+  // Devis repris d'URANUS sans assuré en base
+  const [avertissementReprise, setAvertissementReprise] = useState('');
 
   const [step, setStep] = useState(1);
   const [createdQuote, setCreatedQuote] = useState(null);
@@ -322,6 +324,10 @@ export const NewIaQuotePage = () => {
         }));
         if (!actif) return;
         setAssures(chargees);
+        setAvertissementReprise(chargees.length === 0 && Number(raw.primettc) > 0
+          ? 'Ce devis repris d\'URANUS n\'a aucun assuré en base : seuls l\'en-tête et les montants ont été repris. '
+            + 'Ajoutez les assurés avant d\'enregistrer.'
+          : '');
       } catch (err) {
         if (actif) toastError(`Impossible de charger le devis à modifier : ${messageErreurApi(err)}`);
       } finally {
@@ -631,6 +637,11 @@ export const NewIaQuotePage = () => {
           ) : (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               Garanties Décès accidentel, Infirmité permanente et Frais de traitement — {flotte ? 'contrat groupe (plusieurs assurés)' : 'contrat individuel (un assuré)'}.
+            </p>
+          )}
+          {avertissementReprise && (
+            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
+              {avertissementReprise}
             </p>
           )}
         </div>

@@ -29,6 +29,7 @@ import {
   Edit3,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
+import { StatusBadge } from '../../../components/common/StatusBadge';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
@@ -36,6 +37,8 @@ import {
   calculerTotauxDevisAuto,
   estGarantieRc,
   extraireLigneCumul,
+  ID_SOUS_GARANTIE_NSIA_AUTO_PLUS,
+  ID_SOUS_GARANTIE_CEDEAO,
 } from '../../../utils/tarificationAuto';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
@@ -137,6 +140,71 @@ const ensureCedeaoMin = (value, fallback = 1000) => {
   if (num <= 0) return fallback;
   return Math.round(num / 1000) * 1000;
 };
+
+// Tuiles financières du mode "Imposer la prime" : null = la tuile n'est pas saisie à la main et
+// suit en temps réel le total calculé à partir des garanties.
+const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, cedeao: null, pa: null, pn: null, ttc: null };
+
+// Message d'erreur lisible d'un appel d'enregistrement (erreurs DRF ou OutputMessage des procédures)
+const messageEnregistrement = (e) => {
+  const reponse = e?.response?.data;
+  const detail = Array.isArray(reponse)
+    ? reponse[0]?.OutputMessage
+    : (reponse?.OutputMessage || reponse?.detail || (reponse && typeof reponse === 'object' ? JSON.stringify(reponse) : null));
+  return detail || e?.message || 'erreur du serveur';
+};
+
+// Garanties d'un véhicule telles que le moteur CIMA les calcule (fn_garantie_offre)
+const garantiesDepuisMoteur = (lignes, places = 5) => (lignes || [])
+  .filter((item) => item.IdGarantie !== 0 && item.LibelleSousGarantie)
+  .map((item) => ({
+    id_garantie: item.IdSousGarantie || item.IdGarantie,
+    code: `GAR_${item.IdSousGarantie || item.IdGarantie}`,
+    nom: item.LibelleSousGarantie,
+    acquise: Boolean(item.Acquise ?? true),
+    capital: item.Capital ? `${Number(item.Capital).toLocaleString('fr-FR')} F` : 'Néant',
+    franchise: item.TexteFranchise || (item.Franchise ? `${item.Franchise} F` : 'Néant'),
+    formule: item.Formule || 'CIMA Standard',
+    place: item.NombrePlace || places || 5,
+    primeAnnuelle: Number(item.PrimeAnnuelle || 0),
+    primeNette: Number(item.PrimeNette || 0),
+    taxe: Number(item.Taxe || 0),
+    primeNetteOrigine: Number(item.PrimeNette || 0),
+    is_new_garantie: false,
+  }));
+
+// Garanties réellement enregistrées d'un véhicule (stddevisdetgarantie)
+const garantiesDepuisDevis = (lignes, places = 5) => (lignes || []).map((g) => ({
+  id_garantie: g.IdGarantie,
+  code: `GAR_${g.IdGarantie}`,
+  nom: g.libellegarantie || `Garantie #${g.IdGarantie}`,
+  acquise: Boolean(g.Acquise),
+  capital: g.Capital ? `${Number(g.Capital).toLocaleString('fr-FR')} F` : 'Néant',
+  franchise: g.TexteFranchise || 'Néant',
+  formule: 'CIMA Standard',
+  place: places || 5,
+  primeAnnuelle: Number(g.primeannuelle || 0),
+  primeNette: Number(g.PrimeNette || 0),
+  taxe: Number(g.taxe || 0),
+  primeNetteOrigine: Number(g.PrimeNette || 0),
+  is_new_garantie: false,
+}));
+
+// Champs d'un véhicule transmis à sp_creation_devis : un véhicule de flotte n'est renvoyé à
+// l'enregistrement que si l'un d'eux a changé (ses primes enregistrées sont sinon conservées)
+const CHAMPS_VEHICULE = [
+  'idTarif', 'codeUsage', 'idCarrosserie', 'idOffre', 'codeCarburant', 'codeAlarme', 'codeFormuleSecuriteRoutiere',
+  'idOptionAssistance', 'idMarque', 'idGenreVehicule', 'typeCommercial', 'remorqueAttelee', 'modeleVehicule',
+  'puissanceFiscale', 'chargeUtile', 'nombrePlace', 'valeurNeuf', 'valeurVenale', 'valeurAccessoire', 'immatriculation',
+  'numeroCarteBrune', 'numeroChassis', 'numeroMoteur', 'dateMec', 'carburantAutreMatiere', 'transportEleves',
+  'transportEmployes', 'transportPassagerSupplementaire', 'nsiaAutoPlus',
+];
+const empreinteVehicule = (v) => JSON.stringify(CHAMPS_VEHICULE.map((champ) => {
+  const valeur = v?.[champ];
+  if (typeof valeur === 'boolean') return valeur;
+  if (typeof valeur === 'number') return valeur;
+  return String(valeur ?? '').trim().toUpperCase();
+}));
 
 // Formateur DD-MM-YYYY pour Django
 const toDmy = (dStr) => {
@@ -299,31 +367,11 @@ export const NewAutoQuotePage = () => {
   const [transportPassagerSupplementaire, setTransportPassagerSupplementaire] = useState(false);
   const [nsiaAutoPlus, setNsiaAutoPlus] = useState(false);
 
-  // Gestion Parc Flotte Automobile
-  const [flotteVehicules, setFlotteVehicules] = useState([
-    {
-      idDevisDetail: 101,
-      immatriculation: '1234 AB 01',
-      marque: 'TOYOTA',
-      modele: 'Hilux Double Cabine',
-      puissanceFiscale: 8,
-      genre: 'Camionnette',
-      valeurVenale: 12000000,
-      valeurNeuf: 25000000,
-      nombrePlace: 5,
-    },
-    {
-      idDevisDetail: 102,
-      immatriculation: '5678 CD 01',
-      marque: 'RENAULT',
-      modele: 'Duster 4x4',
-      puissanceFiscale: 7,
-      genre: 'Véhicule Particulier (Tourisme)',
-      valeurVenale: 9000000,
-      valeurNeuf: 18000000,
-      nombrePlace: 5,
-    },
-  ]);
+  // Gestion Parc Flotte Automobile. Vide au départ : les véhicules sont ceux ajoutés à la saisie
+  // ou ceux du devis rouvert (enregistre: true, seuls à exister en base). Les deux véhicules
+  // fictifs d'exemple portaient les ids 101/102 : les retirer supprimait en base les détails
+  // 101/102 d'un autre devis (annulationsaisievehicule).
+  const [flotteVehicules, setFlotteVehicules] = useState([]);
   const [editingFlotteIndex, setEditingFlotteIndex] = useState(null);
 
   // ----------------------------------------------------
@@ -336,6 +384,10 @@ export const NewAutoQuotePage = () => {
   const [offreId, setOffreId] = useState(2);
   const [offreSelectionnee, setOffreSelectionnee] = useState('OFFRE AUTOMOBILE TOUS RISQUES');
   const [isEditingPrimes, setIsEditingPrimes] = useState(false); // Mode "Imposer la prime"
+  // Primes imposées validées par le bouton "Enregistrer" : elles restent appliquées (totaux et
+  // enregistrement du devis) une fois la saisie terminée, jusqu'à un "Recalculer CIMA".
+  const [primesImposees, setPrimesImposees] = useState(false);
+  const impositionActive = isEditingPrimes || primesImposees;
   const [deletedGaranties, setDeletedGaranties] = useState([]);
   // true dès que les garanties réellement enregistrées d'un devis existant (stddevisdetgarantie)
   // ont été chargées : empêche le recalcul automatique silencieux d'écraser ces valeurs
@@ -348,15 +400,7 @@ export const NewAutoQuotePage = () => {
   const [garanties, setGaranties] = useState([]);
 
   // Tuiles financières éditables en mode Imposition
-  const [editedExtras, setEditedExtras] = useState({
-    taxe: '',
-    fga: '',
-    accessoire: '',
-    cedeao: '1000',
-    pa: '',
-    pn: '',
-    ttc: '',
-  });
+  const [editedExtras, setEditedExtras] = useState(TUILES_NON_IMPOSEES);
 
   // Ligne cumul (IdGarantie = 0) renvoyée par fn_garantie_offre : accessoire (fn_get_accessoire,
   // fonction de la tranche de prime nette) et taxe sur accessoire — introuvables autrement côté écran.
@@ -370,9 +414,8 @@ export const NewAutoQuotePage = () => {
   // appliqué réduction commerciale, BNS, prorata et taxe par garantie.
   const calculFinancier = useMemo(() => {
     const vehiculesCount = typeContrat === 'FLOTTE' ? Math.max(1, flotteVehicules.length) : 1;
-    const imposer = (champ, valeurCalculee) => (
-      isEditingPrimes && editedExtras[champ] !== '' ? Number(editedExtras[champ]) : valeurCalculee
-    );
+    const estSaisi = (champ) => impositionActive && editedExtras[champ] != null && editedExtras[champ] !== '';
+    const imposer = (champ, valeurCalculee) => (estSaisi(champ) ? Number(editedExtras[champ]) : valeurCalculee);
 
     // Devis rouvert et garanties intactes : on reprend exactement les totaux enregistrés
     const base = totauxEnregistres && garanties === garantiesEnregistreesRef.current
@@ -384,12 +427,15 @@ export const NewAutoQuotePage = () => {
     const finalTaxe = imposer('taxe', base.taxe);
     const finalFga = imposer('fga', base.fga);
     const finalAccessoire = imposer('accessoire', base.accessoire);
-    const finalCedeao = isEditingPrimes && editedExtras.cedeao !== '' ? ensureCedeaoMin(editedExtras.cedeao) : base.cedeao;
+    const finalCedeao = estSaisi('cedeao') ? ensureCedeaoMin(editedExtras.cedeao) : base.cedeao;
 
-    const calculatedTtc = isEditingPrimes
+    // Dès qu'une composante est saisie, le TTC se recalcule à partir des montants affichés
+    // (sinon il reprend le total de base, qui est celui enregistré pour un devis rouvert).
+    const composanteSaisie = ['pn', 'taxe', 'fga', 'accessoire', 'cedeao'].some(estSaisi);
+    const calculatedTtc = composanteSaisie
       ? finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire
       : base.ttc;
-    const finalTtc = isEditingPrimes && editedExtras.ttc !== '' ? Number(editedExtras.ttc) : calculatedTtc;
+    const finalTtc = imposer('ttc', calculatedTtc);
 
     return {
       primeAnnuelle: finalPA,
@@ -405,11 +451,27 @@ export const NewAutoQuotePage = () => {
     garanties,
     typeContrat,
     flotteVehicules,
-    isEditingPrimes,
+    impositionActive,
     editedExtras,
     ligneCumul,
     totauxEnregistres,
   ]);
+
+  // Valeur affichée dans une tuile éditable : la saisie si elle existe, sinon le total calculé
+  const valeurTuile = (champ, valeurCalculee) => editedExtras[champ] ?? String(valeurCalculee);
+
+  // Saisie d'une tuile : le TTC (s'il n'est pas lui-même la tuile saisie) se recalcule aussitôt
+  const handleTuileChange = (champ, valeur) => setEditedExtras((prev) => ({
+    ...prev,
+    [champ]: valeur,
+    ...(champ !== 'ttc' && champ !== 'pa' ? { ttc: null } : {}),
+  }));
+
+  // Une prime de garantie a changé : les totaux qui en découlent reprennent le calcul pour
+  // refléter la modification en temps réel (accessoire et CEDEAO n'en dépendent pas).
+  const libererTotauxDependants = () => setEditedExtras((prev) => ({
+    ...prev, pa: null, pn: null, taxe: null, fga: null, ttc: null,
+  }));
 
   // Paramètres transmis au moteur CIMA (fn_garantie_offre). Mémorisés pour relancer le calcul
   // dès qu'une donnée d'entrée change : auparavant seuls offre/tarif/compagnie déclenchaient
@@ -428,33 +490,85 @@ export const NewAutoQuotePage = () => {
   const idTarifCalcul = categorieSelectionnee?.id || offreSelectionneeObj?.idTarif || 1;
   const grilleOffre = categories.find((cat) => Number(cat.id) === Number(offreSelectionneeObj?.idTarif));
   const categoriePersonneMorale = categories.find((cat) => cat.code === '212');
-  const calculPayload = useMemo(() => ({
-    CodeCarburant: Number(energieId || 1),
-    CodeAlarme: Number(systemeSecuriteId || 0),
-    IdOffre: Number(offreId || 1),
-    IdTarif: Number(idTarifCalcul),
-    NsiaAutoPlus: Boolean(nsiaAutoPlus),
-    IdCompagnie: Number(compagnieId || 1),
-    ValNeuve: Number(valeurNeuf || 0),
-    ValVenale: Number(valeurVenale || 0),
-    ValAccessoire: Number(valeurAccessoire || 0),
-    Puissance: Number(puissanceFiscale || 7),
-    Tonnage: Number(chargeUtile || 0),
-    TauxReduction: Number(reductionCommerciale || 0),
-    DateEffet: toDmy(dateEffet),
-    DateExpiration: toDmy(effectiveDateExpiration),
-    DateMec: toDmy(dateMec),
-    Bns: Number(bonusMalus || 0),
-    RemorqueAttelee: Boolean(remorqueAttelee),
-    CodeFormuleSecuriteRoutiere: formuleSecuriteCode || '',
-    NombrePlace: Number(nombrePlace || 5),
-    CodeUsage: Number(usageId || 1),
-    CarburantAutreMatiere: Boolean(carburantAutreMatiere),
-    TransportEleves: Boolean(transportEleves),
-    TransportEmployes: Boolean(transportEmployes),
-    TansportPassagerSupplementaire: Boolean(transportPassagerSupplementaire),
-    IdOptionAssistance: Number(formuleAssistanceId || 0),
-  }), [
+
+  // Véhicule saisi à l'écran : instantané complet (paramètres tarifaires compris). En flotte,
+  // chaque véhicule de la liste est un tel instantané, enregistré par son propre appel à
+  // sp_creation_devis ; les clés sont celles attendues par formatAutoQuoteForApi (details).
+  const instantaneVehicule = () => ({
+    idTarif: Number(categorieId) || 0,
+    categorieContrat,
+    codeUsage: Number(usageId) || 0,
+    usageVehicule,
+    idCarrosserie: Number(carrosserieId) || 0,
+    carrosserie,
+    idOffre: Number(offreId) || 0,
+    offreSelectionnee,
+    codeCarburant: Number(energieId) || 0,
+    energie,
+    codeAlarme: Number(systemeSecuriteId) || 0,
+    systemeSecurite,
+    codeFormuleSecuriteRoutiere: formuleSecuriteCode,
+    idOptionAssistance: Number(formuleAssistanceId) || 0,
+    idMarque: Number(marqueId) || 0,
+    marqueVehicule,
+    idGenreVehicule: Number(genreId) || 0,
+    genreVehicule,
+    typeCommercial,
+    remorqueAttelee: Boolean(remorqueAttelee),
+    modeleVehicule,
+    puissanceFiscale: Number(puissanceFiscale) || 0,
+    chargeUtile: Number(chargeUtile) || 0,
+    nombrePlace: Number(nombrePlace) || 0,
+    valeurNeuf: Number(valeurNeuf) || 0,
+    valeurVenale: Number(valeurVenale) || 0,
+    valeurAccessoire: Number(valeurAccessoire) || 0,
+    immatriculation: String(immatriculation || '').trim().toUpperCase(),
+    numeroCarteBrune,
+    numeroChassis,
+    numeroMoteur,
+    dateMec,
+    carburantAutreMatiere: Boolean(carburantAutreMatiere),
+    transportEleves: Boolean(transportEleves),
+    transportEmployes: Boolean(transportEmployes),
+    transportPassagerSupplementaire: Boolean(transportPassagerSupplementaire),
+    nsiaAutoPlus: Boolean(nsiaAutoPlus),
+  });
+
+  // Paramètres du moteur CIMA (fn_garantie_offre) pour un véhicule
+  const payloadMoteur = (v) => {
+    const categorieReelle = categories !== DEFAULT_CATEGORIES
+      && categories.some((cat) => Number(cat.id) === Number(v.idTarif));
+    const offre = offresList.find((o) => o.id === Number(v.idOffre));
+    return {
+      CodeCarburant: Number(v.codeCarburant || 1),
+      CodeAlarme: Number(v.codeAlarme || 0),
+      IdOffre: Number(v.idOffre || 1),
+      IdTarif: Number((categorieReelle ? v.idTarif : null) || offre?.idTarif || 1),
+      NsiaAutoPlus: Boolean(v.nsiaAutoPlus),
+      IdCompagnie: Number(compagnieId || 1),
+      ValNeuve: Number(v.valeurNeuf || 0),
+      ValVenale: Number(v.valeurVenale || 0),
+      ValAccessoire: Number(v.valeurAccessoire || 0),
+      Puissance: Number(v.puissanceFiscale || 7),
+      Tonnage: Number(v.chargeUtile || 0),
+      TauxReduction: Number(reductionCommerciale || 0),
+      DateEffet: toDmy(dateEffet),
+      DateExpiration: toDmy(effectiveDateExpiration),
+      DateMec: toDmy(v.dateMec),
+      Bns: Number(bonusMalus || 0),
+      RemorqueAttelee: Boolean(v.remorqueAttelee),
+      CodeFormuleSecuriteRoutiere: v.codeFormuleSecuriteRoutiere || '',
+      NombrePlace: Number(v.nombrePlace || 5),
+      CodeUsage: Number(v.codeUsage || 1),
+      CarburantAutreMatiere: Boolean(v.carburantAutreMatiere),
+      TransportEleves: Boolean(v.transportEleves),
+      TransportEmployes: Boolean(v.transportEmployes),
+      TansportPassagerSupplementaire: Boolean(v.transportPassagerSupplementaire),
+      IdOptionAssistance: Number(v.idOptionAssistance || 0),
+    };
+  };
+
+  const calculPayload = useMemo(() => payloadMoteur(instantaneVehicule()), [
     energieId, systemeSecuriteId, offreId, idTarifCalcul, nsiaAutoPlus, compagnieId, valeurNeuf,
     valeurVenale, valeurAccessoire, puissanceFiscale, chargeUtile, reductionCommerciale, dateEffet,
     effectiveDateExpiration, dateMec, bonusMalus, remorqueAttelee, formuleSecuriteCode, nombrePlace,
@@ -475,27 +589,14 @@ export const NewAutoQuotePage = () => {
         // elle n'a aucune garantie configurée pour cette compagnie (résultat vide) :
         // ne rien faire ici laissait affichées les garanties de l'offre précédente,
         // donnant l'impression que le tableau ne changeait jamais.
-        const mapped = res.data
-          .filter((item) => item.IdGarantie !== 0 && item.LibelleSousGarantie)
-          .map((item) => ({
-            id_garantie: item.IdSousGarantie || item.IdGarantie,
-            code: `GAR_${item.IdSousGarantie || item.IdGarantie}`,
-            nom: item.LibelleSousGarantie,
-            acquise: Boolean(item.Acquise ?? true),
-            capital: item.Capital ? `${Number(item.Capital).toLocaleString('fr-FR')} F` : 'Néant',
-            franchise: item.TexteFranchise || (item.Franchise ? `${item.Franchise} F` : 'Néant'),
-            formule: item.Formule || 'CIMA Standard',
-            place: item.NombrePlace || nombrePlace || 5,
-            primeAnnuelle: Number(item.PrimeAnnuelle || 0),
-            primeNette: Number(item.PrimeNette || 0),
-            taxe: Number(item.Taxe || 0),
-            primeNetteOrigine: Number(item.PrimeNette || 0),
-            is_new_garantie: false,
-          }));
+        const mapped = garantiesDepuisMoteur(res.data, nombrePlace);
 
         setLigneCumul(extraireLigneCumul(res.data));
         setGaranties(mapped);
         if (!silent) {
+          // Retour au barème : les primes imposées sont abandonnées
+          setPrimesImposees(false);
+          setEditedExtras(TUILES_NON_IMPOSEES);
           if (mapped.length > 0) {
             info('Garanties et primes mises à jour depuis le moteur de tarification CIMA !');
           } else {
@@ -511,11 +612,211 @@ export const NewAutoQuotePage = () => {
   };
 
   // ----------------------------------------------------
+  // FLOTTE : liste de véhicules complets, enregistrés un par un (sp_creation_devis) puis
+  // totalisés par sp_finalisation_devis, comme dans URANUS
+  // ----------------------------------------------------
+  // Véhicules déjà enregistrés retirés de la liste : supprimés en base à l'enregistrement du
+  // devis seulement (sp_suppression_vehicule), pour qu'abandonner la saisie ne supprime rien.
+  const [vehiculesRetires, setVehiculesRetires] = useState([]);
+  // Primes estimées par le moteur CIMA pour les véhicules nouveaux ou modifiés
+  const [estimationsFlotte, setEstimationsFlotte] = useState({});
+  const [estimationFlotteEnCours, setEstimationFlotteEnCours] = useState(false);
+
+  const nouvelleCleVehicule = () => `v${Date.now()}${Math.random().toString(36).slice(2)}`;
+
+  // Replace un véhicule de la flotte dans l'écran Véhicule (pour le modifier)
+  const chargerVehicule = (v) => {
+    setCategorieId(v.idTarif);
+    if (v.categorieContrat) setCategorieContrat(v.categorieContrat);
+    setUsageId(v.codeUsage);
+    if (v.usageVehicule) setUsageVehicule(v.usageVehicule);
+    setCarrosserieId(v.idCarrosserie);
+    if (v.carrosserie) setCarrosserie(v.carrosserie);
+    setOffreId(v.idOffre);
+    if (v.offreSelectionnee) setOffreSelectionnee(v.offreSelectionnee);
+    setEnergieId(v.codeCarburant);
+    if (v.energie) setEnergie(v.energie);
+    setSystemeSecuriteId(v.codeAlarme);
+    if (v.systemeSecurite) setSystemeSecurite(v.systemeSecurite);
+    setFormuleSecuriteCode(v.codeFormuleSecuriteRoutiere || 'AUCUNE');
+    setFormuleAssistanceId(v.idOptionAssistance || 0);
+    setMarqueId(v.idMarque);
+    if (v.marqueVehicule) setMarqueVehicule(v.marqueVehicule);
+    setGenreId(v.idGenreVehicule);
+    if (v.genreVehicule) setGenreVehicule(v.genreVehicule);
+    if (v.typeCommercial) setTypeCommercial(v.typeCommercial);
+    setRemorqueAttelee(Boolean(v.remorqueAttelee));
+    setModeleVehicule(v.modeleVehicule || '');
+    setPuissanceFiscale(v.puissanceFiscale);
+    setChargeUtile(v.chargeUtile);
+    setNombrePlace(v.nombrePlace);
+    setValeurNeuf(v.valeurNeuf);
+    setValeurVenale(v.valeurVenale);
+    setValeurAccessoire(v.valeurAccessoire);
+    setImmatriculation(v.immatriculation || '');
+    setNumeroCarteBrune(v.numeroCarteBrune || '');
+    setNumeroChassis(v.numeroChassis || '');
+    setNumeroMoteur(v.numeroMoteur || '');
+    if (v.dateMec) setDateMec(v.dateMec);
+    setCarburantAutreMatiere(Boolean(v.carburantAutreMatiere));
+    setTransportEleves(Boolean(v.transportEleves));
+    setTransportEmployes(Boolean(v.transportEmployes));
+    setTransportPassagerSupplementaire(Boolean(v.transportPassagerSupplementaire));
+    setNsiaAutoPlus(Boolean(v.nsiaAutoPlus));
+  };
+
+  // Véhicule enregistré (ligne stddevisdetail de /devisdetail) sous forme d'instantané
+  const vehiculeDepuisDetail = (l) => ({
+    idTarif: Number(l.idtarif) || 0,
+    categorieContrat: categories.find((cat) => Number(cat.id) === Number(l.idtarif))?.libelle || '',
+    codeUsage: Number(l.idusage?.IdUsage ?? 0),
+    usageVehicule: l.idusage?.LibelleUsage || '',
+    idCarrosserie: Number(l.idcarrosserie) || 0,
+    carrosserie: carrosseries.find((car) => Number(car.id) === Number(l.idcarrosserie))?.libelle || '',
+    idOffre: Number(l.idoffre) || 0,
+    offreSelectionnee: offresList.find((o) => Number(o.id) === Number(l.idoffre))?.libelle || '',
+    codeCarburant: Number(l.essence?.IdEnergie ?? 0),
+    energie: l.essence?.Libelle || '',
+    codeAlarme: Number(l.securite?.IdSystemeSecurite ?? 0),
+    systemeSecurite: l.securite?.LibelleSystemeSecurite || '',
+    codeFormuleSecuriteRoutiere: l.formule_securite_routiere || 'AUCUNE',
+    idOptionAssistance: Number(l.assistance_automobie || 0),
+    idMarque: Number(l.idmarque?.IdMarque ?? 0),
+    marqueVehicule: l.idmarque?.LibelleMarque || '',
+    idGenreVehicule: Number(l.idgenrevehicule?.IdGenre ?? 0),
+    genreVehicule: l.idgenrevehicule?.LibelleGenre || '',
+    typeCommercial: l.idtypevehicule?.libelle_type || '',
+    idTypeVehicule: l.idtypevehicule?.id,
+    remorqueAttelee: Boolean(l.remorque),
+    modeleVehicule: l.modelevehicule || '',
+    puissanceFiscale: Number(l.puissancefiscale || 0),
+    chargeUtile: Number(l.chargeutile || 0),
+    nombrePlace: Number(l.nombreplace || 0),
+    valeurNeuf: Number(l.valeurneuve || 0),
+    valeurVenale: Number(l.valeurvenale || 0),
+    valeurAccessoire: Number(l.valeuraccessoire || 0),
+    immatriculation: String(l.matricule || '').trim().toUpperCase(),
+    numeroCarteBrune: l.numcarteverte || '',
+    numeroChassis: l.numchassis || '',
+    numeroMoteur: l.nummoteur || '',
+    dateMec: toIsoDate(l.datemec),
+    carburantAutreMatiere: Boolean(l.carburant_autre_matiere),
+    transportEleves: Boolean(l.transport_eleves),
+    transportEmployes: Boolean(l.transport_employes),
+    transportPassagerSupplementaire: Boolean(l.transport_passager_supplementaire),
+    // NSIA Auto Plus n'est pas stocké : seule la garantie qu'il fait retenir le trahit
+    nsiaAutoPlus: (l.garanties_enregistrees || []).some(
+      (g) => Number(g.IdGarantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS && g.Acquise,
+    ),
+  });
+
+  // Véhicule à (r)envoyer à sp_creation_devis : nouveau, modifié, ou en-tête du devis modifié
+  // (enteteModifiee, calculé plus bas avec le souscripteur)
+  const vehiculeAEnvoyer = (v) => !v.enregistre || enteteModifiee || empreinteVehicule(v) !== v.origine;
+
+  const viderSaisieVehicule = () => {
+    setImmatriculation('');
+    setNumeroCarteBrune('');
+    setNumeroChassis('');
+    setNumeroMoteur('');
+  };
+
+  const handleAjouterOuMajVehicule = () => {
+    const v = instantaneVehicule();
+    if (!v.immatriculation) {
+      toastError('Saisissez l\'immatriculation du véhicule.');
+      return;
+    }
+    if (flotteVehicules.some((x, i) => i !== editingFlotteIndex && x.immatriculation === v.immatriculation)) {
+      toastError(`Le véhicule ${v.immatriculation} est déjà dans la flotte.`);
+      return;
+    }
+    if (editingFlotteIndex !== null) {
+      setFlotteVehicules((prev) => prev.map((x, i) => (i === editingFlotteIndex ? { ...x, ...v } : x)));
+      setEditingFlotteIndex(null);
+      success(`Véhicule ${v.immatriculation} mis à jour dans la flotte.`);
+    } else {
+      setFlotteVehicules((prev) => [...prev, { ...v, cle: nouvelleCleVehicule(), idDevisDetail: null, enregistre: false, origine: null }]);
+      success(`Véhicule ${v.immatriculation} ajouté à la flotte.`);
+    }
+    viderSaisieVehicule();
+  };
+
+  const handleModifierVehicule = (idx) => {
+    chargerVehicule(flotteVehicules[idx]);
+    setEditingFlotteIndex(idx);
+  };
+
+  const handleAnnulerModificationVehicule = () => {
+    setEditingFlotteIndex(null);
+    viderSaisieVehicule();
+  };
+
+  const handleRetirerVehicule = (idx) => {
+    const veh = flotteVehicules[idx];
+    if (!veh || !window.confirm(`Retirer le véhicule ${veh.immatriculation} de la flotte ?`)) return;
+    if (veh.enregistre && veh.idDevisDetail) {
+      setVehiculesRetires((prev) => [...prev, { idDevisDetail: veh.idDevisDetail, immatriculation: veh.immatriculation }]);
+    }
+    setFlotteVehicules((prev) => prev.filter((_, i) => i !== idx));
+    if (editingFlotteIndex === idx) handleAnnulerModificationVehicule();
+    else if (editingFlotteIndex !== null && editingFlotteIndex > idx) setEditingFlotteIndex(editingFlotteIndex - 1);
+    info(veh.enregistre
+      ? `Véhicule ${veh.immatriculation} retiré : il sera supprimé du devis à l'enregistrement.`
+      : `Véhicule ${veh.immatriculation} retiré de la flotte.`);
+  };
+
+  // Primes par véhicule : celles enregistrées pour un véhicule inchangé, sinon l'estimation du moteur
+  const primesVehicule = (v) => (vehiculeAEnvoyer(v)
+    ? estimationsFlotte[v.cle]?.empreinte === `${empreinteVehicule(v)}|${enteteDevis}` ? estimationsFlotte[v.cle].totaux : null
+    : v.primesEnregistrees || null);
+
+  // Liste de la flotte telle qu'elle sera enregistrée : le véhicule en cours de modification
+  // est pris tel qu'affiché à l'écran Véhicule
+  const flotteEffective = () => (editingFlotteIndex === null
+    ? flotteVehicules
+    : flotteVehicules.map((x, i) => (i === editingFlotteIndex ? { ...x, ...instantaneVehicule() } : x)));
+
+  // À l'écran des primes d'une flotte : estimation des véhicules nouveaux ou modifiés
+  useEffect(() => {
+    if (step === 3 && typeContrat === 'FLOTTE') estimerFlotte();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, typeContrat]);
+
+  const estimerFlotte = async (forcer = false) => {
+    const aEstimer = flotteEffective().filter((v) => vehiculeAEnvoyer(v) && (forcer || !primesVehicule(v)));
+    if (!aEstimer.length) return;
+    setEstimationFlotteEnCours(true);
+    try {
+      const resultats = await Promise.all(aEstimer.map(async (v) => {
+        try {
+          const res = await quoteApi.calculateOffreGarantie(payloadMoteur(v));
+          const garantiesVehicule = garantiesDepuisMoteur(res?.data, v.nombrePlace);
+          // Offre sans garantie paramétrée pour cette compagnie : pas de prime à afficher (0 F tromperait)
+          return [v.cle, {
+            empreinte: `${empreinteVehicule(v)}|${enteteDevis}`,
+            totaux: garantiesVehicule.length ? calculerTotauxDevisAuto({ garanties: garantiesVehicule }) : null,
+            sansGarantie: garantiesVehicule.length === 0,
+          }];
+        } catch {
+          return [v.cle, null];
+        }
+      }));
+      setEstimationsFlotte((prev) => ({ ...prev, ...Object.fromEntries(resultats.filter(([, r]) => r)) }));
+      if (resultats.some(([, r]) => !r)) toastError('Les primes de certains véhicules n\'ont pas pu être estimées.');
+    } finally {
+      setEstimationFlotteEnCours(false);
+    }
+  };
+
+  // ----------------------------------------------------
   // ÉCRAN 4 : CLIENT / ASSURÉ / CONDUCTEUR
   // ----------------------------------------------------
   const [souscripteurId, setSouscripteurId] = useState(() => clients[0]?.id || 1);
   const [searchSouscripteur, setSearchSouscripteur] = useState('');
   const [nomAssure, setNomAssure] = useState('');
+  // Assuré différent du souscripteur (devis rouvert) ; null = l'assuré est le souscripteur
+  const [assureId, setAssureId] = useState(null);
   const [telephoneClient, setTelephoneClient] = useState('+225 ');
   const [nomConducteur, setNomConducteur] = useState('');
   const [adresseConducteur, setAdresseConducteur] = useState('');
@@ -523,6 +824,16 @@ export const NewAutoQuotePage = () => {
   const [numeroPermis, setNumeroPermis] = useState('');
   const [lieuHabitation, setLieuHabitation] = useState('');
   const [numeroConducteur, setNumeroConducteur] = useState('+225 ');
+
+  // En-tête du devis flotte : s'il change (dates, compagnie, réduction, client…), tous les
+  // véhicules sont recalculés à l'enregistrement
+  const enteteDevis = JSON.stringify([
+    Number(compagnieId), dateEmission, dateEffet, effectiveDateExpiration, Number(dureeId), Number(termeId),
+    Number(reductionCommerciale) || 0, Number(bonusMalus) || 0, numeroPoliceCompagnie || '',
+    Number(souscripteurId), Number(assureId) || 0,
+  ]);
+  const [enteteOrigine, setEnteteOrigine] = useState(null);
+  const enteteModifiee = Boolean(enteteOrigine) && enteteOrigine !== enteteDevis;
 
   // NSIA tarifie les véhicules de tourisme des sociétés en catégorie 212 (RC majorée de 5 %)
   const souscripteurSelectionne = clients.find((c) => String(c.id) === String(souscripteurId));
@@ -544,6 +855,8 @@ export const NewAutoQuotePage = () => {
   const [editIdAvenant, setEditIdAvenant] = useState(null);
   const [editNumeroDevis, setEditNumeroDevis] = useState('');
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
+  // Devis repris d'URANUS sans véhicule en base
+  const [avertissementReprise, setAvertissementReprise] = useState('');
 
   // ----------------------------------------------------
   // BROUILLON : saisie non terminée enregistrée en base (/api/brouillons/) pour être reprise
@@ -604,9 +917,12 @@ export const NewAutoQuotePage = () => {
     transportPassagerSupplementaire: [transportPassagerSupplementaire, setTransportPassagerSupplementaire],
     nsiaAutoPlus: [nsiaAutoPlus, setNsiaAutoPlus],
     flotteVehicules: [flotteVehicules, setFlotteVehicules],
+    vehiculesRetires: [vehiculesRetires, setVehiculesRetires],
+    enteteOrigine: [enteteOrigine, setEnteteOrigine],
     offreId: [offreId, setOffreId],
     offreSelectionnee: [offreSelectionnee, setOffreSelectionnee],
     isEditingPrimes: [isEditingPrimes, setIsEditingPrimes],
+    primesImposees: [primesImposees, setPrimesImposees],
     deletedGaranties: [deletedGaranties, setDeletedGaranties],
     garanties: [garanties, setGaranties],
     editedExtras: [editedExtras, setEditedExtras],
@@ -614,6 +930,7 @@ export const NewAutoQuotePage = () => {
     souscripteurId: [souscripteurId, setSouscripteurId],
     searchSouscripteur: [searchSouscripteur, setSearchSouscripteur],
     nomAssure: [nomAssure, setNomAssure],
+    assureId: [assureId, setAssureId],
     telephoneClient: [telephoneClient, setTelephoneClient],
     nomConducteur: [nomConducteur, setNomConducteur],
     adresseConducteur: [adresseConducteur, setAdresseConducteur],
@@ -682,13 +999,13 @@ export const NewAutoQuotePage = () => {
     // réellement enregistrées soient chargées avant d'envisager un recalcul —
     // sinon un appel lancé avec les valeurs par défaut (avant l'arrivée des
     // vraies données) pourrait, selon le timing réseau, écraser ces garanties.
-    // En mode "Imposer la prime", on ne réécrase pas non plus les primes saisies.
-    if (isLoadingEdit || garantiesChargeesDuDevisRef.current || isEditingPrimes) return undefined;
+    // En mode "Imposer la prime" (en cours ou enregistré), on ne réécrase pas non plus les primes saisies.
+    if (isLoadingEdit || garantiesChargeesDuDevisRef.current || impositionActive) return undefined;
     if (!(offreId && categorieId && compagnieId)) return undefined;
     const timer = setTimeout(() => handleRecalculateApi(true), 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calculPayload, categorieId, isLoadingEdit, isEditingPrimes]);
+  }, [calculPayload, categorieId, isLoadingEdit, impositionActive]);
 
   // Garde la catégorie sélectionnée cohérente avec la liste filtrée par branche :
   // aligne le libellé sur l'id (ex: devis rechargé en édition), sinon bascule sur la 1re catégorie disponible
@@ -736,8 +1053,12 @@ export const NewAutoQuotePage = () => {
     }
   }, [carrosseriesFiltrees, carrosserieId, carrosserie, editIddevisParam, brouillonParam]);
 
+  // Date AAAA-MM-JJ d'une valeur API : la partie date est reprise telle quelle, sans passer par
+  // new Date() qui la décalait d'un jour selon le fuseau horaire du poste.
   const toIsoDate = (v) => {
     if (!v) return '';
+    const iso = String(v).match(/^(\d{4}-\d{2}-\d{2})/);
+    if (iso) return iso[1];
     const d = new Date(v);
     return isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
   };
@@ -747,9 +1068,20 @@ export const NewAutoQuotePage = () => {
     let isMounted = true;
     (async () => {
       try {
-        const dd = await quoteApi.getDevisDetailAuto(editIddevisParam);
-        if (!isMounted || !dd) return;
-        const d = dd.iddevis || {};
+        // Devis repris d'URANUS sans véhicule en base : /devisdetail répond 404, l'en-tête
+        // (stddevis) est alors relu seul pour garder dates, client, compagnie et montants
+        const lignes = await quoteApi.getDevisDetailsAuto(editIddevisParam).catch((e) => {
+          if (e?.response?.status === 404) return [];
+          throw e;
+        });
+        const dd = lignes[0] || {};
+        const d = dd.iddevis || (lignes.length ? {} : (await quoteApi.getQuote(editIddevisParam))?.raw || {});
+        if (!isMounted) return;
+        if (!d.iddevis) throw new Error('devis introuvable');
+        setAvertissementReprise(lignes.length ? '' : (
+          'Ce devis repris d\'URANUS n\'a aucun véhicule ni garantie en base : seuls l\'en-tête et les montants ont été repris. '
+          + 'Complétez le véhicule puis « Recalculer CIMA » avant d\'enregistrer.'
+        ));
 
         if (d.confirme) {
           toastError('Ce devis est déjà confirmé (converti en police) : il ne peut plus être modifié ici.');
@@ -763,6 +1095,36 @@ export const NewAutoQuotePage = () => {
         setEditNumeroDevis(d.numerodevis || '');
 
         // Contrat & tarification
+        setTypeContrat(d.flotte ? 'FLOTTE' : 'MONO');
+        if (d.flotte) {
+          // Chaque véhicule enregistré, avec ses garanties : inchangé, il ne sera pas renvoyé
+          // (ses primes enregistrées sont conservées) ; modifié ou retiré, il le sera à l'enregistrement
+          const vehicules = lignes.map((l) => {
+            // Montants stockés sur le véhicule, ceux que sp_finalisation_devis additionne
+            // (stddevisdetail.primenette comprend FGA et CEDEAO)
+            const cedeao = (l.garanties_enregistrees || [])
+              .filter((g) => Number(g.IdGarantie) === ID_SOUS_GARANTIE_CEDEAO)
+              .reduce((s, g) => s + (Number(g.PrimeNette) || 0), 0);
+            const v = {
+              ...vehiculeDepuisDetail(l),
+              cle: `d${l.iddevisdetail}`,
+              idDevisDetail: l.iddevisdetail,
+              enregistre: true,
+              primesEnregistrees: {
+                pa: Number(l.primeannuelle) || 0,
+                pn: (Number(l.primenette) || 0) - (Number(l.fga) || 0) - cedeao,
+                taxe: Number(l.taxeenregistrement) || 0,
+                fga: Number(l.fga) || 0,
+                cedeao,
+              },
+            };
+            return { ...v, origine: empreinteVehicule(v) };
+          });
+          setFlotteVehicules(vehicules);
+          setVehiculesRetires([]);
+          // L'écran Véhicule montre le premier véhicule, en modification
+          if (vehicules.length) setEditingFlotteIndex(0);
+        }
         setNumeroPoliceCompagnie(d.numero_police_compagnie || '');
         // d.compagnie peut être soit un id simple, soit l'objet compagnie complet
         // selon le point d'API — gérer les deux pour ne jamais obtenir NaN
@@ -771,83 +1133,46 @@ export const NewAutoQuotePage = () => {
         if (compagnieIdFromDevis !== undefined && compagnieIdFromDevis !== null) {
           setCompagnieId(Number(compagnieIdFromDevis));
         }
-        if (dd.idtarif) setCategorieId(Number(dd.idtarif));
-        if (dd.idusage?.IdUsage !== undefined) {
-          setUsageId(Number(dd.idusage.IdUsage));
-          setUsageVehicule(dd.idusage.LibelleUsage || '');
-        }
-        if (dd.idcarrosserie !== undefined) setCarrosserieId(Number(dd.idcarrosserie));
         setReductionCommerciale(Number(dd.taux_reduction || 0));
         setBonusMalus(Number(dd.bns || d.bonus_malus || 0));
-        if (d.idduree) setDureeId(Number(d.idduree));
-        if (d.idterme) setTermeId(Number(d.idterme));
+        // Les menus Durée et Terme affichent le libellé : il doit suivre l'id enregistré
+        const duree = DEFAULT_DUREES.find((x) => x.id === Number(d.idduree));
+        if (duree) {
+          setDureeId(duree.id);
+          setDureeContrat(duree.libelle.split(' ')[0]);
+        }
+        const terme = DEFAULT_TERMES.find((x) => x.id === Number(d.idterme));
+        if (terme) {
+          setTermeId(terme.id);
+          setTermeContrat(terme.libelle);
+        }
         setDateEmission(toIsoDate(d.dateemission) || dateEmission);
         setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
         setCustomDateExpiration(toIsoDate(d.dateexpiration));
 
-        // Véhicule
-        if (dd.essence?.IdEnergie !== undefined) {
-          setEnergieId(Number(dd.essence.IdEnergie));
-          setEnergie(dd.essence.Libelle || '');
-        }
-        if (dd.securite?.IdSystemeSecurite !== undefined) {
-          setSystemeSecuriteId(Number(dd.securite.IdSystemeSecurite));
-          setSystemeSecurite(dd.securite.LibelleSystemeSecurite || '');
-        }
-        setFormuleSecuriteCode(dd.formule_securite_routiere || 'AUCUNE');
-        setFormuleAssistanceId(Number(dd.assistance_automobie || 0));
-        if (dd.idmarque?.IdMarque !== undefined) {
-          setMarqueId(Number(dd.idmarque.IdMarque));
-          setMarqueVehicule(dd.idmarque.LibelleMarque || '');
-        }
-        if (dd.idgenrevehicule?.IdGenre !== undefined) {
-          setGenreId(Number(dd.idgenrevehicule.IdGenre));
-          setGenreVehicule(dd.idgenrevehicule.LibelleGenre || '');
-        }
-        // Type de véhicule enregistré : sans lui, la mise à jour le remplaçait par le type par défaut
-        if (dd.idtypevehicule?.libelle_type) setTypeCommercial(dd.idtypevehicule.libelle_type);
-        setRemorqueAttelee(Boolean(dd.remorque));
-        setModeleVehicule(dd.modelevehicule || '');
-        setPuissanceFiscale(Number(dd.puissancefiscale || 0));
-        setChargeUtile(Number(dd.chargeutile || 0));
-        setNombrePlace(Number(dd.nombreplace || 0));
-        setValeurNeuf(Number(dd.valeurneuve || 0));
-        setValeurVenale(Number(dd.valeurvenale || 0));
-        setValeurAccessoire(Number(dd.valeuraccessoire || 0));
-        setImmatriculation(dd.matricule || '');
-        setNumeroCarteBrune(dd.numcarteverte || '');
-        setNumeroChassis(dd.numchassis || '');
-        setNumeroMoteur(dd.nummoteur || '');
-        setDateMec(toIsoDate(dd.datemec) || dateMec);
-        setCarburantAutreMatiere(Boolean(dd.carburant_autre_matiere));
-        setTransportEleves(Boolean(dd.transport_eleves));
-        setTransportEmployes(Boolean(dd.transport_employes));
-        setTransportPassagerSupplementaire(Boolean(dd.transport_passager_supplementaire));
-        if (dd.idoffre) setOffreId(Number(dd.idoffre));
+        // Véhicule (le premier pour une flotte) ; devis sans véhicule en base : seule l'offre
+        // de l'en-tête est reprise, le reste de l'écran Véhicule est à compléter
+        if (lignes.length) chargerVehicule(vehiculeDepuisDetail(dd));
+        const idOffreDevis = dd.idoffre || d.offre?.IdOffre || d.offre;
+        if (idOffreDevis) setOffreId(Number(idOffreDevis));
 
         // Garanties réellement enregistrées pour ce devis (stddevisdetgarantie) : sans
         // ça, l'écran ne peut qu'afficher les 6 garanties par défaut ou recalculer à
         // neuf via le moteur CIMA, écrasant silencieusement primes imposées/acquises
         // telles qu'elles ont été réellement enregistrées à la création du devis.
-        if (Array.isArray(dd.garanties_enregistrees) && dd.garanties_enregistrees.length > 0) {
-          const garantiesEnregistrees = dd.garanties_enregistrees.map((g) => ({
-            id_garantie: g.IdGarantie,
-            code: `GAR_${g.IdGarantie}`,
-            nom: g.libellegarantie || `Garantie #${g.IdGarantie}`,
-            acquise: Boolean(g.Acquise),
-            capital: g.Capital ? `${Number(g.Capital).toLocaleString('fr-FR')} F` : 'Néant',
-            franchise: g.TexteFranchise || 'Néant',
-            formule: 'CIMA Standard',
-            place: nombrePlace || 5,
-            primeAnnuelle: Number(g.primeannuelle || 0),
-            primeNette: Number(g.PrimeNette || 0),
-            taxe: Number(g.taxe || 0),
-            primeNetteOrigine: Number(g.PrimeNette || 0),
-            is_new_garantie: false,
-          }));
+        // Devis sans véhicule en base : aucune garantie, mais les montants de l'en-tête restent
+        // affichés et le recalcul automatique (sur un véhicule vide) est bloqué.
+        const garantiesDevis = Array.isArray(dd.garanties_enregistrees) ? dd.garanties_enregistrees : [];
+        if (garantiesDevis.length > 0 || lignes.length === 0) {
+          const garantiesEnregistrees = garantiesDepuisDevis(garantiesDevis, Number(dd.nombreplace) || 5);
           garantiesEnregistreesRef.current = garantiesEnregistrees;
           setGaranties(garantiesEnregistrees);
           garantiesChargeesDuDevisRef.current = true;
+          // Devis à primes imposées (stddevis.primeimposee) : l'imposition reste active, pour
+          // que l'enregistrement repasse ces primes au lieu de les recalculer au barème. Pas en
+          // flotte : sp_correction_devis appliquerait les garanties d'un véhicule à tous les autres
+          // (les véhicules inchangés d'une flotte gardent de toute façon leurs primes enregistrées).
+          setPrimesImposees(!d.flotte && Boolean(d.prime_imposee));
 
           // Totaux de l'en-tête (stddevis) tels qu'URANUS les affiche en édition :
           // stddevis.primenette inclut le FGA (sp_finalisation_devis), d'où la soustraction.
@@ -867,12 +1192,16 @@ export const NewAutoQuotePage = () => {
         // client complet ({IdClient, Nom, ...}) selon le point d'API : gérer les
         // deux, sinon la comparaison vaut "[object Object]" et ne matche jamais,
         // laissant le client du devis sur la valeur par défaut au lieu de la vraie.
-        const client = clients.find((c) => String(c.id) === String(d.client?.IdClient ?? d.client));
+        const idClientDevis = d.client?.IdClient ?? d.client;
+        const client = clients.find((c) => String(c.id) === String(idClientDevis));
         if (client) {
           setSouscripteurId(client.id);
           setSearchSouscripteur(client.nomcomplet || '');
           setTelephoneClient(client.telephone || '+225 ');
         }
+        // Assuré distinct du souscripteur (devis repris d'URANUS) : conservé tel quel
+        const idAssureDevis = d.assure?.IdClient ?? d.assure;
+        setAssureId(idAssureDevis && String(idAssureDevis) !== String(idClientDevis) ? Number(idAssureDevis) : null);
         setNomConducteur(dd.conducteur || '');
         setAdresseConducteur(dd.adressecnd || '');
         setNumeroPermis(dd.permis || '');
@@ -889,6 +1218,12 @@ export const NewAutoQuotePage = () => {
     return () => { isMounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editIddevisParam, clients]);
+
+  // En-tête du devis rouvert, tel que chargé : sa modification fera recalculer tous les véhicules
+  useEffect(() => {
+    if (editIddevis && !isLoadingEdit && enteteOrigine === null) setEnteteOrigine(enteteDevis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editIddevis, isLoadingEdit]);
 
   // Chargement des données réelles Django au montage
   useEffect(() => {
@@ -1033,14 +1368,30 @@ export const NewAutoQuotePage = () => {
   useEffect(() => {
     const sc = clients.find((c) => String(c.id) === String(souscripteurId));
     if (sc) {
+      const assure = assureId ? clients.find((c) => String(c.id) === String(assureId)) : null;
       setTelephoneClient(sc.telephone || sc.mobile || '+225 ');
-      setNomAssure(sc.nomcomplet || '');
+      setNomAssure((assure || sc).nomcomplet || '');
       setNomConducteur((prev) => prev || sc.nomcomplet || '');
       setAdresseConducteur((prev) => prev || sc.adresse || '');
       setLieuHabitation((prev) => prev || sc.ville || 'Abidjan');
       setNumeroConducteur((prev) => (prev && prev !== '+225 ' ? prev : sc.telephone || '+225 '));
     }
-  }, [souscripteurId, clients]);
+  }, [souscripteurId, clients, assureId]);
+
+  // Les menus Compagnie et Offre affichent le libellé : il doit suivre l'id (devis rouvert,
+  // brouillon), y compris quand la liste réelle arrive après le chargement du devis.
+  useEffect(() => {
+    const cie = companies.find((c) => Number(c.id) === Number(compagnieId));
+    if (cie && cie.nom !== compagnie) setCompagnie(cie.nom);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies, compagnieId]);
+
+  useEffect(() => {
+    if (offresList === DEFAULT_OFFRES) return;
+    const offre = offresList.find((o) => Number(o.id) === Number(offreId));
+    if (offre && offre.libelle !== offreSelectionnee) setOffreSelectionnee(offre.libelle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offresList, offreId]);
 
   // Filtrage clients
   const filteredClients = useMemo(() => {
@@ -1065,6 +1416,7 @@ export const NewAutoQuotePage = () => {
     if (window.confirm(`Voulez-vous vraiment supprimer la garantie "${target.nom}" ?`)) {
       setDeletedGaranties((prev) => [...prev, target.id_garantie]);
       setGaranties((prev) => prev.filter((_, i) => i !== idx));
+      libererTotauxDependants();
       info(`Garantie "${target.nom}" supprimée.`);
     }
   };
@@ -1075,12 +1427,14 @@ export const NewAutoQuotePage = () => {
     setGaranties((prev) =>
       prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g))
     );
+    libererTotauxDependants();
   };
 
   const handleUpdateGarantieField = (idx, field, val) => {
     setGaranties((prev) =>
       prev.map((g, i) => (i === idx ? { ...g, [field]: val } : g))
     );
+    if (field === 'primeAnnuelle' || field === 'primeNette') libererTotauxDependants();
   };
 
   // Ajout d'une nouvelle garantie personnalisée
@@ -1117,6 +1471,7 @@ export const NewAutoQuotePage = () => {
     };
 
     setGaranties((prev) => [...prev, newG]);
+    libererTotauxDependants();
     setIsAddGarantieModalOpen(false);
     setSelectedSousGarantieId('');
     setNewGarantieForm({
@@ -1165,6 +1520,128 @@ export const NewAutoQuotePage = () => {
     setIsAddMarqueModalOpen(false);
     setNewMarqueInput('');
     success(`Marque "${brandName}" ajoutée avec succès !`);
+  };
+
+  // Totaux d'une flotte à recalculer (sp_finalisation_devis) : reste vrai si la totalisation a
+  // échoué après l'enregistrement des véhicules, pour qu'un nouvel essai la relance
+  const [finalisationFlotteEnAttente, setFinalisationFlotteEnAttente] = useState(false);
+
+  // Enregistrement d'une flotte comme URANUS : un sp_creation_devis par véhicule nouveau ou
+  // modifié (le premier crée le devis), suppression des véhicules retirés, puis
+  // sp_finalisation_devis qui totalise le devis. Renvoie l'id du devis, ou null en cas d'échec.
+  const enregistrerFlotte = async (newQuote, selectedClient) => {
+    // Le véhicule en cours de modification est pris tel qu'affiché à l'écran
+    const saisie = instantaneVehicule();
+    let vehicules = flotteEffective();
+    if (editingFlotteIndex !== null) {
+      if (!saisie.immatriculation) {
+        toastError('Saisissez l\'immatriculation du véhicule en cours de modification.');
+        setStep(2);
+        return null;
+      }
+    } else if (saisie.immatriculation && !vehicules.some((x) => x.immatriculation === saisie.immatriculation)) {
+      toastError(`Le véhicule ${saisie.immatriculation} saisi n'a pas été ajouté à la flotte : ajoutez-le ou videz son immatriculation.`);
+      setStep(2);
+      return null;
+    }
+    if (!vehicules.length) {
+      toastError('Ajoutez au moins un véhicule à la flotte.');
+      setStep(2);
+      return null;
+    }
+    const doublon = vehicules.find((x, i) => vehicules.findIndex((y) => y.immatriculation === x.immatriculation) !== i);
+    if (doublon) {
+      toastError(`Le véhicule ${doublon.immatriculation} figure deux fois dans la flotte.`);
+      setStep(2);
+      return null;
+    }
+
+    let idDevis = editIddevis || 0;
+    let aFinaliser = finalisationFlotteEnAttente;
+    const aEnvoyer = vehicules.filter(vehiculeAEnvoyer);
+    let enregistres = 0;
+    for (const v of aEnvoyer) {
+      let obj = null;
+      let erreur = '';
+      try {
+        const res = await quoteApi.createAutoQuote({
+          ...newQuote,
+          id: idDevis || undefined,
+          details: {
+            ...newQuote.details,
+            ...v,
+            idTypeVehicule: typesVehicules.find((tv) => tv.libelle === v.typeCommercial)?.id ?? v.idTypeVehicule,
+            idDevis,
+            idDevisDetail: v.enregistre ? v.idDevisDetail : 0,
+          },
+        });
+        obj = Array.isArray(res?.data) ? res.data[0] : res?.data;
+        if (!obj?.IdDevis) erreur = obj?.OutputMessage || 'réponse inattendue du serveur';
+      } catch (e) {
+        erreur = messageEnregistrement(e);
+      }
+      if (erreur) {
+        console.error(`Enregistrement du véhicule ${v.immatriculation} impossible : ${erreur}`);
+        toastError(
+          `Véhicule ${v.immatriculation} non enregistré : ${erreur}.`
+          + (enregistres ? ` ${enregistres} véhicule(s) enregistré(s) avant lui : corrigez puis enregistrez à nouveau, seuls les véhicules restants seront envoyés.` : ''),
+        );
+        setFlotteVehicules(vehicules);
+        if (aFinaliser) setFinalisationFlotteEnAttente(true);
+        return null;
+      }
+      enregistres += 1;
+      aFinaliser = true;
+      if (!idDevis) {
+        // Devis créé par le premier véhicule : un nouvel essai le complète au lieu d'en créer un autre
+        idDevis = obj.IdDevis;
+        setEditIddevis(idDevis);
+      }
+      const maj = { ...v, idDevisDetail: obj.IdDevisDetail || v.idDevisDetail, enregistre: true };
+      maj.origine = empreinteVehicule(maj);
+      vehicules = vehicules.map((x) => (x.cle === v.cle ? maj : x));
+    }
+    setFlotteVehicules(vehicules);
+
+    // Véhicules retirés de la liste (sp_suppression_vehicule)
+    const nonSupprimes = [];
+    for (const r of vehiculesRetires) {
+      try {
+        const res = await quoteApi.deleteFlotteVehicle(r.idDevisDetail);
+        const message = (Array.isArray(res?.data) ? res.data[0]?.OutputMessage : res?.data?.OutputMessage) || '';
+        if (!/supprim/i.test(message)) throw new Error(message || 'réponse inattendue du serveur');
+        aFinaliser = true;
+      } catch (e) {
+        nonSupprimes.push(r);
+        toastError(`Le véhicule ${r.immatriculation} n'a pas pu être retiré du devis : ${messageEnregistrement(e)}.`);
+      }
+    }
+    setVehiculesRetires(nonSupprimes);
+    if (nonSupprimes.length) {
+      if (aFinaliser) setFinalisationFlotteEnAttente(true);
+      return null;
+    }
+
+    // Totaux du devis ; rien n'a changé : le devis enregistré est laissé tel quel
+    if (aFinaliser) {
+      try {
+        await quoteApi.finalizeFlotteQuote({
+          IdDevis: Number(idDevis),
+          IdClient: Number(selectedClient?.id || 1),
+          IdAssure: Number(assureId || selectedClient?.id || 1),
+          Flotte: true,
+        });
+      } catch (e) {
+        setFinalisationFlotteEnAttente(true);
+        toastError(`Véhicules enregistrés, mais le calcul des totaux du devis a échoué : ${messageEnregistrement(e)}. Enregistrez à nouveau.`);
+        return null;
+      }
+    } else {
+      info('Aucune modification de la flotte à enregistrer.');
+    }
+    setFinalisationFlotteEnAttente(false);
+    setEnteteOrigine(enteteDevis);
+    return idDevis;
   };
 
   // ----------------------------------------------------
@@ -1263,7 +1740,8 @@ export const NewAutoQuotePage = () => {
         idAvenant: editIdAvenant || 1,
         idTypeVehicule: typesVehicules.find((tv) => tv.libelle === typeCommercial)?.id,
         offreSelectionnee,
-        primeImposeeActive: isEditingPrimes,
+        idAssure: assureId || undefined,
+        primeImposeeActive: impositionActive,
         garanties,
         nomAssure,
         telephoneClient,
@@ -1280,20 +1758,22 @@ export const NewAutoQuotePage = () => {
     // 1. Enregistrement en base : POST /api/enregistrementdevis (sp_creation_devis). Le devis complet
     // est transmis tel quel : le faire passer d'abord par dataStore.saveQuote perdait la compagnie, les
     // dates et la réduction, et son identifiant local faisait répondre « Devis inexistant ».
+    // Flotte : un appel par véhicule (voir enregistrerFlotte).
     let devisApiId = null;
-    try {
-      const apiRes = await quoteApi.createAutoQuote(newQuote);
-      const obj = Array.isArray(apiRes?.data) ? apiRes.data[0] : apiRes?.data;
-      devisApiId = obj?.IdDevis || null;
-      if (!devisApiId) throw new Error(obj?.OutputMessage || 'réponse inattendue du serveur');
-    } catch (e) {
-      const reponse = e?.response?.data;
-      const detail = Array.isArray(reponse)
-        ? reponse[0]?.OutputMessage
-        : (reponse?.OutputMessage || reponse?.detail || (reponse && typeof reponse === 'object' ? JSON.stringify(reponse) : null));
-      console.error('Enregistrement du devis impossible', e);
-      toastError(`Le devis n'a pas été enregistré : ${detail || e.message || 'erreur du serveur'}.`);
-      return;
+    if (typeContrat === 'FLOTTE') {
+      devisApiId = await enregistrerFlotte(newQuote, selectedClient);
+      if (!devisApiId) return;
+    } else {
+      try {
+        const apiRes = await quoteApi.createAutoQuote(newQuote);
+        const obj = Array.isArray(apiRes?.data) ? apiRes.data[0] : apiRes?.data;
+        devisApiId = obj?.IdDevis || null;
+        if (!devisApiId) throw new Error(obj?.OutputMessage || 'réponse inattendue du serveur');
+      } catch (e) {
+        console.error('Enregistrement du devis impossible', e);
+        toastError(`Le devis n'a pas été enregistré : ${messageEnregistrement(e)}.`);
+        return;
+      }
     }
 
     // Relecture du devis enregistré (vrai numéro de devis) puis copie locale pour le registre
@@ -1303,7 +1783,18 @@ export const NewAutoQuotePage = () => {
     } catch (e) {
       console.warn('Relecture du devis enregistré impossible', e);
     }
-    const saved = dataStore.saveQuote({ ...newQuote, id: devisApiId, numerodevis: devisEnregistre?.numerodevis });
+    // Flotte : les montants sont ceux totalisés par sp_finalisation_devis, pas une estimation
+    const montantsServeur = typeContrat === 'FLOTTE' && devisEnregistre
+      ? {
+        prime_nette: devisEnregistre.prime_nette,
+        taxes: devisEnregistre.taxes,
+        accessoires: devisEnregistre.accessoires,
+        fga: devisEnregistre.fga,
+        cedeao: devisEnregistre.cedeao,
+        prime_totale: devisEnregistre.prime_totale,
+      }
+      : {};
+    const saved = dataStore.saveQuote({ ...newQuote, ...montantsServeur, id: devisApiId, numerodevis: devisEnregistre?.numerodevis });
 
     // Le devis est enregistré : son brouillon éventuel n'a plus lieu d'être
     if (brouillonId) {
@@ -1311,8 +1802,9 @@ export const NewAutoQuotePage = () => {
       setBrouillonId(null);
     }
 
-    // 3. Si des primes ont été modifiées/imposées ou des garanties ajoutées/supprimées, appeler /api/correctiondevis/
-    if (isEditingPrimes || deletedGaranties.length > 0 || garanties.some((g) => g.is_new_garantie)) {
+    // 3. Si des primes ont été modifiées/imposées ou des garanties ajoutées/supprimées, appeler /api/correctiondevis/.
+    // Jamais pour une flotte : sp_correction_devis appliquerait cette liste de garanties à tous ses véhicules.
+    if (typeContrat !== 'FLOTTE' && (impositionActive || deletedGaranties.length > 0 || garanties.some((g) => g.is_new_garantie))) {
       try {
         const correctionPayload = {
           id_devis: Number(devisApiId),
@@ -1356,21 +1848,6 @@ export const NewAutoQuotePage = () => {
       } catch (err) {
         console.error('Correction du devis impossible', err);
         toastError(`Devis ${saved.numerodevis} enregistré, mais les primes imposées ou les garanties modifiées n'ont pas pu être appliquées.`);
-      }
-    }
-
-    // 4. Si Flotte, appeler la finalisation de devis auto flotte
-    if (typeContrat === 'FLOTTE') {
-      try {
-        await quoteApi.finalizeFlotteQuote({
-          IdDevis: Number(devisApiId),
-          IdClient: Number(selectedClient?.id || 1),
-          IdAssure: Number(selectedClient?.id || 1),
-          Flotte: true,
-        });
-      } catch (err) {
-        console.error('Finalisation du devis flotte impossible', err);
-        toastError(`Devis ${saved.numerodevis} enregistré, mais la finalisation de la flotte a échoué.`);
       }
     }
 
@@ -1421,6 +1898,11 @@ export const NewAutoQuotePage = () => {
             <Car size={26} color="#3b82f6" />
             {editIddevis ? `Modifier le Devis Automobile [${editNumeroDevis || editIddevis}]` : 'Nouveau Devis Automobile & Flotte'}
           </h1>
+          {avertissementReprise && (
+            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
+              {avertissementReprise}
+            </p>
+          )}
         </div>
 
         {/* Stepper à 4 onglets exactement conformes au parcours métier OREOLE */}
@@ -1740,33 +2222,33 @@ export const NewAutoQuotePage = () => {
               VÉHICULE {typeContrat === 'FLOTTE' && `(PARC FLOTTE : ${flotteVehicules.length} VÉHICULES)`}
             </h3>
             {typeContrat === 'FLOTTE' && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  if (!immatriculation.trim()) {
-                    toastError("Veuillez saisir une immatriculation pour ajouter le véhicule au parc.");
-                    return;
-                  }
-                  const newVehicule = {
-                    idDevisDetail: Date.now(),
-                    immatriculation: immatriculation.toUpperCase(),
-                    marque: marqueVehicule,
-                    modele: modeleVehicule || 'Véhicule Flotte',
-                    puissanceFiscale: puissanceFiscale,
-                    genre: genreVehicule,
-                    valeurVenale: valeurVenale || 10000000,
-                    valeurNeuf: valeurNeuf || 20000000,
-                    nombrePlace: nombrePlace || 5,
-                  };
-                  setFlotteVehicules([...flotteVehicules, newVehicule]);
-                  success(`Véhicule ${newVehicule.immatriculation} ajouté à la flotte !`);
-                  setImmatriculation('');
-                }}
-                style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <Plus size={16} /> Ajouter le véhicule courant à la flotte
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {editingFlotteIndex !== null && (
+                  <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 700 }}>
+                    Modification du véhicule {flotteVehicules[editingFlotteIndex]?.immatriculation}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleAjouterOuMajVehicule}
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  {editingFlotteIndex !== null
+                    ? <><Save size={16} /> Mettre à jour ce véhicule</>
+                    : <><Plus size={16} /> Ajouter le véhicule courant à la flotte</>}
+                </button>
+                {editingFlotteIndex !== null && (
+                  <button
+                    type="button"
+                    className="btn btn-link"
+                    onClick={handleAnnulerModificationVehicule}
+                    style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}
+                  >
+                    Nouveau véhicule
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -1902,7 +2384,9 @@ export const NewAutoQuotePage = () => {
                 value={formuleSecuriteCode}
                 onChange={(e) => setFormuleSecuriteCode(e.target.value)}
               >
-                {sortUniqueBy(formulesSecurite, (f) => f.libelle).map((f) => (
+                {/* Une option par code : seul le code est enregistré (sp_creation_devis), les
+                    variantes d'une même formule (SUNU : FORMULE 1 à FT différents) sont indiscernables */}
+                {sortUniqueBy(formulesSecurite, (f) => f.code).map((f) => (
                   <option key={f.code} value={f.code}>
                     {f.libelle}
                   </option>
@@ -2212,47 +2696,75 @@ export const NewAutoQuotePage = () => {
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Immatriculation</th>
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Marque & Modèle</th>
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Genre</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'left' }}>Offre</th>
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'center' }}>Puissance</th>
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'right' }}>Valeur Vénale</th>
+                      <th style={{ padding: '0.6rem 0.8rem', textAlign: 'center' }}>État</th>
                       <th style={{ padding: '0.6rem 0.8rem', textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {flotteVehicules.map((veh, idx) => (
-                      <tr key={veh.idDevisDetail || idx} style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                        <td style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: '#38bdf8' }}>{veh.immatriculation}</td>
-                        <td style={{ padding: '0.65rem 0.8rem', color: '#fff' }}>{veh.marque} {veh.modele}</td>
-                        <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>{veh.genre}</td>
-                        <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center', color: '#cbd5e1' }}>{veh.puissanceFiscale} CV</td>
-                        <td style={{ padding: '0.65rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#fff' }}>
-                          {Number(veh.valeurVenale || 0).toLocaleString('fr-FR')} F
-                        </td>
-                        <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (window.confirm(`Supprimer le véhicule ${veh.immatriculation} du parc ?`)) {
-                                if (veh.idDevisDetail) {
-                                  try {
-                                    await quoteApi.deleteFlotteVehicle(veh.idDevisDetail);
-                                  } catch (_) {}
-                                }
-                                setFlotteVehicules(flotteVehicules.filter((_, i) => i !== idx));
-                                info(`Véhicule ${veh.immatriculation} retiré de la flotte.`);
-                              }
-                            }}
-                            className="btn btn-danger"
-                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', borderRadius: '4px' }}
-                            title="Supprimer ce véhicule"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                    {flotteVehicules.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ padding: '1rem 0.8rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          Aucun véhicule : saisissez un véhicule ci-dessus puis « Ajouter le véhicule courant à la flotte ».
                         </td>
                       </tr>
-                    ))}
+                    )}
+                    {flotteVehicules.map((veh, idx) => {
+                      const etat = !veh.enregistre ? 'Nouveau' : vehiculeAEnvoyer(veh) ? 'Modifié' : 'Enregistré';
+                      return (
+                        <tr
+                          key={veh.cle || idx}
+                          style={{ borderTop: '1px solid var(--border-subtle)', background: editingFlotteIndex === idx ? 'rgba(245, 158, 11, 0.08)' : 'transparent' }}
+                        >
+                          <td style={{ padding: '0.65rem 0.8rem', fontWeight: 700, color: '#38bdf8' }}>{veh.immatriculation}</td>
+                          <td style={{ padding: '0.65rem 0.8rem', color: '#fff' }}>{veh.marqueVehicule} {veh.modeleVehicule}</td>
+                          <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>{veh.genreVehicule}</td>
+                          <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>
+                            {offresList.find((o) => Number(o.id) === Number(veh.idOffre))?.libelle || veh.offreSelectionnee || `Offre n° ${veh.idOffre}`}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center', color: '#cbd5e1' }}>{veh.puissanceFiscale} CV</td>
+                          <td style={{ padding: '0.65rem 0.8rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#fff' }}>
+                            {Number(veh.valeurVenale || 0).toLocaleString('fr-FR')} F
+                          </td>
+                          <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center' }}>
+                            <StatusBadge label={etat} color={etat === 'Enregistré' ? 'emerald' : etat === 'Modifié' ? 'amber' : 'blue'} />
+                          </td>
+                          <td style={{ padding: '0.65rem 0.8rem', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleModifierVehicule(idx)}
+                                className="btn btn-secondary"
+                                style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', borderRadius: '4px' }}
+                                title="Modifier ce véhicule (repris dans la saisie ci-dessus)"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRetirerVehicule(idx)}
+                                className="btn btn-danger"
+                                style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', borderRadius: '4px' }}
+                                title="Retirer ce véhicule de la flotte"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+              {vehiculesRetires.length > 0 && (
+                <p style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#f59e0b' }}>
+                  Supprimé{vehiculesRetires.length > 1 ? 's' : ''} du devis à l'enregistrement :{' '}
+                  {vehiculesRetires.map((r) => r.immatriculation).join(', ')}
+                </p>
+              )}
             </div>
           )}
 
@@ -2279,9 +2791,140 @@ export const NewAutoQuotePage = () => {
       )}
 
       {/* =========================================================================
+          ÉCRAN 3 (FLOTTE) : PRIMES VÉHICULE PAR VÉHICULE
+          Chaque véhicule est tarifé par la base à l'enregistrement puis le devis est totalisé
+          (sp_finalisation_devis) : pas d'imposition de prime ni de garanties ajoutées ici.
+          ========================================================================= */}
+      {step === 3 && typeContrat === 'FLOTTE' && (() => {
+        const vehiculesRecap = flotteEffective();
+        const lignesRecap = vehiculesRecap.map((v) => ({ v, primes: primesVehicule(v) }));
+        const flotteInchangee = Boolean(editIddevis) && !finalisationFlotteEnAttente && vehiculesRetires.length === 0
+          && vehiculesRecap.every((v) => !vehiculeAEnvoyer(v));
+        const somme = (champ) => (lignesRecap.every((l) => l.primes)
+          ? lignesRecap.reduce((s, l) => s + (Number(l.primes[champ]) || 0), 0)
+          : null);
+        const montant = (valeur) => (valeur === null || valeur === undefined ? '…' : `${Math.round(valeur).toLocaleString('fr-FR')} F`);
+        return (
+          <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '0.75rem' }}>
+              <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '1.05rem' }}>
+                PRIMES DE LA FLOTTE ({vehiculesRecap.length} VÉHICULE{vehiculesRecap.length > 1 ? 'S' : ''})
+              </h3>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => estimerFlotte(true)}
+                disabled={estimationFlotteEnCours}
+                style={{ padding: '0.55rem 1.1rem', fontWeight: 700, borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <RotateCcw size={16} className={estimationFlotteEnCours ? 'spin' : ''} />
+                {estimationFlotteEnCours ? 'Estimation en cours...' : 'Recalculer les estimations'}
+              </button>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem', maxWidth: '900px' }}>
+              Chaque véhicule est tarifé par la base à l'enregistrement, puis le devis est totalisé.
+              Un véhicule inchangé garde ses primes enregistrées ; celles d'un véhicule nouveau ou modifié sont
+              estimées par le moteur CIMA. L'accessoire et la prime TTC définitifs sont calculés à l'enregistrement.
+            </p>
+
+            <div style={{ overflowX: 'auto', marginBottom: '1.5rem', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8', textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Véhicule</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Offre</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Primes</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Prime annuelle</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Prime nette</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Taxes</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>FGA</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>CEDEAO</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignesRecap.length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        Aucun véhicule dans la flotte : ajoutez-les à l'écran Véhicule.
+                      </td>
+                    </tr>
+                  )}
+                  {lignesRecap.map(({ v, primes }) => (
+                    <tr key={v.cle} style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#38bdf8' }}>
+                        {v.immatriculation}
+                        <div style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-muted)' }}>{v.marqueVehicule} {v.modeleVehicule}</div>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
+                        {offresList.find((o) => Number(o.id) === Number(v.idOffre))?.libelle || `Offre n° ${v.idOffre}`}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                        {!vehiculeAEnvoyer(v) ? <StatusBadge label="Enregistrées" color="emerald" />
+                          : estimationsFlotte[v.cle]?.sansGarantie ? <StatusBadge label="Offre sans garantie" color="rose" />
+                            : <StatusBadge label="Estimées" color="amber" />}
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.pa)}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>{montant(primes?.pn)}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.taxe)}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.fga)}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.cedeao)}</td>
+                    </tr>
+                  ))}
+                  {lignesRecap.length > 0 && (
+                    <tr style={{ borderTop: '2px solid var(--border-subtle)', fontWeight: 800 }}>
+                      <td colSpan={3} style={{ padding: '0.75rem 1rem', color: '#fff' }}>TOTAL VÉHICULES</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(somme('pa'))}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#60a5fa' }}>{montant(somme('pn'))}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(somme('taxe'))}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(somme('fga'))}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(somme('cedeao'))}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {flotteInchangee && totauxEnregistres && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                {[
+                  ['Prime nette', totauxEnregistres.pn],
+                  ['Taxes', totauxEnregistres.taxe],
+                  ['FGA', totauxEnregistres.fga],
+                  ['Accessoire', totauxEnregistres.accessoire],
+                  ['CEDEAO', totauxEnregistres.cedeao],
+                  ['Prime TTC', totauxEnregistres.ttc],
+                ].map(([libelle, valeur]) => (
+                  <div key={libelle} style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1rem', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>{libelle} (enregistré)</div>
+                    <div style={{ fontSize: '1.3rem', fontWeight: 800, color: libelle === 'Prime TTC' ? '#38bdf8' : '#fff', fontFamily: 'var(--font-mono)', marginTop: '0.35rem' }}>
+                      {Math.round(valeur || 0).toLocaleString('fr-FR')} FCFA
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <button type="button" className="btn btn-link" onClick={() => setStep(2)} style={{ color: '#ef4444', fontWeight: 600, padding: 0 }}>
+                ← Précédent
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setStep(4)}
+                style={{ padding: '0.65rem 1.75rem', fontWeight: 700, borderRadius: '8px', background: '#2563eb' }}
+              >
+                Suivant →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* =========================================================================
           ÉCRAN 3 : OFFRE, GARANTIES & DÉCOMPTE (AVEC IMPOSITION DE PRIME COMPLÈTE)
           ========================================================================= */}
-      {step === 3 && (
+      {step === 3 && typeContrat !== 'FLOTTE' && (
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
           {/* Barre d'outils Offre : Bouton Imposer la prime + Bouton Ajouter Garantie + Bouton Recalcul CIMA */}
           <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -2290,22 +2933,17 @@ export const NewAutoQuotePage = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => {
-                  const willEdit = !isEditingPrimes;
-                  setIsEditingPrimes(willEdit);
-                  if (willEdit) {
-                    setEditedExtras({
-                      taxe: String(calculFinancier.taxeEnregistrement),
-                      fga: String(calculFinancier.fga),
-                      accessoire: String(calculFinancier.accessoire),
-                      cedeao: String(calculFinancier.cedeao),
-                      pa: String(calculFinancier.primeAnnuelle),
-                      pn: String(calculFinancier.primeNette),
-                      ttc: String(calculFinancier.primeTtc),
-                    });
-                    info('Mode "Imposer la prime" activé : vous pouvez modifier directement les capitaux, franchises, primes et taxes.');
-                  } else {
-                    success('Mode "Imposer la prime" désactivé : retour aux formules CIMA standards.');
+                  if (isEditingPrimes) {
+                    setIsEditingPrimes(false);
+                    setPrimesImposees(true);
+                    success('Primes imposées enregistrées : elles seront reprises à l\'enregistrement du devis.');
+                    return;
                   }
+                  // Nouvelle imposition : les tuiles partent des totaux calculés et les suivent
+                  // en temps réel ; une imposition déjà enregistrée garde ses montants saisis.
+                  if (!primesImposees) setEditedExtras(TUILES_NON_IMPOSEES);
+                  setIsEditingPrimes(true);
+                  info('Mode "Imposer la prime" activé : modifiez les capitaux, franchises, primes et taxes, les totaux se mettent à jour en temps réel.');
                 }}
                 style={{
                   background: isEditingPrimes ? '#059669' : '#2563eb',
@@ -2317,8 +2955,8 @@ export const NewAutoQuotePage = () => {
                   gap: '0.4rem',
                 }}
               >
-                <Edit3 size={16} />
-                {isEditingPrimes ? '✓ Mode Imposition Actif (Quitter)' : 'Imposer la prime'}
+                {isEditingPrimes ? <Save size={16} /> : <Edit3 size={16} />}
+                {isEditingPrimes ? 'Enregistrer' : 'Imposer la prime'}
               </button>
 
               <button
@@ -2360,6 +2998,11 @@ export const NewAutoQuotePage = () => {
             {isEditingPrimes && (
               <span className="badge badge-emerald" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', fontWeight: 700 }}>
                 Édition libre des primes et garanties
+              </span>
+            )}
+            {!isEditingPrimes && primesImposees && (
+              <span className="badge badge-emerald" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', fontWeight: 700 }}>
+                Primes imposées (« Recalculer CIMA » pour revenir au barème)
               </span>
             )}
           </div>
@@ -2536,8 +3179,8 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={editedExtras.taxe}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, taxe: e.target.value })}
+                  value={valeurTuile('taxe', calculFinancier.taxeEnregistrement)}
+                  onChange={(e) => handleTuileChange('taxe', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2557,8 +3200,8 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={editedExtras.fga}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, fga: e.target.value })}
+                  value={valeurTuile('fga', calculFinancier.fga)}
+                  onChange={(e) => handleTuileChange('fga', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2578,8 +3221,8 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={editedExtras.accessoire}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, accessoire: e.target.value })}
+                  value={valeurTuile('accessoire', calculFinancier.accessoire)}
+                  onChange={(e) => handleTuileChange('accessoire', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2600,8 +3243,8 @@ export const NewAutoQuotePage = () => {
                   step="1000"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={editedExtras.cedeao}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, cedeao: e.target.value })}
+                  value={valeurTuile('cedeao', calculFinancier.cedeao)}
+                  onChange={(e) => handleTuileChange('cedeao', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2621,8 +3264,8 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={editedExtras.pa}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, pa: e.target.value })}
+                  value={valeurTuile('pa', calculFinancier.primeAnnuelle)}
+                  onChange={(e) => handleTuileChange('pa', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2642,8 +3285,8 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem', color: '#60a5fa' }}
-                  value={editedExtras.pn}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, pn: e.target.value })}
+                  value={valeurTuile('pn', calculFinancier.primeNette)}
+                  onChange={(e) => handleTuileChange('pn', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#60a5fa', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
@@ -2656,15 +3299,15 @@ export const NewAutoQuotePage = () => {
             <div style={{ background: 'rgba(37, 99, 235, 0.12)', padding: '1.25rem', borderRadius: '12px', border: '1.5px solid #2563eb' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#60a5fa', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>PRIME TTC</span>
-                <span className="badge badge-blue" style={{ fontSize: '0.65rem' }}>{isEditingPrimes ? 'Imposée' : 'Calculé'}</span>
+                <span className="badge badge-blue" style={{ fontSize: '0.65rem' }}>{impositionActive ? 'Imposée' : 'Calculé'}</span>
               </div>
               {isEditingPrimes ? (
                 <input
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 900, fontSize: '1.35rem', color: '#38bdf8' }}
-                  value={editedExtras.ttc}
-                  onChange={(e) => setEditedExtras({ ...editedExtras, ttc: e.target.value })}
+                  value={valeurTuile('ttc', calculFinancier.primeTtc)}
+                  onChange={(e) => handleTuileChange('ttc', e.target.value)}
                 />
               ) : (
                 <div style={{ fontSize: '1.85rem', fontWeight: 900, color: '#38bdf8', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>

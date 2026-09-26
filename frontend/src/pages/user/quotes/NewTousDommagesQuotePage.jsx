@@ -61,6 +61,8 @@ export const NewTousDommagesQuotePage = () => {
   const [idDevisEdite, setIdDevisEdite] = useState(null);
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
   const [idAvenant, setIdAvenant] = useState(1);
+  // Devis repris d'URANUS sans ligne de détail en base
+  const [avertissementReprise, setAvertissementReprise] = useState('');
 
   const [step, setStep] = useState(1);
   const [createdQuote, setCreatedQuote] = useState(null);
@@ -149,12 +151,21 @@ export const NewTousDommagesQuotePage = () => {
     (async () => {
       setIsLoadingEdit(true);
       try {
-        const [devis, ligne] = await Promise.all([
+        // Devis repris d'URANUS sans ligne de détail : lireDevis répond 404, l'en-tête reste repris
+        const [devis, ligneLue] = await Promise.all([
           quoteApi.getQuote(editIddevisParam),
-          tousDommagesApi.lireDevis(editIddevisParam),
+          tousDommagesApi.lireDevis(editIddevisParam).catch((e) => {
+            if (e?.response?.status === 404) return null;
+            throw e;
+          }),
         ]);
         if (!actif) return;
         const raw = devis?.raw || {};
+        const ligne = ligneLue || {};
+        setAvertissementReprise(ligneLue ? '' : (
+          'Ce devis repris d\'URANUS n\'a aucune ligne de détail en base (catégorie, capitaux) : seuls l\'en-tête et '
+          + 'la prime ont été repris. Complétez la catégorie et les capitaux avant d\'enregistrer.'
+        ));
         if (raw.confirme) {
           toastError('Ce devis est confirmé (déjà en contrat) : il ne peut plus être modifié.');
           navigate('/user/quotes');
@@ -181,6 +192,8 @@ export const NewTousDommagesQuotePage = () => {
         setModePrime(taux > 0 ? 'taux' : 'montant');
         setTauxPrime(taux);
         setMontantPrime(Math.round(Number(ligne.MontantPrime) || 0) || (taux > 0 ? 0 : Math.round(Number(raw.primenette) || 0)));
+        // Accessoire enregistré (barème ou saisi) : le laisser vide le faisait recalculer au barème
+        setAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
 
         const idClient = Number(raw.client?.IdClient ?? raw.client) || 0;
         const idAssure = Number(raw.assure?.IdClient ?? raw.assure) || idClient;
@@ -371,6 +384,11 @@ export const NewTousDommagesQuotePage = () => {
             <p style={{ color: COULEUR, fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>
           ) : (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Tous Risques Informatique et Assurance Caution.</p>
+          )}
+          {avertissementReprise && (
+            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
+              {avertissementReprise}
+            </p>
           )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>

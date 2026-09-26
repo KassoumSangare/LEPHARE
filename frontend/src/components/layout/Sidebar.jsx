@@ -291,7 +291,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                   <FileText size={16} className="nav-icon" />
-                  <span>Devis & Tarification</span>
+                  <span>Devis</span>
                 </div>
                 <ChevronDown
                   size={14}

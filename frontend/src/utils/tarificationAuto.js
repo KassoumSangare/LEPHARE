@@ -12,6 +12,9 @@
 // les lignes venant du moteur CIMA ont des codes GAR_<id>, pas 'RC'.
 export const ID_SOUS_GARANTIE_RC = 1;
 export const ID_SOUS_GARANTIE_CEDEAO = 3;
+// Garantie retenue par fn_retenir_garantie_nsia_auto_plus quand l'option NSIA Auto Plus est
+// choisie : l'option elle-même n'est pas stockée, seule cette garantie la trahit.
+export const ID_SOUS_GARANTIE_NSIA_AUTO_PLUS = 175;
 
 export const estGarantieRc = (g) => Number(g.id_garantie) === ID_SOUS_GARANTIE_RC || g.code === 'RC';
 export const estGarantieCedeao = (g) => Number(g.id_garantie) === ID_SOUS_GARANTIE_CEDEAO;

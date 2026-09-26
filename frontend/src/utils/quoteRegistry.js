@@ -1,7 +1,6 @@
-// Registre des devis : seuls les devis à confirmer (attente) sont listés.
-// Les devis confirmés (statut confirmé / contrat) passent dans la liste des contrats,
-// les devis archivés sont masqués.
-// Un devis expiré (non confirmé) sort du registre : il est repris dans le Portefeuille des Contrats (à renouveler).
+// Registre des devis : uniquement les devis en attente de confirmation (ni archivés, ni
+// confirmés, ni expirés). Un devis confirmé devient un contrat ; le Portefeuille des Contrats,
+// lui, ne liste que des contrats.
 export const isExpiredQuote = (q) => {
   if (!q?.date_expiration) return false;
   const d = new Date(q.date_expiration);

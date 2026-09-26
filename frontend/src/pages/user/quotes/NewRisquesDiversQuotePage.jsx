@@ -142,6 +142,8 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [adresseGeo, setAdresseGeo] = useState('');
 
   const offreMinene = Number(idOffre) === ID_OFFRE_MINENE;
+  // Devis repris d'URANUS sans ligne de détail en base
+  const [avertissementReprise, setAvertissementReprise] = useState('');
 
   // -------------------------------------------------------------
   // RÉFÉRENTIELS
@@ -245,12 +247,25 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     (async () => {
       setIsLoadingEdit(true);
       try {
-        const [devis, ligne] = await Promise.all([
+        // Devis repris d'URANUS sans ligne de détail : lireDevis répond 404, l'en-tête reste repris
+        const [devis, ligneLue] = await Promise.all([
           quoteApi.getQuote(editIddevisParam),
-          risquesDiversApi.lireDevis(editIddevisParam),
+          risquesDiversApi.lireDevis(editIddevisParam).catch((e) => {
+            if (e?.response?.status === 404) return null;
+            throw e;
+          }),
         ]);
         if (!actif) return;
         const raw = devis?.raw || {};
+        const ligne = ligneLue || {
+          IdTarif: 0,
+          IdOffre: Number(raw.offre?.IdOffre ?? raw.offre) || 0,
+          TauxReduction: 0,
+        };
+        setAvertissementReprise(ligneLue ? '' : (
+          `Ce devis repris d'URANUS n'a aucune ligne de détail en base (catégorie, garanties${estRc ? ', risque assuré' : ''}) : `
+          + 'seuls l\'en-tête et les primes ont été repris. Choisissez la catégorie et cochez les garanties avant d\'enregistrer.'
+        ));
         if (raw.confirme) {
           toastError('Ce devis est confirmé (déjà en contrat) : il ne peut plus être modifié.');
           navigate('/user/quotes');
@@ -286,12 +301,12 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setCapitalDommageCorporel(Math.round(Number(ligne.CapitalDommageCorporel) || 0));
         setCapitalIntoxication(Math.round(Number(ligne.CapitalIntoxicationAlimentaire) || 0));
         setCapitalDommageMateriel(Math.round(Number(ligne.CapitalDommageMateriel) || 0));
-        // Primes : reprises telles qu'enregistrées lorsqu'elles avaient été imposées
-        if (raw.prime_imposee) {
-          setPrimeNette(Math.round(Number(raw.primenette) || 0));
-          setAccessoire(Math.round(Number(raw.accessoire) || 0));
-          setTaxe(Math.round(Number(raw.taxe) || 0));
-        }
+        // Primes : saisies à la création (ou calculées par la base pour MINENE), donc reprises
+        // telles qu'enregistrées. Les devis repris d'URANUS n'ont pas le drapeau prime_imposee :
+        // ne les reprendre que dans ce cas les affichait à 0.
+        setPrimeNette(Math.round(Number(raw.primenette) || 0));
+        setAccessoire(Math.round(Number(raw.accessoire) || 0));
+        setTaxe(Math.round(Number(raw.taxe) || 0));
 
         // Souscripteur et assuré
         const idClient = Number(raw.client?.IdClient ?? raw.client) || 0;
@@ -534,6 +549,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
               : `Nouveau Devis ${infos.libelle} (${infos.court})`}
           </h1>
           {isLoadingEdit && <p style={{ color: couleur, fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>}
+          {avertissementReprise && (
+            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
+              {avertissementReprise}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {[{ n: 1, l: '1. CONTRAT' }, { n: 2, l: '2. GARANTIES' }, { n: 3, l: '3. PRIMES & ASSURÉ' }].map((e) => (

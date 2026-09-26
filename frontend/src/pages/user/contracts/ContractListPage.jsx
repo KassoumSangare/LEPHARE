@@ -5,8 +5,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
 import { PolicyMovementModal } from './PolicyMovementModal';
-import { ViewQuoteModal } from '../quotes/ViewQuoteModal';
-import { isRegistryQuote, isExpiredQuote } from '../../../utils/quoteRegistry';
+import { isRegistryQuote } from '../../../utils/quoteRegistry';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { dataStore } from '../../../api/dataStore';
 import { contractApi, quoteApi } from '../../../api/endpoints';
@@ -64,9 +63,8 @@ export const ContractListPage = () => {
   const { user } = useAuth();
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Devis à confirmer, proposés uniquement dans la fenêtre « Émettre Police » (jamais dans la liste)
   const [quotes, setQuotes] = useState([]);
-  const [devisRows, setDevisRows] = useState([]);
-  const [viewingQuote, setViewingQuote] = useState(null);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
   // Décompte réel des contrats par branche (calculé sur les contrats chargés)
   const [stats, setStats] = useState(() => {
@@ -119,23 +117,19 @@ export const ContractListPage = () => {
     }
   };
 
-  // Vrais totaux (base entière) des onglets En cours / À Renouveler / Résiliées :
-  // contrats réels (via le statut serveur) + devis confirmés ou à renouveler de la branche.
+  // Vrais totaux (base entière) des onglets En cours / À Renouveler / Résiliées : contrats
+  // uniquement (statut serveur). Les devis, même confirmés ou expirés, restent au registre des devis.
   const loadSubStats = async (branch = selectedBranchFilter) => {
     const params = getBranchParams(branch);
-    const quoteBase = { ...params, archive: 'false', page_size: 1 };
-    const today = new Date().toISOString().split('T')[0];
     try {
-      const [activeContracts, echeanceContracts, terminatedContracts, confirmedDevis, renouvelerDevis] = await Promise.all([
+      const [activeContracts, echeanceContracts, terminatedContracts] = await Promise.all([
         contractApi.getContractsCount({ ...params, statut: 'actif' }),
         contractApi.getContractsCount({ ...params, statut: 'echeance' }),
         contractApi.getContractsCount({ ...params, statut: 'resilie' }),
-        quoteApi.getQuotesCount({ ...quoteBase, confirme: 'true', sans_contrat: 'true' }),
-        quoteApi.getQuotesCount({ ...quoteBase, confirme: 'false', dateexpiration_avant: today }),
       ]);
       setSubStats({
-        active: activeContracts + confirmedDevis,
-        renewable: echeanceContracts + renouvelerDevis,
+        active: activeContracts,
+        renewable: echeanceContracts,
         terminated: terminatedContracts,
       });
     } catch (e) {
@@ -153,30 +147,11 @@ export const ContractListPage = () => {
       const params = getBranchParams(branch);
       const statut = STATUT_PAR_ONGLET[tab];
       const contractParams = statut ? { ...params, statut } : params;
-      // Devis du portefeuille : un devis confirmé sans contrat émis (« à émettre »)
-      // n'a de sens que sur les onglets Tous/En cours ; un devis expiré non confirmé
-      // (« à renouveler ») n'a de sens que sur les onglets Tous/À Renouveler. L'onglet
-      // Résiliées n'a pas d'équivalent côté devis.
-      const includeConfirmedDevis = tab === 'all' || tab === 'active';
-      const includeExpiredDevis = tab === 'all' || tab === 'renewable';
-      const quoteBase = { ...params, archive: 'false', page_size: 200 };
-
-      const [backendList, quotesList, confirmedQuotes] = await Promise.all([
+      // Le portefeuille ne liste que des contrats. Les devis à confirmer ne servent qu'à la
+      // fenêtre « Émettre Police » (émission depuis un devis validé).
+      const [backendList, quotesList] = await Promise.all([
         contractApi.getContracts(contractParams),
-        includeExpiredDevis ? quoteApi.getQuotes({ ...quoteBase, confirme: 'false' }).catch(() => []) : Promise.resolve([]),
-        includeConfirmedDevis ? quoteApi.getQuotes({ ...quoteBase, confirme: 'true', sans_contrat: 'true' }).catch(() => []) : Promise.resolve([]),
-      ]);
-      const toRow = (q, kind) => ({
-        ...q,
-        id: `devis-${q.iddevis}`,
-        _kind: kind,
-        numeropolice: q.numerodevis,
-        statut_contrat: kind === 'devis_confirme' ? 'Devis confirmé' : 'À renouveler',
-        statut_encaissement: kind === 'devis_confirme' ? 'À émettre' : 'Expiré',
-      });
-      setDevisRows([
-        ...(Array.isArray(confirmedQuotes) ? confirmedQuotes.filter((q) => !q.archive).map((q) => toRow(q, 'devis_confirme')) : []),
-        ...(Array.isArray(quotesList) ? quotesList.filter((q) => !q.archive && isExpiredQuote(q)).map((q) => toRow(q, 'devis_renouveler')) : []),
+        quoteApi.getQuotes({ ...params, archive: 'false', confirme: 'false', page_size: 200 }).catch(() => []),
       ]);
       if (Array.isArray(backendList) && backendList.length > 0) {
         setContracts(backendList);
@@ -221,11 +196,8 @@ export const ContractListPage = () => {
     return diffDays <= 30; // Expired or expiring in 30 days
   };
 
-  // Les devis confirmés (statut « À émettre ») sont ajoutés devant les contrats réels dans les
-  // deux listes sources : sans tri, ils occupaient systématiquement toute la première page du
-  // tableau, donnant l'impression à tort que « tous » les contrats étaient en attente d'émission.
-  // Trié par date d'effet décroissante pour mélanger naturellement devis en attente et contrats.
-  const portfolio = [...devisRows, ...contracts].sort((a, b) => {
+  // Contrats uniquement, par date d'effet décroissante
+  const portfolio = [...contracts].sort((a, b) => {
     const dateA = new Date(a.date_effet || a.date_emission || 0).getTime();
     const dateB = new Date(b.date_effet || b.date_emission || 0).getTime();
     return dateB - dateA;
@@ -351,11 +323,6 @@ export const ContractListPage = () => {
       render: (row) => (
         <div>
           <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>
-          {row._kind && (
-            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: row._kind === 'devis_confirme' ? '#60a5fa' : '#f59e0b' }}>
-              {row._kind === 'devis_confirme' ? 'Devis confirmé' : 'Devis expiré à renouveler'}
-            </div>
-          )}
           {row.dernier_avenant && (
             <div style={{ fontSize: '0.7rem', color: '#60a5fa' }}>{row.dernier_avenant}</div>
           )}
@@ -449,26 +416,13 @@ export const ContractListPage = () => {
       sortable: true,
       render: (row) => {
         const statut = row.statut_contrat || row.statut || 'En cours';
-        const couleurs = { 'En cours': 'emerald', 'Expiré': 'amber', 'À renouveler': 'amber', 'Résilié': 'rose', 'Devis confirmé': 'blue' };
+        const couleurs = { 'En cours': 'emerald', 'Expiré': 'amber', 'À renouveler': 'amber', 'Résilié': 'rose' };
         return <StatusBadge label={statut} color={couleurs[statut] || 'blue'} />;
       },
     },
     {
       header: 'Actions Mouvements & Police',
       render: (row) => {
-        if (row._kind) {
-          return (
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-              onClick={() => setViewingQuote(row)}
-              title="Consulter"
-            >
-              <Eye size={13} />
-              <span>Consulter</span>
-            </button>
-          );
-        }
         const canTerminate = canUser(user, 'terminate', 'contracts');
         const canDelete = canUser(user, 'delete', 'contracts');
         const isResilie = row.statut_contrat === 'Résilié' || row.statut === 'Résilié';
@@ -1049,9 +1003,6 @@ export const ContractListPage = () => {
         }}
       />
 
-      {viewingQuote && (
-        <ViewQuoteModal isOpen={!!viewingQuote} onClose={() => setViewingQuote(null)} quote={viewingQuote} />
-      )}
     </div>
   );
 };

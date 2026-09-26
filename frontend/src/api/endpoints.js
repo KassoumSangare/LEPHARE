@@ -642,10 +642,11 @@ export const quoteApi = {
   },
   // GET /api/devisdetail/:iddevis (détail véhicule + devis imbriqué, pour préremplir
   // le formulaire d'édition Auto — cf. bouton « Modifier » du Registre des Devis)
-  getDevisDetailAuto: async (iddevis) => {
+  getDevisDetailAuto: async (iddevis) => (await quoteApi.getDevisDetailsAuto(iddevis))[0] || null,
+  // Tous les véhicules du devis (une ligne stddevisdetail par véhicule d'une flotte)
+  getDevisDetailsAuto: async (iddevis) => {
     const res = await apiClient.get(`/devisdetail/${iddevis}`);
-    const list = Array.isArray(res.data) ? res.data : [];
-    return list[0] || null;
+    return Array.isArray(res.data) ? res.data : [];
   },
   // POST /api/enregistrementdevis (Auto CIMA)
   createAutoQuote: (data) => {
