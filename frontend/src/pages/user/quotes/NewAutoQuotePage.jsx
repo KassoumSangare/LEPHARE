@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide, libelleTerme } from '../../../utils/termesContrat';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
@@ -69,11 +71,6 @@ const DEFAULT_CARROSSERIES = [
   { id: 5, libelle: 'TRACTEUR ROUTIER' },
   { id: 6, libelle: 'PICK-UP DOUBLE CABINE' },
   { id: 7, libelle: 'BENNE BASCULANTE' },
-];
-
-const DEFAULT_TERMES = [
-  { id: 1, libelle: 'Tacite Reconduction' },
-  { id: 2, libelle: 'Ferme / Non Renouvelable' },
 ];
 
 const DEFAULT_DUREES = [
@@ -286,8 +283,8 @@ export const NewAutoQuotePage = () => {
   const [carrosserie, setCarrosserie] = useState('CAMIONNETTE');
   const [reductionCommerciale, setReductionCommerciale] = useState(0);
   const [bonusMalus, setBonusMalus] = useState(0);
-  const [termeContrat, setTermeContrat] = useState('Tacite Reconduction');
-  const [termeId, setTermeId] = useState(1);
+  const [termeContrat, setTermeContrat] = useState(libelleTerme(ID_TERME_PAR_DEFAUT));
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
 
   // Détection dynamique OREOLE selon la Compagnie (NSIA id=1 ou nom contient NSIA)
   const isNsiaCompany = useMemo(() => {
@@ -1141,11 +1138,8 @@ export const NewAutoQuotePage = () => {
           setDureeId(duree.id);
           setDureeContrat(duree.libelle.split(' ')[0]);
         }
-        const terme = DEFAULT_TERMES.find((x) => x.id === Number(d.idterme));
-        if (terme) {
-          setTermeId(terme.id);
-          setTermeContrat(terme.libelle);
-        }
+        setTermeId(idTermeValide(d.idterme));
+        setTermeContrat(libelleTerme(d.idterme));
         setDateEmission(toIsoDate(d.dateemission) || dateEmission);
         setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
         setCustomDateExpiration(toIsoDate(d.dateexpiration));
@@ -2106,20 +2100,13 @@ export const NewAutoQuotePage = () => {
 
             <div className="form-group">
               <label className="form-label">Terme du contrat</label>
-              <select
-                className="form-control"
-                value={termeContrat}
-                onChange={(e) => {
-                  setTermeContrat(e.target.value);
-                  setTermeId(e.target.value === 'Ferme / Non Renouvelable' ? 2 : 1);
+              <TermeContratSelect
+                value={termeId}
+                onChange={(id) => {
+                  setTermeId(id);
+                  setTermeContrat(libelleTerme(id));
                 }}
-              >
-                {trierParLibelle(DEFAULT_TERMES, (t) => t.libelle).map((t) => (
-                  <option key={t.id} value={t.libelle}>
-                    {t.libelle}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 

@@ -581,7 +581,8 @@ export const formatAutoQuoteForApi = (raw) => {
     NsiaAutoPlus: Boolean(details.nsiaAutoPlus),
     NumeroPoliceCompagnie: details.numeroPoliceCompagnie || 'RAS',
     IdDuree: Number(details.idDuree || (details.dureeMois === 1 ? 1 : details.dureeMois === 3 ? 2 : details.dureeMois === 6 ? 3 : details.dureeMois === 12 ? 4 : 4)),
-    IdTerme: Number(details.idTerme || (details.termeContrat === 'Ferme / Non Renouvelable' ? 2 : 1)),
+    // 1 Tacite reconduction, 2 Ferme, 3 Autre (utils/termesContrat)
+    IdTerme: Number(details.idTerme) || 1,
     // Uniquement l'id d'un devis réellement enregistré (modification) : un identifiant local
     // (Date.now()) faisait répondre « Devis inexistant » et bloquait toute création
     IdDevis: Number(premier(details.idDevis, raw.iddevis) || 0),

@@ -6,6 +6,8 @@ import { useToast } from '../../../context/ToastContext';
 import { ArrowLeft, ArrowRight, Check, Plus, Shield, AlertTriangle } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 
@@ -99,6 +101,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [idTarif, setIdTarif] = useState(0);
   const [idOffre, setIdOffre] = useState(0);
   const [dureeId, setDureeId] = useState(4);
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const [dateEmission, setDateEmission] = useState(aujourdhui);
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
@@ -285,6 +288,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setIdOffre(Number(ligne.IdOffre) || 0);
         const duree = [1, 2, 3, 4, 5].includes(Number(raw.idduree)) ? Number(raw.idduree) : 5;
         setDureeId(duree);
+        setTermeId(idTermeValide(raw.idterme));
         setDateEmission(jour(raw.dateemission) || aujourdhui());
         setDateEffet(jour(raw.dateeffet) || aujourdhui());
         setExpirationPersonnalisee(jour(raw.dateexpiration));
@@ -403,6 +407,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       PrimeTTC: primeTtc,
       IdDevis: idDevisEdite || 0,
       IdDuree: Number(dureeId),
+      IdTerme: Number(termeId),
       ListeGarantie: garantiesAcquises.map((g) => ({
         id_garantie: g.id,
         acquise: true,
@@ -597,6 +602,10 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                 {offres.length === 0 && <option value={0}>Aucune offre pour cette catégorie</option>}
                 {trierParLibelle(offres, (o) => o.LibelleOffre).map((o) => (<option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>))}
               </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>

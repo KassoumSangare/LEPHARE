@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 
@@ -139,6 +141,9 @@ export const NewIaQuotePage = () => {
   const [idOffre, setIdOffre] = useState(0);
   const [flotte, setFlotte] = useState(false);
   const [dureeId, setDureeId] = useState(4);
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
+  // Terme du devis rouvert : le changer seul suffit à enregistrer (sans recalculer les primes)
+  const [termeOrigine, setTermeOrigine] = useState(null);
   const [dateEmission, setDateEmission] = useState(aujourdhui);
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
@@ -272,6 +277,8 @@ export const NewIaQuotePage = () => {
         setIdTarif(entete.idTarif);
         setIdOffre(entete.idOffre);
         setDureeId(entete.dureeId);
+        setTermeId(idTermeValide(raw.idterme));
+        setTermeOrigine(idTermeValide(raw.idterme));
         setDateEmission(entete.dateEmission);
         setDateEffet(entete.dateEffet);
         setExpirationPersonnalisee(entete.dateExpiration);
@@ -384,6 +391,7 @@ export const NewIaQuotePage = () => {
     return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: primeNette + taxe + calcule.accessoire };
   }, [assures, flotte]);
   const rienAModifier = Boolean(idDevisEdite) && !enteteModifiee
+    && (termeOrigine === null || Number(termeId) === termeOrigine)
     && assures.every((a) => a.IdDevisDetail && empreinteLigne(a) === a.origine);
 
   // -------------------------------------------------------------
@@ -513,6 +521,7 @@ export const NewIaQuotePage = () => {
       DateExpiration: dateExpiration,
       DateEmission: dateEmission,
       IdDuree: Number(dureeId),
+      IdTerme: Number(termeId),
       TauxReduction: Number(reduction) || 0,
       NumeroPoliceCompagnie: numeroPoliceCompagnie || '',
       NumeroPoliceConnexe: numeroPoliceConnexe || '',
@@ -709,6 +718,10 @@ export const NewIaQuotePage = () => {
                   <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>
                 ))}
               </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>

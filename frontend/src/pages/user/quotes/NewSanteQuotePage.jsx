@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy } from '../../../utils/sortUtils';
 
 const formatFcfa = (val) => {
@@ -67,6 +69,7 @@ export const NewSanteQuotePage = () => {
   const [offreCommerciale, setOffreCommerciale] = useState('SANTE CONFORT PLUS');
   const [gestionnaireSante, setGestionnaireSante] = useState('ASCOMA / OLEAPHARMA');
   const [dureeId, setDureeId] = useState(4); // Annuel
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [dateEmission, setDateEmission] = useState(todayStr);
   const [dateEffet, setDateEffet] = useState(todayStr);
@@ -358,6 +361,7 @@ export const NewSanteQuotePage = () => {
           DateEffet: dateEffet,
           DateExpiration: calculatedDateExpiration,
           DateEmission: dateEmission,
+          IdTerme: idTermeValide(termeId),
           TauxReduction: Number(reductionCommerciale) || 0,
           PrimeNette: totalsFinanciers.primeNetteApresReduction,
           Taxe: totalsFinanciers.taxes,
@@ -536,6 +540,12 @@ export const NewSanteQuotePage = () => {
                 />
                 <Percent size={16} style={{ position: 'absolute', right: '12px', top: '12px', color: '#94a3b8' }} />
               </div>
+            </div>
+
+            {/* Terme du contrat */}
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
 
             {/* Dates Émission & Effet */}

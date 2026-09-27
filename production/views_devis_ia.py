@@ -26,6 +26,7 @@ from rest_framework.response import Response
 
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
+from .database import enregistrer_terme_devis
 from .import_assures import insert_new_assure
 from .models import Devis, DevisDetail, DevisDetGarantie
 
@@ -240,6 +241,9 @@ def _enregistrer(data):
                 "CALL sp_finalisation_devis(%s, %s, %s, %s, %s);",
                 [id_devis, id_client, id_client, True, ""],
             )
+
+    # sp_creation_devis_ia n'a pas de paramètre terme : posé sur le devis après création
+    enregistrer_terme_devis(id_devis, data.get("IdTerme"))
 
     devis = Devis.objects.get(pk=id_devis)
     return {

@@ -46,6 +46,24 @@ DEVIS_NON_CONFIRME = 0
 DEVIS_CONFIRME = 1
 DEVIS_INEXISTANT = 2
 
+# Termes du contrat (stddevis.idterme) : 1 Tacite reconduction, 2 Ferme, 3 Autre
+# (liste de configuration_api.TermeViewSet)
+TERMES_CONTRAT = (1, 2, 3)
+
+
+def enregistrer_terme_devis(id_devis, id_terme):
+    """
+    Pose le terme du contrat sur un devis non confirmé. sp_creation_devis (auto) et
+    sp_creation_devis_mrh le reçoivent ; les procédures des autres produits (IA, risques
+    divers, tous dommages, voyage, santé) n'ont pas ce paramètre : il est posé après création.
+    """
+    try:
+        id_devis, id_terme = int(id_devis or 0), int(id_terme or 0)
+    except (TypeError, ValueError):
+        return
+    if id_devis and id_terme in TERMES_CONTRAT:
+        Devis.objects.filter(pk=id_devis, confirme=False).update(idterme=id_terme)
+
 
 def get_devis(iddevis):
     if iddevis == 0:

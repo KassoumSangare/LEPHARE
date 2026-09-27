@@ -6,6 +6,8 @@ import { useToast } from '../../../context/ToastContext';
 import { ArrowLeft, ArrowRight, Check, Plus, Layers } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 
@@ -79,6 +81,7 @@ export const NewTousDommagesQuotePage = () => {
   const [compagnieId, setCompagnieId] = useState(1);
   const [idTarif, setIdTarif] = useState(ID_TARIF_TRI);
   const [dureeId, setDureeId] = useState(4);
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const [dateEmission, setDateEmission] = useState(aujourdhui);
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
@@ -178,6 +181,7 @@ export const NewTousDommagesQuotePage = () => {
         setTarifDevis(Number(ligne.IdTarif) || null);
         setIdTarif(Number(ligne.IdTarif) || ID_TARIF_TRI);
         setDureeId([1, 2, 3, 4, 5].includes(Number(raw.idduree)) ? Number(raw.idduree) : 5);
+        setTermeId(idTermeValide(raw.idterme));
         setDateEmission(jour(raw.dateemission) || aujourdhui());
         setDateEffet(jour(raw.dateeffet) || aujourdhui());
         setExpirationPersonnalisee(jour(raw.dateexpiration));
@@ -260,6 +264,7 @@ export const NewTousDommagesQuotePage = () => {
       TelephoneAssure: telephoneAssure || '',
       IdDevis: idDevisEdite || 0,
       IdDuree: Number(dureeId),
+      IdTerme: Number(termeId),
     };
 
     setIsSubmitting(true);
@@ -426,6 +431,10 @@ export const NewTousDommagesQuotePage = () => {
               <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))}>
                 {trierParLibelle(tarifsProposes, (t) => t.LibelleTarif).map((t) => (<option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>))}
               </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>

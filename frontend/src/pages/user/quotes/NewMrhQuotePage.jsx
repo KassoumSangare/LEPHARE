@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 
 // Formattage monétaire FCFA
@@ -84,10 +86,6 @@ export const NewMrhQuotePage = () => {
   const [tarifs] = useState([
     { IdTarif: 81, LibelleTarif: 'MULTIRISQUE HABITATION', Libelle: 'MULTIRISQUE HABITATION' }
   ]);
-  const [termes, setTermes] = useState([
-    { IdTerme: 1, Libelle: 'Tacite reconduction' },
-    { IdTerme: 2, Libelle: 'Ferme' }
-  ]);
   const [usages, setUsages] = useState([]);
   const [isLoadingUsages, setIsLoadingUsages] = useState(false);
 
@@ -101,7 +99,7 @@ export const NewMrhQuotePage = () => {
   const [compagnieId, setCompagnieId] = useState(1);
   const [compagnieNom, setCompagnieNom] = useState('NSIA ASSURANCES CI');
   const [categorieId, setCategorieId] = useState(81);
-  const [termeId, setTermeId] = useState(1);
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const [dureeId, setDureeId] = useState(4); // 4 = 12 Mois
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [dateEmission, setDateEmission] = useState(todayStr);
@@ -177,11 +175,10 @@ export const NewMrhQuotePage = () => {
     let isMounted = true;
     const loadData = async () => {
       try {
-        const [cls, cies, usgList, termList] = await Promise.all([
+        const [cls, cies, usgList] = await Promise.all([
           customerApi.getClients().catch(() => []),
           settingsApi.getCompanies().catch(() => []),
           mrhApi.getUsages().catch(() => []),
-          mrhApi.getTermes().catch(() => []),
         ]);
 
         if (!isMounted) return;
@@ -215,11 +212,6 @@ export const NewMrhQuotePage = () => {
         if (usgList && usgList.length > 0) {
           setUsages(usgList);
           setCurrentUsageCode(usgList[0].code);
-        }
-
-        if (termList && termList.length > 0) {
-          setTermes(termList);
-          if (!editIddevisParam) setTermeId(termList[0].IdTerme || 1);
         }
       } catch (err) {
         console.error('Erreur chargement référentiels MRH:', err);
@@ -606,7 +598,7 @@ export const NewMrhQuotePage = () => {
           setCompagnieId(Number(raw.compagnie.IdCompagnie));
           setCompagnieNom(raw.compagnie.RaisonSociale || '');
         }
-        if (raw.idterme) setTermeId(Number(raw.idterme));
+        setTermeId(idTermeValide(raw.idterme));
         if (raw.idduree) setDureeId(Number(raw.idduree));
         setDateEmission(jour(raw.dateemission) || todayStr);
         setDateEffet(jour(raw.dateeffet) || todayStr);
@@ -865,17 +857,7 @@ export const NewMrhQuotePage = () => {
             {/* Terme du contrat */}
             <div className="form-group">
               <label className="form-label">Terme du contrat</label>
-              <select
-                className="form-control"
-                value={termeId}
-                onChange={(e) => setTermeId(Number(e.target.value))}
-              >
-                {trierParLibelle(termes, (t) => t.Libelle).map((t) => (
-                  <option key={t.IdTerme} value={t.IdTerme}>
-                    {t.Libelle}
-                  </option>
-                ))}
-              </select>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
 
             {/* Durée du contrat */}

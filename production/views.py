@@ -69,6 +69,7 @@ from .database import (
     consolider_devis_db,
     correction_devis,
     enregistrer_ayant_droit,
+    enregistrer_terme_devis,
     execute_maj_manuelle_primes,
     get_assure_ia,
     get_certificat_transport,
@@ -2319,6 +2320,11 @@ def create_quotation_voyage(request):
         (err, queryset) = save_quotation_voyage(
             enregistrementdevis_voyage_data
         )
+        if not err and queryset:
+            enregistrer_terme_devis(
+                list(queryset)[0].ObjectId,
+                enregistrementdevis_voyage_data.get("IdTerme"),
+            )
         data_insertion_serializer = DataInsertionSerializer(
             queryset, many=True
         )
@@ -2379,6 +2385,11 @@ def create_quotation_tousrisquesinfo(request):
         (err, queryset) = save_quotation_tousrisquesinfo(
             request.user.id, enregistrementdevis_tri_data
         )
+        if not err and queryset:
+            enregistrer_terme_devis(
+                list(queryset)[0].ObjectId,
+                enregistrementdevis_tri_data.get("IdTerme"),
+            )
         data_insertion_serializer = DataInsertionSerializer(
             queryset,
             many=True,
@@ -2413,6 +2424,11 @@ def create_quotation_risques_divers(request):
             request.user.id,
             enregistrementdevis_risques_divers_serializer.validated_data,
         )
+        if not err and queryset:
+            enregistrer_terme_devis(
+                list(queryset)[0].ObjectId,
+                enregistrementdevis_risques_divers_data.get("IdTerme"),
+            )
         data_insertion_serializer = DataInsertionSerializer(
             queryset,
             many=True,

@@ -5,6 +5,8 @@ import { customerApi, settingsApi, contractApi, voyageApi } from '../../../api/e
 import { useToast } from '../../../context/ToastContext';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import {
   Plane,
@@ -109,6 +111,7 @@ export const NewVoyageQuotePage = () => {
 
   const [numeroPassport, setNumeroPassport] = useState('24CI88992');
   const [dureeJours, setDureeJours] = useState(30);
+  const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
 
   // Step 2: Offres & Garanties
   // Catalogue d'offres et garanties réellement paramétré en base (StdOffre / StdOffreGarantie / StdSousGarantie),
@@ -436,7 +439,8 @@ export const NewVoyageQuotePage = () => {
         NumeroPasseport: numeroPassport || 'CI123456',
         NumeroPoliceCompagnie: numeroPoliceCompagnie || 'RAS',
         IdDevis: 0,
-        IdDuree: Number(dureeJours) || 30
+        IdDuree: Number(dureeJours) || 30,
+        IdTerme: idTermeValide(termeId),
       };
       const apiRes = await voyageApi.enregistrerDevisVoyage(backendPayload);
       if (apiRes?.data?.[0]?.ObjectId) {
@@ -704,6 +708,12 @@ export const NewVoyageQuotePage = () => {
                 value={dateExpiration}
                 onChange={(e) => setDateExpiration(e.target.value)}
               />
+            </div>
+
+            {/* Terme du contrat */}
+            <div className="form-group">
+              <label className="form-label">Terme du contrat</label>
+              <TermeContratSelect value={termeId} onChange={setTermeId} />
             </div>
 
             {/* Numéro Passeport */}

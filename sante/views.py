@@ -13,6 +13,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from production.database import enregistrer_terme_devis
 from production.models import Devis
 from production.serializers import DataInsertionSerializer
 
@@ -239,6 +240,11 @@ def create_quotation_sante(request):
         (err, qryset) = save_quotation_sante(
             request.user.id, enregistrementdevis_data
         )
+        if not err and qryset:
+            # sp_creation_devis_sante n'a pas de paramètre terme : posé après création
+            enregistrer_terme_devis(
+                list(qryset)[0].ObjectId, enregistrementdevis_data.get("IdTerme")
+            )
         data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
         st = status.HTTP_201_CREATED
         if err:
