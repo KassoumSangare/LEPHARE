@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { isRegistryQuote } from '../../../utils/quoteRegistry';
+import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { RowActions } from '../../../components/common/RowActions';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -54,6 +55,9 @@ const isWithinLastThreeYears = (q) => {
   limit.setFullYear(limit.getFullYear() - 3);
   return d >= limit;
 };
+
+// Formulaire (route /user/quotes/<module>) qui rouvre un devis non auto en édition complète, par idproduit
+const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 4: 'mrh', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
 
 export const QuoteListPage = () => {
   const { user } = useAuth();
@@ -495,6 +499,13 @@ export const QuoteListPage = () => {
         const todayStr = new Date().toISOString().split('T')[0];
         const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
         const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
+        // Auto, MRH (4), IA (2), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire de création est
+        // rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
+        // (aucune page d'édition complète construite pour elles pour l'instant).
+        const produit = row.raw?.produit;
+        const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
+        const moduleDevis = getBranchOf(row) === 'AUTO' ? 'auto' : MODULE_EDITION_PAR_PRODUIT[idProduit] || null;
+        const moduleFerme = !moduleActif(moduleDevis);
 
         return (
           <RowActions
@@ -512,32 +523,19 @@ export const QuoteListPage = () => {
             }
             onConfirm={() => handleConvertContract(row)}
             onEdit={() => {
-              // Auto, MRH (4), IA (2), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire de création est
-              // rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
-              // (aucune page d'édition complète construite pour elles pour l'instant).
-              const produit = row.raw?.produit;
-              const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
-              if (getBranchOf(row) === 'AUTO') {
-                navigate(`/user/quotes/auto?edit=${row.iddevis}`);
-              } else if (idProduit === 4) {
-                navigate(`/user/quotes/mrh?edit=${row.iddevis}`);
-              } else if (idProduit === 2) {
-                navigate(`/user/quotes/ia?edit=${row.iddevis}`);
-              } else if (idProduit === 8) {
-                navigate(`/user/quotes/rc?edit=${row.iddevis}`);
-              } else if (idProduit === 7) {
-                navigate(`/user/quotes/mrp?edit=${row.iddevis}`);
-              } else if (idProduit === 9) {
-                navigate(`/user/quotes/tous-dommages?edit=${row.iddevis}`);
+              if (moduleDevis) {
+                navigate(`/user/quotes/${moduleDevis}?edit=${row.iddevis}`);
               } else {
                 setEditingQuote(row);
               }
             }}
-            editDisabled={isConsolidated || !canEdit}
+            editDisabled={isConsolidated || !canEdit || moduleFerme}
             editTitle={
               isConsolidated
                 ? 'Devis consolidé scellé (non modifiable)'
-                : (canEdit ? 'Modifier le devis' : 'Non habilité pour la modification')
+                : !canEdit
+                ? 'Non habilité pour la modification'
+                : (moduleFerme ? TITRE_MODULE_INACTIF : 'Modifier le devis')
             }
             onArchive={() => {
               const check = validateBusinessRule('delete', 'quotes', row, dataStore);
@@ -579,42 +577,29 @@ export const QuoteListPage = () => {
             <Printer size={16} />
             <span>Imprimer la Liste</span>
           </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/auto')}>
-            <Car size={16} />
-            <span>Devis Auto</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/voyage')}>
-            <Plane size={16} />
-            <span>Devis Voyage</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/transport')}>
-            <Ship size={16} />
-            <span>Devis Transport</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/mrh')}>
-            <Home size={16} />
-            <span>Devis MRH</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/sante')}>
-            <HeartPulse size={16} />
-            <span>Devis Santé</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/ia')}>
-            <UserPlus size={16} />
-            <span>Devis IA</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/rc')}>
-            <Shield size={16} />
-            <span>Devis RC</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/mrp')}>
-            <Building2 size={16} />
-            <span>Devis MRP</span>
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/tous-dommages')}>
-            <Layers size={16} />
-            <span>Devis Tous Dommages</span>
-          </button>
+          {[
+            ['auto', Car, 'Devis Auto'],
+            ['voyage', Plane, 'Devis Voyage'],
+            ['transport', Ship, 'Devis Transport'],
+            ['mrh', Home, 'Devis MRH'],
+            ['sante', HeartPulse, 'Devis Santé'],
+            ['ia', UserPlus, 'Devis IA'],
+            ['rc', Shield, 'Devis RC'],
+            ['mrp', Building2, 'Devis MRP'],
+            ['tous-dommages', Layers, 'Devis Tous Dommages'],
+          ].map(([module, Icone, libelle]) => (
+            <button
+              key={module}
+              type="button"
+              className={`btn btn-secondary${moduleActif(module) ? '' : ' module-ferme'}`}
+              onClick={() => navigate(`/user/quotes/${module}`)}
+              disabled={!moduleActif(module)}
+              title={moduleActif(module) ? undefined : TITRE_MODULE_INACTIF}
+            >
+              <Icone size={16} />
+              <span>{libelle}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -848,6 +833,9 @@ export const QuoteListPage = () => {
           isOpen={!!viewingQuote}
           onClose={() => setViewingQuote(null)}
           quote={viewingQuote}
+          onQuoteUpdated={(devisAJour) => setRegistry((prec) => (prec || []).map((q) => (
+            String(q.iddevis) === String(devisAJour.iddevis) ? devisAJour : q
+          )))}
         />
       )}
 

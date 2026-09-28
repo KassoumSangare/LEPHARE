@@ -3171,6 +3171,125 @@ def correction_devis(data):
         }
 
 
+def appliquer_garanties_vehicule_flotte(id_devis, id_devis_detail, garanties):
+    """
+    Garanties d'un seul véhicule d'une flotte : la liste reçue remplace celles du véhicule
+    (stddevisdetgarantie), puis les totaux du véhicule et du devis sont recalculés
+    (sp_finalisation_devis).
+
+    Reprend, pour ce seul véhicule, la boucle de sp_correction_devis : celle-ci ignore
+    l'id_devis_detail de chaque garantie et appliquerait la liste à tous les véhicules du devis.
+    Comme elle, le FGA (2) n'est jamais une ligne de garantie et la CEDEAO (3) n'est jamais retirée.
+    Une garantie absente de la liste est supprimée : le serveur additionne toutes les lignes
+    d'un véhicule, acquises ou non.
+
+    garanties : [{"id_garantie", "prime_annuelle", "prime_nette", "capital" (None = inchangé)}]
+    Renvoie les primes enregistrées du véhicule et du devis.
+    """
+    ids = [int(g["id_garantie"]) for g in garanties]
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT idclient, idassure, dateeffet FROM stddevis WHERE iddevis = %s FOR UPDATE;",
+                [id_devis],
+            )
+            id_client, id_assure, date_effet = cursor.fetchone()
+
+            cursor.execute(
+                "SELECT idgarantie FROM stddevisdetgarantie WHERE iddevisdet = %s;",
+                [id_devis_detail],
+            )
+            existantes = {row[0] for row in cursor.fetchall()}
+
+            cursor.execute(
+                "DELETE FROM stddevisdetgarantie"
+                " WHERE iddevisdet = %s AND idgarantie NOT IN (2, 3) AND NOT (idgarantie = ANY(%s));",
+                [id_devis_detail, ids],
+            )
+
+            for g in garanties:
+                id_garantie = int(g["id_garantie"])
+                if id_garantie == 2:
+                    continue
+                capital = g.get("capital")
+                if id_garantie in existantes:
+                    cursor.execute(
+                        "UPDATE stddevisdetgarantie"
+                        " SET primeannuelle = %s, primenette = %s, acquise = true, capital = COALESCE(%s, capital)"
+                        " WHERE iddevisdet = %s AND idgarantie = %s;",
+                        [g["prime_annuelle"], g["prime_nette"], capital, id_devis_detail, id_garantie],
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO stddevisdetgarantie(iddevisdet, idgarantie, acquise, capital, franchise, formule,"
+                        " primenette, old_acquise, old_capital, old_franchise, old_formule, old_places, old_primenette,"
+                        " deces, ipp, fraismed, hosp, minfranchise, maxfranchise, primeannuelle, taxe, textefranchise)"
+                        " VALUES (%s, %s, true, %s, 0, 0, %s, '0', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, %s, 0, 'NEANT');",
+                        [id_devis_detail, id_garantie, capital or 0, g["prime_nette"], g["prime_annuelle"]],
+                    )
+
+            # Taxe de chaque garantie reçue au taux du produit Automobile (comme sp_correction_devis)
+            cursor.execute(
+                "UPDATE stddevisdetgarantie AS dd"
+                " SET taxe = ROUND((dd.primenette * tt.tauxtaxe) / 100, 0)"
+                " FROM stdtauxtaxegarantieproduit AS tt"
+                " WHERE tt.idgarantie = dd.idgarantie AND tt.idproduit = 1"
+                " AND %s BETWEEN tt.debutvalidite AND tt.finvalidite"
+                " AND dd.iddevisdet = %s AND dd.idgarantie <> 2 AND dd.idgarantie = ANY(%s);",
+                [date_effet, id_devis_detail, ids],
+            )
+
+            # Totaux du véhicule : FGA = 2 % de la RC, primes et taxes sommées sur ses garanties
+            cursor.execute(
+                "UPDATE stddevisdetail AS dd"
+                " SET primeannuelle = m.primeannuelle + m.fgaannuelle, primenette = m.primenette,"
+                " fga = m.fganette, taxeenregistrement = m.taxe"
+                " FROM (SELECT iddevisdet, SUM(primeannuelle) AS primeannuelle, SUM(primenette) AS primenette,"
+                " SUM(CASE WHEN idgarantie = 1 THEN ROUND(primenette * 0.02, 0) ELSE 0 END) AS fganette,"
+                " SUM(CASE WHEN idgarantie = 1 THEN ROUND(primeannuelle * 0.02, 0) ELSE 0 END) AS fgaannuelle,"
+                " SUM(taxe) AS taxe"
+                " FROM stddevisdetgarantie WHERE iddevisdet = %s AND idgarantie <> 2 GROUP BY iddevisdet) AS m"
+                " WHERE m.iddevisdet = dd.iddevisdetail;",
+                [id_devis_detail],
+            )
+
+            cursor.execute(
+                "CALL sp_finalisation_devis(%s, %s, %s, %s, %s);",
+                [id_devis, id_client, id_assure, True, ""],
+            )
+            # Primes saisies à la main, comme après sp_correction_devis
+            cursor.execute("UPDATE stddevis SET primeimposee = true WHERE iddevis = %s;", [id_devis])
+
+            cursor.execute(
+                "SELECT primeannuelle, primenette, fga, taxeenregistrement FROM stddevisdetail WHERE iddevisdetail = %s;",
+                [id_devis_detail],
+            )
+            pa_vehicule, pn_vehicule, fga_vehicule, taxe_vehicule = cursor.fetchone()
+            cursor.execute(
+                "SELECT primeannuelle, primenette, fga, cedeao, taxe, accessoire, primettc FROM stddevis WHERE iddevis = %s;",
+                [id_devis],
+            )
+            pa, pn, fga, cedeao, taxe, accessoire, ttc = cursor.fetchone()
+
+    return {
+        "vehicule": {
+            "prime_annuelle": pa_vehicule,
+            "prime_nette": pn_vehicule,
+            "fga": fga_vehicule,
+            "taxe": taxe_vehicule,
+        },
+        "devis": {
+            "prime_annuelle": pa,
+            "prime_nette": pn,
+            "fga": fga,
+            "cedeao": cedeao,
+            "taxe": taxe,
+            "accessoire": accessoire,
+            "prime_ttc": ttc,
+        },
+    }
+
+
 def execute_maj_manuelle_primes(
     p_numero_devis: str,
     p_prime_annuelle: float,

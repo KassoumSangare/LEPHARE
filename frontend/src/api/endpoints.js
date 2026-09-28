@@ -201,7 +201,11 @@ export const normalizeClient = (c) => {
     CniPat: cniPat,
     contrats_actifs: c.contrats_actifs || 0,
     devis_en_cours: c.devis_en_cours || 0,
-    total_primes: c.total_primes || '0 FCFA',
+    // Primes TTC des polices du client, calculées par /api/client/ (nombre) ; un client déjà
+    // normalisé garde son montant formaté
+    total_primes: typeof c.total_primes === 'number'
+      ? `${String(Math.round(c.total_primes)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} FCFA`
+      : (c.total_primes || '0 FCFA'),
     raw: c,
   };
 };
@@ -218,6 +222,12 @@ export const customerApi = {
     const res = await apiClient.get(`/client/${id}/`);
     return normalizeClient(res.data);
   },
+  // GET /api/client/:id/fiche/ (fiche imprimable : identité avec libellés, synthèse commerciale,
+  // dernières opérations)
+  getFicheClient: async (id) => (await apiClient.get(`/client/${id}/fiche/`)).data,
+  // GET /api/client/:id/dossier/ (dossier 360° : identité, synthèse, tous les devis en cours et
+  // toutes les émissions de contrats du client, filtrés en base)
+  getDossierClient: async (id) => (await apiClient.get(`/client/${id}/dossier/`)).data,
   // POST /api/client/
   createClient: async (clientData) => {
     const payload = sanitizeClientForApi(clientData);
@@ -228,6 +238,8 @@ export const customerApi = {
     const payload = sanitizeClientForApi(clientData);
     return apiClient.put(`/client/${id}/`, payload);
   },
+  // PATCH /api/client/:id/ : seuls les champs fournis (noms de l'API) sont modifiés
+  patchClient: (id, champs) => apiClient.patch(`/client/${id}/`, champs),
   // GET /api/clientrecherche/:terme (Recherche client)
   searchClient: async (term) => {
     const res = await apiClient.get(`/clientrecherche/${term}`);
@@ -423,6 +435,26 @@ export const impressionIaApi = {
       }
     }
     return { quittance, garanties: donneesListe(g), assures: donneesListe(a), ayantsDroit };
+  },
+};
+
+// Annexe d'un devis flotte auto, « Liste des véhicules de la flotte » (mêmes sources qu'URANUS) :
+// quittance de la proposition, primes de chaque véhicule par garantie, détail des véhicules
+// (genre, bonus, réduction commerciale) et taux de réduction flotte
+export const annexeFlotteApi = {
+  get: async (iddevis) => {
+    const [q, v, d, r] = await Promise.all([
+      apiClient.get(`/quittanceproposition/${iddevis}`).catch(() => ({ data: [] })),
+      apiClient.get(`/listevehiculedevis/${iddevis}`),
+      apiClient.get(`/devisdetail/${iddevis}`).catch(() => ({ data: [] })),
+      apiClient.get(`/reductionflottedevis/${iddevis}`).catch(() => ({ data: {} })),
+    ]);
+    return {
+      quittance: donneesEntete(q) || {},
+      vehicules: donneesListe(v),
+      details: donneesListe(d),
+      tauxReductionFlotte: r.data?.TauxReduction ?? null,
+    };
   },
 };
 
@@ -659,14 +691,20 @@ export const quoteApi = {
   // POST /api/correctiondevis/ (Enregistrement des primes & garanties imposées / modifiées)
   correctQuote: (payload) => apiClient.post('/correctiondevis/', payload),
   // POST /api/majrecapprimes/ (Mise à jour manuelle du récapitulatif des primes d'un devis
-  // déjà enregistré, via sp_maj_manuelle_primes — utilisé par « Modifier » sur le Registre des Devis)
+  // déjà enregistré, via sp_maj_manuelle_primes — utilisé par « Modifier » sur le Registre des Devis
+  // et par « Imposer les primes du récapitulatif » de la fiche d'un devis flotte)
   updateQuotePrimes: (payload) => apiClient.post('/majrecapprimes/', payload),
   // POST /api/finalisationdevisauto (Finalisation devis flotte)
   finalizeFlotteQuote: (payload) => apiClient.post('/finalisationdevisauto', payload),
   // POST /api/annulationsaisievehicule (Suppression d'un véhicule de flotte)
   deleteFlotteVehicle: (idDevisDetail) => apiClient.post('/annulationsaisievehicule', { IdDevisDetail: idDevisDetail }),
-  // GET /api/sousgarantie/ (Sous-garanties disponibles)
-  getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/')),
+  // POST /api/garantiesvehiculeflotte/ (garanties d'un seul véhicule d'une flotte enregistrée :
+  // la liste remplace les siennes, puis le devis est retotalisé)
+  appliquerGarantiesVehiculeFlotte: (payload) => apiClient.post('/garantiesvehiculeflotte/', payload),
+  // GET /api/sousgarantie/ (Sous-garanties disponibles ; 237 en base, au-delà de la page par défaut)
+  getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/', { params: { page_size: 1000 } })),
+  // GET /api/tauxtaxegarantie/ (taux de taxe par garantie et produit, ceux de fn_calcul_montant_taxe)
+  getTauxTaxesGaranties: async () => extractData(await apiClient.get('/tauxtaxegarantie/', { params: { page_size: 1000 } })),
   // GET /api/assistanceautomobile/:idCompagnie
   getAssistanceAuto: async (compagnieId) => {
     try {

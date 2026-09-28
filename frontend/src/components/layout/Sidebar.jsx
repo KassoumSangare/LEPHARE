@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ADMIN_MENU, estActif } from './adminMenu';
+import { moduleActif, TITRE_MODULE_INACTIF } from '../../utils/modulesActifs';
 import {
   LayoutDashboard,
   Users,
@@ -309,30 +310,24 @@ export const Sidebar = ({ isOpen, onClose }) => {
                     <ClipboardList size={14} className="nav-icon" />
                     <span>Registre des Devis</span>
                   </NavLink>
-                  <NavLink to="/user/quotes/auto" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <Car size={14} className="nav-icon" />
-                    <span>Automobile</span>
-                  </NavLink>
-                  <NavLink to="/user/quotes/mrh" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <House size={14} className="nav-icon" />
-                    <span>Multirisques Habitation</span>
-                  </NavLink>
-                  <NavLink to="/user/quotes/sante" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <HeartPulse size={14} className="nav-icon" />
-                    <span>Santé</span>
-                  </NavLink>
-                  <NavLink to="/user/quotes/ia" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <Activity size={14} className="nav-icon" />
-                    <span>Individuelle Accidents</span>
-                  </NavLink>
-                  <NavLink to="/user/quotes/voyage" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <Plane size={14} className="nav-icon" />
-                    <span>Voyage</span>
-                  </NavLink>
-                  <NavLink to="/user/quotes/transport" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <Ship size={14} className="nav-icon" />
-                    <span>Transport</span>
-                  </NavLink>
+                  {[
+                    ['auto', Car, 'Automobile'],
+                    ['mrh', House, 'Multirisques Habitation'],
+                    ['sante', HeartPulse, 'Santé'],
+                    ['ia', Activity, 'Individuelle Accidents'],
+                    ['voyage', Plane, 'Voyage'],
+                    ['transport', Ship, 'Transport'],
+                  ].map(([module, Icone, libelle]) => (moduleActif(module) ? (
+                    <NavLink key={module} to={`/user/quotes/${module}`} className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                      <Icone size={14} className="nav-icon" />
+                      <span>{libelle}</span>
+                    </NavLink>
+                  ) : (
+                    <span key={module} className="sidebar-sublink-item disabled" aria-disabled="true" title={TITRE_MODULE_INACTIF}>
+                      <Icone size={14} className="nav-icon" />
+                      <span>{libelle}</span>
+                    </span>
+                  )))}
                 </div>
               )}
             </div>

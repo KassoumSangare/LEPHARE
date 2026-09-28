@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import {
@@ -6,8 +6,11 @@ import {
   printConditionsParticulieres,
   printAnnexeIa,
   estDevisIaImprimable,
+  printAnnexeFlotte,
+  estDevisFlotteAuto,
 } from '../../../utils/exportUtils';
 import { formatDate } from '../../../utils/dateUtils';
+import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
 import {
   FileText,
   Printer,
@@ -28,10 +31,40 @@ import {
   ShieldAlert,
   AlertTriangle,
   Users,
+  Pencil,
 } from 'lucide-react';
 
-export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) => {
+export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvertToContract, onQuoteUpdated }) => {
+  // Devis relu après une imposition des primes du récapitulatif, et formulaire d'imposition
+  // affiché à la place de la fiche (comme le panneau d'URANUS)
+  const [quoteAJour, setQuoteAJour] = useState(null);
+  const [imposition, setImposition] = useState(false);
+  useEffect(() => {
+    setQuoteAJour(null);
+    setImposition(false);
+  }, [quoteInitial?.iddevis, isOpen]);
+
+  const quote = quoteAJour || quoteInitial;
   if (!isOpen || !quote) return null;
+
+  const flotteAuto = estDevisFlotteAuto(quote);
+  const imposable = flotteAuto && !quote.confirme && !quote.raw?.confirme && !quote.devis_consolide;
+
+  if (imposition) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Imposer les primes du récapitulatif de la flotte" size="medium">
+        <ImpositionRecapFlotte
+          quote={quote}
+          onAnnuler={() => setImposition(false)}
+          onEnregistre={(devisAJour) => {
+            setQuoteAJour(devisAJour);
+            setImposition(false);
+            if (onQuoteUpdated) onQuoteUpdated(devisAJour);
+          }}
+        />
+      </Modal>
+    );
+  }
 
   const isConsolidated = quote.statut === 'Consolidé';
   const details = quote.details || {};
@@ -226,8 +259,23 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
 
         {/* Actuarial Financial Breakdown */}
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            Décompte Actuariel CIMA & Quittance
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              Décompte Actuariel CIMA & Quittance
+              {quote.raw?.prime_imposee && <StatusBadge label="Primes imposées" color="amber" />}
+            </div>
+            {imposable && (
+              <button
+                type="button"
+                className="btn btn-secondary no-print"
+                onClick={() => setImposition(true)}
+                title="Corriger le récapitulatif des primes de la flotte (prime nette, accessoire, taxes, FGA, CEDEAO, TTC)"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+              >
+                <Pencil size={14} />
+                <span>Imposer les primes du récapitulatif</span>
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
@@ -402,7 +450,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
             Fermer
           </button>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <button
               type="button"
               className="btn btn-secondary"
@@ -433,6 +481,19 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote, onConvertToContract }) 
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
               >
                 <Users size={15} />
+                <span>Imprimer Annexe</span>
+              </button>
+            )}
+
+            {flotteAuto && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => printAnnexeFlotte(quote)}
+                title="Annexe : liste des véhicules de la flotte avec leurs primes par garantie et le décompte de prime — enregistrable en PDF"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Car size={15} />
                 <span>Imprimer Annexe</span>
               </button>
             )}

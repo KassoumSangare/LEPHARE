@@ -177,7 +177,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
         Ville: selectedVille ? selectedVille.Libelle : (formData.ville || 'Abidjan'),
         profession: selectedProf ? selectedProf.Libelle : (formData.profession || (isEntreprise ? 'Entreprise' : 'Cadre / Salarié')),
         libelleprofession: selectedProf ? selectedProf.Libelle : (formData.profession || (isEntreprise ? 'Entreprise' : 'Cadre / Salarié')),
-        secteur_activite: selectedSecteur ? selectedSecteur.LibelleSecteurActivite : '',
+        secteur_activite: selectedSecteur ? (selectedSecteur.Libelle || selectedSecteur.LibelleSecteurActivite) : '',
         telephone: formData.telephone.trim(),
         Telephone: formData.telephone.trim(),
         Mobile: formData.Mobile.trim() || formData.telephone.trim(),
@@ -578,7 +578,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Secteur d'Activité (Table stdsecteuractivite)</label>
+                <label className="form-label">Secteur d'Activité</label>
                 <select
                   className="form-control"
                   value={formData.IdSecteurActivite}

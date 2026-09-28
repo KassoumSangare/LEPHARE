@@ -64,6 +64,7 @@ from customer.models import Client
 from .anti_doublons.importateur import importer_assures_anti_doublons
 from .anti_doublons.rapport import ConfigurationImport
 from .database import (
+    appliquer_garanties_vehicule_flotte,
     archive_quote,
     cancel_car_input,
     consolider_devis_db,
@@ -179,6 +180,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ExtendedQuotationInfoSerializer,
     FinalisationDevisFlotteSerializer,
     GarantieContratFlotteSerializer,
+    GarantiesVehiculeFlotteSerializer,
     GarantieSouscriteSerializer,
     ImportationAssureIaSerializer,
     ImportationTransportSerializer,
@@ -3431,6 +3433,19 @@ class PrimeUpdateAPIView(APIView):
             validated_data = serializer.validated_data
 
             p_numero_devis = validated_data["numero_devis"]
+            # sp_maj_manuelle_primes ne fait rien, sans erreur, si le numéro ne désigne pas un devis
+            # non archivé ; sur un devis confirmé elle réécrirait la police et sa quittance
+            devis = Devis.objects.filter(numerodevis=p_numero_devis, archive=False).first()
+            if devis is None:
+                return Response(
+                    {"message": f"Devis {p_numero_devis} introuvable ou archivé."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if devis.confirme:
+                return Response(
+                    {"message": f"Le devis {p_numero_devis} est déjà confirmé : ses primes ne peuvent plus être imposées."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             p_prime_annuelle = validated_data["prime_annuelle"]
             p_prime_nette = validated_data["prime_nette"]
             p_accessoire = validated_data["accessoire"]
@@ -3464,13 +3479,71 @@ class PrimeUpdateAPIView(APIView):
                 # Handle database or execution errors
                 return Response(
                     {
-                        "message": "Error executing stored procedure.",
+                        "message": "Les primes n'ont pas pu être imposées.",
                         "details": str(e),
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GarantiesVehiculeFlotteAPIView(APIView):
+    """
+    POST /api/garantiesvehiculeflotte/ : garanties d'un seul véhicule d'une flotte automobile
+    (garanties ajoutées, retirées ou à primes imposées), puis totaux du devis recalculés.
+    sp_correction_devis ne convient pas : elle applique sa liste à tous les véhicules du devis.
+    """
+
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+    def post(self, request, *args, **kwargs):
+        serializer = GarantiesVehiculeFlotteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        donnees = serializer.validated_data
+
+        devis = Devis.objects.filter(pk=donnees["id_devis"], archive=False).first()
+        if devis is None:
+            return Response(
+                {"message": f"Devis {donnees['id_devis']} introuvable ou archivé."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if devis.produit_id != 1 or not devis.flotte:
+            return Response(
+                {"message": f"Le devis {devis.numerodevis} n'est pas une flotte automobile."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if devis.confirme:
+            return Response(
+                {"message": f"Le devis {devis.numerodevis} est déjà confirmé : ses garanties ne peuvent plus être modifiées."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not DevisDetail.objects.filter(pk=donnees["id_devis_detail"], iddevis=devis).exists():
+            return Response(
+                {"message": f"Ce véhicule n'appartient pas au devis {devis.numerodevis}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            primes = appliquer_garanties_vehicule_flotte(
+                devis.pk, donnees["id_devis_detail"], donnees["liste_garantie"]
+            )
+        except Exception as e:
+            logger.exception("Garanties du véhicule %s non appliquées", donnees["id_devis_detail"])
+            return Response(
+                {
+                    "message": "Les garanties du véhicule n'ont pas pu être enregistrées.",
+                    "details": str(e).split("\n")[0],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(
+            {"message": "Garanties du véhicule enregistrées.", **primes},
+            status=status.HTTP_200_OK,
+        )
 
 
 # ============================================================================

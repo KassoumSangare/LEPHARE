@@ -496,6 +496,14 @@ export const NewIaQuotePage = () => {
   // -------------------------------------------------------------
   const handleSave = async () => {
     if (!souscripteurId) { toastError('Choisissez le souscripteur.'); setStep(2); return; }
+    // Nom tapé dans la recherche sans cliquer sur un client de la liste : l'ancien souscripteur
+    // resterait celui du devis
+    const souscripteurChoisi = clients.find((c) => String(c.id) === String(souscripteurId));
+    if (souscripteurChoisi && rechercheSouscripteur.trim() !== (souscripteurChoisi.nomcomplet || '').trim()) {
+      toastError('Le souscripteur n\'a pas été choisi dans la liste : cliquez sur le client voulu sous le champ de recherche.');
+      setStep(2);
+      return;
+    }
     if (!assures.length) { toastError('Ajoutez au moins un assuré.'); setStep(2); return; }
     if (!idOffre) { toastError('Aucune offre pour cette catégorie : choisissez une autre catégorie.'); setStep(1); return; }
     if (!dateExpiration) { toastError('Saisissez la date d\'expiration.'); setStep(1); return; }

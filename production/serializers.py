@@ -15,6 +15,7 @@ from configuration_api.models import (
     Option,
     OptionUsage,
     ParametresCalcul,
+    SousGarantie,
     SousGarantieMRH,
     SousGarantieUsage,
     Tarif,
@@ -1575,19 +1576,19 @@ class EnregistrementDevisAutoSerializer(EnregistrementDevisBaseSerializer):
         if val_accessoire > val_venale:
             raise serializers.ValidationError(
                 {
-                    "Valeur accessoire": "La valeur accessoire ne peut supérieure à la valeur venale."
+                    "Valeur accessoire": "La valeur accessoire ne peut être supérieure à la valeur venale."
                 }
             )
         if val_accessoire > val_neuve:
             raise serializers.ValidationError(
                 {
-                    "Valeur accessoire": "La valeur accessoire ne peut supérieure à la valeur neuve."
+                    "Valeur accessoire": "La valeur accessoire ne peut être supérieure à la valeur neuve."
                 }
             )
         if val_venale > val_neuve:
             raise serializers.ValidationError(
                 {
-                    "Valeur venale": "La valeur venale ne peut supérieure à la valeur neuve."
+                    "Valeur venale": "La valeur venale ne peut être supérieure à la valeur neuve."
                 }
             )
 
@@ -3262,26 +3263,66 @@ class PrimeUpdateSerializer(serializers.Serializer):
 
     # NUMERIC (Use DecimalField for precision)
     prime_annuelle = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     prime_nette = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     accessoire = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     taxe = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     fga = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     cedeao = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
     prime_ttc = serializers.DecimalField(
-        max_digits=19, decimal_places=4, allow_null=True
+        max_digits=19, decimal_places=4, allow_null=True, min_value=0
     )
+
+
+class GarantieVehiculeFlotteSerializer(serializers.Serializer):
+    """Une garantie d'un véhicule de flotte, telle que saisie dans « Garanties de l'offre »."""
+
+    id_garantie = serializers.IntegerField(min_value=1)
+    prime_annuelle = serializers.DecimalField(max_digits=19, decimal_places=4, min_value=0)
+    prime_nette = serializers.DecimalField(max_digits=19, decimal_places=4, min_value=0)
+    # None : capital enregistré inchangé (garantie déjà présente sur le véhicule)
+    capital = serializers.DecimalField(
+        max_digits=19, decimal_places=4, min_value=0, allow_null=True, required=False, default=None
+    )
+
+
+class GarantiesVehiculeFlotteSerializer(serializers.Serializer):
+    """Liste complète des garanties d'un véhicule de flotte (remplace celles enregistrées)."""
+
+    id_devis = serializers.IntegerField(min_value=1)
+    id_devis_detail = serializers.IntegerField(min_value=1)
+    liste_garantie = GarantieVehiculeFlotteSerializer(many=True, allow_empty=False)
+
+    def validate_liste_garantie(self, garanties):
+        ids = [g["id_garantie"] for g in garanties]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("Une garantie figure deux fois dans la liste.")
+        if 1 not in ids:
+            raise serializers.ValidationError("La Responsabilité Civile est obligatoire.")
+        if 2 in ids:
+            raise serializers.ValidationError(
+                "Le FGA est calculé sur la Responsabilité Civile : ce n'est pas une garantie à saisir."
+            )
+        connues = set(
+            SousGarantie.objects.filter(pk__in=ids).values_list("pk", flat=True)
+        )
+        inconnues = sorted(set(ids) - connues)
+        if inconnues:
+            raise serializers.ValidationError(
+                f"Garantie(s) inexistante(s) : {', '.join(str(i) for i in inconnues)}."
+            )
+        return garanties
 
 
 """

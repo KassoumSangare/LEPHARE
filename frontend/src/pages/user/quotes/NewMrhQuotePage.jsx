@@ -439,6 +439,13 @@ export const NewMrhQuotePage = () => {
     }
 
     const selectedClient = clients.find((c) => String(c.id) === String(souscripteurId));
+    // Nom tapé dans la recherche sans cliquer sur un client de la liste : l'ancien souscripteur
+    // resterait celui du devis
+    if (selectedClient && searchSouscripteur.trim() !== (selectedClient.nomcomplet || '').trim()) {
+      toastError('Le souscripteur n\'a pas été choisi dans la liste : cliquez sur le client voulu sous le champ de recherche.');
+      setStep(4);
+      return;
+    }
     const selectedAssure = clients.find((c) => String(c.id) === String(assureId)) || selectedClient;
 
     setIsSubmitting(true);

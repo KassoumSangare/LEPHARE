@@ -4,7 +4,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { EditClientModal } from './EditClientModal';
 import { dataStore } from '../../../api/dataStore';
-import { customerApi, configRefApi, secteurActiviteApi, professionApi } from '../../../api/endpoints';
+import { customerApi, configRefApi, secteurActiviteApi, professionApi, sanitizeClientForApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser } from '../../../utils/rbac';
@@ -13,6 +13,9 @@ import { exportToPdf, printFicheClient } from '../../../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
 import { trierParLibelle } from '../../../utils/sortUtils';
 
+// Champs jamais modifiés depuis la fenêtre de modification : identifiants attribués et soldes
+const CHAMPS_CLIENT_NON_MODIFIABLES = ['Matricule', 'numero_assure', 'cle_unique', 'Solde', 'Avoir', 'CreeCie', 'IdCategorie', 'IdProfil'];
+
 export const ClientListPage = () => {
   const { user } = useAuth();
   const [clients, setClients] = useState([]);
@@ -20,7 +23,7 @@ export const ClientListPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [archivingClient, setArchivingClient] = useState(null);
-  const { success, error: toastError } = useToast();
+  const { success, error: toastError, info } = useToast();
   const navigate = useNavigate();
 
   const handleConfirmArchive = async () => {
@@ -155,7 +158,7 @@ export const ClientListPage = () => {
       'Type',
       'Téléphone',
       'Email / Ville',
-      'Profession / Activité',
+      'Profession',
       'Total Primes',
     ];
 
@@ -178,8 +181,9 @@ export const ClientListPage = () => {
 
     exportToPdf({
       filename: `Repertoire_Clients_LE_PHARE_${new Date().toISOString().slice(0, 10)}.pdf`,
-      title: 'RÉPERTOIRE OFFICIEL DE LA BASE CLIENTÈLE',
-      subtitle: 'État officiel conforme aux normes d’identification et de conformité du Code CIMA',
+      title: 'Répertoire de la base clientèle',
+      enTete: false,
+      piedDePage: false,
       metadata: {
         'Date d\'édition': today,
         'Édité par': user?.nom ? `${user.nom} (${user.email || ''})` : (user?.email || 'Gestionnaire'),
@@ -188,14 +192,6 @@ export const ClientListPage = () => {
       },
       headers,
       rows,
-      totals: [
-        'TOTAL GLOBAL',
-        `${clients.length} Clients`,
-        '-',
-        '-',
-        '-',
-        '-',
-      ],
     });
   };
 
@@ -398,7 +394,7 @@ export const ClientListPage = () => {
       ville: selectedVille ? selectedVille.Libelle : formData.ville,
       profession: selectedProf ? selectedProf.Libelle : (formData.profession || (isEntreprise ? 'Société' : 'Commerçant')),
       libelleprofession: selectedProf ? selectedProf.Libelle : (formData.profession || (isEntreprise ? 'Société' : 'Commerçant')),
-      secteur_activite: selectedSecteur ? selectedSecteur.LibelleSecteurActivite : '',
+      secteur_activite: selectedSecteur ? (selectedSecteur.Libelle || selectedSecteur.LibelleSecteurActivite) : '',
       contrats_actifs: 0,
       devis_en_cours: 0,
       total_primes: '0 FCFA',
@@ -1039,7 +1035,7 @@ export const ClientListPage = () => {
 
                 <div className="form-group">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>Secteur d'Activité Économique (Table stdsecteuractivite)</label>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Secteur d'Activité Économique</label>
                     <button
                       type="button"
                       title="Créer un nouveau secteur d'activité"
@@ -1242,9 +1238,33 @@ export const ClientListPage = () => {
         isOpen={!!editingClient}
         onClose={() => setEditingClient(null)}
         client={editingClient}
-        onSave={(id, updates) => {
+        onSave={async (id, updates, avant) => {
+          // Enregistrement en base (la modification ne restait jusqu'ici que dans le navigateur).
+          // Seuls les champs changés dans la fenêtre partent (PATCH) : les valeurs par défaut de
+          // l'écran et les champs non affichés (solde, matricule…) restent tels qu'en base.
+          const apres = sanitizeClientForApi(updates);
+          const reference = sanitizeClientForApi(avant);
+          const modifs = Object.fromEntries(Object.entries(apres).filter(
+            ([champ, valeur]) => !CHAMPS_CLIENT_NON_MODIFIABLES.includes(champ) && valeur !== reference[champ],
+          ));
+          if (!Object.keys(modifs).length) {
+            info(`Aucune modification à enregistrer pour ${updates.nomcomplet}.`);
+            return;
+          }
+          try {
+            await customerApi.patchClient(id, modifs);
+          } catch (err) {
+            const reponse = err?.response?.data;
+            const detail = reponse && typeof reponse === 'object'
+              ? Object.values(reponse).flat().filter((m) => typeof m === 'string').join(' ; ')
+              : '';
+            toastError(`La fiche de ${updates.nomcomplet} n'a pas été enregistrée : ${detail || err.message}.`);
+            return;
+          }
           dataStore.updateClient(id, updates);
-          setClients(dataStore.getClients());
+          setClients((prev) => prev.map((c) => (
+            String(c.IdClient) === String(id) || String(c.id) === String(id) ? { ...c, ...updates } : c
+          )));
           success(`Fiche de ${updates.nomcomplet} mise à jour avec succès !`);
         }}
       />
@@ -1345,9 +1365,6 @@ export const ClientListPage = () => {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>
                     Nouveau Secteur d'Activité
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Table stdsecteuractivite
                   </div>
                 </div>
               </div>

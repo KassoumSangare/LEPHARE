@@ -238,6 +238,14 @@ export const NewTousDommagesQuotePage = () => {
     if (modePrime === 'taux' && !(Number(tauxPrime) > 0)) { toastError('Saisissez le taux de prime.'); setStep(2); return; }
     if (modePrime === 'montant' && !(Number(montantPrime) > 0)) { toastError('Saisissez le montant de la prime.'); setStep(2); return; }
     if (!souscripteurId) { toastError('Choisissez le souscripteur.'); setStep(3); return; }
+    // Nom tapé dans la recherche sans cliquer sur un client de la liste : l'ancien souscripteur
+    // resterait celui du devis
+    const souscripteurChoisi = clients.find((c) => String(c.id) === String(souscripteurId));
+    if (souscripteurChoisi && rechercheSouscripteur.trim() !== (souscripteurChoisi.nomcomplet || '').trim()) {
+      toastError('Le souscripteur n\'a pas été choisi dans la liste : cliquez sur le client voulu sous le champ de recherche.');
+      setStep(3);
+      return;
+    }
 
     const payload = {
       IdIntermediaire: 1,

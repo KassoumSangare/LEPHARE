@@ -3,7 +3,7 @@
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
 import QRCode from 'qrcode';
-import { conditionsParticulieresMonoApi, contractApi, impressionIaApi, quoteApi } from '../api/endpoints';
+import { annexeFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
 
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
@@ -140,9 +140,10 @@ export const exportToExcel = ({ filename, title, subtitle, metadata = {}, header
 };
 
 /**
- * Export PDF Officiel Certifié CIMA avec déclenchement direct d'impression PDF et téléchargement
+ * Export PDF Officiel Certifié CIMA avec déclenchement direct d'impression PDF et téléchargement.
+ * enTete : bloc République / société / titre / sous-titre ; piedDePage : attestation et signatures.
  */
-export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers, rows, totals }) => {
+export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers, rows, totals, enTete = true, piedDePage = true }) => {
   const metaHtml = Object.entries(metadata)
     .map(([k, v]) => `<div><span style="color:#64748b;font-weight:600;">${k} :</span> <strong>${v}</strong></div>`)
     .join('');
@@ -216,6 +217,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
       margin-top: 3px;
     }
     .doc-badge {
+      margin-left: auto;
       text-align: right;
       font-size: 8pt;
       color: #64748b;
@@ -277,12 +279,12 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
 </head>
 <body>
   <div class="header-box">
-    <div>
+    ${enTete ? `<div>
       <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
       <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
       <div style="font-size: 11.5pt; font-weight: 800; color: #0284c7; margin-top: 3px;">${title}</div>
       ${subtitle ? `<div style="font-size: 8.5pt; color: #475569; margin-top: 2px;">${subtitle}</div>` : ''}
-    </div>
+    </div>` : ''}
     <div class="doc-badge">
       <div>Édité le ${new Date().toLocaleDateString('fr-FR')}</div>
       <div class="doc-badge-status">DOCUMENT OFFICIEL CERTIFIÉ</div>
@@ -303,7 +305,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
     </tbody>
   </table>
 
-  <div class="legal-notice">
+  ${piedDePage ? `<div class="legal-notice">
     <strong>Attestation de Contrôle & Conformité Fiscale :</strong> Le présent bordereau récapitulatif consolide l'ensemble des émissions de polices, quittances et taxes réglementaires conformément aux dispositions des Articles 13 et suivants du Code CIMA.
   </div>
 
@@ -316,7 +318,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
       <div style="font-weight: 700; color: #334155;">Pour la Direction Générale / Visa CIMA :</div>
       <div class="sig-space" style="justify-content: flex-end; color: #0284c7; font-weight: 700;">[ Cachet Officiel ]</div>
     </div>
-  </div>
+  </div>` : ''}
 
   <script>
     window.onload = function() {
@@ -343,158 +345,221 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   downloadBlob(blob, cleanName);
 };
 
-/**
- * Impression de la Fiche Client Officielle (Personne physique ou morale)
- * Génère une page A4 avec toutes les informations saisies lors de la création/modification du client
- * et déclenche directement la boîte de dialogue d'impression du navigateur.
- */
-export const printFicheClient = (client) => {
-  if (!client) return;
+// Texte inséré dans un document HTML : les caractères spéciaux sont neutralisés
+const echapperHtml = (valeur) => String(valeur ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
 
-  const isEntreprise = client.typeclient === 'Entreprise' || client.Particulier === 'F' || client.Particulier === '0';
-  const nomComplet = client.nomcomplet || [client.Nom || client.nom, client.Prenoms || client.prenom].filter(Boolean).join(' ') || 'Client';
-  const matricule = client.Matricule || client.codeclient || client.numero_assure || '—';
+// Date et heure d'édition « JJ/MM/AAAA à HH:MM »
+const dateHeureEdition = (d = new Date()) => `${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
 
-  const field = (label, value) => `
-    <div style="display:flex;padding:5px 0;border-bottom:1px dashed #e2e8f0;">
-      <div style="width:42%;color:#64748b;font-weight:600;font-size:8.5pt;">${label}</div>
-      <div style="width:58%;color:#0f172a;font-weight:600;font-size:9pt;">${value || value === 0 ? value : '—'}</div>
-    </div>
-  `;
+const FICHE_CLIENT_STYLES = `
+  /* Une seule page : tailles en em, réduites au besoin par le script d'ajustement */
+  .fiche-client { font-size: 9pt; line-height: 1.3; color: #1f2937; }
+  .fiche-client .facture-header { margin-bottom: 1.2em; }
+  .fc-titre { display: flex; justify-content: space-between; align-items: flex-end; gap: 1.2em; padding-bottom: 0.5em; border-bottom: 1px solid #233778; }
+  .fc-titre-doc { font-size: 1.45em; font-weight: 800; letter-spacing: 0.04em; color: #233778; }
+  .fc-titre-type { font-size: 0.95em; color: #4b5563; margin-top: 0.1em; }
+  .fc-titre-droite { text-align: right; font-size: 0.85em; color: #4b5563; white-space: nowrap; }
+  .fc-titre-droite b { color: #1f2937; font-family: 'Courier New', monospace; font-size: 1.1em; }
+  .fc-carte { margin: 1em 0 1.1em; padding: 0.7em 1em; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; }
+  .fc-carte-nom { font-size: 1.35em; font-weight: 800; text-transform: uppercase; color: #111827; }
+  .fc-carte-infos { margin-top: 0.2em; font-size: 0.9em; color: #4b5563; }
+  .fc-badge { display: inline-block; margin-left: 0.6em; padding: 0 0.6em; border: 1px solid #233778; border-radius: 1em; font-size: 0.8em; font-weight: 700; color: #233778; }
+  .fc-grille { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 8mm; row-gap: 1em; }
+  .fc-rubrique { break-inside: avoid; page-break-inside: avoid; }
+  .fc-rubrique h2 { margin: 0 0 0.25em; padding-bottom: 0.25em; border-bottom: 1px solid #233778; font-size: 0.95em; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #233778; }
+  .fc-champ { display: flex; gap: 0.8em; padding: 0.3em 0; border-bottom: 1px dotted #e5e7eb; }
+  .fc-libelle { width: 42%; flex-shrink: 0; font-size: 0.9em; color: #6b7280; }
+  .fc-valeur { flex: 1; font-weight: 600; color: #111827; overflow-wrap: anywhere; }
+  /* Largeur 0 : les pointillés remplissent la place restante sans élargir la colonne (et la page) */
+  .fc-pointilles { width: 0; min-width: 0; overflow: hidden; white-space: nowrap; font-weight: 400; letter-spacing: 0.2em; color: #9ca3af; }
+  .fc-vide { padding: 0.3em 0; font-style: italic; color: #9ca3af; }
+  .fc-synthese { margin-top: 1.1em; }
+  .fc-chiffres { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8em; margin: 0.5em 0 0.8em; }
+  .fc-chiffre { padding: 0.55em 0.8em; border: 1px solid #e2e8f0; border-radius: 4px; }
+  .fc-chiffre-libelle { font-size: 0.85em; color: #6b7280; }
+  .fc-chiffre-valeur { font-size: 1.3em; font-weight: 800; color: #111827; white-space: nowrap; }
+  .fc-chiffre-detail { font-size: 0.85em; color: #4b5563; }
+  table.fc-operations { width: 100%; border-collapse: collapse; }
+  table.fc-operations th { padding: 0.35em 0.5em; border-bottom: 1px solid #233778; font-size: 0.85em; font-weight: 700; text-align: left; color: #233778; }
+  table.fc-operations td { padding: 0.35em 0.5em; border-bottom: 1px dotted #e5e7eb; }
+  table.fc-operations .fc-montant { text-align: right; white-space: nowrap; }`;
 
-  const sectionTitle = (label) => `
-    <div style="background:#1e293b;color:#fff;font-weight:700;font-size:8.5pt;text-transform:uppercase;letter-spacing:0.5px;padding:6px 10px;border-radius:4px;margin:16px 0 6px;">
-      ${label}
-    </div>
-  `;
+// Contenu de la fiche client à partir de /api/client/:id/fiche/. Chaque champ a toujours sa
+// ligne : la valeur enregistrée en base, ou des pointillés quand elle est absente.
+const FICHE_POINTILLES = '.'.repeat(160);
+const buildFicheClient = ({ client: c = {}, synthese: s = {}, operations = [] }, matricule) => {
+  const texte = (v) => (v === undefined || v === null ? '' : String(v).trim());
+  const montant = (v) => `${fcfa(v)} FCFA`;
+  const date = (v) => (v ? formatFrDate(v) : '');
+  const ligne = (libelle, valeur) => `<div class="fc-champ"><span class="fc-libelle">${libelle}</span>${texte(valeur)
+    ? `<span class="fc-valeur">${echapperHtml(texte(valeur))}</span>`
+    : `<span class="fc-valeur fc-pointilles">${FICHE_POINTILLES}</span>`}</div>`;
+  const rubrique = (titre, lignes) => `
+    <section class="fc-rubrique">
+      <h2>${titre}</h2>
+      ${lignes.join('')}
+    </section>`;
+  const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
-  const identiteFields = isEntreprise
+  const entreprise = Boolean(c.entreprise);
+  const nomComplet = [texte(c.nom), texte(c.prenoms)].filter(Boolean).join(' ') || 'Client sans nom';
+  const ouiNon = (v) => (v ? 'Oui' : 'Non');
+
+  const identite = entreprise
     ? [
-        field('Raison Sociale', nomComplet),
-        field('N° RCCM / Patente', client.CniPat),
-        field('Date de Création', fmtDate(client.DateNaissance)),
-        field('Siège Social', client.LieuNaissance),
-        field('Nationalité', client.Nationalite),
-      ]
+      ligne('Raison sociale', nomComplet),
+      ligne('RCCM / Patente', c.piece_identite),
+      ligne('Date de création', date(c.date_naissance)),
+      ligne('Siège', c.lieu_naissance),
+      ligne('Interlocuteur', c.responsable),
+    ]
     : [
-        field('Civilité', client.civilite),
-        field('Nom & Prénoms', nomComplet),
-        field('N° Pièce d\'Identité', client.CniPat),
-        field('Date de Naissance', fmtDate(client.DateNaissance)),
-        field('Lieu de Naissance', client.LieuNaissance),
-        field('Nationalité', client.Nationalite),
-        field('Situation Matrimoniale', client.SituationMatrimoniale),
-      ];
+      ligne('Civilité', c.civilite),
+      ligne('Nom & prénoms', nomComplet),
+      ligne('Pièce d\'identité', c.piece_identite),
+      ligne('Date de naissance', date(c.date_naissance)),
+      ligne('Lieu de naissance', c.lieu_naissance),
+    ];
+  const coordonnees = [
+    ligne('Téléphone', c.telephone),
+    ligne('Mobile', c.mobile),
+    ligne('Fixe', c.fixe),
+    ligne('Fax', c.fax),
+    ligne('Email', c.email),
+    ligne('Adresse', c.adresse),
+    ligne('Complément d\'adresse', c.adresse_complement),
+    ligne('Ville', c.ville),
+    ligne('Code postal', c.code_postal),
+  ];
+  const activite = [
+    ligne(entreprise ? 'Activité' : 'Profession', c.profession),
+    ligne('Secteur d\'activité', c.secteur_activite),
+    ligne(entreprise ? 'Fonction de l\'interlocuteur' : 'Poste occupé', c.fonction),
+  ];
+  const finances = [
+    ligne('N° compte client', c.numero_compte),
+    ligne('RIB', c.rib),
+    ligne('Exonéré de taxe', ouiNon(c.exonere_taxes)),
+    ligne('Exonéré d\'accessoires', ouiNon(c.exonere_accessoires)),
+  ];
 
-  const docHtml = `
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <title>Fiche Client - ${nomComplet}</title>
-  <style>
-    @page { size: A4 portrait; margin: 14mm 16mm; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      color: #0f172a; background: #ffffff; margin: 0; padding: 10px; font-size: 10pt; line-height: 1.4;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    .header-box {
-      border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 14px;
-      display: flex; justify-content: space-between; align-items: flex-start;
-    }
-    .republic-tag { font-size: 7.5pt; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #475569; }
-    .company-title { font-size: 14pt; font-weight: 900; color: #0f172a; margin-top: 3px; }
-    .doc-badge { text-align: right; font-size: 8pt; color: #64748b; }
-    .doc-badge-status { font-weight: 800; color: #0284c7; margin-top: 2px; letter-spacing: 0.5px; }
-    .id-band {
-      display: flex; justify-content: space-between; align-items: center;
-      background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 10px 14px; margin-bottom: 6px;
-    }
-    .signatures {
-      display: flex; justify-content: space-between; margin-top: 30px; padding-top: 14px;
-      border-top: 1px dashed #cbd5e1; font-size: 8.5pt;
-    }
-    .sig-col { width: 45%; }
-    .sig-space { height: 48px; display: flex; align-items: flex-end; color: #94a3b8; font-style: italic; }
-    @media print { .no-print { display: none !important; } body { padding: 0; } }
-  </style>
-</head>
-<body>
-  <div class="header-box">
-    <div>
-      <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
-      <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
-      <div style="font-size: 11.5pt; font-weight: 800; color: #0284c7; margin-top: 3px;">FICHE CLIENT ${isEntreprise ? '— PERSONNE MORALE' : '— PERSONNE PHYSIQUE'}</div>
+  const nombreDevis = Number(s.nombre_devis) || 0;
+  const devisDetail = nombreDevis
+    ? [`${nombreDevis} devis, dont ${Number(s.devis_en_cours) || 0} en cours`, s.dernier_devis ? `dernier le ${date(s.dernier_devis)}` : ''].filter(Boolean).join(' · ')
+    : 'Aucun devis';
+  const polices = Number(s.nombre_polices) || 0;
+  const policesEnVigueur = Number(s.polices_en_vigueur) || 0;
+  const policesDetail = polices
+    ? `${pluriel(policesEnVigueur, 'police')} sur ${polices} émise${polices > 1 ? 's' : ''}`
+    : 'Aucune police';
+  const lignesOperations = operations.map((o) => `
+    <tr>
+      <td>${echapperHtml(o.nature)}</td>
+      <td>${echapperHtml(o.numero)}</td>
+      <td>${echapperHtml(o.branche)}</td>
+      <td>${date(o.date)}</td>
+      <td class="fc-montant">${montant(o.prime_ttc)}</td>
+    </tr>`).join('');
+
+  const edition = dateHeureEdition();
+  return `
+    <style>${FICHE_CLIENT_STYLES}</style>
+    <div class="fiche-client">
+      ${printDocEntete('')}
+
+      <div class="fc-titre">
+        <div>
+          <div class="fc-titre-doc">FICHE CLIENT</div>
+          <div class="fc-titre-type">${entreprise ? 'Personne morale' : 'Personne physique'}</div>
+        </div>
+        <div class="fc-titre-droite">
+          <div>Matricule <b>${matricule ? echapperHtml(matricule) : '..........'}</b></div>
+          <div>Édité le ${edition}</div>
+        </div>
+      </div>
+
+      <div class="fc-carte">
+        <div class="fc-carte-nom">${echapperHtml(nomComplet)}${c.vip ? '<span class="fc-badge">VIP</span>' : ''}</div>
+        ${texte(c.categorie) ? `<div class="fc-carte-infos">${echapperHtml(c.categorie)}</div>` : ''}
+      </div>
+
+      <div class="fc-grille">
+        ${rubrique(entreprise ? 'Identité de l\'entreprise' : 'Identité', identite)}
+        ${rubrique('Coordonnées', coordonnees)}
+        ${rubrique('Activité professionnelle', activite)}
+        ${rubrique('Informations financières', finances)}
+      </div>
+
+      <section class="fc-rubrique fc-synthese">
+        <h2>Synthèse commerciale</h2>
+        <div class="fc-chiffres">
+          <div class="fc-chiffre">
+            <div class="fc-chiffre-libelle">Devis</div>
+            <div class="fc-chiffre-valeur">${montant(s.total_devis)}</div>
+            <div class="fc-chiffre-detail">${devisDetail}</div>
+          </div>
+          <div class="fc-chiffre">
+            <div class="fc-chiffre-libelle">Primes des polices en vigueur</div>
+            <div class="fc-chiffre-valeur">${montant(s.primes_en_vigueur)}</div>
+            <div class="fc-chiffre-detail">${policesDetail}</div>
+          </div>
+          <div class="fc-chiffre">
+            <div class="fc-chiffre-libelle">Total des primes émises</div>
+            <div class="fc-chiffre-valeur">${montant(s.total_primes)}</div>
+            <div class="fc-chiffre-detail">${s.dernier_contrat ? `dernier contrat le ${date(s.dernier_contrat)}` : 'Aucun contrat'}</div>
+          </div>
+        </div>
+        ${operations.length ? `
+          <table class="fc-operations">
+            <thead><tr><th>Nature</th><th>N°</th><th>Branche</th><th>Émis le</th><th class="fc-montant">Prime TTC</th></tr></thead>
+            <tbody>${lignesOperations}</tbody>
+          </table>` : '<div class="fc-vide">Aucun devis ni contrat.</div>'}
+      </section>
     </div>
-    <div class="doc-badge">
-      <div>Édité le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}</div>
-      <div class="doc-badge-status">DOCUMENT OFFICIEL CERTIFIÉ</div>
-    </div>
-  </div>
-
-  <div class="id-band">
-    <div>
-      <div style="font-size:13pt;font-weight:800;color:#0f172a;">${nomComplet}</div>
-      <div style="font-size:8.5pt;color:#475569;">${isEntreprise ? 'Entreprise / Personne morale' : 'Particulier / Personne physique'}${client.Vip === 'V' ? ' • Client VIP' : ''}</div>
-    </div>
-    <div style="text-align:right;">
-      <div style="font-size:8pt;color:#64748b;">Matricule Client</div>
-      <div style="font-size:12pt;font-weight:800;color:#0284c7;font-family:monospace;">${matricule}</div>
-    </div>
-  </div>
-
-  ${sectionTitle(isEntreprise ? '1. Identité de l\'Entreprise' : '1. État Civil & Identité')}
-  ${identiteFields.join('')}
-
-  ${sectionTitle('2. Coordonnées & Adresse')}
-  ${field('Téléphone Principal', client.Telephone || client.telephone)}
-  ${field('Mobile', client.Mobile || client.mobile)}
-  ${field('Email', client.Email || client.email)}
-  ${field('Ville', client.Ville || client.ville)}
-  ${field('Commune', client.Commune)}
-  ${field('Quartier', client.Quartier)}
-  ${field('Adresse', client.Adresse1 || client.adresse)}
-  ${field('Boîte Postale', client.BoitePostale)}
-
-  ${sectionTitle(isEntreprise ? '3. Activité de l\'Entreprise' : '3. Activité Professionnelle')}
-  ${field('Profession / Secteur', client.libelleprofession || client.profession)}
-  ${field('Secteur d\'Activité', client.secteur_activite)}
-  ${isEntreprise ? field('Compte Contribuable', client.CompteContribuable) : field('Employeur', client.Employeur)}
-  ${field(isEntreprise ? 'Interlocuteur / Contact' : 'Poste Occupé', isEntreprise ? client.NomContact : client.Fonction)}
-
-  ${sectionTitle('4. Courtage, CIMA & Banque')}
-  ${field('Statut VIP', client.Vip === 'V' ? 'Oui (Client VIP)' : 'Non (Standard)')}
-  ${field('RIB', client.Rib)}
-  ${field('N° Compte Client', client.NumeroCompte)}
-  ${field('Exonéré de Taxe d\'Assurance', client.ExonereDeTaxes ? 'Oui' : 'Non')}
-  ${field('Exonéré d\'Accessoires de Police', client.ExonereDeAccess ? 'Oui' : 'Non')}
-
-  <div class="signatures">
-    <div class="sig-col">
-      <div style="font-weight: 700; color: #334155;">Le Souscripteur / Représentant :</div>
-      <div class="sig-space">Signature</div>
-    </div>
-    <div class="sig-col" style="text-align: right;">
-      <div style="font-weight: 700; color: #334155;">Pour LE PHARE Courtage :</div>
-      <div class="sig-space" style="justify-content: flex-end; color: #0284c7; font-weight: 700;">[ Cachet Officiel ]</div>
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() {
-      setTimeout(function() { window.print(); }, 350);
-    };
-  </script>
-</body>
-</html>
+    <script>
+      // Contenu plus haut que la page A4 (moins les marges d'impression) : la police est
+      // réduite par petits pas plutôt que de laisser la fiche passer sur une deuxième page
+      (function () {
+        var fiche = document.querySelector('.fiche-client');
+        var hauteurUtile = (297 - 28) * 96 / 25.4;
+        var taille = 9;
+        while (fiche && fiche.scrollHeight > hauteurUtile && taille > 7) {
+          taille -= 0.25;
+          fiche.style.fontSize = taille + 'pt';
+        }
+      })();
+    </script>
   `;
+};
 
+/**
+ * Impression de la fiche client (personne physique ou morale) : une page A4, avec l'en-tête des
+ * devis, les données réelles du client (/api/client/:id/fiche/) et sa synthèse commerciale.
+ * Document d'information : aucune zone de signature ni de cachet. La fenêtre est ouverte dès
+ * le clic pour ne pas être bloquée par le navigateur pendant l'appel API.
+ */
+export const printFicheClient = async (client) => {
+  const id = client?.IdClient || client?.id;
+  if (!id) return;
   const printWindow = window.open('', '_blank');
   if (printWindow) {
-    printWindow.document.open();
-    printWindow.document.write(docHtml);
-    printWindow.document.close();
+    printWindow.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la fiche client…</p>');
+  }
+  try {
+    const fiche = await customerApi.getFicheClient(id);
+    const matricule = client.codeclient || fiche?.client?.matricule || client.Matricule || '';
+    openPrintWindow(`Fiche client ${matricule || id}`, buildFicheClient(fiche || {}, matricule), printWindow);
+  } catch (err) {
+    console.error('Erreur fiche client :', err);
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger les données du client pour la fiche. Veuillez réessayer.</p>');
+      printWindow.document.close();
+    }
   }
 };
 
@@ -888,18 +953,24 @@ const getCompagnieLogoUrl = (compagnieName) => {
   return null;
 };
 
-const printDocHeader = (quote, docTitle) => {
-  const logo = getCompagnieLogoUrl(quote.compagnie);
+// En-tête commun des documents imprimés (devis, factures, conditions particulières, fiche
+// client) : logo OREOLE à gauche, logo ou nom de la compagnie à droite
+const printDocEntete = (compagnie) => {
+  const logo = getCompagnieLogoUrl(compagnie);
   return `
     <div class="facture-header">
       <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="header-logo-oreole" />
       ${logo
-        ? `<img src="${logo}" alt="${quote.compagnie}" class="header-logo-compagnie" />`
-        : `<div class="header-compagnie-text">${quote.compagnie || ''}</div>`}
+        ? `<img src="${logo}" alt="${compagnie}" class="header-logo-compagnie" />`
+        : `<div class="header-compagnie-text">${compagnie || ''}</div>`}
     </div>
-    <div class="facture-title">${docTitle}</div>
   `;
 };
+
+const printDocHeader = (quote, docTitle) => `
+  ${printDocEntete(quote.compagnie)}
+  <div class="facture-title">${docTitle}</div>
+`;
 
 const printDocFooter = (withBarcode) => `
   <div class="facture-footer">
@@ -1697,6 +1768,230 @@ export const estDevisIaImprimable = (quote) => Boolean(quote) && estDevisIa(quot
 export const printAnnexeIa = (quote) => {
   if (!quote) return undefined;
   return imprimerDocumentIa(quote, `Annexe ${quote.numerodevis || ''}`.trim(), buildAnnexeIa);
+};
+
+/* =========================================================================
+   ANNEXE D'UN DEVIS FLOTTE AUTO — « Liste des véhicules de la flotte »
+   (gabarit URANUS AnnexeFlotteDevis : A4 paysage, primes de chaque véhicule
+   par garantie, légende, réductions et décompte de prime du devis)
+   ========================================================================= */
+
+// Devis flotte automobile enregistré en base (produit 1)
+export const estDevisFlotteAuto = (quote) => {
+  const raw = quote?.raw || {};
+  if (raw.idcontrat || !Number(quote?.iddevis || raw.iddevis) || !raw.flotte) return false;
+  const p = raw.produit;
+  const idProduit = Number(p && typeof p === 'object' ? (p.id_produit ?? p.IdProduit) : (raw.idproduit ?? p));
+  return idProduit ? idProduit === 1 : quote.branche === 'Auto';
+};
+
+// Montants de l'annexe (comme URANUS) : entiers avec espaces ; une garantie à 0 est « Exclu »
+const entierAnnexe = (v) => String(Math.round(Math.abs(Number(v) || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+const garantieAnnexe = (v) => (Math.round(Number(v) || 0) === 0 ? 'Exclu' : entierAnnexe(v));
+const tauxAnnexe = (v) => (Math.abs(Number(v) || 0)).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Sigle du type de véhicule (« Véhicule Particulier (…) » → VP), sinon genre sans précision
+const sigleVehicule = (v, d) => {
+  const type = String(v.LibelleTypeVehicule || '').split('(')[0].trim();
+  if (type) return type.split(/\s+/).filter((m) => m.length > 2).map((m) => m[0].toUpperCase()).join('') || type;
+  const genre = String(d?.idgenrevehicule?.LibelleGenre || '').split('(')[0].trim();
+  return genre || '-';
+};
+const energieAnnexe = (libelle) => {
+  const s = String(libelle || '').trim();
+  if (!s) return '-';
+  return s.toLowerCase().startsWith('electri') ? 'EL' : s.charAt(0).toUpperCase();
+};
+
+// Taux commun à tous les véhicules du détail (bonus, réduction commerciale) ; « Variable » s'ils diffèrent
+const tauxCommun = (details, champ) => {
+  const taux = [...new Set(details.map((d) => Number(d[champ]) || 0))];
+  if (taux.length > 1) return 'Variable';
+  return tauxAnnexe(taux[0] || 0);
+};
+
+const ANNEXE_FLOTTE_STYLES = `
+  @page { size: A4 landscape; margin: 0; }
+  body { max-width: 277mm; }
+  @media print { body { padding: 9mm 10mm; } }
+  .af { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #000; }
+  .af-logo { height: 40px; margin-bottom: 14px; }
+  .af-badge { text-align: center; margin: 2px 0 10px; }
+  .af-badge span { display: inline-block; padding: 5px 12px; border: 1px solid #000; border-radius: 6px; background: #f5f5f5; font-size: 13pt; }
+  .af-ligne { display: flex; justify-content: space-between; gap: 12px; font-size: 8.5pt; margin-bottom: 4px; }
+  .af-ligne > div { flex: 2; white-space: nowrap; }
+  .af-ligne > div:last-child { text-align: right; }
+  .af-dates { text-align: center; font-size: 8.5pt; margin: 6px 0 14px; }
+  .af-dates b, .af-ligne b { font-weight: 400; margin-left: 4px; margin-right: 18px; }
+  table.af-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.af-table th, table.af-table td { border: 1px solid #000; padding: 0; text-align: center; vertical-align: middle; }
+  table.af-table th { background: #ededed; font-size: 7.5pt; font-weight: 400; height: 34px; }
+  table.af-table thead tr { border-bottom: 2px solid #000; }
+  table.af-table td { font-size: 6.8pt; height: 30px; }
+  .af-double > div { padding: 2px 0; }
+  .af-double > div + div { border-top: 1px solid #000; }
+  tr.af-groupe td { border: none; font-size: 9.5pt; height: 28px; }
+  .af-nombre { font-size: 8.5pt; margin: 6px 0 16px 6px; }
+  .af-bas { display: flex; gap: 20px; align-items: flex-start; }
+  .af-legende { flex: 2; font-size: 6.8pt; }
+  .af-legende-titre, .af-reduction-titre { font-size: 8.5pt; text-decoration: underline; margin-bottom: 4px; }
+  .af-legende div.l { display: flex; margin-bottom: 1px; }
+  .af-legende div.l span:first-child { width: 28px; }
+  .af-legende div.l span:nth-child(2) { margin-right: 4px; }
+  .af-reduction { flex: 1.2; font-size: 7.5pt; }
+  .af-reduction div.r { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .af-decompte { flex: 3; border: 1px solid #000; }
+  .af-decompte-titre { text-align: center; padding: 6px 0; border-bottom: 1px solid #000; font-size: 9pt; }
+  table.af-recap { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  table.af-recap td { border-right: 1px solid #000; text-align: center; font-size: 8.5pt; }
+  table.af-recap td:last-child { border-right: none; }
+  table.af-recap tr:first-child td { padding: 6px 2px; border-bottom: 1px solid #000; }
+  table.af-recap tr:last-child td { padding: 16px 2px; }
+`;
+
+const LEGENDE_ANNEXE_FLOTTE = [
+  ['RC', 'Responsabilité civile'], ['D/R', 'Défense et recours'], ['DOM', 'Dommages tous risques'],
+  ['DC', 'Dommages collisions'], ['INC', 'Incendie'], ['VAC', 'Vol des accessoires'], ['VOL', 'Vol du véhicule'],
+  ['BDG', 'Bris de glace'], ['RA', 'Recours anticipé'], ['IC/SR', 'Individuelle Conducteur / Sécurité Routière'],
+  ['VMA', 'Vol a main armée'],
+];
+
+// Largeurs des colonnes en unités (comme les flex d'URANUS) : 29 unités au total
+const COLONNES_ANNEXE_FLOTTE = [1, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2];
+
+const buildAnnexeFlotte = (quote, { quittance, vehicules, details, tauxReductionFlotte }) => {
+  const raw = quote.raw || {};
+  const q = quittance || {};
+  const t = (v) => echapperHtml(v === undefined || v === null ? '' : String(v).trim());
+  const date = (v) => (v ? formatFrDate(v).replace(/\//g, '-') : '');
+  const double = (haut, bas) => `<div class="af-double"><div>${haut}</div><div>${bas}</div></div>`;
+  const detailDe = (v) => details.find((d) => String(d.matricule || '').trim() === String(v.Immatriculation || '').trim());
+
+  // Lignes groupées par catégorie tarifaire, numérotées à la suite (comme URANUS)
+  const groupes = [];
+  vehicules.forEach((v) => {
+    const libelle = String(v.LibelleTarif || v.LibelleCategorie || '').trim();
+    let groupe = groupes.find((g) => g.libelle === libelle);
+    if (!groupe) groupes.push(groupe = { libelle, vehicules: [] });
+    groupe.vehicules.push(v);
+  });
+  let numero = 0;
+  const lignes = groupes.map((g) => `
+    ${g.libelle ? `<tr class="af-groupe"><td colspan="${COLONNES_ANNEXE_FLOTTE.length}">${t(g.libelle)}</td></tr>` : ''}
+    ${g.vehicules.map((v) => {
+      const d = detailDe(v);
+      numero += 1;
+      return `<tr>
+        <td>${numero}</td>
+        <td>${double(t(v.Immatriculation) || '-', t(sigleVehicule(v, d)))}</td>
+        <td>${double(t(v.LibelleMarque) || '-', t(d?.modelevehicule) || '-')}</td>
+        <td>${double(entierAnnexe(v.ValeurNeuve), entierAnnexe(v.ValeurVenale))}</td>
+        <td>${double(energieAnnexe(v.LibelleEnergie), entierAnnexe(v.Puissance))}</td>
+        <td>${double(entierAnnexe(v.ChargeUtile), entierAnnexe(v.NombrePlace))}</td>
+        <td>${double(v.DateMec ? formatFrDate(v.DateMec) : '-', '&nbsp;')}</td>
+        <td>${garantieAnnexe(v.Rc)}</td>
+        <td>${garantieAnnexe(v.Recours)}</td>
+        <td>${garantieAnnexe(v.Dommages)}</td>
+        <td>${garantieAnnexe(v.Collision)}</td>
+        <td>${garantieAnnexe(v.Incendie)}</td>
+        <td>${garantieAnnexe(v.VolAccessoires)}</td>
+        <td>${garantieAnnexe(v.VolSimple)}</td>
+        <td>${garantieAnnexe(v.BrisDeGlaces)}</td>
+        <td>${garantieAnnexe(v.VolMainsArmees)}</td>
+        <td>${garantieAnnexe(v.RecoursAnticipe)}</td>
+        <td>${garantieAnnexe(v.PrimeHorsTaxes)}</td>
+        <td>${garantieAnnexe(v.Reduction)}</td>
+        <td>${double(garantieAnnexe(v.SecuriteRoutiere), garantieAnnexe(v.IndividuelleChauffeur))}</td>
+        <td>${garantieAnnexe(v.PrimeNette)}</td>
+      </tr>`;
+    }).join('')}`).join('');
+
+  // Décompte : quittance de la proposition, sinon montants du devis (prime nette hors FGA)
+  const quittanceVide = Object.keys(q).length === 0;
+  const primeNette = quittanceVide ? Number(raw.primenette || 0) - Number(raw.fga || 0) : q.PrimeNetteHorsFga;
+  const decompte = [
+    ['PRIME NETTE', primeNette],
+    ['CP', quittanceVide ? raw.accessoire : q.Accessoire],
+    ['TAXES', quittanceVide ? raw.taxe : q.TaxeEnregistrement],
+    ['FGA', quittanceVide ? raw.fga : q.Fga],
+    ['CEDEAO', quittanceVide ? raw.cedeao : q.Cedeao],
+    ['PRIME TTC', quittanceVide ? raw.primettc : q.PrimeTtc],
+  ];
+  const unite = 100 / COLONNES_ANNEXE_FLOTTE.reduce((a, b) => a + b, 0);
+
+  return `
+    <style>${ANNEXE_FLOTTE_STYLES}</style>
+    <div class="af">
+      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="af-logo" />
+      <div class="af-badge"><span>Liste des véhicules de la flotte</span></div>
+      <div class="af-ligne">
+        <div>Souscripteur :<b>${t(quittanceVide ? quote.client_nom : q.NomClient)}</b></div>
+        <div>Assuré :<b>${t(quittanceVide ? (raw.nomassure || quote.client_nom) : q.NomAssure)}</b></div>
+        <div>Compagnie :<b>${t(quittanceVide ? quote.compagnie : q.RaisonSociale)}</b></div>
+        <div>Id. Devis :<b>${t(q.NumeroDevis || quote.numerodevis)}</b>N° Avt :<b style="margin-right:0">${t(q.NumeroAvenant || raw.numeroavenant)}</b></div>
+      </div>
+      <div class="af-dates">Effet :<b>${date(q.DateEffet || raw.dateeffet)}</b>Expiration :<b>${date(q.DateExpiration || raw.dateexpiration)}</b></div>
+      <table class="af-table">
+        <colgroup>${COLONNES_ANNEXE_FLOTTE.map((n) => `<col style="width:${(n * unite).toFixed(3)}%">`).join('')}</colgroup>
+        <thead><tr>
+          <th>N°</th>
+          <th>${double('N° Immat.', 'Genre')}</th>
+          <th>${double('Marque', 'Type')}</th>
+          <th>${double('Val. neuf', 'Val. vén.')}</th>
+          <th>${double('Ener.', 'Puis.')}</th>
+          <th>${double('CU', 'NP')}</th>
+          <th>${double('M.E.C.', 'D. entrée')}</th>
+          <th>RC</th><th>D/R</th><th>DOM</th><th>DC</th><th>INC</th><th>VAC</th><th>VOL</th><th>BDG</th><th>VMA</th><th>RA</th>
+          <th>PRIME HT</th>
+          <th>REDUCT</th>
+          <th>${double('SR', 'IC')}</th>
+          <th>P. NETTE</th>
+        </tr></thead>
+        <tbody>${lignes || `<tr><td colspan="${COLONNES_ANNEXE_FLOTTE.length}">Aucun véhicule enregistré pour ce devis.</td></tr>`}</tbody>
+      </table>
+      <div class="af-nombre">Nombre de véhicules : ${vehicules.length}</div>
+      <div class="af-bas">
+        <div class="af-legende">
+          <div class="af-legende-titre">Légende</div>
+          ${LEGENDE_ANNEXE_FLOTTE.map(([code, libelle]) => `<div class="l"><span>${code}</span><span>:</span><span>${libelle}</span></div>`).join('')}
+        </div>
+        <div class="af-reduction">
+          <div class="af-reduction-titre">Réduction (%) :</div>
+          <div class="r"><span>BNS :</span><span>${tauxCommun(details, 'bns')}</span></div>
+          <div class="r"><span>Flotte :</span><span>${tauxAnnexe(tauxReductionFlotte)}</span></div>
+          <div class="r"><span>Commerciale :</span><span>${tauxCommun(details, 'taux_reduction')}</span></div>
+          <div class="r"><span>Permis :</span><span>${tauxAnnexe(0)}</span></div>
+          <div class="r"><span>SP :</span><span>${tauxAnnexe(0)}</span></div>
+        </div>
+        <div class="af-decompte">
+          <div class="af-decompte-titre">Décompte de prime</div>
+          <table class="af-recap">
+            <tr>${decompte.map(([libelle]) => `<td>${libelle}</td>`).join('')}</tr>
+            <tr>${decompte.map(([, valeur]) => `<td>${entierAnnexe(valeur)}</td>`).join('')}</tr>
+          </table>
+        </div>
+      </div>
+    </div>`;
+};
+
+// Bouton « Imprimer Annexe » d'un devis flotte : la fenêtre s'ouvre dès le clic (sinon bloquée
+// pendant les appels API), puis reçoit l'annexe
+export const printAnnexeFlotte = async (quote) => {
+  const iddevis = Number(quote?.iddevis || quote?.raw?.iddevis);
+  if (!iddevis) return;
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de l\'annexe…</p>');
+  try {
+    const donnees = await annexeFlotteApi.get(iddevis);
+    openPrintWindow(`Annexe ${quote.numerodevis || iddevis}`, buildAnnexeFlotte(quote, donnees), fenetre);
+  } catch (err) {
+    console.error('Erreur annexe flotte :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger les véhicules du devis pour l\'annexe. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
 };
 
 // --- GABARIT B : IA / VOYAGE / TRANSPORT / SANTE (facture simple à blocs) ---

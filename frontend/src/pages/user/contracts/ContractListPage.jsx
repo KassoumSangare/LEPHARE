@@ -6,6 +6,7 @@ import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
 import { PolicyMovementModal } from './PolicyMovementModal';
 import { isRegistryQuote } from '../../../utils/quoteRegistry';
+import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { dataStore } from '../../../api/dataStore';
 import { contractApi, quoteApi } from '../../../api/endpoints';
@@ -908,53 +909,27 @@ export const ContractListPage = () => {
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
-              <button
-                className="btn btn-secondary"
-                style={{ display: 'flex', flexDirection: 'column', padding: '1rem', height: 'auto', gap: '0.5rem', textAlign: 'center' }}
-                onClick={() => {
-                  setIsModalOpen(false);
-                  navigate('/user/quotes/auto');
-                }}
-              >
-                <Car size={22} color="#3b82f6" />
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Automobile</span>
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                style={{ display: 'flex', flexDirection: 'column', padding: '1rem', height: 'auto', gap: '0.5rem', textAlign: 'center' }}
-                onClick={() => {
-                  setIsModalOpen(false);
-                  navigate('/user/quotes/mrh');
-                }}
-              >
-                <Home size={22} color="#0ea5e9" />
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Habitation MRH</span>
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                style={{ display: 'flex', flexDirection: 'column', padding: '1rem', height: 'auto', gap: '0.5rem', textAlign: 'center' }}
-                onClick={() => {
-                  setIsModalOpen(false);
-                  navigate('/user/quotes/sante');
-                }}
-              >
-                <HeartPulse size={22} color="#f43f5e" />
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Santé Groupe</span>
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                style={{ display: 'flex', flexDirection: 'column', padding: '1rem', height: 'auto', gap: '0.5rem', textAlign: 'center' }}
-                onClick={() => {
-                  setIsModalOpen(false);
-                  navigate('/user/quotes/ia');
-                }}
-              >
-                <Activity size={22} color="#a855f7" />
-                <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Individuelle IA</span>
-              </button>
+              {[
+                ['auto', Car, '#3b82f6', 'Automobile'],
+                ['mrh', Home, '#0ea5e9', 'Habitation MRH'],
+                ['sante', HeartPulse, '#f43f5e', 'Santé Groupe'],
+                ['ia', Activity, '#a855f7', 'Individuelle IA'],
+              ].map(([module, Icone, couleur, libelle]) => (
+                <button
+                  key={module}
+                  className={`btn btn-secondary${moduleActif(module) ? '' : ' module-ferme'}`}
+                  style={{ display: 'flex', flexDirection: 'column', padding: '1rem', height: 'auto', gap: '0.5rem', textAlign: 'center' }}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    navigate(`/user/quotes/${module}`);
+                  }}
+                  disabled={!moduleActif(module)}
+                  title={moduleActif(module) ? undefined : TITRE_MODULE_INACTIF}
+                >
+                  <Icone size={22} color={couleur} />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{libelle}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>

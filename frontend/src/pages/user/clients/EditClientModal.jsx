@@ -53,6 +53,8 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
     }
   };
 
+  // Formulaire tel qu'à l'ouverture : l'enregistrement n'envoie que ce qui en diffère
+  const [formInitial, setFormInitial] = useState(null);
   const [formData, setFormData] = useState({
     // 1. Identité & État Civil
     typeclient: 'Particulier',
@@ -136,7 +138,7 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
   useEffect(() => {
     if (client) {
       const isPart = client.typeclient === 'Particulier' || client.Particulier === 'V' || client.Particulier === '1';
-      setFormData({
+      const initial = {
         typeclient: isPart ? 'Particulier' : 'Entreprise',
         Particulier: isPart ? 'V' : 'F',
         IdQualite: client.IdQualite || (isPart ? 1 : 4),
@@ -187,36 +189,39 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
         Avoir: client.Avoir !== undefined ? String(client.Avoir) : '0',
         ExonereDeTaxes: Boolean(client.ExonereDeTaxes),
         ExonereDeAccess: Boolean(client.ExonereDeAccess),
-      });
+      };
+      setFormData(initial);
+      setFormInitial(initial);
       setModalTab('identite');
     }
   }, [client]);
 
   if (!isOpen || !client) return null;
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const isEntreprise = formData.typeclient === 'Entreprise';
-
-    const selectedQualite = refData.qualites.find((q) => q.IdQualite === Number(formData.IdQualite));
-    const selectedVille = refData.villes.find((v) => v.IdVille === Number(formData.IdVille));
-    const selectedProf = refData.professions.find((p) => p.IdProfession === Number(formData.IdProfession));
-    const selectedSecteur = refData.secteurs.find((s) => s.IdSecteurActivite === Number(formData.IdSecteurActivite));
-
-    const updated = {
-      ...formData,
-      Nom: formData.nom,
-      Prenoms: isEntreprise ? '' : formData.prenom,
-      nomcomplet: isEntreprise ? formData.nom : `${formData.nom} ${formData.prenom}`.trim(),
+  // Client tel que le formulaire le décrit (champs de l'API et libellés affichés dans la liste)
+  const versClient = (donnees) => {
+    const isEntreprise = donnees.typeclient === 'Entreprise';
+    const selectedQualite = refData.qualites.find((q) => q.IdQualite === Number(donnees.IdQualite));
+    const selectedVille = refData.villes.find((v) => v.IdVille === Number(donnees.IdVille));
+    const selectedProf = refData.professions.find((p) => p.IdProfession === Number(donnees.IdProfession));
+    const selectedSecteur = refData.secteurs.find((s) => s.IdSecteurActivite === Number(donnees.IdSecteurActivite));
+    return {
+      ...donnees,
+      Nom: donnees.nom,
+      Prenoms: isEntreprise ? '' : donnees.prenom,
+      nomcomplet: isEntreprise ? donnees.nom : `${donnees.nom} ${donnees.prenom}`.trim(),
       Particulier: isEntreprise ? 'F' : 'V',
       civilite: selectedQualite ? selectedQualite.Libelle : (isEntreprise ? 'Société' : 'Monsieur'),
-      ville: selectedVille ? selectedVille.Libelle : formData.ville,
-      profession: selectedProf ? selectedProf.Libelle : formData.profession,
-      libelleprofession: selectedProf ? selectedProf.Libelle : formData.profession,
-      secteur_activite: selectedSecteur ? selectedSecteur.LibelleSecteurActivite : '',
+      ville: selectedVille ? selectedVille.Libelle : donnees.ville,
+      profession: selectedProf ? selectedProf.Libelle : donnees.profession,
+      libelleprofession: selectedProf ? selectedProf.Libelle : donnees.profession,
+      secteur_activite: selectedSecteur ? (selectedSecteur.Libelle || selectedSecteur.LibelleSecteurActivite) : '',
     };
+  };
 
-    onSave(client.id || client.IdClient, updated);
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(client.id || client.IdClient, versClient(formData), versClient(formInitial || formData));
     onClose();
   };
 
@@ -551,9 +556,10 @@ export const EditClientModal = ({ isOpen, onClose, client, onSave }) => {
                   onChange={(e) => setFormData({ ...formData, IdSecteurActivite: e.target.value ? Number(e.target.value) : '' })}
                 >
                   <option value="">-- Sélectionner un secteur --</option>
-                  {trierParLibelle(refData.secteurs, (s) => s.LibelleSecteurActivite).map((s) => (
+                  {/* /api/secteuractivite/ renvoie le libellé dans « Libelle » */}
+                  {trierParLibelle(refData.secteurs, (s) => s.Libelle || s.LibelleSecteurActivite).map((s) => (
                     <option key={s.IdSecteurActivite} value={s.IdSecteurActivite}>
-                      {s.LibelleSecteurActivite}
+                      {s.Libelle || s.LibelleSecteurActivite}
                     </option>
                   ))}
                 </select>

@@ -304,6 +304,12 @@ p {
   border: 1px solid rgba(139, 92, 246, 0.25);
 }
 
+.badge-slate {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
 /* Button Component Styles */
 .btn {
   display: inline-flex;
@@ -958,6 +964,21 @@ select.form-control {
   background: rgba(15, 23, 42, 0.03);
 }
 
+/* Module de devis fermé (utils/modulesActifs.js) : affiché grisé, sans effet au survol. Le bouton
+   est plus nettement grisé qu'un simple bouton désactivé. */
+.btn.module-ferme:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.sidebar-sublink-item.disabled,
+.sidebar-sublink-item.disabled:hover,
+[data-theme="light"] .sidebar-sublink-item.disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
 .sidebar-sublink-item.active {
   color: #60a5fa;
   font-weight: 600;
@@ -1080,6 +1101,11 @@ body,
   background: #faf5ff;
   color: #6d28d9;
   border-color: #e9d5ff;
+}
+[data-theme="light"] .badge-slate {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
 }
 
 /* Light mode automatic typography adaptation */
