@@ -698,6 +698,9 @@ export const quoteApi = {
   finalizeFlotteQuote: (payload) => apiClient.post('/finalisationdevisauto', payload),
   // POST /api/annulationsaisievehicule (Suppression d'un véhicule de flotte)
   deleteFlotteVehicle: (idDevisDetail) => apiClient.post('/annulationsaisievehicule', { IdDevisDetail: idDevisDetail }),
+  // GET /api/offreparproduit/?idproduit=1&idtarif= : offres Automobile actives d'une catégorie
+  // (fn_liste_offre_produit, la liste d'URANUS) ; une erreur est remontée (≠ catégorie sans offre)
+  getOffresAutoParCategorie: async (idTarif) => extractData(await apiClient.get('/offreparproduit/', { params: { idproduit: 1, idtarif: idTarif } })),
   // POST /api/garantiesvehiculeflotte/ (garanties d'un seul véhicule d'une flotte enregistrée :
   // la liste remplace les siennes, puis le devis est retotalisé)
   appliquerGarantiesVehiculeFlotte: (payload) => apiClient.post('/garantiesvehiculeflotte/', payload),
@@ -1134,6 +1137,12 @@ export const cashApi = {
     const res = await apiClient.get(`/infoencaissement/${id}`);
     return res.data;
   },
+  // GET /api/listedetailencaissement/:idencaissement (lignes d'un encaissement, une par quittance)
+  getDetailsEncaissement: async (idencaissement) =>
+    extractData(await apiClient.get(`/listedetailencaissement/${idencaissement}`)),
+  // GET /api/detailencaissement/?numeroquittance= (dernier règlement non annulé d'une quittance)
+  getDernierReglementQuittance: async (numeroquittance) =>
+    extractData(await apiClient.get('/detailencaissement/', { params: { numeroquittance, page_size: 1 } }))[0] || null,
   // GET /api/cheques/
   getCheques: async () => extractData(await apiClient.get('/cheques/')),
   // GET /api/cheques/statut/
@@ -1432,6 +1441,8 @@ export const crmApi = {
   createLead: (data) => apiClient.post('/crm/leads/', data),
   // PATCH /api/crm/leads/:id/
   updateLead: (id, data) => apiClient.patch(`/crm/leads/${id}/`, data),
+  // DELETE /api/crm/leads/:id/
+  deleteLead: (id) => apiClient.delete(`/crm/leads/${id}/`),
   // POST /api/crm/leads/:id/changer_statut/
   updateLeadStage: (id, stage) => apiClient.post(`/crm/leads/${id}/changer_statut/`, { statut: stage }),
   // GET /api/crm/leads/stats/

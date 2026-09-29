@@ -342,10 +342,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>Avenants & Mouvements</span>
             </NavLink>
 
-            <NavLink to="/user/asaci" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {/* Grisé en attendant l'ouverture des e-attestations */}
+            <span className="sidebar-nav-item disabled" aria-disabled="true" title="Module indisponible pour le moment">
               <Car size={16} className="nav-icon" />
               <span>e-Attestations ASACI Auto</span>
-            </NavLink>
+            </span>
 
             {/* 3. FINANCE & CAISSE (ART. 13) */}
             <div className="sidebar-section-header">

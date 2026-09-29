@@ -400,6 +400,15 @@ export const NewAutoQuotePage = () => {
   // manuellement le menu déroulant pour resélectionner la même offre affichée.
   const [offreId, setOffreId] = useState(2);
   const [offreSelectionnee, setOffreSelectionnee] = useState('OFFRE AUTOMOBILE TOUS RISQUES');
+  // Offres proposées pour le véhicule, comme dans URANUS : celles de sa catégorie
+  // (fn_liste_offre_produit) — { idTarif, liste } — et, pour les signaler, celles que la
+  // compagnie a paramétrées (stdoffregarantie) — Map id → nombre de garanties
+  const [offresCategorie, setOffresCategorie] = useState(null);
+  const [offresCompagnie, setOffresCompagnie] = useState(null);
+  // Vrai quand l'utilisateur vient de changer de catégorie : l'offre suit alors la nouvelle liste
+  const offreASuivreCategorieRef = useRef(false);
+  // Dernière offre choisie dans chaque catégorie (id de catégorie → id d'offre), reprise au retour
+  const offreParCategorieRef = useRef(new Map());
   const [isEditingPrimes, setIsEditingPrimes] = useState(false); // Mode "Imposer la prime"
   // Primes imposées validées par le bouton "Enregistrer" : elles restent appliquées (totaux et
   // enregistrement du devis) une fois la saisie terminée, jusqu'à un "Recalculer CIMA".
@@ -668,6 +677,7 @@ export const NewAutoQuotePage = () => {
 
   // Replace un véhicule de la flotte dans l'écran Véhicule (pour le modifier)
   const chargerVehicule = (v) => {
+    offreASuivreCategorieRef.current = false;
     setCategorieId(v.idTarif);
     if (v.categorieContrat) setCategorieContrat(v.categorieContrat);
     setUsageId(v.codeUsage);
@@ -1001,6 +1011,7 @@ export const NewAutoQuotePage = () => {
   const passerEnCategoriePersonneMorale = () => {
     setCategorieId(categoriePersonneMorale.id);
     setCategorieContrat(categoriePersonneMorale.libelle);
+    offreASuivreCategorieRef.current = true;
   };
 
   // ----------------------------------------------------
@@ -1555,6 +1566,101 @@ export const NewAutoQuotePage = () => {
     if (offre && offre.libelle !== offreSelectionnee) setOffreSelectionnee(offre.libelle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offresList, offreId]);
+
+  // Offres de la catégorie du véhicule (les vraies grilles stdtarif, pas les catégories par défaut)
+  useEffect(() => {
+    if (categories === DEFAULT_CATEGORIES || !categorieId) return undefined;
+    let actif = true;
+    const idTarif = Number(categorieId);
+    quoteApi.getOffresAutoParCategorie(idTarif)
+      .then((lignes) => {
+        if (!actif) return;
+        const liste = (Array.isArray(lignes) ? lignes : []).map((o) => ({ id: Number(o.IdOffre), libelle: o.LibelleOffre }));
+        setOffresCategorie({ idTarif, liste });
+      })
+      .catch((e) => {
+        console.warn(`Offres de la catégorie ${idTarif} indisponibles : offres Automobile proposées`, e);
+        if (actif) setOffresCategorie(null);
+      });
+    return () => { actif = false; };
+  }, [categorieId, categories]);
+
+  // Offres paramétrées pour la compagnie (une offre sans garantie pour elle ne tarifie rien)
+  useEffect(() => {
+    if (!compagnieId) return undefined;
+    let actif = true;
+    settingsApi.getOffres(compagnieId)
+      .then((lignes) => {
+        if (actif) setOffresCompagnie(new Map((lignes || []).map((o) => [Number(o.IdOffre ?? o.id), Number(o.NbGaranties) || 0])));
+      })
+      .catch(() => { if (actif) setOffresCompagnie(null); });
+    return () => { actif = false; };
+  }, [compagnieId]);
+
+  const offreParametree = (id) => !offresCompagnie || (offresCompagnie.get(Number(id)) || 0) > 0;
+  // Offres de la catégorie affichée, une fois chargées pour elle ; sinon les offres Automobile
+  const listeOffresCategorie = offresCategorie && offresCategorie.idTarif === Number(categorieId)
+    ? offresCategorie.liste
+    : null;
+
+  // Menu des offres : celles de la catégorie, paramétrées pour la compagnie d'abord ; l'offre en
+  // place reste affichée même hors de la liste (devis ancien), sans être changée d'office
+  const offresProposees = useMemo(() => {
+    const auto = categories !== DEFAULT_CATEGORIES
+      ? offresList.filter((o) => categories.some((cat) => Number(cat.id) === Number(o.idTarif)))
+      : offresList;
+    const liste = trierParLibelle(listeOffresCategorie ?? auto, (o) => o.libelle)
+      .map((o) => ({ id: Number(o.id), libelle: o.libelle, parametree: offreParametree(o.id), horsCategorie: false }))
+      .sort((a, b) => Number(b.parametree) - Number(a.parametree));
+    if (offreId && !liste.some((o) => o.id === Number(offreId))) {
+      const courante = offresList.find((o) => Number(o.id) === Number(offreId));
+      liste.unshift({
+        id: Number(offreId),
+        libelle: courante?.libelle || offreSelectionnee || `Offre n° ${offreId}`,
+        parametree: offreParametree(offreId),
+        horsCategorie: Boolean(listeOffresCategorie),
+      });
+    }
+    return liste;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listeOffresCategorie, offresList, offresCompagnie, categories, offreId, offreSelectionnee]);
+
+  const libelleOptionOffre = (o) => `${o.libelle}${o.horsCategorie ? ' — hors de cette catégorie' : ''}`
+    + `${o.parametree ? '' : ` — non paramétrée pour ${compagnie || 'cette compagnie'}`}`;
+
+  const choisirOffre = (id) => {
+    const offre = offresProposees.find((o) => o.id === Number(id));
+    setOffreId(Number(id));
+    if (offre) setOffreSelectionnee(offre.libelle);
+  };
+
+  // Offre retenue dans la catégorie affichée, pour la reprendre si l'utilisateur y revient
+  useEffect(() => {
+    if (listeOffresCategorie?.some((o) => o.id === Number(offreId))) {
+      offreParCategorieRef.current.set(Number(categorieId), Number(offreId));
+    }
+  }, [listeOffresCategorie, offreId, categorieId]);
+
+  // Catégorie changée par l'utilisateur : si l'offre n'en fait plus partie, l'offre équivalente de
+  // la nouvelle catégorie (« TOUS RISQUES » → « TOUS RISQUES (CAT 212) »), sinon celle déjà
+  // choisie dans cette catégorie, sinon la première paramétrée pour la compagnie
+  useEffect(() => {
+    if (!offreASuivreCategorieRef.current || !listeOffresCategorie) return;
+    offreASuivreCategorieRef.current = false;
+    if (listeOffresCategorie.some((o) => o.id === Number(offreId))) return;
+    const base = (libelle) => String(libelle || '').replace(/\s*(\(CAT[^)]*\)|CAT[EÉ]GORIE\s*\d+)\s*$/i, '').trim().toUpperCase();
+    const candidates = trierParLibelle(listeOffresCategorie, (o) => o.libelle);
+    const dejaChoisie = offreParCategorieRef.current.get(Number(categorieId));
+    const equivalente = candidates.find((o) => base(o.libelle) === base(offreSelectionnee) && offreParametree(o.id))
+      || candidates.find((o) => o.id === dejaChoisie)
+      || candidates.find((o) => offreParametree(o.id))
+      || candidates[0];
+    if (equivalente) {
+      setOffreId(equivalente.id);
+      setOffreSelectionnee(equivalente.libelle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listeOffresCategorie]);
 
   // Filtrage clients
   const filteredClients = useMemo(() => {
@@ -2246,6 +2352,8 @@ export const NewAutoQuotePage = () => {
                       setCategorieContrat(e.target.value);
                       const c = categories.find((cat) => cat.libelle === e.target.value);
                       if (c) setCategorieId(c.id);
+                      // L'offre suit la catégorie choisie (sa liste d'offres change)
+                      offreASuivreCategorieRef.current = true;
                     }}
                   >
                     {sortUniqueBy(categories, (cat) => cat.libelle).map((cat) => (
@@ -2492,6 +2600,8 @@ export const NewAutoQuotePage = () => {
                       setCategorieContrat(e.target.value);
                       const c = categories.find((cat) => cat.libelle === e.target.value);
                       if (c) setCategorieId(c.id);
+                      // L'offre suit la catégorie choisie (sa liste d'offres change)
+                      offreASuivreCategorieRef.current = true;
                     }}
                   >
                     {trierParLibelle(categories, (cat) => cat.libelle).map((cat) => (
@@ -2541,22 +2651,29 @@ export const NewAutoQuotePage = () => {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Formule d'Offre pour ce véhicule</label>
+                  <label className="form-label" htmlFor="offre-vehicule-flotte">Formule d'Offre pour ce véhicule</label>
                   <select
+                    id="offre-vehicule-flotte"
                     className="form-control"
-                    value={offreSelectionnee}
-                    onChange={(e) => {
-                      setOffreSelectionnee(e.target.value);
-                      const o = offresList.find((off) => off.libelle === e.target.value);
-                      if (o) setOffreId(o.id);
-                    }}
+                    value={Number(offreId) || ''}
+                    onChange={(e) => choisirOffre(e.target.value)}
                   >
-                    {sortUniqueBy(offresList, (o) => o.libelle).map((o) => (
-                      <option key={o.id} value={o.libelle}>
-                        {o.libelle}
+                    {offresProposees.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {libelleOptionOffre(o)}
                       </option>
                     ))}
                   </select>
+                  {listeOffresCategorie && listeOffresCategorie.length === 0 && (
+                    <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: '#f59e0b' }}>
+                      Aucune offre active pour la catégorie « {categorieContrat} ».
+                    </div>
+                  )}
+                  {offreId && !offreParametree(offreId) && (
+                    <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: '#f59e0b' }}>
+                      Offre non paramétrée pour {compagnie || 'cette compagnie'} : aucune garantie ne sera calculée.
+                    </div>
+                  )}
                   {(() => {
                     const cle = cleVehiculeAffiche();
                     const v = vehiculeParCle(cle);
@@ -3091,10 +3208,9 @@ export const NewAutoQuotePage = () => {
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem', maxWidth: '900px' }}>
               Chaque véhicule est tarifé par la base à l'enregistrement, puis le devis est totalisé.
-              Un véhicule inchangé garde ses primes enregistrées ; celles d'un véhicule nouveau ou modifié sont
-              estimées par le moteur CIMA. Le bouton « Garanties » d'un véhicule montre les garanties de son offre
-              et permet d'en retirer, d'en ajouter ou d'imposer leurs primes. L'accessoire et la prime TTC définitifs
-              sont calculés à l'enregistrement.
+              Le bouton « Garanties » d'un véhicule montre les garanties de son offre et permet d'en retirer,
+              d'en ajouter ou d'imposer leurs primes. L'accessoire et la prime TTC définitifs sont calculés
+              à l'enregistrement.
             </p>
 
             <div style={{ overflowX: 'auto', marginBottom: '1.5rem', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
@@ -3307,28 +3423,26 @@ export const NewAutoQuotePage = () => {
           <div style={{ maxWidth: '440px', marginBottom: '1.75rem' }}>
             <select
               className="form-control"
-              value={offreSelectionnee}
-              onChange={(e) => {
-                setOffreSelectionnee(e.target.value);
-                const of = offresList.find((o) => o.libelle === e.target.value);
-                if (of) setOffreId(of.id);
-              }}
+              value={Number(offreId) || ''}
+              onChange={(e) => choisirOffre(e.target.value)}
               style={{ fontWeight: 700, fontSize: '0.9rem' }}
             >
-              {trierParLibelle(offresList, (o) => o.libelle).map((o) => (
-                <option key={o.id} value={o.libelle}>
-                  {o.libelle}{o.nbGaranties === 0 ? ' — ⚠ non configurée' : ''}
+              {offresProposees.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {libelleOptionOffre(o)}
                 </option>
               ))}
             </select>
-            {(() => {
-              const offreCourante = offresList.find((o) => o.id === Number(offreId));
-              return offreCourante && offreCourante.nbGaranties === 0 ? (
-                <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '0.4rem' }}>
-                  ⚠ Cette offre n'a aucune garantie configurée en base (table Offres &amp; Garanties à compléter par un administrateur).
-                </p>
-              ) : null;
-            })()}
+            {listeOffresCategorie && listeOffresCategorie.length === 0 && (
+              <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                ⚠ Aucune offre active pour la catégorie « {categorieContrat} ».
+              </p>
+            )}
+            {offreId && !offreParametree(offreId) && (
+              <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                ⚠ Cette offre n'a aucune garantie paramétrée pour {compagnie || 'cette compagnie'} (table Offres &amp; Garanties à compléter par un administrateur).
+              </p>
+            )}
             {categorieSelectionnee && grilleOffre && grilleOffre.id !== categorieSelectionnee.id && (
               <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.4rem' }}>
                 Offre paramétrée sur la grille « {grilleOffre.libelle} » : les primes sont calculées

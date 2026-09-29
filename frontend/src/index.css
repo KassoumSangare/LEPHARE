@@ -972,11 +972,17 @@ select.form-control {
 }
 .sidebar-sublink-item.disabled,
 .sidebar-sublink-item.disabled:hover,
-[data-theme="light"] .sidebar-sublink-item.disabled:hover {
+[data-theme="light"] .sidebar-sublink-item.disabled:hover,
+.sidebar-nav-item.disabled,
+.sidebar-nav-item.disabled:hover,
+[data-theme="light"] .sidebar-nav-item.disabled:hover {
   opacity: 0.4;
   cursor: not-allowed;
   color: var(--text-secondary);
   background: transparent;
+}
+.sidebar-nav-item.disabled:hover .nav-icon {
+  color: var(--text-muted);
 }
 
 .sidebar-sublink-item.active {

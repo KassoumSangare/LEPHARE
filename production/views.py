@@ -146,6 +146,7 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ChangementImmatriculationSerializer,
     ChequeOperationSerializer,
     ChequeSerializer,
+    ChequeListeSerializer,
     ConsolidationDevisClientSerializer,
     ContractForPremiumCollectionSerializer,
     ContratDetailSerializer,
@@ -965,10 +966,25 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                         Q(dateexpiration__isnull=True) | Q(dateexpiration__gt=seuil)
                     )
 
-        # Portefeuille des Contrats : seuls les contrats émis durant les 3 dernières
-        # années sont affichés (même fenêtre que le Registre des Devis).
-        three_years_ago = timezone.now() - timedelta(days=365 * 3)
-        queryset = queryset.filter(dateemission__gte=three_years_ago)
+        if self.request.query_params.get("a_encaisser") in ("1", "true"):
+            # Caisse : même règle que fn_liste_contrat_encaissement (URANUS), la quittance du
+            # contrat n'est pas soldée. Sans fenêtre de 3 ans : un devis ancien confirmé
+            # aujourd'hui garde sa date d'émission. Derniers contrats confirmés en tête, sinon
+            # ils sortent des 200 lignes de la page.
+            from django.db.models import Value
+            from django.db.models.functions import Coalesce
+
+            queryset = queryset.annotate(
+                solde_quittance=F("idquittance__primettc")
+                - Coalesce(F("idquittance__mt_encaisse"), Value(Decimal(0)))
+            ).filter(
+                idquittance__police=F("numeropolice"), solde_quittance__gt=0
+            ).order_by("-idcontrat")
+        else:
+            # Portefeuille des Contrats : seuls les contrats émis durant les 3 dernières
+            # années sont affichés (même fenêtre que le Registre des Devis).
+            three_years_ago = timezone.now() - timedelta(days=365 * 3)
+            queryset = queryset.filter(dateemission__gte=three_years_ago)
 
         # Filtre par produit (Portefeuille des Contrats : onglets par branche).
         # Le paramètre idproduit peut être un identifiant unique ou une liste
@@ -1970,6 +1986,17 @@ class DetailEncaissementViewSet(viewsets.ModelViewSet):
         permissions.IsAuthenticated,
     ]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Caisse : règlements d'une quittance, le dernier en tête (réimpression du reçu)
+        numeroquittance = self.request.query_params.get("numeroquittance")
+        if numeroquittance:
+            queryset = queryset.filter(
+                numeroquittance_id=numeroquittance,
+                encaissement__piece_annulee=False,
+            ).order_by("-iddetailencaissement")
+        return queryset
+
 
 class ContractListView(APIView):
     def get(self, request, format=None):
@@ -2508,7 +2535,7 @@ def creer_ayant_droit_ia(request):
 
 # Change quotation into contract
 @api_view(["POST"])
-@authentication_classes([TokenAuthentication, BasicAuthentication])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
 def create_contract(request):
     confirmationdevis_data = JSONParser().parse(request)
@@ -5180,8 +5207,36 @@ class CheckChequeStatusView(APIView):
 
 
 class ChequeListView(generics.ListAPIView):
-    queryset = Cheque.objects.all().order_by("-date_saisie")
-    serializer_class = ChequeSerializer
+    # Portefeuille des chèques : quittances réglées par chaque chèque et leurs clients,
+    # via stdchequeoperation → stddetailencaissement → stdquittance (le tireur n'est pas
+    # renseigné en base : nomtireurcheque vaut « 0 »)
+    queryset = (
+        Cheque.objects.select_related("banque")
+        .annotate(
+            nombre_operations=RawSQL(
+                "SELECT COUNT(*) FROM stdchequeoperation op WHERE op.idcheque = stdcheque.idcheque",
+                [],
+            ),
+            quittances_reglees=RawSQL(
+                """SELECT string_agg(DISTINCT de.numeroquittance, ', ')
+                   FROM stdchequeoperation op
+                   JOIN stddetailencaissement de ON de.idencaissement = op.idencaissement
+                   WHERE op.idcheque = stdcheque.idcheque""",
+                [],
+            ),
+            clients=RawSQL(
+                """SELECT string_agg(DISTINCT TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')), ', ')
+                   FROM stdchequeoperation op
+                   JOIN stddetailencaissement de ON de.idencaissement = op.idencaissement
+                   JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
+                   JOIN stdclient cl ON cl.idclient = q.idclient
+                   WHERE op.idcheque = stdcheque.idcheque""",
+                [],
+            ),
+        )
+        .order_by("-date_saisie")
+    )
+    serializer_class = ChequeListeSerializer
     filter_backends = (filters.DjangoFilterBackend,)
     filterset_class = ChequeFilter
 

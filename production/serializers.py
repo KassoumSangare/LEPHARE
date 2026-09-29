@@ -4635,6 +4635,21 @@ class ChequeSerializer(serializers.ModelSerializer):
         ]
 
 
+class ChequeListeSerializer(ChequeSerializer):
+    """Chèque du portefeuille, avec les annotations de ChequeListView."""
+
+    nombre_operations = serializers.IntegerField(read_only=True)
+    quittances_reglees = serializers.CharField(read_only=True, allow_null=True)
+    clients = serializers.CharField(read_only=True, allow_null=True)
+
+    class Meta(ChequeSerializer.Meta):
+        fields = ChequeSerializer.Meta.fields + [
+            "nombre_operations",
+            "quittances_reglees",
+            "clients",
+        ]
+
+
 """
 Serializers pour modification de maison et imposition de prime
 ===============================================================

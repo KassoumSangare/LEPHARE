@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { Receipt, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Receipt } from 'lucide-react';
 import { cashApi } from '../../../api/endpoints';
-import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
 
+const fcfa = (v) => `${Math.round(Number(v) || 0).toLocaleString('fr-FR')} F`;
+
+// Chèques reçus en caisse (stdcheque) : un chèque peut régler plusieurs quittances, son solde
+// disponible est la part pas encore affectée. La base ne suit pas la remise en banque ni les
+// impayés : pas de statut bancaire ici.
 export const ChequeManagementPage = () => {
-  const { success, error } = useToast();
   const [cheques, setCheques] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -17,18 +20,28 @@ export const ChequeManagementPage = () => {
       setIsLoading(true);
       try {
         const data = await cashApi.getCheques();
-        if (isMounted && data && Array.isArray(data)) {
-          const normalized = data.map((ch) => ({
-            id: ch.id_cheque || ch.idcheque || ch.id,
-            numero: ch.numero_cheque || ch.numerocheque || ch.numero || 'CHQ-0000',
-            banque: ch.nom_banque || ch.banque || 'Banque Partenaire',
-            tireur: ch.tireur || ch.emetteur || ch.nom_emetteur || 'Assuré LE PHARE',
-            montant: Number(ch.montant_initial || ch.montant || 0),
-            date_reception: ch.date_saisie ? ch.date_saisie.split('T')[0] : (ch.date_reception || new Date().toISOString().split('T')[0]),
-            statut: Number(ch.solde_disponible) === 0 ? 'Encaissé' : 'En attente compensation',
-            statut_badge: Number(ch.solde_disponible) === 0 ? 'emerald' : 'amber',
+        if (isMounted && Array.isArray(data)) {
+          setCheques(data.map((ch) => {
+            const montant = Number(ch.montant_initial) || 0;
+            const solde = Number(ch.solde_disponible) || 0;
+            const affecte = montant - solde;
+            return {
+              id: ch.id_cheque,
+              numero: ch.numero_cheque,
+              banque: ch.nom_banque,
+              date_saisie: ch.date_saisie,
+              montant,
+              affecte,
+              solde,
+              quittances: ch.quittances_reglees || '',
+              clients: ch.clients || '',
+              utilisation: solde === 0 ? 'Épuisé' : affecte > 0 ? 'Partiellement affecté' : 'Non affecté',
+              utilisation_badge: solde === 0 ? 'emerald' : affecte > 0 ? 'amber' : 'rose',
+              // Clés lues par la recherche du DataTable : client puis n° de chèque
+              client_nom: ch.clients || '',
+              police: ch.numero_cheque,
+            };
           }));
-          setCheques(normalized);
         }
       } catch (err) {
         console.error('Erreur chargement chèques Django:', err);
@@ -40,55 +53,21 @@ export const ChequeManagementPage = () => {
     return () => { isMounted = false; };
   }, []);
 
-  const validerEncaissement = (id) => {
-    setCheques(cheques.map((c) => (c.id === id ? { ...c, statut: 'Encaissé', statut_badge: 'emerald' } : c)));
-    success('Chèque marqué comme encaissé en banque.');
-  };
-
-  const declarerImpaye = (id) => {
-    setCheques(cheques.map((c) => (c.id === id ? { ...c, statut: 'Rejeté / Impayé', statut_badge: 'rose' } : c)));
-    error('Alerte : Chèque marqué comme impayé !');
-  };
+  const soldeTotal = cheques.reduce((s, c) => s + c.solde, 0);
 
   const columns = [
-    { header: 'N° Chèque', accessor: 'numero', render: (row) => <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{row.numero}</strong> },
+    { header: 'N° Chèque', accessor: 'numero', render: (row) => <strong style={{ fontFamily: 'var(--font-mono)' }}>{row.numero}</strong> },
     { header: 'Banque', accessor: 'banque' },
-    { header: 'Tireur / Émetteur', accessor: 'tireur' },
-    { header: 'Date Dépôt', accessor: 'date_reception', render: (r) => formatDate(r.date_reception) },
+    { header: 'Client(s)', accessor: 'clients' },
+    { header: 'Date de saisie', render: (row) => formatDate(row.date_saisie) },
+    { header: 'Montant du chèque', render: (row) => <strong>{fcfa(row.montant)}</strong> },
+    { header: 'Affecté', render: (row) => <span style={{ color: '#34d399' }}>{fcfa(row.affecte)}</span> },
+    { header: 'Solde disponible', render: (row) => <span style={{ color: row.solde > 0 ? '#fbbf24' : 'var(--text-muted)' }}>{fcfa(row.solde)}</span> },
+    { header: 'Quittance(s) réglée(s)', accessor: 'quittances', render: (row) => <span style={{ fontFamily: 'var(--font-mono)' }}>{row.quittances || '—'}</span> },
     {
-      header: 'Montant',
-      accessor: 'montant',
-      render: (row) => <strong style={{ color: '#34d399' }}>{row.montant.toLocaleString('fr-FR')} FCFA</strong>,
-    },
-    {
-      header: 'Statut Bancaire',
-      accessor: 'statut',
-      render: (row) => <StatusBadge label={row.statut} color={row.statut_badge} />,
-    },
-    {
-      header: 'Actions',
-      render: (row) => (
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          {row.statut === 'En attente compensation' && (
-            <>
-              <button
-                className="btn btn-secondary"
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: '#34d399' }}
-                onClick={() => validerEncaissement(row.id)}
-              >
-                <CheckCircle size={14} /> Encaisser
-              </button>
-              <button
-                className="btn btn-danger"
-                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                onClick={() => declarerImpaye(row.id)}
-              >
-                <AlertTriangle size={14} /> Impayé
-              </button>
-            </>
-          )}
-        </div>
-      ),
+      header: 'Utilisation',
+      accessor: 'utilisation',
+      render: (row) => <StatusBadge label={row.utilisation} color={row.utilisation_badge} />,
     },
   ];
 
@@ -100,12 +79,18 @@ export const ChequeManagementPage = () => {
           Portefeuille des Chèques & Rapprochement Bancaire
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          Suivi du statut de compensation, encaissements certifiés et gestion des rejets pour provisions insuffisantes.
+          Chèques reçus en caisse, quittances qu'ils ont réglées et solde encore disponible sur chaque chèque.
         </p>
       </div>
 
       <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <DataTable columns={columns} data={cheques} searchPlaceholder="Rechercher par n° de chèque, tireur ou banque..." />
+        {!isLoading && (
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            <strong>{cheques.length}</strong> chèque{cheques.length > 1 ? 's' : ''} enregistré{cheques.length > 1 ? 's' : ''} ·
+            solde disponible total <strong>{fcfa(soldeTotal)}</strong>
+          </p>
+        )}
+        <DataTable columns={columns} data={cheques} loading={isLoading} searchPlaceholder="Rechercher par client ou n° de chèque..." />
       </div>
     </div>
   );

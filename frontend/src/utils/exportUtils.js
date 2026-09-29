@@ -3,7 +3,7 @@
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
 import QRCode from 'qrcode';
-import { annexeFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
 
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
@@ -1991,6 +1991,93 @@ export const printAnnexeFlotte = async (quote) => {
       fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger les véhicules du devis pour l\'annexe. Veuillez réessayer.</p>');
       fenetre.document.close();
     }
+  }
+};
+
+// --- REÇU D'ENCAISSEMENT (Caisse & Encaissement des Primes) ---
+// Gabarit URANUS « Quittance de règlement des primes d'assurance », en deux exemplaires sur la
+// page. Données de fn_info_encaissement (/api/infoencaissement/<iddetailencaissement>). URANUS
+// écrivait « 1 Avt 0 ()/NSIA CI » en dur : ici, le vrai avenant et la vraie compagnie.
+const RECU_ENCAISSEMENT_STYLES = `
+  .rq { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000; }
+  .rq-separateur { border-top: 1px dashed #000; margin: 9mm 0; }
+  .rq-entete { display: flex; justify-content: space-between; align-items: flex-start; }
+  .rq-logo { height: 42px; }
+  .rq-cabinet { text-align: right; font-weight: 700; line-height: 1.6; }
+  .rq-titre { border: 1px solid #000; text-align: center; padding: 6px; margin: 10px 0 6px; font-size: 9pt; }
+  .rq-recu { margin: 4px 0 8px; }
+  .rq-grille { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .rq-grille td { padding: 3px 4px; vertical-align: top; }
+  .rq-bas { display: flex; margin-top: 8px; }
+  .rq-caisse { width: 50%; text-align: center; padding-top: 4px; }
+  .rq-rappel { width: 50%; border: 1px solid #000; padding: 3px 6px; }
+  .rq-rappel-titre { text-align: center; margin-bottom: 2px; }
+  .rq-rappel div { padding: 1px 0; }
+`;
+
+const buildRecuEncaissement = (info) => {
+  const t = (v) => echapperHtml(v === undefined || v === null ? '' : String(v).trim());
+  const montant = (v) => entierAnnexe(v);
+  const cheque = info.NumeroCheque ? ` n° ${t(info.NumeroCheque)}${info.LibelleBanque ? ` (${t(info.LibelleBanque)})` : ''}` : '';
+  const exemplaire = `
+    <div class="rq-entete">
+      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="rq-logo" />
+      <div class="rq-cabinet">OREOLE ASSURANCES<br />Tél : 27 22 487 218 / Fax : 27 22 487 349</div>
+    </div>
+    <div class="rq-titre">Quittance de règlement des primes d'assurance</div>
+    <div class="rq-recu">Reçu N° : ${t(info.NumeroRecu)}</div>
+    <table class="rq-grille">
+      <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
+      <tr><td>Versement en cours</td><td>${montant(info.MontantEncaissement)}</td><td>Date de paiement</td><td>${formatFrDate(info.DateEncaissement)}</td></tr>
+      <tr><td>Assuré(e)</td><td>${t([info.PrenomsAssure, info.NomAssure].filter(Boolean).join(' '))}</td><td>Tel.</td><td>${t(info.TelephoneAssure)}</td></tr>
+      <tr>
+        <td>Police(s) réglée(s)</td><td>Police Assurance ${t(info.LibelleProduit)} N°-${t(info.NumeroPolice)}</td>
+        <td>1 Avt ${t(info.NumeroAvenant)} / ${t(info.NomCompagnie)}</td>
+        <td>Date effet : ${formatFrDate(info.DateEffet)} | Date expiration : ${formatFrDate(info.DateExpiration)}</td>
+      </tr>
+      <tr><td>Montant</td><td>${montant(info.MontantEncaissement)}</td><td>Montant (Lettre)</td><td>${t(info.MontantEncaissementEnLettres)}</td></tr>
+      <tr><td>Mode de paiement</td><td>${t(info.LibelleModePaiement)}${cheque}</td><td>Ref</td><td>${t(info.Reference)}</td></tr>
+    </table>
+    <div class="rq-bas">
+      <div class="rq-caisse">LA CAISSE</div>
+      <div class="rq-rappel">
+        <div class="rq-rappel-titre">RAPPEL IMPORTANT</div>
+        <div>Prime totale : ${montant(info.PrimeTotale)}</div>
+        <div>Versement en cours : ${montant(info.MontantEncaissement)}</div>
+        <div>Versements antérieurs : ${montant(info.VersementAnterieur)}</div>
+        <div>Total versement à ce jour : ${montant(info.TotalVersement)}</div>
+        <div>Reste à payer : ${montant(info.Solde)}</div>
+      </div>
+    </div>`;
+  return `
+    <style>${RECU_ENCAISSEMENT_STYLES}</style>
+    <div class="rq">${exemplaire}<div class="rq-separateur"></div>${exemplaire}</div>`;
+};
+
+// Reçu d'une ligne d'encaissement. La fenêtre est ouverte par l'appelant au moment du clic
+// (ouverte après les appels API, elle serait bloquée par le navigateur).
+export const printRecuEncaissement = async (iddetailencaissement, fenetre = null) => {
+  const erreur = (message) => {
+    if (!fenetre) return;
+    fenetre.document.open();
+    fenetre.document.write(`<p style="font-family:Arial;padding:20px;color:#b91c1c;">${message}</p>`);
+    fenetre.document.close();
+  };
+  if (!iddetailencaissement) {
+    erreur('Aucun règlement enregistré pour cette quittance.');
+    return;
+  }
+  try {
+    const reponse = await cashApi.getEncaissementInfo(iddetailencaissement);
+    const info = (reponse?.data || [])[0];
+    if (!info) {
+      erreur('Informations du règlement introuvables.');
+      return;
+    }
+    openPrintWindow(`Quittance ${info.NumeroRecu || ''}`.trim(), buildRecuEncaissement(info), fenetre);
+  } catch (err) {
+    console.error('Erreur quittance d\'encaissement :', err);
+    erreur('Impossible de charger le règlement pour la quittance. Veuillez réessayer.');
   }
 };
 
