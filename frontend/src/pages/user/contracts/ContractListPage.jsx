@@ -270,7 +270,7 @@ export const ContractListPage = () => {
 
     const headers = [
       'N° Police',
-      'Client / Souscripteur',
+      'Souscripteur',
       'Branche / Produit',
       'Compagnie',
       'Intermédiaire',

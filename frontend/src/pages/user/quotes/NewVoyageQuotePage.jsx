@@ -99,7 +99,8 @@ export const NewVoyageQuotePage = () => {
   const [numeroAttestation, setNumeroAttestation] = useState('ATT-SCH-2026-CI');
   const [dateNaissance, setDateNaissance] = useState('1990-05-15');
   const [isSchengen, setIsSchengen] = useState(true);
-  const [dateEmission, setDateEmission] = useState(() => new Date().toISOString().split('T')[0]);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = new Date().toISOString().split('T')[0];
 
   const todayPlus7 = new Date();
   todayPlus7.setDate(todayPlus7.getDate() + 7);
@@ -684,7 +685,7 @@ export const NewVoyageQuotePage = () => {
                 type="date"
                 className="form-control"
                 value={dateEmission}
-                onChange={(e) => setDateEmission(e.target.value)}
+                readOnly disabled title="Date du jour, non modifiable"
               />
             </div>
 

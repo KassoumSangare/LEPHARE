@@ -428,10 +428,10 @@ export const GarantiesVehiculeFlotteModal = ({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem' }}>
             {[
               ['Prime annuelle', totaux.pa, totauxAvant.pa],
-              ['Prime nette', totaux.pn, totauxAvant.pn],
+              // Prime nette de toutes les garanties de la liste, CEDEAO comprise (pas de case à part)
+              ['Prime nette', totaux.pn + totaux.cedeao, totauxAvant.pn + totauxAvant.cedeao],
               ['Taxes', totaux.taxe, totauxAvant.taxe],
               ['FGA', totaux.fga, totauxAvant.fga],
-              ['CEDEAO', totaux.cedeao, totauxAvant.cedeao],
             ].map(([libelle, valeur, avant]) => (
               <div key={libelle} style={{ background: 'var(--bg-surface-elevated)', padding: '0.75rem 0.9rem', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase' }}>{libelle}</div>

@@ -1,7 +1,11 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from .views_devis_ia import enregistrer_devis_ia_complet
+from .views_devis_ia import (
+    enregistrer_devis_ia_complet,
+    garanties_devis_ia,
+    taux_taxe_devis_ia,
+)
 from .views_devis_risques_divers import lire_devis_risques_divers
 from .importation_views import (
     ImportAssuresAPIView,
@@ -24,7 +28,12 @@ from .views import (  # cancel_premium_collection,
     CertificatTransportView,
     CheckChequeStatusView,
     ChequeDetailOperationsView,
+    ChequeAlertesView,
+    ChequeDecaissementView,
+    ChequeEcheancierView,
     ChequeListView,
+    ChequeQuittancesView,
+    ChequeSuppressionView,
     ConsolidationDevisView,
     ContractListView,
     ContratDetailInfoView,
@@ -217,6 +226,18 @@ urlpatterns = [
         r"devisia/enregistrement/",
         enregistrer_devis_ia_complet,
         name="enregistrement_devis_ia_complet",
+    ),
+    # Taux de taxe d'une offre IA (taxe des primes imposées affichée comme la base la calcule)
+    path(
+        r"devisia/taux-taxe/",
+        taux_taxe_devis_ia,
+        name="taux_taxe_devis_ia",
+    ),
+    # Garanties enregistrées de chaque assuré d'un devis IA
+    path(
+        r"devisia/<int:iddevis>/garanties/",
+        garanties_devis_ia,
+        name="garanties_devis_ia",
     ),
     path(
         r"enregistrementdevisvoyage",
@@ -641,6 +662,22 @@ urlpatterns = [
     ),
     # Endpoint 1 : Liste filtrée des chèques
     path("cheques/", ChequeListView.as_view(), name="cheque-liste"),
+    # Échéancier : chèques à déposer d'ici un mois (alertes), saisie d'un échéancier
+    path("cheques/alertes/", ChequeAlertesView.as_view(), name="cheque-alertes"),
+    path("cheques/echeancier/", ChequeEcheancierView.as_view(), name="cheque-echeancier"),
+    # Chèque à déposer retiré de l'échéancier (DELETE)
+    path("cheques/<int:id_cheque>/", ChequeSuppressionView.as_view(), name="cheque-suppression"),
+    # Chèque impayé : décaissement, puis quittances à réencaisser
+    path(
+        "cheques/<int:id_cheque>/decaissement/",
+        ChequeDecaissementView.as_view(),
+        name="cheque-decaissement",
+    ),
+    path(
+        "cheques/<int:id_cheque>/quittances/",
+        ChequeQuittancesView.as_view(),
+        name="cheque-quittances",
+    ),
     # Endpoint 2 : Détails et opérations d'un chèque
     path(
         "cheques/<int:id_cheque>/operations/",

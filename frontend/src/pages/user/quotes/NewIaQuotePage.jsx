@@ -17,22 +17,27 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
-import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
+import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
+import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 
-// Durées du contrat (mêmes identifiants que la base : stddevis.idduree)
-const DUREES = [
-  { id: 1, duree: '1 Mois' },
-  { id: 2, duree: '3 Mois' },
-  { id: 3, duree: '6 Mois' },
-  { id: 4, duree: '12 Mois (Annuel)' },
-  { id: 5, duree: 'Divers / Période Spécifique' },
-];
-// Catégorie IA MINENE : exige le n° de police Santé connexe
+// Catégorie IA MINENE (comme URANUS) : NSIA, offre 66, capitaux fixes, durée annuelle ou au
+// 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
+// ayants droit = affiliés)
 const ID_TARIF_MINENE = 103;
+const ID_OFFRE_MINENE = 66;
+const ID_COMPAGNIE_MINENE = 1;
+const CAPITAUX_MINENE = { CapitalDeces: 2000000, CapitalIpp: 2000000, FraisTraitement: 100000 };
+const DUREES_MINENE = [4];
+// Réduction plafonnée à 35 % comme dans URANUS
+const REDUCTION_MAX = 35;
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
+// Taxe des primes saisies, calculée comme la base : (prime nette + accessoire) × taux, arrondie
+const taxeImposee = (primeNette, accessoire, taux) => Math.round(((Number(primeNette) || 0) + (Number(accessoire) || 0)) * (Number(taux) || 0) / 100);
+// Date au format JJ-MM-AAAA attendu par les procédures d'URANUS
+const dateTiret = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('-') : '');
 const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
 
@@ -48,9 +53,11 @@ const messageErreurApi = (err) => {
     .join(' ; ');
 };
 
-// Date d'expiration : date d'effet + durée - 1 jour (même règle que la base)
-const expirationPour = (dateEffet, dureeId, personnalisee) => {
+// Date d'expiration : date d'effet + durée - 1 jour (même règle que la base). Durée libre :
+// date saisie, sauf en MINENE où elle tombe au 31/12 de l'année d'effet (« Divers » d'URANUS)
+const expirationPour = (dateEffet, dureeId, personnalisee, minene = false) => {
   if (!dateEffet) return '';
+  if (Number(dureeId) === 5 && minene) return `${String(dateEffet).slice(0, 4)}-12-31`;
   if (Number(dureeId) === 5) return personnalisee || '';
   const mois = { 1: 1, 2: 3, 3: 6, 4: 12 }[Number(dureeId)] || 12;
   const d = new Date(dateEffet);
@@ -68,12 +75,17 @@ const assureVide = () => ({
   DateNaissance: '',
   IdProfession: 0,
   AdresseGeographique: '',
+  Telephone: '',
   CapitalDeces: 0,
   CapitalIpp: 0,
   FraisTraitement: 0,
+  // Tarif personnalisé : primes saisies de l'assuré (0 = primes du barème)
+  PrimeNette: 0,
+  Accessoire: 0,
   AyantsDroit: [],
   ayantsOrigine: '[]',
   prime: null,
+  garantiesEnregistrees: null,
 });
 
 // Empreintes : une ligne n'est renvoyée au calcul que si elle a changé (primes imposées conservées)
@@ -87,6 +99,8 @@ const empreinteLigne = (a) => JSON.stringify([
   Number(a.CapitalDeces) || 0,
   Number(a.CapitalIpp) || 0,
   Number(a.FraisTraitement) || 0,
+  Number(a.PrimeNette) || 0,
+  Number(a.Accessoire) || 0,
 ]);
 const empreinteAyants = (liste) => JSON.stringify((liste || []).map((d) => [
   Number(d.IdQualiteAyantDroit) || 0,
@@ -140,20 +154,32 @@ export const NewIaQuotePage = () => {
   const [idTarif, setIdTarif] = useState(77);
   const [idOffre, setIdOffre] = useState(0);
   const [flotte, setFlotte] = useState(false);
+  // Catégorie à tarif personnalisé (offres « SPECIFIQUE ») : primes saisies par assuré
+  const [personnalise, setPersonnalise] = useState(false);
+  const [tauxTaxe, setTauxTaxe] = useState(0);
   const [dureeId, setDureeId] = useState(4);
   const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   // Terme du devis rouvert : le changer seul suffit à enregistrer (sans recalculer les primes)
   const [termeOrigine, setTermeOrigine] = useState(null);
-  const [dateEmission, setDateEmission] = useState(aujourdhui);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = aujourdhui();
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
   const [reduction, setReduction] = useState(0);
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [numeroPoliceConnexe, setNumeroPoliceConnexe] = useState('');
+  const estMinene = Number(idTarif) === ID_TARIF_MINENE;
+  // Création MINENE : les assurés viennent du contrat Santé, rien n'est saisi à l'écran
+  const creationMinene = estMinene && !editIddevisParam;
   const dateExpiration = useMemo(
-    () => expirationPour(dateEffet, dureeId, expirationPersonnalisee),
-    [dateEffet, dureeId, expirationPersonnalisee]
+    () => expirationPour(dateEffet, dureeId, expirationPersonnalisee, estMinene),
+    [dateEffet, dureeId, expirationPersonnalisee, estMinene]
   );
+  // Rechargement du devis ouvert (après un import d'assurés dans ce même devis)
+  const [versionChargement, setVersionChargement] = useState(0);
+  const [fichierImport, setFichierImport] = useState(null);
+  const [importEnCours, setImportEnCours] = useState(false);
+  const [garantiesOuvertes, setGarantiesOuvertes] = useState({});
 
   // -------------------------------------------------------------
   // ÉTAPE 2 : SOUSCRIPTEUR, ASSURÉ(S) ET AYANTS DROIT
@@ -178,7 +204,7 @@ export const NewIaQuotePage = () => {
 
   // En-tête : si elle change, toutes les lignes sont recalculées
   const enteteActuelle = JSON.stringify([
-    Number(compagnieId), Number(idTarif), Number(idOffre), Number(dureeId), dateEmission, dateEffet,
+    Number(compagnieId), Number(idTarif), Number(idOffre), Number(dureeId), dateEffet,
     dateExpiration, Number(reduction) || 0, numeroPoliceCompagnie || '', numeroPoliceConnexe || '', Number(souscripteurId),
   ]);
   const enteteModifiee = Boolean(enteteOrigine) && enteteOrigine !== enteteActuelle;
@@ -211,23 +237,44 @@ export const NewIaQuotePage = () => {
     return () => { actif = false; };
   }, []);
 
-  // Offres et nature (individuelle / groupe) de la catégorie choisie
+  // Offres et nature (individuelle / groupe, tarif personnalisé) de la catégorie choisie
   useEffect(() => {
     let actif = true;
     if (!idTarif) return undefined;
     Promise.all([
       iaApi.getOffres(idTarif).catch(() => []),
       iaApi.estTarifGroupe(idTarif).catch(() => false),
-    ]).then(([liste, groupe]) => {
+      iaApi.estTarifPersonnalise(idTarif).catch(() => false),
+    ]).then(([liste, groupe, perso]) => {
       if (!actif) return;
       setOffres(liste || []);
       setFlotte(Boolean(groupe));
+      setPersonnalise(Boolean(perso));
       setIdOffre((courant) => ((liste || []).some((o) => Number(o.IdOffre) === Number(courant))
         ? courant
         : Number(liste?.[0]?.IdOffre) || 0));
     });
     return () => { actif = false; };
   }, [idTarif]);
+
+  // MINENE : compagnie NSIA, offre MINENE et capitaux fixes, durée annuelle ou au 31/12 (URANUS)
+  useEffect(() => {
+    if (!estMinene) return;
+    setCompagnieId(ID_COMPAGNIE_MINENE);
+    setIdOffre(ID_OFFRE_MINENE);
+    setDureeId((d) => (Number(d) === 5 || DUREES_MINENE.includes(Number(d)) ? d : DUREES_MINENE[0]));
+    setAssureEnCours((p) => ({ ...p, ...CAPITAUX_MINENE }));
+  }, [estMinene]);
+
+  // Taux de taxe de l'offre : taxe et TTC des primes saisies affichées comme la base les calcule
+  useEffect(() => {
+    let actif = true;
+    if (!personnalise || !idOffre || !dateEffet) return undefined;
+    iaApi.getTauxTaxe({ idCompagnie: compagnieId, idOffre, dateEffet })
+      .then((t) => { if (actif) setTauxTaxe(t); })
+      .catch(() => { if (actif) setTauxTaxe(0); });
+    return () => { actif = false; };
+  }, [personnalise, compagnieId, idOffre, dateEffet]);
 
   // -------------------------------------------------------------
   // « MODIFIER » : REPRISE DE TOUT CE QUI A ÉTÉ SAISI À LA CRÉATION
@@ -238,10 +285,11 @@ export const NewIaQuotePage = () => {
     (async () => {
       setIsLoadingEdit(true);
       try {
-        const [devis, lignes, details] = await Promise.all([
+        const [devis, lignes, details, garanties] = await Promise.all([
           quoteApi.getQuote(editIddevisParam),
           iaApi.getAssuresDevis(editIddevisParam),
           iaApi.getDetailsDevis(editIddevisParam).catch(() => []),
+          iaApi.getGarantiesDevis(editIddevisParam).catch(() => []),
         ]);
         if (!actif) return;
         const raw = devis?.raw || {};
@@ -251,12 +299,13 @@ export const NewIaQuotePage = () => {
           return;
         }
         const detail = (details || [])[0] || {};
+        // Durée libre et terme « Autre » vont ensemble (anciens devis « Divers » compris)
+        const charge = termeEtDureeEnregistres(raw.idterme, raw.idduree);
         const entete = {
           compagnieId: Number(raw.compagnie?.IdCompagnie ?? raw.compagnie) || 1,
           idTarif: Number(detail.idtarif?.IdTarif ?? detail.idtarif) || 77,
           idOffre: Number(detail.idoffre?.IdOffre ?? detail.idoffre) || 0,
-          dureeId: Number(raw.idduree) || 4,
-          dateEmission: jour(raw.dateemission) || aujourdhui(),
+          dureeId: charge.dureeId,
           dateEffet: jour(raw.dateeffet) || aujourdhui(),
           dateExpiration: jour(raw.dateexpiration),
           reduction: Number(detail.taux_reduction) || 0,
@@ -277,9 +326,8 @@ export const NewIaQuotePage = () => {
         setIdTarif(entete.idTarif);
         setIdOffre(entete.idOffre);
         setDureeId(entete.dureeId);
-        setTermeId(idTermeValide(raw.idterme));
-        setTermeOrigine(idTermeValide(raw.idterme));
-        setDateEmission(entete.dateEmission);
+        setTermeId(charge.termeId);
+        setTermeOrigine(charge.termeId);
         setDateEffet(entete.dateEffet);
         setExpirationPersonnalisee(entete.dateExpiration);
         setReduction(entete.reduction);
@@ -288,7 +336,7 @@ export const NewIaQuotePage = () => {
         setSouscripteurId(entete.souscripteurId);
         const expirationChargee = expirationPour(entete.dateEffet, entete.dureeId, entete.dateExpiration);
         setEnteteOrigine(JSON.stringify([
-          entete.compagnieId, entete.idTarif, entete.idOffre, entete.dureeId, entete.dateEmission, entete.dateEffet,
+          entete.compagnieId, entete.idTarif, entete.idOffre, entete.dureeId, entete.dateEffet,
           expirationChargee, entete.reduction, entete.numeroPoliceCompagnie, entete.numeroPoliceConnexe, entete.souscripteurId,
         ]));
 
@@ -302,9 +350,14 @@ export const NewIaQuotePage = () => {
         }
         setRechercheSouscripteur(souscripteur?.nomcomplet || (entete.souscripteurId ? `Client n° ${entete.souscripteurId}` : ''));
 
-        // Assurés (une ligne de devis chacun) avec leurs ayants droit
+        // Tarif personnalisé : prime nette et accessoire de chaque assuré sont ceux saisis
+        const primesSaisies = await iaApi.estTarifPersonnalise(entete.idTarif).catch(() => false);
+        if (!actif) return;
+
+        // Assurés (une ligne de devis chacun) avec leurs ayants droit et garanties enregistrées
         const chargees = await Promise.all((lignes || []).map(async (l) => {
           const ayants = ayantsDepuisApi(await iaApi.getAyantsDroit(l.id_assure).catch(() => []));
+          const garantiesLigne = (garanties || []).filter((g) => Number(g.id_devis_detail) === Number(l.id_devis_detail));
           const assure = {
             cle: `l${l.id_devis_detail}`,
             IdDevisDetail: Number(l.id_devis_detail),
@@ -314,9 +367,12 @@ export const NewIaQuotePage = () => {
             DateNaissance: jour(l.date_naissance),
             IdProfession: Number(l.id_profession) || 0,
             AdresseGeographique: l.adresse_geographique || '',
+            Telephone: l.telephone && l.telephone !== '-' ? l.telephone : '',
             CapitalDeces: Math.round(Number(l.capital_deces) || 0),
             CapitalIpp: Math.round(Number(l.capital_infirmite) || 0),
             FraisTraitement: Math.round(Number(l.capital_frais_traitement) || 0),
+            PrimeNette: primesSaisies ? Math.round(Number(l.prime_nette) || 0) : 0,
+            Accessoire: primesSaisies ? Math.round(Number(l.accessoire) || 0) : 0,
             AyantsDroit: ayants,
             ayantsOrigine: empreinteAyants(ayants),
             prime: {
@@ -325,6 +381,7 @@ export const NewIaQuotePage = () => {
               accessoire: Math.round(Number(l.accessoire) || 0),
               enregistree: true,
             },
+            garantiesEnregistrees: garantiesLigne.length ? garantiesLigne : null,
           };
           assure.origine = empreinteLigne(assure);
           return assure;
@@ -343,7 +400,7 @@ export const NewIaQuotePage = () => {
     })();
     return () => { actif = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editIddevisParam]);
+  }, [editIddevisParam, versionChargement]);
 
   // -------------------------------------------------------------
   // PRIMES CALCULÉES PAR LE SERVEUR (même moteur que l'enregistrement)
@@ -359,6 +416,8 @@ export const NewIaQuotePage = () => {
     dateExpiration,
     dateNaissance: a.DateNaissance,
     codeActivite: codeActivite(a.IdProfession),
+    primeNette: personnalise ? a.PrimeNette : 0,
+    accessoire: personnalise ? a.Accessoire : 0,
   });
 
   // Récapitulatif : lignes à recalculer mises à jour (les lignes inchangées gardent leurs primes enregistrées)
@@ -381,7 +440,15 @@ export const NewIaQuotePage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
+  // Primes saisies de tous les assurés (tarif personnalisé) : totaux tels que la base les enregistrera
+  const primesToutesSaisies = personnalise && assures.length > 0 && assures.every((a) => Number(a.PrimeNette) > 0);
   const totaux = useMemo(() => {
+    if (primesToutesSaisies) {
+      const primeNette = assures.reduce((s, a) => s + (Number(a.PrimeNette) || 0), 0);
+      const accessoire = assures.reduce((s, a) => s + (Number(a.Accessoire) || 0), 0);
+      const taxe = assures.reduce((s, a) => s + taxeImposee(a.PrimeNette, a.Accessoire, tauxTaxe), 0);
+      return { primeNette, taxe, accessoire, primeTtc: primeNette + accessoire + taxe };
+    }
     const primeNette = assures.reduce((s, a) => s + (a.prime?.primeNette || 0), 0);
     const taxeLignes = assures.reduce((s, a) => s + (a.prime?.taxe || 0), 0);
     // Individuel : accessoire (et sa taxe) de la ligne calculée ; groupe : fixés par la base à l'enregistrement
@@ -389,7 +456,7 @@ export const NewIaQuotePage = () => {
     if (!calcule) return { primeNette, taxe: taxeLignes, accessoire: null, primeTtc: null };
     const taxe = taxeLignes + (calcule.taxeAccessoire || 0);
     return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: primeNette + taxe + calcule.accessoire };
-  }, [assures, flotte]);
+  }, [assures, flotte, primesToutesSaisies, tauxTaxe]);
   const rienAModifier = Boolean(idDevisEdite) && !enteteModifiee
     && (termeOrigine === null || Number(termeId) === termeOrigine)
     && assures.every((a) => a.IdDevisDetail && empreinteLigne(a) === a.origine);
@@ -398,7 +465,7 @@ export const NewIaQuotePage = () => {
   // ÉDITION D'UN ASSURÉ
   // -------------------------------------------------------------
   const reinitialiserEditeur = () => {
-    setAssureEnCours(assureVide());
+    setAssureEnCours(estMinene ? { ...assureVide(), ...CAPITAUX_MINENE } : assureVide());
     setCleEnEdition(null);
     setModeAssure('nouveau');
     setRechercheAssure('');
@@ -418,9 +485,22 @@ export const NewIaQuotePage = () => {
       Prenoms: c.prenom || c.Prenoms || '',
       DateNaissance: p.DateNaissance || jour(brut.DateNaissance),
       AdresseGeographique: p.AdresseGeographique || brut.Adresse2 || '',
+      // Téléphone de la fiche client (affiché, non modifié par le devis)
+      Telephone: c.telephone || brut.Mobile || brut.Telephone || '',
       AyantsDroit: ayants,
       ayantsOrigine: empreinteAyants(ayants),
     }));
+  };
+
+  // Souscripteur choisi : en contrat individuel, l'assuré est par défaut le souscripteur (URANUS)
+  const choisirSouscripteur = (c) => {
+    setSouscripteurId(Number(c.id));
+    setRechercheSouscripteur(c.nomcomplet);
+    setListeSouscripteurOuverte(false);
+    if (!flotte && !assures.length && !cleEnEdition && !assureEnCours.IdAssure && !assureEnCours.Nom.trim()) {
+      setModeAssure('existant');
+      choisirClientAssure(c);
+    }
   };
 
   const editerAssure = (a) => {
@@ -462,11 +542,22 @@ export const NewIaQuotePage = () => {
       toastError('Cette catégorie est individuelle : un seul assuré. Choisissez une catégorie « groupe » pour en ajouter.');
       return;
     }
+    if (modeAssure === 'existant' && assures.some((x) => x.cle !== cleEnEdition && Number(x.IdAssure) === Number(a.IdAssure))) {
+      toastError('Assuré existant : ce client figure déjà parmi les assurés du devis.');
+      return;
+    }
+    if (personnalise && Number(a.Accessoire) > 0 && !(Number(a.PrimeNette) > 0)) {
+      toastError('Saisissez la prime nette : l\'accessoire seul ne peut pas être imposé.');
+      return;
+    }
     const assure = {
       ...a,
+      ...(estMinene ? CAPITAUX_MINENE : {}),
       IdAssure: modeAssure === 'existant' ? a.IdAssure : 0,
       Nom: a.Nom.trim().toUpperCase(),
       Prenoms: a.Prenoms.trim().toUpperCase(),
+      PrimeNette: personnalise ? Number(a.PrimeNette) || 0 : 0,
+      Accessoire: personnalise && Number(a.PrimeNette) > 0 ? Number(a.Accessoire) || 0 : 0,
     };
     if (modeAssure === 'nouveau' && a.IdAssure) assure.ayantsOrigine = '[]';
     // Ligne enregistrée et inchangée : le serveur n'y touchera pas, sa prime enregistrée reste affichée
@@ -495,6 +586,7 @@ export const NewIaQuotePage = () => {
   // ENREGISTREMENT (création ou modification, une seule transaction côté serveur)
   // -------------------------------------------------------------
   const handleSave = async () => {
+    if (creationMinene) { await handleSaveMinene(); return; }
     if (!souscripteurId) { toastError('Choisissez le souscripteur.'); setStep(2); return; }
     // Nom tapé dans la recherche sans cliquer sur un client de la liste : l'ancien souscripteur
     // resterait celui du devis
@@ -512,9 +604,9 @@ export const NewIaQuotePage = () => {
       setStep(1);
       return;
     }
-    if (Number(idTarif) === ID_TARIF_MINENE && !numeroPoliceConnexe.trim()) {
-      toastError('Catégorie MINENE : saisissez le n° de police Santé connexe.');
-      setStep(1);
+    if (estMinene && !numeroPoliceConnexe.trim()) {
+      toastError('Catégorie MINENE : saisissez le numéro de police Santé connexe.');
+      setStep(2);
       return;
     }
 
@@ -541,9 +633,12 @@ export const NewIaQuotePage = () => {
         DateNaissance: a.DateNaissance,
         IdProfession: Number(a.IdProfession) || 0,
         AdresseGeographique: a.AdresseGeographique || '',
+        Telephone: a.Telephone || '',
         CapitalDeces: Number(a.CapitalDeces) || 0,
         CapitalIpp: Number(a.CapitalIpp) || 0,
         FraisTraitement: Number(a.FraisTraitement) || 0,
+        PrimeNette: personnalise ? Number(a.PrimeNette) || 0 : 0,
+        Accessoire: personnalise ? Number(a.Accessoire) || 0 : 0,
         Recalculer: ligneAChanger(a),
         AyantsDroitModifies: empreinteAyants(a.AyantsDroit) !== (a.ayantsOrigine || '[]'),
         AyantsDroit: a.AyantsDroit.map((d) => ({
@@ -604,6 +699,120 @@ export const NewIaQuotePage = () => {
       toastError(`Erreur lors de l'enregistrement du devis IA : ${messageErreurApi(err)}`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Création MINENE (comme URANUS) : le serveur reprend le contrat Santé connexe — client du
+  // contrat = souscripteur, adhérents = assurés, affiliés = ayants droit — aux capitaux fixes
+  const handleSaveMinene = async () => {
+    if (!numeroPoliceConnexe.trim()) { toastError('Saisissez le numéro de police Santé connexe.'); setStep(2); return; }
+    if (!dateExpiration) { toastError('Saisissez la date d\'expiration.'); setStep(1); return; }
+    // Date de naissance de repli d'URANUS (18 ans) : le serveur prend celle de l'adhérent principal
+    const majorite = new Date();
+    majorite.setFullYear(majorite.getFullYear() - 18);
+    setIsSubmitting(true);
+    try {
+      let res;
+      try {
+        res = await iaApi.creerDevisMinene({
+          NumeroPoliceConnexe: numeroPoliceConnexe.trim(),
+          IdIntermediaire: 1,
+          IdCompagnie: ID_COMPAGNIE_MINENE,
+          IdProduit: 2,
+          IdOffre: ID_OFFRE_MINENE,
+          IdAvenant: 1,
+          Flotte: false,
+          Coassurance: false,
+          DateEffet: dateTiret(dateEffet),
+          DateExpiration: dateTiret(dateExpiration),
+          DateEmission: dateTiret(dateEmission),
+          IdTarif: ID_TARIF_MINENE,
+          ...CAPITAUX_MINENE,
+          TauxReduction: Number(reduction) || 0,
+          CodeActivite: '01',
+          DateNaissance: dateTiret(majorite.toISOString()),
+          IdDuree: Number(dureeId),
+          IdTerme: Number(termeId),
+          IdDevis: 0,
+          IdDevisDetail: 0,
+          AdresseGeographique: '',
+          NumeroPoliceCompagnie: numeroPoliceCompagnie || '',
+          IdClient: 0,
+          IdAssure: 0,
+          IdProfession: 0,
+        });
+      } catch (errApi) {
+        toastError(`Devis IA MINENE non enregistré : ${messageErreurApi(errApi)}`);
+        return;
+      }
+      if (res?.Status !== 'Succès' || !res.iddevis) {
+        toastError(`Devis IA MINENE non enregistré : ${res?.message || 'réponse inattendue du serveur'}`);
+        return;
+      }
+      success(`Devis MINENE créé : ${res.assures_crees} assuré(s), ${res.ayants_droits_crees} ayant(s) droit.`);
+      if (res.erreurs > 0) {
+        const premiere = res.details_erreurs?.[0]?.message;
+        toastError(`${res.erreurs} adhérent(s) ou affilié(s) non repris${premiere ? ` : ${premiere}` : ''}.`);
+      }
+      const devisEnregistre = await quoteApi.getQuote(res.iddevis).catch(() => null);
+      if (devisEnregistre) setCreatedQuote(devisEnregistre);
+      else navigate('/user/quotes');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Import d'une liste d'assurés (fichier Excel aux formats d'URANUS) dans le devis groupe : le
+  // serveur crée le devis s'il n'existe pas, ses totaux sont recalculés, puis il est rouvert
+  const assuresNonEnregistres = assures.some((a) => !a.IdDevisDetail || empreinteLigne(a) !== a.origine) || enteteModifiee;
+  const handleImportAssures = async () => {
+    if (!fichierImport) { toastError('Choisissez le fichier Excel des assurés.'); return; }
+    if (!souscripteurId) { toastError('Choisissez d\'abord le souscripteur.'); return; }
+    if (!idOffre) { toastError('Aucune offre pour cette catégorie : choisissez une autre catégorie.'); setStep(1); return; }
+    if (!dateExpiration) { toastError('Saisissez la date d\'expiration.'); setStep(1); return; }
+    if (assuresNonEnregistres) {
+      toastError('Enregistrez d\'abord le devis avec les assurés et modifications en cours, puis importez le fichier.');
+      return;
+    }
+    const donnees = new FormData();
+    donnees.append('FichierExcel', fichierImport);
+    donnees.append('IdCompagnie', Number(compagnieId));
+    donnees.append('IdIntermediaire', 1);
+    donnees.append('IdOffre', Number(idOffre));
+    donnees.append('IdAvenant', 1);
+    donnees.append('IdClient', Number(souscripteurId));
+    donnees.append('DateEffet', dateTiret(dateEffet));
+    donnees.append('DateExpiration', dateTiret(dateExpiration));
+    donnees.append('DateEmission', dateTiret(dateEmission));
+    donnees.append('IdTarif', Number(idTarif));
+    donnees.append('TauxReduction', Number(reduction) || 0);
+    donnees.append('IdDuree', Number(dureeId));
+    donnees.append('IdDevis', idDevisEdite || 0);
+    donnees.append('NumeroPoliceConnexe', '');
+    donnees.append('NumeroPoliceCompagnie', numeroPoliceCompagnie || '');
+    setImportEnCours(true);
+    try {
+      let res;
+      try {
+        res = await iaApi.importerAssures(donnees);
+      } catch (errApi) {
+        const data = errApi?.response?.data;
+        const detail = data?.erreurs?.[0] ? ` (${typeof data.erreurs[0] === 'string' ? data.erreurs[0] : JSON.stringify(data.erreurs[0])})` : '';
+        toastError(`Import impossible : ${messageErreurApi(errApi)}${detail}`);
+        return;
+      }
+      const idDevis = Number(res?.id_devis) || 0;
+      if (!res?.success || !idDevis) {
+        toastError(`Import impossible : ${res?.message || 'aucun assuré importé'}`);
+        return;
+      }
+      await iaApi.finaliserDevis({ idDevis, idClient: souscripteurId }).catch(() => null);
+      success(res.message || 'Importation des assurés réalisée avec succès.');
+      setFichierImport(null);
+      if (String(idDevis) === String(editIddevisParam)) setVersionChargement((v) => v + 1);
+      else navigate(`/user/quotes/ia?edit=${idDevis}`);
+    } finally {
+      setImportEnCours(false);
     }
   };
 
@@ -702,8 +911,18 @@ export const NewIaQuotePage = () => {
           <h3 style={titreSection}>Informations générales du contrat</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
             <div className="form-group">
+              <label className="form-label">Numéro de police compagnie</label>
+              <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
+            </div>
+            <div className="form-group">
               <label className="form-label">Compagnie d'assurance (* requis)</label>
-              <select className="form-control" value={compagnieId} onChange={(e) => setCompagnieId(Number(e.target.value))}>
+              <select
+                className="form-control"
+                value={compagnieId}
+                onChange={(e) => setCompagnieId(Number(e.target.value))}
+                disabled={estMinene}
+                title={estMinene ? 'Catégorie MINENE : compagnie NSIA imposée' : undefined}
+              >
                 {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id} value={c.id}>{c.nom}</option>
                 ))}
@@ -716,11 +935,15 @@ export const NewIaQuotePage = () => {
                   <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>
                 ))}
               </select>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{flotte ? 'Groupe : plusieurs assurés' : 'Individuel : un seul assuré'}</span>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                {flotte ? 'Groupe : plusieurs assurés' : 'Individuel : un seul assuré'}
+                {personnalise ? ' — tarif personnalisé : primes saisies par assuré' : ''}
+                {estMinene ? ' — devis créé depuis le contrat Santé MINENE' : ''}
+              </span>
             </div>
             <div className="form-group">
               <label className="form-label">Offre (* requis)</label>
-              <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))}>
+              <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))} disabled={estMinene}>
                 {offres.length === 0 && <option value={0}>Aucune offre pour cette catégorie</option>}
                 {trierParLibelle(offres, (o) => o.LibelleOffre).map((o) => (
                   <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>
@@ -729,44 +952,54 @@ export const NewIaQuotePage = () => {
             </div>
             <div className="form-group">
               <label className="form-label">Terme du contrat</label>
-              <TermeContratSelect value={termeId} onChange={setTermeId} />
+              <TermeContratSelect
+                value={termeId}
+                onChange={(id) => {
+                  setTermeId(id);
+                  // « Autre » ouvre la durée libre (date d'expiration saisie)
+                  setDureeId((d) => dureeSelonTerme(id, d));
+                }}
+              />
             </div>
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              <select className="form-control" value={dureeId} onChange={(e) => setDureeId(Number(e.target.value))}>
-                {DUREES.map((d) => (<option key={d.id} value={d.id}>{d.duree}</option>))}
-              </select>
+              <DureeContratSelect value={dureeId} onChange={setDureeId} idsAutorises={estMinene ? DUREES_MINENE : null} />
             </div>
             <div className="form-group">
               <label className="form-label">Date d'émission</label>
-              <input type="date" className="form-control" value={dateEmission} onChange={(e) => setDateEmission(e.target.value)} />
+              <input type="date" className="form-control" value={dateEmission} readOnly disabled title="Date du jour, non modifiable" />
             </div>
             <div className="form-group">
               <label className="form-label">Date d'effet (* requis)</label>
               <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date d'expiration {Number(dureeId) === 5 ? '(* requis)' : '(calculée)'}</label>
-              {Number(dureeId) === 5 ? (
+              <label className="form-label">Date d'expiration (* requis)</label>
+              {Number(dureeId) === 5 && !estMinene ? (
                 <input type="date" className="form-control" value={expirationPersonnalisee} onChange={(e) => setExpirationPersonnalisee(e.target.value)} />
               ) : (
-                <input type="date" className="form-control" value={dateExpiration} readOnly style={{ background: 'rgba(255,255,255,0.05)', color: '#a78bfa', fontWeight: 700 }} />
+                <input
+                  type="date"
+                  className="form-control"
+                  value={dateExpiration}
+                  readOnly
+                  title={estMinene && Number(dureeId) === 5 ? 'MINENE, terme « Autre » : 31/12 de l\'année d\'effet' : 'Calculée d\'après la durée'}
+                  style={{ background: 'rgba(255,255,255,0.05)', color: '#a78bfa', fontWeight: 700 }}
+                />
               )}
             </div>
             <div className="form-group">
-              <label className="form-label">Réduction commerciale (%)</label>
-              <input type="number" min="0" max="100" className="form-control" value={reduction} onChange={(e) => setReduction(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />
+              <label className="form-label">Réduction (%) (* requis)</label>
+              <input
+                type="number"
+                min="0"
+                max={REDUCTION_MAX}
+                className="form-control"
+                value={reduction}
+                onChange={(e) => setReduction(Math.max(0, Math.min(REDUCTION_MAX, Number(e.target.value) || 0)))}
+                title={`De 0 à ${REDUCTION_MAX} %`}
+              />
             </div>
-            <div className="form-group">
-              <label className="form-label">N° de police compagnie (optionnel)</label>
-              <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
-            </div>
-            {Number(idTarif) === ID_TARIF_MINENE && (
-              <div className="form-group">
-                <label className="form-label">N° de police Santé connexe (* requis)</label>
-                <input type="text" className="form-control" value={numeroPoliceConnexe} onChange={(e) => setNumeroPoliceConnexe(e.target.value)} placeholder="Ex: SANTE-MINENE-2024-001" />
-              </div>
-            )}
           </div>
           <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-primary" onClick={() => setStep(2)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#7c3aed' }}>
@@ -779,6 +1012,32 @@ export const NewIaQuotePage = () => {
       {/* ÉTAPE 2 : SOUSCRIPTEUR, ASSURÉS ET AYANTS DROIT */}
       {step === 2 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {estMinene && (
+            <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px', border: '1px solid rgba(249, 115, 22, 0.45)' }}>
+              <h3 style={{ ...titreSection, color: '#f97316' }}>Contrat Santé MINENE connexe</h3>
+              <div className="form-group" style={{ maxWidth: '560px' }}>
+                <label className="form-label">Numéro de police Santé connexe (* requis)</label>
+                <input type="text" className="form-control" value={numeroPoliceConnexe} onChange={(e) => setNumeroPoliceConnexe(e.target.value)} placeholder="Ex: 1186123263114M" />
+              </div>
+              <p style={{ fontSize: '0.85rem', color: '#fb923c', margin: '0.5rem 0 0' }}>
+                {creationMinene
+                  ? 'Le souscripteur et l\'assuré seront automatiquement déterminés depuis le contrat Santé : chaque adhérent devient un assuré et ses affiliés ses ayants droit.'
+                  : 'Assurés repris du contrat Santé.'}
+                {' '}Capitaux MINENE : décès {fcfa(CAPITAUX_MINENE.CapitalDeces)}, infirmité permanente {fcfa(CAPITAUX_MINENE.CapitalIpp)}, frais de traitement {fcfa(CAPITAUX_MINENE.FraisTraitement)} FCFA.
+              </p>
+              {creationMinene && (
+                <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <ArrowLeft size={16} /> Précédent
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={() => setStep(3)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#7c3aed' }}>
+                    Suivant : Récapitulatif <ArrowRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {!creationMinene && (<>
           <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
             <h3 style={titreSection}>Souscripteur</h3>
             <div className="form-group" style={{ position: 'relative', maxWidth: '560px' }}>
@@ -802,7 +1061,7 @@ export const NewIaQuotePage = () => {
                     <div
                       key={c.id}
                       style={elementListe}
-                      onClick={() => { setSouscripteurId(Number(c.id)); setRechercheSouscripteur(c.nomcomplet); setListeSouscripteurOuverte(false); }}
+                      onClick={() => choisirSouscripteur(c)}
                     >
                       <div style={{ fontWeight: 700, color: '#fff' }}>{c.nomcomplet}</div>
                       <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{c.codeclient} • {c.telephone}</div>

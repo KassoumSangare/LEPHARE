@@ -23,7 +23,8 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
-import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
+import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
+import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 
 // Formattage monétaire FCFA
@@ -36,15 +37,6 @@ const cleanNum = (str) => {
   if (typeof str === 'number') return str;
   return parseFloat(String(str || '0').replace(/\s/g, '')) || 0;
 };
-
-// Durées standards OREOLE
-const DEFAULT_DUREES = [
-  { id: 1, duree: '1 Mois' },
-  { id: 2, duree: '3 Mois' },
-  { id: 3, duree: '6 Mois' },
-  { id: 4, duree: '12 Mois (Annuel)' },
-  { id: 5, duree: 'Divers / Période Spécifique' },
-];
 
 // Message lisible d'une erreur renvoyée par l'API ({error}, {erreur}, {message} ou erreurs par champ)
 const messageErreurApi = (err) => {
@@ -100,9 +92,10 @@ export const NewMrhQuotePage = () => {
   const [compagnieNom, setCompagnieNom] = useState('NSIA ASSURANCES CI');
   const [categorieId, setCategorieId] = useState(81);
   const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
-  const [dureeId, setDureeId] = useState(4); // 4 = 12 Mois
+  const [dureeId, setDureeId] = useState(4); // 4 = Annuelle
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [dateEmission, setDateEmission] = useState(todayStr);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = todayStr;
   const [dateEffet, setDateEffet] = useState(todayStr);
   const [customExpiration, setCustomExpiration] = useState('');
 
@@ -605,9 +598,10 @@ export const NewMrhQuotePage = () => {
           setCompagnieId(Number(raw.compagnie.IdCompagnie));
           setCompagnieNom(raw.compagnie.RaisonSociale || '');
         }
-        setTermeId(idTermeValide(raw.idterme));
-        if (raw.idduree) setDureeId(Number(raw.idduree));
-        setDateEmission(jour(raw.dateemission) || todayStr);
+        // Durée libre et terme « Autre » vont ensemble (anciens devis « Divers » compris)
+        const charge = termeEtDureeEnregistres(raw.idterme, raw.idduree);
+        setTermeId(charge.termeId);
+        setDureeId(charge.dureeId);
         setDateEffet(jour(raw.dateeffet) || todayStr);
         setCustomExpiration(jour(raw.dateexpiration));
 
@@ -864,23 +858,20 @@ export const NewMrhQuotePage = () => {
             {/* Terme du contrat */}
             <div className="form-group">
               <label className="form-label">Terme du contrat</label>
-              <TermeContratSelect value={termeId} onChange={setTermeId} />
+              <TermeContratSelect
+                value={termeId}
+                onChange={(id) => {
+                  setTermeId(id);
+                  // « Autre » ouvre la durée libre (date d'expiration saisie)
+                  setDureeId((d) => dureeSelonTerme(id, d));
+                }}
+              />
             </div>
 
             {/* Durée du contrat */}
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              <select
-                className="form-control"
-                value={dureeId}
-                onChange={(e) => setDureeId(Number(e.target.value))}
-              >
-                {trierParLibelle(DEFAULT_DUREES, (d) => d.duree).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.duree}
-                  </option>
-                ))}
-              </select>
+              <DureeContratSelect value={dureeId} onChange={setDureeId} />
             </div>
 
             {/* Dates Émission & Effet */}
@@ -890,7 +881,7 @@ export const NewMrhQuotePage = () => {
                 type="date"
                 className="form-control"
                 value={dateEmission}
-                onChange={(e) => setDateEmission(e.target.value)}
+                readOnly disabled title="Date du jour, non modifiable"
               />
             </div>
 
@@ -906,7 +897,7 @@ export const NewMrhQuotePage = () => {
 
             {/* Date Expiration */}
             <div className="form-group">
-              <label className="form-label">Date d'expiration (* calculée)</label>
+              <label className="form-label">Date d'expiration {Number(dureeId) === 5 ? '(* requis)' : '(* calculée)'}</label>
               {Number(dureeId) === 5 ? (
                 <input
                   type="date"
@@ -1291,7 +1282,7 @@ export const NewMrhQuotePage = () => {
             </div>
 
             <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Accessoires & Frais</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Accessoires</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#cbd5e1', fontFamily: 'var(--font-mono)' }}>
                 {formatFcfa(totalsFinanciers.accessoires)} FCFA
               </div>
@@ -1417,10 +1408,10 @@ export const NewMrhQuotePage = () => {
           </h3>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            {/* Nom du Client / Souscripteur avec autocomplétion OREOLE */}
+            {/* Nom du Souscripteur avec autocomplétion OREOLE */}
             <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Nom du Client / Souscripteur (* requis)</span>
+                <span>Nom du Souscripteur (* requis)</span>
                 <button
                   type="button"
                   onClick={() => setIsQuickAddClientOpen(true)}

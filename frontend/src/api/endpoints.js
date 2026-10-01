@@ -371,15 +371,21 @@ const libelleEnergie = (valeur, energies) => {
   const e = energies.find((x) => String(x.CodeEnergie) === String(valeur) || String(x.IdEnergie) === String(valeur));
   return e ? e.Libelle : null;
 };
+// Libellé de la carrosserie (stdcarrosserie) à partir de l'identifiant du détail véhicule
+const libelleCarrosserie = (id, carrosseries) => {
+  const c = carrosseries.find((x) => Number(x.IdCarrosserie) === Number(id));
+  return c ? c.LibelleCarrosserie : null;
+};
 
 export const conditionsParticulieresMonoApi = {
   get: async (id, { contrat = false } = {}) => {
     if (contrat) {
-      const [q, g, v, en] = await Promise.all([
+      const [q, g, v, en, ca] = await Promise.all([
         apiClient.get(`/quittancecontrat/${id}`),
         apiClient.get(`/garantiesouscritecontrat/${id}`),
         apiClient.get(`/contratdetail/${id}`),
         apiClient.get('/energie/').catch(() => ({ data: [] })),
+        apiClient.get('/carrosserie/').catch(() => ({ data: [] })),
       ]);
       const vehicule = donneesListe(v)[0] || null;
       return {
@@ -388,15 +394,17 @@ export const conditionsParticulieresMonoApi = {
         vehicule: vehicule && {
           ...vehicule,
           libelleenergie: libelleEnergie(vehicule.codecarburant ?? vehicule.essence, extractData(en)),
+          libellecarrosserie: libelleCarrosserie(vehicule.idcarrosserie, extractData(ca)),
         },
       };
     }
-    const [q, g, v, l, en] = await Promise.all([
+    const [q, g, v, l, en, ca] = await Promise.all([
       apiClient.get(`/quittanceproposition/${id}`),
       apiClient.get(`/garantiesouscritedevis/${id}`),
       apiClient.get(`/devisdetail/${id}`),
       apiClient.get(`/listevehiculedevis/${id}`).catch(() => ({ data: [] })),
       apiClient.get('/energie/').catch(() => ({ data: [] })),
+      apiClient.get('/carrosserie/').catch(() => ({ data: [] })),
     ]);
     // Le détail devis imbrique marque / genre / type (objets) là où le détail contrat donne des libellés
     const vehicule = donneesListe(v)[0] || null;
@@ -411,8 +419,21 @@ export const conditionsParticulieresMonoApi = {
         libelletypevehicule: vehicule.libelletypevehicule || libelle(vehicule.idtypevehicule, 'libelle_type', 'LibelleType') || infos.LibelleTypeVehicule,
         libellegenrevehicule: vehicule.libellegenrevehicule || libelle(vehicule.idgenrevehicule, 'LibelleGenre', 'libelle_genre'),
         libelleenergie: libelleEnergie(vehicule.essence ?? vehicule.codecarburant, extractData(en)),
+        libellecarrosserie: libelleCarrosserie(vehicule.idcarrosserie, extractData(ca)),
       },
     };
+  },
+};
+
+// Conditions Particulières d'une flotte auto (« Liste des véhicules en Automobile », modèle NSIA) :
+// quittance du devis / contrat et véhicules avec l'état, le capital et la prime de chaque garantie
+export const conditionsParticulieresFlotteApi = {
+  get: async (id, { contrat = false } = {}) => {
+    const [q, v] = await Promise.all([
+      apiClient.get(contrat ? `/quittancecontrat/${id}` : `/quittanceproposition/${id}`),
+      apiClient.get(contrat ? `/contrat/${id}/vehicules-flotte/` : `/devis/${id}/vehicules-flotte/`),
+    ]);
+    return { quittance: donneesEntete(q) || {}, vehicules: Array.isArray(v.data) ? v.data : [] };
   },
 };
 
@@ -456,6 +477,23 @@ export const annexeFlotteApi = {
       tauxReductionFlotte: r.data?.TauxReduction ?? null,
     };
   },
+};
+
+// Branche d'un devis d'après le libellé du produit (stdproduit) : IA, Santé, RC, MRP… ne sont plus
+// rangés dans « Auto » par défaut (fiche devis, facture et Conditions Particulières en dépendent)
+const brancheDuProduit = (produitNom) => {
+  const p = String(produitNom || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  if (/auto|vehicule/.test(p)) return 'Auto';
+  if (/individuelle|accident/.test(p)) return 'IA';
+  if (/sante|maladie/.test(p)) return 'Santé';
+  if (/voyage/.test(p)) return 'Voyage';
+  if (/transport|facultes/.test(p)) return 'Transport';
+  if (/habitation|\bmrh\b/.test(p)) return 'MRH';
+  if (/professionnel/.test(p)) return 'MRP';
+  if (/responsabilite/.test(p)) return 'RC';
+  if (/tous dommages/.test(p)) return 'Tous Dommages';
+  if (/\bvie\b/.test(p)) return 'Vie';
+  return 'Auto';
 };
 
 export const normalizeDevis = (bq) => {
@@ -509,7 +547,7 @@ export const normalizeDevis = (bq) => {
     nomassure: bq.nomassure || clientNom,
     compagnie: cieNom,
     produit: produitNom,
-    branche: bq.branche || (produitNom.toLowerCase().includes('auto') ? 'Auto' : produitNom.toLowerCase().includes('hab') ? 'MRH' : 'Auto'),
+    branche: bq.branche || brancheDuProduit(produitNom),
     date_emission: bq.dateemission || bq.date_emission || new Date().toISOString().split('T')[0],
     date_effet: bq.dateeffet || bq.date_effet || new Date().toISOString().split('T')[0],
     date_expiration: bq.dateexpiration || bq.date_expiration,
@@ -688,6 +726,20 @@ export const quoteApi = {
   },
   // POST /api/offregarantie (Calcul dynamique des garanties auto CIMA)
   calculateOffreGarantie: (payload) => apiClient.post('/offregarantie', payload),
+  // POST /api/calculprime/ : accessoire Automobile (fn_get_accessoire, tranche de prime nette) et
+  // taux de taxe, pour une prime nette CEDEAO et FGA compris
+  calculerAccessoireAuto: async ({ primeNette, idOffre, idCompagnie, dateEffet }) => {
+    const { data } = await apiClient.post('/calculprime/', {
+      id_produit: 1,
+      id_compagnie: Number(idCompagnie),
+      id_offre: Number(idOffre),
+      prime_nette: Math.round(Number(primeNette) || 0),
+      date_effet: dateEffet,
+    });
+    const accessoire = Math.round(Number(data?.accessoire) || 0);
+    // Même arrondi que fn_get_accessoire : ROUND(accessoire × taux / 100, 0)
+    return { accessoire, taxeAccessoire: Math.round((accessoire * (Number(data?.taux_taxe) || 0)) / 100) };
+  },
   // POST /api/correctiondevis/ (Enregistrement des primes & garanties imposées / modifiées)
   correctQuote: (payload) => apiClient.post('/correctiondevis/', payload),
   // POST /api/majrecapprimes/ (Mise à jour manuelle du récapitulatif des primes d'un devis
@@ -817,13 +869,24 @@ export const iaApi = {
   getOffres: async (idTarif) => extractData(await apiClient.get('/offreparproduit/', { params: { idproduit: 2, idtarif: idTarif } })),
   // GET /api/esttarifiagroupe/:id/ : catégorie « groupe » (plusieurs assurés, devis flotte)
   estTarifGroupe: async (idTarif) => Boolean((await apiClient.get(`/esttarifiagroupe/${idTarif}/`)).data?.est_tarif_ia_groupe),
+  // GET /api/esttarifiapersonnalise/:id/ : catégorie à primes saisies (offres « SPECIFIQUE »)
+  estTarifPersonnalise: async (idTarif) => Boolean((await apiClient.get(`/esttarifiapersonnalise/${idTarif}/`)).data?.est_tarif_ia_personnalise),
+  // GET /api/devisia/taux-taxe/ : taux (%) appliqué par la base aux primes saisies de l'offre
+  getTauxTaxe: async ({ idCompagnie, idOffre, dateEffet }) => Number((await apiClient.get('/devisia/taux-taxe/', {
+    params: { IdCompagnie: Number(idCompagnie) || 1, IdOffre: Number(idOffre), DateEffet: String(dateEffet || '').slice(0, 10) },
+  })).data?.taux) || 0,
+  // GET /api/devisia/:iddevis/garanties/ : garanties enregistrées de chaque assuré du devis
+  getGarantiesDevis: async (idDevis) => (await apiClient.get(`/devisia/${idDevis}/garanties/`)).data || [],
   // GET /api/professionia/ : professions IA (la classe de risque donne le code activité)
   getProfessions: async () => extractData(await apiClient.get('/professionia/', { params: { page_size: 1000 } })),
   // GET /api/qualiteayantdroit/ : liens de parenté des ayants droit
   getQualites: async () => extractData(await apiClient.get('/qualiteayantdroit/')),
   // POST /api/offregarantieia : primes calculées d'un assuré (ligne « CUMUL » = totaux)
-  calculerPrimes: async ({ idCompagnie, idOffre, capitalDeces, capitalIpp, fraisTraitement, tauxReduction, dateEffet, dateExpiration, dateNaissance, codeActivite }) => {
+  // primeNette / accessoire : primes saisies d'une catégorie à tarif personnalisé (0 = barème)
+  calculerPrimes: async ({ idCompagnie, idOffre, capitalDeces, capitalIpp, fraisTraitement, tauxReduction, dateEffet, dateExpiration, dateNaissance, codeActivite, primeNette = 0, accessoire = 0 }) => {
     const lignes = extractData(await apiClient.post('/offregarantieia', {
+      PrimeNette: Number(primeNette) || 0,
+      Accessoire: Number(primeNette) > 0 ? Number(accessoire) || 0 : 0,
       IdCompagnie: Number(idCompagnie) || 1,
       IdOffre: Number(idOffre),
       CapitalDeces: Number(capitalDeces) || 0,
@@ -855,6 +918,17 @@ export const iaApi = {
   getDetailsDevis: async (idDevis) => extractData(await apiClient.get(`/devisdetail/${idDevis}`)),
   // POST /api/devisia/enregistrement/ : création ou « Modifier », tout en une transaction
   enregistrerDevis: async (payload) => (await apiClient.post('/devisia/enregistrement/', payload)).data,
+  // POST /api/importationassureia/ : assurés d'un fichier Excel ajoutés au devis (créé s'il n'existe pas)
+  importerAssures: async (formData) => (await apiClient.post('/importationassureia/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })).data,
+  // POST /api/finalisationdevisia : totaux d'un devis groupe (sp_finalisation_devis)
+  finaliserDevis: async ({ idDevis, idClient, idAssure }) => (await apiClient.post('/finalisationdevisia', {
+    IdDevis: Number(idDevis), IdClient: Number(idClient), IdAssure: Number(idAssure || idClient), Flotte: true,
+  })).data,
+  // POST /api/creer-devis-ia-minene/ : devis MINENE créé depuis le contrat Santé connexe
+  // (souscripteur, assurés = adhérents, ayants droit = affiliés)
+  creerDevisMinene: async (payload) => (await apiClient.post('/creer-devis-ia-minene/', payload)).data,
 };
 
 /* =========================================================================
@@ -1152,6 +1226,16 @@ export const cashApi = {
   },
   // GET /api/cheques/:id/operations/
   getChequeOperations: async (id) => extractData(await apiClient.get(`/cheques/${id}/operations/`)),
+  // GET /api/cheques/alertes/ : chèques de l'échéancier à déposer d'ici un mois (ou échus)
+  getChequesAlertes: async () => extractData(await apiClient.get('/cheques/alertes/')),
+  // POST /api/cheques/echeancier/ : chèques remis d'avance par un client, avec leurs dates de dépôt
+  enregistrerEcheancier: (data) => apiClient.post('/cheques/echeancier/', data),
+  // DELETE /api/cheques/:id/ : chèque à déposer retiré de l'échéancier
+  supprimerCheque: (id) => apiClient.delete(`/cheques/${id}/`),
+  // POST /api/cheques/:id/decaissement/ : chèque impayé, ses encaissements sont annulés
+  decaisserCheque: (id, data) => apiClient.post(`/cheques/${id}/decaissement/`, data),
+  // GET /api/cheques/:id/quittances/ : quittances réglées par le chèque (à réencaisser)
+  getQuittancesCheque: async (id) => extractData(await apiClient.get(`/cheques/${id}/quittances/`)),
 };
 
 /* =========================================================================

@@ -57,7 +57,8 @@ export const NewTransportQuotePage = () => {
   const [numeroBlLta, setNumeroBlLta] = useState('MEDU-ABJ-2026-889');
   const [nomNavireVol, setNomNavireVol] = useState('MSC COTE D’IVOIRE V.2408');
   const [dateEffet, setDateEffet] = useState(() => new Date().toISOString().split('T')[0]);
-  const [dateEmission, setDateEmission] = useState(() => new Date().toISOString().split('T')[0]);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = new Date().toISOString().split('T')[0];
 
   // Step 2: Marchandises & Garanties
   const [natureMarchandise, setNatureMarchandise] = useState(() => natures[0]?.id || 'manufactures');
@@ -536,7 +537,7 @@ export const NewTransportQuotePage = () => {
                     type="date"
                     className="form-control"
                     value={dateEmission}
-                    onChange={(e) => setDateEmission(e.target.value)}
+                    readOnly disabled title="Date du jour, non modifiable"
                   />
                 </div>
 

@@ -100,7 +100,7 @@ export const EditLeadModal = ({ isOpen, onClose, lead, onSave, commerciaux = [],
             </AvecIcone>
           </div>
           <div>
-            <Libelle htmlFor="prospect-contact">Contact / interlocuteur</Libelle>
+            <Libelle htmlFor="prospect-contact">Interlocuteur</Libelle>
             <AvecIcone icone={Users}>
               <input type="text" className="form-control" style={{ paddingLeft: '2.25rem' }} {...champ('contact')} />
             </AvecIcone>

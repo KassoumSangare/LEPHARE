@@ -21,6 +21,7 @@ from dateutil.relativedelta import relativedelta
 from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
+from django.utils import timezone
 
 from configuration_api.models import (
     Option,
@@ -970,7 +971,8 @@ class MRHCalculService:
             code_categorie=codecategorie,
         )
 
-        dateemission = kwargs.get("dateemission", datetime.now())
+        # Date d'émission imposée : jamais saisie, toujours le jour de l'enregistrement
+        dateemission = timezone.now()
         numero_police_compagnie = kwargs.get("numeropolicecompagnie", "")
 
         # ⚠️ Devis.objects.create peut lever une exception

@@ -22,7 +22,7 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
-import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
+import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, estDureeLibre, idTermeValide } from '../../../utils/termesContrat';
 import { sortUniqueBy } from '../../../utils/sortUtils';
 
 const formatFcfa = (val) => {
@@ -34,15 +34,6 @@ const cleanNum = (str) => {
   if (typeof str === 'number') return str;
   return parseFloat(String(str || '0').replace(/\s/g, '')) || 0;
 };
-
-// Durées standards CIMA / OREOLE
-const DEFAULT_DUREES = [
-  { id: 1, duree: '1 Mois' },
-  { id: 2, duree: '3 Mois' },
-  { id: 3, duree: '6 Mois' },
-  { id: 4, duree: '12 Mois (Annuel)' },
-  { id: 5, duree: 'Divers' },
-];
 
 export const NewSanteQuotePage = () => {
   const navigate = useNavigate();
@@ -68,10 +59,12 @@ export const NewSanteQuotePage = () => {
   const [compagnieNom, setCompagnieNom] = useState('NSIA ASSURANCES CI');
   const [offreCommerciale, setOffreCommerciale] = useState('SANTE CONFORT PLUS');
   const [gestionnaireSante, setGestionnaireSante] = useState('ASCOMA / OLEAPHARMA');
-  const [dureeId, setDureeId] = useState(4); // Annuel
+  const [dureeId, setDureeId] = useState(4); // Annuelle ; libre avec le terme « Autre »
+  const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
   const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [dateEmission, setDateEmission] = useState(todayStr);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = todayStr;
   const [dateEffet, setDateEffet] = useState(todayStr);
   const [reductionCommerciale, setReductionCommerciale] = useState(0);
   const [ajustement, setAjustement] = useState(0);
@@ -79,6 +72,7 @@ export const NewSanteQuotePage = () => {
   // Date d'expiration calculée
   const calculatedDateExpiration = useMemo(() => {
     if (!dateEffet) return '';
+    if (estDureeLibre(dureeId)) return expirationPersonnalisee;
     const d = new Date(dateEffet);
     let months = 12;
     if (Number(dureeId) === 1) months = 1;
@@ -88,7 +82,7 @@ export const NewSanteQuotePage = () => {
     d.setMonth(d.getMonth() + months);
     d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
-  }, [dateEffet, dureeId]);
+  }, [dateEffet, dureeId, expirationPersonnalisee]);
 
   // -------------------------------------------------------------
   // ÉTAPE 2 : FILIALES, COLLÈGES & COUVERTURE (JX OREOLE)
@@ -405,7 +399,7 @@ export const NewSanteQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <HeartPulse size={28} color="#ec4899" />
-            Production de Contrat Santé & Assurance Maladie
+            Production de Contrat Santé
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
             Gestion des collèges de bénéficiaires, tiers payant pharmacie, hospitalisation & gestionnaires délégués.
@@ -545,7 +539,14 @@ export const NewSanteQuotePage = () => {
             {/* Terme du contrat */}
             <div className="form-group">
               <label className="form-label">Terme du contrat</label>
-              <TermeContratSelect value={termeId} onChange={setTermeId} />
+              <TermeContratSelect
+                value={termeId}
+                onChange={(id) => {
+                  setTermeId(id);
+                  // « Autre » ouvre la durée libre (date d'expiration saisie)
+                  setDureeId((d) => dureeSelonTerme(id, d));
+                }}
+              />
             </div>
 
             {/* Dates Émission & Effet */}
@@ -555,7 +556,7 @@ export const NewSanteQuotePage = () => {
                 type="date"
                 className="form-control"
                 value={dateEmission}
-                onChange={(e) => setDateEmission(e.target.value)}
+                readOnly disabled title="Date du jour, non modifiable"
               />
             </div>
 
@@ -570,14 +571,23 @@ export const NewSanteQuotePage = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Date d'expiration (* calculée)</label>
-              <input
-                type="date"
-                className="form-control"
-                value={calculatedDateExpiration}
-                readOnly
-                style={{ background: 'rgba(255,255,255,0.05)', color: '#f472b6', fontWeight: 700 }}
-              />
+              <label className="form-label">Date d'expiration {estDureeLibre(dureeId) ? '(* requis)' : '(* calculée)'}</label>
+              {estDureeLibre(dureeId) ? (
+                <input
+                  type="date"
+                  className="form-control"
+                  value={expirationPersonnalisee}
+                  onChange={(e) => setExpirationPersonnalisee(e.target.value)}
+                />
+              ) : (
+                <input
+                  type="date"
+                  className="form-control"
+                  value={calculatedDateExpiration}
+                  readOnly
+                  style={{ background: 'rgba(255,255,255,0.05)', color: '#f472b6', fontWeight: 700 }}
+                />
+              )}
             </div>
           </div>
 
@@ -795,14 +805,14 @@ export const NewSanteQuotePage = () => {
       {step === 3 && (
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
           <h3 style={{ color: '#ec4899', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem', fontSize: '1.05rem' }}>
-            Souscripteur / Entreprise & Décompte Financier
+            Souscripteur & Décompte Financier
           </h3>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
             {/* Recherche Client Souscripteur */}
             <div className="form-group" style={{ position: 'relative' }}>
               <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Souscripteur / Entreprise Contractante (* requis)</span>
+                <span>Souscripteur (* requis)</span>
                 <button
                   type="button"
                   onClick={() => setIsQuickAddClientOpen(true)}

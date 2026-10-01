@@ -10,6 +10,7 @@ import {
   estDevisFlotteAuto,
 } from '../../../utils/exportUtils';
 import { formatDate } from '../../../utils/dateUtils';
+import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
 import {
   FileText,
@@ -31,8 +32,20 @@ import {
   ShieldAlert,
   AlertTriangle,
   Users,
+  UserPlus,
   Pencil,
 } from 'lucide-react';
+
+const fcfa = (montant) => `${Number(montant || 0).toLocaleString('fr-FR')} FCFA`;
+
+// Champ des blocs Références et Décompte : libellé au-dessus de la valeur, sur la grille commune
+// .fiche-devis-grille (index.css). Couleur en style en ligne pour garder la recoloration du mode clair.
+const Champ = ({ libelle, couleur, libelleColore = false, className, children }) => (
+  <div className={className}>
+    <div className="fiche-devis-champ-libelle" style={libelleColore ? { color: couleur } : undefined}>{libelle}</div>
+    <div className="fiche-devis-champ-valeur" style={couleur ? { color: couleur } : undefined}>{children}</div>
+  </div>
+);
 
 export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvertToContract, onQuoteUpdated }) => {
   // Devis relu après une imposition des primes du récapitulatif, et formulaire d'imposition
@@ -69,6 +82,17 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
   const isConsolidated = quote.statut === 'Consolidé';
   const details = quote.details || {};
   const raw = quote.raw || {};
+  // Prime nette affichée hors FGA (qui a sa case), CEDEAO comprise (garantie du devis, sans case à
+  // part), comme sur les CP : prime nette + accessoire + taxes + FGA = prime TTC. stddevis.primenette
+  // comprend le FGA, et la CEDEAO sauf pour un devis à primes imposées. Copie locale d'un devis Auto :
+  // sa prime nette est hors CEDEAO, qui lui est donc ajoutée.
+  const primeNetteAffichee = raw.primenette != null
+    ? Number(raw.primenette) - Number(raw.fga || 0) + (cedeaoDansPrimeNette({
+      ...raw,
+      primeImposee: Boolean(raw.prime_imposee),
+      arrondiNsia: Number(raw.compagnie?.IdCompagnie ?? raw.compagnie) === 1,
+    }) ? 0 : Number(raw.cedeao || 0))
+    : Number(quote.prime_nette || 0) + Number(quote.cedeao || 0);
   const telephone = details.telephoneClient || raw.numerotelephoneassure || raw.telephoneclient || '—';
   const numeroActe = raw.numeroavenant || details.numeroAvenant || '0000001';
 
@@ -79,6 +103,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     if (b.includes('sant')) return <HeartPulse size={20} color="#f43f5e" />;
     if (b.includes('voyag')) return <Plane size={20} color="#38bdf8" />;
     if (b.includes('transp')) return <Ship size={20} color="#0284c7" />;
+    if (b === 'ia') return <UserPlus size={20} color="#a855f7" />;
     return <Shield size={20} color="#8b5cf6" />;
   };
 
@@ -229,31 +254,13 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             <FileText size={15} color="#60a5fa" />
             Références
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', fontSize: '0.82rem' }}>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Id. Devis</div>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{quote.iddevis || '—'}</strong>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>N° Devis</div>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{quote.numerodevis || '—'}</strong>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Effet</div>
-              <strong style={{ color: '#fff' }}>{formatDate(quote.date_effet)}</strong>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>N° Acte</div>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>{numeroActe}</strong>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Effect Acte</div>
-              <strong style={{ color: '#fff' }}>{formatDate(quote.date_effet)}</strong>
-            </div>
-            <div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Expiration</div>
-              <strong style={{ color: '#fff' }}>{formatDate(quote.date_expiration)}</strong>
-            </div>
+          <div className="fiche-devis-grille">
+            <Champ libelle="Id. Devis">{quote.iddevis || '—'}</Champ>
+            <Champ libelle="N° Devis">{quote.numerodevis || '—'}</Champ>
+            <Champ libelle="Effet">{formatDate(quote.date_effet)}</Champ>
+            <Champ libelle="N° Acte">{numeroActe}</Champ>
+            <Champ libelle="Effet Acte">{formatDate(quote.date_effet)}</Champ>
+            <Champ libelle="Expiration">{formatDate(quote.date_expiration)}</Champ>
           </div>
         </div>
 
@@ -278,48 +285,12 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.75rem' }}>
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Prime Nette</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.prime_nette || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Accessoire</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.accessoires || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Taxes</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.taxes || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>FDG</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.fga || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Cedeao</div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.cedeao || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-              <div style={{ fontSize: '0.7rem', color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>Prime TTC</div>
-              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34d399', fontFamily: 'var(--font-mono)' }}>
-                {Number(quote.prime_totale || 0).toLocaleString('fr-FR')} FCFA
-              </div>
-            </div>
+          <div className="fiche-devis-grille">
+            <Champ libelle="Prime Nette" couleur="#60a5fa">{fcfa(primeNetteAffichee)}</Champ>
+            <Champ libelle="Accessoire">{fcfa(quote.accessoires)}</Champ>
+            <Champ libelle="Taxes">{fcfa(quote.taxes)}</Champ>
+            <Champ libelle="FDG">{fcfa(quote.fga)}</Champ>
+            <Champ libelle="Prime TTC" couleur="#34d399" libelleColore className="fiche-devis-ttc">{fcfa(quote.prime_totale)}</Champ>
           </div>
 
           <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
@@ -425,7 +396,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 <div><strong>Incoterm :</strong> {details.incoterm}</div>
                 <div><strong>Garantie :</strong> {details.typeGarantie}</div>
                 <div><strong>Trajet :</strong> De {details.portDepart} à {details.portArrivee}</div>
-                <div><strong>N° Connaissement / B/L :</strong> {details.numeroBlLta || 'En cours'}</div>
+                <div><strong>N° Connaissement :</strong> {details.numeroBlLta || 'En cours'}</div>
                 <div><strong>Navire / Vol :</strong> {details.nomNavireVol}</div>
                 <div><strong>Somme Totale Assurée :</strong> {Number(details.sommeAssuree || 0).toLocaleString('fr-FR')} FCFA</div>
               </div>

@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db import connection
 from openpyxl import load_workbook
 
+from core.date_parser import date_emission_du_jour
 from core.utils import convert_to_date
 from production.models import ComplementDevisDetailSante, DataInsertionResult, DevisDetail
 
@@ -736,9 +737,7 @@ def enregistrer_filiale_sante(userid, input_data):
     college = int(input_data["college"])
     offresante = int(input_data["offresante"])
     zonecouverture = int(input_data["zonecouverture"])
-    date_emission = datetime.strptime(
-        input_data["date_emission"], "%d-%m-%Y"
-    ).date()
+    date_emission = date_emission_du_jour()
     date_effet = datetime.strptime(input_data["date_effet"], "%d-%m-%Y").date()
     date_expiration = datetime.strptime(
         input_data["date_expiration"], "%d-%m-%Y"

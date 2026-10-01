@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ADMIN_MENU, estActif } from './adminMenu';
-import { moduleActif, TITRE_MODULE_INACTIF } from '../../utils/modulesActifs';
 import {
   LayoutDashboard,
   Users,
@@ -27,24 +26,18 @@ import {
   Compass,
   Settings,
   X,
-  Activity,
   BadgeCheck,
   Banknote,
   Boxes,
   Briefcase,
-  ClipboardList,
   Contact,
   Factory,
   FileSignature,
-  HeartPulse,
-  House,
   MapPin,
   Package,
   Percent,
-  Plane,
   Receipt,
   ScrollText,
-  Ship,
   Tag,
   TrafficCone,
   Truck,
@@ -61,7 +54,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
   // Collapsible accordion states
   const [openSubmenus, setOpenSubmenus] = useState({
     crm: true,
-    quotes: true,
     cash: true,
     conventions: true,
     compliance: true,
@@ -72,9 +64,6 @@ export const Sidebar = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (location.pathname.includes('/user/crm') || location.pathname.includes('/user/clients')) {
       setOpenSubmenus((prev) => ({ ...prev, crm: true }));
-    }
-    if (location.pathname.includes('/user/quotes')) {
-      setOpenSubmenus((prev) => ({ ...prev, quotes: true }));
     }
     if (location.pathname.includes('/user/cash') || location.pathname.includes('/user/cheques')) {
       setOpenSubmenus((prev) => ({ ...prev, cash: true }));
@@ -249,7 +238,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                   <Users size={16} className="nav-icon" />
-                  <span>CRM & Relations Clients</span>
+                  <span>Relations Clients</span>
                 </div>
                 <ChevronDown
                   size={14}
@@ -280,57 +269,10 @@ export const Sidebar = ({ isOpen, onClose }) => {
             </div>
 
             {/* 2. PRODUCTION & SOUSCRIPTION */}
-            <div className="sidebar-section-header">
+            <NavLink to="/user/quotes" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <FileText size={16} className="nav-icon" />
               <span>Production</span>
-            </div>
-
-            <div>
-              <div
-                onClick={() => toggleSubmenu('quotes')}
-                className={`sidebar-nav-item ${location.pathname.includes('/user/quotes') ? 'active' : ''}`}
-                style={{ justifyContent: 'space-between' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <FileText size={16} className="nav-icon" />
-                  <span>Devis</span>
-                </div>
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: openSubmenus.quotes ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                    color: 'var(--text-muted)',
-                  }}
-                />
-              </div>
-
-              {openSubmenus.quotes && (
-                <div className="sidebar-submenu-tree">
-                  <NavLink to="/user/quotes" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                    <ClipboardList size={14} className="nav-icon" />
-                    <span>Registre des Devis</span>
-                  </NavLink>
-                  {[
-                    ['auto', Car, 'Automobile'],
-                    ['mrh', House, 'Multirisques Habitation'],
-                    ['sante', HeartPulse, 'Santé'],
-                    ['ia', Activity, 'Individuelle Accidents'],
-                    ['voyage', Plane, 'Voyage'],
-                    ['transport', Ship, 'Transport'],
-                  ].map(([module, Icone, libelle]) => (moduleActif(module) ? (
-                    <NavLink key={module} to={`/user/quotes/${module}`} className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
-                      <Icone size={14} className="nav-icon" />
-                      <span>{libelle}</span>
-                    </NavLink>
-                  ) : (
-                    <span key={module} className="sidebar-sublink-item disabled" aria-disabled="true" title={TITRE_MODULE_INACTIF}>
-                      <Icone size={14} className="nav-icon" />
-                      <span>{libelle}</span>
-                    </span>
-                  )))}
-                </div>
-              )}
-            </div>
+            </NavLink>
 
             <NavLink to="/user/contracts" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <ShieldCheck size={16} className="nav-icon" />
@@ -339,7 +281,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <RefreshCw size={16} className="nav-icon" />
-              <span>Avenants & Mouvements</span>
+              <span>Avenants</span>
             </NavLink>
 
             {/* Grisé en attendant l'ouverture des e-attestations */}
@@ -350,7 +292,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             {/* 3. FINANCE & CAISSE (ART. 13) */}
             <div className="sidebar-section-header">
-              <span>Caisse & Encaissements (Art. 13)</span>
+              <span>Caisse (Art. 13)</span>
             </div>
 
             <div>
@@ -361,7 +303,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                   <CreditCard size={16} className="nav-icon" />
-                  <span>Caisse & Règlements</span>
+                  <span>Encaissements</span>
                 </div>
                 <ChevronDown
                   size={14}

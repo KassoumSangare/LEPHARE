@@ -2,8 +2,8 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import QRCode from 'qrcode';
-import { annexeFlotteApi, cashApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
+import { cedeaoDansPrimeNette } from './tarificationAuto';
 
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
@@ -998,7 +998,7 @@ const buildAutoFacture = (quote) => {
   // L'assuré peut différer du souscripteur (idassure / nomassure du devis)
   const assure = nomPersonne(raw.assure) || raw.nomassure;
   const numeroFacture = raw.numero_facture;
-  const docTitle = `${isPolice ? 'FACTURE DE PRIME' : 'FACTURE PROFORMA DE LA PRIME'} N°${txt(numeroFacture)}`;
+  const docTitle = `${isPolice ? 'FACTURE DE PRIME' : 'DEVIS'} N°${txt(numeroFacture)}`;
   const idLabel = isPolice ? 'Id. Police' : 'Id. Devis';
   const numLabel = isPolice ? 'N° Police' : 'N° Devis';
 
@@ -1265,180 +1265,474 @@ const buildConditionsParticulieres = (quote, cp) => {
   `;
 };
 
-// --- CONDITIONS PARTICULIÈRES AUTO MONO — reproduction du contenu Uranus (Quittance.jsx) :
-// références compagnie / souscripteur / police, fiche véhicule, garanties souscrites avec
-// prime annuelle, réductions et prime nette, récapitulatif tel qu'enregistré sur la quittance.
-// Sources : quittancecontrat|quittanceproposition, garantiesouscrite*, contratdetail|devisdetail.
-// Mentions légales NSIA ASSURANCES imprimées au pied de ses Conditions Particulières (texte d'URANUS)
-const MENTIONS_NSIA = "Visa : MEF/DGTCP/DA N°736 DU 31 DECEMBRE 1999 / NSIA ASSURANCES - Société Anonyme au capital de F. CFA 7 600 000 000 entièrement libéré. Entreprise régie par le code des Assurances CIMA. CI - ABJ - 183449 - Compte Contribuable - 9507932 W - Siège Social: Immeuble Manzi Avenue Noguès Rue A43 Plateau 01 BP 15 01 - Tél. : (225) 27 20 27 88 88 / (225) 27 20 31 75 00 - Fax: (225) 27 20 22 76 20 / 27 20 33 25 79 Centre d'Impots: D.G.E. Régime: Réel Normal - Site Web : : www.nsiaassurances.ci - email: nsiaassurancesci@nsiaassurances.com";
+// --- CONDITIONS PARTICULIÈRES AUTO MONO — mise en page des CP NSIA (police 11862122595290Z) :
+// cadres client / quittance, fiche véhicule, garanties (prime annuelle, BNS, autres réductions,
+// nette annuelle, prime comptant), capitaux sécurité routière, récapitulatif et signatures.
+// Le nombre de lignes de garanties suit l'offre souscrite. Sources : quittancecontrat|quittanceproposition,
+// garantiesouscrite*, contratdetail|devisdetail.
+// Pied de page légal de NSIA ASSURANCES, tel qu'imprimé sur ses Conditions Particulières
+const VISA_NSIA = 'Visa: MEF/DGTCP/DA N°736 DU 31 DECEMBRE 1999';
+const PIED_NSIA = [
+  'NSIA ASSURANCES',
+  'Société Anonyme au capital de F. CFA 7 600 000 000 entièrement libéré. Entreprise régie par le code des Assurances CIMA.',
+  'CI - ABJ - 1995 - B - 183449 - Compte Contribuable - 9507932 W - Siège Social: Immeuble Manzi, Avenue Noguès Rue A43 Plateau',
+  '01 BP 1571 Abidjan 01 - Tél. : (225) 27 20 27 88 88 / (225) 27 20 31 75 00 - Fax: (225) 27 20 22 76 20 / 27 20 33 25 79',
+  "Centre d'Impots: D.G.E / Régime: Réel Normal - Site Web : www.groupensia.com - email : nsiaassurancesci@nsiaassurances.com",
+];
 
-// Code QR de la CP : références du document (le QR d'URANUS est une image fixe sans contenu utile)
-const qrCodeConditionsParticulieres = async (quote, cp, { contrat = false } = {}) => {
-  const q = cp.quittance || {};
-  const v = cp.vehicule || {};
-  const lignes = [
-    `${q.LibelleIntermediaire || 'OREOLE ASSURANCES'} - CONDITIONS PARTICULIERES AUTO`,
-    `Compagnie : ${q.RaisonSociale || quote.compagnie || ''}`,
-    contrat ? `Police : ${q.NumeroPolice || ''}` : `Devis : ${q.NumeroDevis || quote.numerodevis || ''}`,
-    `Client : ${q.NomClient || ''}`,
-    v.matricule ? `Immatriculation : ${v.matricule}` : null,
-    q.PrimeTtc !== undefined && q.PrimeTtc !== null ? `Prime TTC : ${fcfa(q.PrimeTtc)} F CFA` : null,
-    q.DateEmission ? `Emission : ${formatFrDate(q.DateEmission)}` : null,
-  ].filter(Boolean);
-  try {
-    return await QRCode.toString(lignes.join('\n'), { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
-  } catch {
-    return '';
-  }
+const ID_SECURITE_ROUTIERE = 169;
+const ID_INDIVIDUELLE_CHAUFFEUR = 16;
+
+// Prime nette du récapitulatif des CP auto : hors FGA (qui a sa ligne), CEDEAO comprise comme dans
+// le tableau des garanties (pas de ligne CEDEAO au récapitulatif). Un devis à primes imposées
+// (sp_maj_manuelle_primes) enregistre sa prime nette sans la CEDEAO : elle y est alors rajoutée.
+const primeNetteRecapAuto = (q, estNsia) => {
+  const pnHorsFgaEnregistree = q.PrimeNetteHorsFga ?? (q.PrimeNette !== undefined && q.PrimeNette !== null
+    ? Number(q.PrimeNette) - Number(q.Fga || 0) : null);
+  if (pnHorsFgaEnregistree === null) return null;
+  const cedeaoAbsente = q.PrimeNette != null && q.PrimeTtc != null && !cedeaoDansPrimeNette({
+    primenette: q.PrimeNette,
+    accessoire: q.Accessoire,
+    taxe: q.TaxeEnregistrement,
+    cedeao: q.Cedeao,
+    primettc: q.PrimeTtc,
+    arrondiNsia: estNsia,
+  });
+  return Number(pnHorsFgaEnregistree) + (cedeaoAbsente ? Number(q.Cedeao || 0) : 0);
 };
 
-const buildConditionsParticulieresMono = (quote, cp, { contrat = false, qrSvg = '' } = {}) => {
+const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) => {
   const q = cp.quittance || {};
   const v = cp.vehicule || {};
-  // Comme Uranus (calculateTotalPrimeNette / InvoiceCategTable) : le FGA figure au récapitulatif
-  // et les lignes techniques « *** » (capitaux sécurité routière) ne sont pas des garanties affichées
-  const LIGNES_EXCLUES = ['fga', '*** capital décès', '*** incapacité', '*** frais médicaux'];
-  const garanties = (cp.garanties || []).filter((g) => {
-    const libelle = String(g?.libellesousgarantie || '').toLowerCase();
-    return !LIGNES_EXCLUES.some((exclu) => (exclu === 'fga' ? libelle.trim() === 'fga' : libelle.includes(exclu)));
-  });
+  const toutes = cp.garanties || [];
+  const libelle = (g) => String(g?.libellesousgarantie || '').trim().toLowerCase();
+  // Lignes techniques « *** » : capitaux de la sécurité routière (imprimés sous le tableau) ;
+  // le FGA figure au récapitulatif
+  const technique = (g) => libelle(g).startsWith('***');
+  const garanties = toutes.filter((g) => !technique(g) && libelle(g) !== 'fga');
+  const capitalTechnique = (motCle) => toutes.find((g) => technique(g) && libelle(g).includes(motCle))?.capital;
+
   const txt = (x) => (x === undefined || x === null || String(x).trim() === '' ? VIDE : String(x).trim());
   const date = (x) => (x ? formatFrDate(x) : VIDE);
-  const nombre = (x) => (x === undefined || x === null || x === '' ? VIDE : fcfa(x));
-  const tronque = (x, n = 20) => (x ? (String(x).length > n ? `${String(x).slice(0, n)} ...` : String(x)) : VIDE);
-  // Plafond : texte préparé par la base (« 4 000 000 ») ; sans texte, le capital s'il est renseigné
-  const plafond = (g) => g.textecapital || (Number(g.capital) > 0 ? fcfa(g.capital) : VIDE);
-  const pourcent = (x) => `${Math.round(Number(x) || 0)} %`;
-
-  const totalAnnuelle = garanties.reduce((t, g) => t + Math.round(Number(g.primeannuelle) || 0), 0);
-  const totalNette = garanties.reduce((t, g) => t + Math.round(Number(g.primenette) || 0), 0);
-  const produit = String(q.LibelleProduit || quote.produit || 'AUTOMOBILE').toUpperCase();
+  const montant = (x) => (x === undefined || x === null || x === '' ? VIDE : fcfa(x));
+  // Caractéristiques absentes de la base (PTAC, poids vide…) : 0, comme sur les CP NSIA
+  const technico = (x) => fcfa(x ?? 0);
+  const pourcent = (x) => `${Math.round(Number(x) || 0)}%`;
+  // Prime annuelle après réductions BNS et commerciale (la prime comptant en est la part à la durée)
+  const netteAnnuelle = (g) => Math.round((Number(g.primeannuelle) || 0)
+    * (1 - (Number(g.reductionbns) || 0) / 100) * (1 - (Number(g.reductioncommerciale) || 0) / 100));
+  const total = (f) => garanties.reduce((t, g) => t + Math.round(Number(f(g)) || 0), 0);
 
   const compagnie = q.RaisonSociale || quote.compagnie || '';
   const logo = getCompagnieLogoUrl(compagnie);
   const estNsia = /nsia/i.test(compagnie);
-  const telephone = [q.TelephoneClient, q.MobileClient].find((t) => t && String(t).trim() && String(t).trim() !== '-')
-    || q.TelephoneClient || q.MobileClient;
-  const reseau = [q.LibelleIntermediaire, q.CodeIntermediaire ? `( ${q.CodeIntermediaire} )` : ''].filter(Boolean).join(' ');
-  // Comme URANUS : prime nette du récapitulatif hors FGA (le FGA a sa propre ligne)
-  const primeNetteHorsFga = q.PrimeNetteHorsFga ?? (q.PrimeNette !== undefined && q.PrimeNette !== null
-    ? Number(q.PrimeNette) - Number(q.Fga || 0) : null);
-  const entier = (x) => Math.round(Number(x) || 0);
+  const telephone = [q.TelephoneClient, q.MobileClient].find((t) => t && String(t).trim() && String(t).trim() !== '-');
+  const primeNetteHorsFga = primeNetteRecapAuto(q, estNsia);
+  // « Véhicule Particulier (Voiture, …) » : le type sans sa description entre parenthèses
+  const typeVehicule = txt(String(v.libelletypevehicule || '').replace(/\s*\(.*$/, ''));
+
+  // Capitaux non renseignés sur le devis (tous à 0) : rien n'est imprimé après le libellé
+  const capitauxSr = ['décès', 'incapacité', 'frais médicaux'].map(capitalTechnique);
+  const securiteRoutiere = garanties.some((g) => g.idsousgarantie === ID_SECURITE_ROUTIERE) && capitauxSr.some((c) => Number(c) > 0)
+    ? `Deces : ${technico(capitauxSr[0])} / IPT: ${technico(capitauxSr[1])} / FT : ${technico(capitauxSr[2])}`
+    : VIDE;
+  const chauffeur = garanties.find((g) => g.idsousgarantie === ID_INDIVIDUELLE_CHAUFFEUR);
+  const capitauxChauffeur = chauffeur
+    ? ([chauffeur.deces, chauffeur.ipp, chauffeur.ft].some((c) => Number(c) > 0)
+      ? `Deces : ${technico(chauffeur.deces)} / IPT: ${technico(chauffeur.ipp)} / FT : ${technico(chauffeur.ft)}`
+      : txt(chauffeur.textecapital))
+    : VIDE;
+
+  const paire = (label, valeur, classe = '') => `<span class="cpn-paire ${classe}"><span class="l">${label}</span><span class="v">${valeur}</span></span>`;
+
+  // Sécurité routière et individuelle chauffeur : capitaux imprimés sous le tableau, pas en colonne
+  const sommesGaranties = (g) => ([ID_SECURITE_ROUTIERE, ID_INDIVIDUELLE_CHAUFFEUR].includes(g.idsousgarantie)
+    ? VIDE
+    : txt(g.textecapital) || (Number(g.capital) > 0 ? fcfa(g.capital) : VIDE));
 
   const ligne = (g) => `
     <tr>
-      <td class="g-lib">${txt(g.libellesousgarantie)}</td>
+      <td>${txt(g.libellesousgarantie)}</td>
       <td>${g.souscrite === false ? 'NON' : 'OUI'}</td>
-      <td class="g-lib">${plafond(g)}</td>
-      <td class="g-lib">${txt(g.textefranchise) || 'NEANT'}</td>
-      <td class="g-lib">${nombre(g.primeannuelle)}</td>
-      <td class="g-lib">${pourcent(g.reductioncommerciale)}</td>
-      <td class="g-lib">${pourcent(g.reductionbns)}</td>
-      <td class="g-lib">${nombre(g.primenette)}</td>
+      <td>${sommesGaranties(g)}</td>
+      <td>${txt(g.textefranchise) || 'NEANT'}</td>
+      <td>${montant(g.primeannuelle)}</td>
+      <td>${pourcent(g.reductionbns)}</td>
+      <td>${pourcent(g.reductioncommerciale)}</td>
+      <td>${fcfa(netteAnnuelle(g))}</td>
+      <td>${montant(g.primenette)}</td>
     </tr>`;
 
   return `
-    <div class="cpm">
-      ${logo ? `<img src="${logo}" alt="${compagnie}" class="cpm-logo" />` : ''}
-      <div class="cpm-titre">
-        <div>CONDITIONS PARTICULIÈRES</div>
-        <div>ASSURANCE ${produit}</div>
+    <div class="cpn${estNsia ? ' cpn-nsia' : ''}">
+      <div class="cpn-haut">
+        ${logo ? `<img src="${logo}" alt="${compagnie}" class="cpn-logo" />` : `<div class="cpn-compagnie">${txt(compagnie)}</div>`}
+      </div>
+      <div class="cpn-titre">Conditions Particulières</div>
+
+      <div class="cpn-entete">
+        <div class="cpn-cadre cpn-client">
+          <table>
+            <tr><td class="l">Numéro</td><td colspan="3">${txt(q.IdClient)}</td></tr>
+            <tr><td class="l">Nom</td><td colspan="3">${txt(q.NomClient)}</td></tr>
+            <tr class="cpn-saut"><td colspan="4"></td></tr>
+            <tr><td class="l">Adresse</td><td colspan="3">${txt(q.AdresseClient)}</td></tr>
+            <tr><td class="l">Téléphone</td><td>${txt(telephone)}</td><td class="l">Faxe</td><td>${txt(q.FaxClient)}</td></tr>
+            <tr><td class="l">Profession</td><td colspan="3">${txt(q.ProfessionClient)}</td></tr>
+            <tr><td class="l">RESEAU</td><td colspan="3">${txt(q.LibelleIntermediaire)}</td></tr>
+          </table>
+        </div>
+        <div class="cpn-cadre cpn-police">
+          <table>
+            <tr><td class="l">Quittance</td><td colspan="5">${txt(q.NumeroQuittance)}</td></tr>
+            <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td colspan="3">${txt(contrat ? q.NumeroPolice : q.NumeroDevis)}</td><td class="l">Avenant</td><td>${txt(q.NumeroAvenant)}</td></tr>
+            <tr><td class="l">Assuré(e)</td><td colspan="5">${txt(q.NomAssure)}</td></tr>
+            <tr class="cpn-saut"><td colspan="6"></td></tr>
+            <tr><td class="l">Adresse</td><td colspan="5">${txt(q.AdresseAssure)}</td></tr>
+            <tr><td class="l">Mouvement</td><td colspan="5">${txt(q.LibelleMouvement)}</td></tr>
+            <tr><td class="l">Offre</td><td colspan="5">${txt(q.LibelleOffre)}</td></tr>
+            <tr><td class="l">Effet</td><td>${date(q.DateEffet)}</td><td class="l">Expiration</td><td>${date(q.DateExpiration)}</td><td class="l">Durée</td><td>${txt(q.Duree)}</td></tr>
+          </table>
+        </div>
       </div>
 
-      <div class="cpm-entete">
-        <table class="cpm-bloc">
-          <tr><td class="label">Compagnie</td><td class="val">${txt(compagnie)}</td></tr>
-          <tr><td class="label">Numéro client</td><td class="val">${txt(q.IdClient)}</td></tr>
-          <tr><td class="label">Souscripteur</td><td class="val">${txt(q.NomClient)}</td></tr>
-          <tr><td class="label">Adresse</td><td class="val">${txt(q.AdresseClient)}</td></tr>
-          <tr><td class="label">Téléphone</td><td class="val">${telephone ? `(+225) ${txt(telephone)}` : VIDE}</td></tr>
-          <tr><td class="label">Profession</td><td class="val">${txt(q.ProfessionClient)}</td></tr>
-          <tr><td class="label">Réseau</td><td class="val">${txt(reseau)}</td></tr>
+      <div class="cpn-cadre cpn-bandeau">CONDITIONS PARTICULIERES</div>
+
+      <div class="cpn-cadre cpn-vehicule">
+        <div class="cpn-rangee">
+          ${paire('N° Immatriculation', txt(v.matricule))}
+          ${paire('Date', VIDE)}
+          ${paire('1° mise en circulation', date(v.datemec))}
+          ${paire('Energie', txt(v.libelleenergie))}
+        </div>
+        <div class="cpn-rangee">
+          ${paire('Marque', txt(v.libellemarque))}
+          ${paire('Genre', txt(v.libellegenrevehicule))}
+          ${paire('Carosserie', txt(v.libellecarrosserie))}
+          ${paire('Nbre Place', txt(v.nombreplace))}
+        </div>
+        <div class="cpn-rangee">
+          ${paire('Puissance', txt(v.puissancefiscale))}
+          ${paire('Puissance Réelle', technico(v.puissancereelle))}
+          ${paire('Poids vide', technico(v.poidsvide))}
+          ${paire('Charge Utile', technico(v.chargeutile))}
+          ${paire('PTAC', technico(v.ptac))}
+        </div>
+        <div class="cpn-rangee">
+          ${paire('Type', typeVehicule)}
+          ${paire('N° de Série', txt(v.numchassis))}
+          ${paire('Valeur Neuve', technico(v.valeurneuve))}
+          ${paire('Valeur Venale', technico(v.valeurvenale))}
+        </div>
+      </div>
+
+      <div class="cpn-cadre cpn-garanties${garanties.length > 9 ? ' cpn-dense' : ''}">
+        <div class="cpn-offre">
+          ${paire('Offre', txt(q.LibelleOffre))}
+          ${paire('Conducteur habituel', txt(v.conducteur))}
+        </div>
+        <table>
+          <colgroup>
+            <col style="width:21%" /><col style="width:6%" /><col style="width:13%" /><col style="width:18%" />
+            <col style="width:9%" /><col style="width:5.5%" /><col style="width:6.5%" /><col style="width:10.5%" /><col style="width:10.5%" />
+          </colgroup>
+          <tr class="entete">
+            <td>Garanties</td><td>Etats</td><td>Sommes<br/>Garanties</td><td>Franchise</td><td>Prime<br/>Annuelle</td>
+            <td>BNS</td><td>Autres</td><td>Nette<br/>Annuelle</td><td>Prime<br/>Comptant</td>
+          </tr>
+          ${garanties.map(ligne).join('')}
+          <tr class="total">
+            <td colspan="4">TOTAL VEHICULE :&nbsp;&nbsp;&nbsp;${txt(v.matricule)}</td>
+            <td>${fcfa(total((g) => g.primeannuelle))}</td><td></td><td></td>
+            <td>${fcfa(total(netteAnnuelle))}</td>
+            <td>${fcfa(total((g) => g.primenette))}</td>
+          </tr>
         </table>
-        <table class="cpm-bloc">
-          <tr><td class="label">${contrat ? 'Numéro Police' : 'Numéro Devis'}</td><td class="val" colspan="3">${txt(contrat ? q.NumeroPolice : q.NumeroDevis)}</td></tr>
-          <tr><td class="label">Quittance</td><td class="val" colspan="3">${txt(q.NumeroQuittance)}</td></tr>
-          <tr><td class="label">Avenant</td><td class="val" colspan="3">${txt(q.NumeroAvenant)}</td></tr>
-          <tr><td class="label">Assuré(e)</td><td class="val" colspan="3">${txt(q.NomAssure)}</td></tr>
-          <tr><td class="label">Adresse assuré</td><td class="val" colspan="3">${txt(q.AdresseAssure)}</td></tr>
-          <tr><td class="label">Mouvement</td><td class="val" colspan="3">${txt(q.LibelleMouvement)}</td></tr>
-          <tr><td class="label">Offre</td><td class="val" colspan="3">${txt(q.LibelleOffre)}</td></tr>
-          <tr><td class="label">Produit</td><td class="val" colspan="3">${txt(q.LibelleCategorie)}</td></tr>
-          <tr><td class="label">Effet</td><td class="val">${date(q.DateEffet)}</td><td class="label">Expiration</td><td class="val">${date(q.DateExpiration)}</td></tr>
-          <tr><td class="label">Durée</td><td class="val">${txt(q.Duree)}</td><td class="label">Emission</td><td class="val">${date(q.DateEmission)}</td></tr>
-        </table>
       </div>
 
-      <table class="cpm-vehicule">
-        <tr>
-          <td class="label">N° Immatriculation</td><td>${txt(v.matricule)}</td>
-          <td class="label">Date</td><td>${formatFrDate(new Date())}</td>
-          <td class="label">1° mise en circulation</td><td>${date(v.datemec)}</td>
-          <td class="label">Energie</td><td>${txt(v.libelleenergie)}</td>
-        </tr>
-        <tr>
-          <td class="label">Marque</td><td>${txt(v.libellemarque)}</td>
-          <td class="label">Carosserie</td><td>${txt(v.libellegenrevehicule)}</td>
-          <td class="label">Nbre de Place</td><td>${txt(v.nombreplace)}</td>
-          <td></td><td></td>
-        </tr>
-        <tr>
-          <td class="label">Puissance</td><td>${txt(v.puissancefiscale)}</td>
-          <td class="label">Puissance Réelle</td><td></td>
-          <td class="label">Poids Vide</td><td>${nombre(v.chargeutile ?? 0)}</td>
-          <td class="label">Charge Utile</td><td>${nombre(v.chargeutile ?? 0)}</td>
-        </tr>
-        <tr>
-          <td class="label">Type véhicule</td><td>${tronque(v.libelletypevehicule)}</td>
-          <td class="label">N° chassis</td><td>${txt(v.numchassis)}</td>
-          <td class="label">Valeur Neuve</td><td>${nombre(v.valeurneuve)}</td>
-          <td class="label">Valeur Venale</td><td>${nombre(v.valeurvenale)}</td>
-        </tr>
-      </table>
+      <div class="cpn-capitaux">SECURITE ROUTIERE : ${securiteRoutiere}</div>
+      <div class="cpn-capitaux">Individuelle Chauffeur : ${capitauxChauffeur}</div>
 
-      <table class="cpm-garanties">
-        <tr class="entete">
-          <td>Garantie</td><td>Ac-<br/>quise</td><td>Plafonds<br/>Garanties</td><td>Franchise</td>
-          <td>Prime Annuelle</td><td>Réd.<br/>CCIAL</td><td>BNS</td><td>Prime Nette à<br/>Payer</td>
-        </tr>
-        ${garanties.map(ligne).join('')}
-        <tr class="total">
-          <td colspan="4">TOTAL PRIME NETTE :</td>
-          <td>${fcfa(totalAnnuelle)}</td><td colspan="2"></td><td>${fcfa(totalNette)}</td>
-        </tr>
-      </table>
-
-      <table class="cpm-synthese">
-        <tr>
-          <td class="cpm-qr">${qrSvg}</td>
-          <td class="cpm-reductions">
-            <div>Réduction BNS : ${entier(v.bns)} %</div>
-            <div>Réduction Flotte : 0%</div>
-            <div>Réduction Commerciale : ${entier(v.taux_reduction)} %</div>
-          </td>
-          <td class="cpm-montants">
-            <table>
-              <tr><td>Prime Nette</td><td>${nombre(primeNetteHorsFga)}</td></tr>
-              <tr><td>Accessoire</td><td>${nombre(q.Accessoire)}</td></tr>
-              <tr><td>Taxe d'enregistrement</td><td>${nombre(q.TaxeEnregistrement)}</td></tr>
-              <tr><td>FGA</td><td>${nombre(q.Fga)}</td></tr>
-              <tr><td>Prime TTC</td><td>${nombre(q.PrimeTtc)}</td></tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-      <div class="cpm-total">Prime totale à payer : ${q.PrimeTtc !== undefined && q.PrimeTtc !== null ? `${fcfa(q.PrimeTtc)} F CFA` : VIDE}</div>
-
-      <div class="cpm-nb">
-        <div>NB : Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraires.</div>
-        ${estNsia ? "<div>En cas de besoin d'assistance veuillez contacter le numéro suivant : 225 27 20 23 66 66</div>" : ''}
+      <div class="cpn-fin">
+      <div class="cpn-bas">
+        <div class="cpn-mentions">
+          <p>Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraire.</p>
+          ${estNsia ? `<p class="cpn-visa">${VISA_NSIA}</p>` : ''}
+        </div>
+        <div class="cpn-recap">
+          <table>
+            <tr><td>Prime Nette</td><td>${montant(primeNetteHorsFga)}</td></tr>
+            <tr><td>Accessoire</td><td>${montant(q.Accessoire)}</td></tr>
+            <tr><td>Taxe d'enregistrement</td><td>${montant(q.TaxeEnregistrement)}</td></tr>
+            <tr><td>FGA</td><td>${montant(q.Fga)}</td></tr>
+            <tr><td>Prime TTC</td><td>${montant(q.PrimeTtc)}</td></tr>
+          </table>
+          <table class="cpn-net">
+            <tr><td>Total net à payer</td><td>${montant(q.PrimeTtc)}</td></tr>
+          </table>
+        </div>
       </div>
 
-      <div class="cpm-fait">Fait à Abidjan, le ${date(q.DateEmission)}.</div>
-      <div class="cpm-signatures"><div>L'ASSURE</div><div>POUR LA SOCIETE</div></div>
-      ${estNsia ? `<div class="cpm-mentions">${MENTIONS_NSIA}</div>` : ''}
+      <div class="cpn-signatures">
+        <div class="cpn-sig-assure">L'assuré</div>
+        <div class="cpn-sig-compagnie">Pour la compagnie</div>
+      </div>
+      </div>
+
+      ${estNsia ? `
+      <div class="cpn-pied">
+        <div class="cpn-pied-texte">${PIED_NSIA.map((l, i) => (i === 0 ? `<strong>${l}</strong>` : l)).join('<br/>')}</div>
+        <div class="cpn-pied-ligne"><span></span>${logo ? `<img src="${logo}" alt="NSIA" />` : ''}</div>
+        <div class="cpn-pied-depuis">depuis 1995</div>
+      </div>` : ''}
     </div>
   `;
+};
+
+// --- CONDITIONS PARTICULIÈRES FLOTTE AUTO — « Liste des véhicules en Automobile » (modèle NSIA
+// imprimé, A4 paysage) : un tableau par catégorie, trois lignes par véhicule sous chaque garantie
+// (prime, état Oui / Non, capital ; capital et franchise pour la RC), totaux par catégorie et
+// général, récapitulatif de la quittance. Sources : quittanceproposition|quittancecontrat et
+// /devis|contrat/:id/vehicules-flotte/.
+
+// Colonnes de garanties du modèle et sous-garanties (stdsousgarantie) qui y sont comptées ; le
+// capital imprimé est celui de la première. La prime nette du véhicule reprend toutes ses garanties.
+const COLONNES_CP_FLOTTE = [
+  { libelle: 'RC', ids: [1, 163, 165], rc: true, largeur: 62 },
+  { libelle: 'CEDEAO', ids: [3], largeur: 36 },
+  { libelle: 'Protection Cond.', ids: [ID_SECURITE_ROUTIERE, ID_INDIVIDUELLE_CHAUFFEUR, 17, 18, 19, 20], deces: true, largeur: 48 },
+  { libelle: 'Défense Recours', ids: [4], largeur: 40 },
+  { libelle: 'Remb. Anticipé', ids: [5], largeur: 40 },
+  { libelle: 'Immob.', ids: [21], largeur: 36 },
+  { libelle: 'Dommage', ids: [7], largeur: 50 },
+  { libelle: 'Collision', ids: [8], largeur: 46 },
+  { libelle: 'Recours Express', ids: [6, 173], largeur: 40 },
+  { libelle: 'Bris de glace', ids: [9, 172], largeur: 48 },
+  { libelle: "Assist'Car", ids: [199, 22, 147, 148, 174, 175, 177, 178, 179], largeur: 46 },
+  { libelle: 'Incendie', ids: [10, 11, 164], largeur: 48 },
+  { libelle: 'Vol Simple', ids: [12], largeur: 48 },
+  { libelle: 'Vol à main A.', ids: [13], largeur: 48 },
+  { libelle: 'Vol des Accessoires', ids: [15], largeur: 44 },
+  { libelle: 'Vandalisme', ids: [14, 223], largeur: 44 },
+];
+// N°, Marque / Type, Puiss. / Cu., Immatric. / Energie Zone, Valeurs à neuf / Vénale, Nb. Pl.
+const IDENTITE_CP_FLOTTE = [20, 62, 32, 58, 54, 22];
+const LARGEUR_PRIME_CP_FLOTTE = 50;
+
+const CP_FLOTTE_STYLES = `
+  @page { size: A4 landscape; margin: 0; }
+  body { max-width: 281mm; color: #000; }
+  @media print { body { padding: 7mm 8mm; } }
+  .cpf { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; }
+  .cpf-haut { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+  .cpf-gauche { flex: 1; }
+  .cpf-logo-ligne { display: flex; align-items: center; gap: 22px; }
+  .cpf-logo { height: 46px; display: block; }
+  .cpf-compagnie { font-weight: 800; font-size: 12pt; }
+  .cpf-nom { margin-top: 6px; }
+  .cpf-refs { border-collapse: collapse; }
+  .cpf-refs td { padding: 0 8px 1px 0; white-space: nowrap; vertical-align: top; }
+  .cpf-refs td.l { font-weight: 700; }
+  .cpf-refs td.e { padding-left: 14px; }
+  .cpf-titre { flex: none; width: 76mm; margin-top: 26px; border: 1.5px solid #000; border-radius: 10px; padding: 5px 12px; text-align: center; font-weight: 700; font-size: 15pt; line-height: 1.2; }
+  .cpf-droite { flex: 1; display: flex; justify-content: flex-end; }
+  table.cpf-table { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid #000; margin-bottom: 6px; }
+  table.cpf-table td { border-left: 1px solid #000; padding: 0 2px; font-size: 6.3pt; line-height: 1.3; vertical-align: top; overflow: hidden; }
+  table.cpf-table td.d { text-align: right; white-space: nowrap; }
+  table.cpf-table td.c { text-align: center; vertical-align: middle; }
+  table.cpf-table td.n { white-space: nowrap; }
+  tr.cpf-categorie td { border-left: none; border-bottom: 1px solid #000; font-size: 8pt; font-weight: 700; padding: 2px 4px; }
+  tr.cpf-categorie td.v { font-weight: 400; }
+  tr.cpf-entete td { border-bottom: 1px solid #000; font-weight: 700; font-size: 6.3pt; line-height: 1.15; padding: 2px; vertical-align: top; overflow-wrap: anywhere; }
+  tr.cpf-entete td.g { text-align: center; vertical-align: middle; }
+  .cpf-entete-bas { display: flex; justify-content: space-between; margin-top: 6px; }
+  tbody.cpf-vehicule { break-inside: avoid; }
+  tbody.cpf-vehicule tr:first-child td { border-top: 1px solid #000; padding-top: 1px; }
+  tbody.cpf-vehicule tr:last-child td { padding-bottom: 2px; }
+  .cpf-energie { display: flex; justify-content: space-between; }
+  tr.cpf-total td { border-top: 1px solid #000; font-weight: 700; font-size: 6.5pt; padding: 3px 2px; vertical-align: middle; }
+  tr.cpf-total td.l { font-size: 7.5pt; white-space: nowrap; }
+  tr.cpf-general td { border-top: 1.5px solid #000; }
+  .cpf-bas { display: flex; justify-content: flex-end; margin-top: 10px; break-inside: avoid; }
+  .cpf-recap { border: 1px solid #000; padding: 4px 12px 0; min-width: 72mm; }
+  .cpf-recap table { border-collapse: collapse; margin-left: auto; }
+  .cpf-recap td { padding: 1px 0; font-size: 9pt; font-weight: 700; white-space: nowrap; }
+  .cpf-recap td:first-child { text-align: right; padding-right: 10px; }
+  .cpf-recap .cpf-net { border-top: 1px solid #000; margin: 4px -12px 0; padding: 5px 12px; text-align: center; font-weight: 700; font-size: 9.5pt; }
+  .cpf-recap .cpf-net span + span { margin-left: 10px; }
+`;
+
+const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { contrat = false } = {}) => {
+  const q = quittance || {};
+  const t = (x) => echapperHtml(x === undefined || x === null ? '' : String(x).trim());
+  const date = (x) => (x ? formatFrDate(x) : VIDE);
+  const montant = (x) => fcfa(x);
+  const compagnie = q.RaisonSociale || quote.compagnie || '';
+  const logo = getCompagnieLogoUrl(compagnie);
+  const estNsia = /nsia/i.test(compagnie);
+
+  // Type commercial du véhicule, sinon sigle de son type (« Véhicule Particulier (…) » → VP)
+  const typeVehicule = (v) => {
+    if (String(v.modele || '').trim()) return v.modele;
+    const type = String(v.type_vehicule || '').replace(/\s*\(.*$/, '').trim();
+    return type.split(/\s+/).filter((m) => m.length > 2).map((m) => m[0].toUpperCase()).join('') || type;
+  };
+  const energie = (libelle) => String(libelle || '').trim().slice(0, 2);
+
+  // Une colonne d'un véhicule : prime cumulée, état et capital de ses sous-garanties
+  const colonne = (v, col) => {
+    const garanties = col.ids
+      .map((id) => (v.garanties || []).find((g) => g.id_garantie === id && g.acquise))
+      .filter(Boolean);
+    const principale = garanties[0];
+    return {
+      prime: garanties.reduce((s, g) => s + (Number(g.prime_nette) || 0), 0),
+      acquise: garanties.length > 0,
+      capital: principale ? (col.deces ? (principale.deces || principale.capital) : principale.capital) : 0,
+      franchise: principale ? principale.franchise : 0,
+    };
+  };
+  const primeVehicule = (v) => (v.garanties || []).filter((g) => g.acquise)
+    .reduce((s, g) => s + (Number(g.prime_nette) || 0), 0);
+  const idsEnColonne = new Set(COLONNES_CP_FLOTTE.flatMap((c) => c.ids));
+  const horsColonnes = (vehicules || []).flatMap((v) => (v.garanties || [])
+    .filter((g) => g.acquise && Number(g.prime_nette) && !idsEnColonne.has(g.id_garantie)));
+  if (horsColonnes.length) console.warn('CP flotte : garanties sans colonne (comptées dans la prime nette)', horsColonnes);
+
+  // Groupes par catégorie / tarif, dans l'ordre renvoyé (catégorie puis tarif)
+  const groupes = [];
+  (vehicules || []).forEach((v) => {
+    let groupe = groupes.find((g) => g.idTarif === v.id_tarif);
+    if (!groupe) groupes.push(groupe = { idTarif: v.id_tarif, code: v.code_categorie, tarif: v.tarif || v.categorie, vehicules: [] });
+    groupe.vehicules.push(v);
+  });
+
+  const nbColonnes = IDENTITE_CP_FLOTTE.length + COLONNES_CP_FLOTTE.length + 1;
+  const unites = [...IDENTITE_CP_FLOTTE, ...COLONNES_CP_FLOTTE.map((c) => c.largeur), LARGEUR_PRIME_CP_FLOTTE];
+  const total = unites.reduce((a, b) => a + b, 0);
+  const colgroup = `<colgroup>${unites.map((u) => `<col style="width:${((u * 100) / total).toFixed(3)}%">`).join('')}</colgroup>`;
+
+  const entete = (g) => `
+    <thead>
+      <tr class="cpf-categorie">
+        <td colspan="2">Catégorie</td><td colspan="2" class="v">${t(g.code)}</td>
+        <td colspan="${nbColonnes - 4}">${t(g.tarif)}</td>
+      </tr>
+      <tr class="cpf-entete">
+        <td>N°</td>
+        <td>Marque<div class="cpf-entete-bas"><span>Type</span></div></td>
+        <td>Puiss.<div class="cpf-entete-bas"><span>Cu.</span></div></td>
+        <td>Immatric.<div class="cpf-entete-bas"><span>Energie</span><span>Zone</span></div></td>
+        <td>Valeurs à neuf<div class="cpf-entete-bas"><span>Vénale</span></div></td>
+        <td>Nb. Pl.</td>
+        ${COLONNES_CP_FLOTTE.map((c) => `<td class="g">${t(c.libelle)}</td>`).join('')}
+        <td class="g">Prime Nette</td>
+      </tr>
+    </thead>`;
+
+  let numero = 0;
+  const ligneVehicule = (v) => {
+    numero += 1;
+    const cellules = COLONNES_CP_FLOTTE.map((col) => ({ col, ...colonne(v, col) }));
+    const etat = ({ col, acquise, capital, franchise }) => (col.rc && acquise
+      ? `${montant(capital)}<br/>${montant(franchise)}`
+      : `${acquise ? 'Oui' : 'Non'}<br/>${montant(capital)}`);
+    return `
+      <tbody class="cpf-vehicule">
+        <tr>
+          <td rowspan="2">${numero}</td>
+          <td>${t(v.marque)}</td>
+          <td class="d">${t(v.puissance)}</td>
+          <td class="n">${t(v.immatriculation)}</td>
+          <td class="d">${montant(v.valeur_neuve)}</td>
+          <td rowspan="2" class="c">${t(v.nombre_places)}</td>
+          ${cellules.map((c) => `<td class="d">${montant(c.prime)}</td>`).join('')}
+          <td rowspan="2" class="d">${montant(primeVehicule(v))}</td>
+        </tr>
+        <tr>
+          <td>${t(typeVehicule(v))}</td>
+          <td class="d">${montant(v.charge_utile)}</td>
+          <td><div class="cpf-energie"><span>${t(energie(v.energie))}</span><span></span></div></td>
+          <td class="d">${montant(v.valeur_venale)}</td>
+          ${cellules.map((c) => `<td class="n">${etat(c)}</td>`).join('')}
+        </tr>
+      </tbody>`;
+  };
+
+  const ligneTotal = (libelle, liste, classe = '') => `
+    <tr class="cpf-total ${classe}">
+      <td colspan="4" class="l">${libelle}</td>
+      <td colspan="2" class="c">${liste.length} Véhicule(s)</td>
+      ${COLONNES_CP_FLOTTE.map((col) => `<td class="d">${montant(liste.reduce((s, v) => s + colonne(v, col).prime, 0))}</td>`).join('')}
+      <td class="d">${montant(liste.reduce((s, v) => s + primeVehicule(v), 0))}</td>
+    </tr>`;
+
+  const tableaux = groupes.length ? groupes.map((g, i) => `
+    <table class="cpf-table">
+      ${colgroup}
+      ${entete(g)}
+      ${g.vehicules.map(ligneVehicule).join('')}
+      <tbody>
+        ${ligneTotal(`Total Catégorie&nbsp;&nbsp;&nbsp;${t(g.code)}`, g.vehicules)}
+        ${i === groupes.length - 1 ? ligneTotal('Total Général', vehicules, 'cpf-general') : ''}
+      </tbody>
+    </table>`).join('') : `
+    <table class="cpf-table">${colgroup}${entete({ code: '', tarif: '' })}
+      <tbody><tr><td colspan="${nbColonnes}" class="c">Aucun véhicule enregistré.</td></tr></tbody>
+    </table>`;
+
+  // Primes imposées sur le récapitulatif : les garanties des véhicules n'y retombent plus
+  const primeNetteRecap = primeNetteRecapAuto(q, estNsia);
+  const totalGeneral = (vehicules || []).reduce((s, v) => s + primeVehicule(v), 0);
+  const alerteEcart = primeNetteRecap !== null && vehicules?.length && Math.abs(primeNetteRecap - totalGeneral) > 1 ? `
+    <div class="alerte-ecart no-print">
+      <strong>⚠ Écart avec la prime enregistrée.</strong> Total des véhicules : <strong>${montant(totalGeneral)}</strong>
+      — prime nette du récapitulatif : <strong>${montant(primeNetteRecap)}</strong> (prime probablement imposée).
+      <em>(Ce bandeau n'apparaît pas à l'impression.)</em>
+    </div>` : '';
+
+  return `
+    <style>${CP_FLOTTE_STYLES}</style>
+    ${alerteEcart}
+    <div class="cpf">
+      <div class="cpf-haut">
+        <div class="cpf-gauche">
+          <div class="cpf-logo-ligne">
+            ${logo ? `<img src="${logo}" alt="${t(compagnie)}" class="cpf-logo" />` : `<div class="cpf-compagnie">${t(compagnie)}</div>`}
+            <table class="cpf-refs">
+              <tr><td class="l">Numéro</td><td>${t(q.IdClient)}</td></tr>
+              <tr><td class="l">Date</td><td>${date(q.DateEmission)}</td></tr>
+            </table>
+          </div>
+          <div class="cpf-nom">${t([q.TitreClient, q.NomClient].filter((x) => x && String(x).trim()).join(' '))}</div>
+          <table class="cpf-refs"><tr><td class="l">Adresse</td><td>${t(q.AdresseClient)}</td></tr></table>
+        </div>
+        <div class="cpf-titre">${contrat ? 'CONDITIONS PARTICULIERES' : 'PROPOSITION'} : Liste des véhicules en Automobile</div>
+        <div class="cpf-droite">
+          <table class="cpf-refs">
+            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'PROPOSITION'}</td><td class="l e">Emise le</td><td>${date(q.DateEmission)}</td></tr>
+            <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td colspan="3">${t(contrat ? q.NumeroPolice : q.NumeroDevis)}</td></tr>
+            <tr><td class="l">Assuré(e)</td><td colspan="3">${t(q.NomAssure)}</td></tr>
+            <tr><td class="l">Effet</td><td>${date(q.DateEffet)}</td><td class="l e">Expiration</td><td>${date(q.DateExpiration)}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      ${tableaux}
+
+      <div class="cpf-bas">
+        <div class="cpf-recap">
+          <table>
+            <tr><td>Prime Nette</td><td>${primeNetteRecap === null ? VIDE : montant(primeNetteRecap)}</td></tr>
+            <tr><td>Accessoire</td><td>${montant(q.Accessoire)}</td></tr>
+            <tr><td>Taxe d'enregistrement</td><td>${montant(q.TaxeEnregistrement)}</td></tr>
+            <tr><td>FGA</td><td>${montant(q.Fga)}</td></tr>
+            <tr><td>Prime TTC</td><td>${montant(q.PrimeTtc)}</td></tr>
+          </table>
+          <div class="cpf-net"><span>Total net à payer</span><span>${montant(q.PrimeTtc)}</span></div>
+        </div>
+      </div>
+    </div>`;
 };
 
 // --- GABARITS IA (Individuelle Accidents), repris d'URANUS -----------------------------------
@@ -2299,39 +2593,66 @@ const PRINT_STYLES = `
   .cp-colonne table.cadre-unique { flex: none; margin-bottom: 8px; }
   table.cp-bloc td.label { width: 96px; font-weight: 600; color: #475569; background: #f8fafc; white-space: nowrap; }
   table.cp-recap td.g-num { text-align: right; white-space: nowrap; }
-  .cpm { font-size: 9pt; }
-  .cpm-titre { text-align: center; font-weight: 800; font-size: 11pt; line-height: 1.35; margin: 0 0 6px; }
-  .cpm-entete { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
-  table.cpm-bloc { flex: 1; border-collapse: separate; border-spacing: 0 2px; }
-  /* Bloc de droite plus large : offre et catégorie tiennent sur une ligne */
-  table.cpm-bloc:last-child { flex: 1.35; }
-  table.cpm-bloc td { border: 1px solid #0f172a; padding: 2px 6px; font-weight: 700; font-size: 8.5pt; }
-  table.cpm-bloc td.label { width: 34%; white-space: nowrap; }
-  table.cpm-vehicule { width: 100%; border: 1px solid #0f172a; border-radius: 8px; border-collapse: separate; padding: 4px; margin-bottom: 6px; }
-  table.cpm-vehicule td { font-size: 8pt; padding: 2px 4px; text-align: center; }
-  table.cpm-vehicule td.label { font-weight: 600; white-space: nowrap; }
-  table.cpm-garanties { width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a; margin-bottom: 8px; }
-  table.cpm-garanties td { border: 1px solid #0f172a; padding: 2px 5px; font-size: 8pt; }
-  table.cpm-garanties tr.entete td { font-weight: 700; text-align: center; }
-  table.cpm-garanties td.g-lib { text-align: left; }
-  table.cpm-garanties tr:not(.entete):not(.total) td:nth-child(2) { text-align: left; }
-  table.cpm-garanties tr.total td { font-weight: 700; }
-  .cpm-logo { height: 30px; display: block; margin-bottom: 2px; }
-  table.cpm-synthese { width: 92%; margin: 0 auto 10px; border-collapse: collapse; border: 1px solid #0f172a; }
-  table.cpm-synthese > tbody > tr > td { border: 1px solid #0f172a; padding: 4px 12px; vertical-align: middle; font-size: 8.5pt; }
-  table.cpm-synthese td.cpm-qr { width: 24%; text-align: center; }
-  table.cpm-synthese td.cpm-qr svg { width: 74px; height: 74px; display: block; margin: 0 auto; }
-  table.cpm-synthese td.cpm-reductions div { margin: 3px 0; }
-  table.cpm-synthese td.cpm-montants { width: 36%; }
-  table.cpm-synthese td.cpm-montants table { width: 100%; border-collapse: collapse; }
-  table.cpm-synthese td.cpm-montants td { padding: 2px 0; font-size: 8.5pt; }
-  table.cpm-synthese td.cpm-montants td + td { text-align: right; }
-  .cpm-total { width: 92%; margin: 0 auto 8px; border: 1px solid #0f172a; border-radius: 6px; padding: 6px; text-align: center; font-weight: 700; font-size: 9pt; }
-  .cpm-nb { font-style: italic; font-size: 8.5pt; margin: 4px 0 2px; }
-  .cpm-nb div { margin-bottom: 3px; }
-  .cpm-mentions { margin-top: 8px; font-size: 6.5pt; color: #334155; text-align: center; line-height: 1.3; break-inside: avoid; }
-  .cpm-fait { text-align: right; font-size: 9pt; margin: 4px 0 12px; }
-  .cpm-signatures { display: flex; justify-content: space-between; font-weight: 700; font-size: 9pt; }
+  /* Conditions Particulières Auto : mise en page des CP NSIA (cadres arrondis, filet bleu à
+     gauche, pied de page doré). La page occupe toute la hauteur A4 pour que le pied reste en bas. */
+  .cpn { font-size: 8.5pt; color: #111; display: flex; flex-direction: column; min-height: 256mm; }
+  .cpn-nsia { border-left: 3px solid #1d4f91; padding-left: 12px; }
+  .cpn-haut { min-height: 38px; }
+  .cpn-logo { height: 40px; display: block; }
+  .cpn-compagnie { font-weight: 800; font-size: 12pt; }
+  .cpn-titre { text-align: center; font-weight: 700; font-size: 13pt; margin: -4px 0 4px; }
+  .cpn-cadre { border: 1px solid #444; border-radius: 9px; }
+  .cpn-entete { display: flex; gap: 6px; margin-bottom: 4px; }
+  .cpn-entete .cpn-cadre { padding: 4px 10px; }
+  .cpn-client { flex: 0.95; }
+  .cpn-police { flex: 1.05; }
+  .cpn-entete table { width: 100%; border-collapse: collapse; }
+  .cpn-entete td { padding: 1px 4px 1px 0; vertical-align: top; }
+  .cpn-entete td.l { white-space: nowrap; padding-right: 10px; width: 1%; }
+  .cpn-entete tr.cpn-saut td { height: 7px; }
+  .cpn-bandeau { text-align: center; font-weight: 700; font-size: 11pt; padding: 2px; margin-bottom: 2px; }
+  .cpn-vehicule { padding: 3px 10px; margin-bottom: 5px; }
+  .cpn-rangee { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; }
+  .cpn-paire .l { margin-right: 8px; }
+  .cpn-garanties { border-radius: 9px 9px 0 0; border-bottom: none; }
+  .cpn-offre { display: flex; justify-content: space-between; padding: 3px 10px 2px; }
+  .cpn-offre .cpn-paire:last-child { margin-right: 60px; }
+  .cpn-garanties table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .cpn-garanties td { padding: 5px 4px; vertical-align: top; text-align: left; word-wrap: break-word; font-size: 8pt; line-height: 1.2; }
+  /* Offres à nombreuses garanties : lignes resserrées pour tenir sur une page */
+  .cpn-garanties.cpn-dense td { padding: 0 4px; font-size: 7.5pt; line-height: 1.15; }
+  .cpn-garanties td:nth-child(n+3):not(:nth-child(4)) { white-space: nowrap; }
+  .cpn-garanties tr.entete td { border-top: 1px solid #444; border-bottom: 1px solid #444; border-right: 1px solid #444; line-height: 1.1; vertical-align: middle; padding: 2px 4px; white-space: nowrap; }
+  .cpn-garanties tr.entete td:last-child { border-right: none; }
+  .cpn-garanties tr.entete + tr td { padding-top: 4px; }
+  .cpn-garanties tr:nth-last-child(2):not(.entete) td { padding-bottom: 3px; }
+  .cpn-garanties td:nth-child(1), .cpn-garanties td:nth-child(2) { border-right: 1px solid #444; }
+  .cpn-garanties tr.total td { border-top: 1px solid #444; border-bottom: 1px solid #444; border-right: none; padding-top: 3px; padding-bottom: 3px; }
+  .cpn-garanties tr.total td:first-child { border-left: 1px solid #444; }
+  .cpn-capitaux { font-weight: 700; font-size: 9pt; margin-top: 4px; }
+  .cpn-bas { display: flex; align-items: flex-start; gap: 18px; margin-top: 4px; }
+  .cpn-mentions { flex: 1; font-size: 11pt; line-height: 1.3; padding-top: 8px; }
+  .cpn-mentions p { margin: 0 0 8px; }
+  .cpn-visa { font-size: 10pt; }
+  .cpn-recap { width: 37%; border: 1px solid #444; }
+  .cpn-recap table { width: 100%; border-collapse: collapse; }
+  .cpn-recap td { padding: 1px 8px; text-align: right; font-size: 9pt; }
+  .cpn-recap td + td { width: 34%; }
+  .cpn-recap table:first-child td { padding-top: 2px; }
+  .cpn-recap .cpn-net { border-top: 1px solid #444; margin-top: 4px; }
+  .cpn-recap .cpn-net td { font-weight: 700; font-size: 9.5pt; padding: 6px 8px; }
+  .cpn-recap .cpn-net td:first-child { text-align: center; }
+  /* Récapitulatif et signatures restent ensemble (jamais coupés entre deux pages) */
+  .cpn-fin { break-inside: avoid; }
+  .cpn-signatures { display: flex; justify-content: space-between; align-items: flex-start; font-weight: 700; font-style: italic; font-size: 10pt; margin-top: 4px; min-height: 56px; }
+  .cpn-sig-assure { margin-top: 26px; padding-left: 50px; }
+  .cpn-sig-compagnie { padding-right: 10px; }
+  .cpn-pied { margin-top: auto; padding-top: 4px; break-inside: avoid; }
+  .cpn-pied-texte { font-size: 6pt; font-weight: 700; line-height: 1.25; padding-left: 70px; }
+  .cpn-pied-ligne { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .cpn-pied-ligne span { flex: 1; border-top: 3px solid #b8a24a; }
+  .cpn-pied-ligne img { height: 18px; }
+  .cpn-pied-depuis { text-align: right; font-size: 6pt; color: #666; margin-top: -2px; }
   /* IA (Individuelle Accidents) : proposition / CP / facture, modèles URANUS */
   .ia, .iaf { font-family: 'Arial Narrow', Arial, Helvetica, sans-serif; font-size: 10pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .ia-logo { width: 150px; display: block; margin-bottom: 10px; }
@@ -2543,8 +2864,10 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
     const auto = /auto/i.test(String(quote.branche || quote.produit || ''));
     if (auto && !flotte) {
       const cp = await conditionsParticulieresMonoApi.get(id, { contrat });
-      const qrSvg = await qrCodeConditionsParticulieres(quote, cp, { contrat });
-      openPrintWindow(title, buildConditionsParticulieresMono(quote, cp, { contrat, qrSvg }), printWindow);
+      openPrintWindow(title, buildConditionsParticulieresMono(quote, cp, { contrat }), printWindow);
+    } else if (auto) {
+      const cp = await conditionsParticulieresFlotteApi.get(id, { contrat });
+      openPrintWindow(title, buildConditionsParticulieresFlotte(quote, cp, { contrat }), printWindow);
     } else {
       const cp = contrat
         ? await contractApi.getConditionsParticulieres(id)

@@ -270,7 +270,7 @@ export const QuoteListPage = () => {
 
     const headers = [
       'N° Devis',
-      'Client / Souscripteur',
+      'Souscripteur',
       'Branche / Produit',
       'Compagnie',
       'Avenant',
@@ -306,7 +306,7 @@ export const QuoteListPage = () => {
 
     exportToPdf({
       filename: `Registre_Devis_${tabName}_LE_PHARE_${new Date().toISOString().slice(0, 10)}.pdf`,
-      title: `REGISTRE OFFICIEL DES DEVIS & PROPOSITIONS [${tabName.toUpperCase()}]`,
+      title: `REGISTRE OFFICIEL DES DEVIS [${tabName.toUpperCase()}]`,
       subtitle: branchToUse !== 'ALL' ? `Branche / Catégorie : ${tabName} — Conforme aux normes d'audit CIMA` : 'État global de souscription conforme aux normes CIMA',
       metadata: {
         'Date d\'édition': today,
@@ -505,7 +505,8 @@ export const QuoteListPage = () => {
         const produit = row.raw?.produit;
         const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
         const moduleDevis = getBranchOf(row) === 'AUTO' ? 'auto' : MODULE_EDITION_PAR_PRODUIT[idProduit] || null;
-        const moduleFerme = !moduleActif(moduleDevis);
+        // Santé n'a pas de page d'édition complète (fenêtre des primes) mais sa branche est ouverte
+        const moduleFerme = !moduleActif(moduleDevis || (getBranchOf(row) === 'SANTE' ? 'sante' : null));
 
         return (
           <RowActions
@@ -571,7 +572,7 @@ export const QuoteListPage = () => {
             className="btn btn-secondary"
             onClick={handlePrintQuotes}
             disabled={loading || quotes.length === 0}
-            title="Imprimer le registre officiel des devis & propositions"
+            title="Imprimer le registre officiel des devis"
             style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
           >
             <Printer size={16} />

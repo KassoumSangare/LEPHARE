@@ -32,12 +32,21 @@ import { ViewQuoteModal } from './ViewQuoteModal';
 import { GarantiesVehiculeFlotteModal } from './GarantiesVehiculeFlotteModal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
-import { ID_TERME_PAR_DEFAUT, idTermeValide, libelleTerme } from '../../../utils/termesContrat';
+import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
+import {
+  DUREES_CONTRAT,
+  ID_TERME_PAR_DEFAUT,
+  dureeSelonTerme,
+  libelleTerme,
+  termeEtDureeEnregistres,
+} from '../../../utils/termesContrat';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 import {
+  baseAccessoireAuto,
   calculerTotauxDevisAuto,
+  cedeaoDansPrimeNette,
   estGarantieRc,
   extraireLigneCumul,
   ID_SOUS_GARANTIE_NSIA_AUTO_PLUS,
@@ -47,6 +56,10 @@ import {
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
 // Code branche CIMA (stdbranche) du produit Automobile : seules les catégories 2xx sont proposées
 const BRANCHE_AUTOMOBILE = '200';
+
+// Tarifs commerciaux nommés (TARIF TECK, BAOBAB, EBENE…) : grilles stdtarif rattachées à une
+// catégorie CIMA par son code (201, 202…), proposées dans « Tarifs spécifiques » et non dans « Catégorie »
+const estTarifSpecifique = (cat) => /^TARIF\b/i.test(String(cat?.libelle || '').trim());
 
 const DEFAULT_CATEGORIES = [
   { id: 13, code: '201', libelle: 'PROMENADE & AFFAIRES' },
@@ -74,13 +87,8 @@ const DEFAULT_CARROSSERIES = [
   { id: 7, libelle: 'BENNE BASCULANTE' },
 ];
 
-const DEFAULT_DUREES = [
-  { id: 1, mois: 1, libelle: 'Mensuelle (1 Mois)' },
-  { id: 2, mois: 3, libelle: 'Trimestrielle (3 Mois)' },
-  { id: 3, mois: 6, libelle: 'Semestrielle (6 Mois)' },
-  { id: 4, mois: 12, libelle: 'Annuelle (12 Mois)' },
-  { id: 5, mois: 0, libelle: 'Divers (Durée personnalisée)' },
-];
+// Libellé de la durée (transmis dans details.dureeContrat) : « Libre » pour la durée du terme « Autre »
+const libelleDuree = (idDuree) => DUREES_CONTRAT.find((d) => d.id === Number(idDuree))?.libelle || 'Libre';
 
 const DEFAULT_SYSTEMES_SECURITE = [
   { id: 0, code: 0, libelle: 'AUCUN SYSTEME' },
@@ -132,16 +140,9 @@ const DEFAULT_OFFRES = [
   { id: 3, code: 'TIERS_COLLISION', libelle: 'OFFRE TIERS COMPLET (VOL + INCENDIE + BRIS)' },
 ];
 
-// Helper CEDEAO conforme OREOLE: multiple de 1000, fallback 1000
-const ensureCedeaoMin = (value, fallback = 1000) => {
-  const num = Number(value) || 0;
-  if (num <= 0) return fallback;
-  return Math.round(num / 1000) * 1000;
-};
-
 // Tuiles financières du mode "Imposer la prime" : null = la tuile n'est pas saisie à la main et
 // suit en temps réel le total calculé à partir des garanties.
-const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, cedeao: null, pa: null, pn: null, ttc: null };
+const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, pa: null, pn: null, ttc: null };
 
 // Message d'erreur lisible d'un appel d'enregistrement (erreurs DRF ou OutputMessage des procédures)
 const messageEnregistrement = (e) => {
@@ -324,9 +325,10 @@ export const NewAutoQuotePage = () => {
   const showTransportOptions = transportCompteAssure || transportPublicMarchandise;
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [dateEmission, setDateEmission] = useState(todayStr);
+  // Date d'émission : toujours la date du jour, jamais saisie (le serveur l'impose aussi)
+  const dateEmission = todayStr;
   const [dateEffet, setDateEffet] = useState(todayStr);
-  const [dureeId, setDureeId] = useState(4); // 1: 1M, 2: 3M, 3: 6M, 4: 12M, 5: Divers
+  const [dureeId, setDureeId] = useState(4); // 1: 1M, 2: 3M, 3: 6M, 4: 12M, 5: libre (terme « Autre »)
   const [dureeContrat, setDureeContrat] = useState('Annuelle');
   const [customDateExpiration, setCustomDateExpiration] = useState('');
 
@@ -431,10 +433,30 @@ export const NewAutoQuotePage = () => {
   // Ligne cumul (IdGarantie = 0) renvoyée par fn_garantie_offre : accessoire (fn_get_accessoire,
   // fonction de la tranche de prime nette) et taxe sur accessoire — introuvables autrement côté écran.
   const [ligneCumul, setLigneCumul] = useState(null);
+  // Numéro du dernier calcul de garanties lancé (handleRecalculateApi)
+  const dernierCalculRef = useRef(0);
   // Totaux réellement enregistrés d'un devis rouvert en édition (stddevis) : URANUS affiche ces
   // montants tels quels (primes imposées comprises) tant que les garanties ne sont pas modifiées.
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
   const garantiesEnregistreesRef = useRef(null);
+
+  // Accessoire de la prime nette réellement retenue à l'écran. La ligne cumul du moteur ne vaut
+  // que pour l'offre complète (et n'existe pas pour un devis rouvert) : dès que des garanties sont
+  // décochées, retirées, ajoutées ou leurs primes imposées, l'accessoire suit la tranche de la
+  // nouvelle prime nette (fn_get_accessoire, comme à l'enregistrement). Flotte : l'accessoire est
+  // calculé à l'enregistrement sur le total du devis.
+  const baseAccessoire = useMemo(() => baseAccessoireAuto(garanties), [garanties]);
+  const [accessoireGaranties, setAccessoireGaranties] = useState(null);
+  useEffect(() => {
+    if (typeContrat === 'FLOTTE' || !offreId || !compagnieId || !dateEffet || baseAccessoire <= 0) return undefined;
+    let actif = true;
+    const timer = setTimeout(() => {
+      quoteApi.calculerAccessoireAuto({ primeNette: baseAccessoire, idOffre: offreId, idCompagnie: compagnieId, dateEffet })
+        .then((acc) => { if (actif) setAccessoireGaranties({ base: baseAccessoire, ...acc }); })
+        .catch((e) => console.warn("Accessoire indisponible : celui du moteur est conservé", e));
+    }, 300);
+    return () => { actif = false; clearTimeout(timer); };
+  }, [typeContrat, baseAccessoire, offreId, compagnieId, dateEffet]);
 
   // Calcul financier aligné sur URANUS (voir utils/tarificationAuto) : le moteur CIMA a déjà
   // appliqué réduction commerciale, BNS, prorata et taxe par garantie.
@@ -443,21 +465,28 @@ export const NewAutoQuotePage = () => {
     const estSaisi = (champ) => impositionActive && editedExtras[champ] != null && editedExtras[champ] !== '';
     const imposer = (champ, valeurCalculee) => (estSaisi(champ) ? Number(editedExtras[champ]) : valeurCalculee);
 
+    // Accessoire et taxe sur accessoire : ceux de la prime nette affichée une fois connus, sinon
+    // ceux du moteur (ou le dernier connu, pour un devis rouvert dont le moteur n'a pas tourné)
+    const cumulAccessoire = (typeContrat !== 'FLOTTE' && accessoireGaranties?.base === baseAccessoire && accessoireGaranties)
+      || ligneCumul
+      || (typeContrat !== 'FLOTTE' ? accessoireGaranties : null);
+
     // Devis rouvert et garanties intactes : on reprend exactement les totaux enregistrés
     const base = totauxEnregistres && garanties === garantiesEnregistreesRef.current
       ? totauxEnregistres
-      : calculerTotauxDevisAuto({ garanties, ligneCumul, vehiculesCount });
+      : calculerTotauxDevisAuto({ garanties, ligneCumul: cumulAccessoire, vehiculesCount });
 
     const finalPA = imposer('pa', base.pa);
     const finalPN = imposer('pn', base.pn);
     const finalTaxe = imposer('taxe', base.taxe);
     const finalFga = imposer('fga', base.fga);
     const finalAccessoire = imposer('accessoire', base.accessoire);
-    const finalCedeao = estSaisi('cedeao') ? ensureCedeaoMin(editedExtras.cedeao) : base.cedeao;
+    // La CEDEAO est une garantie de la liste : elle suit sa ligne, sans saisie séparée
+    const finalCedeao = base.cedeao;
 
     // Dès qu'une composante est saisie, le TTC se recalcule à partir des montants affichés
     // (sinon il reprend le total de base, qui est celui enregistré pour un devis rouvert).
-    const composanteSaisie = ['pn', 'taxe', 'fga', 'accessoire', 'cedeao'].some(estSaisi);
+    const composanteSaisie = ['pn', 'taxe', 'fga', 'accessoire'].some(estSaisi);
     const calculatedTtc = composanteSaisie
       ? finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire
       : base.ttc;
@@ -465,7 +494,10 @@ export const NewAutoQuotePage = () => {
 
     return {
       primeAnnuelle: finalPA,
+      // primeNette (hors CEDEAO) et cedeao sont transmis séparément à l'enregistrement ;
+      // l'écran affiche la prime nette de toutes les garanties de la liste, CEDEAO comprise
       primeNette: finalPN,
+      primeNetteGaranties: finalPN + finalCedeao,
       taxeEnregistrement: finalTaxe,
       fga: finalFga,
       accessoire: finalAccessoire,
@@ -480,6 +512,8 @@ export const NewAutoQuotePage = () => {
     impositionActive,
     editedExtras,
     ligneCumul,
+    accessoireGaranties,
+    baseAccessoire,
     totauxEnregistres,
   ]);
 
@@ -494,7 +528,8 @@ export const NewAutoQuotePage = () => {
   }));
 
   // Une prime de garantie a changé : les totaux qui en découlent reprennent le calcul pour
-  // refléter la modification en temps réel (accessoire et CEDEAO n'en dépendent pas).
+  // refléter la modification en temps réel. Un accessoire saisi à la main reste imposé ; sinon
+  // il suit déjà la tranche de la nouvelle prime nette (accessoireGaranties).
   const libererTotauxDependants = () => setEditedExtras((prev) => ({
     ...prev, pa: null, pn: null, taxe: null, fga: null, ttc: null,
   }));
@@ -516,6 +551,25 @@ export const NewAutoQuotePage = () => {
   const idTarifCalcul = categorieSelectionnee?.id || offreSelectionneeObj?.idTarif || 1;
   const grilleOffre = categories.find((cat) => Number(cat.id) === Number(offreSelectionneeObj?.idTarif));
   const categoriePersonneMorale = categories.find((cat) => cat.code === '212');
+
+  // La grille retenue (categorieId) est soit une catégorie CIMA, soit un tarif spécifique de
+  // cette catégorie : les deux menus affichent chacun leur part de ce choix
+  const categoriesCima = categories.filter((cat) => !estTarifSpecifique(cat));
+  const grilleChoisie = categories.find((cat) => Number(cat.id) === Number(categorieId));
+  const tarifSpecifiqueChoisi = estTarifSpecifique(grilleChoisie) ? grilleChoisie : null;
+  const categorieCimaChoisie = tarifSpecifiqueChoisi
+    ? categoriesCima.find((cat) => cat.code && cat.code === tarifSpecifiqueChoisi.code)
+    : grilleChoisie;
+  const tarifsSpecifiques = categorieCimaChoisie?.code
+    ? categories.filter((cat) => estTarifSpecifique(cat) && cat.code === categorieCimaChoisie.code)
+    : [];
+  const choisirGrille = (grille) => {
+    if (!grille) return;
+    setCategorieId(grille.id);
+    setCategorieContrat(grille.libelle);
+    // L'offre suit la grille choisie (sa liste d'offres change)
+    offreASuivreCategorieRef.current = true;
+  };
 
   // Véhicule saisi à l'écran : instantané complet (paramètres tarifaires compris). En flotte,
   // chaque véhicule de la liste est un tel instantané, enregistré par son propre appel à
@@ -604,12 +658,16 @@ export const NewAutoQuotePage = () => {
 
   // Appel dynamique au backend /api/offregarantie si disponible
   const handleRecalculateApi = async (silent = false) => {
+    // Plusieurs calculs peuvent se chevaucher (compagnie, catégorie, offre chargées coup sur
+    // coup) : seule la réponse du dernier lancé est appliquée au tableau
+    const numero = ++dernierCalculRef.current;
     setLoadingCalculation(true);
     // Un recalcul demandé explicitement remplace les garanties enregistrées : les
     // changements de saisie suivants doivent alors relancer le calcul automatiquement.
     if (!silent) garantiesChargeesDuDevisRef.current = false;
     try {
       const res = await quoteApi.calculateOffreGarantie(calculPayload);
+      if (numero !== dernierCalculRef.current) return;
       if (res && Array.isArray(res.data)) {
         // Le tableau doit toujours refléter l'offre sélectionnée, y compris quand
         // elle n'a aucune garantie configurée pour cette compagnie (résultat vide) :
@@ -633,7 +691,7 @@ export const NewAutoQuotePage = () => {
     } catch (err) {
       console.warn('Recalcul API /api/offregarantie non disponible, tarification CIMA locale maintenue', err);
     } finally {
-      setLoadingCalculation(false);
+      if (numero === dernierCalculRef.current) setLoadingCalculation(false);
     }
   };
 
@@ -979,7 +1037,7 @@ export const NewAutoQuotePage = () => {
   };
 
   // ----------------------------------------------------
-  // ÉCRAN 4 : CLIENT / ASSURÉ / CONDUCTEUR
+  // ÉCRAN 4 : CLIENT ASSURÉ
   // ----------------------------------------------------
   const [souscripteurId, setSouscripteurId] = useState(() => clients[0]?.id || 1);
   const [searchSouscripteur, setSearchSouscripteur] = useState('');
@@ -1052,7 +1110,6 @@ export const NewAutoQuotePage = () => {
     bonusMalus: [bonusMalus, setBonusMalus],
     termeContrat: [termeContrat, setTermeContrat],
     termeId: [termeId, setTermeId],
-    dateEmission: [dateEmission, setDateEmission],
     dateEffet: [dateEffet, setDateEffet],
     dureeId: [dureeId, setDureeId],
     dureeContrat: [dureeContrat, setDureeContrat],
@@ -1194,8 +1251,9 @@ export const NewAutoQuotePage = () => {
       return;
     }
     if (!editIddevisParam && !brouillonParam) {
-      setCategorieId(categories[0].id);
-      setCategorieContrat(categories[0].libelle);
+      const premiere = categories.find((cat) => !estTarifSpecifique(cat)) || categories[0];
+      setCategorieId(premiere.id);
+      setCategorieContrat(premiere.libelle);
     }
   }, [categories, categorieId, categorieContrat, editIddevisParam, brouillonParam]);
 
@@ -1313,14 +1371,12 @@ export const NewAutoQuotePage = () => {
         setReductionCommerciale(Number(dd.taux_reduction || 0));
         setBonusMalus(Number(dd.bns || d.bonus_malus || 0));
         // Les menus Durée et Terme affichent le libellé : il doit suivre l'id enregistré
-        const duree = DEFAULT_DUREES.find((x) => x.id === Number(d.idduree));
-        if (duree) {
-          setDureeId(duree.id);
-          setDureeContrat(duree.libelle.split(' ')[0]);
-        }
-        setTermeId(idTermeValide(d.idterme));
-        setTermeContrat(libelleTerme(d.idterme));
-        setDateEmission(toIsoDate(d.dateemission) || dateEmission);
+        // Durée libre et terme « Autre » vont ensemble (anciens devis « Divers » compris)
+        const charge = termeEtDureeEnregistres(d.idterme, d.idduree);
+        setDureeId(charge.dureeId);
+        setDureeContrat(libelleDuree(charge.dureeId));
+        setTermeId(charge.termeId);
+        setTermeContrat(libelleTerme(charge.termeId));
         setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
         setCustomDateExpiration(toIsoDate(d.dateexpiration));
 
@@ -1348,12 +1404,25 @@ export const NewAutoQuotePage = () => {
           // (les véhicules inchangés d'une flotte gardent de toute façon leurs primes enregistrées).
           setPrimesImposees(!d.flotte && Boolean(d.prime_imposee));
 
-          // Totaux de l'en-tête (stddevis) tels qu'URANUS les affiche en édition :
-          // stddevis.primenette inclut le FGA (sp_finalisation_devis), d'où la soustraction.
+          // Totaux de l'en-tête (stddevis). stddevis.primenette inclut le FGA, et la CEDEAO pour un
+          // devis calculé (TTC = prime nette + accessoire + taxe) ; un devis à primes imposées
+          // (sp_maj_manuelle_primes) l'enregistre sans la CEDEAO. L'écran manipule la prime nette
+          // hors FGA et hors CEDEAO : la CEDEAO n'y est ajoutée qu'une fois.
           const fgaEnregistre = Number(d.fga || 0);
+          const cedeaoEnregistree = Number(d.cedeao || 0);
+          const pnHorsFga = Number(d.primenette || 0) - fgaEnregistre;
+          const pnInclutCedeao = cedeaoDansPrimeNette({
+            primenette: d.primenette,
+            accessoire: d.accessoire,
+            taxe: d.taxe,
+            cedeao: d.cedeao,
+            primettc: d.primettc,
+            primeImposee: Boolean(d.prime_imposee),
+            arrondiNsia: Number(d.compagnie?.IdCompagnie ?? d.compagnie) === 1,
+          });
           setTotauxEnregistres({
             pa: Number(d.primeannuelle || 0),
-            pn: Number(d.primenette || 0) - fgaEnregistre,
+            pn: pnInclutCedeao ? pnHorsFga - cedeaoEnregistree : pnHorsFga,
             taxe: Number(d.taxe || 0),
             fga: fgaEnregistre,
             accessoire: Number(d.accessoire || 0),
@@ -1430,8 +1499,13 @@ export const NewAutoQuotePage = () => {
           if (cies && cies.length > 0) {
             const mappedCies = cies.map((c) => ({ id: c.id || c.IdCompagnie, nom: c.RaisonSociale || c.nom }));
             setCompanies(mappedCies);
-            setCompagnie(mappedCies[0].nom);
-            setCompagnieId(mappedCies[0].id);
+            // La compagnie déjà retenue est conservée si elle est dans la liste : NSIA (id 1) par
+            // défaut comme pour les autres devis, ou celle du devis rouvert / du brouillon. Prendre
+            // la première de la liste (AXA, sans aucune offre Auto paramétrée) laissait l'écran
+            // Offre sans garantie ; le libellé suit l'id (effet plus bas).
+            setCompagnieId((actuelle) => (mappedCies.some((c) => Number(c.id) === Number(actuelle))
+              ? actuelle
+              : mappedCies[0].id));
           }
           if (gnrs && gnrs.length > 0) {
             setGenres(gnrs.map((g) => ({ id: g.id || g.IdGenre || g.IdGenreVehicule, libelle: g.LibelleGenre || g.libelle_genre || g.libelle })));
@@ -2146,7 +2220,9 @@ export const NewAutoQuotePage = () => {
         const correctionPayload = {
           id_devis: Number(devisApiId),
           prime_annuelle: calculFinancier.primeAnnuelle,
-          prime_nette: calculFinancier.primeNette,
+          // CEDEAO comprise, comme l'envoie URANUS : sp_correction_devis la retire lui-même avant
+          // sp_maj_manuelle_primes (envoyée hors CEDEAO, elle était retirée deux fois)
+          prime_nette: calculFinancier.primeNette + calculFinancier.cedeao,
           taxe: calculFinancier.taxeEnregistrement,
           accessoire: calculFinancier.accessoire,
           cedeao: calculFinancier.cedeao,
@@ -2248,7 +2324,7 @@ export const NewAutoQuotePage = () => {
             { stepNum: 1, label: '1. CONTRAT' },
             { stepNum: 2, label: '2. VÉHICULE' },
             { stepNum: 3, label: '3. OFFRE & DÉCOMPTE' },
-            { stepNum: 4, label: '4. CLIENT / CONDUCTEUR' },
+            { stepNum: 4, label: '4. CLIENT' },
           ].map((item) => (
             <button
               key={item.stepNum}
@@ -2347,18 +2423,32 @@ export const NewAutoQuotePage = () => {
                   <label className="form-label">Catégorie (* requis)</label>
                   <select
                     className="form-control"
-                    value={categorieContrat}
-                    onChange={(e) => {
-                      setCategorieContrat(e.target.value);
-                      const c = categories.find((cat) => cat.libelle === e.target.value);
-                      if (c) setCategorieId(c.id);
-                      // L'offre suit la catégorie choisie (sa liste d'offres change)
-                      offreASuivreCategorieRef.current = true;
-                    }}
+                    value={categorieCimaChoisie?.id ?? ''}
+                    onChange={(e) => choisirGrille(categoriesCima.find((cat) => Number(cat.id) === Number(e.target.value)))}
                   >
-                    {sortUniqueBy(categories, (cat) => cat.libelle).map((cat) => (
-                      <option key={cat.id} value={cat.libelle}>
+                    {sortUniqueBy(categoriesCima, (cat) => cat.libelle).map((cat) => (
+                      <option key={cat.id} value={cat.id}>
                         {cat.libelle}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="tarif-specifique-mono">Tarifs spécifiques</label>
+                  <select
+                    id="tarif-specifique-mono"
+                    className="form-control"
+                    value={tarifSpecifiqueChoisi?.id ?? ''}
+                    disabled={tarifsSpecifiques.length === 0}
+                    onChange={(e) => choisirGrille(e.target.value
+                      ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
+                      : categorieCimaChoisie)}
+                  >
+                    <option value="">{tarifsSpecifiques.length > 0 ? 'Aucun (tarif de la catégorie)' : 'Aucun tarif spécifique pour cette catégorie'}</option>
+                    {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.libelle}
                       </option>
                     ))}
                   </select>
@@ -2450,6 +2540,10 @@ export const NewAutoQuotePage = () => {
                 onChange={(id) => {
                   setTermeId(id);
                   setTermeContrat(libelleTerme(id));
+                  // « Autre » ouvre la durée libre (date d'expiration saisie)
+                  const duree = dureeSelonTerme(id, dureeId);
+                  setDureeId(duree);
+                  setDureeContrat(libelleDuree(duree));
                 }}
               />
             </div>
@@ -2476,10 +2570,11 @@ export const NewAutoQuotePage = () => {
               <label className="form-label">Date d'émission</label>
               <input
                 type="date"
-                max={todayStr}
                 className="form-control"
                 value={dateEmission}
-                onChange={(e) => setDateEmission(e.target.value)}
+                readOnly
+                disabled
+                title="Date du jour, non modifiable"
               />
             </div>
 
@@ -2495,22 +2590,13 @@ export const NewAutoQuotePage = () => {
 
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              <select
-                className="form-control"
+              <DureeContratSelect
                 value={dureeId}
-                onChange={(e) => {
-                  const dId = Number(e.target.value);
-                  setDureeId(dId);
-                  const selectedD = DEFAULT_DUREES.find((d) => d.id === dId);
-                  if (selectedD) setDureeContrat(selectedD.libelle.split(' ')[0]);
+                onChange={(id) => {
+                  setDureeId(id);
+                  setDureeContrat(libelleDuree(id));
                 }}
-              >
-                {trierParLibelle(DEFAULT_DUREES, (d) => d.libelle).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.libelle}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="form-group">
@@ -2595,18 +2681,32 @@ export const NewAutoQuotePage = () => {
                   <label className="form-label">Catégorie CIMA (* requis)</label>
                   <select
                     className="form-control"
-                    value={categorieContrat}
-                    onChange={(e) => {
-                      setCategorieContrat(e.target.value);
-                      const c = categories.find((cat) => cat.libelle === e.target.value);
-                      if (c) setCategorieId(c.id);
-                      // L'offre suit la catégorie choisie (sa liste d'offres change)
-                      offreASuivreCategorieRef.current = true;
-                    }}
+                    value={categorieCimaChoisie?.id ?? ''}
+                    onChange={(e) => choisirGrille(categoriesCima.find((cat) => Number(cat.id) === Number(e.target.value)))}
                   >
-                    {trierParLibelle(categories, (cat) => cat.libelle).map((cat) => (
-                      <option key={cat.id} value={cat.libelle}>
+                    {trierParLibelle(categoriesCima, (cat) => cat.libelle).map((cat) => (
+                      <option key={cat.id} value={cat.id}>
                         {cat.libelle}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="tarif-specifique-flotte">Tarifs spécifiques</label>
+                  <select
+                    id="tarif-specifique-flotte"
+                    className="form-control"
+                    value={tarifSpecifiqueChoisi?.id ?? ''}
+                    disabled={tarifsSpecifiques.length === 0}
+                    onChange={(e) => choisirGrille(e.target.value
+                      ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
+                      : categorieCimaChoisie)}
+                  >
+                    <option value="">{tarifsSpecifiques.length > 0 ? 'Aucun (tarif de la catégorie)' : 'Aucun tarif spécifique pour cette catégorie'}</option>
+                    {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.libelle}
                       </option>
                     ))}
                   </select>
@@ -3224,14 +3324,13 @@ export const NewAutoQuotePage = () => {
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Prime nette</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Taxes</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>FGA</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>CEDEAO</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Garanties</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lignesRecap.length === 0 && (
                     <tr>
-                      <td colSpan={9} style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      <td colSpan={8} style={{ padding: '1.25rem 1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                         Aucun véhicule dans la flotte : ajoutez-les à l'écran Véhicule.
                       </td>
                     </tr>
@@ -3259,10 +3358,12 @@ export const NewAutoQuotePage = () => {
                               : <StatusBadge label="Estimées" color="amber" />}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.pa)}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>{montant(primes?.pn)}</td>
+                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#60a5fa' }}>
+                        {/* Prime nette de toutes les garanties du véhicule, CEDEAO comprise */}
+                        {montant(primes?.pn == null ? null : primes.pn + (Number(primes.cedeao) || 0))}
+                      </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.taxe)}</td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.fga)}</td>
-                      <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{montant(primes?.cedeao)}</td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         <button
                           type="button"
@@ -3572,7 +3673,7 @@ export const NewAutoQuotePage = () => {
             </table>
           </div>
 
-          {/* Les Tuiles financières (Taxe, FGA, Accessoire, CEDEAO, Prime Annuelle, Prime Nette, Prime TTC) */}
+          {/* Les Tuiles financières (Taxe, FGA, Accessoire, Prime Annuelle, Prime Nette, Prime TTC) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
             {/* Tuile 1 : TAXE D'ENREGISTREMENT */}
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
@@ -3637,29 +3738,7 @@ export const NewAutoQuotePage = () => {
               )}
             </div>
 
-            {/* Tuile 4 : CEDEAO */}
-            <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
-                <Shield size={15} color="#38bdf8" />
-                CEDEAO (CARTE BRUNE)
-              </div>
-              {isEditingPrimes ? (
-                <input
-                  type="number"
-                  step="1000"
-                  className="form-control"
-                  style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={valeurTuile('cedeao', calculFinancier.cedeao)}
-                  onChange={(e) => handleTuileChange('cedeao', e.target.value)}
-                />
-              ) : (
-                <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.cedeao.toLocaleString('fr-FR')} FCFA
-                </div>
-              )}
-            </div>
-
-            {/* Tuile 5 : TOTAL PRIME ANNUELLE */}
+            {/* Tuile 4 : TOTAL PRIME ANNUELLE */}
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
                 <Clock size={15} color="#a78bfa" />
@@ -3680,7 +3759,8 @@ export const NewAutoQuotePage = () => {
               )}
             </div>
 
-            {/* Tuile 6 : TOTAL PRIME NETTE */}
+            {/* Tuile 5 : TOTAL PRIME NETTE — toutes les garanties de la liste, CEDEAO comprise
+                (elle n'a plus de tuile à part : prime nette + taxe + FGA + accessoire = TTC) */}
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
                 <Plus size={15} color="#38bdf8" />
@@ -3691,17 +3771,22 @@ export const NewAutoQuotePage = () => {
                   type="number"
                   className="form-control"
                   style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem', color: '#60a5fa' }}
-                  value={valeurTuile('pn', calculFinancier.primeNette)}
-                  onChange={(e) => handleTuileChange('pn', e.target.value)}
+                  value={editedExtras.pn != null && editedExtras.pn !== ''
+                    ? String(Number(editedExtras.pn) + calculFinancier.cedeao)
+                    : String(calculFinancier.primeNetteGaranties)}
+                  // La saisie inclut la CEDEAO ; la prime nette transmise reste hors CEDEAO
+                  onChange={(e) => handleTuileChange('pn', e.target.value === ''
+                    ? ''
+                    : String(Number(e.target.value) - calculFinancier.cedeao))}
                 />
               ) : (
                 <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#60a5fa', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.primeNette.toLocaleString('fr-FR')} FCFA
+                  {calculFinancier.primeNetteGaranties.toLocaleString('fr-FR')} FCFA
                 </div>
               )}
             </div>
 
-            {/* Tuile 7 : PRIME TTC */}
+            {/* Tuile 6 : PRIME TTC */}
             <div style={{ background: 'rgba(37, 99, 235, 0.12)', padding: '1.25rem', borderRadius: '12px', border: '1.5px solid #2563eb' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: '#60a5fa', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase' }}>PRIME TTC</span>
@@ -3746,12 +3831,12 @@ export const NewAutoQuotePage = () => {
       )}
 
       {/* =========================================================================
-          ÉCRAN 4 : CLIENT / ASSURÉ / CONDUCTEUR
+          ÉCRAN 4 : CLIENT ASSURÉ
           ========================================================================= */}
       {step === 4 && (
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
           <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem', fontSize: '1.05rem' }}>
-            CLIENT / ASSURÉ / CONDUCTEUR
+            CLIENT ASSURÉ
           </h3>
 
           {/* Ligne 1 : Nom du souscripteur (avec search et bouton +) | Nom de l'assuré | Numéro de téléphone */}

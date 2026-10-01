@@ -7,6 +7,13 @@ import { useToast } from '../../../context/ToastContext';
 import { CreditCard, Check, Receipt } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
 import { printRecuEncaissement } from '../../../utils/exportUtils';
+import {
+  ChampsReglement,
+  champsReglementApi,
+  modesProposes,
+  natureMode,
+  reglementVide,
+} from '../../../components/cash/ChampsReglement';
 
 // Date du jour au format du champ date (AAAA-MM-JJ), en heure locale
 const aujourdhui = () => {
@@ -61,40 +68,29 @@ export const CashCollectionPage = () => {
     loadContracts();
     Promise.all([settingsApi.getModesEncaissement(), settingsApi.getBanques()])
       .then(([listeModes, listeBanques]) => {
-        const ordre = (m) => Number(m.ordreaffichage) || 99;
-        setModes((Array.isArray(listeModes) ? listeModes : []).sort((a, b) => ordre(a) - ordre(b)));
+        setModes(modesProposes(listeModes));
         setBanques(Array.isArray(listeBanques) ? listeBanques : []);
       })
       .catch((err) => console.error('Erreur chargement modes de paiement / banques :', err));
   }, []);
 
   // Payment Form State
-  const [idMode, setIdMode] = useState('');
   const [montantEncaisse, setMontantEncaisse] = useState(0);
   const [dateEncaissement, setDateEncaissement] = useState(aujourdhui());
-  const [idBanque, setIdBanque] = useState('');
-  const [numeroCheque, setNumeroCheque] = useState('');
-  const [montantInitialCheque, setMontantInitialCheque] = useState('');
-  const [referenceEncaissement, setReferenceEncaissement] = useState('');
-  const [referenceCompensation, setReferenceCompensation] = useState('');
-  const [nomEmetteur, setNomEmetteur] = useState('');
+  const [reglement, setReglement] = useState(reglementVide());
   const [enregistrement, setEnregistrement] = useState(false);
-
-  const modeChoisi = modes.find((m) => String(m.idmodeencaissement) === String(idMode));
+  const changerReglement = (champ, valeur) => setReglement((prev) => ({ ...prev, [champ]: valeur }));
 
   const handleOpenPayment = (contract) => {
     setSelectedContract(contract);
     const reste = contract.prime_totale - (contract.montant_encaisse || 0);
     setMontantEncaisse(reste > 0 ? reste : contract.prime_totale);
-    const especes = modes.find((m) => /esp[eè]ce/i.test(m.libellemodepaiement || ''));
-    setIdMode(String((especes || modes[0])?.idmodeencaissement || ''));
+    const especes = modes.find((m) => natureMode(m).especes);
+    setReglement({
+      ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
+      idMode: String((especes || modes[0])?.idmodeencaissement || ''),
+    });
     setDateEncaissement(aujourdhui());
-    setIdBanque('');
-    setNumeroCheque('');
-    setMontantInitialCheque('');
-    setReferenceEncaissement('');
-    setReferenceCompensation('');
-    setNomEmetteur(String(contract.client_nom || '').slice(0, 50));
     setIsModalOpen(true);
   };
 
@@ -124,17 +120,11 @@ export const CashCollectionPage = () => {
     setEnregistrement(true);
     try {
       const [annee, mois, jour] = dateEncaissement.split('-');
-      const bancaire = Boolean(modeChoisi?.banque);
+      const mode = modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode));
       const res = await cashApi.collectPremium({
-        mode_encaissement: Number(idMode),
+        ...champsReglementApi(reglement, mode),
         date_encaissement: `${jour}-${mois}-${annee}`,
-        banque: bancaire && idBanque ? Number(idBanque) : 1,
         montant_total: Number(montantEncaisse),
-        numero_cheque: bancaire ? numeroCheque.trim() : '',
-        montant_initial_cheque: bancaire && montantInitialCheque ? Number(montantInitialCheque) : null,
-        reference_encaissement: referenceEncaissement.trim(),
-        reference_compensation: modeChoisi?.compensation ? referenceCompensation.trim() : '',
-        nom_emetteur: nomEmetteur.trim(),
         liste_quittance: [{ numero_quittance: quittance, montant_encaissement: Number(montantEncaisse) }],
       });
       setIsModalOpen(false);
@@ -219,7 +209,7 @@ export const CashCollectionPage = () => {
       <div>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <CreditCard size={26} color="#10b981" />
-          Caisse & Encaissement des Primes
+          Encaissement des Primes
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
           Enregistrement des règlements (espèces, chèques, virements, Wave / Orange Money DistriPay) et émission des quittances.
@@ -319,87 +309,7 @@ export const CashCollectionPage = () => {
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Mode de paiement</label>
-              <select className="form-control" required value={idMode} onChange={(e) => setIdMode(e.target.value)}>
-                <option value="">— Choisir —</option>
-                {modes.map((m) => (
-                  <option key={m.idmodeencaissement} value={m.idmodeencaissement}>{m.libellemodepaiement}</option>
-                ))}
-              </select>
-            </div>
-
-            {modeChoisi?.banque && (
-              <div className="responsive-form-row">
-                <div className="form-group">
-                  <label className="form-label">Banque émettrice</label>
-                  <select className="form-control" required value={idBanque} onChange={(e) => setIdBanque(e.target.value)}>
-                    <option value="">— Choisir —</option>
-                    {banques.map((b) => (
-                      <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Numéro du chèque</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    maxLength={20}
-                    value={numeroCheque}
-                    onChange={(e) => setNumeroCheque(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Montant initial du chèque</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    min="0"
-                    placeholder="Obligatoire au 1er usage du chèque"
-                    value={montantInitialCheque}
-                    onChange={(e) => setMontantInitialCheque(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {modeChoisi?.compensation && (
-              <div className="form-group">
-                <label className="form-label">Référence de compensation</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  maxLength={10}
-                  value={referenceCompensation}
-                  onChange={(e) => setReferenceCompensation(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div className="responsive-form-row">
-              <div className="form-group">
-                <label className="form-label">Nom de l'émetteur</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  required
-                  maxLength={50}
-                  value={nomEmetteur}
-                  onChange={(e) => setNomEmetteur(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Référence (facultatif)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  maxLength={50}
-                  value={referenceEncaissement}
-                  onChange={(e) => setReferenceEncaissement(e.target.value)}
-                />
-              </div>
-            </div>
+            <ChampsReglement modes={modes} banques={banques} valeurs={reglement} onChange={changerReglement} />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>

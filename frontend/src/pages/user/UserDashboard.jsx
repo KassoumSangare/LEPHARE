@@ -184,7 +184,7 @@ export const UserDashboard = () => {
         <div className="glass-panel" style={{ padding: '1.75rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <div>
-              <h2 className="title-md" style={{ color: '#fff' }}>Dernières Propositions & Devis</h2>
+              <h2 className="title-md" style={{ color: '#fff' }}>Derniers Devis</h2>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Propositions prêtes à être converties en police</p>
             </div>
             <button
