@@ -57,7 +57,7 @@ const isWithinLastThreeYears = (q) => {
 };
 
 // Formulaire (route /user/quotes/<module>) qui rouvre un devis non auto en édition complète, par idproduit
-const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 4: 'mrh', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
+const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 4: 'mrh', 5: 'sante', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
 
 export const QuoteListPage = () => {
   const { user } = useAuth();
@@ -499,14 +499,13 @@ export const QuoteListPage = () => {
         const todayStr = new Date().toISOString().split('T')[0];
         const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
         const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
-        // Auto, MRH (4), IA (2), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire de création est
-        // rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
+        // Auto, IA (2), MRH (4), Santé (5), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire
+        // de création est rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
         // (aucune page d'édition complète construite pour elles pour l'instant).
         const produit = row.raw?.produit;
         const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
         const moduleDevis = getBranchOf(row) === 'AUTO' ? 'auto' : MODULE_EDITION_PAR_PRODUIT[idProduit] || null;
-        // Santé n'a pas de page d'édition complète (fenêtre des primes) mais sa branche est ouverte
-        const moduleFerme = !moduleActif(moduleDevis || (getBranchOf(row) === 'SANTE' ? 'sante' : null));
+        const moduleFerme = !moduleActif(moduleDevis);
 
         return (
           <RowActions

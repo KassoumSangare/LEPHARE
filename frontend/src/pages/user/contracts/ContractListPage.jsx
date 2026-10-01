@@ -294,7 +294,6 @@ export const ContractListPage = () => {
       c.statut_contrat || c.statut || 'En cours',
     ]);
 
-    const totalNette = listToPrint.reduce((acc, c) => acc + Number(c.prime_nette || 0), 0);
     const totalTtc = listToPrint.reduce((acc, c) => acc + Number(c.prime_totale || 0), 0);
     const tabName = getTabLabel(branchToUse);
     const statutLabel = LIBELLES_ONGLET_STATUT[filterTab] || 'Tous les contrats';
@@ -312,7 +311,10 @@ export const ContractListPage = () => {
       },
       headers,
       rows,
-      totals: ['TOTAL', `${listToPrint.length} lignes`, '', '', '', '', '', fcfa(totalNette), fcfa(totalTtc), ''],
+      // Sans le bloc République / société / titre / sous-titre, la ligne TOTAL, ni l'attestation
+      // et les signatures
+      enTete: false,
+      piedDePage: false,
     });
   };
 

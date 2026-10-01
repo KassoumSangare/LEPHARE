@@ -12,6 +12,7 @@ import {
 import { formatDate } from '../../../utils/dateUtils';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
+import { iaApi, santeApi } from '../../../api/endpoints';
 import {
   FileText,
   Printer,
@@ -56,6 +57,25 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     setQuoteAJour(null);
     setImposition(false);
   }, [quoteInitial?.iddevis, isOpen]);
+
+  // Détail lu en base : assurés d'un devis IA (assureiainfo), saisie d'un devis Santé (couvertures,
+  // adhérents, affiliés)
+  const [detailBranche, setDetailBranche] = useState(null);
+  const idDevisBase = Number(quoteInitial?.iddevis || quoteInitial?.raw?.iddevis) || 0;
+  const brancheDevis = quoteInitial?.branche;
+  useEffect(() => {
+    let actif = true;
+    setDetailBranche(null);
+    if (!isOpen || !idDevisBase) return undefined;
+    const chargement = brancheDevis === 'IA'
+      ? iaApi.getAssuresDevis(idDevisBase).then((assures) => ({ assures: assures || [] }))
+      : brancheDevis === 'Santé' ? santeApi.lireDevis(idDevisBase) : null;
+    if (!chargement) return undefined;
+    chargement
+      .then((d) => { if (actif) setDetailBranche(d); })
+      .catch(() => { if (actif) setDetailBranche({ erreur: true }); });
+    return () => { actif = false; };
+  }, [isOpen, idDevisBase, brancheDevis]);
 
   const quote = quoteAJour || quoteInitial;
   if (!isOpen || !quote) return null;
@@ -299,8 +319,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </div>
         </div>
 
-        {/* Branch Specific Technical Details */}
-        {Object.keys(details).length > 0 && (
+        {/* Branch Specific Technical Details (IA et Santé : détail lu en base) */}
+        {(Object.keys(details).length > 0 || ['IA', 'Santé'].includes(quote.branche)) && (
           <div className="glass-panel" style={{ padding: '1.25rem' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase' }}>
               Détails & Paramètres Techniques ({quote.branche})
@@ -346,26 +366,83 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               </div>
             )}
 
-            {/* Santé Details */}
+            {/* Santé : saisie enregistrée (couvertures, adhérents, affiliés) */}
             {quote.branche === 'Santé' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
-                <div><strong>Nombre total de bénéficiaires :</strong> {details.totalAssures || 0} personnes</div>
-                {details.colleges && details.colleges.map((c, idx) => (
-                  <div key={idx} style={{ padding: '0.6rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-                    <strong>{c.nom}</strong> : {c.effectif} assurés • Taux de couverture : {c.taux_couverture} • Prime/tête : {Number(c.prime_par_tete || 0).toLocaleString('fr-FR')} FCFA
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement de la saisie Santé…</div>
+              ) : detailBranche.erreur ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Détail Santé indisponible pour ce devis.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
+                    <div><strong>Offre commerciale :</strong> {detailBranche.detail?.libelle_tarif || detailBranche.filiales?.[0]?.libelle_offre || '—'}</div>
+                    <div><strong>Formule de couverture :</strong> {detailBranche.detail?.libelle_offre || '—'}</div>
+                    <div><strong>Type de contrat :</strong> {detailBranche.detail?.libelle_type_contrat || '—'}</div>
+                    <div><strong>Gestionnaire :</strong> {detailBranche.detail?.gestionnairesante || '—'}</div>
+                    <div><strong>Adhérents :</strong> {detailBranche.adherents?.length || 0} • <strong>Affiliés :</strong> {detailBranche.affilies?.length || 0}</div>
                   </div>
-                ))}
-              </div>
+                  {(detailBranche.filiales || []).map((f) => (
+                    <div key={f.idfiliale} style={{ padding: '0.5rem 0.6rem', borderRadius: '6px', background: 'var(--bg-surface-elevated)' }}>
+                      <strong>{f.libellecollege}</strong> : {f.libelle_offre} • {f.libellezone}
+                    </div>
+                  ))}
+                  {(detailBranche.affilies || []).length > 0 && (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr><th style={{ textAlign: 'left' }}>Nom et prénoms</th><th style={{ textAlign: 'left' }}>Lien</th><th style={{ textAlign: 'left' }}>Né(e) le</th></tr>
+                        </thead>
+                        <tbody>
+                          {detailBranche.affilies.map((a) => (
+                            <tr key={a.idaffilie}><td>{a.nom} {a.prenom}</td><td>{a.libellelien || a.lien}</td><td>{formatDate(a.datenaissance)}</td></tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {!(detailBranche.adherents || []).length && (
+                    <div style={{ color: 'var(--text-muted)' }}>Aucun adhérent en base pour ce devis (devis repris d'URANUS sans saisie détaillée).</div>
+                  )}
+                </div>
+              )
             )}
 
-            {/* IA Details */}
+            {/* IA : assurés du devis (une ligne de devis par assuré) */}
             {quote.branche === 'IA' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
-                <div><strong>Classe Professionnelle :</strong> {details.classeProfessionnelle}</div>
-                <div><strong>Capital Décès :</strong> {Number(details.capitalDeces || 0).toLocaleString('fr-FR')} FCFA</div>
-                <div><strong>Capital Invalidité (IPT) :</strong> {Number(details.capitalIpt || 0).toLocaleString('fr-FR')} FCFA</div>
-                <div><strong>Frais Médicaux :</strong> {Number(details.fraisMedicaux || 0).toLocaleString('fr-FR')} FCFA</div>
-              </div>
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des assurés…</div>
+              ) : !(detailBranche.assures || []).length ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun assuré en base pour ce devis (devis repris d'URANUS sans détail).</div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left' }}>Assuré</th>
+                        <th style={{ textAlign: 'left' }}>Né(e) le</th>
+                        <th style={{ textAlign: 'left' }}>Profession</th>
+                        <th style={{ textAlign: 'right' }}>Décès</th>
+                        <th style={{ textAlign: 'right' }}>Infirmité</th>
+                        <th style={{ textAlign: 'right' }}>Frais trait.</th>
+                        <th style={{ textAlign: 'right' }}>Prime nette</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailBranche.assures.map((a) => (
+                        <tr key={a.id_devis_detail}>
+                          <td>{a.nom} {a.prenoms}</td>
+                          <td>{formatDate(a.date_naissance)}</td>
+                          <td>{a.libelle_profession || '—'}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(a.capital_deces || 0).toLocaleString('fr-FR')}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(a.capital_infirmite || 0).toLocaleString('fr-FR')}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(a.capital_frais_traitement || 0).toLocaleString('fr-FR')}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(Number(a.prime_nette || 0)).toLocaleString('fr-FR')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
 
             {/* Voyage Details */}

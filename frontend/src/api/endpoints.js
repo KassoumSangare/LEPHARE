@@ -932,6 +932,42 @@ export const iaApi = {
 };
 
 /* =========================================================================
+   4.0 ter SANTÉ (produit 5) - parcours et procédures d'URANUS
+   ========================================================================= */
+const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
+
+export const santeApi = {
+  // GET /api/tarifparproduit/5 : « Offre commerciale » d'URANUS (catégories Santé)
+  getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/5')),
+  // GET /api/typecontratsante/ : CONTRAT PARTICULIER, CONTRAT SOCIETE
+  getTypesContrat: async () => extractData(await apiClient.get('/typecontratsante/')),
+  // GET /api/offresantepartarif/:idTarif : « Formule de couverture » de la catégorie
+  getFormules: async (idTarif) => extractData(await apiClient.get(`/offresantepartarif/${idTarif}`)),
+  // GET /api/collegesanteparoffre/:idOffre : collèges de la formule
+  getColleges: async (idOffre) => extractData(await apiClient.get(`/collegesanteparoffre/${idOffre}`)),
+  // GET /api/zonecouverturesante/ : CÔTE D'IVOIRE, MONDE ENTIER
+  getZones: async () => extractData(await apiClient.get('/zonecouverturesante/')),
+  // GET /api/lienjuridiquesante/ : liens des affiliés (A Adhérent, C Conjoint(e), E Enfant)
+  getLiens: async () => extractData(await apiClient.get('/lienjuridiquesante/')),
+  // POST /api/devissante/initialisation/ : devis vide qui porte la saisie (numéro de saisie d'URANUS)
+  initialiser: async () => (await apiClient.post('/devissante/initialisation/', {})).data,
+  // POST /api/devissante/filiale/ : « Enregistrer le collège » (couverture souscrite)
+  enregistrerFiliale: async (payload) => (await apiClient.post('/devissante/filiale/', payload)).data,
+  // POST /api/devissante/adherent/ (multipart) : adhérent créé ou modifié, pièce jointe facultative
+  enregistrerAdherent: async (formData) => (await apiClient.post('/devissante/adherent/', formData, multipart)).data,
+  // POST /api/devissante/affilie/ (multipart) : affilié créé ou modifié
+  enregistrerAffilie: async (formData) => (await apiClient.post('/devissante/affilie/', formData, multipart)).data,
+  // POST /api/devissante/suppression/ : { type: ADH | AFF | FIL, id_devis, id_objet }
+  supprimer: async (payload) => (await apiClient.post('/devissante/suppression/', payload)).data,
+  // POST /api/importationaffilie/ (multipart) : adhérents et affiliés d'un fichier Excel dans une filiale
+  importerAffilies: async (formData) => (await apiClient.post('/importationaffilie/', formData, multipart)).data,
+  // POST /api/devissante/enregistrement/ : « Enregistrer le devis » (sp_creation_devis_sante)
+  enregistrerDevis: async (payload) => (await apiClient.post('/devissante/enregistrement/', payload)).data,
+  // GET /api/devissante/:iddevis/ : tout ce qui a été saisi sur le devis
+  lireDevis: async (idDevis) => (await apiClient.get(`/devissante/${idDevis}/`)).data,
+};
+
+/* =========================================================================
    4.0 bis RISQUES DIVERS : RC (produit 8) et MULTIRISQUE PROFESSIONNELLE (produit 7)
    ========================================================================= */
 // Chemins URANUS par produit : calcul des garanties et enregistrement du devis

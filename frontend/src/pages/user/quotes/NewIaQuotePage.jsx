@@ -13,6 +13,9 @@ import {
   Edit3,
   AlertTriangle,
   Calculator,
+  Upload,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
@@ -32,6 +35,20 @@ const CAPITAUX_MINENE = { CapitalDeces: 2000000, CapitalIpp: 2000000, FraisTrait
 const DUREES_MINENE = [4];
 // Réduction plafonnée à 35 % comme dans URANUS
 const REDUCTION_MAX = 35;
+// Clauses du tarif IA NSIA (document « TARIF IA_NSIA CI », feuille Clauses) : personnes de plus de
+// 60 ans à la souscription non garanties sauf dérogation de l'assureur ; indemnité limitée à
+// 200 millions par assuré et par sinistre. Avertissements, la dérogation restant possible.
+const ID_COMPAGNIE_NSIA = 1;
+const AGE_MAX_NSIA = 60;
+const INDEMNITE_MAX_NSIA = 200000000;
+const ageAu = (naissance, date) => {
+  if (!naissance || !date) return null;
+  const n = new Date(naissance);
+  const d = new Date(date);
+  let a = d.getFullYear() - n.getFullYear();
+  if (d.getMonth() < n.getMonth() || (d.getMonth() === n.getMonth() && d.getDate() < n.getDate())) a -= 1;
+  return a;
+};
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 // Taxe des primes saisies, calculée comme la base : (prime nette + accessoire) × taux, arrondie
@@ -169,6 +186,19 @@ export const NewIaQuotePage = () => {
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [numeroPoliceConnexe, setNumeroPoliceConnexe] = useState('');
   const estMinene = Number(idTarif) === ID_TARIF_MINENE;
+  // Clauses du tarif IA NSIA (hors MINENE, qui a ses propres règles) pour un assuré
+  const alertesNsia = (a) => {
+    if (Number(compagnieId) !== ID_COMPAGNIE_NSIA || estMinene) return [];
+    const alertes = [];
+    const ageEffet = ageAu(a.DateNaissance, dateEffet);
+    if (ageEffet !== null && ageEffet > AGE_MAX_NSIA) {
+      alertes.push(`${ageEffet} ans à la date d'effet : NSIA ne garantit pas les personnes de plus de ${AGE_MAX_NSIA} ans à la souscription, sauf dérogation de l'assureur.`);
+    }
+    if (Number(a.CapitalDeces) > INDEMNITE_MAX_NSIA || Number(a.CapitalIpp) > INDEMNITE_MAX_NSIA) {
+      alertes.push('NSIA limite l\'indemnité à 200 000 000 FCFA par assuré et par sinistre.');
+    }
+    return alertes;
+  };
   // Création MINENE : les assurés viennent du contrat Santé, rien n'est saisi à l'écran
   const creationMinene = estMinene && !editIddevisParam;
   const dateExpiration = useMemo(
@@ -457,6 +487,29 @@ export const NewIaQuotePage = () => {
     const taxe = taxeLignes + (calcule.taxeAccessoire || 0);
     return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: primeNette + taxe + calcule.accessoire };
   }, [assures, flotte, primesToutesSaisies, tauxTaxe]);
+  // Garanties d'un assuré : celles du calcul en cours (offregarantieia), sinon celles enregistrées
+  const garantiesAssure = (a) => {
+    if (a.prime?.garanties?.length && !a.prime.enregistree) {
+      return a.prime.garanties.map((g) => ({
+        cle: g.IdSousGarantie || g.IdGarantie,
+        libelle: g.LibelleSousGarantie || g.LibelleGarantie,
+        acquise: g.Acquise !== false,
+        capital: g.Capital,
+        primeAnnuelle: g.PrimeAnnuelle,
+        primeNette: g.PrimeNette,
+        taxe: g.Taxe,
+      }));
+    }
+    return (a.garantiesEnregistrees || []).map((g) => ({
+      cle: g.id_garantie,
+      libelle: g.libelle,
+      acquise: g.acquise,
+      capital: g.capital,
+      primeAnnuelle: g.prime_annuelle,
+      primeNette: g.prime_nette,
+      taxe: g.taxe,
+    }));
+  };
   const rienAModifier = Boolean(idDevisEdite) && !enteteModifiee
     && (termeOrigine === null || Number(termeId) === termeOrigine)
     && assures.every((a) => a.IdDevisDetail && empreinteLigne(a) === a.origine);
@@ -519,6 +572,8 @@ export const NewIaQuotePage = () => {
   const ajouterAyant = () => {
     const part = Number(ayantEnCours.Part) || 0;
     if (!ayantEnCours.Nom.trim()) { toastError('Saisissez le nom de l\'ayant droit.'); return; }
+    // Prénoms obligatoires, comme dans URANUS
+    if (!ayantEnCours.Prenoms.trim()) { toastError('Saisissez les prénoms de l\'ayant droit.'); return; }
     if (part <= 0) { toastError('La part de l\'ayant droit doit être supérieure à 0 %.'); return; }
     const total = assureEnCours.AyantsDroit.reduce((s, d) => s + (Number(d.Part) || 0), 0) + part;
     if (total > 100) { toastError(`Le total des parts dépasserait 100 % (${total} %).`); return; }
@@ -816,16 +871,16 @@ export const NewIaQuotePage = () => {
     }
   };
 
+  // Confirmation : contrat, police et quittance créés par la base (sp_confirmation_devis), sans repli local
   const handleConvertToContract = async (quoteToConvert) => {
     try {
-      await contractApi.createContractFromQuote(quoteToConvert.id);
-    } catch (e) {
-      console.warn('Fallback contract creation');
+      await contractApi.createContractFromQuote(quoteToConvert.iddevis || quoteToConvert.id);
+      success(`Devis ${quoteToConvert.numerodevis} confirmé : le contrat a été créé.`);
+      setCreatedQuote(null);
+      navigate('/user/contracts');
+    } catch (err) {
+      toastError(`Le devis n'a pas pu être confirmé : ${messageErreurApi(err)}`);
     }
-    const newContract = dataStore.convertQuoteToContract(quoteToConvert);
-    success(`Devis ${quoteToConvert.numerodevis} transformé en police d'assurance avec succès !`);
-    setCreatedQuote(null);
-    navigate(`/user/contracts/${newContract.id || newContract.numeropolice}`);
   };
 
   // -------------------------------------------------------------
@@ -837,11 +892,11 @@ export const NewIaQuotePage = () => {
   };
   const totalParts = assureEnCours.AyantsDroit.reduce((s, d) => s + (Number(d.Part) || 0), 0);
   const listeDeroulante = {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#1e293b',
+    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--bg-surface-elevated)',
     border: '1px solid var(--border-subtle)', borderRadius: '6px', maxHeight: '220px', overflowY: 'auto',
     marginTop: '4px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
   };
-  const elementListe = { padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem' };
+  const elementListe = { padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.85rem' };
   const titreSection = { color: '#8b5cf6', fontWeight: 800, textTransform: 'uppercase', fontSize: '1.05rem', margin: '0 0 1.25rem' };
 
   return (
@@ -859,7 +914,7 @@ export const NewIaQuotePage = () => {
               : 'Nouveau Devis Individuelle Accident (IA)'}
           </h1>
           {isLoadingEdit ? (
-            <p style={{ color: '#a78bfa', fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>
+            <p style={{ color: 'var(--accent-purple)', fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>
           ) : (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               Garanties Décès accidentel, Infirmité permanente et Frais de traitement — {flotte ? 'contrat groupe (plusieurs assurés)' : 'contrat individuel (un assuré)'}.
@@ -884,8 +939,8 @@ export const NewIaQuotePage = () => {
               style={{
                 padding: '0.5rem 0.95rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
                 border: step === e.n ? '2px solid #8b5cf6' : '1px solid var(--border-subtle)',
-                background: step === e.n ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                color: step === e.n ? '#c4b5fd' : 'var(--text-muted)',
+                background: step === e.n ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                color: step === e.n ? 'var(--accent-purple)' : 'var(--text-muted)',
               }}
             >
               {e.label}
@@ -895,7 +950,7 @@ export const NewIaQuotePage = () => {
       </div>
 
       {primeImposee && (
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', color: '#fcd34d', fontSize: '0.85rem' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--accent-amber)', fontSize: '0.85rem' }}>
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>
             Ce devis comporte des <strong>primes imposées</strong>. Les assurés que vous ne modifiez pas gardent leurs primes ;
@@ -935,11 +990,6 @@ export const NewIaQuotePage = () => {
                   <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>
                 ))}
               </select>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                {flotte ? 'Groupe : plusieurs assurés' : 'Individuel : un seul assuré'}
-                {personnalise ? ' — tarif personnalisé : primes saisies par assuré' : ''}
-                {estMinene ? ' — devis créé depuis le contrat Santé MINENE' : ''}
-              </span>
             </div>
             <div className="form-group">
               <label className="form-label">Offre (* requis)</label>
@@ -984,7 +1034,7 @@ export const NewIaQuotePage = () => {
                   value={dateExpiration}
                   readOnly
                   title={estMinene && Number(dureeId) === 5 ? 'MINENE, terme « Autre » : 31/12 de l\'année d\'effet' : 'Calculée d\'après la durée'}
-                  style={{ background: 'rgba(255,255,255,0.05)', color: '#a78bfa', fontWeight: 700 }}
+                  style={{ background: 'var(--bg-surface-elevated)', color: 'var(--accent-purple)', fontWeight: 700 }}
                 />
               )}
             </div>
@@ -1043,7 +1093,7 @@ export const NewIaQuotePage = () => {
             <div className="form-group" style={{ position: 'relative', maxWidth: '560px' }}>
               <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Nom du souscripteur (* requis)</span>
-                <button type="button" onClick={() => setIsQuickAddClientOpen(true)} style={{ background: 'transparent', border: 'none', color: '#a78bfa', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                <button type="button" onClick={() => setIsQuickAddClientOpen(true)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-purple)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                   <Plus size={14} /> Nouveau client
                 </button>
               </label>
@@ -1063,8 +1113,8 @@ export const NewIaQuotePage = () => {
                       style={elementListe}
                       onClick={() => choisirSouscripteur(c)}
                     >
-                      <div style={{ fontWeight: 700, color: '#fff' }}>{c.nomcomplet}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{c.codeclient} • {c.telephone}</div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{c.nomcomplet}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.codeclient} • {c.telephone}</div>
                     </div>
                   ))}
                 </div>
@@ -1123,8 +1173,8 @@ export const NewIaQuotePage = () => {
                     <div style={listeDeroulante}>
                       {clientsFiltres(rechercheAssure).map((c) => (
                         <div key={c.id} style={elementListe} onClick={() => choisirClientAssure(c)}>
-                          <div style={{ fontWeight: 700, color: '#fff' }}>{c.nomcomplet}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{c.codeclient} • {c.telephone}</div>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{c.nomcomplet}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.codeclient} • {c.telephone}</div>
                         </div>
                       ))}
                     </div>
@@ -1148,8 +1198,8 @@ export const NewIaQuotePage = () => {
               </div>
               <div className="form-group">
                 <label className="form-label">Profession</label>
+                {/* Liste de la base seule : elle contient déjà « AUTRE » (id 0, classe 01) */}
                 <select className="form-control" value={assureEnCours.IdProfession} onChange={(e) => setAssureEnCours((p) => ({ ...p, IdProfession: Number(e.target.value) }))}>
-                  <option value={0}>AUTRE</option>
                   {professionsTriees.map((p) => (
                     <option key={p.id} value={p.id}>{p.libelle_profession} (classe {p.code_classe_assure})</option>
                   ))}
@@ -1158,6 +1208,18 @@ export const NewIaQuotePage = () => {
               <div className="form-group">
                 <label className="form-label">Adresse géographique</label>
                 <input type="text" className="form-control" value={assureEnCours.AdresseGeographique} onChange={(e) => setAssureEnCours((p) => ({ ...p, AdresseGeographique: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Téléphone Assuré</label>
+                <input
+                  type="tel"
+                  className="form-control"
+                  placeholder="+225"
+                  value={assureEnCours.Telephone}
+                  onChange={(e) => setAssureEnCours((p) => ({ ...p, Telephone: e.target.value }))}
+                  readOnly={modeAssure === 'existant'}
+                  title={modeAssure === 'existant' ? 'Téléphone de la fiche client (modifiable depuis la fiche)' : 'Enregistré sur la fiche du nouvel assuré'}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Capital décès</label>
@@ -1173,15 +1235,52 @@ export const NewIaQuotePage = () => {
               </div>
             </div>
 
+            {alertesNsia(assureEnCours).map((alerte) => (
+              <div key={alerte} style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--accent-amber)', fontSize: '0.82rem' }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{alerte}</span>
+              </div>
+            ))}
+
+            {/* Catégorie à tarif personnalisé (offres « SPECIFIQUE ») : primes de l'assuré saisies, comme URANUS.
+                Taxe et TTC sont celles que la base enregistrera (taux de taxe de l'offre). */}
+            {personnalise && (() => {
+              const taxe = taxeImposee(assureEnCours.PrimeNette, assureEnCours.Accessoire, tauxTaxe);
+              const ttc = Number(assureEnCours.PrimeNette) > 0 ? (Number(assureEnCours.PrimeNette) || 0) + (Number(assureEnCours.Accessoire) || 0) + taxe : 0;
+              return (
+                <div style={{ marginTop: '1.25rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
+                  <h4 style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700, margin: '0 0 0.75rem' }}>Primes imposées (tarif personnalisé)</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Prime Nette</label>
+                      <AmountInput value={assureEnCours.PrimeNette} onChange={(v) => setAssureEnCours((p) => ({ ...p, PrimeNette: v }))} />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Accessoire</label>
+                      <AmountInput value={assureEnCours.Accessoire} onChange={(v) => setAssureEnCours((p) => ({ ...p, Accessoire: v }))} disabled={!(Number(assureEnCours.PrimeNette) > 0)} />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Taxe ({tauxTaxe} %)</label>
+                      <input type="text" className="form-control" readOnly value={`${fcfa(taxe)} FCFA`} />
+                    </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label">Prime TTC</label>
+                      <input type="text" className="form-control" readOnly value={`${fcfa(ttc)} FCFA`} style={{ fontWeight: 700 }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Ayants droit de l'assuré */}
-            <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'rgba(255,255,255,0.02)' }}>
-              <h4 style={{ fontSize: '0.9rem', color: '#e2e8f0', fontWeight: 700, margin: '0 0 0.75rem' }}>
+            <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
+              <h4 style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700, margin: '0 0 0.75rem' }}>
                 Ayants droit (bénéficiaires en cas de décès) — total {totalParts} %
               </h4>
               {assureEnCours.AyantsDroit.length > 0 && (
                 <table className="table" style={{ width: '100%', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
                   <thead>
-                    <tr style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                    <tr style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                       <th style={{ textAlign: 'left', padding: '0.4rem' }}>QUALITÉ</th>
                       <th style={{ textAlign: 'left', padding: '0.4rem' }}>NOM</th>
                       <th style={{ textAlign: 'left', padding: '0.4rem' }}>PRÉNOMS</th>
@@ -1216,11 +1315,11 @@ export const NewIaQuotePage = () => {
                   </select>
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Nom</label>
+                  <label className="form-label">Nom *</label>
                   <input type="text" className="form-control" value={ayantEnCours.Nom} onChange={(e) => setAyantEnCours((p) => ({ ...p, Nom: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Prénoms</label>
+                  <label className="form-label">Prénoms *</label>
                   <input type="text" className="form-control" value={ayantEnCours.Prenoms} onChange={(e) => setAyantEnCours((p) => ({ ...p, Prenoms: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
@@ -1249,7 +1348,7 @@ export const NewIaQuotePage = () => {
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: '#94a3b8', fontSize: '0.75rem' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                     <th style={{ padding: '0.6rem', textAlign: 'left' }}>ASSURÉ</th>
                     <th style={{ padding: '0.6rem', textAlign: 'left' }}>NÉ(E) LE</th>
                     <th style={{ padding: '0.6rem', textAlign: 'left' }}>PROFESSION</th>
@@ -1263,13 +1362,18 @@ export const NewIaQuotePage = () => {
                 </thead>
                 <tbody>
                   {assures.length === 0 && (
-                    <tr><td colSpan={9} style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>Aucun assuré pour l'instant.</td></tr>
+                    <tr><td colSpan={9} style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>Aucun assuré pour l'instant.</td></tr>
                   )}
                   {assures.map((a) => (
-                    <tr key={a.cle} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', background: cleEnEdition === a.cle ? 'rgba(139, 92, 246, 0.08)' : undefined }}>
+                    <tr key={a.cle} style={{ borderBottom: '1px solid var(--border-subtle)', background: cleEnEdition === a.cle ? 'rgba(139, 92, 246, 0.08)' : undefined }}>
                       <td style={{ padding: '0.6rem', fontWeight: 600 }}>
                         {a.Nom} {a.Prenoms}
-                        {!a.IdAssure && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: '#a78bfa' }}>(nouvelle fiche)</span>}
+                        {!a.IdAssure && <span style={{ marginLeft: '0.4rem', fontSize: '0.7rem', color: 'var(--accent-purple)' }}>(nouvelle fiche)</span>}
+                        {alertesNsia(a).length > 0 && (
+                          <span title={alertesNsia(a).join('\n')} style={{ marginLeft: '0.4rem', color: 'var(--accent-amber)', verticalAlign: 'middle' }}>
+                            <AlertTriangle size={14} />
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '0.6rem' }}>{a.DateNaissance ? a.DateNaissance.split('-').reverse().join('/') : ''}</td>
                       <td style={{ padding: '0.6rem' }}>{libelleProfession(a.IdProfession)}</td>
@@ -1277,7 +1381,7 @@ export const NewIaQuotePage = () => {
                       <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(a.CapitalIpp)}</td>
                       <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(a.FraisTraitement)}</td>
                       <td style={{ padding: '0.6rem', textAlign: 'center' }}>{a.AyantsDroit.length}</td>
-                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: '#c4b5fd', fontWeight: 700 }}>
+                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--accent-purple)', fontWeight: 700 }}>
                         {a.prime ? `${fcfa(a.prime.primeNette)} FCFA` : '—'}
                       </td>
                       <td style={{ padding: '0.6rem', textAlign: 'center' }}>
@@ -1295,6 +1399,29 @@ export const NewIaQuotePage = () => {
                 </tbody>
               </table>
             </div>
+            {flotte && (
+              <div style={{ marginTop: '1.25rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
+                <h4 style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700, margin: '0 0 0.75rem' }}>Importer une liste d'assurés (Excel)</h4>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="form-control"
+                    style={{ maxWidth: '420px' }}
+                    onChange={(e) => setFichierImport(e.target.files?.[0] || null)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleImportAssures}
+                    disabled={!fichierImport || importEnCours}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#7c3aed' }}
+                  >
+                    <Upload size={15} /> {importEnCours ? 'Importation…' : 'Importer'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ArrowLeft size={16} /> Précédent
@@ -1304,6 +1431,7 @@ export const NewIaQuotePage = () => {
               </button>
             </div>
           </div>
+          </>)}
         </div>
       )}
 
@@ -1312,11 +1440,11 @@ export const NewIaQuotePage = () => {
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <h3 style={{ ...titreSection, margin: 0 }}>Récapitulatif des primes</h3>
-            {calculEnCours && <span style={{ color: '#a78bfa', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Calculator size={15} /> Calcul des primes…</span>}
+            {calculEnCours && <span style={{ color: 'var(--accent-purple)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Calculator size={15} /> Calcul des primes…</span>}
           </div>
           <table className="table" style={{ width: '100%', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
             <thead>
-              <tr style={{ color: '#94a3b8', fontSize: '0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
+              <tr style={{ color: 'var(--text-muted)', fontSize: '0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
                 <th style={{ padding: '0.6rem', textAlign: 'left' }}>ASSURÉ</th>
                 <th style={{ padding: '0.6rem', textAlign: 'right' }}>PRIME NETTE</th>
                 <th style={{ padding: '0.6rem', textAlign: 'right' }}>TAXES</th>
@@ -1324,16 +1452,64 @@ export const NewIaQuotePage = () => {
               </tr>
             </thead>
             <tbody>
-              {assures.map((a) => (
-                <tr key={a.cle} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                  <td style={{ padding: '0.6rem', fontWeight: 600 }}>{a.Nom} {a.Prenoms}</td>
-                  <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.primeNette) : '—'}</td>
-                  <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.taxe) : '—'}</td>
-                  <td style={{ padding: '0.6rem', color: '#94a3b8' }}>
-                    {!idDevisEdite ? 'Nouveau' : !a.IdDevisDetail ? 'Ajouté' : ligneAChanger(a) ? 'Recalculé' : 'Inchangé (prime enregistrée)'}
-                  </td>
-                </tr>
-              ))}
+              {assures.map((a) => {
+                const garantiesLigne = garantiesAssure(a);
+                const ouvert = Boolean(garantiesOuvertes[a.cle]);
+                return (
+                  <React.Fragment key={a.cle}>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={{ padding: '0.6rem', fontWeight: 600 }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          title={garantiesLigne.length ? 'Garanties de l\'assuré' : 'Garanties disponibles après le calcul'}
+                          disabled={!garantiesLigne.length}
+                          onClick={() => setGarantiesOuvertes((p) => ({ ...p, [a.cle]: !p[a.cle] }))}
+                          style={{ padding: '0.15rem 0.3rem', marginRight: '0.5rem' }}
+                        >
+                          {ouvert ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </button>
+                        {a.Nom} {a.Prenoms}
+                      </td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.primeNette) : '—'}</td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.taxe) : '—'}</td>
+                      <td style={{ padding: '0.6rem', color: 'var(--text-muted)' }}>
+                        {!idDevisEdite ? 'Nouveau' : !a.IdDevisDetail ? 'Ajouté' : ligneAChanger(a) ? 'Recalculé' : 'Inchangé (prime enregistrée)'}
+                      </td>
+                    </tr>
+                    {ouvert && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '0.25rem 0.6rem 0.9rem 2.4rem' }}>
+                          <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                            <thead>
+                              <tr style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                                <th style={{ padding: '0.4rem', textAlign: 'left' }}>GARANTIE</th>
+                                <th style={{ padding: '0.4rem', textAlign: 'center' }}>ACQUISE</th>
+                                <th style={{ padding: '0.4rem', textAlign: 'right' }}>CAPITAL</th>
+                                <th style={{ padding: '0.4rem', textAlign: 'right' }}>P. ANNUELLE</th>
+                                <th style={{ padding: '0.4rem', textAlign: 'right' }}>P. NETTE</th>
+                                <th style={{ padding: '0.4rem', textAlign: 'right' }}>TAXE</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {garantiesLigne.map((g) => (
+                                <tr key={g.cle}>
+                                  <td style={{ padding: '0.4rem' }}>{g.libelle}</td>
+                                  <td style={{ padding: '0.4rem', textAlign: 'center' }}>{g.acquise ? 'Oui' : 'Non'}</td>
+                                  <td style={{ padding: '0.4rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(g.capital)}</td>
+                                  <td style={{ padding: '0.4rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(g.primeAnnuelle)}</td>
+                                  <td style={{ padding: '0.4rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(g.primeNette)}</td>
+                                  <td style={{ padding: '0.4rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(g.taxe)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
 
@@ -1351,20 +1527,14 @@ export const NewIaQuotePage = () => {
                 ['Accessoires', totaux.accessoire],
                 ['Prime TTC', totaux.primeTtc],
               ]).map(([libelle, valeur]) => (
-                <div key={libelle} style={{ background: libelle === 'Prime TTC' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: libelle === 'Prime TTC' ? '2px solid #8b5cf6' : '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>{libelle}</div>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: '#fff' }}>
+                <div key={libelle} style={{ background: libelle === 'Prime TTC' ? 'rgba(139, 92, 246, 0.12)' : 'var(--bg-surface-elevated)', padding: '1rem', borderRadius: '8px', border: libelle === 'Prime TTC' ? '2px solid #8b5cf6' : '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{libelle}</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
                     {valeur === null || valeur === undefined ? 'à l\'enregistrement' : `${fcfa(valeur)} FCFA`}
                   </div>
                 </div>
               ))}
           </div>
-          {flotte && !rienAModifier && (
-            <p style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: '#94a3b8' }}>
-              Contrat groupe : l'accessoire et la taxe sur accessoire sont fixés par la base à l'enregistrement (barème de la compagnie) ;
-              le montant définitif s'affiche ensuite dans l'aperçu du devis.
-            </p>
-          )}
 
           <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setStep(2)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
