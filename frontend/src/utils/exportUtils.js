@@ -2,7 +2,7 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, quoteApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 
 export const downloadBlob = (blob, filename) => {
@@ -2065,6 +2065,173 @@ export const printAnnexeIa = (quote) => {
 };
 
 /* =========================================================================
+   VOYAGE : Proposition (gabarit URANUS scenes/Products/Documents/Voyage/QuittanceProposition,
+   document OREOLE « ASSURANCE VOYAGE PROPOSITION »). URANUS laissait Capital, Franchise et Prime
+   prorata vides (noms de champs erronés) : ils sont lus dans les garanties souscrites du devis.
+   La date de naissance imprimée est celle retenue par le tarif (saisie sur le devis), à défaut
+   celle de la fiche de l'assuré.
+   ========================================================================= */
+export const estDevisVoyage = (quote) => /voyag/i.test(String(quote?.branche || quote?.produit || ''));
+
+const buildPropositionVoyage = (quote, { quittance: q = {}, garanties = [], voyage = null }) => {
+  const jma = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('-') : VIDE);
+  const naissance = voyage?.Detail?.DateNaissance || q.DateNaissanceAssure;
+  // Franchise enregistrée sur la garantie du devis (32 800 posé par sp_creation_devis_voyage), à défaut
+  // le texte de franchise de la base
+  const franchise = (g) => {
+    const montant = (voyage?.Garanties || []).find((x) => Number(x.IdSousGarantie) === Number(g.idsousgarantie))?.Franchise;
+    return Number(montant) > 0 ? fcfa(montant) : (g.textefranchise || VIDE);
+  };
+  const lignes = garanties.length
+    ? garanties.map((g) => `
+        <tr>
+          <td style="text-align:left;font-weight:600;">${g.libellesousgarantie || ''}</td>
+          <td>${Number(g.capital) > 0 ? fcfa(g.capital) : VIDE}</td>
+          <td>${franchise(g)}</td>
+          <td>${fcfa(g.primeannuelle)}</td>
+          <td>${fcfa(g.primenette)}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="5">Aucune garantie enregistrée sur ce devis</td></tr>';
+
+  return `
+    ${printDocHeader({ ...quote, compagnie: q.RaisonSociale || quote.compagnie }, '')}
+    <div class="titre-cp">
+      <div>${String(q.LibelleCategorie || 'ASSURANCE VOYAGE').toUpperCase()}</div>
+      <div>Proposition ${q.RaisonSociale || ''}</div>
+    </div>
+    <div class="ligne-identifiants">N° CLIENT : ${q.MobileClient || VIDE} | Id. POLICE : ${q.IdDevis || ''} | N° DEVIS : ${q.NumeroDevis || quote.numerodevis || ''}</div>
+    <table class="bloc-libre">
+      <tr><td style="width:22%;font-weight:700;">SOUSCRIPTEUR :</td><td style="width:28%;">${q.NomClient || VIDE}</td>
+          <td style="width:22%;font-weight:700;">ADRESSE :</td><td>${q.AdresseClient || VIDE}</td></tr>
+      <tr><td style="font-weight:700;">ASSURE :</td><td>${q.NomAssure || VIDE}</td>
+          <td style="font-weight:700;">DATE NAISSANCE ASSURE :</td><td>${jma(naissance)}</td></tr>
+      ${voyage?.Complement ? `
+      <tr><td style="font-weight:700;">DESTINATION :</td><td>${voyage.Complement.LibellePaysDestination || VIDE}${voyage.LibelleZone ? ` (${voyage.LibelleZone})` : ''}</td>
+          <td style="font-weight:700;">N° PASSEPORT :</td><td>${voyage.Complement.NumeroPasseport || VIDE}</td></tr>` : ''}
+    </table>
+    <div class="ligne-dates" style="display:flex;justify-content:space-between;">
+      <span>Du : ${jma(q.DateEffet)}</span><span>au ${jma(q.DateExpiration)} à minuit</span><span>Durée : ${q.Duree ?? VIDE} Jours</span>
+    </div>
+    <table class="tableau-garanties">
+      <tr class="ligne-labels"><td>Garantie</td><td>Capital</td><td>Franchise</td><td>Prime annuelle</td><td>Prime prorata</td></tr>
+      ${lignes}
+    </table>
+    <table class="recap-vertical">
+      <tr><td class="label">PRIME NETTE</td><td style="text-align:right;">${fcfa(q.PrimeNette)} FCFA</td></tr>
+      <tr><td class="label">TAXES</td><td style="text-align:right;">${fcfa(q.TaxeEnregistrement)} FCFA</td></tr>
+      <tr><td class="label">ACCESSOIRE</td><td style="text-align:right;">${fcfa(q.Accessoire)} FCFA</td></tr>
+      <tr><td class="label">PRIME TTC</td><td style="text-align:right;">${fcfa(q.PrimeTtc)} FCFA</td></tr>
+      <tr class="ligne-total"><td class="label">NET A PAYER</td><td style="text-align:right;">${fcfa(q.PrimeTtc)} FCFA</td></tr>
+    </table>
+    <div class="mention-courte">
+      Cette offre n'est qu'une proposition d'assurance. Elle n'engage en rien la compagnie et a durée de validité
+      d'un (1) mois à compter de sa date d'émission.
+    </div>
+    <div class="bloc-signature-simple">Fait à Abidjan, le <strong>${formatFrDate(q.DateEmission || quote.date_emission)}</strong>.</div>
+    ${printDocFooter(false)}
+  `;
+};
+
+/* =========================================================================
+   TRANSPORT : bordereau de ressortie de primes facultés (modèle OREOLE « RESSORTIE DE PRIME
+   FACULTES … », 29 colonnes GUCE). Impression sous forme condensée (colonnes principales,
+   A4 paysage) ; l'export Excel du bordereau reprend les 29 colonnes. TOTAL GENERAL = prime
+   totale diminuée de 500 F par certificat (part AFS-CI), comme le contrat généré.
+   ========================================================================= */
+const libelleNumeroBordereau = (debutIso) => {
+  if (!debutIso) return '';
+  const [, mois, jour] = debutIso.split('-').map(Number);
+  return String((mois - 1) * 2 + (jour === 1 ? 1 : 2)).padStart(2, '0');
+};
+
+const buildBordereauTransport = (donnees) => {
+  const certificats = donnees.Certificats || [];
+  const t = donnees.Totaux || {};
+  const jma = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : VIDE);
+  const souscripteurs = [...new Set(certificats.map((c) => c.Souscripteur).filter(Boolean))].join(', ');
+  const assureurs = [...new Set(certificats.map((c) => c.Assureur).filter(Boolean))];
+  const annee = (donnees.DebutPeriode || '').slice(0, 4);
+  const lignes = certificats.map((c) => `
+    <tr>
+      <td>${c.NumeroRequete || ''}</td>
+      <td>${jma(c.DateCertificat)}</td>
+      <td>${c.ReferenceCertificat || ''}</td>
+      <td style="text-align:left;">${c.Assure || ''}</td>
+      <td>${c.MoyenTransport || ''}</td>
+      <td style="text-align:left;">${c.Voyage || ''}</td>
+      <td style="text-align:left;">${c.DescriptionCommerciale || ''}</td>
+      <td class="g-num">${fcfa(c.ValeurAssurance)}</td>
+      <td class="g-num">${fcfa(c.PrimeNette)}</td>
+      <td class="g-num">${fcfa(c.Accessoire)}</td>
+      <td class="g-num">${fcfa(c.Taxe)}</td>
+      <td class="g-num">${fcfa(c.PrimeTtc)}</td>
+    </tr>`).join('');
+  return `
+    <style>@page { size: A4 landscape; margin: 0; } body { max-width: 277mm; } table.tableau-garanties td.g-num { text-align: right; white-space: nowrap; }</style>
+    ${printDocEntete(assureurs.length === 1 ? assureurs[0] : '')}
+    <div class="titre-cp">
+      <div>BORDEREAU N°${libelleNumeroBordereau(donnees.DebutPeriode)} DE RESSORTIE DE PRIMES FACULTES ${annee}</div>
+      <div style="font-size:10pt;">GUCE P/C ${souscripteurs || VIDE}</div>
+    </div>
+    <div class="ligne-dates" style="text-align:center;">Période du ${jma(donnees.DebutPeriode)} au ${jma(donnees.FinPeriode)}${assureurs.length ? ` — Assureur : ${assureurs.join(', ')}` : ''}</div>
+    <table class="tableau-garanties">
+      <tr class="ligne-labels">
+        <td>N° requête</td><td>Date certificat</td><td>Réf. certificat</td><td>Assuré</td><td>Moyen de transport</td>
+        <td>Voyage</td><td>Description commerciale</td><td>Valeur assurance</td><td>Prime nette</td><td>Accessoires</td><td>Taxe</td><td>Prime totale</td>
+      </tr>
+      ${lignes || '<tr><td colspan="12">Aucun certificat</td></tr>'}
+      <tr class="ligne-total">
+        <td colspan="7" style="text-align:left;">TOTAL (${t.Certificats || 0} certificats)</td>
+        <td class="g-num">${fcfa(t.ValeurAssurance)}</td><td class="g-num">${fcfa(t.PrimeNette)}</td><td class="g-num">${fcfa(t.Accessoire)}</td>
+        <td class="g-num">${fcfa(t.Taxe)}</td><td class="g-num">${fcfa(t.PrimeTtc)}</td>
+      </tr>
+    </table>
+    <table class="recap-vertical" style="margin-left:auto;">
+      <tr><td class="label">Prime totale</td><td style="text-align:right;">${fcfa(t.PrimeTtc)} FCFA</td></tr>
+      <tr><td class="label">Part AFS-CI (500 F × ${t.Certificats || 0})</td><td style="text-align:right;">- ${fcfa(t.AccessoireClient)} FCFA</td></tr>
+      <tr class="ligne-total"><td class="label">TOTAL GENERAL</td><td style="text-align:right;">${fcfa(t.TotalGeneral)} FCFA</td></tr>
+    </table>
+    <div class="bloc-signature-simple">Fait à Abidjan, le <strong>${formatFrDate(new Date())}</strong>.</div>
+  `;
+};
+
+// filtres : { idimportation } (bordereau), { iddevis } ou { idcontrat } (contrat issu du bordereau)
+export const printBordereauTransport = async (filtres) => {
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du bordereau…</p>');
+  try {
+    const donnees = await transportApi.getCertificats(filtres);
+    openPrintWindow(`Bordereau ${donnees.DebutPeriode || ''} ${donnees.FinPeriode || ''}`.trim(), buildBordereauTransport(donnees), fenetre);
+  } catch (err) {
+    console.error('Erreur bordereau Transport :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger les certificats du bordereau. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
+};
+
+export const estDevisTransport = (quote) => /transport|facult/i.test(String(quote?.branche || quote?.produit || ''));
+
+export const printPropositionVoyage = async (quote) => {
+  if (!quote) return;
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la proposition…</p>');
+  try {
+    const donnees = await impressionVoyageApi.get(quote.iddevis || quote.id);
+    openPrintWindow(`Proposition ${quote.numerodevis || ''}`.trim(), buildPropositionVoyage(quote, donnees), fenetre);
+  } catch (err) {
+    console.error('Erreur proposition Voyage :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger le devis pour la proposition. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
+};
+
+/* =========================================================================
    ANNEXE D'UN DEVIS FLOTTE AUTO — « Liste des véhicules de la flotte »
    (gabarit URANUS AnnexeFlotteDevis : A4 paysage, primes de chaque véhicule
    par garantie, légende, réductions et décompte de prime du devis)
@@ -2444,9 +2611,45 @@ const buildSimpleFacture = (quote) => {
 };
 
 // --- GABARIT C : MRH (proposition d'assurance habitation) ---
+export const estDevisMrh = (quote) => /mrh|habit/i.test(String(quote?.branche || quote?.produit || ''));
+
+// Lignes du tableau des garanties, comme URANUS : garanties souscrites cumulées sur les maisons
+// (garantiesouscritedevis), capitaux et franchises du résumé financier (saisis par maison : une
+// valeur différente d'une maison à l'autre est listée « a / b »)
+const lignesGarantiesMrh = (garanties, resume) => {
+  const parGarantie = {};
+  (resume?.sous_garanties_acquises || []).forEach((g) => {
+    (parGarantie[g.id_sous_garantie] = parGarantie[g.id_sous_garantie] || []).push(g);
+  });
+  const valeurs = (liste, champ) => {
+    const vues = [...new Set(liste.map((g) => g[champ]).filter((v) => v != null && Number(v) !== 0).map(Number))];
+    return vues.length ? vues : null;
+  };
+  return (garanties || []).map((g) => {
+    const rf = parGarantie[g.idsousgarantie] || [];
+    const capitaux = valeurs(rf, 'capital') || (Number(g.capital) ? [Number(g.capital)] : null);
+    return {
+      libelle: g.libellesousgarantie,
+      capitaux,
+      franchise: valeurs(rf, 'franchise') || (g.textefranchise && g.textefranchise !== 'NEANT' ? g.textefranchise : null),
+      min_franchise: valeurs(rf, 'minfranchise'),
+      max_franchise: valeurs(rf, 'maxfranchise'),
+      taux_franchise: valeurs(rf, 'tauxfranchise'),
+      prime_annuelle: Number(g.primeannuelle) || 0,
+      prime_nette: Number(g.primenette) || 0,
+    };
+  });
+};
+
 const buildMrhFacture = (quote) => {
   const numero = quote.numero_police_compagnie || quote.numerodevis;
   const garanties = quote.raw?.garanties || quote.details?.garanties || [];
+  // Montant, liste de montants (un par maison) ou texte de la base
+  const montants = (v) => {
+    if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '—';
+    if (Array.isArray(v)) return v.map((x) => money(x)).join(' / ');
+    return typeof v === 'number' || /^[\d.]+$/.test(String(v)) ? (Number(v) ? money(v) : '—') : String(v);
+  };
   const dureeJours = quote.raw?.duree_terme_jours
     ?? (quote.date_effet && quote.date_expiration
       ? Math.round((new Date(quote.date_expiration) - new Date(quote.date_effet)) / 86400000)
@@ -2486,16 +2689,15 @@ const buildMrhFacture = (quote) => {
         ? garanties.map((g) => `
           <tr>
             <td>${g.libelle || g.nom || '—'}</td>
-            <td>${g.capital ? money(g.capital) : '—'}</td>
-            <td>${g.franchise ? money(g.franchise) : '—'}</td>
-            <td>${g.min_franchise ? money(g.min_franchise) : '—'}</td>
-            <td>${g.max_franchise ? money(g.max_franchise) : '—'}</td>
-            <td>${g.taux_franchise ?? '—'}</td>
+            <td>${montants(g.capitaux || g.capital)}</td>
+            <td>${montants(g.franchise)}</td>
+            <td>${montants(g.min_franchise)}</td>
+            <td>${montants(g.max_franchise)}</td>
+            <td>${Array.isArray(g.taux_franchise) ? g.taux_franchise.join(' / ') : (g.taux_franchise ?? '—')}</td>
             <td>${g.prime_annuelle ? money(g.prime_annuelle) : '—'}</td>
             <td>${g.prime_nette ? money(g.prime_nette) : '—'}</td>
           </tr>`).join('')
-        : ['VOL', 'BRIS DE GLACES', 'DOMMAGES ÉLECTRIQUES', 'DÉGÂTS DES EAUX', 'TEMPÊTE OURAGAN CYCLONE', 'INCENDIE', 'RESPONSABILITÉ CIVILE VIE PRIVÉE', 'SÉJOUR VOYAGE']
-            .map((lib) => `<tr><td>${lib}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`).join('')}
+        : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;">Aucune garantie enregistrée pour ce devis</td></tr>'}
     </table>
 
     <table class="recap-vertical">
@@ -2785,6 +2987,45 @@ export const printQuoteFacture = (quote) => {
   if (estDevisIa(quote)) {
     return imprimerDocumentIa(quote, `Facture ${quote.numerodevis || ''}`.trim(), buildFactureIa);
   }
+  // Devis Voyage : numéro d'attestation et adresses lus sur le devis (absents de la liste des devis)
+  if (estDevisVoyage(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
+    const fenetre = window.open('', '_blank');
+    impressionVoyageApi.get(quote.iddevis || quote.id)
+      .then(({ quittance: q, voyage }) => ({
+        ...quote,
+        raw: {
+          ...(quote.raw || {}),
+          numero_attestation: voyage?.Complement?.NumeroAttestation || '',
+          adresse: q.AdresseClient || voyage?.Client?.Adresse || '',
+          adresse_assure: q.AdresseAssure || voyage?.Assure?.Adresse || '',
+        },
+        nomassure: q.NomAssure || quote.nomassure,
+        souscripteur: q.NomClient || quote.souscripteur,
+      }))
+      .catch(() => quote)
+      .then((devis) => openPrintWindow(devis.numerodevis || 'Devis', buildSimpleFacture(devis), fenetre));
+    return;
+  }
+  // Devis MRH : garanties souscrites, capitaux/franchises, adresse et date de naissance lus sur le devis
+  if (estDevisMrh(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
+    const fenetre = window.open('', '_blank');
+    impressionMrhApi.get(quote.iddevis || quote.id)
+      .then(({ quittance: q, garanties, resume }) => ({
+        ...quote,
+        raw: {
+          ...(quote.raw || {}),
+          adresse: q.AdresseClient || quote.raw?.adresse || '',
+          date_naissance_assure: q.DateNaissanceAssure || quote.raw?.date_naissance_assure || null,
+          duree_terme_jours: q.Duree ?? quote.raw?.duree_terme_jours,
+          garanties: lignesGarantiesMrh(garanties, resume),
+        },
+        nomassure: q.NomAssure || quote.nomassure,
+        souscripteur: q.NomClient || quote.souscripteur,
+      }))
+      .catch(() => quote)
+      .then((devis) => openPrintWindow(devis.numerodevis || 'Devis', buildMrhFacture(devis), fenetre));
+    return;
+  }
   const branche = String(quote.branche || quote.produit || '').toLowerCase();
   let bodyHtml;
   if (branche.includes('auto')) {
@@ -2848,6 +3089,11 @@ export const printContratConditionsParticulieres = (contract) => {
 export const printConditionsParticulieres = async (quote, { contrat = false } = {}) => {
   if (!quote) return;
   const title = `Conditions Particulieres ${quote.numerodevis || quote.iddevis || ''}`.trim();
+  // Devis Voyage : proposition du modèle URANUS (le contrat est l'imprimé remis par l'assureur)
+  if (!contrat && estDevisVoyage(quote)) {
+    await printPropositionVoyage(quote);
+    return;
+  }
   // Devis IA : proposition « groupe » pour une flotte, sinon Conditions Particulières individuelles
   if (!contrat && estDevisIa(quote)) {
     const groupe = Boolean(quote.flotte ?? quote.raw?.flotte);

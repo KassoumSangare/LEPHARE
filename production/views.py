@@ -4098,7 +4098,42 @@ def _imposer_mrh(devis, imposition, user):
     )
     if not resultat.get("success", False):
         raise ValueError(resultat.get("message") or resultat.get("erreur") or "Imposition refusée")
+    _aligner_garanties_mrh(ids_maisons)
     return resultat
+
+
+def _aligner_garanties_mrh(ids_maisons):
+    """
+    Prime imposée : les garanties de chaque maison sont ramenées à sa prime nette, au prorata
+    de leurs primes calculées (règle du reliquat de repartir-garanties), la taxe de chaque
+    garantie recalculée à son taux. Sans cela, la proposition imprime des garanties dont la
+    somme n'est pas la prime nette du devis. La répartition reste ajustable ensuite.
+    """
+    from .models import DevisDetail, DevisDetGarantie
+
+    service = MRHCalculService()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT idsousgarantie, code FROM stdmrh_sous_garantie")
+        codes_mrh = dict(cursor.fetchall())
+    for maison in DevisDetail.objects.filter(iddevisdetail__in=ids_maisons):
+        garanties = list(
+            DevisDetGarantie.objects.filter(IdDevisDet_id=maison.iddevisdetail).order_by("pk")
+        )
+        poids = sum((g.PrimeNette or Decimal("0")) for g in garanties)
+        if not garanties or not poids:
+            continue
+        reste = maison.primenette or Decimal("0")
+        for i, garantie in enumerate(garanties):
+            if i == len(garanties) - 1:
+                prime = reste
+            else:
+                prime = service._arrondir(maison.primenette * (garantie.PrimeNette or 0) / poids)
+                reste -= prime
+            taux = service._get_taux_taxe(codes_mrh.get(garantie.IdGarantie_id, ""))
+            taxe = service._arrondir(prime * taux)
+            DevisDetGarantie.objects.filter(pk=garantie.pk).update(
+                PrimeNette=prime, taxe=taxe, primeannuelle=prime + taxe
+            )
 
 
 class DevisMRHViewSet(viewsets.ViewSet):
@@ -4173,6 +4208,14 @@ class DevisMRHViewSet(viewsets.ViewSet):
                 from .models import Devis  # Import local
 
                 devis = Devis.objects.get(iddevis=id_devis)
+                # Téléphone de l'assuré : mobile de sa fiche client, comme à la modification
+                numero_telephone_assure = data.get("numerotelephoneassure")
+                if numero_telephone_assure:
+                    from customer.models import Client
+
+                    Client.objects.filter(IdClient=devis.assure_id).update(
+                        Mobile=numero_telephone_assure
+                    )
                 if maisons:
                     _enregistrer_maisons_mrh(devis, maisons, data["idtarif"])
                 if maisons and request.data.get("imposition"):
@@ -5198,6 +5241,12 @@ class RepartirGarantiesView(APIView):
         # sinon redistribution équipondérée.
         sum_poids_non_touches = sum(g.PrimeNette for g in non_touches)
 
+        # Taux de taxe : _get_taux_taxe attend le code MRH (INCENDIE, DOMMAGES_ELECTRIQUES à 25 %),
+        # les garanties du devis portent le code standard (1301, 90001…)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT idsousgarantie, code FROM stdmrh_sous_garantie")
+            codes_mrh = dict(cursor.fetchall())
+
         # Appliquer les nouveaux montants
         for garantie in garanties_actuelles:
             code = garantie.IdGarantie.CodeSousGarantie
@@ -5213,7 +5262,7 @@ class RepartirGarantiesView(APIView):
             else:
                 nouvelle_prime = Decimal("0")
 
-            taux_taxe = service._get_taux_taxe(code)
+            taux_taxe = service._get_taux_taxe(codes_mrh.get(garantie.IdGarantie_id, code))
             nouvelle_taxe = service._arrondir(nouvelle_prime * taux_taxe)
 
             update_kwargs = {
@@ -5249,14 +5298,19 @@ class RepartirGarantiesView(APIView):
         prime_nette_totale = sum(m.primenette for m in maisons)
         taxe_maisons = sum(m.taxeenregistrement for m in maisons)
 
-        accessoire_result = service.calculer_accessoire(
-            prime_nette_totale=prime_nette_totale,
-            id_produit=devis.produit_id,
-            id_compagnie=devis.compagnie_id,
-        )
-        accessoire = accessoire_result["accessoire"]
-        taxe_accessoire = accessoire_result["taxe_accessoire"]
-        taxe_totale = taxe_maisons + taxe_accessoire
+        if devis.prime_imposee:
+            # Prime imposée : la répartition ne touche ni la taxe ni l'accessoire imposés
+            accessoire = devis.accessoire or Decimal("0")
+            taxe_totale = devis.taxe or Decimal("0")
+        else:
+            accessoire_result = service.calculer_accessoire(
+                prime_nette_totale=prime_nette_totale,
+                id_produit=devis.produit_id,
+                id_compagnie=devis.compagnie_id,
+            )
+            accessoire = accessoire_result["accessoire"]
+            taxe_accessoire = accessoire_result["taxe_accessoire"]
+            taxe_totale = taxe_maisons + taxe_accessoire
         primettc = prime_nette_totale + taxe_totale + accessoire
 
         Devis.objects.filter(iddevis=devis_id).update(

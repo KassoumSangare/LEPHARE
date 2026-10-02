@@ -57,7 +57,7 @@ const isWithinLastThreeYears = (q) => {
 };
 
 // Formulaire (route /user/quotes/<module>) qui rouvre un devis non auto en édition complète, par idproduit
-const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 4: 'mrh', 5: 'sante', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
+const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 3: 'voyage', 4: 'mrh', 5: 'sante', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
 
 export const QuoteListPage = () => {
   const { user } = useAuth();
@@ -499,7 +499,7 @@ export const QuoteListPage = () => {
         const todayStr = new Date().toISOString().split('T')[0];
         const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
         const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
-        // Auto, IA (2), MRH (4), Santé (5), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire
+        // Auto, IA (2), Voyage (3), MRH (4), Santé (5), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire
         // de création est rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
         // (aucune page d'édition complète construite pour elles pour l'instant).
         const produit = row.raw?.produit;

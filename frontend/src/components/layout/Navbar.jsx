@@ -272,7 +272,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
         </button>
 
         {/* Role & Habilitation Quick Switcher (Mode Démo & Audit Métier) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+        <div className="nav-profil-switch" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <select
             value={user?.username || ''}
             onChange={(e) => {

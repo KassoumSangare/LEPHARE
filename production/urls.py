@@ -7,6 +7,14 @@ from .views_devis_ia import (
     taux_taxe_devis_ia,
 )
 from .views_devis_risques_divers import lire_devis_risques_divers
+from .views_devis_voyage import enregistrer_devis_voyage_vue, lire_devis_voyage
+from .views_transport_guce import (
+    analyser_bordereau,
+    certificats_transport,
+    exporter_bordereau,
+    importer_bordereau,
+    liste_bordereaux,
+)
 from .importation_views import (
     ImportAssuresAPIView,
     ImportsHistoriqueDetailAPIView,
@@ -238,6 +246,27 @@ urlpatterns = [
         r"devisia/<int:iddevis>/garanties/",
         garanties_devis_ia,
         name="garanties_devis_ia",
+    ),
+    # Transport : bordereaux GUCE (analyse sans écriture, import tout ou rien, consultation, export)
+    path(r"transport/guce/analyse/", analyser_bordereau, name="transport_guce_analyse"),
+    path(r"transport/guce/import/", importer_bordereau, name="transport_guce_import"),
+    path(r"transport/guce/bordereaux/", liste_bordereaux, name="transport_guce_bordereaux"),
+    path(
+        r"transport/guce/bordereaux/<int:id_importation>/excel/",
+        exporter_bordereau,
+        name="transport_guce_bordereau_excel",
+    ),
+    path(r"transport/certificats/", certificats_transport, name="transport_certificats"),
+    # Devis Voyage (création / « Modifier ») et relecture complète
+    path(
+        r"devisvoyage/enregistrement/",
+        enregistrer_devis_voyage_vue,
+        name="enregistrement_devis_voyage_complet",
+    ),
+    path(
+        r"devisvoyage/<int:iddevis>/",
+        lire_devis_voyage,
+        name="lecture_devis_voyage",
     ),
     path(
         r"enregistrementdevisvoyage",

@@ -590,6 +590,16 @@ select.form-control {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* Icône de chargement (Loader2 …) qui tourne */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin,
+.animate-spin {
+  animation: spin 0.9s linear infinite;
+}
+
 /* ==========================================================================
    RESPONSIVE UTILITIES, TABLES & MEDIA QUERIES
    ========================================================================== */
@@ -752,6 +762,13 @@ select.form-control {
   }
 }
 
+/* Tablettes : sélecteur de profil (démonstration) réduit, masqué sur téléphone (voir < 480px) */
+@media (max-width: 900px) {
+  .nav-profil-switch select {
+    max-width: 110px !important;
+  }
+}
+
 /* Mobile Screens (< 768px) */
 @media (max-width: 768px) {
   :root {
@@ -812,6 +829,9 @@ select.form-control {
 
 /* Very Small Mobile (< 480px) */
 @media (max-width: 480px) {
+  .nav-profil-switch {
+    display: none !important;
+  }
   .nav-space-btn span {
     display: none;
   }

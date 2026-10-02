@@ -459,6 +459,34 @@ export const impressionIaApi = {
   },
 };
 
+// Proposition MRH (gabarit URANUS) : quittance de la proposition et garanties de chaque maison
+// (capital, franchises, primes) lues dans le résumé financier du devis
+// Proposition MRH (gabarit URANUS) : quittance de la proposition, garanties souscrites (cumulées
+// sur les maisons) et résumé financier (capitaux et franchises saisis par maison)
+export const impressionMrhApi = {
+  get: async (iddevis) => {
+    const [q, g, r] = await Promise.all([
+      apiClient.get(`/quittanceproposition/${iddevis}`),
+      apiClient.get(`/garantiesouscritedevis/${iddevis}`).catch(() => ({ data: [] })),
+      apiClient.get(`/mrh/devis/${iddevis}/resume-financier/`).catch(() => ({ data: {} })),
+    ]);
+    return { quittance: donneesEntete(q) || {}, garanties: donneesListe(g), resume: r.data || {} };
+  },
+};
+
+// Proposition Voyage (gabarit URANUS) : quittance de la proposition, garanties souscrites et voyage
+// saisi (destination, date de naissance retenue par le tarif, attestation)
+export const impressionVoyageApi = {
+  get: async (iddevis) => {
+    const [q, g, v] = await Promise.all([
+      apiClient.get(`/quittanceproposition/${iddevis}`),
+      apiClient.get(`/garantiesouscritedevis/${iddevis}`).catch(() => ({ data: [] })),
+      apiClient.get(`/devisvoyage/${iddevis}/`).catch(() => ({ data: null })),
+    ]);
+    return { quittance: donneesEntete(q) || {}, garanties: donneesListe(g), voyage: v.data };
+  },
+};
+
 // Annexe d'un devis flotte auto, « Liste des véhicules de la flotte » (mêmes sources qu'URANUS) :
 // quittance de la proposition, primes de chaque véhicule par garantie, détail des véhicules
 // (genre, bonus, réduction commerciale) et taux de réduction flotte
@@ -1029,6 +1057,12 @@ export const tousDommagesApi = {
 };
 
 export const mrhApi = {
+  // GET /api/tarifparproduit/4 : catégories MRH (MULTIRISQUE HABITATION, « NSIA ATEGBAN »…)
+  getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/4')),
+  // GET /api/mrh/usages/:code/parametres/ : capitaux requis et formule de calcul de l'usage
+  getParametresUsage: async (code) => (await apiClient.get(`/mrh/usages/${encodeURIComponent(code)}/parametres/`)).data,
+  // Garanties de l'usage : { obligatoires: [...], optionnelles: [...] }
+  getGarantiesUsage: async (code) => (await apiClient.get(`/mrh/usages/${encodeURIComponent(code)}/garanties/`)).data,
   // GET /api/mrh/usages/
   getUsages: async () => extractData(await apiClient.get('/mrh/usages/')),
   // GET /api/mrh/usages/:code/
@@ -1118,7 +1152,63 @@ export const voyageApi = {
   // POST /api/enregistrementdevisvoyage
   enregistrerDevisVoyage: async (payload) => {
     return apiClient.post('/enregistrementdevisvoyage', payload);
+  },
+  // GET /api/pays/ : toutes les nationalités (203 pays, au-delà de la page de 200 lignes)
+  getNationalites: async () => extractData(await apiClient.get('/pays/', { params: { page_size: 1000 } })),
+  // GET /api/zonevoyage/ : libellés des zones (id_zone renvoyé par payszone)
+  getZones: async () => extractData(await apiClient.get('/zonevoyage/')),
+  // POST /api/offregarantievoyage : garanties de l'offre et prime de la grille (fn_garantie_offre_voyage),
+  // erreur remontée à l'écran (getGarantiesVoyage la masque)
+  calculerPrime: async (payload) => extractData(await apiClient.post('/offregarantievoyage', payload)),
+  // POST /api/devisvoyage/enregistrement/ : création (IdDevis 0) ou « Modifier » (sp_creation_devis_voyage)
+  enregistrer: async (payload) => (await apiClient.post('/devisvoyage/enregistrement/', payload)).data,
+  // GET /api/devisvoyage/:iddevis/ : saisie complète du devis (Modifier, aperçu, proposition)
+  lireDevis: async (iddevis) => (await apiClient.get(`/devisvoyage/${iddevis}/`)).data,
+};
+
+/* =========================================================================
+   4.3 TRANSPORT (FACULTÉS) - BORDEREAUX GUCE
+   ========================================================================= */
+// Formulaire multipart : fichier_excel, debut_periode / fin_periode (AAAA-MM-JJ, facultatives :
+// période du titre du fichier sinon), correspondances (JSON { souscripteur du fichier: IdClient })
+const formulaireBordereau = ({ fichier, debut, fin, correspondances }) => {
+  const formulaire = new FormData();
+  formulaire.append('fichier_excel', fichier);
+  if (debut && fin) {
+    formulaire.append('debut_periode', debut);
+    formulaire.append('fin_periode', fin);
   }
+  if (correspondances && Object.keys(correspondances).length) {
+    formulaire.append('correspondances', JSON.stringify(correspondances));
+  }
+  return formulaire;
+};
+
+export const transportApi = {
+  // POST /api/transport/guce/analyse/ : contrôle du bordereau sans rien enregistrer
+  analyserBordereau: async (params) => (await apiClient.post('/transport/guce/analyse/', formulaireBordereau(params), {
+    headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000,
+  })).data,
+  // POST /api/transport/guce/import/ : certificats, devis, contrats et quittances (tout ou rien)
+  importerBordereau: async (params) => (await apiClient.post('/transport/guce/import/', formulaireBordereau(params), {
+    headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+  })).data,
+  // GET /api/transport/guce/bordereaux/ : bordereaux importés, totaux et contrats générés
+  getBordereaux: async () => (await apiClient.get('/transport/guce/bordereaux/', { timeout: 120000 })).data,
+  // GET /api/transport/certificats/?idimportation=|iddevis=|idcontrat=
+  getCertificats: async (params) => (await apiClient.get('/transport/certificats/', { params })).data,
+  // GET /api/transport/guce/bordereaux/:id/excel/ : bordereau au format de la ressortie GUCE
+  telechargerBordereauExcel: async (idImportation, nomFichier) => {
+    const res = await apiClient.get(`/transport/guce/bordereaux/${idImportation}/excel/`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nomFichier || `bordereau-${idImportation}.xlsx`;
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
 };
 
 /* =========================================================================
@@ -1175,7 +1265,8 @@ export const normalizeContrat = (bc) => {
     numero_police_compagnie: bc.numero_police_compagnie || null,
     adresse: bc.adresse || bc.idclient?.Adresse || bc.idclient?.adresse || 'Abidjan, Côte d\'Ivoire',
     intermediaire: libelleIntermediaire(bc.idintermediaire, bc.intermediaire),
-    branche: bc.branche || (produitNom.toLowerCase().includes('auto') ? 'Auto' : produitNom.toLowerCase().includes('mrh') || produitNom.toLowerCase().includes('habit') ? 'MRH' : 'Auto'),
+    // Même règle que les devis : un contrat IA, Voyage, Transport… n'est plus présenté (ni imprimé) comme un contrat Auto
+    branche: bc.branche || brancheDuProduit(produitNom),
     details: bc.details || {},
     raw: bc,
   };

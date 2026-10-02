@@ -8,11 +8,13 @@ import {
   estDevisIaImprimable,
   printAnnexeFlotte,
   estDevisFlotteAuto,
+  estDevisVoyage,
+  printBordereauTransport,
 } from '../../../utils/exportUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
-import { iaApi, santeApi } from '../../../api/endpoints';
+import { iaApi, santeApi, voyageApi, transportApi, mrhApi } from '../../../api/endpoints';
 import {
   FileText,
   Printer,
@@ -59,7 +61,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
   }, [quoteInitial?.iddevis, isOpen]);
 
   // Détail lu en base : assurés d'un devis IA (assureiainfo), saisie d'un devis Santé (couvertures,
-  // adhérents, affiliés)
+  // adhérents, affiliés), voyage d'un devis Voyage (destination, voyageur, garanties enregistrées)
   const [detailBranche, setDetailBranche] = useState(null);
   const idDevisBase = Number(quoteInitial?.iddevis || quoteInitial?.raw?.iddevis) || 0;
   const brancheDevis = quoteInitial?.branche;
@@ -69,7 +71,10 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     if (!isOpen || !idDevisBase) return undefined;
     const chargement = brancheDevis === 'IA'
       ? iaApi.getAssuresDevis(idDevisBase).then((assures) => ({ assures: assures || [] }))
-      : brancheDevis === 'Santé' ? santeApi.lireDevis(idDevisBase) : null;
+      : brancheDevis === 'Santé' ? santeApi.lireDevis(idDevisBase)
+        : brancheDevis === 'Voyage' ? voyageApi.lireDevis(idDevisBase)
+          : brancheDevis === 'Transport' ? transportApi.getCertificats({ iddevis: idDevisBase })
+            : brancheDevis === 'MRH' ? mrhApi.getMaisons(idDevisBase) : null;
     if (!chargement) return undefined;
     chargement
       .then((d) => { if (actif) setDetailBranche(d); })
@@ -319,8 +324,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </div>
         </div>
 
-        {/* Branch Specific Technical Details (IA et Santé : détail lu en base) */}
-        {(Object.keys(details).length > 0 || ['IA', 'Santé'].includes(quote.branche)) && (
+        {/* Branch Specific Technical Details (IA, Santé, Voyage et Transport : détail lu en base) */}
+        {(Object.keys(details).length > 0 || ['IA', 'Santé', 'Voyage', 'Transport', 'MRH'].includes(quote.branche)) && (
           <div className="glass-panel" style={{ padding: '1.25rem' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase' }}>
               Détails & Paramètres Techniques ({quote.branche})
@@ -352,18 +357,49 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               </div>
             )}
 
-            {/* MRH Details */}
-            {quote.branche === 'MRH' && details.maisons && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
-                {details.maisons.map((m, idx) => (
-                  <div key={idx} style={{ padding: '0.65rem', borderRadius: '6px', background: 'var(--surface-sunken)' }}>
-                    <strong>Logement #{idx + 1} - {m.description}</strong> ({m.code_usage}) :
-                    Bâtiment : {Number(m.valeur_batiment || 0).toLocaleString('fr-FR')} FCFA •
-                    Contenu : {Number(m.valeur_contenu || 0).toLocaleString('fr-FR')} FCFA
-                    {m.presence_gardien && ' • Gardiennage (-5%)'}
-                  </div>
-                ))}
-              </div>
+            {/* MRH : maisons enregistrées (usage, capitaux, options, garanties) */}
+            {quote.branche === 'MRH' && (
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des maisons…</div>
+              ) : detailBranche.erreur ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Détail MRH indisponible pour ce devis.</div>
+              ) : !(detailBranche.maisons || []).length ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucune maison enregistrée pour ce devis.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+                  {detailBranche.maisons.map((m, idx) => {
+                    const p = m.parametres || {};
+                    const capitaux = [
+                      ['Bâtiment', p.valeur_batiment], ['Contenu', p.valeur_contenu], ['Loyer mensuel', p.loyer_mensuel], ['Capital RVT', p.capital_rvt],
+                    ].filter(([, v]) => Number(v) > 0);
+                    return (
+                      <div key={m.maison_id || idx} style={{ padding: '0.65rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <strong>Maison {idx + 1} — {m.usage_libelle || m.code_usage || 'usage non renseigné'}{m.adresse ? ` — ${m.adresse}` : ''}</strong>
+                          <span style={{ fontWeight: 700 }}>{fcfa(m.prime_nette)}{m.prime_imposee ? ' (imposée)' : ''}</span>
+                        </div>
+                        {capitaux.length > 0 && (
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                            {capitaux.map(([l, v]) => `${l} : ${fcfa(v)}`).join(' • ')}
+                          </div>
+                        )}
+                        {(m.garanties || []).length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.4rem' }}>
+                            {m.garanties.map((g) => (
+                              <span key={g.code_sous_garantie || g.id_sous_garantie} style={{ padding: '0.15rem 0.45rem', borderRadius: '4px', border: '1px solid var(--border-subtle)', fontSize: '0.72rem', color: g.optionnelle ? 'var(--accent-purple)' : 'var(--text-secondary)' }}>
+                                {g.libelle_sous_garantie || g.code_sous_garantie} {fcfa(g.prime_nette)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {(m.options || []).length > 0 && (
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.3rem' }}>Options : {m.options.join(', ').replace(/_/g, ' ')}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
 
             {/* Santé : saisie enregistrée (couvertures, adhérents, affiliés) */}
@@ -445,38 +481,116 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               )
             )}
 
-            {/* Voyage Details */}
+            {/* Voyage : saisie enregistrée (destination, voyageur, garanties) */}
             {quote.branche === 'Voyage' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
-                <div><strong>Destination :</strong> {details.paysDestination || 'Espace Schengen'} ({details.zone})</div>
-                <div><strong>Formule :</strong> {details.formule}</div>
-                <div><strong>Période :</strong> Du {details.dateDepart} au {details.dateRetour} ({details.daysCount} jours)</div>
-                <div><strong>Plafond Médical :</strong> {details.plafondFraisMedicaux || '30 000 €'}</div>
-                {details.voyageurs && (
-                  <div style={{ gridColumn: 'span 2', marginTop: '0.5rem' }}>
-                    <strong>Voyageurs assurés ({details.voyageurs.length}) :</strong>
-                    <ul style={{ margin: '0.3rem 0 0 1.25rem', padding: 0 }}>
-                      {details.voyageurs.map((v, i) => (
-                        <li key={i}>{v.nom} {v.prenom} (Né(e) le {v.dateNaissance}, Pass: {v.passeport || 'N/A'})</li>
-                      ))}
-                    </ul>
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement du voyage…</div>
+              ) : detailBranche.erreur ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Détail Voyage indisponible pour ce devis.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
+                    <div><strong>Formule :</strong> {detailBranche.Detail?.LibelleTarif || '—'}</div>
+                    <div><strong>Offre :</strong> {detailBranche.Detail?.IdOffre ? detailBranche.Detail.LibelleOffre : '—'}</div>
+                    <div><strong>Destination :</strong> {detailBranche.Complement?.LibellePaysDestination || '—'}{detailBranche.LibelleZone ? ` (${detailBranche.LibelleZone})` : ''}</div>
+                    <div><strong>Schengen :</strong> {detailBranche.Complement ? (detailBranche.Complement.Schengen ? 'Oui' : 'Non') : '—'}</div>
+                    <div>
+                      <strong>Période :</strong> du {formatDate(detailBranche.DateEffet)} au {formatDate(detailBranche.DateExpiration)}
+                      {detailBranche.DateEffet && detailBranche.DateExpiration
+                        ? ` (${Math.round((new Date(detailBranche.DateExpiration) - new Date(detailBranche.DateEffet)) / 86400000)} jours)` : ''}
+                    </div>
+                    <div><strong>Voyageur né(e) le :</strong> {formatDate(detailBranche.Detail?.DateNaissance)}</div>
+                    <div><strong>Nationalité :</strong> {detailBranche.Complement?.Nationalite || '—'}</div>
+                    <div><strong>Passeport :</strong> {detailBranche.Complement?.NumeroPasseport || '—'}</div>
+                    <div><strong>N° attestation :</strong> {detailBranche.Complement?.NumeroAttestation || '—'}</div>
+                    <div><strong>Référence contrat :</strong> {detailBranche.Complement?.ReferenceContrat || '—'}</div>
+                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '—'}</div>
+                    {Number(detailBranche.Detail?.TauxReduction) > 0 && <div><strong>Réduction :</strong> {detailBranche.Detail.TauxReduction} %</div>}
                   </div>
-                )}
-              </div>
+                  {(detailBranche.Garanties || []).length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left' }}>Garantie</th>
+                            <th style={{ textAlign: 'right' }}>Capital</th>
+                            <th style={{ textAlign: 'right' }}>Franchise</th>
+                            <th style={{ textAlign: 'right' }}>Prime annuelle</th>
+                            <th style={{ textAlign: 'right' }}>Prime nette</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailBranche.Garanties.map((g) => (
+                            <tr key={g.IdSousGarantie}>
+                              <td>{g.LibelleSousGarantie}</td>
+                              <td style={{ textAlign: 'right' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '—'}</td>
+                              <td style={{ textAlign: 'right' }}>{g.Franchise ? Math.round(g.Franchise).toLocaleString('fr-FR') : '—'}</td>
+                              <td style={{ textAlign: 'right' }}>{Math.round(g.PrimeAnnuelle || 0).toLocaleString('fr-FR')}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(g.PrimeNette || 0).toLocaleString('fr-FR')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (devis repris d'URANUS sans détail).</div>
+                  )}
+                  {detailBranche.Detail && !detailBranche.Complement && (
+                    <div style={{ color: 'var(--text-muted)' }}>Devis repris d'URANUS : destination, nationalité et passeport non enregistrés.</div>
+                  )}
+                </div>
+              )
             )}
 
-            {/* Transport Details */}
+            {/* Transport : certificats GUCE du bordereau rattachés au devis (une ligne de devis par certificat) */}
             {quote.branche === 'Transport' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
-                <div><strong>Mode de Transport :</strong> {details.modeTransport}</div>
-                <div><strong>Catégorie de Marchandise :</strong> {details.natureMarchandise}</div>
-                <div><strong>Incoterm :</strong> {details.incoterm}</div>
-                <div><strong>Garantie :</strong> {details.typeGarantie}</div>
-                <div><strong>Trajet :</strong> De {details.portDepart} à {details.portArrivee}</div>
-                <div><strong>N° Connaissement :</strong> {details.numeroBlLta || 'En cours'}</div>
-                <div><strong>Navire / Vol :</strong> {details.nomNavireVol}</div>
-                <div><strong>Somme Totale Assurée :</strong> {Number(details.sommeAssuree || 0).toLocaleString('fr-FR')} FCFA</div>
-              </div>
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des certificats…</div>
+              ) : detailBranche.erreur || !(detailBranche.Certificats || []).length ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun certificat GUCE rattaché à ce devis (devis repris d'URANUS ou saisi hors GUCE).</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span>
+                      Bordereau GUCE du <strong>{formatDate(detailBranche.DebutPeriode)}</strong> au <strong>{formatDate(detailBranche.FinPeriode)}</strong> :
+                      {' '}{detailBranche.Totaux.Certificats} certificats, valeur assurée {Math.round(detailBranche.Totaux.ValeurAssurance).toLocaleString('fr-FR')} FCFA
+                    </span>
+                    <button type="button" className="btn btn-secondary" onClick={() => printBordereauTransport({ iddevis: idDevisBase })} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}>
+                      <Printer size={14} /> Bordereau
+                    </button>
+                  </div>
+                  <div style={{ overflow: 'auto', maxHeight: '300px' }}>
+                    <table className="table" style={{ width: '100%', fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>N° requête</th>
+                          <th style={{ textAlign: 'left' }}>Certificat</th>
+                          <th style={{ textAlign: 'left' }}>Assuré</th>
+                          <th style={{ textAlign: 'left' }}>Transport / voyage</th>
+                          <th style={{ textAlign: 'right' }}>Valeur</th>
+                          <th style={{ textAlign: 'right' }}>Prime totale</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detailBranche.Certificats.map((c) => (
+                          <tr key={c.NumeroRequete}>
+                            <td>{c.NumeroRequete}</td>
+                            <td>{c.ReferenceCertificat} <span style={{ color: 'var(--text-muted)' }}>({formatDate(c.DateCertificat)})</span></td>
+                            <td>{c.Assure}</td>
+                            <td>{c.MoyenTransport} <span style={{ color: 'var(--text-muted)' }}>{c.Voyage}</span></td>
+                            <td style={{ textAlign: 'right' }}>{Math.round(c.ValeurAssurance).toLocaleString('fr-FR')}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(c.PrimeTtc).toLocaleString('fr-FR')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                    Prime totale des certificats {Math.round(detailBranche.Totaux.PrimeTtc).toLocaleString('fr-FR')} FCFA, diminuée de la part AFS-CI
+                    ({Math.round(detailBranche.Totaux.AccessoireClient).toLocaleString('fr-FR')} FCFA) : total général {Math.round(detailBranche.Totaux.TotalGeneral).toLocaleString('fr-FR')} FCFA.
+                  </div>
+                </div>
+              )
             )}
           </div>
         )}
@@ -530,11 +644,13 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               type="button"
               className="btn btn-secondary"
               onClick={() => printConditionsParticulieres(quote)}
-              title="Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF"
+              title={estDevisVoyage(quote)
+                ? "Proposition d'assurance Voyage (souscripteur, assuré, période, garanties, primes) — enregistrable en PDF"
+                : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF'}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <FileText size={15} />
-              <span>Imprimer Conditions Particulières</span>
+              <span>{estDevisVoyage(quote) ? 'Imprimer Proposition' : 'Imprimer Conditions Particulières'}</span>
             </button>
 
             {estDevisIaImprimable(quote) && (

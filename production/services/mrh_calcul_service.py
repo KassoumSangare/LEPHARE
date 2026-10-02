@@ -1814,6 +1814,9 @@ class MRHCalculService:
         devis.prime_imposee = True
         devis.prime_imposee_date = datetime.now()
         if montant_taxe is not None and montant_taxe > 0:
+            # Accessoire tel que mettre_a_jour_totaux_devis vient de l'enregistrer (imposé ou barème) :
+            # l'objet devis a été lu avant
+            devis.refresh_from_db(fields=["accessoire"])
             accessoire_val = devis.accessoire or Decimal("0")
             devis.taxe = montant_taxe
             devis.primettc = montant_impose + montant_taxe + accessoire_val
