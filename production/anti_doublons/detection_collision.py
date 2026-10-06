@@ -49,6 +49,11 @@ def detecter_collision(assure_data: dict, assure_existant) -> tuple:
             valeur_nouvelle = str(valeur_nouvelle).strip().lower() if valeur_nouvelle else ""
             valeur_existante = str(valeur_existante).strip().lower() if valeur_existante else ""
         elif champ_import == "Sexe":
+            # Sexe absent du fichier : rien à comparer (la civilité en base peut être celle posée
+            # par défaut à un import précédent ; la compter faisait passer l'assuré pour un
+            # homonyme et le recréait à chaque import)
+            if not valeur_nouvelle:
+                continue
             # CORRECTION: Gérer la conversion M/F vers 1/2
             if valeur_nouvelle == "M":
                 valeur_nouvelle = "1"

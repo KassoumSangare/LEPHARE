@@ -134,7 +134,7 @@ const ayantsDepuisApi = (liste) => (liste || []).map((d) => ({
 
 export const NewIaQuotePage = () => {
   const navigate = useNavigate();
-  const { success, error: toastError } = useToast();
+  const { success, error: toastError, info } = useToast();
 
   // « Modifier » depuis le registre des devis : /user/quotes/ia?edit=<iddevis>
   const [searchParams] = useSearchParams();
@@ -845,6 +845,8 @@ export const NewIaQuotePage = () => {
     donnees.append('IdDevis', idDevisEdite || 0);
     donnees.append('NumeroPoliceConnexe', '');
     donnees.append('NumeroPoliceCompagnie', numeroPoliceCompagnie || '');
+    // Assuré déjà connu (renouvellement) : repris dans le devis, fonction et ayants droit du fichier
+    donnees.append('ModeImport', 'mettre_a_jour');
     setImportEnCours(true);
     try {
       let res;
@@ -863,6 +865,19 @@ export const NewIaQuotePage = () => {
       }
       await iaApi.finaliserDevis({ idDevis, idClient: souscripteurId }).catch(() => null);
       success(res.message || 'Importation des assurés réalisée avec succès.');
+      // Écarts relevés par l'import (primes, période, souscripteur, acte du fichier)
+      (res.avertissements || []).slice(0, 4).forEach((a) => info(a));
+      // Devis créé par l'import : sa prime TTC finalisée doit égaler le total TTC du fichier
+      const ttcFichier = Number(res.primes_fichier?.prime_ttc) || 0;
+      if (!idDevisEdite && ttcFichier > 0) {
+        const devisImporte = await quoteApi.getQuote(idDevis).catch(() => null);
+        const ttcDevis = Math.round(Number(devisImporte?.prime_totale) || 0);
+        if (devisImporte && ttcDevis === Math.round(ttcFichier)) {
+          success(`Primes contrôlées : TTC du devis ${fcfa(ttcDevis)} F = total TTC du fichier.`);
+        } else if (devisImporte) {
+          toastError(`Écart de primes : TTC du devis ${fcfa(ttcDevis)} F, total TTC du fichier ${fcfa(ttcFichier)} F. Vérifiez l'offre choisie.`);
+        }
+      }
       setFichierImport(null);
       if (String(idDevis) === String(editIddevisParam)) setVersionChargement((v) => v + 1);
       else navigate(`/user/quotes/ia?edit=${idDevis}`);

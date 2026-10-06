@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { cashApi } from '../../api/endpoints';
 
 // Champs du mode de règlement d'un encaissement, communs à l'encaissement des primes et au
 // réencaissement d'un chèque impayé. Chaque mode n'affiche que ce qui le concerne :
@@ -58,10 +59,43 @@ export const champsReglementApi = (valeurs, mode) => {
   };
 };
 
-export const ChampsReglement = ({ modes, banques, valeurs, onChange }) => {
+const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
+
+// montantAEncaisser (facultatif) : total réglé par ce chèque, comparé à son solde disponible
+export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEncaisser }) => {
   const mode = modes.find((m) => String(m.idmodeencaissement) === String(valeurs.idMode));
   const nature = natureMode(mode);
   const saisie = (champ, filtre = (v) => v) => (e) => onChange(champ, filtre(e.target.value));
+
+  // Chèque déjà au portefeuille (règlement de plusieurs quittances) : son montant initial est
+  // repris et verrouillé, le solde disponible borne le montant encaissé (GET /api/cheques/statut/)
+  const [chequeConnu, setChequeConnu] = useState(null);
+  // Montant initial repris d'un chèque connu : vidé si le numéro saisi ne correspond plus à ce chèque
+  const montantRepris = useRef(false);
+  useEffect(() => {
+    const numero = (valeurs.numero || '').trim();
+    if (!nature.cheque || !valeurs.idBanque || numero.length < 3) { setChequeConnu(null); return undefined; }
+    let actif = true;
+    const minuterie = setTimeout(() => {
+      cashApi.getChequeStatus({ numero_cheque: numero, banque: valeurs.idBanque })
+        .then((r) => {
+          if (!actif) return;
+          setChequeConnu(r || null);
+          if (r?.existe) {
+            onChange('montantInitialCheque', String(Math.round(Number(r.montant_initial) || 0)));
+            montantRepris.current = true;
+          } else if (montantRepris.current) {
+            onChange('montantInitialCheque', '');
+            montantRepris.current = false;
+          }
+        })
+        .catch(() => { if (actif) setChequeConnu(null); });
+    }, 350);
+    return () => { actif = false; clearTimeout(minuterie); };
+  }, [nature.cheque, valeurs.idBanque, valeurs.numero]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const plafondCheque = chequeConnu?.existe ? Number(chequeConnu.solde_disponible) : Number(valeurs.montantInitialCheque) || null;
+  const depassementCheque = nature.cheque && plafondCheque !== null && Number(montantAEncaisser) > plafondCheque;
 
   return (
     <>
@@ -119,9 +153,20 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange }) => {
                 placeholder="Au 1er usage, sauf chèque de l'échéancier"
                 value={valeurs.montantInitialCheque}
                 onChange={saisie('montantInitialCheque')}
+                readOnly={Boolean(chequeConnu?.existe)}
+                title={chequeConnu?.existe ? 'Montant fixé au premier usage du chèque' : undefined}
               />
             </div>
           )}
+        </div>
+      )}
+
+      {nature.cheque && chequeConnu && (
+        <div style={{ fontSize: '0.8rem', marginTop: '-0.3rem', color: depassementCheque ? 'var(--accent-rose)' : 'var(--text-secondary)' }}>
+          {chequeConnu.existe
+            ? `Chèque déjà enregistré : montant initial ${fcfa(chequeConnu.montant_initial)} F, solde disponible ${fcfa(chequeConnu.solde_disponible)} F.`
+            : 'Nouveau chèque : saisissez son montant initial ; il pourra régler plusieurs quittances sans jamais dépasser ce montant.'}
+          {depassementCheque && ` Le montant à encaisser (${fcfa(montantAEncaisser)} F) dépasse ce que le chèque permet (${fcfa(plafondCheque)} F).`}
         </div>
       )}
 

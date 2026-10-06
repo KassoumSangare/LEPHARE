@@ -57,8 +57,9 @@ import {
 // Code branche CIMA (stdbranche) du produit Automobile : seules les catégories 2xx sont proposées
 const BRANCHE_AUTOMOBILE = '200';
 
-// Tarifs commerciaux nommés (TARIF TECK, BAOBAB, EBENE…) : grilles stdtarif rattachées à une
-// catégorie CIMA par son code (201, 202…), proposées dans « Tarifs spécifiques » et non dans « Catégorie »
+// Formules NSIA (TARIF TECK, BAOBAB, EBENE…) : grilles stdtarif rattachées à une catégorie CIMA
+// par son code (201, 202…), proposées dans « Formules NSIA » (compagnie NSIA seulement) et non
+// dans « Catégorie »
 const estTarifSpecifique = (cat) => /^TARIF\b/i.test(String(cat?.libelle || '').trim());
 
 const DEFAULT_CATEGORIES = [
@@ -87,8 +88,8 @@ const DEFAULT_CARROSSERIES = [
   { id: 7, libelle: 'BENNE BASCULANTE' },
 ];
 
-// Libellé de la durée (transmis dans details.dureeContrat) : « Libre » pour la durée du terme « Autre »
-const libelleDuree = (idDuree) => DUREES_CONTRAT.find((d) => d.id === Number(idDuree))?.libelle || 'Libre';
+// Libellé de la durée (transmis dans details.dureeContrat) : « Divers » pour la durée du terme « Autre »
+const libelleDuree = (idDuree) => DUREES_CONTRAT.find((d) => d.id === Number(idDuree))?.libelle || 'Divers';
 
 const DEFAULT_SYSTEMES_SECURITE = [
   { id: 0, code: 0, libelle: 'AUCUN SYSTEME' },
@@ -570,6 +571,13 @@ export const NewAutoQuotePage = () => {
     // L'offre suit la grille choisie (sa liste d'offres change)
     offreASuivreCategorieRef.current = true;
   };
+
+  // Les formules NSIA ne sont proposées qu'avec la compagnie NSIA : avec une autre compagnie,
+  // le tarif redevient celui de la catégorie CIMA
+  useEffect(() => {
+    if (!isNsiaCompany && tarifSpecifiqueChoisi && categorieCimaChoisie) choisirGrille(categorieCimaChoisie);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNsiaCompany, tarifSpecifiqueChoisi?.id, categorieCimaChoisie?.id]);
 
   // Véhicule saisi à l'écran : instantané complet (paramètres tarifaires compris). En flotte,
   // chaque véhicule de la liste est un tel instantané, enregistré par son propre appel à
@@ -2434,25 +2442,27 @@ export const NewAutoQuotePage = () => {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="tarif-specifique-mono">Tarifs spécifiques</label>
-                  <select
-                    id="tarif-specifique-mono"
-                    className="form-control"
-                    value={tarifSpecifiqueChoisi?.id ?? ''}
-                    disabled={tarifsSpecifiques.length === 0}
-                    onChange={(e) => choisirGrille(e.target.value
-                      ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
-                      : categorieCimaChoisie)}
-                  >
-                    <option value="">{tarifsSpecifiques.length > 0 ? 'Aucun (tarif de la catégorie)' : 'Aucun tarif spécifique pour cette catégorie'}</option>
-                    {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.libelle}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {isNsiaCompany && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="tarif-specifique-mono">Formules NSIA</label>
+                    <select
+                      id="tarif-specifique-mono"
+                      className="form-control"
+                      value={tarifSpecifiqueChoisi?.id ?? ''}
+                      disabled={tarifsSpecifiques.length === 0}
+                      onChange={(e) => choisirGrille(e.target.value
+                        ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
+                        : categorieCimaChoisie)}
+                    >
+                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune (tarif de la catégorie)' : 'Aucune formule NSIA pour cette catégorie'}</option>
+                      {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.libelle}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label" style={{ background: 'rgba(59, 130, 246, 0.2)', padding: '0.1rem 0.4rem', borderRadius: '4px', width: 'fit-content' }}>
@@ -2692,25 +2702,27 @@ export const NewAutoQuotePage = () => {
                   </select>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label" htmlFor="tarif-specifique-flotte">Tarifs spécifiques</label>
-                  <select
-                    id="tarif-specifique-flotte"
-                    className="form-control"
-                    value={tarifSpecifiqueChoisi?.id ?? ''}
-                    disabled={tarifsSpecifiques.length === 0}
-                    onChange={(e) => choisirGrille(e.target.value
-                      ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
-                      : categorieCimaChoisie)}
-                  >
-                    <option value="">{tarifsSpecifiques.length > 0 ? 'Aucun (tarif de la catégorie)' : 'Aucun tarif spécifique pour cette catégorie'}</option>
-                    {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.libelle}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {isNsiaCompany && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="tarif-specifique-flotte">Formules NSIA</label>
+                    <select
+                      id="tarif-specifique-flotte"
+                      className="form-control"
+                      value={tarifSpecifiqueChoisi?.id ?? ''}
+                      disabled={tarifsSpecifiques.length === 0}
+                      onChange={(e) => choisirGrille(e.target.value
+                        ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
+                        : categorieCimaChoisie)}
+                    >
+                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune (tarif de la catégorie)' : 'Aucune formule NSIA pour cette catégorie'}</option>
+                      {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.libelle}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="form-group">
                   <label className="form-label">Usage Véhicule (* requis)</label>

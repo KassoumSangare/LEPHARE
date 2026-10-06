@@ -2,9 +2,10 @@
 Devis Assurance Voyage : enregistrement (création ou « Modifier ») et relecture complète.
 
 L'enregistrement passe par la procédure d'URANUS sp_creation_devis_voyage (en-tête, ligne,
-complément voyage, garanties et primes). La prime vient de la grille de la base
-(fn_garantie_offre_voyage -> fn_calcul_prime_voyage_by_age : zone de destination x durée x âge,
-par offre pour NSIA, par tarif pour AMSA), l'accessoire de fn_get_accessoire.
+complément voyage, garanties et primes). Prime nette, accessoire et taux de taxe viennent de la
+grille de la base (fn_garantie_offre_voyage -> fn_grille_voyage : zone de destination x jours
+couverts x âge, par offre pour NSIA, par formule pour AMSA ; grilles OREOLE 2026 modifiables dans
+l'admin, Grilles Voyage) ; la procédure enregistre les montants de fn_garantie_offre_voyage.
 La route d'URANUS (enregistrementdevisvoyage) exige un jeton Knox réel : LE PHARE passe par
 celle-ci, comme pour l'IA et la Santé.
 
@@ -30,6 +31,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.response import Response
 
+from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
@@ -38,6 +40,7 @@ from .database import enregistrer_terme_devis
 ID_INTERMEDIAIRE = 1
 ID_PRODUIT_VOYAGE = 3
 ID_AVENANT_AFFAIRE_NOUVELLE = 1
+# Réduction commerciale maximale : paramètre « voyage.taux_reduction_max » (admin, Le cabinet)
 TAUX_REDUCTION_MAX = Decimal("35")
 
 
@@ -127,8 +130,9 @@ def _lire_saisie(donnees):
         saisie["taux_reduction"] = Decimal(str(donnees.get("TauxReduction") or 0))
     except InvalidOperation:
         raise ErreurDevisVoyage("Réduction : valeur invalide.")
-    if not Decimal("0") <= saisie["taux_reduction"] <= TAUX_REDUCTION_MAX:
-        raise ErreurDevisVoyage("La réduction doit être comprise entre 0 et 35 %.")
+    taux_maximum = valeur_parametre("voyage.taux_reduction_max", TAUX_REDUCTION_MAX)
+    if not Decimal("0") <= saisie["taux_reduction"] <= taux_maximum:
+        raise ErreurDevisVoyage(f"La réduction doit être comprise entre 0 et {taux_maximum.normalize():f} %.")
     if (saisie["date_expiration"] - saisie["date_effet"]).days < 1:
         raise ErreurDevisVoyage(
             "La durée du voyage est incorrecte : la date d'expiration doit suivre la date d'effet d'au moins un jour."
@@ -285,6 +289,101 @@ def enregistrer_devis_voyage_vue(request):
     return Response(resultat, status=status.HTTP_201_CREATED)
 
 
+# ------------------------------------------------------------------ ligne de tarif appliquée
+# Durées des documents exprimées en mois (jours couverts au plus)
+DUREES_EN_MOIS = {184: "6 mois", 276: "9 mois", 365: "1 an", 366: "1 an"}
+
+
+def _libelle_duree(d_min, d_max):
+    if d_max in DUREES_EN_MOIS:
+        return f"{DUREES_EN_MOIS[d_max]} ({d_min} à {d_max} jours)"
+    return f"jusqu'à {d_max} jours ({d_min} à {d_max} jours)"
+
+
+def _lignes_offre(cursor, id_tarif, id_offre, id_zone):
+    """Lignes de grille applicables à l'offre dans la zone (même ordre de recherche que fn_grille_voyage)."""
+    cursor.execute(
+        """
+        SELECT duree_minimum, duree_maximum, age_minimum, age_maximum FROM stdzonevoyageprimensia
+        WHERE id_offre = %s AND (id_zone = %s OR id_zone IS NULL)
+        """,
+        [id_offre, id_zone],
+    )
+    lignes = cursor.fetchall()
+    if lignes:
+        return lignes
+    cursor.execute(
+        """
+        SELECT duree_minimum, duree_maximum, age_minimum, age_maximum FROM stdzonevoyageprime
+        WHERE id_tarif = %s AND id_zone = %s
+        """,
+        [id_tarif, id_zone],
+    )
+    return cursor.fetchall()
+
+
+def ligne_tarif_voyage(donnees):
+    """Ligne de la grille (document tarifaire) retenue pour ces paramètres, ou motif de refus."""
+    id_tarif = _entier(donnees.get("IdTarif"), "Formule", obligatoire=False)
+    id_offre = _entier(donnees.get("IdOffre"), "Offre")
+    id_zone = _entier(donnees.get("IdZoneVoyage"), "Zone de destination")
+    date_effet = _date(donnees.get("DateEffet"), "Date d'effet")
+    date_expiration = _date(donnees.get("DateExpiration"), "Date d'expiration")
+    date_naissance = _date(donnees.get("DateNaissance"), "Date de naissance")
+    duree = (date_expiration - date_effet).days + 1
+    with connection.cursor() as cursor:
+        # Même âge et même formule que fn_garantie_offre_voyage
+        age = _une_ligne(cursor, "SELECT EXTRACT(YEAR FROM AGE(CURRENT_DATE, %s))::int", [date_naissance])[0]
+        ligne = _une_ligne(cursor, "SELECT idtarif FROM stdoffre WHERE idoffre = %s", [id_offre])
+        id_tarif = (ligne[0] if ligne and ligne[0] else None) or id_tarif
+        ligne = _une_ligne(
+            cursor,
+            """
+            SELECT prime_nette, accessoire, taux_taxe, prime_ttc, duree_minimum, duree_maximum, age_minimum, age_maximum
+            FROM fn_grille_voyage(%s, %s, %s, %s, %s)
+            """,
+            [id_tarif, id_offre, id_zone, age, duree],
+        )
+        resultat = {"Age": age, "Duree": duree, "Ligne": None, "Motif": None}
+        if ligne:
+            resultat["Ligne"] = {
+                "PrimeNette": _nombre(ligne[0]), "Accessoire": _nombre(ligne[1]), "TauxTaxe": _nombre(ligne[2]),
+                "PrimeTtc": _nombre(ligne[3]), "DureeMin": ligne[4], "DureeMax": ligne[5],
+                "AgeMin": ligne[6], "AgeMax": ligne[7], "LibelleDuree": _libelle_duree(ligne[4], ligne[5]),
+            }
+            return resultat
+        if not _une_ligne(cursor, "SELECT 1 FROM stdoffrevoyagezone WHERE id_offre = %s AND id_zone = %s", [id_offre, id_zone]):
+            resultat["Motif"] = "Cette offre n'est pas proposée pour la zone de destination choisie."
+            return resultat
+        lignes = _lignes_offre(cursor, id_tarif, id_offre, id_zone)
+    if not lignes:
+        resultat["Motif"] = "Aucun tarif paramétré pour cette offre dans cette zone."
+    elif not any(d_min <= duree <= d_max for d_min, d_max, _, _ in lignes):
+        tranches = sorted({(d_min, d_max) for d_min, d_max, _, _ in lignes})
+        resultat["Motif"] = (
+            f"Durée de {duree} jours hors du tarif : ce tarif ne couvre que "
+            + ", ".join(_libelle_duree(d_min, d_max) for d_min, d_max in tranches) + "."
+        )
+    else:
+        ages = sorted({(a_min, a_max) for d_min, d_max, a_min, a_max in lignes if d_min <= duree <= d_max})
+        resultat["Motif"] = (
+            f"Âge de {age} ans hors du tarif pour cette destination : âges tarifés "
+            + ", ".join(f"{a_min} à {a_max} ans" for a_min, a_max in ages) + "."
+        )
+    return resultat
+
+
+@api_view(["POST"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def ligne_tarif_voyage_vue(request):
+    """POST /api/devisvoyage/ligne-tarif/ : ligne du document tarifaire appliquée (ou motif de refus)"""
+    try:
+        return Response(ligne_tarif_voyage(request.data))
+    except ErreurDevisVoyage as erreur:
+        return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 def _personne(cursor, id_client):
     ligne = _une_ligne(
         cursor,
@@ -425,5 +524,72 @@ def lire_devis_voyage(request, iddevis):
             "Garanties": garanties,
             "Client": client,
             "Assure": assure,
+        }
+    )
+
+
+@api_view(["GET"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def attestation_contrat_voyage(request, idcontrat):
+    """
+    GET /api/contratvoyage/<idcontrat>/attestation/ : données de l'attestation d'assurance et
+    d'assistance voyage, lues sur le contrat (complément voyage copié à la confirmation du devis).
+    Les contrats repris d'URANUS n'ont le plus souvent ni complément ni passeport : champs vides.
+    """
+    with connection.cursor() as cursor:
+        ligne = _une_ligne(
+            cursor,
+            """
+            SELECT ct.idcontrat, ct.numeropolice, ct.idproduit, ct.idcompagnie, cie.raisonsociale,
+                   ct.dateemission, ct.dateeffet, ct.dateexpiration, ct.numeropolicecompagnie,
+                   COALESCE(cd.idassure, ct.idassure, ct.idclient), cd.datemec, o.libelleoffre,
+                   v.numeroattestation, v.referencecontrat, v.numeropasseport, v.idpaysdestination,
+                   pd.libelle_pays, pv.nationalite
+            FROM stdcontrat ct
+            LEFT JOIN stdcompagnie cie ON cie.idcompagnie = ct.idcompagnie
+            LEFT JOIN stdcontratdetail cd ON cd.idcontrat = ct.idcontrat
+            LEFT JOIN stdoffre o ON o.idoffre = cd.idoffre
+            LEFT JOIN stdcomplementcontratdetailvoyage v ON v.idcontratdetail = cd.idcontratdetail
+            LEFT JOIN stdpays pd ON pd.id_pays = v.idpaysdestination
+            LEFT JOIN stdpays pv ON pv.id_pays = v.idpaysvoyageur
+            WHERE ct.idcontrat = %s
+            ORDER BY cd.idcontratdetail
+            LIMIT 1
+            """,
+            [idcontrat],
+        )
+        if not ligne:
+            return Response({"error": f"Contrat {idcontrat} introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        if ligne[2] != ID_PRODUIT_VOYAGE:
+            return Response({"error": "Ce contrat n'est pas un contrat Voyage."}, status=status.HTTP_400_BAD_REQUEST)
+        assure = _une_ligne(
+            cursor,
+            "SELECT TRIM(nom), TRIM(COALESCE(prenoms, '')), datenaissance FROM stdclient WHERE idclient = %s",
+            [ligne[9]],
+        ) or ("", "", None)
+        _, libelle_zone = _zone_destination(cursor, ligne[3], ligne[15]) if ligne[15] else (None, None)
+
+    return Response(
+        {
+            "IdContrat": ligne[0],
+            "NumeroPolice": ligne[1] or "",
+            "IdCompagnie": ligne[3],
+            "Compagnie": ligne[4] or "",
+            "DateEmission": _iso(ligne[5]),
+            "DebutValidite": _iso(ligne[6]),
+            "FinValidite": _iso(ligne[7]),
+            "NumeroPoliceCompagnie": (ligne[8] or "").strip(),
+            "Nom": assure[0] or "",
+            "Prenoms": assure[1] or "",
+            # Date de naissance retenue par le tarif (saisie sur le devis), à défaut celle de la fiche
+            "DateNaissance": _iso(ligne[10] or assure[2]),
+            "Offre": ligne[11] or "",
+            # Certificat AMSA : saisi en « Numéro attestation », parfois seulement en « Référence contrat »
+            "NumeroCertificat": (ligne[12] or "").strip() or (ligne[13] or "").strip(),
+            "NumeroPasseport": (ligne[14] or "").strip(),
+            "PaysDestination": ligne[16] or "",
+            "ZoneCouverture": libelle_zone or "",
+            "Nationalite": (ligne[17] or "").strip(" ;"),
         }
     )

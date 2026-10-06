@@ -29,6 +29,10 @@ class Client(models.Model):
     Fax = models.CharField(db_column="fax", max_length=20, null=True, blank=True)
     Fixe = models.CharField(db_column="fixe", max_length=20, null=True, blank=True)
     IdQualite = models.IntegerField(db_column="idqualite", null=True, blank=True)
+    # Forme juridique (stdstatutjuridique), renseignée pour les personnes morales
+    IdStatutJuridique = models.IntegerField(
+        db_column="idstatutjuridique", null=True, blank=True
+    )
     IdProfession = models.IntegerField(db_column="idprofession", null=True, blank=True)
     IdSecteurActivite = models.IntegerField(
         db_column="idsecteuractivite", null=True, blank=True

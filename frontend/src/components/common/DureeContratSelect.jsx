@@ -4,7 +4,7 @@ import { trierParLibelle } from '../../utils/sortUtils';
 
 // Menu « Durée du contrat » commun à tous les devis : Mensuelle, Trimestrielle, Semestrielle,
 // Annuelle. Avec le terme « Autre », la durée est libre (date d'expiration saisie) : le menu est
-// alors grisé. value / onChange portent l'id de durée (stddevis.idduree). idsAutorises restreint
+// alors grisé sur « Divers ». value / onChange portent l'id de durée (stddevis.idduree). idsAutorises restreint
 // les durées proposées (ex. IA MINENE : Annuelle seulement).
 export const DureeContratSelect = ({ value, onChange, className = 'form-control', idsAutorises = null, ...props }) => {
   const libre = estDureeLibre(value);
@@ -18,7 +18,7 @@ export const DureeContratSelect = ({ value, onChange, className = 'form-control'
       onChange={(e) => onChange(Number(e.target.value))}
       {...props}
     >
-      {libre && <option value={ID_DUREE_LIBRE}>Libre</option>}
+      {libre && <option value={ID_DUREE_LIBRE}>Divers</option>}
       {trierParLibelle(durees, (d) => d.libelle).map((d) => (
         <option key={d.id} value={d.id}>
           {d.libelle}

@@ -4,6 +4,7 @@ import { TrendingUp, Download, Calendar, Printer, Loader2, RefreshCw, FileSpread
 import { useToast } from '../../../context/ToastContext';
 import { exportBordereauPdf, exportBordereauExcel } from '../../../utils/exportUtils';
 import { reportingApi } from '../../../api/endpoints';
+import { nomCabinet } from '../../../utils/parametrage';
 
 const emptyTotal = () => ({ primeNette: 0, accessoire: 0, taxe: 0, primeTtc: 0, commission: 0 });
 
@@ -124,7 +125,7 @@ export const EmissionSummaryPage = () => {
     title: `BORDEREAU DES EMISSIONS PAR COMPAGNIE, PAR BRANCHE ET PAR CLIENT ${periodeLabel.toUpperCase()}`,
     subtitle: 'État réglementaire certifié conforme — Code CIMA (CRCA)',
     metadata: {
-      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
+      'Organisme': nomCabinet(),
       'Période': periodeLabel,
       'Nombre de Compagnies': String(groups.compagnies.length),
       'Nombre de Polices': String(rawRecords.length),

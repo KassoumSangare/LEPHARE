@@ -1,393 +1,390 @@
-import React, { useState, useEffect } from 'react';
-import { DataTable } from '../../../components/common/DataTable';
-import { StatusBadge } from '../../../components/common/StatusBadge';
-import { Modal } from '../../../components/common/Modal';
-import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
-import { Building2, Plus, Phone, Mail, Check, FileText, Trash2 } from 'lucide-react';
-import { settingsApi } from '../../../api/endpoints';
-import { dataStore } from '../../../api/dataStore';
-import { validateBusinessRule } from '../../../utils/rbac';
-import { useToast } from '../../../context/ToastContext';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  Building2, Plus, Search, Loader2, Save, IdCard, Printer, Plane, Calculator, ExternalLink, Eye, CheckCircle2,
+  AlertTriangle, Image as ImageIcon, FileText,
+} from 'lucide-react';
+import { EnTeteParametrage } from '../../../components/admin/EnTeteParametrage';
+import { ChampImage } from '../../../components/admin/ChampImage';
+import { Modal } from '../../../components/common/Modal';
+import { parametrageApi } from '../../../api/endpoints';
+import { messageErreurApi } from '../../../utils/financeUtils';
+import { chargerParametrage } from '../../../utils/parametrage';
+import { apercuAttestationVoyage } from '../../../utils/exportUtils';
+import { useToast } from '../../../context/ToastContext';
+
+// Compagnies d'assurance (stdcompagnie) et ce que les documents imprimés reprennent de chacune
+// (lephare_compagnie_document) : configuration_api/parametrage.py
+
+const CHAMPS_IDENTITE = [
+  { cle: 'RaisonSociale', libelle: 'Raison sociale', requis: true, longueur: 100 },
+  { cle: 'CodeAsaci', libelle: 'Code ASACI', longueur: 10, aide: 'Code de la compagnie auprès de l\'ASACI (attestations automobile).' },
+  { cle: 'Adresse1', libelle: 'Adresse', longueur: 100 },
+  { cle: 'Adresse2', libelle: 'Complément d\'adresse', longueur: 100 },
+  { cle: 'Telephone', libelle: 'Téléphone', longueur: 20 },
+  { cle: 'Mobile', libelle: 'Mobile', longueur: 20 },
+  { cle: 'Fax', libelle: 'Fax', longueur: 20 },
+];
+
+const ONGLETS_FICHE = [
+  { id: 'identite', libelle: 'Identité', icone: IdCard },
+  { id: 'documents', libelle: 'Documents imprimés', icone: Printer },
+  { id: 'attestation', libelle: 'Attestation voyage', icone: Plane },
+  { id: 'baremes', libelle: 'Barèmes', icone: Calculator },
+];
+
+// Raccourcis vers les barèmes de la compagnie (écrans filtrés sur elle)
+const BAREMES = [
+  { libelle: 'Taux de commission', description: 'Commission du cabinet par produit.', chemin: '/admin/settings/commissions-baremes' },
+  { libelle: 'Accessoires de la compagnie', description: 'Frais de dossier par tranche de prime.', chemin: '/admin/settings/tarifs' },
+  { libelle: 'Accessoires du cabinet', description: 'Part des accessoires revenant au cabinet.', chemin: '/admin/settings/tarifs', extra: 'onglet=courtier' },
+  { libelle: 'Réductions flotte', description: 'Remise selon le nombre de véhicules.', chemin: '/admin/settings/flotte' },
+  { libelle: 'Sécurité routière', description: 'Formules des personnes transportées.', chemin: '/admin/settings/securite-routiere' },
+  { libelle: 'Offres', description: 'Formules et garanties proposées.', chemin: '/admin/settings/offres' },
+  { libelle: 'Grilles Voyage', description: 'Primes Voyage par zone, durée et âge.', chemin: '/admin/settings/grilles-voyage' },
+];
+
+const ATTESTATION_VIDE = { Actif: false, Convention: '', PaysResidence: "CÔTE D'IVOIRE", Signataire: '', Garanties: [], Telephone: '', Email: '', Whatsapp: '', Exemplaires: ['Exemplaire destiné aux Consulats', "Exemplaire de l'Assuré", 'Exemplaire de la Compagnie'] };
+
+const lignesVersListe = (texte) => String(texte || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+const Pastille = ({ actif, libelle, icone: Icone }) => (
+  <span title={libelle} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: '0.7rem', padding: '0.12rem 0.45rem', borderRadius: 999, background: actif ? 'rgba(16,185,129,0.12)' : 'var(--bg-surface-hover)', color: actif ? 'var(--accent-emerald)' : 'var(--text-muted)', opacity: actif ? 1 : 0.7 }}>
+    <Icone size={11} /> {libelle}
+  </span>
+);
 
 export const CatalogCompaniesPage = () => {
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const navigate = useNavigate();
+  const [compagnies, setCompagnies] = useState([]);
+  const [chargement, setChargement] = useState(true);
+  const [recherche, setRecherche] = useState('');
+  const [inactives, setInactives] = useState(false);
+  const [fiche, setFiche] = useState(null); // { origine, saisie } de la compagnie ouverte
+  const [onglet, setOnglet] = useState('identite');
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const [creation, setCreation] = useState(null);
 
-  const [companies, setCompanies] = useState(() => dataStore.getCompanies());
+  const charger = async () => {
+    setChargement(true);
+    try {
+      setCompagnies(await parametrageApi.getCompagnies());
+    } catch (err) {
+      toastError(`Compagnies non chargées : ${messageErreurApi(err)}`);
+    } finally {
+      setChargement(false);
+    }
+  };
+  useEffect(() => { charger(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    // Charger les compagnies réelles de la base Django (30 compagnies en BDD)
-    settingsApi.getCompanies().then((res) => {
-      if (Array.isArray(res) && res.length > 0) {
-        const mapped = res.map((c) => ({
-          id: c.IdCompagnie || c.id,
-          code: c.CodeAsaci || c.code || `CIE-${c.IdCompagnie || c.id}`,
-          nom: c.RaisonSociale || c.nom,
-          code_asaci: c.CodeAsaci || c.code_asaci || 'N/A',
-          telephone: c.Telephone || c.telephone || '+225 27 20 00 00',
-          email: c.Email || c.email || 'contact@assurance.ci',
-          branches: c.branches || 'Auto, Santé, MRH, IA, Transport, Voyage',
-          statut: c.statut || 'Partenaire Actif',
-          statut_badge: 'emerald',
-          raw: c,
-        }));
-        setCompanies(mapped);
-      }
-    }).catch(() => {});
+  const visibles = useMemo(() => {
+    const terme = recherche.trim().toLowerCase();
+    return compagnies
+      .filter((c) => inactives || c.Active)
+      .filter((c) => !terme || [c.RaisonSociale, c.CodeAsaci, c.Telephone].some((v) => String(v || '').toLowerCase().includes(terme)))
+      // Partenaires en activité d'abord (nombre de contrats), puis ordre alphabétique
+      .sort((a, b) => Number(b.Active) - Number(a.Active) || b.Contrats - a.Contrats || a.RaisonSociale.localeCompare(b.RaisonSociale, 'fr'));
+  }, [compagnies, recherche, inactives]);
 
-    const unsub = dataStore.subscribe(() => {
-      setCompanies(dataStore.getCompanies());
-    });
-    return unsub;
-  }, []);
+  const ouvrir = async (id, ongletInitial = 'identite') => {
+    setErreur('');
+    setOnglet(ongletInitial);
+    try {
+      const c = await parametrageApi.getCompagnie(id);
+      const saisie = {
+        ...c,
+        Documents: {
+          ...c.Documents,
+          PiedPageTexte: c.Documents.PiedPage || '',
+          AttestationVoyage: { ...ATTESTATION_VIDE, ...(c.Documents.AttestationVoyage || {}) },
+        },
+      };
+      setFiche({ origine: JSON.stringify(saisie), saisie });
+    } catch (err) {
+      toastError(`Fiche non chargée : ${messageErreurApi(err)}`);
+    }
+  };
 
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [selectedCompany, setSelectedCompany] = useState(null);
-  const [deletingCompany, setDeletingCompany] = useState(null);
-  const [deleteValidation, setDeleteValidation] = useState({ allowed: true });
+  const modifiee = fiche && JSON.stringify(fiche.saisie) !== fiche.origine;
+  const changer = (cle, valeur) => setFiche((f) => ({ ...f, saisie: { ...f.saisie, [cle]: valeur } }));
+  const changerDoc = (cle, valeur) => setFiche((f) => ({ ...f, saisie: { ...f.saisie, Documents: { ...f.saisie.Documents, [cle]: valeur } } }));
+  const changerAttestation = (cle, valeur) => setFiche((f) => ({
+    ...f,
+    saisie: { ...f.saisie, Documents: { ...f.saisie.Documents, AttestationVoyage: { ...f.saisie.Documents.AttestationVoyage, [cle]: valeur } } },
+  }));
 
-  const [newCompany, setNewCompany] = useState({
-    code: '',
-    nom: '',
-    code_asaci: '',
-    telephone: '+225 ',
-    email: '',
-    branches: 'Auto, MRH, Santé',
-    statut: 'Partenaire Actif',
+  const corpsDocuments = (s) => ({
+    Logo: s.Documents.Logo,
+    Visa: s.Documents.Visa,
+    PiedPage: s.Documents.PiedPageTexte,
+    MentionLogo: s.Documents.MentionLogo,
+    AttestationVoyage: s.Documents.AttestationVoyage,
   });
 
-  const handleCreate = (e) => {
-    e.preventDefault();
-    const item = dataStore.saveCompany({
-      ...newCompany,
-      code: newCompany.code.toUpperCase(),
-      code_asaci: newCompany.code_asaci.toUpperCase() || `ASACI_${newCompany.code.toUpperCase()}`,
-    });
-    setCompanies(dataStore.getCompanies());
-    setIsCreateModalOpen(false);
-    success(`Compagnie partenaire "${item.nom}" ajoutée avec succès.`);
+  const enregistrer = async () => {
+    setErreur('');
+    setEnvoi(true);
+    const s = fiche.saisie;
+    try {
+      const c = await parametrageApi.modifierCompagnie(s.IdCompagnie, {
+        ...Object.fromEntries(CHAMPS_IDENTITE.map((ch) => [ch.cle, s[ch.cle]])),
+        Etranger: s.Etranger,
+        Active: s.Active,
+        Documents: corpsDocuments(s),
+      });
+      const saisie = { ...c, Documents: { ...c.Documents, PiedPageTexte: c.Documents.PiedPage || '', AttestationVoyage: { ...ATTESTATION_VIDE, ...(c.Documents.AttestationVoyage || {}) } } };
+      setFiche({ origine: JSON.stringify(saisie), saisie });
+      success(`${c.RaisonSociale} enregistrée : les prochains documents imprimés en tiennent compte.`);
+      chargerParametrage(true);
+      charger();
+    } catch (err) {
+      setErreur(messageErreurApi(err));
+    } finally {
+      setEnvoi(false);
+    }
   };
 
-  const handleSaveEdit = (e) => {
-    e.preventDefault();
-    if (!selectedCompany) return;
-    dataStore.updateCompany(selectedCompany.id, selectedCompany);
-    setCompanies(dataStore.getCompanies());
-    setIsEditModalOpen(false);
-    success(`Données de ${selectedCompany.nom} mises à jour.`);
+  const fermer = () => {
+    if (modifiee && !window.confirm('Des modifications ne sont pas enregistrées. Fermer quand même ?')) return;
+    setFiche(null);
   };
 
-  const columns = [
-    { header: 'Code', accessor: 'code', render: (r) => <strong style={{ color: '#60a5fa' }}>{r.code}</strong> },
-    { header: 'Raison Sociale de la Compagnie', accessor: 'nom', render: (r) => <div style={{ fontWeight: 600, color: '#fff' }}>{r.nom}</div> },
-    { header: 'Code ASACI', accessor: 'code_asaci', render: (r) => <span style={{ fontFamily: 'var(--font-mono)', color: '#34d399' }}>{r.code_asaci}</span> },
-    { header: 'Téléphone', accessor: 'telephone' },
-    { header: 'Email Contact', accessor: 'email' },
-    { header: 'Branches Agréées', accessor: 'branches' },
-    { header: 'Statut', accessor: 'statut', render: (r) => <StatusBadge label={r.statut} color="emerald" /> },
-    {
-      header: 'Actions',
-      render: (r) => (
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
-          <button
-            className="btn btn-secondary"
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => {
-              setSelectedCompany(r);
-              setIsDetailModalOpen(true);
-            }}
-          >
-            Fiche
-          </button>
-          <button
-            className="btn btn-secondary"
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.55rem' }}
-            onClick={() => {
-              setSelectedCompany({ ...r });
-              setIsEditModalOpen(true);
-            }}
-          >
-            Modifier
-          </button>
-          <button
-            className="btn btn-secondary"
-            style={{ fontSize: '0.75rem', padding: '0.25rem 0.45rem', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.25)' }}
-            onClick={() => {
-              const check = validateBusinessRule('delete', 'conventions', r, dataStore);
-              setDeleteValidation(check);
-              setDeletingCompany(r);
-            }}
-            title="Supprimer la compagnie partenaire"
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
-      ),
-    },
-  ];
+  const creer = async (e) => {
+    e.preventDefault();
+    setEnvoi(true);
+    setErreur('');
+    try {
+      const c = await parametrageApi.creerCompagnie(creation);
+      success(`Compagnie « ${c.RaisonSociale} » créée.`);
+      setCreation(null);
+      await charger();
+      ouvrir(c.IdCompagnie);
+    } catch (err) {
+      setErreur(messageErreurApi(err));
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const s = fiche?.saisie;
+  const att = s?.Documents.AttestationVoyage;
+  const champTexte = (cle, libelle, { longueur = 120, aide, valeur, onChange, placeholder } = {}) => (
+    <div className="form-group">
+      <label className="form-label">{libelle}</label>
+      <input className="form-control" maxLength={longueur} value={valeur ?? ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      {aide && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{aide}</span>}
+    </div>
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <Building2 size={26} color="#3b82f6" />
-            Compagnies partenaires
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Les assureurs avec qui le cabinet travaille : agréments, codes ASACI, modalités de reversement.
-          </p>
+    <div style={{ padding: '1.5rem' }}>
+      <EnTeteParametrage
+        icone={Building2}
+        titre="Compagnies partenaires"
+        description="Les assureurs avec qui le cabinet travaille : coordonnées, logo et mentions imprimées sur leurs documents, modèle d'attestation voyage, et accès à leurs barèmes."
+        usage="Une compagnie inactive n'est plus proposée dans les nouveaux devis ; ses contrats existants ne changent pas."
+        actions={<button type="button" className="btn btn-primary" onClick={() => { setErreur(''); setCreation({ RaisonSociale: '', CodeAsaci: '', Adresse1: 'ABIDJAN', Adresse2: '', Telephone: '', Mobile: '', Fax: '', Etranger: false }); }} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Plus size={15} /> Nouvelle compagnie</button>}
+      />
+
+      <div className="glass-panel" style={{ padding: '1.1rem 1.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.9rem' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 240 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input className="form-control" style={{ paddingLeft: '1.9rem' }} placeholder="Rechercher une compagnie, un code ASACI…" value={recherche} onChange={(e) => setRecherche(e.target.value)} />
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={inactives} onChange={(e) => setInactives(e.target.checked)} /> Afficher les compagnies inactives ({compagnies.filter((c) => !c.Active).length})
+          </label>
         </div>
 
-        <button className="btn btn-primary" onClick={() => setIsCreateModalOpen(true)}>
-          <Plus size={16} /> Nouvelle Compagnie
-        </button>
+        {chargement ? <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}><Loader2 className="spin" /> Chargement…</div> : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: '0.8rem' }}>
+            {visibles.map((c) => (
+              <button key={c.IdCompagnie} type="button" onClick={() => ouvrir(c.IdCompagnie)}
+                style={{ textAlign: 'left', cursor: 'pointer', padding: '0.9rem 1rem', borderRadius: 10, border: '1px solid var(--border-subtle)', background: 'var(--bg-surface)', color: 'var(--text-primary)', opacity: c.Active ? 1 : 0.6, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{c.RaisonSociale}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      {c.CodeAsaci ? `ASACI ${c.CodeAsaci}` : 'Sans code ASACI'}{c.Telephone ? ` • ${c.Telephone}` : ''}
+                    </div>
+                  </div>
+                  <span className={`badge ${c.Active ? 'badge-emerald' : 'badge-slate'}`}>{c.Active ? 'Active' : 'Inactive'}</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{c.Contrats.toLocaleString('fr-FR')} contrat{c.Contrats > 1 ? 's' : ''}</div>
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                  <Pastille actif={c.Documents.Logo} libelle="Logo" icone={ImageIcon} />
+                  <Pastille actif={c.Documents.PiedPage} libelle="Pied de page CP" icone={FileText} />
+                  <Pastille actif={c.Documents.AttestationVoyage} libelle="Attestation voyage" icone={Plane} />
+                </div>
+              </button>
+            ))}
+            {!visibles.length && <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Aucune compagnie ne correspond.</div>}
+          </div>
+        )}
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <DataTable columns={columns} data={companies} searchPlaceholder="Filtrer une compagnie d'assurance..." />
-      </div>
-
-      {/* Modal Créer Compagnie */}
-      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Enregistrer une Compagnie Partenaire">
-        <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div className="responsive-form-row">
-            <div className="form-group">
-              <label className="form-label">Code Compagnie (Court) *</label>
-              <input
-                type="text"
-                className="form-control"
-                required
-                placeholder="Ex: SANLAM ou WAFA"
-                value={newCompany.code}
-                onChange={(e) => setNewCompany({ ...newCompany, code: e.target.value.toUpperCase() })}
-              />
+      {/* Fiche compagnie */}
+      <Modal isOpen={!!fiche} onClose={fermer} title={s?.RaisonSociale || 'Compagnie'} subtitle={s ? `${s.Contrats.toLocaleString('fr-FR')} contrat(s) — ${s.Active ? 'active' : 'inactive'}` : ''} size="large">
+        {s && (
+          <div>
+            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+              {ONGLETS_FICHE.map((o) => (
+                <button key={o.id} type="button" onClick={() => setOnglet(o.id)} className={`btn ${onglet === o.id ? 'btn-primary' : 'btn-secondary'}`} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                  <o.icone size={14} /> {o.libelle}
+                </button>
+              ))}
             </div>
-            <div className="form-group">
-              <label className="form-label">Code Passerelle ASACI</label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="Ex: ASACI_SANLAM"
-                value={newCompany.code_asaci}
-                onChange={(e) => setNewCompany({ ...newCompany, code_asaci: e.target.value })}
-              />
+
+            {onglet === 'identite' && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', columnGap: '1rem' }}>
+                  {CHAMPS_IDENTITE.map((c) => (
+                    <div className="form-group" key={c.cle}>
+                      <label className="form-label">{c.libelle}{c.requis ? ' *' : ''}</label>
+                      <input className="form-control" maxLength={c.longueur} value={s[c.cle] ?? ''} onChange={(e) => changer(c.cle, c.cle === 'CodeAsaci' ? e.target.value.toUpperCase() : e.target.value)} />
+                      {c.aide && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{c.aide}</span>}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!s.Active} onChange={(e) => changer('Active', e.target.checked)} /> Compagnie active (proposée dans les nouveaux devis)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.85rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!s.Etranger} onChange={(e) => changer('Etranger', e.target.checked)} /> Compagnie étrangère
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {onglet === 'documents' && (
+              <div>
+                <ChampImage libelle="Logo de la compagnie" aide="Imprimé en haut à droite des devis, factures et conditions particulières de cette compagnie. Sans logo, son nom est imprimé." valeur={s.Documents.Logo} onChange={(v) => changerDoc('Logo', v)} />
+                {champTexte('Visa', 'Visa réglementaire', { longueur: 200, valeur: s.Documents.Visa, onChange: (v) => changerDoc('Visa', v), aide: 'Imprimé sous les mentions des Conditions Particulières Automobile (ex. « Visa: MEF/DGTCP/DA N°736 … »). Vide : rien n\'est imprimé.' })}
+                <div className="form-group">
+                  <label className="form-label">Pied de page des Conditions Particulières</label>
+                  <textarea className="form-control" rows={5} maxLength={2000} value={s.Documents.PiedPageTexte} onChange={(e) => changerDoc('PiedPageTexte', e.target.value)}
+                    placeholder={'NOM DE LA COMPAGNIE\nForme juridique, capital, agrément…\nSiège social, téléphone…'} />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Une ligne par ligne imprimée, la première en gras. Vide : pas de pied de page.</span>
+                </div>
+                {champTexte('MentionLogo', 'Mention sous le logo du pied de page', { longueur: 100, valeur: s.Documents.MentionLogo, onChange: (v) => changerDoc('MentionLogo', v), placeholder: 'ex. depuis 1995' })}
+                {lignesVersListe(s.Documents.PiedPageTexte).length > 0 && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div className="form-label" style={{ marginBottom: 4 }}>Aperçu du pied de page</div>
+                    <div style={{ background: '#fff', color: '#111', borderRadius: 6, padding: '0.6rem 0.8rem', fontSize: '0.68rem', lineHeight: 1.35, fontFamily: 'Arial, sans-serif', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-end' }}>
+                      <div>{lignesVersListe(s.Documents.PiedPageTexte).map((l, i) => <div key={i} style={{ fontWeight: i === 0 ? 700 : 400 }}>{l}</div>)}</div>
+                      <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                        {s.Documents.Logo && <img src={s.Documents.Logo} alt="" style={{ height: 18, display: 'block', margin: '0 auto' }} />}
+                        {s.Documents.MentionLogo && <div style={{ fontStyle: 'italic' }}>{s.Documents.MentionLogo}</div>}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {onglet === 'attestation' && (
+              <div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 0 }}>
+                  Attestation d'assurance et d'assistance voyage imprimée depuis la fiche d'un contrat Voyage de cette compagnie (demande de visa).
+                  Nom, passeport, dates, destination et n° de certificat viennent du contrat ; le reste se règle ici.
+                </p>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer', marginBottom: '0.9rem' }}>
+                  <input type="checkbox" checked={!!att.Actif} onChange={(e) => changerAttestation('Actif', e.target.checked)} /> Imprimer une attestation voyage pour cette compagnie
+                </label>
+                <fieldset disabled={!att.Actif} style={{ border: 'none', padding: 0, margin: 0, opacity: att.Actif ? 1 : 0.55 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', columnGap: '1rem' }}>
+                    {champTexte('Signataire', 'Signataire (« Pour … »)', { valeur: att.Signataire, onChange: (v) => changerAttestation('Signataire', v), placeholder: "ex. AMSA ASSURANCES COTE D'IVOIRE" })}
+                    {champTexte('Convention', 'N° de convention', { valeur: att.Convention, onChange: (v) => changerAttestation('Convention', v) })}
+                    {champTexte('PaysResidence', 'Pays de résidence imprimé', { valeur: att.PaysResidence, onChange: (v) => changerAttestation('PaysResidence', v) })}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Principales garanties</label>
+                    <textarea className="form-control" rows={5} value={(att.Garanties || []).join('\n')} onChange={(e) => changerAttestation('Garanties', e.target.value.split('\n'))}
+                      placeholder={'Transport médicalisé : frais réels\nFrais médicaux d\'urgence : 30 000 euros maximum…'} />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Une garantie par ligne (12 au plus), imprimées telles quelles.</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: '1rem' }}>
+                    {champTexte('Telephone', 'Assistance — téléphone', { valeur: att.Telephone, onChange: (v) => changerAttestation('Telephone', v) })}
+                    {champTexte('Email', 'Assistance — e-mail', { valeur: att.Email, onChange: (v) => changerAttestation('Email', v) })}
+                    {champTexte('Whatsapp', 'Assistance — WhatsApp', { valeur: att.Whatsapp, onChange: (v) => changerAttestation('Whatsapp', v) })}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Exemplaires imprimés</label>
+                    <textarea className="form-control" rows={3} value={(att.Exemplaires || []).join('\n')} onChange={(e) => changerAttestation('Exemplaires', e.target.value.split('\n'))} />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Une page par ligne (5 au plus) : libellé imprimé sur le bord de la page.</span>
+                  </div>
+                </fieldset>
+                <button type="button" className="btn btn-secondary" disabled={!att.Actif}
+                  onClick={() => apercuAttestationVoyage({ RaisonSociale: s.RaisonSociale, Logo: s.Documents.Logo, AttestationVoyage: { ...att, Garanties: lignesVersListe((att.Garanties || []).join('\n')), Exemplaires: lignesVersListe((att.Exemplaires || []).join('\n')) } })}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Eye size={15} /> Aperçu sur un assuré fictif
+                </button>
+              </div>
+            )}
+
+            {onglet === 'baremes' && (
+              <div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 0 }}>Les barèmes de {s.RaisonSociale} se modifient dans leurs écrans, ouverts directement sur cette compagnie.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.6rem' }}>
+                  {BAREMES.map((b) => (
+                    <button key={b.libelle} type="button" className="btn btn-secondary"
+                      onClick={() => { if (!modifiee || window.confirm('Des modifications ne sont pas enregistrées. Quitter la fiche ?')) navigate(`${b.chemin}?${b.extra ? `${b.extra}&` : ''}compagnie=${s.IdCompagnie}`); }}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, textAlign: 'left', padding: '0.65rem 0.8rem' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>{b.libelle} <ExternalLink size={12} /></span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>{b.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {erreur && (
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', padding: '0.6rem 0.8rem', borderRadius: 8, background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)', color: 'var(--accent-rose)', fontSize: '0.82rem', marginTop: '0.9rem' }}>
+                <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} /> {erreur}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', alignItems: 'center', marginTop: '1rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem' }}>
+              {modifiee
+                ? <span style={{ fontSize: '0.78rem', color: 'var(--accent-amber)' }}>Modifications non enregistrées</span>
+                : <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}><CheckCircle2 size={14} /> À jour</span>}
+              <button type="button" className="btn btn-secondary" onClick={fermer} disabled={envoi}>Fermer</button>
+              <button type="button" className="btn btn-primary" onClick={enregistrer} disabled={!modifiee || envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {envoi ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Enregistrer
+              </button>
             </div>
           </div>
-
-          <div className="form-group">
-            <label className="form-label">Dénomination Sociale Complète *</label>
-            <input
-              type="text"
-              className="form-control"
-              required
-              placeholder="Ex: SANLAM Assurances Côte d'Ivoire"
-              value={newCompany.nom}
-              onChange={(e) => setNewCompany({ ...newCompany, nom: e.target.value })}
-            />
-          </div>
-
-          <div className="responsive-form-row">
-            <div className="form-group">
-              <label className="form-label">Téléphone Direct</label>
-              <input
-                type="text"
-                className="form-control"
-                value={newCompany.telephone}
-                onChange={(e) => setNewCompany({ ...newCompany, telephone: e.target.value })}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Email Professionnel</label>
-              <input
-                type="email"
-                className="form-control"
-                value={newCompany.email}
-                onChange={(e) => setNewCompany({ ...newCompany, email: e.target.value })}
-              />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Branches Agréées</label>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Ex: Auto, MRH, Santé, Transport, Responsabilité Civile"
-              value={newCompany.branches}
-              onChange={(e) => setNewCompany({ ...newCompany, branches: e.target.value })}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsCreateModalOpen(false)}>
-              Annuler
-            </button>
-            <button type="submit" className="btn btn-primary">
-              <Check size={16} /> Enregistrer la Compagnie
-            </button>
-          </div>
-        </form>
+        )}
       </Modal>
 
-      {/* Modal Modifier Compagnie */}
-      {selectedCompany && (
-        <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title={`Modifier Partenaire – ${selectedCompany.code}`}>
-          <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div className="form-group">
-              <label className="form-label">Raison Sociale</label>
-              <input
-                type="text"
-                className="form-control"
-                value={selectedCompany.nom}
-                onChange={(e) => setSelectedCompany({ ...selectedCompany, nom: e.target.value })}
-              />
+      {/* Nouvelle compagnie */}
+      <Modal isOpen={!!creation} onClose={() => !envoi && setCreation(null)} title="Nouvelle compagnie" subtitle="Le logo, les mentions et les barèmes se règlent ensuite dans sa fiche." size="medium">
+        {creation && (
+          <form onSubmit={creer}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', columnGap: '1rem' }}>
+              {CHAMPS_IDENTITE.map((c) => (
+                <div className="form-group" key={c.cle}>
+                  <label className="form-label">{c.libelle}{c.requis ? ' *' : ''}</label>
+                  <input className="form-control" required={c.requis} maxLength={c.longueur} value={creation[c.cle] ?? ''} onChange={(e) => setCreation((v) => ({ ...v, [c.cle]: c.cle === 'CodeAsaci' ? e.target.value.toUpperCase() : e.target.value }))} />
+                </div>
+              ))}
             </div>
-
-            <div className="responsive-form-row">
-              <div className="form-group">
-                <label className="form-label">Code ASACI</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={selectedCompany.code_asaci}
-                  onChange={(e) => setSelectedCompany({ ...selectedCompany, code_asaci: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Statut</label>
-                <select
-                  className="form-control"
-                  value={selectedCompany.statut}
-                  onChange={(e) => setSelectedCompany({ ...selectedCompany, statut: e.target.value })}
-                >
-                  <option value="En Révision Convention">En Révision Convention</option>
-                  <option value="Partenaire Actif">Partenaire Actif</option>
-                  <option value="Suspendu">Suspendu</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="responsive-form-row">
-              <div className="form-group">
-                <label className="form-label">Téléphone</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={selectedCompany.telephone}
-                  onChange={(e) => setSelectedCompany({ ...selectedCompany, telephone: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Email</label>
-                <input
-                  type="email"
-                  className="form-control"
-                  value={selectedCompany.email}
-                  onChange={(e) => setSelectedCompany({ ...selectedCompany, email: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Branches Agréées</label>
-              <input
-                type="text"
-                className="form-control"
-                value={selectedCompany.branches}
-                onChange={(e) => setSelectedCompany({ ...selectedCompany, branches: e.target.value })}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setIsEditModalOpen(false)}>
-                Annuler
-              </button>
-              <button type="submit" className="btn btn-primary">
-                Sauvegarder
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '0.8rem' }}>
+              <input type="checkbox" checked={creation.Etranger} onChange={(e) => setCreation((v) => ({ ...v, Etranger: e.target.checked }))} /> Compagnie étrangère
+            </label>
+            {erreur && <div style={{ color: 'var(--accent-rose)', fontSize: '0.82rem', marginBottom: '0.8rem' }}>{erreur}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setCreation(null)} disabled={envoi}>Annuler</button>
+              <button type="submit" className="btn btn-primary" disabled={envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {envoi ? <Loader2 size={14} className="spin" /> : <Plus size={14} />} Créer la compagnie
               </button>
             </div>
           </form>
-        </Modal>
-      )}
-
-      {/* Modal Fiche Compagnie & Passerelle */}
-      {selectedCompany && (
-        <Modal isOpen={isDetailModalOpen} onClose={() => setIsDetailModalOpen(false)} title={`Fiche Partenaire – ${selectedCompany.nom}`}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ background: 'rgba(37,99,235,0.08)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid rgba(37,99,235,0.2)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Porteur de Risque Agréé</div>
-              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>{selectedCompany.nom}</div>
-              <div style={{ fontSize: '0.75rem', color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>Identifiant Code : {selectedCompany.code}</div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.825rem' }}>
-              <div style={{ padding: '0.65rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>CODE ASACI OCI</span>
-                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{selectedCompany.code_asaci}</strong>
-              </div>
-              <div style={{ padding: '0.65rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>STATUT CONVENTION</span>
-                <strong style={{ color: '#60a5fa' }}>{selectedCompany.statut}</strong>
-              </div>
-              <div style={{ padding: '0.65rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>CONTACT TÉLÉPHONIQUE</span>
-                <div>{selectedCompany.telephone}</div>
-              </div>
-              <div style={{ padding: '0.65rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>EMAIL GESTION</span>
-                <div>{selectedCompany.email}</div>
-              </div>
-            </div>
-
-            <div style={{ padding: '0.75rem', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', fontSize: '0.8rem' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>BRANCHES COUVERTES</span>
-              <div>{selectedCompany.branches}</div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setIsDetailModalOpen(false);
-                  navigate('/admin/conventions');
-                }}
-              >
-                Voir Convention & Plafonds
-              </button>
-              <button type="button" className="btn btn-primary" onClick={() => setIsDetailModalOpen(false)}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Modal Suppression Compagnie */}
-      <DeleteConfirmModal
-        isOpen={!!deletingCompany}
-        onClose={() => setDeletingCompany(null)}
-        itemType="compagnie partenaire"
-        itemName={deletingCompany?.nom}
-        itemCode={deletingCompany?.code}
-        validation={deleteValidation}
-        onConfirm={() => {
-          if (deletingCompany) {
-            try {
-              dataStore.deleteCompany(deletingCompany.id);
-              setCompanies(dataStore.getCompanies());
-              success(`Compagnie ${deletingCompany.nom} supprimée.`);
-              setDeletingCompany(null);
-            } catch (err) {
-              toastError(err.message);
-            }
-          }
-        }}
-      />
+        )}
+      </Modal>
     </div>
   );
 };

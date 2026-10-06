@@ -1,257 +1,550 @@
-import React, { useState, useEffect } from 'react';
-import { MetricCard } from '../../../components/common/MetricCard';
-import { DataTable } from '../../../components/common/DataTable';
-import { StatusBadge } from '../../../components/common/StatusBadge';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Ban, CheckCircle2, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Plus, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
+import { apporteurApi, financeApi, settingsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
-import { commissionApi } from '../../../api/endpoints';
-import { dataStore } from '../../../api/dataStore';
-import { mockCommissions } from '../../../api/mockData';
-import { Coins, CheckCircle, ArrowUpRight, Banknote, ShieldAlert, Lock, Printer, FileText } from 'lucide-react';
+import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
+import { exportToExcel, exportToPdf } from '../../../utils/exportUtils';
+import { aujourdhui, bornesMois, dateFr, exporterReclamation, fcfa, messageErreurApi } from '../../../utils/financeUtils';
+import { trierParLibelle } from '../../../utils/sortUtils';
 
-export const CommissionDashboardPage = () => {
-  const { success, error } = useToast();
-  const [selectedBordereau, setSelectedBordereau] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+// Commissions du cabinet (son chiffre d'affaires, pas les émissions). Après le reversement de la
+// prime entière à la compagnie, les quittances reversées sont cochées dans un bordereau
+// récapitulatif (en général mensuel) qui réclame la commission ; l'assureur la règle par chèque
+// ou virement (encaissement imputé sur les lignes du bordereau). États des commissions payées et
+// non payées ; référentiel des apporteurs auxquels le cabinet peut verser des commissions.
+const COULEURS = { A_RECLAMER: 'blue', RECLAMEE: 'amber', PARTIELLE: 'amber', PAYEE: 'emerald', EMISE: 'amber', ANNULEE: 'rose' };
+const FILTRES_STATUT = [
+  ['A_RECLAMER', 'À réclamer'], ['NON_PAYEES', 'Non payées (reste dû)'], ['PAYEES', 'Payées (encaissées)'], ['', 'Toutes les quittances reversées'],
+];
 
-  const [affaires, setAffaires] = useState(() => dataStore.getCommissions());
+const Onglet = ({ actif, onClick, icone: Icone, children }) => (
+  <button type="button" role="tab" aria-selected={actif} className={`btn ${actif ? 'btn-primary' : 'btn-secondary'}`}
+    onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+    <Icone size={15} /> {children}
+  </button>
+);
 
+const Carte = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => (
+  <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+    <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 700, color: 'var(--text-muted)' }}>{libelle}</div>
+    <div style={{ fontSize: '1.3rem', fontWeight: 900, color: couleur, marginTop: '0.2rem' }}>{valeur}</div>
+    {detail && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{detail}</div>}
+  </div>
+);
+
+// ------------------------------------------------------------------ règlement de l'assureur
+const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
+  const { success, error: toastError } = useToast();
+  const [saisie, setSaisie] = useState({});
+  const [envoi, setEnvoi] = useState(false);
   useEffect(() => {
-    let isMounted = true;
-    const loadCommissions = async () => {
-      try {
-        const [dash, aff] = await Promise.all([
-          commissionApi.getDashboard().catch(() => null),
-          commissionApi.getAffaires().catch(() => []),
-        ]);
-        if (isMounted && aff && Array.isArray(aff) && aff.length > 0) {
-          setAffaires(aff);
-        }
-      } catch (err) {
-        console.error('Erreur commissions Django:', err);
-      }
-    };
-    loadCommissions();
-    return () => { isMounted = false; };
-  }, []);
+    if (reclamation) setSaisie({ DatePaiement: aujourdhui(), Mode: 'VIR', IdBanque: '', ReferencePaiement: '', Montant: reclamation.Reste, Notes: '' });
+  }, [reclamation]);
+  const champ = (cle) => (e) => setSaisie((s) => ({ ...s, [cle]: e.target.value }));
 
-  const reglerCommission = async (affaire) => {
-    if (!affaire.prime_encaissee) {
-      error("Blocage Article 13 CIMA : La prime d'assurance n'ayant pas été encaissée, aucun droit à commission ne peut être décaissé.");
-      return;
-    }
-
+  const enregistrer = async (e) => {
+    e.preventDefault();
+    setEnvoi(true);
     try {
-      await commissionApi.createPayment({ affaire_id: affaire.id, montant: affaire.montant_commission });
+      const resultat = await financeApi.encaisserCommission(reclamation.IdReclamation, saisie);
+      success(`Règlement de ${fcfa(saisie.Montant)} F enregistré sur ${resultat.Reference} (${resultat.LibelleStatut}).`);
+      onEnregistre(resultat);
     } catch (err) {
-      console.warn('API pay commission fallback');
+      toastError(`Règlement non enregistré : ${messageErreurApi(err)}`);
+    } finally {
+      setEnvoi(false);
     }
-    dataStore.updateCommission(affaire.id, { statut: 'Payé', statut_badge: 'emerald' });
-    setAffaires(dataStore.getCommissions());
-    success(`Commission de ${Number(affaire.montant_commission || 0).toLocaleString('fr-FR')} FCFA réglée à ${affaire.apporteur}.`);
   };
-
-  const handleOpenBordereau = (a) => {
-    setSelectedBordereau(a);
-    setModalOpen(true);
-  };
-
-  const columns = [
-    {
-      header: 'Apporteur / Partenaire',
-      accessor: 'apporteur',
-      render: (r) => (
-        <div>
-          <strong style={{ color: '#fff' }}>{r.apporteur}</strong>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.contrat} • {r.client}</div>
-        </div>
-      ),
-    },
-    {
-      header: 'Branche & Plafond CIMA',
-      render: (r) => (
-        <div>
-          <div style={{ fontSize: '0.85rem' }}>{r.branche}</div>
-          <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>CIMA {r.plafond_cima}</span>
-        </div>
-      ),
-    },
-    {
-      header: 'Prime Nette',
-      render: (r) => <span>{Number(r.prime_nette || 0).toLocaleString('fr-FR')} FCFA</span>,
-    },
-    {
-      header: 'Contrôle Art. 13 (Encaissement)',
-      render: (r) => (
-        <span className={`badge ${r.prime_encaissee ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.75rem' }}>
-          {r.prime_encaissee ? 'Prime Encaissée' : 'Non Encaissée (Bloqué)'}
-        </span>
-      ),
-    },
-    {
-      header: 'Taux & Rétrocession',
-      render: (r) => (
-        <div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Taux : {r.taux_commission}</div>
-          <strong style={{ color: '#fbbf24', fontFamily: 'var(--font-mono)' }}>
-            {Number(r.montant_commission || 0).toLocaleString('fr-FR')} FCFA
-          </strong>
-        </div>
-      ),
-    },
-    { header: 'Statut', accessor: 'statut', render: (r) => <StatusBadge label={r.statut} color={r.statut_badge} /> },
-    {
-      header: 'Action',
-      render: (r) => (
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-          {r.statut === 'En attente' ? (
-            r.prime_encaissee ? (
-              <button
-                className="btn btn-primary"
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: 'linear-gradient(135deg, #059669, #10b981)' }}
-                onClick={() => reglerCommission(r)}
-              >
-                <CheckCircle size={14} /> Payer
-              </button>
-            ) : (
-              <button
-                className="btn btn-secondary"
-                disabled
-                title="Paiement interdit par l'article 13 CIMA tant que la prime n'est pas recouvrée"
-                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', opacity: 0.6, cursor: 'not-allowed', color: '#f87171' }}
-              >
-                <Lock size={13} /> Bloqué Art. 13
-              </button>
-            )
-          ) : (
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-              onClick={() => handleOpenBordereau(r)}
-            >
-              <FileText size={13} /> Bordereau
-            </button>
-          )}
-        </div>
-      ),
-    },
-  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-      {/* Header */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-          <span className="badge badge-warning">Réglementation CIMA Livre V</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Encadrement du Courtage & Apports d'Affaires</span>
+    <Modal isOpen={Boolean(reclamation)} onClose={onClose} size="medium" title="Encaissement de commission"
+      subtitle={reclamation ? `${reclamation.Reference} — ${reclamation.Compagnie} — reste dû ${fcfa(reclamation.Reste)} F` : ''}>
+      {reclamation && (
+        <form onSubmit={enregistrer} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="rg-mode">Mode de règlement</label>
+            <select id="rg-mode" className="form-control" value={saisie.Mode} onChange={champ('Mode')}>
+              <option value="VIR">Virement</option>
+              <option value="CHQ">Chèque</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="rg-date">Date du règlement</label>
+            <input id="rg-date" type="date" className="form-control" required value={saisie.DatePaiement || ''} onChange={champ('DatePaiement')} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="rg-banque">Banque</label>
+            <select id="rg-banque" className="form-control" value={saisie.IdBanque || ''} onChange={champ('IdBanque')}>
+              <option value="">— Facultatif —</option>
+              {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="rg-ref">{saisie.Mode === 'CHQ' ? 'N° du chèque' : 'Référence du virement'}</label>
+            <input id="rg-ref" className="form-control" required maxLength={50} value={saisie.ReferencePaiement || ''} onChange={champ('ReferencePaiement')} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="rg-montant">Montant reçu (F)</label>
+            <input id="rg-montant" type="number" className="form-control" required min={1} max={reclamation.Reste} step="1" value={saisie.Montant ?? ''} onChange={champ('Montant')} />
+          </div>
+          <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+            <label className="form-label" htmlFor="rg-notes">Observations</label>
+            <input id="rg-notes" className="form-control" maxLength={500} value={saisie.Notes || ''} onChange={champ('Notes')} placeholder="Facultatif" />
+          </div>
+          <p style={{ gridColumn: '1 / -1', fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+            Le montant est imputé sur les quittances du bordereau, dans l'ordre, sans dépasser la commission restant due.
+          </p>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Annuler</button>
+            <button type="submit" className="btn btn-primary" disabled={envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              {envoi ? <Loader2 size={15} className="spin" /> : <CheckCircle2 size={15} />} Enregistrer le règlement
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+};
+
+// ------------------------------------------------------------------ détail d'un bordereau
+const ReclamationModal = ({ reclamation, onClose, onRegler, onAnnuler }) => (
+  <Modal isOpen={Boolean(reclamation)} onClose={onClose} size="large"
+    title={reclamation ? `Bordereau récapitulatif ${reclamation.Reference}` : ''}
+    subtitle={reclamation ? `${reclamation.Compagnie} — période du ${dateFr(reclamation.PeriodeDebut)} au ${dateFr(reclamation.PeriodeFin)} — ${reclamation.LibelleStatut}` : ''}>
+    {reclamation && (
+      <>
+        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.88rem', marginBottom: '0.9rem' }}>
+          <span>Primes reversées : <strong>{fcfa(reclamation.MontantPrimes)} F</strong></span>
+          <span>Commissions réclamées : <strong>{fcfa(reclamation.MontantCommissions)} F</strong></span>
+          <span>Réglé : <strong style={{ color: 'var(--accent-emerald)' }}>{fcfa(reclamation.MontantPaye)} F</strong></span>
+          <span>Reste dû : <strong style={{ color: 'var(--accent-amber)' }}>{fcfa(reclamation.Reste)} F</strong></span>
         </div>
-        <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <Coins size={26} color="#fbbf24" />
-          Commissions & apporteurs
+        <div className="table-wrapper" style={{ maxHeight: '40vh', overflow: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>N° Police</th><th>Quittance</th><th>Client</th><th>Branche</th><th>Reversement</th>
+                <th style={{ textAlign: 'right' }}>Prime reversée</th><th style={{ textAlign: 'right' }}>Commission due</th>
+                <th style={{ textAlign: 'right' }}>Réglée</th><th style={{ textAlign: 'right' }}>Reste</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(reclamation.Lignes || []).map((l) => (
+                <tr key={l.IdDetailReversement}>
+                  <td>{l.NumeroPolice}</td><td>{l.NumeroQuittance}</td><td>{l.Client}</td><td>{l.Branche}</td>
+                  <td>{l.NumeroReversement} du {dateFr(l.DateReversement)}</td>
+                  <td style={{ textAlign: 'right' }}>{fcfa(l.MontantReverse)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fcfa(l.CommissionDue)}</td>
+                  <td style={{ textAlign: 'right' }}>{fcfa(l.CommissionPayee)}</td><td style={{ textAlign: 'right' }}>{fcfa(l.Reste)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {reclamation.Paiements?.length > 0 && (
+          <>
+            <div style={{ fontWeight: 800, margin: '1rem 0 0.4rem' }}>Règlements reçus de l'assureur</div>
+            <table className="data-table">
+              <thead><tr><th>Référence</th><th>Date</th><th>Mode</th><th>N° chèque / virement</th><th>Banque</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {reclamation.Paiements.map((p) => (
+                  <tr key={p.IdPaiement}><td>{p.Reference}</td><td>{dateFr(p.DatePaiement)}</td><td>{p.Mode}</td><td>{p.ReferencePaiement}</td><td>{p.Banque}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fcfa(p.Montant)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+          {reclamation.Statut === 'EMISE' && !reclamation.Paiements?.length && (
+            <button type="button" className="btn btn-secondary" style={{ color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => onAnnuler(reclamation)}><Ban size={15} /> Annuler le bordereau</button>
+          )}
+          <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'excel')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileSpreadsheet size={15} /> Excel</button>
+          <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'pdf')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={15} /> Imprimer / PDF</button>
+          {reclamation.Reste > 0 && reclamation.Statut !== 'ANNULEE' && (
+            <button type="button" className="btn btn-primary" onClick={() => onRegler(reclamation)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Wallet size={15} /> Encaisser un règlement</button>
+          )}
+        </div>
+      </>
+    )}
+  </Modal>
+);
+
+// ------------------------------------------------------------------ apporteurs
+const APPORTEUR_VIDE = { Nom: '', TypePersonne: 'P', PieceIdentite: '', Telephone: '', Email: '', Adresse: '', TauxRetrocession: '', Actif: true };
+
+const Apporteurs = () => {
+  const { success, error: toastError } = useToast();
+  const [apporteurs, setApporteurs] = useState([]);
+  const [edition, setEdition] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const charger = () => apporteurApi.liste().then((l) => setApporteurs(Array.isArray(l) ? l : [])).catch((err) => toastError(messageErreurApi(err)));
+  useEffect(() => { charger(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const champ = (cle) => (e) => setEdition((a) => ({ ...a, [cle]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+  const enregistrer = async (e) => {
+    e.preventDefault();
+    setEnvoi(true);
+    const corps = { ...edition, TauxRetrocession: edition.TauxRetrocession === '' ? null : edition.TauxRetrocession };
+    try {
+      const resultat = edition.IdApporteur ? await apporteurApi.modifier(edition.IdApporteur, corps) : await apporteurApi.creer(corps);
+      success(`Apporteur ${resultat.Code} — ${resultat.Nom} enregistré.`);
+      setEdition(null);
+      charger();
+    } catch (err) {
+      toastError(`Apporteur non enregistré : ${messageErreurApi(err)}`);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', flex: 1 }}>
+          Apporteurs d'affaires auxquels le cabinet peut verser des commissions. Le code (APP-0001…) est attribué à la création ;
+          un apporteur ne se supprime pas, il se désactive.
+        </p>
+        <button type="button" className="btn btn-primary" onClick={() => setEdition({ ...APPORTEUR_VIDE })} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Plus size={15} /> Nouvel apporteur</button>
+      </div>
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead><tr><th>Code</th><th>Nom</th><th>Type</th><th>CNI / RCCM</th><th>Téléphone</th><th>Email</th><th style={{ textAlign: 'right' }}>Rétrocession</th><th>Statut</th><th aria-label="Actions" /></tr></thead>
+          <tbody>
+            {apporteurs.map((a) => (
+              <tr key={a.IdApporteur}>
+                <td style={{ fontFamily: 'var(--font-mono)' }}>{a.Code}</td><td style={{ fontWeight: 700 }}>{a.Nom}</td>
+                <td>{a.TypePersonne === 'M' ? 'Personne morale' : 'Personne physique'}</td><td>{a.PieceIdentite}</td><td>{a.Telephone}</td><td>{a.Email}</td>
+                <td style={{ textAlign: 'right' }}>{a.TauxRetrocession !== null && a.TauxRetrocession !== '' ? `${Number(a.TauxRetrocession).toLocaleString('fr-FR')} %` : '—'}</td>
+                <td><StatusBadge label={a.Actif ? 'Actif' : 'Inactif'} /></td>
+                <td><button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem' }} onClick={() => setEdition({ ...a, TauxRetrocession: a.TauxRetrocession ?? '' })} aria-label="Modifier"><Edit2 size={14} /></button></td>
+              </tr>
+            ))}
+            {!apporteurs.length && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>Aucun apporteur codifié.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={Boolean(edition)} onClose={() => setEdition(null)} size="medium" title={edition?.IdApporteur ? `Apporteur ${edition.Code}` : 'Nouvel apporteur'}>
+        {edition && (
+          <form onSubmit={enregistrer} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
+            <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+              <label className="form-label" htmlFor="ap-nom">Nom ou raison sociale</label>
+              <input id="ap-nom" className="form-control" required maxLength={150} value={edition.Nom} onChange={champ('Nom')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ap-type">Type</label>
+              <select id="ap-type" className="form-control" value={edition.TypePersonne} onChange={champ('TypePersonne')}>
+                <option value="P">Personne physique</option>
+                <option value="M">Personne morale</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ap-piece">{edition.TypePersonne === 'M' ? 'N° RCCM' : 'N° CNI / passeport'}</label>
+              <input id="ap-piece" className="form-control" maxLength={50} value={edition.PieceIdentite} onChange={champ('PieceIdentite')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ap-tel">Téléphone</label>
+              <input id="ap-tel" className="form-control" maxLength={30} value={edition.Telephone} onChange={champ('Telephone')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ap-mail">Email</label>
+              <input id="ap-mail" type="email" className="form-control" value={edition.Email} onChange={champ('Email')} />
+            </div>
+            <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
+              <label className="form-label" htmlFor="ap-adr">Adresse</label>
+              <input id="ap-adr" className="form-control" maxLength={200} value={edition.Adresse} onChange={champ('Adresse')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ap-taux">Taux de rétrocession (%)</label>
+              <input id="ap-taux" type="number" className="form-control" min={0} max={100} step="0.01" value={edition.TauxRetrocession} onChange={champ('TauxRetrocession')} placeholder="Facultatif" />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', alignSelf: 'end', paddingBottom: '0.5rem' }}>
+              <input type="checkbox" checked={edition.Actif} onChange={champ('Actif')} /> Actif
+            </label>
+            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setEdition(null)}>Annuler</button>
+              <button type="submit" className="btn btn-primary" disabled={envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {envoi ? <Loader2 size={15} className="spin" /> : <Save size={15} />} Enregistrer
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ page
+export const CommissionDashboardPage = () => {
+  const { success, error: toastError } = useToast();
+  const [onglet, setOnglet] = useState('etat');
+  const [compagnies, setCompagnies] = useState([]);
+  const [banques, setBanques] = useState([]);
+  const [filtres, setFiltres] = useState({ compagnie: '', du: '', au: '', statut: 'A_RECLAMER' });
+  const [etat, setEtat] = useState(null);
+  const [selection, setSelection] = useState(new Set());
+  const [periode, setPeriode] = useState(bornesMois());
+  const [reclamations, setReclamations] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [aRegler, setARegler] = useState(null);
+  const [chargement, setChargement] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+
+  useEffect(() => {
+    settingsApi.getCompanies().then((l) => setCompagnies(Array.isArray(l) ? l : [])).catch(() => {});
+    settingsApi.getBanques().then((l) => setBanques(Array.isArray(l) ? l : [])).catch(() => {});
+  }, []);
+
+  const chargerEtat = () => {
+    setChargement(true);
+    const params = Object.fromEntries(Object.entries(filtres).filter(([, v]) => v !== ''));
+    financeApi.commissions(params)
+      .then((r) => { setEtat(r); setSelection(new Set()); })
+      .catch((err) => toastError(`État des commissions indisponible : ${messageErreurApi(err)}`))
+      .finally(() => setChargement(false));
+  };
+  const chargerReclamations = () => financeApi.reclamations(filtres.compagnie ? { compagnie: filtres.compagnie } : {})
+    .then((r) => setReclamations(r.Reclamations || []))
+    .catch((err) => toastError(`Bordereaux indisponibles : ${messageErreurApi(err)}`));
+  useEffect(() => { chargerEtat(); chargerReclamations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const lignes = etat?.Lignes || [];
+  const reclamables = lignes.filter((l) => l.Statut === 'A_RECLAMER');
+  const cochees = lignes.filter((l) => selection.has(l.IdDetailReversement));
+  const compagniesCochees = new Set(cochees.map((l) => l.IdCompagnie));
+  const basculer = (l) => setSelection((s) => {
+    const suivant = new Set(s);
+    if (suivant.has(l.IdDetailReversement)) suivant.delete(l.IdDetailReversement); else suivant.add(l.IdDetailReversement);
+    return suivant;
+  });
+  const champ = (cle) => (e) => setFiltres((f) => ({ ...f, [cle]: e.target.value }));
+
+  // Chiffre d'affaires du cabinet = commissions (dues sur les primes reversées, encaissées, restant dues)
+  const totaux = etat?.Total;
+  const reclameesNonPayees = useMemo(() => reclamations.filter((r) => r.Statut !== 'ANNULEE').reduce((s, r) => s + r.Reste, 0), [reclamations]);
+
+  const emettre = async () => {
+    if (compagniesCochees.size !== 1) {
+      toastError('Un bordereau de réclamation ne concerne qu\'une compagnie : cochez des quittances d\'une seule compagnie.');
+      return;
+    }
+    setEnvoi(true);
+    try {
+      const rc = await financeApi.emettreReclamation({
+        IdCompagnie: [...compagniesCochees][0], PeriodeDebut: periode[0], PeriodeFin: periode[1],
+        DetailsReversement: cochees.map((l) => l.IdDetailReversement),
+      });
+      success(`Bordereau ${rc.Reference} émis : ${fcfa(rc.MontantCommissions)} F de commissions réclamées à ${rc.Compagnie}.`);
+      setDetail(rc);
+      chargerEtat();
+      chargerReclamations();
+    } catch (err) {
+      toastError(`Bordereau non émis : ${messageErreurApi(err)}`);
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const annuler = async (rc) => {
+    const motif = window.prompt(`Motif de l'annulation du bordereau ${rc.Reference} :`);
+    if (motif === null) return;
+    try {
+      await financeApi.annulerReclamation(rc.IdReclamation, motif);
+      success(`Bordereau ${rc.Reference} annulé : ses quittances sont de nouveau à réclamer.`);
+      setDetail(null);
+      chargerEtat();
+      chargerReclamations();
+    } catch (err) {
+      toastError(messageErreurApi(err));
+    }
+  };
+
+  const exporterEtat = (format) => {
+    const libelle = FILTRES_STATUT.find(([v]) => v === filtres.statut)?.[1] || '';
+    const charge = {
+      filename: `Etat_Commissions_${aujourdhui()}`,
+      title: `ÉTAT DES COMMISSIONS — ${libelle.toUpperCase()}`,
+      subtitle: [filtres.du && `reversements du ${dateFr(filtres.du)}`, filtres.au && `au ${dateFr(filtres.au)}`].filter(Boolean).join(' '),
+      metadata: {
+        'Quittances': String(totaux?.Nombre || 0), 'Primes reversées': `${fcfa(totaux?.PrimesReversees)} F`,
+        'Commissions dues': `${fcfa(totaux?.CommissionDue)} F`, 'Commissions encaissées': `${fcfa(totaux?.CommissionPayee)} F`, 'Reste dû': `${fcfa(totaux?.Reste)} F`,
+      },
+      headers: ['Compagnie', 'N° Police', 'Quittance', 'Client', 'Branche', 'Reversement', 'Prime reversée', 'Commission due', 'Encaissée', 'Reste', 'Statut'],
+      rows: lignes.map((l) => [l.Compagnie, l.NumeroPolice, l.NumeroQuittance, l.Client, l.Branche, `${l.NumeroReversement} ${dateFr(l.DateReversement)}`,
+        fcfa(l.MontantReverse), fcfa(l.CommissionDue), fcfa(l.CommissionPayee), fcfa(l.Reste), l.LibelleStatut]),
+      totals: ['TOTAL', '', '', '', '', '', fcfa(totaux?.PrimesReversees), fcfa(totaux?.CommissionDue), fcfa(totaux?.CommissionPayee), fcfa(totaux?.Reste), ''],
+    };
+    if (format === 'excel') exportToExcel(charge); else exportToPdf(charge);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
+      <div>
+        <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0 }}>
+          <Coins size={26} style={{ color: 'var(--primary-500)' }} /> Commissions & apporteurs
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          Commissions gagnées par le cabinet et rétrocessions versées aux apporteurs.
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0', maxWidth: 920 }}>
+          Le chiffre d'affaires du cabinet est le montant de ses commissions. Elles sont réclamées à chaque compagnie par un bordereau
+          récapitulatif des quittances reversées, puis encaissées à réception du chèque ou du virement de l'assureur.
         </p>
       </div>
 
-      {/* CIMA Regulatory Reminder */}
-      <div
-        style={{
-          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(37, 99, 235, 0.08) 100%)',
-          border: '1px solid rgba(245, 158, 11, 0.25)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1rem 1.25rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-        }}
-      >
-        <ShieldAlert size={26} color="#f59e0b" />
-        <div>
-          <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-            Règle CIMA sur les Rétrocessions d'Apporteurs (Articles 13 & Livre V)
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
+        <Onglet actif={onglet === 'etat'} onClick={() => setOnglet('etat')} icone={Coins}>État des commissions</Onglet>
+        <Onglet actif={onglet === 'bordereaux'} onClick={() => setOnglet('bordereaux')} icone={FileText}>Bordereaux de réclamation ({reclamations.length})</Onglet>
+        <Onglet actif={onglet === 'apporteurs'} onClick={() => setOnglet('apporteurs')} icone={Users}>Apporteurs</Onglet>
+      </div>
+
+      {onglet === 'etat' && (
+        <>
+          <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="cm-cie">Compagnie</label>
+              <select id="cm-cie" className="form-control" value={filtres.compagnie} onChange={champ('compagnie')}>
+                <option value="">Toutes les compagnies</option>
+                {trierParLibelle(compagnies, (c) => c.RaisonSociale).map((c) => <option key={c.IdCompagnie ?? c.id} value={c.IdCompagnie ?? c.id}>{c.RaisonSociale}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="cm-du">Reversées du</label>
+              <input id="cm-du" type="date" className="form-control" value={filtres.du} onChange={champ('du')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="cm-au">au</label>
+              <input id="cm-au" type="date" className="form-control" value={filtres.au} onChange={champ('au')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="cm-statut">Commissions</label>
+              <select id="cm-statut" className="form-control" value={filtres.statut} onChange={champ('statut')}>
+                {FILTRES_STATUT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className="btn btn-primary" onClick={() => { chargerEtat(); chargerReclamations(); }} disabled={chargement} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {chargement ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} Afficher
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => exporterEtat('excel')} disabled={!etat} title="Excel"><FileSpreadsheet size={15} /></button>
+              <button type="button" className="btn btn-secondary" onClick={() => exporterEtat('pdf')} disabled={!etat} title="PDF"><FileText size={15} /></button>
+            </div>
           </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Le paiement de toute commission d'apport est strictement conditionné à l'encaissement effectif préalable de la prime auprès de l'assuré. Les barèmes appliqués respectent impérativement les plafonds légaux par branche (Auto : 10% / 12%, IRD : 15%).
+
+          {totaux && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' }}>
+              <Carte libelle="Commissions dues (sélection)" valeur={`${fcfa(totaux.CommissionDue)} F`} detail={`${totaux.Nombre} quittance(s) — ${fcfa(totaux.PrimesReversees)} F de primes reversées`} />
+              <Carte libelle="Commissions encaissées" valeur={`${fcfa(totaux.CommissionPayee)} F`} couleur="var(--accent-emerald)" detail="Chiffre d'affaires encaissé" />
+              <Carte libelle="Reste dû par les assureurs" valeur={`${fcfa(totaux.Reste)} F`} couleur="var(--accent-amber)" />
+              <Carte libelle="Réclamé, en attente de règlement" valeur={`${fcfa(reclameesNonPayees)} F`} detail="Tous les bordereaux émis" />
+            </div>
+          )}
+
+          {etat?.ParCompagnie?.length > 1 && (
+            <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+              <div style={{ fontWeight: 800, marginBottom: '0.5rem' }}>Par compagnie</div>
+              <table className="data-table">
+                <thead><tr><th>Compagnie</th><th style={{ textAlign: 'right' }}>Quittances</th><th style={{ textAlign: 'right' }}>Primes reversées</th><th style={{ textAlign: 'right' }}>Commissions dues</th><th style={{ textAlign: 'right' }}>Encaissées</th><th style={{ textAlign: 'right' }}>Reste</th></tr></thead>
+                <tbody>
+                  {etat.ParCompagnie.map((g) => (
+                    <tr key={g.Compagnie}><td>{g.Compagnie}</td><td style={{ textAlign: 'right' }}>{g.Nombre}</td><td style={{ textAlign: 'right' }}>{fcfa(g.PrimesReversees)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fcfa(g.CommissionDue)}</td><td style={{ textAlign: 'right' }}>{fcfa(g.CommissionPayee)}</td><td style={{ textAlign: 'right' }}>{fcfa(g.Reste)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+            <div className="table-wrapper" style={{ maxHeight: '55vh', overflow: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th aria-label="Sélection" />
+                    <th>Compagnie</th><th>N° Police</th><th>Quittance</th><th>Client</th><th>Branche</th><th>Reversement</th>
+                    <th style={{ textAlign: 'right' }}>Prime reversée</th><th style={{ textAlign: 'right' }}>Commission due</th>
+                    <th style={{ textAlign: 'right' }}>Encaissée</th><th style={{ textAlign: 'right' }}>Reste</th><th>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignes.map((l) => (
+                    <tr key={l.IdDetailReversement} style={selection.has(l.IdDetailReversement) ? { background: 'var(--primary-glow)' } : undefined}>
+                      <td>{l.Statut === 'A_RECLAMER' && (
+                        <input type="checkbox" checked={selection.has(l.IdDetailReversement)} onChange={() => basculer(l)} aria-label={`Réclamer ${l.NumeroQuittance}`} />
+                      )}</td>
+                      <td>{l.Compagnie}</td><td>{l.NumeroPolice}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{l.NumeroQuittance}</td>
+                      <td>{l.Client}</td><td>{l.Branche}</td><td>{l.NumeroReversement} du {dateFr(l.DateReversement)}</td>
+                      <td style={{ textAlign: 'right' }}>{fcfa(l.MontantReverse)}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fcfa(l.CommissionDue)}</td>
+                      <td style={{ textAlign: 'right' }}>{fcfa(l.CommissionPayee)}</td><td style={{ textAlign: 'right' }}>{fcfa(l.Reste)}</td>
+                      <td title={l.Reclamation || undefined}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
+                    </tr>
+                  ))}
+                  {!lignes.length && <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                    {chargement ? 'Chargement…' : 'Aucune quittance reversée (et payée à la compagnie) pour ces critères.'}
+                  </td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {reclamables.length > 0 && (
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: '1rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.9rem' }}>
+                <div style={{ fontSize: '0.9rem' }}>
+                  <div>
+                    <button type="button" className="btn btn-link" style={{ padding: 0 }} onClick={() => setSelection(new Set(reclamables.map((l) => l.IdDetailReversement)))}>Tout cocher</button>
+                    {' — '}<strong>{cochees.length}</strong> quittance(s) cochée(s) : <strong style={{ fontSize: '1.05rem' }}>{fcfa(cochees.reduce((s, l) => s + l.CommissionDue, 0))} F</strong> de commissions
+                  </div>
+                  {compagniesCochees.size > 1 && <div style={{ color: 'var(--accent-rose)', fontSize: '0.8rem' }}>Plusieurs compagnies cochées : un bordereau par compagnie.</div>}
+                </div>
+                <div className="form-group" style={{ margin: '0 0 0 auto' }}>
+                  <label className="form-label" htmlFor="cm-p1">Période du</label>
+                  <input id="cm-p1" type="date" className="form-control" value={periode[0]} onChange={(e) => setPeriode([e.target.value, periode[1]])} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" htmlFor="cm-p2">au</label>
+                  <input id="cm-p2" type="date" className="form-control" value={periode[1]} onChange={(e) => setPeriode([periode[0], e.target.value])} />
+                </div>
+                <button type="button" className="btn btn-primary" disabled={!cochees.length || envoi} onClick={emettre} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  {envoi ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Émettre le bordereau récapitulatif
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {onglet === 'bordereaux' && (
+        <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Référence</th><th>Compagnie</th><th>Période</th><th>Émis le</th><th style={{ textAlign: 'right' }}>Quittances</th>
+                  <th style={{ textAlign: 'right' }}>Commissions</th><th style={{ textAlign: 'right' }}>Réglé</th><th style={{ textAlign: 'right' }}>Reste</th><th>Statut</th><th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {reclamations.map((r) => (
+                  <tr key={r.IdReclamation}>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{r.Reference}</td><td>{r.Compagnie}</td>
+                    <td>{dateFr(r.PeriodeDebut)} – {dateFr(r.PeriodeFin)}</td><td>{dateFr(r.DateEmission)}</td>
+                    <td style={{ textAlign: 'right' }}>{r.NombreQuittances}</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fcfa(r.MontantCommissions)}</td>
+                    <td style={{ textAlign: 'right' }}>{fcfa(r.MontantPaye)}</td><td style={{ textAlign: 'right' }}>{fcfa(r.Reste)}</td>
+                    <td><StatusBadge label={r.LibelleStatut} color={COULEURS[r.Statut]} /></td>
+                    <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.55rem' }} onClick={() => financeApi.reclamation(r.IdReclamation).then(setDetail)}>Détail</button>{' '}
+                      {r.Reste > 0 && r.Statut !== 'ANNULEE' && (
+                        <button type="button" className="btn btn-primary" style={{ padding: '0.25rem 0.55rem' }} onClick={() => setARegler(r)}>Encaisser</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!reclamations.length && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>Aucun bordereau de réclamation émis.</td></tr>}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-        <MetricCard title="Total Commissions Générées" value={mockCommissions.kpis.total_commissions_dues} icon={Coins} color="blue" />
-        <MetricCard title="Total Déjà Réglé" value={mockCommissions.kpis.total_paye} icon={CheckCircle} color="emerald" />
-        <MetricCard title="Reste à Payer aux Apporteurs" value={mockCommissions.kpis.reste_a_payer} icon={Banknote} color="amber" />
-        <MetricCard title="Apporteurs Partenaires" value={`${mockCommissions.kpis.nombre_apporteurs_actifs} cabinets`} icon={Coins} color="purple" />
-      </div>
+      {onglet === 'apporteurs' && <Apporteurs />}
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h2 className="title-md" style={{ color: '#fff' }}>Affaires Souscrites & Droits à Commission CIMA</h2>
-        </div>
-        <DataTable columns={columns} data={affaires} searchPlaceholder="Filtrer par apporteur, police ou client..." />
-      </div>
-
-      {/* Modal Bordereau Apporteur */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="Bordereau de Commission Apporteur d'Affaires"
-        subtitle={`Apporteur : ${selectedBordereau?.apporteur} • Police : ${selectedBordereau?.contrat}`}
-        maxWidth="620px"
-      >
-        {selectedBordereau && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '0.75rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-muted)' }}>
-                LE PHARE COURTAGE & ASSURANCES
-              </div>
-              <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
-                BORDEREAU DE LIQUIDATION DE COMMISSION
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Date de règlement : {new Date().toLocaleDateString('fr-FR')} • Conformité CIMA Livre V
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-surface)', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Bénéficiaire :</span>
-                <strong>{selectedBordereau.apporteur}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Police / Client :</span>
-                <strong>{selectedBordereau.contrat} ({selectedBordereau.client})</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Branche d'assurance :</span>
-                <span>{selectedBordereau.branche} (Plafond CIMA : {selectedBordereau.plafond_cima})</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-                <span>Prime Nette Encaissée (Art. 13) :</span>
-                <strong>{Number(selectedBordereau.prime_nette || 0).toLocaleString('fr-FR')} FCFA</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Taux de rétrocession appliqué :</span>
-                <strong style={{ color: '#fbbf24' }}>{selectedBordereau.taux_commission}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.5rem', fontSize: '1.1rem' }}>
-                <span style={{ fontWeight: 700 }}>Net Réglé à l'Apporteur :</span>
-                <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(selectedBordereau.montant_commission || 0).toLocaleString('fr-FR')} FCFA</strong>
-              </div>
-            </div>
-
-            <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-              <button className="btn btn-secondary" onClick={() => setModalOpen(false)}>
-                Fermer
-              </button>
-              <button className="btn btn-primary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Printer size={15} />
-                <span>Imprimer Bordereau</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <ReclamationModal reclamation={detail} onClose={() => setDetail(null)} onRegler={(r) => { setDetail(null); setARegler(r); }} onAnnuler={annuler} />
+      <ReglementModal reclamation={aRegler} banques={banques} onClose={() => setARegler(null)}
+        onEnregistre={(r) => { setARegler(null); setDetail(r); chargerEtat(); chargerReclamations(); }} />
     </div>
   );
 };

@@ -25,6 +25,7 @@ import {
   FileSpreadsheet,
   FileText
 } from 'lucide-react';
+import { nomCabinet } from '../../../utils/parametrage';
 
 const URL_OPTIONS = ['DETAIL', 'LISTE', 'VALIDATION', 'REJET', 'CLOTURE'];
 
@@ -189,7 +190,7 @@ export const DecisionalStatesPage = () => {
     const title = 'RÉFÉRENTIEL DES ÉTATS DÉCISIONNELS';
     const subtitle = 'États de gestion : souscription, contrats et sinistres';
     const metadata = {
-      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
+      'Organisme': nomCabinet(),
       'Périmètre': exportScope === 'ACTIFS' ? 'États actifs uniquement' : exportScope === 'INACTIFS' ? 'États inactifs uniquement' : 'Tous les états',
       'Total États': String(filteredData.length),
       'Date d\'édition': new Date().toLocaleDateString('fr-FR'),
@@ -357,7 +358,7 @@ export const DecisionalStatesPage = () => {
     const subtitle = `Période du ${contenuDateDebut} au ${contenuDateFin} • Type : ${Number(contenuTypeEtat) === 1 ? 'Détail' : 'Récapitulatif'}`;
 
     const metadata = {
-      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
+      'Organisme': nomCabinet(),
       'État Décisionnel': `${contenuTarget?.code_etat} - ${contenuTarget?.libelle_etat}`,
       'Période': `Du ${contenuDateDebut} au ${contenuDateFin}`,
       'Total Lignes': String(filteredContenuDossiers.length),

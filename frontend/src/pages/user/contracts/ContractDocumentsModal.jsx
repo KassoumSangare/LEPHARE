@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
+import { identiteCabinet, nomCabinet } from '../../../utils/parametrage';
 
 export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onSaveContract }) => {
   const { success } = useToast();
@@ -81,9 +82,9 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
           <div style={{ background: '#fff', color: '#1e293b', padding: '2rem', borderRadius: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #0284c7', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>LE PHARE ASSURANCES</h2>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>{nomCabinet()}</h2>
                 <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Courtage & Sinistres Délégués • Agréé CIMA</div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Plateau, Boulevard de la République, Abidjan</div>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{identiteCabinet().AdresseGeographique || ''}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0284c7' }}>
@@ -160,7 +161,7 @@ export const ContractDocumentsModal = ({ isOpen, onClose, docType, contract, onS
                 <div style={{ color: '#64748b' }}>N° de Police :</div>
                 <div style={{ fontWeight: 700, fontSize: '1rem' }}>{contract.numeropolice}</div>
                 <div style={{ color: '#64748b', marginTop: '0.35rem' }}>Assureur Conseil :</div>
-                <div style={{ fontWeight: 600 }}>LE PHARE COURTAGES</div>
+                <div style={{ fontWeight: 600 }}>{nomCabinet()}</div>
               </div>
               <div style={{ padding: '0.75rem', background: '#f8fafc', borderRadius: '6px' }}>
                 <div style={{ color: '#64748b' }}>Souscripteur :</div>

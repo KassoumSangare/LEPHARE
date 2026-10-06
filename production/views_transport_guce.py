@@ -4,7 +4,7 @@ Production Transport (facultés) : import des bordereaux GUCE (« ressortie de p
 Règles d'URANUS reprises sans changement (production/exceltopostgresql.py et procédures en base) :
 - période : début le 1er ou le 16, fin le 15 ou le dernier jour du mois (28, 29, 30 ou 31), même
   mois ; pas de chevauchement avec une période déjà importée (la même période exceptée) ;
-- fichier : 5 Mo au plus, ligne d'en-tête détectée, exactement les 29 colonnes GUCE ;
+- fichier : 5 Mo au plus, ligne d'en-tête détectée, les 29 colonnes GUCE et aucune colonne inconnue ;
 - dates de requête et de certificat comprises dans la période ; lignes sans n° de requête ignorées ;
 - souscripteur rapproché d'un client par ressemblance de nom : introuvable ou ambigu = refus (LE PHARE
   laisse l'opérateur choisir le client parmi les candidats, ou celui des imports précédents) ;
@@ -19,7 +19,16 @@ Ajouts LE PHARE (la route d'URANUS importationfichierguce reste disponible et in
 - import tout ou rien : URANUS enregistre chaque certificat au fil de l'eau, une erreur en cours de
   fichier laissait un import partiel ;
 - refus anticipé d'une période déjà convertie en contrat (la procédure la refuse de toute façon,
-  mais après avoir réécrit les certificats).
+  mais après avoir réécrit les certificats) ;
+- extraction brute du GUCE (« LISTE DES CERTIFICATS D'ASSURANCE ») acceptée telle quelle, en plus de
+  la ressortie mise en forme par OREOLE : en-tête cherché sur chaque feuille (une feuille « Document
+  map » précède la liste), colonnes de codes, valeur CAF, taux de taxe et colonnes vides d'espacement
+  ignorées, « Accessoires AFS-CI » absente recalculée (−500 F par certificat, comme la ressortie),
+  période lue dans « Date certificat entre … et … » ;
+- nombre de certificats et ligne des totaux du fichier comparés aux lignes lues : un écart bloque
+  l'import (une période convertie en contrat ne peut plus être réimportée) ;
+- police GUCE dont les contrats sont au nom d'un autre client que celui du souscripteur signalée,
+  avec le choix du client (sinon une nouvelle police est ouverte).
 """
 
 import calendar
@@ -53,6 +62,7 @@ from .exceltopostgresql import (
     check_date_validity,
     normalize_text,
     date_columns,
+    date_columns_after_mapping,
     excel_column_mapping,
     excel_expected_columns,
     get_customer_id,
@@ -67,6 +77,22 @@ TABLE_CERTIFICATS = "stdcertificattransport"
 ACCESSOIRE_CLIENT_PAR_CERTIFICAT = Decimal("500")  # part AFS-CI, règle de sp_generation_devis_transport_client
 COLONNES_MONTANTS = ["valeurassurance", "primenette", "accessoire", "taxe", "primettc", "accessoireafsci"]
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
+
+# Ajoutée par OREOLE dans la ressortie, absente de l'extraction GUCE
+COLONNE_AFS_CI = "Accessoires AFS-CI"
+# Colonnes de l'extraction GUCE sans champ dans stdcertificattransport
+COLONNES_GUCE_SANS_USAGE = [
+    "Code Assureur", "Code Souscripteur", "Code Assuré", "Code Intermediaire", "Valeur CAF FDI", "Taux Taxe",
+]
+# Contrôle des totaux du fichier : colonne, libellé
+TOTAUX_CONTROLES = [
+    ("valeurassurance", "Valeur assurance"), ("primenette", "Prime nette"), ("accessoire", "Accessoires"),
+    ("taxe", "Taxe"), ("primettc", "Prime totale"),
+]
+MOTIFS_PERIODE = [
+    r"P[ée]riode du (\d{2}/\d{2}/\d{4}) au (\d{2}/\d{2}/\d{4})",  # ressortie OREOLE
+    r"entre (\d{2}/\d{2}/\d{4}) et (\d{2}/\d{2}/\d{4})",  # extraction GUCE : « Date certificat entre … et … »
+]
 
 
 class ErreurBordereau(Exception):
@@ -196,52 +222,123 @@ def import_existant(debut, fin):
 
 
 # ------------------------------------------------------------------ lecture du fichier
-def _periode_du_titre(fichier, nb_lignes):
-    """Titre du bordereau et « Période du JJ/MM/AAAA au JJ/MM/AAAA » (lignes au-dessus de l'en-tête)."""
-    fichier.seek(0)
-    brut = pd.read_excel(fichier, header=None, dtype=str, nrows=max(nb_lignes, 1))
-    fichier.seek(0)
-    titre, periode = "", None
-    for valeur in brut.fillna("").values.ravel():
-        texte = " ".join(str(valeur).split())
-        if not titre and "BORDEREAU" in texte.upper():
-            titre = texte
-        trouve = re.search(r"P[ée]riode du (\d{2}/\d{2}/\d{4}) au (\d{2}/\d{2}/\d{4})", texte, re.I)
-        if trouve and not periode:
-            periode = (datetime.strptime(trouve.group(1), "%d/%m/%Y").date(),
-                       datetime.strptime(trouve.group(2), "%d/%m/%Y").date())
-    return titre, periode
+def _entete_du_fichier(classeur, feuille, ligne_entete):
+    """
+    Titre, période (« Période du … au … » de la ressortie, « Date certificat entre … et … » de
+    l'extraction GUCE) au-dessus de l'en-tête, et nombre de certificats annoncé par la ligne
+    « TOTAL GENERAL Nombre de certificats d'Assurance : N » de l'extraction.
+    """
+    brut = pd.read_excel(classeur, sheet_name=feuille, header=None, dtype=str).fillna("")
+    titre, periode, nombre = "", None, None
+    for n, ligne in enumerate(brut.values):
+        for valeur in ligne:
+            texte = " ".join(str(valeur).split())
+            trouve = re.search(r"Nombre de certificats\D*(\d+)", texte, re.I)
+            if trouve and nombre is None:
+                nombre = int(trouve.group(1))
+            if n >= ligne_entete:
+                continue
+            if not titre and re.search(r"BORDEREAU|LISTE DES CERTIFICATS", texte, re.I):
+                titre = texte
+            for motif in MOTIFS_PERIODE:
+                trouve = re.search(motif, texte, re.I)
+                if trouve and not periode:
+                    periode = (datetime.strptime(trouve.group(1), "%d/%m/%Y").date(),
+                               datetime.strptime(trouve.group(2), "%d/%m/%Y").date())
+    return titre, periode, nombre
+
+
+def _colonnes_absentes(classeur, colonnes):
+    """Colonnes attendues absentes de la ligne qui en contient le plus, toutes feuilles confondues."""
+    attendues = {normalize_text(c): c for c in colonnes}
+    meilleure = set(attendues)
+    for feuille in classeur.sheet_names:
+        brut = pd.read_excel(classeur, sheet_name=feuille, header=None, dtype=str)
+        for ligne in brut.values:
+            absentes = set(attendues) - {normalize_text(v) for v in ligne}
+            if len(absentes) < len(meilleure):
+                meilleure = absentes
+    return [libelle for forme, libelle in attendues.items() if forme in meilleure]
+
+
+def _ligne_des_totaux(df):
+    """
+    Ligne des totaux du fichier : sans n° de requête, avec un statut vide (extraction GUCE, juste
+    sous l'en-tête) ou « TOTAL » (ressortie, en fin de liste).
+    """
+    statut = df["statut"].map(_texte).str.upper()
+    totaux = df[df["numerorequete"].isna() & statut.isin(["", "TOTAL"]) & df["primettc"].notna()]
+    if totaux.empty:
+        return None
+    return {colonne: _nombre(totaux.iloc[0][colonne]) for colonne, _ in TOTAUX_CONTROLES}
 
 
 def lire_bordereau(fichier):
+    """
+    Ressortie OREOLE (29 colonnes) ou extraction brute du GUCE : feuille de l'en-tête, colonnes
+    sans usage écartées, « Accessoires AFS-CI » recalculée si absente.
+    """
     if fichier.size > max_file_size:
         raise ErreurBordereau(f"La taille du fichier excède {max_file_size / (1024 * 1024):.2f} Mo.")
+    requises = [c for c in excel_expected_columns if c != COLONNE_AFS_CI]
     try:
         fichier.seek(0)
-        df, ligne_entete = locate_header_and_read_excel(
-            fichier, expected_columns=excel_expected_columns, sheet_name=0, date_columns=date_columns
-        )
+        classeur = pd.ExcelFile(fichier)
+        df, ligne_entete, feuille = None, 0, 0
+        for feuille in classeur.sheet_names:
+            try:
+                df, ligne_entete = locate_header_and_read_excel(
+                    classeur, expected_columns=requises, sheet_name=feuille, date_columns=date_columns
+                )
+                break
+            except ValueError:
+                continue
+        if df is None:
+            raise ErreurBordereau(
+                "Erreur lors de la lecture du fichier : aucune ligne d'en-tête ne contient toutes les colonnes GUCE "
+                f"(manquantes : {', '.join(_colonnes_absentes(classeur, requises))})."
+            )
+        titre, periode_titre, nombre_annonce = _entete_du_fichier(classeur, feuille, ligne_entete)
+    except ErreurBordereau:
+        raise
     except Exception as erreur:
         raise ErreurBordereau(f"Erreur lors de la lecture du fichier : {erreur}")
     finally:
         fichier.seek(0)
 
+    # Intitulés à l'accent ou à la casse près ramenés au libellé attendu
+    par_forme = {normalize_text(c): c for c in excel_expected_columns}
+    df = df.rename(columns=lambda c: par_forme.get(normalize_text(c), c))
+    sans_titre = [c for c in df.columns if str(c).startswith("Unnamed:")]
+    sans_usage = {normalize_text(c) for c in COLONNES_GUCE_SANS_USAGE}
+    df = df.drop(columns=[
+        c for c in df.columns
+        if normalize_text(c) in sans_usage or (c in sans_titre and df[c].isna().all())
+    ])
+
     reelles = {str(c).strip().lower() for c in df.columns}
     attendues = {c.lower() for c in excel_expected_columns}
-    if reelles != attendues:
+    inconnues = sorted(
+        f"colonne sans titre n° {int(str(c).split(':')[1]) + 1}" if c in sans_titre else str(c).strip()
+        for c in df.columns if str(c).strip().lower() not in attendues
+    )
+    manquantes = [c for c in excel_expected_columns if c.lower() not in reelles and c != COLONNE_AFS_CI]
+    if inconnues or manquantes:
         message = "Erreur dans les colonnes du fichier Excel."
-        if reelles - attendues:
-            message += " Colonnes inconnues : " + ", ".join(sorted(reelles - attendues)) + "."
-        if attendues - reelles:
-            message += " Colonnes manquantes : " + ", ".join(sorted(attendues - reelles)) + "."
+        if inconnues:
+            message += " Colonnes inconnues : " + ", ".join(inconnues) + "."
+        if manquantes:
+            message += " Colonnes manquantes : " + ", ".join(manquantes) + "."
         raise ErreurBordereau(message)
 
-    titre, periode_titre = _periode_du_titre(fichier, ligne_entete)
     df = map_columns(df, excel_column_mapping)
+    if "accessoireafsci" not in df.columns:
+        df["accessoireafsci"] = [-float(accessoire_client(a)) if not pd.isna(a) else None for a in df["accessoire"]]
     df["_ligne_excel"] = df.index + ligne_entete + 2  # numéro de ligne vu dans Excel
-    df["daterequete"] = pd.to_datetime(df["daterequete"], errors="coerce", dayfirst=True)
-    df["datecertificat"] = pd.to_datetime(df["datecertificat"], errors="coerce", dayfirst=True)
-    return df, titre, periode_titre
+    # Cellules date de l'extraction (rendues en texte AAAA-MM-JJ par la lecture) ou texte JJ/MM/AAAA
+    for colonne in date_columns_after_mapping:
+        df[colonne] = pd.to_datetime(df[colonne].map(_jour), errors="coerce")
+    return df, titre, periode_titre, {"Nombre": nombre_annonce, "Totaux": _ligne_des_totaux(df)}
 
 
 # ------------------------------------------------------------------ analyse
@@ -316,11 +413,45 @@ def _compagnies_par_assureur(assureurs):
     return resultat
 
 
+def _titulaires_polices(polices):
+    """
+    Clients des contrats Transport déjà émis sur ces polices GUCE : la procédure reprend la police
+    LE PHARE du même client et de la même police GUCE, sinon elle en ouvre une nouvelle.
+    """
+    titulaires = {}
+    if not polices:
+        return titulaires
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT d.numeropoliceconnexe, d.idclient, TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')),
+                   STRING_AGG(DISTINCT c.numeropolice, ', '), MAX(d.dateexpiration)::date
+            FROM stddevis d
+            JOIN stdclient cl ON cl.idclient = d.idclient
+            LEFT JOIN stdcontrat c ON c.iddevis = d.iddevis
+            WHERE d.idproduit = 6 AND d.numeropoliceconnexe = ANY(%s)
+            GROUP BY 1, 2, 3
+            ORDER BY 5 DESC
+            """,
+            [list(polices)],
+        )
+        for police, id_client, nom, numeros, dernier in cursor.fetchall():
+            titulaires.setdefault(police, []).append({
+                "IdClient": id_client, "Nom": nom, "NumeroPoliceGuce": police, "NumeroPolice": numeros or "",
+                "DernierePeriode": _iso(dernier),
+            })
+    return titulaires
+
+
+def _montant(valeur):
+    return f"{valeur:,.2f}".replace(",", " ").replace(".", ",")
+
+
 def analyser(fichier, debut=None, fin=None, correspondances=None):
-    df, titre, periode_titre = lire_bordereau(fichier)
+    df, titre, periode_titre, controle_fichier = lire_bordereau(fichier)
     if not debut or not fin:
         if not periode_titre:
-            raise ErreurBordereau("Indiquez la période du bordereau (introuvable dans le titre du fichier).")
+            raise ErreurBordereau("Indiquez la période du bordereau (introuvable dans le fichier).")
         debut, fin = periode_titre
     erreurs_periode = controler_periode(debut, fin)
     deja = import_existant(debut, fin)
@@ -333,12 +464,28 @@ def analyser(fichier, debut=None, fin=None, correspondances=None):
     avertissements_generaux = []
     if periode_titre and periode_titre != (debut, fin):
         avertissements_generaux.append(
-            f"Le titre du fichier indique la période du {periode_titre[0]:%d/%m/%Y} au {periode_titre[1]:%d/%m/%Y}."
+            f"Le fichier indique la période du {periode_titre[0]:%d/%m/%Y} au {periode_titre[1]:%d/%m/%Y}."
         )
 
     ignorees = int(df["numerorequete"].isna().sum())
     df = df.dropna(subset=["numerorequete"]).copy()
     df["numerorequete"] = df["numerorequete"].astype(str).str.strip()
+
+    # Certificats lus contre le nombre et les totaux imprimés dans le fichier
+    if controle_fichier["Nombre"] is not None and controle_fichier["Nombre"] != len(df):
+        erreurs_periode.append(
+            f"Le fichier annonce {controle_fichier['Nombre']} certificat(s), {len(df)} ont été lus : "
+            "vérifiez le fichier (lignes masquées, supprimées ou sans n° de requête)."
+        )
+    if controle_fichier["Totaux"]:
+        ecarts = [
+            f"{libelle} {_montant(controle_fichier['Totaux'][colonne])} dans le fichier, "
+            f"{_montant(df[colonne].map(_nombre).sum())} pour les certificats lus"
+            for colonne, libelle in TOTAUX_CONTROLES
+            if abs(controle_fichier["Totaux"][colonne] - df[colonne].map(_nombre).sum()) > 1
+        ]
+        if ecarts:
+            erreurs_periode.append("Les totaux du fichier ne correspondent pas aux certificats : " + " ; ".join(ecarts) + ".")
 
     souscripteurs = identifier_souscripteurs(df["nomsouscripteur"].dropna().unique(), correspondances)
     clients = {nom: s["_id"] for nom, s in souscripteurs.items()}
@@ -346,6 +493,35 @@ def analyser(fichier, debut=None, fin=None, correspondances=None):
         i: f"{n} {p or ''}".strip()
         for i, n, p in Client.objects.filter(pk__in=[i for i in clients.values() if i > 0]).values_list("IdClient", "Nom", "Prenoms")
     }
+
+    # Police GUCE jusqu'ici au nom d'un autre client : nouvelle police LE PHARE si le client est maintenu
+    polices_par_nom = {}
+    for nom, police in zip(df["nomsouscripteur"], df["numeropolice"]):
+        if not pd.isna(nom) and _texte(police):
+            polices_par_nom.setdefault(nom, set()).add(_texte(police))
+    titulaires = _titulaires_polices({p for polices in polices_par_nom.values() for p in polices})
+    for nom, s in souscripteurs.items():
+        s["TitulairesPolice"] = [t for p in sorted(polices_par_nom.get(nom, ())) for t in titulaires.get(p, [])]
+        s["PoliceAutreClient"] = False
+        if s["_id"] <= 0:
+            continue
+        for police in sorted(polices_par_nom.get(nom, ())):
+            autres = titulaires.get(police, [])
+            if not autres or any(t["IdClient"] == s["_id"] for t in autres):
+                continue
+            s["PoliceAutreClient"] = True
+            if not s["Candidats"]:
+                s["Candidats"] = _candidats(nom)
+            avertissements_generaux.append(
+                f"Police GUCE {police} : contrats émis jusqu'ici au nom de "
+                + ", ".join(
+                    f"{t['Nom']} (client n° {t['IdClient']}" + (f", police {t['NumeroPolice']}" if t["NumeroPolice"] else "") + ")"
+                    for t in autres
+                )
+                + f". Le souscripteur « {s['Souscripteur']} » est rattaché à {noms_clients.get(s['_id'], '')} "
+                f"(client n° {s['_id']}) : l'import ouvrira une nouvelle police à son nom. "
+                "S'il s'agit du même assuré, choisissez le titulaire de la police."
+            )
     compagnies = _compagnies_par_assureur([_texte(a) for a in df["assureur"].dropna().unique()])
 
     existants = {}

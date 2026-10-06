@@ -53,6 +53,17 @@ OFFRE_SPECIFIQUE_GROUPE = 174
 OFFRE_STANDARD_PARTICULIER = 6
 OFFRE_STANDARD_GROUPE = 7
 
+# Intitulés possibles de la colonne prime TTC (le modèle 2 d'OREOLE écrit « PRIME TTC ») : sans
+# elle, l'offre CGA (capital + prime) n'était pas reconnue et l'offre de l'écran était appliquée
+ALIAS_PRIME_TTC = ["Prime TTC", "PRIME TTC", "PRIMES TTC", "Primes TTC"]
+# Colonnes d'en-tête du contrat (modèle 2), contrôlées contre la saisie de l'écran
+COLONNES_ENTETE_FICHIER = {
+    "Acte": "ACTE",
+    "Periode": "PERIODE",
+    "Echeance": "DATE D'ECHEANCE",
+    "Souscripteur": "SOUSCRIPTEUR",
+}
+
 importation_col_list = [
     "Nom",
     "Prenoms",
@@ -633,6 +644,11 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
                 ),  # valider_monetaire(row.get("PRIMES TTC"), "PRIMES TTC"),
                 "Offre": row.get("Offre", 0),
                 "Beneficiaires": [],
+                # En-tête du contrat porté par le fichier (contrôlé contre l'écran à l'import)
+                "EnteteFichier": {
+                    cle: row.get(colonne) for cle, colonne in COLONNES_ENTETE_FICHIER.items()
+                    if colonne in row and pd.notna(row.get(colonne))
+                },
             }
 
             # Ajout des bénéficiaires si présents
@@ -771,6 +787,12 @@ def extraire_assures(filepath: str, id_offre: int = 0) -> List[Dict]:
         if "Catégorie" in df.columns:
             df["Catégorie"] = df["Catégorie"].fillna("")
 
+        # Colonnes d'en-tête du contrat fusionnées sur toutes les lignes (modèle 2 : acte,
+        # période, échéance, souscripteur) : la valeur n'est lue que sur la première ligne
+        for colonne in COLONNES_ENTETE_FICHIER.values():
+            if colonne in df.columns:
+                df[colonne] = df[colonne].ffill()
+
         # Création de la colonne 'Offre' (si elle n'existe pas)
         if id_offre in (
             OFFRE_STANDARD_PARTICULIER,
@@ -808,7 +830,7 @@ def extraire_assures(filepath: str, id_offre: int = 0) -> List[Dict]:
                                 "Capitaux Décès",
                             ],
                         ),
-                        get_col_value(row, ["Prime TTC", "PRIMES TTC"]),
+                        get_col_value(row, ALIAS_PRIME_TTC),
                         None,
                     ),
                     axis=1,
@@ -881,15 +903,16 @@ def insert_new_assure(donnee_assure):
     email = donnee_assure.get("Email", "")
     idprofession = 12
 
-    # Gestion du sexe
+    # Gestion du sexe : sans sexe dans le fichier, civilité non renseignée (« Monsieur » par
+    # défaut se trompait pour les femmes et faisait prendre l'assuré pour un homonyme au
+    # prochain import)
     sexe = donnee_assure.get("Sexe", "")
     if sexe == "M":
         idqualite = SEXE_MASCULIN
     elif sexe == "F":
         idqualite = SEXE_FEMININ
     else:
-        # Valeur par défaut si sexe non spécifié
-        idqualite = SEXE_MASCULIN
+        idqualite = None
 
     telephone = donnee_assure.get("NumeroTelephone", "")
     mobile = donnee_assure.get("NumeroMobile", "")

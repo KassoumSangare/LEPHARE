@@ -7,7 +7,13 @@ from .views_devis_ia import (
     taux_taxe_devis_ia,
 )
 from .views_devis_risques_divers import lire_devis_risques_divers
-from .views_devis_voyage import enregistrer_devis_voyage_vue, lire_devis_voyage
+from .views_devis_voyage import (
+    attestation_contrat_voyage,
+    enregistrer_devis_voyage_vue,
+    ligne_tarif_voyage_vue,
+    lire_devis_voyage,
+)
+from . import views_finance
 from .views_transport_guce import (
     analyser_bordereau,
     certificats_transport,
@@ -257,6 +263,18 @@ urlpatterns = [
         name="transport_guce_bordereau_excel",
     ),
     path(r"transport/certificats/", certificats_transport, name="transport_certificats"),
+    # Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
+    # entière), réclamation et encaissement des commissions
+    path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),
+    path("finance/reversements/a-reverser/", views_finance.lignes_a_reverser, name="finance_a_reverser"),
+    path("finance/reversements/", views_finance.reversements, name="finance_reversements"),
+    path("finance/reversements/<int:id_reversement>/", views_finance.reversement, name="finance_reversement"),
+    path("finance/reversements/<int:id_reversement>/valider/", views_finance.valider_reversement, name="finance_valider_reversement"),
+    path("finance/commissions/", views_finance.etat_commissions, name="finance_commissions"),
+    path("finance/commissions/reclamations/", views_finance.reclamations, name="finance_reclamations"),
+    path("finance/commissions/reclamations/<int:id_reclamation>/", views_finance.reclamation, name="finance_reclamation"),
+    path("finance/commissions/reclamations/<int:id_reclamation>/annuler/", views_finance.annuler_reclamation, name="finance_annuler_reclamation"),
+    path("finance/commissions/reclamations/<int:id_reclamation>/paiements/", views_finance.encaisser_commission, name="finance_encaisser_commission"),
     # Devis Voyage (création / « Modifier ») et relecture complète
     path(
         r"devisvoyage/enregistrement/",
@@ -264,9 +282,19 @@ urlpatterns = [
         name="enregistrement_devis_voyage_complet",
     ),
     path(
+        r"devisvoyage/ligne-tarif/",
+        ligne_tarif_voyage_vue,
+        name="ligne_tarif_devis_voyage",
+    ),
+    path(
         r"devisvoyage/<int:iddevis>/",
         lire_devis_voyage,
         name="lecture_devis_voyage",
+    ),
+    path(
+        r"contratvoyage/<int:idcontrat>/attestation/",
+        attestation_contrat_voyage,
+        name="attestation_contrat_voyage",
     ),
     path(
         r"enregistrementdevisvoyage",

@@ -22,6 +22,7 @@ import {
   Lock,
   ExternalLink,
 } from 'lucide-react';
+import { nomCabinet } from '../../../utils/parametrage';
 
 export const ClaimDetailPage = () => {
   const navigate = useNavigate();
@@ -557,7 +558,7 @@ export const ClaimDetailPage = () => {
                 RÉPUBLIQUE DE CÔTE D'IVOIRE • CODE DES ASSURANCES CIMA (LIVRE I & V)
               </div>
               <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
-                LE PHARE COURTAGE & GESTION DÉLÉGUÉE
+                {nomCabinet()}
               </div>
               <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#34d399', marginTop: '0.2rem' }}>
                 ACTE DE QUITTANCE SUBROGATIVE D'INDEMNITÉ

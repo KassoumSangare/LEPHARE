@@ -9,7 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
-from configuration_api.models import Profession, Qualite, SecteurActivite, Ville
+from configuration_api.models import Profession, Qualite, SecteurActivite, StatutJuridique, Ville
 from .activite import annotations_activite, dernieres_operations, dossier_client, synthese_commerciale
 from .serializers import ClientSerializer
 from .models import Client
@@ -54,7 +54,9 @@ def identite_client(client):
         "matricule": client.Matricule or client.numero_assure or "",
         "categorie": getattr(client.idtypeclient, "libelle_type", "") or "",
         "vip": client.Vip == "V",
+        # Civilité d'une personne physique, type d'entreprise d'une personne morale
         "civilite": libelle(Qualite, client.IdQualite),
+        "statut_juridique": libelle(StatutJuridique, client.IdStatutJuridique),
         "piece_identite": client.CniPat or "",
         "date_naissance": client.DateNaissance,
         "lieu_naissance": client.LieuNaissance or "",

@@ -25,6 +25,7 @@ import {
   Layers,
   Check,
 } from 'lucide-react';
+import { nomCabinet } from '../../../utils/parametrage';
 
 export const PolicyMovementModal = ({
   isOpen,
@@ -320,7 +321,7 @@ export const PolicyMovementModal = ({
                   RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)
                 </div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#0f172a', marginTop: '0.35rem' }}>
-                  LE PHARE COURTAGE & GESTION D'ASSURANCES
+                  {nomCabinet()}
                 </div>
                 <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0284c7', textTransform: 'uppercase', marginTop: '0.25rem' }}>
                   CERTIFICAT OFFICIEL DE {completedOperation.type.toUpperCase()}

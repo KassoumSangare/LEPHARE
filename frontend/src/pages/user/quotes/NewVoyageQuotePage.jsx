@@ -33,7 +33,7 @@ const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
 const dateFr = (iso) => (iso ? iso.split('-').reverse().join('/') : '—');
 const versDmy = (iso) => (iso ? iso.split('-').reverse().join('-') : '');
-// Durée tarifée : date d'expiration - date d'effet, en jours (comme la base)
+// Écart en jours entre la date d'effet et la date d'expiration (au moins 1, comme la base)
 const ecartJours = (debut, fin) => {
   if (!debut || !fin) return null;
   return Math.round((Date.UTC(...fin.split('-').map((x, i) => Number(x) - (i === 1 ? 1 : 0)))
@@ -135,7 +135,9 @@ export const NewVoyageQuotePage = () => {
   useEffect(() => {
     let actif = true;
     Promise.all([
-      settingsApi.getCompanies().catch(() => []),
+      // Compagnies ayant un tarif Voyage (NSIA, AMSA) ; toutes les compagnies si la liste est indisponible
+      voyageApi.getCompagniesVoyage().catch(() => [])
+        .then((liste) => (liste.length ? liste : settingsApi.getCompanies().catch(() => []))),
       voyageApi.getNationalites().catch(() => []),
       voyageApi.getZones().catch(() => []),
     ]).then(([cies, nats, zns]) => {
@@ -191,34 +193,42 @@ export const NewVoyageQuotePage = () => {
     return () => { actif = false; };
   }, [compagnie, categorie, idZone]);
 
-  const duree = ecartJours(dateEffet, dateExpiration);
+  const ecart = ecartJours(dateEffet, dateExpiration);
+  // Durée tarifée : jours de couverture, date d'effet et date d'expiration comprises (grilles des compagnies)
+  const duree = ecart === null ? null : ecart + 1;
   const age = ageAuJour(dateNaissance);
 
   // Prime de la grille (offregarantievoyage), recalculée à chaque changement
   useEffect(() => {
-    if (!offre || !idZone || !dateNaissance || !dateEffet || !dateExpiration || duree === null || duree < 1) {
+    if (!offre || !idZone || !dateNaissance || !dateEffet || !dateExpiration || ecart === null || ecart < 1) {
       setCalcul(null);
       return undefined;
     }
     let actif = true;
     const minuterie = setTimeout(async () => {
       setCalculEnCours(true);
+      const parametres = {
+        IdOffre: Number(offre),
+        IdCompagnie: Number(compagnie),
+        IdTarif: Number(categorie),
+        IdZoneVoyage: idZone,
+        TauxReduction: Number(reduction) || 0,
+        DateEffet: versDmy(dateEffet),
+        DateExpiration: versDmy(dateExpiration),
+        DateNaissance: versDmy(dateNaissance),
+      };
       try {
-        const lignes = await voyageApi.calculerPrime({
-          IdOffre: Number(offre),
-          IdCompagnie: Number(compagnie),
-          IdTarif: Number(categorie),
-          IdZoneVoyage: idZone,
-          TauxReduction: Number(reduction) || 0,
-          DateEffet: versDmy(dateEffet),
-          DateExpiration: versDmy(dateExpiration),
-          DateNaissance: versDmy(dateNaissance),
-        });
+        const [lignes, tarif] = await Promise.all([
+          voyageApi.calculerPrime(parametres),
+          // Ligne du document appliquée : affichage seulement, la prime vient du calcul ci-dessus
+          voyageApi.ligneTarif(parametres).catch(() => null),
+        ]);
         if (!actif) return;
         const liste = Array.isArray(lignes) ? lignes : [];
         setCalcul({
           lignes: liste.filter((l) => Number(l.IdGarantie) !== 0 && Number(l.IdSousGarantie) !== 0),
           cumul: liste.find((l) => Number(l.IdGarantie) === 0) || null,
+          tarif,
         });
       } catch (err) {
         if (actif) setCalcul({ erreur: messageErreurApi(err) });
@@ -320,14 +330,18 @@ export const NewVoyageQuotePage = () => {
       else if (dateNaissance > aujourdhui()) e.dateNaissance = 'La date de naissance ne peut pas être dans le futur.';
       if (!dateEffet) e.dateEffet = 'Saisissez la date d\'effet.';
       if (!dateExpiration) e.dateExpiration = 'Saisissez la date d\'expiration.';
-      else if (duree !== null && duree < 1) e.dateExpiration = 'La date d\'expiration doit suivre la date d\'effet d\'au moins un jour.';
+      else if (ecart !== null && ecart < 1) e.dateExpiration = 'La date d\'expiration doit suivre la date d\'effet d\'au moins un jour.';
     }
     if (n === 3) {
       if (!offre) e.offre = 'Aucune offre pour cette formule et cette destination.';
       if (Number(reduction) < 0 || Number(reduction) > REDUCTION_MAX) e.reduction = `Réduction comprise entre 0 et ${REDUCTION_MAX} %.`;
       if (calculEnCours) e.prime = 'Calcul de la prime en cours…';
       else if (calcul?.erreur) e.prime = `Prime non calculée : ${calcul.erreur}`;
-      else if (!montants || montants.primeNette <= 0) e.prime = 'Aucune prime dans la grille pour ces paramètres (âge, durée ou zone hors tarif).';
+      else if (!montants || montants.primeNette <= 0) {
+        e.prime = calcul?.tarif?.Motif
+          ? `Hors tarif : ${calcul.tarif.Motif}`
+          : 'Aucune prime dans la grille pour ces paramètres (âge, durée ou zone hors tarif).';
+      }
     }
     return e;
   };
@@ -639,8 +653,8 @@ export const NewVoyageQuotePage = () => {
                 <Champ label="Date d'expiration" requis erreur={erreurs.dateExpiration}>
                   <input type="date" className="form-control" min={dateEffet || undefined} value={dateExpiration} onChange={(e) => setDateExpiration(e.target.value)} />
                 </Champ>
-                <Champ label="Durée">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minHeight: '2.4rem', fontWeight: 800, fontSize: '1.05rem', color: duree !== null && duree < 1 ? 'var(--accent-rose)' : 'var(--text-primary)' }}>
+                <Champ label="Durée" aide="Jours couverts, date d'effet et date d'expiration comprises">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minHeight: '2.4rem', fontWeight: 800, fontSize: '1.05rem', color: ecart !== null && ecart < 1 ? 'var(--accent-rose)' : 'var(--text-primary)' }}>
                     <CalendarDays size={18} style={{ color: 'var(--primary-500)' }} />
                     {duree === null ? '—' : `${duree} jour${Math.abs(duree) > 1 ? 's' : ''}`}
                   </div>
@@ -705,7 +719,12 @@ export const NewVoyageQuotePage = () => {
               {!erreurs.prime && montants && montants.primeNette <= 0 && (
                 <div style={{ ...styles.alerte('var(--accent-amber)'), marginBottom: '0.75rem' }}>
                   <AlertTriangle size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />
-                  <span>Aucune prime dans la grille pour ces paramètres (âge {age ?? '—'} ans, {duree ?? '—'} jours, {libelleZone || 'zone inconnue'}) : le devis ne pourra pas être enregistré.</span>
+                  <span>
+                    {calcul?.tarif?.Motif
+                      ? `Hors tarif : ${calcul.tarif.Motif}`
+                      : `Aucune prime dans la grille pour ces paramètres (âge ${age ?? '—'} ans, ${duree ?? '—'} jours, ${libelleZone || 'zone inconnue'})`}
+                    {' '}Le devis ne pourra pas être enregistré.
+                  </span>
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '0.6rem' }}>
@@ -722,10 +741,28 @@ export const NewVoyageQuotePage = () => {
                   </div>
                 ))}
                 <div style={{ padding: '0.75rem 0.9rem', borderRadius: '10px', border: '1px solid var(--primary-500)', background: 'var(--primary-glow)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--primary-500)', textTransform: 'uppercase', fontWeight: 800 }}>Prime TTC</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--primary-500)', textTransform: 'uppercase', fontWeight: 800 }}>Prime TTC calculée</div>
                   <div style={{ fontSize: '1.2rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: '0.2rem' }}>{montants ? `${fcfa(montants.primeTtc)} F` : '—'}</div>
                 </div>
               </div>
+
+              {/* Ligne du document tarifaire retenue, pour rapprocher la prime du tarif de la compagnie */}
+              {calcul?.tarif?.Ligne && montants?.primeNette > 0 && (() => {
+                const l = calcul.tarif.Ligne;
+                return (
+                  <div style={{ ...styles.alerte('var(--border-subtle)'), marginTop: '0.9rem' }}>
+                    <FileCheck size={18} style={{ color: 'var(--primary-500)', flexShrink: 0 }} />
+                    <span>
+                      <strong>Ligne du tarif {nomCompagnie} appliquée</strong> : {libelleOffre}{libelleZone ? ` — ${libelleZone}` : ''} — {l.AgeMin} à {l.AgeMax} ans — {l.LibelleDuree}.
+                      {' '}Tarif : {fcfa(l.PrimeNette)} F de prime nette + {fcfa(l.Accessoire)} F d'accessoire + {fcfa(l.PrimeTtc - l.PrimeNette - l.Accessoire)} F de taxe = <strong>{fcfa(l.PrimeTtc)} F TTC</strong>
+                      {montants.reduction > 0 ? ` ; la prime calculée applique la réduction de ${reduction} %.` : '.'}
+                      <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.2rem' }}>
+                        Voyageur de {calcul.tarif.Age} ans à ce jour, {calcul.tarif.Duree} jours couverts (date d'effet et date d'expiration comprises).
+                      </span>
+                    </span>
+                  </div>
+                );
+              })()}
             </>
           )}
 
@@ -753,7 +790,7 @@ export const NewVoyageQuotePage = () => {
                   {ligneRecap('Zone', libelleZone)}
                   {ligneRecap('Schengen', schengen ? 'Oui' : 'Non')}
                   {ligneRecap('Période', dateExpiration ? `du ${dateFr(dateEffet)} au ${dateFr(dateExpiration)}` : '')}
-                  {ligneRecap('Durée', duree !== null ? `${duree} jours` : '')}
+                  {ligneRecap('Durée', duree !== null && ecart > 0 ? `${duree} jours` : '')}
                   <div style={styles.sousTitre}>Prime</div>
                   {ligneRecap('Offre', libelleOffre)}
                   {ligneRecap('Prime nette', montants ? `${fcfa(montants.primeNette)} F` : '')}
@@ -790,7 +827,7 @@ export const NewVoyageQuotePage = () => {
           {ligneRecap('Compagnie', nomCompagnie)}
           {ligneRecap('Destination', destination ? `${destination.libelle_pays}` : '')}
           {ligneRecap('Zone', libelleZone)}
-          {ligneRecap('Durée', duree !== null && duree > 0 ? `${duree} jours` : '')}
+          {ligneRecap('Durée', duree !== null && ecart > 0 ? `${duree} jours` : '')}
           {ligneRecap('Âge', age !== null ? `${age} ans` : '')}
           {ligneRecap('Offre', libelleOffre)}
           <div style={{ marginTop: '1rem', padding: '0.9rem', borderRadius: '12px', background: 'var(--primary-glow)', border: '1px solid var(--primary-500)' }}>

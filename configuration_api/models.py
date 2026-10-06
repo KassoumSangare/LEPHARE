@@ -963,6 +963,75 @@ class Qualite(models.Model):
         verbose_name_plural = "Qualités"
 
 
+class StatutJuridique(models.Model):
+    """Forme juridique d'un client personne morale (formes OHADA : SA, SARL, SAS…)."""
+
+    IdStatutJuridique = models.AutoField(
+        verbose_name="Id Statut Juridique",
+        db_column="idstatutjuridique",
+        primary_key=True,
+    )
+    CodeStatut = models.CharField(
+        max_length=10, verbose_name="Code Statut", db_column="codestatut", unique=True
+    )
+    Libelle = models.CharField(
+        verbose_name="Libellé", max_length=100, db_column="libelle"
+    )
+
+    def __str__(self):
+        return self.Libelle
+
+    class Meta:
+        db_table = "stdstatutjuridique"
+        verbose_name = "Statut Juridique"
+        verbose_name_plural = "Statuts Juridiques"
+
+
+class Apporteur(models.Model):
+    """Apporteur d'affaires codifié, auquel le cabinet peut verser des commissions."""
+
+    TYPES_PERSONNE = [("P", "Personne physique"), ("M", "Personne morale")]
+
+    IdApporteur = models.AutoField(
+        verbose_name="Id Apporteur", db_column="idapporteur", primary_key=True
+    )
+    Code = models.CharField(
+        max_length=20, verbose_name="Code apporteur", db_column="code", unique=True
+    )
+    Nom = models.CharField(
+        max_length=150, verbose_name="Nom ou raison sociale", db_column="nom"
+    )
+    TypePersonne = models.CharField(
+        max_length=1, choices=TYPES_PERSONNE, default="P", db_column="typepersonne"
+    )
+    PieceIdentite = models.CharField(
+        max_length=50, blank=True, default="", verbose_name="CNI / RCCM", db_column="pieceidentite"
+    )
+    Telephone = models.CharField(
+        max_length=30, blank=True, default="", db_column="telephone"
+    )
+    Email = models.EmailField(blank=True, default="", db_column="email")
+    Adresse = models.CharField(
+        max_length=200, blank=True, default="", db_column="adresse"
+    )
+    # Part de la commission du cabinet reversée à l'apporteur (facultatif, en %)
+    TauxRetrocession = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="Taux de rétrocession (%)", db_column="tauxretrocession",
+    )
+    Actif = models.BooleanField(default=True, db_column="actif")
+    DateCreation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+
+    def __str__(self):
+        return f"{self.Code} - {self.Nom}"
+
+    class Meta:
+        db_table = "stdapporteur"
+        verbose_name = "Apporteur"
+        verbose_name_plural = "Apporteurs"
+        ordering = ["Code"]
+
+
 class SecteurActivite(models.Model):
     IdSecteurActivite = models.AutoField(
         verbose_name="Id Secteur Activité",
@@ -1749,6 +1818,14 @@ class ZoneVoyagePrime(models.Model):
         max_digits=19,
         decimal_places=4,
     )
+    # Taux de la taxe sur prime nette + accessoire (AMSA 14,5 %, NSIA 8 %)
+    taux_taxe = models.DecimalField(
+        verbose_name="Taux de taxe (%)",
+        db_column="taux_taxe",
+        max_digits=7,
+        decimal_places=4,
+        default=14.5,
+    )
 
     class Meta:
         db_table = "stdzonevoyageprime"
@@ -1785,12 +1862,15 @@ class ZoneVoyagePrimeNsia(models.Model):
         related_name="primesvoyagensia",
         on_delete=models.CASCADE,
     )
+    # Vide : la ligne vaut pour toutes les zones où l'offre est proposée (OffreVoyageZone)
     zone_voyage = models.ForeignKey(
         ZoneVoyage,
         verbose_name="Zone de voyage",
         db_column="id_zone",
         related_name="primesvoyagensia",
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
     )
     duree_minimum = models.PositiveIntegerField(
         verbose_name="Durée minimum", db_column="duree_minimum"
@@ -1843,6 +1923,13 @@ class ZoneVoyagePrimeNsia(models.Model):
         max_digits=19,
         decimal_places=4,
     )
+    taux_taxe = models.DecimalField(
+        verbose_name="Taux de taxe (%)",
+        db_column="taux_taxe",
+        max_digits=7,
+        decimal_places=4,
+        default=14.5,
+    )
 
     class Meta:
         db_table = "stdzonevoyageprimensia"
@@ -1868,6 +1955,33 @@ class ZoneVoyagePrimeNsia(models.Model):
                 check=Q(duree_minimum__lte=models.F("duree_maximum")),
                 name="zone_voyage_prime_nsia_check_duree",
             ),
+        ]
+
+
+class OffreVoyageZone(models.Model):
+    """Offres Voyage proposées pour une zone de destination (le pays de destination donne la zone)."""
+
+    offre = models.ForeignKey(
+        Offre,
+        verbose_name="Offre",
+        db_column="id_offre",
+        related_name="zonesvoyage",
+        on_delete=models.CASCADE,
+    )
+    zone_voyage = models.ForeignKey(
+        ZoneVoyage,
+        verbose_name="Zone de voyage",
+        db_column="id_zone",
+        related_name="offresvoyage",
+        on_delete=models.CASCADE,
+    )
+
+    class Meta:
+        db_table = "stdoffrevoyagezone"
+        verbose_name = "Offre Voyage par zone"
+        verbose_name_plural = "Offres Voyage par zone"
+        constraints = [
+            models.UniqueConstraint(fields=["offre", "zone_voyage"], name="offre_voyage_zone_unique"),
         ]
 
 
@@ -3812,3 +3926,102 @@ class RepartitionPrimeSante(models.Model):
             "commission_commerciaux": commission_commerciaux,
             "provision_sinistre": provision_sinistre,
         }
+
+
+# ============================================================================
+# PARAMÉTRAGE LE PHARE : ce qui était écrit dans le code et se règle désormais dans
+# l'administration (écrans « Le cabinet », « Compagnies partenaires », « Produits »).
+# Lu par GET /api/parametrage/ (configuration_api/parametrage.py) ; une valeur absente
+# ou illisible laisse s'appliquer la valeur d'origine prévue dans le code.
+# ============================================================================
+class ParametreGeneral(models.Model):
+    """Règle de gestion ou réglage de document, sous forme clé / valeur typée."""
+
+    TYPES = [
+        ("texte", "Texte"),
+        ("texte_long", "Texte sur plusieurs lignes"),
+        ("entier", "Nombre entier"),
+        ("decimal", "Nombre décimal"),
+        ("montant", "Montant (FCFA)"),
+        ("pourcentage", "Pourcentage"),
+        ("date", "Date"),
+        ("booleen", "Oui / Non"),
+        ("image", "Image"),
+    ]
+
+    Cle = models.CharField(max_length=80, primary_key=True, db_column="cle")
+    Groupe = models.CharField(max_length=40, db_column="groupe")
+    Libelle = models.CharField(max_length=150, db_column="libelle")
+    Aide = models.TextField(blank=True, default="", db_column="aide")
+    Type = models.CharField(max_length=20, choices=TYPES, default="texte", db_column="type")
+    Valeur = models.TextField(blank=True, default="", db_column="valeur")
+    # Valeur livrée avec l'application, pour « Rétablir la valeur d'origine »
+    ValeurOrigine = models.TextField(blank=True, default="", db_column="valeurorigine")
+    Unite = models.CharField(max_length=20, blank=True, default="", db_column="unite")
+    Minimum = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, db_column="minimum")
+    Maximum = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, db_column="maximum")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    def __str__(self):
+        return f"{self.Cle} = {self.Valeur}"
+
+    class Meta:
+        db_table = "lephare_parametre"
+        verbose_name = "Paramètre général"
+        verbose_name_plural = "Paramètres généraux"
+        ordering = ["Groupe", "Ordre", "Cle"]
+
+
+class CompagnieDocument(models.Model):
+    """Ce que les documents imprimés reprennent d'une compagnie (stdcompagnie, table URANUS)."""
+
+    IdCompagnie = models.IntegerField(primary_key=True, db_column="idcompagnie")
+    # Image en data URL (png/jpeg/svg) : imprimée telle quelle, sans serveur de fichiers
+    Logo = models.TextField(blank=True, default="", db_column="logo")
+    # Pied de page des Conditions Particulières : une ligne par ligne imprimée
+    PiedPage = models.TextField(blank=True, default="", db_column="piedpage")
+    Visa = models.CharField(max_length=200, blank=True, default="", db_column="visa")
+    # Mention imprimée sous le logo du pied de page (ex. « depuis 1995 »)
+    MentionLogo = models.CharField(max_length=100, blank=True, default="", db_column="mentionlogo")
+    # Attestation d'assurance voyage : {Actif, Convention, PaysResidence, Signataire,
+    # Garanties: [...], Telephone, Email, Whatsapp, Exemplaires: [...]}
+    AttestationVoyage = models.JSONField(default=dict, blank=True, db_column="attestationvoyage")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_compagnie_document"
+        verbose_name = "Documents d'une compagnie"
+        verbose_name_plural = "Documents des compagnies"
+
+
+class ProduitParametre(models.Model):
+    """Place d'un produit (stdproduit) dans LE PHARE : onglet du registre et formulaire de saisie."""
+
+    MODULES = [
+        ("", "Aucun formulaire"),
+        ("auto", "Automobile"),
+        ("ia", "Individuelle Accidents"),
+        ("voyage", "Voyage"),
+        ("mrh", "Multirisque Habitation"),
+        ("sante", "Santé"),
+        ("transport", "Transport (bordereaux GUCE)"),
+        ("rc", "Responsabilité Civile"),
+        ("mrp", "Multirisque Professionnelle"),
+        ("tous-dommages", "Tous Dommages"),
+    ]
+
+    IdProduit = models.IntegerField(primary_key=True, db_column="idproduit")
+    # Onglet du registre des devis (les produits du même onglet sont regroupés)
+    Onglet = models.CharField(max_length=40, db_column="onglet")
+    ModuleSaisie = models.CharField(max_length=30, blank=True, default="", choices=MODULES, db_column="modulesaisie")
+    SaisieOuverte = models.BooleanField(default=False, db_column="saisieouverte")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_produit_parametre"
+        verbose_name = "Paramètre d'un produit"
+        verbose_name_plural = "Paramètres des produits"
+        ordering = ["Ordre", "IdProduit"]

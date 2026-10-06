@@ -2701,6 +2701,13 @@ def save_premium_collection(user, input_data):
                 raise ValidationError(
                     "Ce chèque est revenu impayé : il ne peut plus régler de quittance."
                 )
+            # Un chèque qui règle plusieurs quittances garde le montant de son premier usage :
+            # un autre montant saisi est une erreur (il était ignoré sans prévenir)
+            if cheque and montant_initial_cheque and montant_initial_cheque != cheque.montant_initial:
+                raise ValidationError(
+                    f"Ce chèque est déjà enregistré pour un montant initial de {cheque.montant_initial:,.0f} F "
+                    f"(solde disponible {cheque.solde_disponible:,.0f} F).".replace(",", " ")
+                )
 
             if not cheque:
                 # Premier usage : le montant_initial est obligatoire

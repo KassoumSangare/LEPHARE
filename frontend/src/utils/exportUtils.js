@@ -3,6 +3,7 @@
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
 import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
+import { construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 
 export const downloadBlob = (blob, filename) => {
@@ -107,7 +108,7 @@ export const exportToExcel = ({ filename, title, subtitle, metadata = {}, header
           </tr>
           <tr>
             <td colspan="${headers.length}" style="font-size:14pt;font-weight:bold;color:#0f172a;padding-bottom:3px;">
-              LE PHARE COURTAGE & GESTION D'ASSURANCES
+              ${echapperHtml(nomCabinet())}
             </td>
           </tr>
           <tr>
@@ -281,7 +282,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   <div class="header-box">
     ${enTete ? `<div>
       <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
-      <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
+      <div class="company-title">${echapperHtml(nomCabinet())}</div>
       <div style="font-size: 11.5pt; font-weight: 800; color: #0284c7; margin-top: 3px;">${title}</div>
       ${subtitle ? `<div style="font-size: 8.5pt; color: #475569; margin-top: 2px;">${subtitle}</div>` : ''}
     </div>` : ''}
@@ -412,6 +413,8 @@ const buildFicheClient = ({ client: c = {}, synthese: s = {}, operations = [] },
   const identite = entreprise
     ? [
       ligne('Raison sociale', nomComplet),
+      ligne('Type entreprise', c.civilite),
+      ligne('Statut juridique', c.statut_juridique),
       ligne('RCCM / Patente', c.piece_identite),
       ligne('Date de création', date(c.date_naissance)),
       ligne('Siège', c.lieu_naissance),
@@ -645,7 +648,7 @@ const buildBordereauGroupsHtml = (groups) => {
  * Export PDF du bordereau des émissions groupé par Compagnie / Client / Branche
  * (mise en page A4 paysage, identique au modèle réglementaire de référence).
  */
-export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, groups }) => {
+export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, groups, mention }) => {
   const metaHtml = Object.entries(metadata)
     .map(([k, v]) => `<div><span style="color:#64748b;font-weight:600;">${k} :</span> <strong>${v}</strong></div>`)
     .join('');
@@ -678,7 +681,7 @@ export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, g
   <div class="header-box">
     <div>
       <div class="republic-tag">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
-      <div class="company-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
+      <div class="company-title">${echapperHtml(nomCabinet())}</div>
       <div style="font-size: 10pt; font-weight: 800; color: #0284c7; margin-top: 2px;">${title}</div>
       ${subtitle ? `<div style="font-size: 7.8pt; color: #475569; margin-top: 2px;">${subtitle}</div>` : ''}
     </div>
@@ -693,7 +696,7 @@ export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, g
   <table>${buildBordereauGroupsHtml(groups)}</table>
 
   <div class="legal-notice">
-    <strong>Attestation de Contrôle & Conformité Fiscale :</strong> Le présent bordereau consolide, par compagnie, par client et par branche, l'ensemble des émissions de polices et quittances de la période conformément aux dispositions des Articles 13 et suivants du Code CIMA.
+    ${mention || "<strong>Attestation de Contrôle & Conformité Fiscale :</strong> Le présent bordereau consolide, par compagnie, par client et par branche, l'ensemble des émissions de polices et quittances de la période conformément aux dispositions des Articles 13 et suivants du Code CIMA."}
   </div>
 
   <script>
@@ -736,7 +739,7 @@ export const exportBordereauExcel = ({ filename, title, subtitle, metadata = {},
       </head>
       <body style="font-family:Arial, sans-serif;font-size:10pt;">
         <table style="margin-bottom:12px;">
-          <tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:14pt;font-weight:bold;color:#0f172a;">LE PHARE COURTAGE & GESTION D'ASSURANCES</td></tr>
+          <tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:14pt;font-weight:bold;color:#0f172a;">${echapperHtml(nomCabinet())}</td></tr>
           <tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:12pt;font-weight:bold;color:#0284c7;padding-bottom:6px;">${title || ''}</td></tr>
           ${subtitle ? `<tr><td colspan="${BORDEREAU_COLUMNS.length}" style="font-size:9pt;color:#475569;padding-bottom:8px;">${subtitle}</td></tr>` : ''}
           ${metaRows}
@@ -946,12 +949,8 @@ export const code128Svg = (texte, hauteur = 42, module = 1.2) => {
   return `<svg class="barcode-svg" xmlns="http://www.w3.org/2000/svg" width="${largeurTotale * module}" height="${hauteur}" viewBox="0 0 ${largeurTotale} ${hauteur}" preserveAspectRatio="none" role="img" aria-label="Code-barres ${texte}"><g fill="#000">${barres}</g></svg>`;
 };
 
-const getCompagnieLogoUrl = (compagnieName) => {
-  const c = String(compagnieName || '').toLowerCase();
-  if (c.includes('nsia')) return '/assets/print/logo-nsia.jpg';
-  if (c.includes('sunu')) return '/assets/print/logo-sunu.png';
-  return null;
-};
+// Logo de la compagnie : Administration > Compagnies partenaires, onglet « Documents imprimés »
+const getCompagnieLogoUrl = (compagnieName) => logoCompagnie(compagnieName);
 
 // En-tête commun des documents imprimés (devis, factures, conditions particulières, fiche
 // client) : logo OREOLE à gauche, logo ou nom de la compagnie à droite
@@ -959,7 +958,7 @@ const printDocEntete = (compagnie) => {
   const logo = getCompagnieLogoUrl(compagnie);
   return `
     <div class="facture-header">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="header-logo-oreole" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="header-logo-oreole" />
       ${logo
         ? `<img src="${logo}" alt="${compagnie}" class="header-logo-compagnie" />`
         : `<div class="header-compagnie-text">${compagnie || ''}</div>`}
@@ -980,7 +979,7 @@ const printDocFooter = (withBarcode) => `
         <div class="barcode-ref">Réf. document</div>
       </div>
     ` : '<div></div>'}
-    <img src="/assets/print/logo-oreole-pied.png" alt="OREOLE Assurances" class="footer-logo-oreole" />
+    <img src="${logoCabinetPied()}" alt="OREOLE Assurances" class="footer-logo-oreole" />
   </div>
 `;
 
@@ -1102,7 +1101,7 @@ const buildAutoFacture = (quote) => {
     <p class="texte-politesse">Dans cette attente, nous vous prions d'agréer l'expression de nos sentiments dévoués.</p>
 
     <div class="bloc-signature-droite">
-      <div>Fait à Abidjan, le <strong>${date(raw.dateemission)}</strong>.</div>
+      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${date(raw.dateemission)}</strong>.</div>
       <div style="margin-top:28px;"><strong>Pour la société</strong></div>
     </div>
 
@@ -1111,7 +1110,7 @@ const buildAutoFacture = (quote) => {
         ${numeroFacture ? code128Svg(numeroFacture) || '' : ''}
         <div class="barcode-ref">${txt(numeroFacture)}</div>
       </div>
-      <img src="/assets/print/logo-oreole-pied.png" alt="OREOLE Assurances" class="footer-logo-oreole" />
+      <img src="${logoCabinetPied()}" alt="OREOLE Assurances" class="footer-logo-oreole" />
     </div>
     </div>
   `;
@@ -1270,15 +1269,8 @@ const buildConditionsParticulieres = (quote, cp) => {
 // nette annuelle, prime comptant), capitaux sécurité routière, récapitulatif et signatures.
 // Le nombre de lignes de garanties suit l'offre souscrite. Sources : quittancecontrat|quittanceproposition,
 // garantiesouscrite*, contratdetail|devisdetail.
-// Pied de page légal de NSIA ASSURANCES, tel qu'imprimé sur ses Conditions Particulières
-const VISA_NSIA = 'Visa: MEF/DGTCP/DA N°736 DU 31 DECEMBRE 1999';
-const PIED_NSIA = [
-  'NSIA ASSURANCES',
-  'Société Anonyme au capital de F. CFA 7 600 000 000 entièrement libéré. Entreprise régie par le code des Assurances CIMA.',
-  'CI - ABJ - 1995 - B - 183449 - Compte Contribuable - 9507932 W - Siège Social: Immeuble Manzi, Avenue Noguès Rue A43 Plateau',
-  '01 BP 1571 Abidjan 01 - Tél. : (225) 27 20 27 88 88 / (225) 27 20 31 75 00 - Fax: (225) 27 20 22 76 20 / 27 20 33 25 79',
-  "Centre d'Impots: D.G.E / Régime: Réel Normal - Site Web : www.groupensia.com - email : nsiaassurancesci@nsiaassurances.com",
-];
+// Visa et pied de page légal imprimés sur les Conditions Particulières : réglages de la compagnie
+// (Administration > Compagnies partenaires, onglet « Documents imprimés » ; NSIA livré avec les siens)
 
 const ID_SECURITE_ROUTIERE = 169;
 const ID_INDIVIDUELLE_CHAUFFEUR = 16;
@@ -1326,6 +1318,8 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
   const compagnie = q.RaisonSociale || quote.compagnie || '';
   const logo = getCompagnieLogoUrl(compagnie);
   const estNsia = /nsia/i.test(compagnie);
+  const docCie = documentsCompagnie(compagnie);
+  const piedCie = String(docCie?.PiedPage || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const telephone = [q.TelephoneClient, q.MobileClient].find((t) => t && String(t).trim() && String(t).trim() !== '-');
   const primeNetteHorsFga = primeNetteRecapAuto(q, estNsia);
   // « Véhicule Particulier (Voiture, …) » : le type sans sa description entre parenthèses
@@ -1457,7 +1451,7 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
       <div class="cpn-bas">
         <div class="cpn-mentions">
           <p>Les présentes Conditions Particulières prévalent sur les Conditions Générales ou Conventions Spéciales pour autant qu'elles leur sont contraire.</p>
-          ${estNsia ? `<p class="cpn-visa">${VISA_NSIA}</p>` : ''}
+          ${docCie?.Visa ? `<p class="cpn-visa">${echapperHtml(docCie.Visa)}</p>` : ''}
         </div>
         <div class="cpn-recap">
           <table>
@@ -1479,11 +1473,11 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
       </div>
       </div>
 
-      ${estNsia ? `
+      ${piedCie.length ? `
       <div class="cpn-pied">
-        <div class="cpn-pied-texte">${PIED_NSIA.map((l, i) => (i === 0 ? `<strong>${l}</strong>` : l)).join('<br/>')}</div>
-        <div class="cpn-pied-ligne"><span></span>${logo ? `<img src="${logo}" alt="NSIA" />` : ''}</div>
-        <div class="cpn-pied-depuis">depuis 1995</div>
+        <div class="cpn-pied-texte">${piedCie.map((l, i) => (i === 0 ? `<strong>${echapperHtml(l)}</strong>` : echapperHtml(l))).join('<br/>')}</div>
+        <div class="cpn-pied-ligne"><span></span>${logo ? `<img src="${logo}" alt="${echapperHtml(compagnie)}" />` : ''}</div>
+        ${docCie?.MentionLogo ? `<div class="cpn-pied-depuis">${echapperHtml(docCie.MentionLogo)}</div>` : ''}
       </div>` : ''}
     </div>
   `;
@@ -1868,7 +1862,7 @@ const buildPropositionIaGroupe = (quote, donnees) => {
   const q = quittanceIa(quote, donnees.quittance);
   return `
     <div class="ia">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
       <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
       <div class="ia-refs">
         <div class="ia-boite">
@@ -1888,7 +1882,7 @@ const buildPropositionIaGroupe = (quote, donnees) => {
       ${paragrapheProposition(q)}
       ${estCategorieGroupe(q) ? '' : tableauGarantiesIa(donnees.garanties, { capitalTexte: true })}
       ${decompteIa(q, q.PrimeNetteHorsFga)}
-      <div class="ia-fait">Fait à Abidjan, le ${dateTiret(q.DateEmission)}</div>
+      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())}, le ${dateTiret(q.DateEmission)}</div>
       <div class="ia-signatures"><div>LE SOUSCRIPTEUR</div><div>POUR LA COMPAGNIE</div></div>
     </div>`;
 };
@@ -1912,7 +1906,7 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
     : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
   return `
     <div class="ia">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
       <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
       <div class="ia-refs">
         <div class="ia-boite">
@@ -1946,7 +1940,7 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
       </div>
       ${tableauGarantiesIa(donnees.garanties)}`}
       ${decompteIa(q, q.PrimeNette)}
-      <div class="ia-fait">Fait à Abidjan le ${dateBarre(q.DateEmission)}</div>
+      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())} le ${dateBarre(q.DateEmission)}</div>
       <div class="ia-signatures"><div>Le Souscripteur</div><div>Pour la Compagnie</div></div>
     </div>`;
 };
@@ -1984,7 +1978,7 @@ const buildFactureIa = (quote, donnees) => {
         <div>PRIME TOTALE A PAYER: ${fcfaIa(q.PrimeTtc)}</div>
       </div>
       <div class="iaf-cima">Conformément aux dispositions de l’Article 13 et suivants du Code des Assurances (Code CIMA) « La prise d’effet du contrat est subordonnée au paiement intégral de la prime ». « Pour les polices des risques autres que la maladie, l’automobile et les marchandises transportées dont la prime est supérieure à 80 fois le SMIG annuel, un délai maximum du contrat peut être accordé au souscripteur » de paiement de 60 jours à compter de la date de prise d'effet ou de renouvellement « A défaut du paiement de la prime dans le délai convenu, le contrat est résilié de plein droit. La portion de prime courue reste acquise à l’assureur sans préjudice des éventuels frais de poursuite et de recouvrement » « Lorsqu’un chèque ou effet remis en paiement de la prime revient impayé, l’assuré est mis en demeure de régulariser le paiement dans un délai de 8 jours ouvrés à compter de la réception de l’acte ou de la lettre de mise en demeure. A l’expiration de ce délai, si la régularisation n’est pas effectuée, le contrat est résilié de plein droit La portion de prime courue reste acquise</div>
-      <div class="iaf-fait">Fait à Abidjan, le <b>${dateBarre(q.DateEmission)}.</b></div>
+      <div class="iaf-fait">Fait à ${echapperHtml(villeSignature())}, le <b>${dateBarre(q.DateEmission)}.</b></div>
       <div class="iaf-signatures"><div>LE SOUSCRIPTEUR</div><div>LA COMPAGNIE</div></div>
     </div>`;
 };
@@ -2029,7 +2023,7 @@ const buildAnnexeIa = (quote, donnees) => {
   }).join('');
   return `
     <div class="ia iaa">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="ia-logo" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
       <div class="iaa-corps">
         <div class="iaa-bandeau">
           <div class="iaa-bandeau-titre">ANNEXE – LISTE DES ASSURES INDIVIDUELLE ACCIDENT</div>
@@ -2127,7 +2121,7 @@ const buildPropositionVoyage = (quote, { quittance: q = {}, garanties = [], voya
       Cette offre n'est qu'une proposition d'assurance. Elle n'engage en rien la compagnie et a durée de validité
       d'un (1) mois à compter de sa date d'émission.
     </div>
-    <div class="bloc-signature-simple">Fait à Abidjan, le <strong>${formatFrDate(q.DateEmission || quote.date_emission)}</strong>.</div>
+    <div class="bloc-signature-simple">Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(q.DateEmission || quote.date_emission)}</strong>.</div>
     ${printDocFooter(false)}
   `;
 };
@@ -2191,7 +2185,7 @@ const buildBordereauTransport = (donnees) => {
       <tr><td class="label">Part AFS-CI (500 F × ${t.Certificats || 0})</td><td style="text-align:right;">- ${fcfa(t.AccessoireClient)} FCFA</td></tr>
       <tr class="ligne-total"><td class="label">TOTAL GENERAL</td><td style="text-align:right;">${fcfa(t.TotalGeneral)} FCFA</td></tr>
     </table>
-    <div class="bloc-signature-simple">Fait à Abidjan, le <strong>${formatFrDate(new Date())}</strong>.</div>
+    <div class="bloc-signature-simple">Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(new Date())}</strong>.</div>
   `;
 };
 
@@ -2229,6 +2223,167 @@ export const printPropositionVoyage = async (quote) => {
       fenetre.document.close();
     }
   }
+};
+
+/* =========================================================================
+   VOYAGE : Attestation d'assurance et d'assistance voyage d'un contrat (demande de visa),
+   d'après l'attestation AMSA imprimée fournie par l'utilisateur (certificat AMSAVOCIV00001381).
+   Garanties, convention et assistance (COVEREDGE) sont celles de cet imprimé : AMSA n'a qu'une
+   formule voyage. Les deux QR codes de l'imprimé (vérification visa, portail d'assistance) relèvent
+   du système d'AMSA/COVEREDGE et ne sont pas reproduits ; cachet et signature restent à apposer.
+   Une page par exemplaire (« Fait, en trois exemplaires »).
+   ========================================================================= */
+// Modèle de chaque compagnie (convention, garanties, assistance, exemplaires) : Administration >
+// Compagnies partenaires, onglet « Documents imprimés » (AMSA livré avec celui de l'imprimé fourni)
+const NOMBRES_EN_LETTRES = ['un', 'deux', 'trois', 'quatre', 'cinq'];
+
+const ATTESTATION_VOYAGE_STYLES = `
+  body { max-width: 210mm; padding: 0; color: #1f2937; }
+  .atv-page { position: relative; box-sizing: border-box; width: 210mm; height: 296mm; padding: 13mm 17mm 10mm 13mm;
+    page-break-after: always; break-after: page; overflow: hidden; font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+  .atv-page:last-child { page-break-after: auto; break-after: auto; }
+  .atv-entete { display: flex; align-items: flex-start; gap: 10mm; margin-bottom: 8mm; }
+  .atv-logo { width: 38mm; display: block; }
+  .atv-titres { flex: 1; text-align: center; padding-top: 6mm; }
+  .atv-titre { font-size: 19pt; color: #3a3f6b; padding-bottom: 2mm; border-bottom: 1.2px solid #3a3f6b; }
+  .atv-soustitre { font-size: 9pt; color: #4b5563; margin: 3mm 8mm 0; }
+  .atv-section { font-size: 10.5pt; font-weight: 700; color: #3a3f6b; border-bottom: 1.4px solid #2f3352; padding-bottom: 1mm; margin: 5mm 0 2mm; }
+  .atv-infos { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; row-gap: 1.6mm; }
+  .atv-info { display: flex; align-items: baseline; gap: 2mm; border-bottom: 0.5px solid #e5e7eb; padding: 0.6mm 0; }
+  .atv-info span { font-size: 8.5pt; color: #6b7280; white-space: nowrap; }
+  .atv-info b { font-size: 10.5pt; font-weight: 400; color: #111827; }
+  .atv-puces { margin: 0; padding-left: 5mm; font-size: 8.5pt; color: #374151; }
+  .atv-puces li { margin: 1.2mm 0; }
+  .atv-texte { font-size: 8.5pt; color: #374151; margin: 1.5mm 0; }
+  .atv-contacts { display: flex; flex-wrap: wrap; gap: 3mm 4mm; margin-top: 3mm; }
+  .atv-contact { display: inline-flex; align-items: center; gap: 2mm; border: 1px solid #e9a23b; border-radius: 4mm;
+    padding: 1mm 3mm 1mm 1mm; font-size: 8.5pt; }
+  .atv-contact i { display: inline-flex; align-items: center; justify-content: center; width: 5.5mm; height: 5.5mm; border-radius: 50%;
+    background: #2f3352; color: #fff; font-style: normal; font-size: 8pt; font-weight: 700; }
+  .atv-contact svg { width: 3.2mm; height: 3.2mm; }
+  /* Cachet de la compagnie et signature de l'assuré apposés à la main (espace réservé) */
+  .atv-signatures { display: flex; justify-content: space-between; margin-top: 9mm; height: 36mm; font-size: 9.5pt; }
+  .atv-signe-cie { position: relative; width: 58%; }
+  .atv-signe-cie > div:first-child { margin-left: 30mm; }
+  .atv-fait { position: absolute; left: 0; top: 17mm; }
+  .atv-fait b { font-weight: 400; letter-spacing: 0.3px; }
+  .atv-signe-assure { width: 34%; }
+  .atv-onglet { position: absolute; right: 0; top: 112mm; width: 7mm; height: 52mm; background: #3d5a99; color: #fff;
+    display: flex; align-items: center; justify-content: center; border-radius: 2mm 0 0 2mm; }
+  .atv-onglet span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 7.5pt; white-space: nowrap; }
+  @media print { .atv-page { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+`;
+
+const ICONE_TELEPHONE = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+const ICONE_MESSAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
+
+const buildAttestationVoyage = (a, modele) => {
+  const t = (v) => echapperHtml(v === undefined || v === null ? '' : String(v).trim());
+  const jma = (v, sep = '/') => (v ? String(v).slice(0, 10).split('-').reverse().join(sep) : '');
+  const info = (label, valeur) => `<div class="atv-info"><span>${label} :</span><b>${t(valeur)}</b></div>`;
+  const { telephone, email, whatsapp } = modele.assistance;
+  const page = (exemplaire) => `
+    <div class="atv-page">
+      <div class="atv-entete">
+        <img src="${modele.logo}" alt="${t(a.Compagnie)}" class="atv-logo" />
+        <div class="atv-titres">
+          <div class="atv-titre">Attestation d’assurance et d’assistance voyage</div>
+          <div class="atv-soustitre">Cette attestation est destinée à valoir et faire valoir ce que de droit dans le cas d’une
+            demande de visa auprès des consulats étrangers.</div>
+        </div>
+      </div>
+
+      <div class="atv-section">Renseignement de l’assuré</div>
+      <div class="atv-infos">
+        ${info('Nom', String(a.Nom || '').toUpperCase())}
+        ${info('Convention', modele.convention)}
+        ${info('Prénom', String(a.Prenoms || '').toUpperCase())}
+        ${info('No de certificat', a.NumeroCertificat)}
+        ${info('Date de naissance', jma(a.DateNaissance))}
+        ${info('Début de validité', jma(a.DebutValidite))}
+        ${info('Nationalité', String(a.Nationalite || '').toUpperCase())}
+        ${info('Fin de validité', jma(a.FinValidite))}
+        ${info('No de passeport', a.NumeroPasseport)}
+        ${info('Pays de destination', String(a.PaysDestination || '').toUpperCase())}
+        ${info('Pays de résidence', modele.paysResidence)}
+        ${info('Zone de couverture', a.ZoneCouverture)}
+      </div>
+
+      <div class="atv-section">Principales Garanties</div>
+      <ul class="atv-puces">${modele.garanties.map((g) => `<li>${t(g)}</li>`).join('')}</ul>
+
+      <div class="atv-section">Dispositions Spéciales</div>
+      <ul class="atv-puces">
+        <li>L’Assuré reconnaît avoir reçu les Conditions Générales du contrat et déclare avoir pris connaissance des évènements garantis ainsi que
+          des exclusions générales et médicales. L’assuré déclare ne pas effectuer ce voyage à des fins thérapeutiques.</li>
+        <li>Ce certificat ne peut servir en aucun cas de lettre de garantie ou de prise en charge auprès des structures médicales publiques ou privées
+          comme de tout autre organisme.</li>
+      </ul>
+
+      <div class="atv-section">Confirmation d’assurance voyage pour une demande de visa</div>
+      <p class="atv-texte">Nous certifions que la personne mentionnée bénéficie d’une couverture d’assurance voyage conforme aux
+        garanties énoncées dans le présent certificat. Cette assurance répond aux exigences du règlement (CE)
+        N° 810/2009 et est valable pour une demande de visa auprès des États membres de l’espace Schengen.</p>
+
+      <div class="atv-section">Que faire en cas de besoin d’assistance ?</div>
+      <p class="atv-texte">En cas de sinistre, et avant d’engager toute dépense, l’assuré (ou toute personne agissant pour son compte) doit
+        impérativement contacter la compagnie d’assistance dans les 5 jours suivant l’évènement :</p>
+      <div class="atv-contacts">
+        <span class="atv-contact"><i>${ICONE_TELEPHONE}</i>Tél. : <strong>${t(telephone)}</strong></span>
+        <span class="atv-contact"><i>@</i>E-mail : <strong>${t(email)}</strong></span>
+        <span class="atv-contact"><i>${ICONE_MESSAGE}</i>WhatsApp (messages uniquement) : <strong>${t(whatsapp)}</strong></span>
+      </div>
+
+      <div class="atv-signatures">
+        <div class="atv-signe-cie">
+          <div>Pour ${t(modele.signataire)} :</div>
+          <div class="atv-fait">Fait, en ${NOMBRES_EN_LETTRES[modele.exemplaires.length - 1] || modele.exemplaires.length} exemplaire${modele.exemplaires.length > 1 ? 's' : ''}, à ${t(villeSignature())} le : <b>${jma(a.DateEmission, '-')}</b></div>
+        </div>
+        <div class="atv-signe-assure">Signature de l’Assuré :</div>
+      </div>
+
+      <div class="atv-onglet"><span>${t(exemplaire)}</span></div>
+    </div>`;
+  return `<style>${ATTESTATION_VOYAGE_STYLES}</style>${modele.exemplaires.map(page).join('')}`;
+};
+
+export const printAttestationVoyage = async (contract) => {
+  const idcontrat = contract?.raw?.idcontrat || contract?.idcontrat || contract?.id;
+  if (!idcontrat) return;
+  const fenetre = window.open('', '_blank');
+  const message = (texte, couleur = '#0f172a') => {
+    if (!fenetre) return;
+    fenetre.document.open();
+    fenetre.document.write(`<p style="font-family:Arial;padding:20px;color:${couleur};">${texte}</p>`);
+    fenetre.document.close();
+  };
+  message("Préparation de l'attestation…");
+  try {
+    const a = await impressionVoyageApi.getAttestation(idcontrat);
+    const modele = modeleAttestationVoyage(a.IdCompagnie);
+    if (!modele) {
+      message(`Aucun modèle d'attestation voyage pour ${echapperHtml(a.Compagnie || 'cette compagnie')} : à renseigner dans Administration &gt; Compagnies partenaires, onglet « Attestation voyage ».`, '#b45309');
+      return;
+    }
+    openPrintWindow(`Attestation voyage ${a.NumeroCertificat || a.NumeroPolice || ''}`.trim(), buildAttestationVoyage(a, modele), fenetre);
+  } catch (err) {
+    console.error('Erreur attestation Voyage :', err);
+    message("Impossible de charger le contrat pour l'attestation. Veuillez réessayer.", '#b91c1c');
+  }
+};
+
+// Aperçu d'un modèle d'attestation en cours de saisie dans l'admin, sur un assuré fictif
+export const apercuAttestationVoyage = (doc) => {
+  const jour = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const fin = new Date(jour);
+  fin.setDate(fin.getDate() + 29);
+  const exemple = {
+    Compagnie: doc?.RaisonSociale || '', Nom: 'EXEMPLE', Prenoms: 'ASSURÉ FICTIF', DateNaissance: '1980-01-01',
+    Nationalite: 'IVOIRIENNE', NumeroPasseport: '00AA00000', NumeroCertificat: 'APERÇU — NON VALABLE',
+    DebutValidite: iso(jour), FinValidite: iso(fin), PaysDestination: 'FRANCE', ZoneCouverture: 'SCHENGEN', DateEmission: iso(jour),
+  };
+  openPrintWindow('Aperçu attestation voyage', buildAttestationVoyage(exemple, construireModeleAttestation(doc)));
 };
 
 /* =========================================================================
@@ -2383,7 +2538,7 @@ const buildAnnexeFlotte = (quote, { quittance, vehicules, details, tauxReduction
   return `
     <style>${ANNEXE_FLOTTE_STYLES}</style>
     <div class="af">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="af-logo" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="af-logo" />
       <div class="af-badge"><span>Liste des véhicules de la flotte</span></div>
       <div class="af-ligne">
         <div>Souscripteur :<b>${t(quittanceVide ? quote.client_nom : q.NomClient)}</b></div>
@@ -2482,7 +2637,7 @@ const buildRecuEncaissement = (info) => {
   const cheque = info.NumeroCheque ? ` n° ${t(info.NumeroCheque)}${info.LibelleBanque ? ` (${t(info.LibelleBanque)})` : ''}` : '';
   const exemplaire = `
     <div class="rq-entete">
-      <img src="/assets/print/logo-oreole-entete.png" alt="OREOLE Assurances" class="rq-logo" />
+      <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="rq-logo" />
       <div class="rq-cabinet">OREOLE ASSURANCES<br />Tél : 27 22 487 218 / Fax : 27 22 487 349</div>
     </div>
     <div class="rq-titre">Quittance de règlement des primes d'assurance</div>
@@ -2599,7 +2754,7 @@ const buildSimpleFacture = (quote) => {
     </div>
 
     <div class="bloc-signature-simple">
-      <div>Fait à Abidjan, le <strong>${formatFrDate(new Date())}</strong>.</div>
+      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(new Date())}</strong>.</div>
       <div class="signatures-deux-colonnes">
         <div>LE SOUSCRIPTEUR</div>
         <div>LA COMPAGNIE</div>
@@ -3495,8 +3650,8 @@ export const printEtatDecisionnelDocument = ({
     <tr>
       <td style="vertical-align:top;">
         <div class="republic-text">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DE L'ÉCONOMIE ET DES FINANCES</div>
-        <div class="cabinet-title">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
-        <div class="cabinet-sub">Agrément N° 0021 / MEF / DAPS • Siège Social : Abidjan Plateau • Code CIMA CRCA</div>
+        <div class="cabinet-title">${echapperHtml(nomCabinet())}</div>
+        <div class="cabinet-sub">${echapperHtml(mentionCabinet())}</div>
       </td>
       <td style="vertical-align:top;text-align:right;">
         <div style="font-size:7pt;color:#64748b;">Édition du : <strong>${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</strong></div>

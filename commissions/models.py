@@ -65,8 +65,21 @@ class PaiementCommission(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Règlement de la commission par l'assureur (chèque ou virement) et bordereau de réclamation
+    # auquel il répond
+    MODES_PAIEMENT = [('CHQ', 'Chèque'), ('VIR', 'Virement')]
+    mode_paiement = models.CharField(max_length=3, choices=MODES_PAIEMENT, default='VIR')
+    reference_paiement = models.CharField(max_length=50, blank=True, default='')
+    banque = models.ForeignKey(
+        'configuration_api.Banque', on_delete=models.PROTECT, null=True, blank=True,
+        db_column='idbanque', related_name='paiements_commission',
+    )
+    reclamation = models.ForeignKey(
+        'ReclamationCommission', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='paiements',
+    )
     created_by = models.ForeignKey(
-        User, 
+        User,
         on_delete=models.PROTECT,
         related_name='paiements_commission_crees',
         help_text="Utilisateur ayant créé le paiement"
@@ -567,3 +580,51 @@ class NotificationCommission(models.Model):
             self.lue = True
             self.date_lecture = timezone.now()
             self.save(update_fields=['lue', 'date_lecture'])
+
+class ReclamationCommission(models.Model):
+    """
+    Bordereau récapitulatif de reversement (en général mensuel) : il réclame à l'assureur les
+    commissions dues au cabinet sur les quittances reversées sélectionnées. Le cabinet reverse la
+    prime entière (Code CIMA : pas de déduction de commission) puis réclame sa commission ici.
+    """
+    STATUTS = [
+        ('EMISE', 'Émise'),
+        ('PARTIELLE', 'Payée partiellement'),
+        ('PAYEE', 'Payée'),
+        ('ANNULEE', 'Annulée'),
+    ]
+
+    reference = models.CharField(max_length=30, unique=True)
+    compagnie = models.ForeignKey(Compagnie, on_delete=models.PROTECT, related_name='reclamations_commission')
+    periode_debut = models.DateField()
+    periode_fin = models.DateField()
+    date_emission = models.DateField(default=timezone.localdate)
+    montant_primes = models.DecimalField(max_digits=19, decimal_places=4, default=Decimal('0'))
+    montant_commissions = models.DecimalField(max_digits=19, decimal_places=4, default=Decimal('0'))
+    statut = models.CharField(max_length=10, choices=STATUTS, default='EMISE', db_index=True)
+    notes = models.TextField(blank=True, default='')
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='reclamations_commission_creees')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'std_reclamation_commission'
+        ordering = ['-date_emission', '-id']
+        verbose_name = "Bordereau de réclamation de commissions"
+        verbose_name_plural = "Bordereaux de réclamation de commissions"
+
+    def __str__(self):
+        return f"{self.reference} - {self.compagnie}"
+
+
+class DetailReclamationCommission(models.Model):
+    """Quittance reversée réclamée dans un bordereau (une ligne de reversement n'est réclamée qu'une fois)."""
+    reclamation = models.ForeignKey(ReclamationCommission, on_delete=models.CASCADE, related_name='details')
+    detail_reversement = models.ForeignKey(DetailReversement, on_delete=models.PROTECT, related_name='details_reclamation')
+    quittance = models.ForeignKey(Quittance, on_delete=models.PROTECT, related_name='details_reclamation')
+    montant_prime_reversee = models.DecimalField(max_digits=19, decimal_places=4)
+    montant_commission = models.DecimalField(max_digits=19, decimal_places=4)
+
+    class Meta:
+        db_table = 'std_detail_reclamation_commission'
+        verbose_name = "Ligne de réclamation de commission"
+        verbose_name_plural = "Lignes de réclamation de commission"

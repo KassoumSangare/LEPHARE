@@ -308,7 +308,8 @@ export const NewTransportQuotePage = () => {
   }, [analyse, filtreLignes]);
 
   const t = analyse?.Totaux;
-  const souscripteursAChoisir = (analyse?.Souscripteurs || []).filter((s) => s.Statut !== 'IDENTIFIE');
+  // Souscripteur non identifié, ou identifié alors que sa police GUCE est au nom d'un autre client
+  const souscripteursAChoisir = (analyse?.Souscripteurs || []).filter((s) => s.Statut !== 'IDENTIFIE' || s.PoliceAutreClient);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1280px', margin: '0 auto', paddingBottom: '3rem' }}>
@@ -369,7 +370,7 @@ export const NewTransportQuotePage = () => {
               {fichier ? fichier.name : 'Déposez le fichier GUCE ici ou cliquez pour le choisir'}
             </div>
             <div style={styles.aide}>
-              {fichier ? `${(fichier.size / 1024).toFixed(0)} Ko` : 'Extraction GUCE ou « ressortie de prime facultés » : .xls ou .xlsx, 5 Mo au plus, 29 colonnes GUCE'}
+              {fichier ? `${(fichier.size / 1024).toFixed(0)} Ko` : 'Extraction GUCE (« Liste des certificats d\'assurance ») ou « ressortie de prime facultés » : .xls ou .xlsx, 5 Mo au plus'}
             </div>
             <input ref={champFichier} type="file" accept=".xls,.xlsx" hidden onChange={(e) => choisirFichier(e.target.files?.[0])} />
           </div>
@@ -377,7 +378,7 @@ export const NewTransportQuotePage = () => {
           <div style={styles.sousTitre}>Période du bordereau</div>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
             <input type="checkbox" checked={periodeDuFichier} onChange={(e) => setPeriodeDuFichier(e.target.checked)} style={{ width: 17, height: 17, accentColor: 'var(--primary-500)' }} />
-            Reprendre la période indiquée dans le titre du fichier (« Période du … au … »)
+            Reprendre la période indiquée dans le fichier (« Période du … au … » ou « Date certificat entre … et … »)
           </label>
           {!periodeDuFichier && (
             <div style={{ ...styles.grille, marginTop: '0.9rem' }}>
@@ -419,7 +420,7 @@ export const NewTransportQuotePage = () => {
               <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                 {analyse.Titre || fichier?.name}<br />
                 Période : <strong>du {dateFr(analyse.DebutPeriode)} au {dateFr(analyse.FinPeriode)}</strong>
-                {analyse.PeriodeFichier && ` (titre du fichier : du ${dateFr(analyse.PeriodeFichier[0])} au ${dateFr(analyse.PeriodeFichier[1])})`}
+                {analyse.PeriodeFichier && ` (indiquée dans le fichier : du ${dateFr(analyse.PeriodeFichier[0])} au ${dateFr(analyse.PeriodeFichier[1])})`}
               </div>
             </div>
             <span style={styles.pastille(analyse.Importable ? 'var(--accent-emerald)' : 'var(--accent-rose)')}>
@@ -438,22 +439,27 @@ export const NewTransportQuotePage = () => {
             <>
               <div style={styles.sousTitre}><Users size={13} style={{ verticalAlign: '-2px' }} /> Client du souscripteur</div>
               {souscripteursAChoisir.map((s) => {
-                const options = [...s.Precedents, ...s.Candidats].filter((c, i, liste) => liste.findIndex((x) => x.IdClient === c.IdClient) === i);
+                const titulaires = s.TitulairesPolice || [];
+                const options = [...s.Precedents, ...titulaires, ...s.Candidats].filter((c, i, liste) => liste.findIndex((x) => x.IdClient === c.IdClient) === i);
                 const precedent = new Set(s.Precedents.map((p) => p.IdClient));
+                const titulaire = new Map(titulaires.map((t) => [t.IdClient, t]));
                 return (
-                  <div key={s.NomFichier} style={{ ...styles.tuile(s.IdClient ? 'var(--accent-emerald)' : 'var(--accent-amber)'), marginBottom: '0.6rem' }}>
+                  <div key={s.NomFichier} style={{ ...styles.tuile(s.IdClient && !s.PoliceAutreClient ? 'var(--accent-emerald)' : 'var(--accent-amber)'), marginBottom: '0.6rem' }}>
                     <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{s.Souscripteur}</div>
                     <div style={styles.aide}>
                       {s.Statut === 'AMBIGU' && 'Plusieurs clients ressemblent à ce souscripteur : choisissez le bon.'}
                       {s.Statut === 'INTROUVABLE' && 'Aucun client ne correspond : créez-le dans la Clientèle, ou choisissez-le s\'il apparaît ci-dessous.'}
+                      {s.Statut === 'IDENTIFIE' && 'Client rapproché par le nom, mais la police GUCE est au nom d\'un autre client : confirmez le client.'}
                       {s.Statut === 'CHOISI' && 'Client choisi pour cet import.'}
                     </div>
-                    <select className="form-control" style={{ marginTop: '0.5rem', maxWidth: 560 }} value={s.IdClient || ''} disabled={analyseEnCours}
+                    <select className="form-control" style={{ marginTop: '0.5rem', maxWidth: 780 }} value={s.IdClient || ''} disabled={analyseEnCours}
                       onChange={(e) => choisirClient(s.NomFichier, e.target.value)}>
                       <option value="">— Choisir le client —</option>
                       {options.map((c) => (
                         <option key={c.IdClient} value={c.IdClient}>
-                          {c.Nom} (n° {c.IdClient}){precedent.has(c.IdClient) ? ' — retenu lors des imports précédents' : ''}{c.Score ? ` — ressemblance ${c.Score} %` : ''}
+                          {c.Nom} (n° {c.IdClient}){precedent.has(c.IdClient) ? ' — retenu lors des imports précédents' : ''}
+                          {titulaire.has(c.IdClient) ? ` — titulaire de la police GUCE ${titulaire.get(c.IdClient).NumeroPoliceGuce}${titulaire.get(c.IdClient).NumeroPolice ? ` (police ${titulaire.get(c.IdClient).NumeroPolice})` : ''}` : ''}
+                          {c.Score ? ` — ressemblance ${c.Score} %` : ''}
                         </option>
                       ))}
                     </select>

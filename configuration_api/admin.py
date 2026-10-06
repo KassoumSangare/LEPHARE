@@ -27,6 +27,8 @@ from .models import (
     Intermediaire,
     Carrosserie,
     Qualite,
+    StatutJuridique,
+    Apporteur,
     Marque,
     SystemeSecurite,
     ModeleVehicule,
@@ -83,6 +85,8 @@ admin.site.register(Energie)
 admin.site.register(Avenant)
 admin.site.register(Carrosserie)
 admin.site.register(Qualite)
+admin.site.register(StatutJuridique)
+admin.site.register(Apporteur)
 admin.site.register(Marque)
 admin.site.register(SystemeSecurite)
 admin.site.register(ModeleVehicule)

@@ -1000,6 +1000,17 @@ class ImportResultatSerializer(serializers.Serializer):
         help_text="Détails additionnels (nouveaux, ignorés, erreurs)",
     )
 
+    # Renvoyés par la vue : sans ces champs, le sérialiseur les retirait de la réponse et
+    # l'écran n'affichait ni erreurs ni avertissements
+    erreurs = serializers.ListField(required=False, help_text="Erreurs par ligne (10 premières)")
+    erreurs_supplementaires = serializers.IntegerField(required=False)
+    message_erreurs = serializers.CharField(required=False)
+    avertissements = serializers.ListField(required=False, help_text="Avertissements (homonymies, écarts de primes…)")
+    details_erreur = serializers.CharField(required=False, allow_blank=True)
+    primes_fichier = serializers.DictField(
+        required=False, help_text="Totaux du fichier : prime_ht, prime_ttc, assures"
+    )
+
 
 class ImportsHistoriqueSerializer(serializers.ModelSerializer):
     """

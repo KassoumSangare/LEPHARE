@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { X } from 'lucide-react';
+import { nomCabinet } from '../../utils/parametrage';
 
 // Largeurs associées à la prop `size` (utilisée par de nombreux écrans) ; `maxWidth` reste prioritaire
 const SIZE_WIDTHS = { small: '480px', medium: '720px', large: '960px' };
@@ -38,7 +39,7 @@ export const Modal = ({ isOpen, onClose, title, subtitle, children, size, maxWid
           <div className="print-republic-header">
             <div>
               <div className="print-supertitle">RÉPUBLIQUE DE CÔTE D'IVOIRE • MINISTÈRE DES FINANCES • CODE CIMA (CRCA)</div>
-              <div className="print-company-name">LE PHARE COURTAGE & GESTION D'ASSURANCES</div>
+              <div className="print-company-name">{nomCabinet()}</div>
             </div>
             <div className="print-doc-meta">
               <div>Édité le {new Date().toLocaleDateString('fr-FR')}</div>

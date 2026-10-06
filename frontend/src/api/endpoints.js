@@ -85,6 +85,8 @@ export const sanitizeClientForApi = (raw) => {
     IdVille: raw.IdVille ? Number(raw.IdVille) : null,
     CodePostal: (raw.CodePostal || '').trim() || null,
     IdQualite: raw.IdQualite ? Number(raw.IdQualite) : (isEntreprise ? 4 : 1),
+    // Statut juridique : propre aux personnes morales
+    IdStatutJuridique: isEntreprise && raw.IdStatutJuridique ? Number(raw.IdStatutJuridique) : null,
     IdProfession: raw.IdProfession ? Number(raw.IdProfession) : null,
     IdSecteurActivite: raw.IdSecteurActivite ? Number(raw.IdSecteurActivite) : null,
     Responsable: (raw.Responsable || '').trim() || null,
@@ -259,6 +261,8 @@ export const customerApi = {
 export const configRefApi = {
   // GET /api/qualite/
   getQualites: async () => extractData(await apiClient.get('/qualite/')),
+  // GET /api/statutjuridique/ (formes juridiques des personnes morales : SA, SARL, SAS…)
+  getStatutsJuridiques: async () => extractData(await apiClient.get('/statutjuridique/')),
   // GET /api/ville/
   getVilles: async () => extractData(await apiClient.get('/ville/')),
   // GET /api/profession/
@@ -485,6 +489,8 @@ export const impressionVoyageApi = {
     ]);
     return { quittance: donneesEntete(q) || {}, garanties: donneesListe(g), voyage: v.data };
   },
+  // GET /api/contratvoyage/:idcontrat/attestation/ (assuré, certificat, validité, destination du contrat)
+  getAttestation: async (idcontrat) => (await apiClient.get(`/contratvoyage/${idcontrat}/attestation/`)).data,
 };
 
 // Annexe d'un devis flotte auto, « Liste des véhicules de la flotte » (mêmes sources qu'URANUS) :
@@ -1160,10 +1166,66 @@ export const voyageApi = {
   // POST /api/offregarantievoyage : garanties de l'offre et prime de la grille (fn_garantie_offre_voyage),
   // erreur remontée à l'écran (getGarantiesVoyage la masque)
   calculerPrime: async (payload) => extractData(await apiClient.post('/offregarantievoyage', payload)),
+  // POST /api/devisvoyage/ligne-tarif/ : ligne du document tarifaire appliquée (âge, durée, montants)
+  // ou motif de refus (offre hors zone, durée ou âge hors tarif), mêmes paramètres que calculerPrime
+  ligneTarif: async (payload) => (await apiClient.post('/devisvoyage/ligne-tarif/', payload)).data,
+  // GET /api/grillesvoyage/ : compagnies ayant un tarif Voyage (zones paramétrées)
+  getCompagniesVoyage: async () => (await apiClient.get('/grillesvoyage/')).data?.Compagnies || [],
   // POST /api/devisvoyage/enregistrement/ : création (IdDevis 0) ou « Modifier » (sp_creation_devis_voyage)
   enregistrer: async (payload) => (await apiClient.post('/devisvoyage/enregistrement/', payload)).data,
   // GET /api/devisvoyage/:iddevis/ : saisie complète du devis (Modifier, aperçu, proposition)
   lireDevis: async (iddevis) => (await apiClient.get(`/devisvoyage/${iddevis}/`)).data,
+};
+
+// Grilles Voyage (admin) : lignes de grille, offres proposées par zone, zone des pays de destination
+/* =========================================================================
+   PARAMÉTRAGE (Administration) : configuration_api/parametrage.py et barèmes d'URANUS
+   ========================================================================= */
+export const parametrageApi = {
+  // Règles de gestion et réglages des documents (lephare_parametre)
+  getParametres: async () => (await apiClient.get('/parametrage/parametres/')).data,
+  modifierParametre: async (cle, valeur) => (await apiClient.patch(`/parametrage/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametre: async (cle) => (await apiClient.patch(`/parametrage/parametres/${cle}/`, { Retablir: true })).data,
+  // Identité du cabinet (stdparametresite)
+  getCabinet: async () => (await apiClient.get('/parametrage/cabinet/')).data,
+  modifierCabinet: async (donnees) => (await apiClient.patch('/parametrage/cabinet/', donnees)).data,
+  // Compagnies (stdcompagnie) et réglages de leurs documents imprimés
+  getCompagnies: async () => (await apiClient.get('/parametrage/compagnies/')).data,
+  getCompagnie: async (id) => (await apiClient.get(`/parametrage/compagnies/${id}/`)).data,
+  creerCompagnie: async (donnees) => (await apiClient.post('/parametrage/compagnies/', donnees)).data,
+  modifierCompagnie: async (id, donnees) => (await apiClient.patch(`/parametrage/compagnies/${id}/`, donnees)).data,
+  // Produits (stdproduit) : onglet du registre, formulaire de saisie, saisie ouverte
+  getProduits: async () => (await apiClient.get('/parametrage/produits/')).data,
+  modifierProduit: async (id, donnees) => (await apiClient.patch(`/parametrage/produits/${id}/`, donnees)).data,
+  // Barème d'URANUS (taxes, commissions, accessoires…) : route DRF complète, toutes les lignes
+  bareme: (route) => ({
+    lister: async () => {
+      const lignes = [];
+      for (let page = 1; page <= 20; page += 1) {
+        const { data } = await apiClient.get(`/${route}/`, { params: { page_size: 1000, page } });
+        lignes.push(...(Array.isArray(data) ? data : data?.results || []));
+        if (Array.isArray(data) || !data?.next) break;
+      }
+      return lignes;
+    },
+    creer: async (donnees) => (await apiClient.post(`/${route}/`, donnees)).data,
+    modifier: async (id, donnees) => (await apiClient.patch(`/${route}/${id}/`, donnees)).data,
+    supprimer: async (id) => apiClient.delete(`/${route}/${id}/`),
+  }),
+};
+
+export const grillesVoyageApi = {
+  // GET /api/grillesvoyage/ : compagnies ayant des zones Voyage
+  getCompagnies: async () => (await apiClient.get('/grillesvoyage/')).data?.Compagnies || [],
+  // GET /api/grillesvoyage/:idcompagnie/ : zones, formules et offres, pays, lignes de grille
+  getParametrage: async (idCompagnie) => (await apiClient.get(`/grillesvoyage/${idCompagnie}/`)).data,
+  creerLigne: async (idCompagnie, ligne) => (await apiClient.post(`/grillesvoyage/${idCompagnie}/lignes/`, ligne)).data,
+  modifierLigne: async (idCompagnie, id, ligne) => (await apiClient.put(`/grillesvoyage/${idCompagnie}/lignes/${id}/`, ligne)).data,
+  supprimerLigne: async (idCompagnie, id) => apiClient.delete(`/grillesvoyage/${idCompagnie}/lignes/${id}/`),
+  // { Libelle, Actif, Zones: [IdZone] }
+  modifierOffre: async (idCompagnie, idOffre, offre) => (await apiClient.put(`/grillesvoyage/${idCompagnie}/offres/${idOffre}/`, offre)).data,
+  // { IdZone } (null : pays non couvert par la compagnie)
+  modifierZonePays: async (idCompagnie, idPays, idZone) => (await apiClient.put(`/grillesvoyage/${idCompagnie}/pays/${idPays}/`, { IdZone: idZone })).data,
 };
 
 /* =========================================================================
@@ -1433,6 +1495,38 @@ export const remittanceApi = {
 /* =========================================================================
    10. COMMISSIONS APPORTEURS (commissions)
    ========================================================================= */
+// Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
+// entière, sans déduction de commission), réclamation et encaissement des commissions
+export const financeApi = {
+  // GET /api/finance/encaissements/?du&au&compagnie&mode&statut
+  etatEncaissements: async (params) => (await apiClient.get('/finance/encaissements/', { params })).data,
+  // GET /api/finance/reversements/a-reverser/?compagnie
+  lignesAReverser: async (compagnie) => (await apiClient.get('/finance/reversements/a-reverser/', { params: { compagnie } })).data,
+  // GET /api/finance/reversements/?compagnie&du&au
+  reversements: async (params) => (await apiClient.get('/finance/reversements/', { params })).data,
+  reversement: async (id) => (await apiClient.get(`/finance/reversements/${id}/`)).data,
+  // POST { IdCompagnie, DateReversement, Lignes: [{ IdDetailEncaissement, Montant }] }
+  reverser: async (payload) => (await apiClient.post('/finance/reversements/', payload)).data,
+  // POST { IdMode, IdBanque, NumeroCheque, NomEmetteur, ReferenceCompensation, DateReversement }
+  validerReversement: async (id, payload) => (await apiClient.post(`/finance/reversements/${id}/valider/`, payload)).data,
+  // GET /api/finance/commissions/?compagnie&du&au&statut (A_RECLAMER, RECLAMEE, PARTIELLE, PAYEE, PAYEES, NON_PAYEES)
+  commissions: async (params) => (await apiClient.get('/finance/commissions/', { params })).data,
+  reclamations: async (params) => (await apiClient.get('/finance/commissions/reclamations/', { params })).data,
+  reclamation: async (id) => (await apiClient.get(`/finance/commissions/reclamations/${id}/`)).data,
+  // POST { IdCompagnie, PeriodeDebut, PeriodeFin, DetailsReversement: [id], Notes }
+  emettreReclamation: async (payload) => (await apiClient.post('/finance/commissions/reclamations/', payload)).data,
+  annulerReclamation: async (id, motif) => (await apiClient.post(`/finance/commissions/reclamations/${id}/annuler/`, { Motif: motif })).data,
+  // POST { DatePaiement, Mode: CHQ|VIR, IdBanque, ReferencePaiement, Montant, Notes }
+  encaisserCommission: async (id, payload) => (await apiClient.post(`/finance/commissions/reclamations/${id}/paiements/`, payload)).data,
+};
+
+// Apporteurs d'affaires codifiés (commissions versées par le cabinet)
+export const apporteurApi = {
+  liste: async () => extractData(await apiClient.get('/apporteurs/', { params: { page_size: 1000 } })),
+  creer: async (apporteur) => (await apiClient.post('/apporteurs/', apporteur)).data,
+  modifier: async (id, apporteur) => (await apiClient.put(`/apporteurs/${id}/`, apporteur)).data,
+};
+
 export const commissionApi = {
   // GET /api/commissions/dashboard/dashboard_complet/
   getDashboard: async () => {

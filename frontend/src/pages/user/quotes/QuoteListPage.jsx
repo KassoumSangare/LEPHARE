@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { isRegistryQuote } from '../../../utils/quoteRegistry';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
+import { moduleDuProduit, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { RowActions } from '../../../components/common/RowActions';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -47,17 +48,31 @@ const formatDateTime = (value) => {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
-// Seuls les devis émis durant les 3 dernières années sont affichés
+// Seuls les devis émis durant les N dernières années sont affichés (Administration > Le cabinet,
+// règle « Ancienneté des devis affichés au registre », 3 ans à l'origine)
 const isWithinLastThreeYears = (q) => {
   const d = new Date(q.date_emission || q.dateemission);
   if (isNaN(d.getTime())) return true;
   const limit = new Date();
-  limit.setFullYear(limit.getFullYear() - 3);
+  limit.setFullYear(limit.getFullYear() - parametre('devis.registre_annees', 3));
   return d >= limit;
 };
 
-// Formulaire (route /user/quotes/<module>) qui rouvre un devis non auto en édition complète, par idproduit
-const MODULE_EDITION_PAR_PRODUIT = { 2: 'ia', 3: 'voyage', 4: 'mrh', 5: 'sante', 7: 'mrp', 8: 'rc', 9: 'tous-dommages' };
+// Formulaires qui savent rouvrir un devis enregistré (?edit=<iddevis>) ; le formulaire d'un produit
+// est réglé dans Administration > Produits. Transport (import de bordereaux) n'en fait pas partie.
+const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'rc', 'mrp', 'tous-dommages'];
+
+// Icône de l'onglet du registre selon son code (onglets réglés dans Administration > Produits)
+const ICONES_ONGLET = {
+  AUTO: <Car size={13} />,
+  VOYAGE: <Plane size={13} color="#60a5fa" />,
+  TRANSPORT: <Ship size={13} color="#38bdf8" />,
+  MRH: <Home size={13} />,
+  SANTE: <HeartPulse size={13} />,
+  IA: <UserPlus size={13} />,
+  RC: <Shield size={13} />,
+  MRP: <Building2 size={13} />,
+};
 
 export const QuoteListPage = () => {
   const { user } = useAuth();
@@ -65,9 +80,9 @@ export const QuoteListPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
   // Décompte du registre par branche, calculé sur les devis à confirmer réellement chargés
-  const [stats, setStats] = useState(() => {
-    return { ALL: 0, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, CONSOLIDATED: 0 };
-  });
+  const [stats, setStats] = useState({ ALL: 0, CONSOLIDATED: 0 });
+  // Onglets du registre : un par « Onglet du registre » des produits, « Autres » pour un produit non réglé
+  const onglets = ongletsRegistre();
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [viewingQuote, setViewingQuote] = useState(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -140,36 +155,17 @@ export const QuoteListPage = () => {
   // compteurs, onglets et liste soient toujours identiques.
   const [registry, setRegistry] = useState(null);
 
+  // Onglet du registre d'un devis : celui de son produit (Administration > Produits). Devis sans
+  // identifiant de produit (données locales) : produit retrouvé par son libellé ; sinon « Autres ».
   const getBranchOf = (q) => {
     const p = q.raw?.produit;
     const id = Number(p && typeof p === 'object' ? (p.id_produit ?? p.IdProduit ?? p.idproduit) : (q.raw?.idproduit ?? p));
-    if (id === 1) return 'AUTO';
-    if (id === 2) return 'IA';
-    if (id === 3) return 'VOYAGE';
-    if ([4, 7, 9].includes(id)) return 'MRH';
-    if ([5, 10].includes(id)) return 'SANTE';
-    if (id === 6) return 'TRANSPORT';
-    // Identifiant produit non répertorié : on rattache le devis à sa branche d'après le libellé du produit
-    // (ex. « Auto Flotte », « Santé Groupe ») plutôt que de le laisser dans « Autres ».
-    const libelle = String(
-      (p && typeof p === 'object' ? (p.LibelleProduit ?? p.libelle_produit) : p) ||
-      (typeof q.produit === 'string' ? q.produit : '') ||
-      ''
-    ).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    if (/auto|vehicule|automobile/.test(libelle)) return 'AUTO';
-    if (/sante|maladie|medical/.test(libelle)) return 'SANTE';
-    if (/individuelle|accident|\bia\b/.test(libelle)) return 'IA';
-    if (/voyage/.test(libelle)) return 'VOYAGE';
-    if (/transport|marchandise|facultes/.test(libelle)) return 'TRANSPORT';
-    if (/habitation|\bmrh\b|multirisque/.test(libelle)) return 'MRH';
-    // Branche affichée dans la colonne « Branche / Produit » du registre (Auto par défaut)
-    const br = String(q.branche || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-    if (/sante/.test(br)) return 'SANTE';
-    if (/voyage/.test(br)) return 'VOYAGE';
-    if (/transport/.test(br)) return 'TRANSPORT';
-    if (/mrh|habitation/.test(br)) return 'MRH';
-    if (/^ia$|accident|individuelle/.test(br)) return 'IA';
-    return 'AUTO';
+    const onglet = Number.isFinite(id) ? ongletDuProduit(id) : null;
+    if (onglet) return onglet;
+    const normaliser = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    const libelle = normaliser((p && typeof p === 'object' ? (p.LibelleProduit ?? p.libelle_produit) : p) || q.produit);
+    const parLibelle = produitsParametres().find((x) => libelle && normaliser(x.Libelle) === libelle);
+    return (parLibelle && ongletDuProduit(parLibelle.IdProduit)) || 'AUTRES';
   };
 
   const sortRecent = (list) => [...list].sort((a, b) => {
@@ -200,9 +196,10 @@ export const QuoteListPage = () => {
   // Liste affichée + compteurs, tous dérivés du même registre
   useEffect(() => {
     if (!registry) return;
-    const counts = { ALL: registry.length, AUTO: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, SANTE: 0, IA: 0, CONSOLIDATED: 0 };
+    const counts = { ALL: registry.length, CONSOLIDATED: 0 };
     registry.forEach((q) => {
-      counts[getBranchOf(q)] += 1;
+      const onglet = getBranchOf(q);
+      counts[onglet] = (counts[onglet] || 0) + 1;
       if (q.devis_consolide) counts.CONSOLIDATED += 1;
     });
     setStats(counts);
@@ -238,17 +235,10 @@ export const QuoteListPage = () => {
   const countByBranch = stats;
 
   const getTabLabel = (filter) => {
-    switch (filter) {
-      case 'AUTO': return 'Auto';
-      case 'VOYAGE': return 'Voyage';
-      case 'TRANSPORT': return 'Transport';
-      case 'MRH': return 'MRH';
-      case 'SANTE': return 'Santé';
-      case 'IA': return 'IA';
-      case 'CONSOLIDATED': return 'Consolidés';
-      case 'ARCHIVED': return 'Archivés';
-      default: return 'Tous';
-    }
+    if (filter === 'CONSOLIDATED') return 'Consolidés';
+    if (filter === 'ARCHIVED') return 'Archivés';
+    if (filter === 'AUTRES') return 'Autres';
+    return onglets.find((o) => o.id === filter)?.label || 'Tous';
   };
 
   const handlePrintQuotes = (specificBranch = null) => {
@@ -499,12 +489,12 @@ export const QuoteListPage = () => {
         const todayStr = new Date().toISOString().split('T')[0];
         const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
         const isPendingApproval = row.circuit_approbation && row.circuit_approbation.statut_validation === 'EN_ATTENTE_DIRECTION';
-        // Auto, IA (2), Voyage (3), MRH (4), Santé (5), RC (8), MRP (7) et Tous Dommages (9) : édition complète, le formulaire
-        // de création est rouvert avec toutes les valeurs du devis. Autres branches : primes seulement
-        // (aucune page d'édition complète construite pour elles pour l'instant).
+        // Édition complète : le formulaire du produit (Administration > Produits) est rouvert avec toutes
+        // les valeurs du devis, s'il sait le faire. Autres produits : primes seulement.
         const produit = row.raw?.produit;
         const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
-        const moduleDevis = getBranchOf(row) === 'AUTO' ? 'auto' : MODULE_EDITION_PAR_PRODUIT[idProduit] || null;
+        const moduleProduit = moduleDuProduit(idProduit) || (getBranchOf(row) === 'AUTO' ? 'auto' : null);
+        const moduleDevis = MODULES_EDITION_COMPLETE.includes(moduleProduit) ? moduleProduit : null;
         const moduleFerme = !moduleActif(moduleDevis);
 
         return (
@@ -664,12 +654,8 @@ export const QuoteListPage = () => {
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
         {[
           { id: 'ALL', label: 'Tous', count: countByBranch.ALL, icon: null },
-          { id: 'AUTO', label: 'Auto', count: countByBranch.AUTO, icon: <Car size={13} /> },
-          { id: 'VOYAGE', label: 'Voyage', count: countByBranch.VOYAGE, icon: <Plane size={13} color="#60a5fa" /> },
-          { id: 'TRANSPORT', label: 'Transport', count: countByBranch.TRANSPORT, icon: <Ship size={13} color="#38bdf8" /> },
-          { id: 'MRH', label: 'MRH', count: countByBranch.MRH, icon: <Home size={13} /> },
-          { id: 'SANTE', label: 'Santé', count: countByBranch.SANTE, icon: <HeartPulse size={13} /> },
-          { id: 'IA', label: 'IA', count: countByBranch.IA, icon: <UserPlus size={13} /> },
+          ...onglets.map((o) => ({ id: o.id, label: o.label, count: countByBranch[o.id] || 0, icon: ICONES_ONGLET[o.id] || <FileText size={13} /> })),
+          ...(countByBranch.AUTRES ? [{ id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: <FileText size={13} /> }] : []),
         ].map((tab) => {
           const isActive = selectedBranchFilter === tab.id;
           return (

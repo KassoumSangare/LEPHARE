@@ -175,7 +175,8 @@ export const ClientDetailPage = () => {
       {/* Identité et coordonnées, telles qu'enregistrées */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
         <Carte icone={User} couleur="#3b82f6" titre={entreprise ? 'Identité de l\'entreprise' : 'Identité'}>
-          {!entreprise && <Champ libelle="Civilité" valeur={c.civilite} />}
+          <Champ libelle={entreprise ? 'Type entreprise' : 'Civilité'} valeur={c.civilite} />
+          {entreprise && <Champ libelle="Statut juridique" valeur={c.statut_juridique} />}
           <Champ libelle={entreprise ? 'RCCM / Patente' : 'Pièce d\'identité'} valeur={c.piece_identite} />
           <Champ libelle={entreprise ? 'Date de création' : 'Date de naissance'} valeur={c.date_naissance ? formatDate(c.date_naissance) : ''} />
           <Champ libelle={entreprise ? 'Siège' : 'Lieu de naissance'} valeur={c.lieu_naissance} />

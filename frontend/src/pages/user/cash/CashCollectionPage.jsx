@@ -309,7 +309,7 @@ export const CashCollectionPage = () => {
               </div>
             </div>
 
-            <ChampsReglement modes={modes} banques={banques} valeurs={reglement} onChange={changerReglement} />
+            <ChampsReglement modes={modes} banques={banques} valeurs={reglement} onChange={changerReglement} montantAEncaisser={montantEncaisse} />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>

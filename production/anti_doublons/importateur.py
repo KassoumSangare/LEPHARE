@@ -13,8 +13,10 @@ CORRECTIONS APPLIQUÉES:
 import os
 import logging
 from datetime import datetime
-from django.db import transaction, IntegrityError
+from decimal import Decimal, InvalidOperation
+from django.db import connection, transaction, IntegrityError
 from .detection_collision import detecter_collision
+from .utils import normaliser_texte
 from .rapport import (
     ConfigurationImport,
     RapportImport,
@@ -33,6 +35,166 @@ from .cle_unique import (
 
 
 logger = logging.getLogger(__name__)
+
+
+class ErreurPrimesImport(Exception):
+    """Import refusé en entier : prime calculée nulle alors que le fichier en indique une."""
+
+
+def _montant(valeur) -> Decimal:
+    try:
+        return Decimal(str(valeur or 0))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+def _assure_du_souscripteur(id_assure, id_souscripteur) -> bool:
+    """L'assuré figure déjà dans un devis ou un contrat de ce souscripteur (ou est le souscripteur)."""
+    if not id_souscripteur:
+        return False
+    if int(id_assure) == int(id_souscripteur):
+        return True
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT 1 FROM stddevisdetail dd JOIN stddevis d ON d.iddevis = dd.iddevis
+            WHERE d.idclient = %s AND dd.matricule = LPAD(%s::text, 20, '0')
+            UNION ALL
+            SELECT 1 FROM stdcontratdetail cd JOIN stdcontrat ct ON ct.idcontrat = cd.idcontrat
+            WHERE ct.idclient = %s AND cd.idassure = %s
+            LIMIT 1
+            """,
+            [id_souscripteur, id_assure, id_souscripteur, id_assure],
+        )
+        return cursor.fetchone() is not None
+
+
+def _reprendre_assure_existant(assure_existant, assure_data, numero_ligne, rapport, id_souscripteur):
+    """Assuré déjà en base (même personne) repris dans le devis au lieu d'être recréé :
+    fonction mise à jour, ayants droit remplacés par ceux du fichier s'ils diffèrent (l'ancienne
+    désignation est gardée dans le rapport d'import). La fiche n'est modifiée que si l'assuré
+    appartient déjà au souscripteur du devis : reconnu sur son seul nom et sa date de naissance,
+    il pourrait être l'assuré d'un autre souscripteur."""
+    from customer.models import Client
+    from ..import_assures import enregistrer_beneficiaire
+
+    if not _assure_du_souscripteur(assure_existant.IdClient, id_souscripteur):
+        if assure_data.get("Beneficiaires") or assure_data.get("Fonction"):
+            rapport.avertissements.append(
+                f"Ligne {numero_ligne} - {assure_data['Nom']} {assure_data.get('Prenoms', '')} : assuré déjà connu "
+                "hors de ce souscripteur, sa fiche (fonction, ayants droit) n'a pas été modifiée : à vérifier."
+            )
+        return
+
+    fonction = (assure_data.get("Fonction") or "").strip()
+    if fonction and fonction != (assure_existant.Fonction or "").strip():
+        Client.objects.filter(pk=assure_existant.IdClient).update(Fonction=fonction)
+
+    beneficiaires = assure_data.get("Beneficiaires") or []
+    if not beneficiaires:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT nomayantdroit, prenomsayantdroit, part FROM stdayantdroitia WHERE idassure = %s ORDER BY idayantdroit",
+            [assure_existant.IdClient],
+        )
+        existants = cursor.fetchall()
+
+    def designation(nom, prenoms, part):
+        return (normaliser_texte(f"{nom or ''} {prenoms or ''}"), _montant(part).quantize(Decimal("0.01")))
+
+    avant = sorted(designation(n, p, part) for n, p, part in existants)
+    apres = sorted(designation(b["Nom"], b["Prenoms"], b["Part"]) for b in beneficiaires)
+    if avant == apres:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM stdayantdroitia WHERE idassure = %s", [assure_existant.IdClient])
+    for beneficiaire in beneficiaires:
+        enregistrer_beneficiaire(assure_existant.IdClient, beneficiaire)
+    if existants:
+        ancienne = " / ".join(" ".join(filter(None, [n, p, f"{part} %"])) for n, p, part in existants)
+        rapport.avertissements.append(
+            f"Ligne {numero_ligne} - {assure_data['Nom']} {assure_data.get('Prenoms', '')} : ayants droit remplacés par "
+            f"ceux du fichier (avant : {ancienne})"
+        )
+
+
+def _controler_entete(entete_fichier, request_post_data, rapport):
+    """Acte, période et souscripteur du fichier comparés à la saisie de l'écran (avertissements)."""
+    from ..iautils import convert_to_date
+
+    def date_fichier(valeur):
+        if isinstance(valeur, datetime):
+            return valeur.date()
+        try:
+            return convert_to_date(str(valeur).strip()[:10])
+        except Exception:
+            return None
+
+    def date_ecran(champ):
+        try:
+            return convert_to_date(str(request_post_data.get(champ) or "").strip())
+        except Exception:
+            return None
+
+    for cle, champ, libelle in (("Periode", "DateEffet", "date d'effet"), ("Echeance", "DateExpiration", "date d'expiration")):
+        fichier, ecran = date_fichier(entete_fichier.get(cle)), date_ecran(champ)
+        if fichier and ecran and fichier != ecran:
+            rapport.avertissements.append(
+                f"Le fichier indique une {libelle} au {fichier:%d/%m/%Y}, le devis est au {ecran:%d/%m/%Y}."
+            )
+    souscripteur = normaliser_texte(str(entete_fichier.get("Souscripteur") or ""))
+    if souscripteur:
+        from customer.models import Client
+
+        client = Client.objects.filter(pk=int(request_post_data.get("IdClient") or 0)).first()
+        nom_client = normaliser_texte(f"{client.Nom or ''} {client.Prenoms or ''}") if client else ""
+        if nom_client and nom_client != souscripteur:
+            nom_devis = " ".join(filter(None, [client.Nom, client.Prenoms]))
+            rapport.avertissements.append(
+                f"Le fichier est au nom du souscripteur « {entete_fichier['Souscripteur'].strip()} », "
+                f"le devis au nom de « {nom_devis} »."
+            )
+    acte = str(entete_fichier.get("Acte") or "").strip()
+    if acte and acte.upper() != "AFFAIRE NOUVELLE" and int(request_post_data.get("IdAvenant") or 1) == 1:
+        rapport.avertissements.append(f"Le fichier indique « {acte} » : le devis est créé en affaire nouvelle.")
+
+
+def _controler_primes(id_devis, assures_inscrits, rapport):
+    """Prime nette de chaque assuré inscrit au devis comparée à la « PRIME HT » du fichier : une
+    prime nulle alors que le fichier en indique une refuse tout l'import (offre sans tarif pour
+    ces capitaux) ; un autre écart est signalé. Renvoie les totaux du fichier."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT CAST(matricule AS bigint), primenette, idoffre FROM stddevisdetail WHERE iddevis = %s AND matricule ~ '^[0-9]+$'",
+            [id_devis],
+        )
+        lignes = {id_client: (_montant(pn), offre) for id_client, pn, offre in cursor.fetchall()}
+    totaux = {"prime_ht": Decimal("0"), "prime_ttc": Decimal("0"), "assures": 0}
+    primes_nulles = []
+    for numero_ligne, id_client, assure_data in assures_inscrits:
+        prime_fichier = _montant(assure_data.get("PrimeHT"))
+        totaux["prime_ht"] += prime_fichier
+        totaux["prime_ttc"] += _montant(assure_data.get("PrimeTTC"))
+        totaux["assures"] += 1
+        if prime_fichier <= 0 or id_client not in lignes:
+            continue
+        prime_devis, offre = lignes[id_client]
+        nom = f"{assure_data['Nom']} {assure_data.get('Prenoms', '')}".strip()
+        if prime_devis == 0:
+            primes_nulles.append(f"ligne {numero_ligne} ({nom}, offre {offre})")
+        elif prime_devis != prime_fichier:
+            rapport.avertissements.append(
+                f"Ligne {numero_ligne} - {nom} : prime nette du devis {prime_devis:,.0f} F, fichier {prime_fichier:,.0f} F (offre {offre})."
+                .replace(",", " ")
+            )
+    if primes_nulles:
+        raise ErreurPrimesImport(
+            "Prime nette nulle au tarif de l'offre alors que le fichier indique une prime pour "
+            + ", ".join(primes_nulles[:5]) + (" …" if len(primes_nulles) > 5 else "")
+            + ". Aucun assuré n'a été importé : choisissez l'offre qui correspond aux capitaux et aux primes du fichier."
+        )
+    return {cle: float(v) if isinstance(v, Decimal) else v for cle, v in totaux.items()}
 
 
 def calculer_hash_fichier(filepath: str) -> str:
@@ -74,12 +236,17 @@ def traiter_assures(assures, request_post_data, config, rapport):
     )
     
     id_devis = 0
-    
+
     # ✅ AMÉLIORATION 1 : Cache local des clés uniques traitées dans ce fichier
     cles_traitees_fichier = set()
-    
+    # Assurés inscrits au devis (ligne, client, données du fichier) : contrôle des primes
+    assures_inscrits = []
+
     with transaction.atomic():
         for idx, assure_data in enumerate(assures, 1):
+            # Une ligne en erreur est annulée entièrement (assuré, ayants droit, ligne du devis)
+            # sans bloquer les suivantes
+            point_de_reprise = transaction.savepoint()
             try:
                 # Générer la clé unique
                 cle_unique = obtenir_cle_unique_assure(assure_data)
@@ -116,31 +283,31 @@ def traiter_assures(assures, request_post_data, config, rapport):
                         # ✅ CORRECTION : Même personne détectée
                         # Gérer TOUS les modes d'import
                         
-                        if config.mode_import == ModeImport.CREER_SEULEMENT:
-                            # Mode : Créer uniquement → Ignorer les doublons
-                            rapport.assures_ignores.append(AssureResultat(
+                        if config.mode_import in (ModeImport.CREER_SEULEMENT, ModeImport.METTRE_A_JOUR):
+                            # L'assuré déjà connu est inscrit au devis avec sa fiche existante (un
+                            # assuré écarté manquait au devis, un assuré recréé faisait un doublon).
+                            # « Mettre à jour » (mode de l'écran) reprend aussi sa fonction et ses
+                            # ayants droit depuis le fichier ; « créer seulement » ne touche pas la fiche.
+                            logger.info(f"  → Assuré existant repris (ID: {assure_existant.IdClient})")
+                            if config.mode_import == ModeImport.METTRE_A_JOUR:
+                                _reprendre_assure_existant(
+                                    assure_existant, assure_data, idx, rapport,
+                                    int(request_post_data.get("IdClient") or 0),
+                                )
+                            cles_traitees_fichier.add(cle_unique)
+                            id_devis = enregistrer_devis_ia(entete_devis, assure_data, assure_existant.IdClient)
+                            entete_devis["IdDevis"] = id_devis
+                            assures_inscrits.append((idx, assure_existant.IdClient, assure_data))
+                            rapport.assures_mis_a_jour.append(AssureResultat(
                                 nom=assure_data['Nom'],
                                 prenoms=assure_data.get('Prenoms', ''),
                                 cle_unique=cle_unique,
                                 numero_ligne=idx,
-                                action='IGNORE',
+                                action='MIS_A_JOUR',
                                 id_client=assure_existant.IdClient,
-                                message=f"Déjà en base (similarité: {score:.1f}%)"
+                                message=f"Assuré déjà connu repris dans le devis {id_devis} (similarité: {score:.1f}%)"
                             ))
-                            continue  # ✅ Passer au suivant
-                        
-                        elif config.mode_import == ModeImport.METTRE_A_JOUR:
-                            # Mode : Mettre à jour → TODO: implémenter
-                            logger.info(f"  → Mise à jour (non implémenté)")
-                            rapport.assures_ignores.append(AssureResultat(
-                                nom=assure_data['Nom'],
-                                prenoms=assure_data.get('Prenoms', ''),
-                                cle_unique=cle_unique,
-                                numero_ligne=idx,
-                                action='IGNORE',
-                                id_client=assure_existant.IdClient,
-                                message="Mise à jour non implémentée"
-                            ))
+                            transaction.savepoint_commit(point_de_reprise)
                             continue  # ✅ Passer au suivant
                         
                         elif config.mode_import == ModeImport.ERREUR_SI_DOUBLON:
@@ -259,11 +426,11 @@ def traiter_assures(assures, request_post_data, config, rapport):
                         f"Erreur d'intégrité lors de la création: {str(e)}"
                     )
                 
-                # Créer les bénéficiaires             
-                for idx, ben in enumerate(assure_data.get("Beneficiaires", []), 1):
-                    logger.debug(f"Traitement du bénéficiaire {idx}/{len(assure_data['Beneficiaires'])}")
+                # Créer les bénéficiaires (rang distinct du numéro de ligne de l'assuré)
+                for rang, ben in enumerate(assure_data.get("Beneficiaires", []), 1):
+                    logger.debug(f"Traitement du bénéficiaire {rang}/{len(assure_data['Beneficiaires'])}")
                     enregistrer_beneficiaire(assure.IdClient, ben)
-                
+
                 # Créer le devis
                 id_devis = enregistrer_devis_ia(
                     entete_devis,
@@ -271,7 +438,8 @@ def traiter_assures(assures, request_post_data, config, rapport):
                     assure.IdClient
                 )
                 entete_devis["IdDevis"] = id_devis
-                
+                assures_inscrits.append((idx, assure.IdClient, assure_data))
+
                 rapport.assures_nouveaux.append(AssureResultat(
                     nom=assure_data['Nom'],
                     prenoms=assure_data.get('Prenoms', ''),
@@ -281,8 +449,10 @@ def traiter_assures(assures, request_post_data, config, rapport):
                     id_client=assure.IdClient,
                     message=f"Créé avec succès (Devis: {id_devis})"
                 ))
-            
+                transaction.savepoint_commit(point_de_reprise)
+
             except ValidationError as e:
+                transaction.savepoint_rollback(point_de_reprise)
                 logger.error(f"  ✗ Erreur validation ligne {idx}: {e}")
                 rapport.erreurs.append(
                     f"Ligne {idx} ({assure_data.get('Nom', 'Inconnu')} "
@@ -290,17 +460,24 @@ def traiter_assures(assures, request_post_data, config, rapport):
                 )
             
             except Exception as e:
+                transaction.savepoint_rollback(point_de_reprise)
                 logger.error(f"  ✗ Erreur ligne {idx}: {e}", exc_info=True)
                 rapport.erreurs.append(
                     f"Ligne {idx} ({assure_data.get('Nom', 'Inconnu')} "
                     f"{assure_data.get('Prenoms', '')}): "
                     f"Erreur lors de l'enregistrement de l'assuré: {str(e)}"
                 )
-                
+
                 # Propager l'erreur si mode strict
                 if config.mode_import == ModeImport.ERREUR_SI_DOUBLON:
                     raise
-    
+
+        # Contrôles du fichier contre le devis obtenu : primes de chaque assuré (une prime nulle
+        # refuse tout l'import), puis acte, période et souscripteur (avertissements)
+        if id_devis and assures_inscrits:
+            rapport.totaux_fichier = _controler_primes(id_devis, assures_inscrits, rapport)
+            _controler_entete(assures_inscrits[0][2].get("EnteteFichier") or {}, request_post_data, rapport)
+
     return id_devis
 
 
@@ -380,7 +557,9 @@ def importer_assures_anti_doublons(
         # ÉTAPE 3: Extraire les assurés du fichier
         # ─────────────────────────────────────────────────────────────
         logger.info("→ Extraction des assurés...")
-        assures = extraire_assures(filepath)
+        # Offre de l'écran transmise : imposée pour les offres standard et spécifiques (6, 7, 173,
+        # 174), sinon l'offre est déduite des capitaux et de la prime du fichier (CGA, CI-ENERGIES)
+        assures = extraire_assures(filepath, int(request_post_data.get("IdOffre") or 0))
         rapport.total_lignes = len(assures)
         logger.info(f"  {rapport.total_lignes} assurés extraits")
         
@@ -440,6 +619,9 @@ def importer_assures_anti_doublons(
         rapport.statut = StatutImport.ECHOUE
         rapport.details_erreur = str(e)
         rapport.duree_secondes = (datetime.now() - debut).total_seconds()
+        # Tout a été annulé : aucun assuré créé ni repris
+        rapport.assures_nouveaux.clear()
+        rapport.assures_mis_a_jour.clear()
         
         # CORRECTION : En cas d'exception, enregistrer l'historique HORS transaction
         # (la transaction a déjà été rollback)

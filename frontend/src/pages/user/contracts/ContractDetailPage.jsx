@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
-import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport } from '../../../utils/exportUtils';
+import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, printAttestationVoyage } from '../../../utils/exportUtils';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 
 export const ContractDetailPage = () => {
@@ -70,6 +70,8 @@ export const ContractDetailPage = () => {
 
   // Contrat Transport : certificats GUCE du bordereau dont il est issu (une ligne de contrat par certificat)
   const contratTransport = estDevisTransport(contract);
+  // Contrat Voyage : attestation d'assurance et d'assistance voyage (demande de visa) au lieu de l'attestation auto
+  const contratVoyage = estDevisVoyage(contract);
   const [bordereauTransport, setBordereauTransport] = useState(null);
   const [certificatsOuverts, setCertificatsOuverts] = useState(false);
   useEffect(() => {
@@ -336,15 +338,15 @@ export const ContractDetailPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>Editions Attestation</span>
+                <span style={{ color: '#fff' }}>{contratVoyage ? 'Attestation d’assurance voyage' : 'Editions Attestation'}</span>
               </span>
               <button
                 type="button"
                 className="btn-link"
                 style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => { setActiveDoc('attestation'); setIsDocModalOpen(true); }}
+                onClick={() => (contratVoyage ? printAttestationVoyage(contract) : (setActiveDoc('attestation'), setIsDocModalOpen(true)))}
               >
-                Editer
+                {contratVoyage ? 'Imprimer' : 'Editer'}
               </button>
             </div>
 

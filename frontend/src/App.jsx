@@ -28,6 +28,7 @@ import ContractDetailPage from './pages/user/contracts/ContractDetailPage';
 import EndorsementPage from './pages/user/endorsements/EndorsementPage';
 import CashCollectionPage from './pages/user/cash/CashCollectionPage';
 import ChequeManagementPage from './pages/user/cash/ChequeManagementPage';
+import EtatEncaissementsPage from './pages/user/cash/EtatEncaissementsPage';
 import AsaciPage from './pages/user/asaci/AsaciPage';
 import MyDerogationsPage from './pages/user/derogations/MyDerogationsPage';
 import ArchivesPage from './pages/user/archives/ArchivesPage';
@@ -47,6 +48,7 @@ import RolesPermissionsPage from './pages/admin/users/RolesPermissionsPage';
 import CatalogCompaniesPage from './pages/admin/settings/CatalogCompaniesPage';
 import CatalogProductsPage from './pages/admin/settings/CatalogProductsPage';
 import CatalogTarifsPage from './pages/admin/settings/CatalogTarifsPage';
+import CabinetSettingsPage from './pages/admin/settings/CabinetSettingsPage';
 import VehicleGeoSettingsPage from './pages/admin/settings/VehicleGeoSettingsPage';
 import { SecteursActivitePage } from './pages/admin/settings/SecteursActivitePage';
 import { TypeSouscripteurPage } from './pages/admin/settings/TypeSouscripteurPage';
@@ -59,6 +61,7 @@ import ParametrageMarquesPage from './pages/admin/settings/ParametrageMarquesPag
 import ParametrageCommissionsPage from './pages/admin/settings/ParametrageCommissionsPage';
 import ParametrageFlottePage from './pages/admin/settings/ParametrageFlottePage';
 import ParametrageSecuritePage from './pages/admin/settings/ParametrageSecuritePage';
+import ParametrageGrillesVoyagePage from './pages/admin/settings/ParametrageGrillesVoyagePage';
 
 // New Institutional Modules (LE PHARE V2)
 import CrmPipelinePage from './pages/user/crm/CrmPipelinePage';
@@ -151,6 +154,7 @@ function App() {
                 {/* ===== MODULE F – ENCAISSEMENT & TRÉSORERIE ===== */}
                 <Route path="/user/cash" element={<CashCollectionPage />} />
                 <Route path="/user/cheques" element={<ChequeManagementPage />} />
+                <Route path="/user/cash/etat" element={<EtatEncaissementsPage />} />
 
                 {/* ===== MODULE H – SINISTRES DÉLÉGUÉS ===== */}
                 <Route path="/user/claims" element={<ClaimsListPage />} />
@@ -178,8 +182,10 @@ function App() {
                 <Route path="/admin/profiles" element={<AdminRoute><ProfileManagementPage /></AdminRoute>} />
                 <Route path="/admin/roles-permissions" element={<AdminRoute><RolesPermissionsPage /></AdminRoute>} />
                 <Route path="/admin/settings/companies" element={<AdminRoute><CatalogCompaniesPage /></AdminRoute>} />
-                <Route path="/admin/settings/products" element={<AdminRoute><CatalogProductsPage initialTab="products" /></AdminRoute>} />
-                <Route path="/admin/settings/guarantees" element={<AdminRoute><CatalogProductsPage initialTab="guarantees" /></AdminRoute>} />
+                <Route path="/admin/settings/cabinet" element={<AdminRoute><CabinetSettingsPage /></AdminRoute>} />
+                <Route path="/admin/settings/products" element={<AdminRoute><CatalogProductsPage /></AdminRoute>} />
+                {/* Ancien onglet « Garanties » des produits : un seul écran de garanties */}
+                <Route path="/admin/settings/guarantees" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />
                 <Route path="/admin/settings/tarifs" element={<AdminRoute><CatalogTarifsPage /></AdminRoute>} />
                 <Route path="/admin/settings/vehicle-geo" element={<AdminRoute><VehicleGeoSettingsPage /></AdminRoute>} />
                 <Route path="/admin/settings/secteurs-activite" element={<AdminRoute><SecteursActivitePage /></AdminRoute>} />
@@ -194,6 +200,7 @@ function App() {
                 <Route path="/admin/settings/commissions-baremes" element={<AdminRoute><ParametrageCommissionsPage /></AdminRoute>} />
                 <Route path="/admin/settings/flotte" element={<AdminRoute><ParametrageFlottePage /></AdminRoute>} />
                 <Route path="/admin/settings/securite-routiere" element={<AdminRoute><ParametrageSecuritePage /></AdminRoute>} />
+                <Route path="/admin/settings/grilles-voyage" element={<AdminRoute><ParametrageGrillesVoyagePage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}
                 <Route path="/parametrage/garanties" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />

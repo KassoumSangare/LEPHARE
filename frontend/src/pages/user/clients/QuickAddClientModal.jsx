@@ -20,6 +20,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { trierParLibelle } from '../../../utils/sortUtils';
+import { qualitesSelonPersonne } from '../../../utils/clientUtils';
 
 export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
   const { success, error: toastError } = useToast();
@@ -31,6 +32,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
   // Référentiels
   const [refData, setRefData] = useState({
     qualites: [],
+    statutsJuridiques: [],
     villes: [],
     professions: [],
     secteurs: [],
@@ -41,12 +43,14 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
       setStep(1);
       Promise.all([
         configRefApi.getQualites().catch(() => []),
+        configRefApi.getStatutsJuridiques().catch(() => []),
         configRefApi.getVilles().catch(() => []),
         configRefApi.getProfessions().catch(() => []),
         configRefApi.getSecteursActivite().catch(() => []),
-      ]).then(([qualites, villes, professions, secteurs]) => {
+      ]).then(([qualites, statutsJuridiques, villes, professions, secteurs]) => {
         setRefData({
           qualites: qualites || [],
+          statutsJuridiques: statutsJuridiques || [],
           villes: villes || [],
           professions: professions || [],
           secteurs: secteurs || [],
@@ -61,6 +65,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
     typeclient: 'Particulier',
     Particulier: 'V',
     IdQualite: 1,
+    IdStatutJuridique: '',
     nom: '',
     prenom: '',
     DateNaissance: '',
@@ -275,7 +280,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
                     type="radio"
                     name="modalQuickType"
                     checked={!isEntreprise}
-                    onChange={() => setFormData({ ...formData, typeclient: 'Particulier', Particulier: 'V', IdQualite: 1, idtypeclient: 1, idtypeassure: 1 })}
+                    onChange={() => setFormData({ ...formData, typeclient: 'Particulier', Particulier: 'V', IdQualite: 1, IdStatutJuridique: '', idtypeclient: 1, idtypeassure: 1 })}
                     style={{ accentColor: '#3b82f6' }}
                   />
                   <User size={16} color="#60a5fa" />
@@ -310,24 +315,25 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
 
             <div style={{ display: 'grid', gridTemplateColumns: isEntreprise ? '1.2fr 2.5fr' : '1fr 1.5fr 1.5fr', gap: '0.75rem' }}>
               <div className="form-group">
-                <label className="form-label">Civilité</label>
+                <label className="form-label">{isEntreprise ? 'Type entreprise' : 'Civilité'}</label>
                 <select
                   className="form-control"
                   value={formData.IdQualite}
                   onChange={(e) => setFormData({ ...formData, IdQualite: Number(e.target.value) })}
                 >
                   {refData.qualites.length > 0 ? (
-                    trierParLibelle(refData.qualites, (q) => q.Libelle).map((q) => (
+                    qualitesSelonPersonne(refData.qualites, isEntreprise).map((q) => (
                       <option key={q.IdQualite} value={q.IdQualite}>
                         {q.Libelle}
                       </option>
                     ))
+                  ) : isEntreprise ? (
+                    <option value={4}>Entreprise privée</option>
                   ) : (
                     <>
                       <option value={1}>Monsieur</option>
                       <option value={2}>Madame</option>
                       <option value={3}>Mademoiselle</option>
-                      <option value={4}>Société</option>
                     </>
                   )}
                 </select>
@@ -405,6 +411,24 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
                   onChange={(e) => setFormData({ ...formData, Nationalite: e.target.value })}
                 />
               </div>
+
+              {isEntreprise && (
+                <div className="form-group">
+                  <label className="form-label">Statut juridique</label>
+                  <select
+                    className="form-control"
+                    value={formData.IdStatutJuridique}
+                    onChange={(e) => setFormData({ ...formData, IdStatutJuridique: e.target.value ? Number(e.target.value) : '' })}
+                  >
+                    <option value="">-- Sélectionner un statut --</option>
+                    {refData.statutsJuridiques.map((s) => (
+                      <option key={s.IdStatutJuridique} value={s.IdStatutJuridique}>
+                        {s.Libelle}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {!isEntreprise && (
                 <div className="form-group">

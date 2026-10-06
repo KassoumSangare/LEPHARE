@@ -20,6 +20,7 @@ from rest_framework.parsers import JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .parametrage import JournalModificationsMixin
 from .models import (
     Accessoire,
     AccessoireCourtierParCompagnie,
@@ -68,6 +69,8 @@ from .models import (
     QualiteSouscripteurMrh,
     ReductionFlotte,
     RepartitionPrimeSante,
+    StatutJuridique,
+    Apporteur,
     Region,
     Risque,
     SecteurActivite,
@@ -151,6 +154,8 @@ from .serializers import (
     QualiteAyantDroitSerializer,
     QualiteSerializer,
     QualiteSouscripteurMrhSerializer,
+    StatutJuridiqueSerializer,
+    ApporteurSerializer,
     ReductionFlotteSerializer,
     RepartitionPrimeSanteSerializer,
     CalculRepartitionPrimeSanteInputSerializer,
@@ -535,7 +540,8 @@ class GenreVehiculeViewSet(viewsets.ModelViewSet):
     ]
 
 
-class FormuleSecuriteRoutiereViewSet(SettingsModelViewSet):
+class FormuleSecuriteRoutiereViewSet(JournalModificationsMixin, SettingsModelViewSet):
+    libelle_journal = "Sécurité routière"
     queryset = FormuleSecuriteRoutiere.objects.all()
     serializer_class = FormuleSecuriteRoutiereSerializer
 
@@ -813,7 +819,8 @@ class CommissionViewSet(viewsets.ModelViewSet):
     ]
 
 
-class CommissionProduitViewSet(viewsets.ModelViewSet):
+class CommissionProduitViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    libelle_journal = "Taux de commission"
     queryset = CommissionProduit.objects.filter(~Q(produit=0))
     serializer_class = CommissionProduitSerializer
     permission_classes = [
@@ -821,7 +828,8 @@ class CommissionProduitViewSet(viewsets.ModelViewSet):
     ]
 
 
-class TauxTaxeGarantieProduitViewSet(viewsets.ModelViewSet):
+class TauxTaxeGarantieProduitViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    libelle_journal = "Taux de taxe"
     queryset = TauxTaxeGarantieProduit.objects.filter(
         ~Q(garantie=0) & ~Q(produit=0)
     )
@@ -831,7 +839,8 @@ class TauxTaxeGarantieProduitViewSet(viewsets.ModelViewSet):
     ]
 
 
-class AccessoireViewSet(viewsets.ModelViewSet):
+class AccessoireViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    libelle_journal = "Accessoires compagnie"
     queryset = Accessoire.objects.filter(~Q(produit=0))
     serializer_class = AccessoireSerializer
     permission_classes = [
@@ -882,6 +891,46 @@ class IntermediaireViewSet(viewsets.ModelViewSet):
 class QualiteViewSet(viewsets.ModelViewSet):
     queryset = Qualite.objects.all()
     serializer_class = QualiteSerializer
+    permission_classes = [
+        permissions.IsAuthenticated,
+    ]
+
+
+class EcrituresAdministrateur(permissions.BasePermission):
+    """Lecture pour tout utilisateur connecté, écriture réservée aux administrateurs."""
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and getattr(request.user, "is_admin", False))
+
+
+class ApporteurViewSet(viewsets.ModelViewSet):
+    """Apporteurs d'affaires codifiés : lecture pour tous, création et modification par un
+    administrateur. Un apporteur n'est pas supprimé mais désactivé (Actif = False)."""
+
+    queryset = Apporteur.objects.all().order_by("Code")
+    serializer_class = ApporteurSerializer
+    http_method_names = ["get", "post", "put", "patch", "head", "options"]
+
+    def get_permissions(self):
+        return [permissions.IsAuthenticated(), EcrituresAdministrateur()]
+
+    def perform_create(self, serializer):
+        code = serializer.validated_data.get("Code")
+        if not code:
+            dernier = (
+                Apporteur.objects.filter(Code__startswith="APP-").order_by("-Code").values_list("Code", flat=True).first()
+            )
+            rang = int(dernier.split("-")[1]) + 1 if dernier and dernier.split("-")[1].isdigit() else 1
+            code = f"APP-{rang:04d}"
+        serializer.save(Code=code)
+
+
+class StatutJuridiqueViewSet(viewsets.ModelViewSet):
+    # Ordre de saisie du référentiel (sociétés commerciales d'abord, « Autre » en dernier)
+    queryset = StatutJuridique.objects.all().order_by("IdStatutJuridique")
+    serializer_class = StatutJuridiqueSerializer
     permission_classes = [
         permissions.IsAuthenticated,
     ]
@@ -1081,7 +1130,8 @@ class ModeEncaissementViewSet(viewsets.ModelViewSet):
     ]
 
 
-class AccessoireCourtierParCompagnieViewSet(viewsets.ModelViewSet):
+class AccessoireCourtierParCompagnieViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    libelle_journal = "Accessoires courtier"
     queryset = AccessoireCourtierParCompagnie.objects.all()
     serializer_class = AccessoireCourtierParCompagnieSerializer
     permission_classes = [
@@ -1607,7 +1657,8 @@ class TarifVoyageView(APIView):
             )
 
 
-class ReductionFlotteViewSet(viewsets.ModelViewSet):
+class ReductionFlotteViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    libelle_journal = "Réductions flotte"
     queryset = ReductionFlotte.objects.all()
     serializer_class = ReductionFlotteSerializer
     permission_classes = [
@@ -1615,7 +1666,8 @@ class ReductionFlotteViewSet(viewsets.ModelViewSet):
     ]
 
 
-class DelaiAvisEcheanceViewSet(SettingsModelViewSet):
+class DelaiAvisEcheanceViewSet(JournalModificationsMixin, SettingsModelViewSet):
+    libelle_journal = "Délais d'avis d'échéance"
     queryset = DelaiAvisEcheance.objects.all()
     serializer_class = DelaiAvisEcheanceSerializer
 

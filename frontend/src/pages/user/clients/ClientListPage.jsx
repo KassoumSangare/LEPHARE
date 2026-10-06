@@ -12,6 +12,7 @@ import { Users, Plus, Phone, Mail, MapPin, Building, User, Eye, Edit2, Archive, 
 import { exportToPdf, printFicheClient } from '../../../utils/exportUtils';
 import { useNavigate } from 'react-router-dom';
 import { trierParLibelle } from '../../../utils/sortUtils';
+import { qualitesSelonPersonne } from '../../../utils/clientUtils';
 
 // Champs jamais modifiés depuis la fenêtre de modification : identifiants attribués et soldes
 const CHAMPS_CLIENT_NON_MODIFIABLES = ['Matricule', 'numero_assure', 'cle_unique', 'Solde', 'Avoir', 'CreeCie', 'IdCategorie', 'IdProfil'];
@@ -202,6 +203,7 @@ export const ClientListPage = () => {
   // Référentiels de configuration chargés depuis l'API
   const [refData, setRefData] = useState({
     qualites: [],
+    statutsJuridiques: [],
     villes: [],
     professions: [],
     secteurs: [],
@@ -218,6 +220,7 @@ export const ClientListPage = () => {
     typeclient: 'Particulier',
     Particulier: 'V',
     IdQualite: 1,
+    IdStatutJuridique: '',
     nom: '',
     prenom: '',
     CniPat: '',
@@ -275,12 +278,14 @@ export const ClientListPage = () => {
     // Charger les tables de référence depuis l'API / fallback
     Promise.all([
       configRefApi.getQualites(),
+      configRefApi.getStatutsJuridiques().catch(() => []),
       configRefApi.getVilles(),
       configRefApi.getProfessions(),
       configRefApi.getSecteursActivite(),
-    ]).then(([qualites, villes, professions, secteurs]) => {
+    ]).then(([qualites, statutsJuridiques, villes, professions, secteurs]) => {
       setRefData({
         qualites: qualites || [],
+        statutsJuridiques: statutsJuridiques || [],
         villes: villes || [],
         professions: professions || [],
         secteurs: secteurs || [],
@@ -313,6 +318,7 @@ export const ClientListPage = () => {
             typeclient: isPart ? 'Particulier' : 'Entreprise',
             Particulier: isPart ? 'V' : 'F',
             IdQualite: c.IdQualite || (isPart ? 1 : 4),
+            IdStatutJuridique: c.IdStatutJuridique || null,
             civilite: c.civilite || (isPart ? 'Monsieur' : 'Soci?t?'),
             DateNaissance: c.DateNaissance || null,
             LieuNaissance: c.LieuNaissance || '',
@@ -745,7 +751,7 @@ export const ClientListPage = () => {
                       name="typeclient"
                       value="Particulier"
                       checked={formData.typeclient === 'Particulier'}
-                      onChange={() => setFormData({ ...formData, typeclient: 'Particulier', Particulier: 'V', IdQualite: 1, idtypeclient: 1, idtypeassure: 1 })}
+                      onChange={() => setFormData({ ...formData, typeclient: 'Particulier', Particulier: 'V', IdQualite: 1, IdStatutJuridique: '', idtypeclient: 1, idtypeassure: 1 })}
                     />
                     Personne physique
                   </label>
@@ -764,13 +770,13 @@ export const ClientListPage = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: formData.typeclient === 'Entreprise' ? '1fr 2fr' : '1fr 2fr 2fr', gap: '0.75rem' }}>
                 <div className="form-group">
-                  <label className="form-label">Civilité</label>
+                  <label className="form-label">{formData.typeclient === 'Entreprise' ? 'Type entreprise' : 'Civilité'}</label>
                   <select
                     className="form-control"
                     value={formData.IdQualite}
                     onChange={(e) => setFormData({ ...formData, IdQualite: Number(e.target.value) })}
                   >
-                    {trierParLibelle(refData.qualites, (q) => q.Libelle).map((q) => (
+                    {qualitesSelonPersonne(refData.qualites, formData.typeclient === 'Entreprise').map((q) => (
                       <option key={q.IdQualite} value={q.IdQualite}>
                         {q.Libelle}
                       </option>
@@ -807,7 +813,25 @@ export const ClientListPage = () => {
                 )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: formData.typeclient === 'Particulier' ? '1.5fr 1fr 1fr' : '1fr', gap: '0.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: formData.typeclient === 'Particulier' ? '1.5fr 1fr 1fr' : '1fr 1fr', gap: '0.75rem' }}>
+                {formData.typeclient === 'Entreprise' && (
+                  <div className="form-group">
+                    <label className="form-label">Statut juridique</label>
+                    <select
+                      className="form-control"
+                      value={formData.IdStatutJuridique}
+                      onChange={(e) => setFormData({ ...formData, IdStatutJuridique: e.target.value ? Number(e.target.value) : '' })}
+                    >
+                      <option value="">-- Sélectionner un statut --</option>
+                      {refData.statutsJuridiques.map((s) => (
+                        <option key={s.IdStatutJuridique} value={s.IdStatutJuridique}>
+                          {s.Libelle}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label className="form-label">
                     {formData.typeclient === 'Entreprise' ? 'N° Registre de Commerce (RCCM / Patente)' : 'N° Pièce d\'Identité (CNI / Passeport / Attestation)'}
@@ -1067,8 +1091,10 @@ export const ClientListPage = () => {
           {/* ONGLET 4: BANQUE & FISCALITÉ */}
           {modalTab === 'banque' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
+              {/* Alignement par le haut : le texte d'aide sous le RIB décalerait son champ
+                  avec l'alignement en bas par défaut des .form-group */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '0.75rem', alignItems: 'start' }}>
+                <div className="form-group" style={{ justifyContent: 'flex-start' }}>
                   <label className="form-label">Relevé d'Identité Bancaire (RIB - 24 caractères UEMOA)</label>
                   <input
                     type="text"
@@ -1083,7 +1109,7 @@ export const ClientListPage = () => {
                   </small>
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ justifyContent: 'flex-start' }}>
                   <label className="form-label">Numéro de Compte Client Interne</label>
                   <input
                     type="text"

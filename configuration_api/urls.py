@@ -1,6 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
+from . import parametrage, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -56,6 +57,8 @@ from .views import (
     QualiteAyantDroitViewSet,
     QualiteSouscripteurMrhViewSet,
     QualiteViewSet,
+    StatutJuridiqueViewSet,
+    ApporteurViewSet,
     ReductionFlotteViewSet,
     RepartitionPrimeSanteViewSet,
     CalculRepartitionPrimeSanteView,
@@ -109,6 +112,8 @@ router.register(r"risque", RisqueViewSet)
 router.register(r"energie", EnergieViewSet)
 router.register(r"compagnie", CompagnieViewSet)
 router.register(r"qualite", QualiteViewSet)
+router.register(r"statutjuridique", StatutJuridiqueViewSet)
+router.register(r"apporteurs", ApporteurViewSet)
 router.register(r"terme", TermeViewSet, basename="terme_contrat")
 router.register(r"secteuractivite", SecteurActiviteViewSet)
 router.register(r"domaineactiviterc", DomaineActiviteRCViewSet)
@@ -162,6 +167,22 @@ router.register(r"periodictaskschedule", PeriodicTaskViewSet)
 router.register(r"typecontratsante", TypeContratSanteViewSet)
 
 urlpatterns = [
+    # Grilles Voyage (admin) : lecture, lignes de grille, offres par zone, zone des pays
+    # Paramétrage LE PHARE (règles de gestion, cabinet, compagnies, produits) : configuration_api/parametrage.py
+    path("parametrage/", parametrage.parametrage, name="parametrage"),
+    path("parametrage/parametres/", parametrage.liste_parametres, name="parametrage-parametres"),
+    path("parametrage/parametres/<str:cle>/", parametrage.modifier_parametre, name="parametrage-parametre"),
+    path("parametrage/cabinet/", parametrage.cabinet, name="parametrage-cabinet"),
+    path("parametrage/compagnies/", parametrage.compagnies, name="parametrage-compagnies"),
+    path("parametrage/compagnies/<int:id_compagnie>/", parametrage.compagnie, name="parametrage-compagnie"),
+    path("parametrage/produits/", parametrage.produits, name="parametrage-produits"),
+    path("parametrage/produits/<int:id_produit>/", parametrage.produit, name="parametrage-produit"),
+    path("grillesvoyage/", views_grilles_voyage.grilles_voyage, name="grilles-voyage"),
+    path("grillesvoyage/<int:id_compagnie>/", views_grilles_voyage.grilles_voyage, name="grilles-voyage-compagnie"),
+    path("grillesvoyage/<int:id_compagnie>/lignes/", views_grilles_voyage.creer_ligne, name="grilles-voyage-lignes"),
+    path("grillesvoyage/<int:id_compagnie>/lignes/<int:id_ligne>/", views_grilles_voyage.ligne_grille, name="grilles-voyage-ligne"),
+    path("grillesvoyage/<int:id_compagnie>/offres/<int:id_offre>/", views_grilles_voyage.offre_voyage, name="grilles-voyage-offre"),
+    path("grillesvoyage/<int:id_compagnie>/pays/<int:id_pays>/", views_grilles_voyage.pays_zone, name="grilles-voyage-pays"),
     # Doit précéder include(router.urls) : le routeur enregistre aussi
     # "offregarantie" (CRUD OffreGarantieViewSet) sur le même préfixe, et
     # comme Django résout les URLs dans l'ordre, le router masquerait

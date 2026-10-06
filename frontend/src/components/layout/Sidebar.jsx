@@ -45,6 +45,7 @@ import {
   UserPlus,
   Wallet,
   Archive,
+  ListChecks,
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, onClose }) => {
@@ -317,13 +318,17 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
               {openSubmenus.cash && (
                 <div className="sidebar-submenu-tree">
-                  <NavLink to="/user/cash" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                  <NavLink to="/user/cash" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Wallet size={14} className="nav-icon" />
                     <span>Encaisser Primes (Quittances)</span>
                   </NavLink>
                   <NavLink to="/user/cheques" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Banknote size={14} className="nav-icon" />
                     <span>Portefeuille Chèques</span>
+                  </NavLink>
+                  <NavLink to="/user/cash/etat" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                    <ListChecks size={14} className="nav-icon" />
+                    <span>État des encaissements</span>
                   </NavLink>
                 </div>
               )}

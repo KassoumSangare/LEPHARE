@@ -5,6 +5,7 @@ import { reportingApi } from '../../../api/endpoints';
 import { FileSpreadsheet, Download, Calendar, Filter, FileText, Printer, ShieldCheck, Check } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { exportToCsv, exportToExcel, exportToPdf, exportToXml } from '../../../utils/exportUtils';
+import { nomCabinet } from '../../../utils/parametrage';
 
 export const CimaReportsPage = () => {
   const [activeTab, setActiveTab] = useState('E1');
@@ -94,7 +95,7 @@ export const CimaReportsPage = () => {
     const title = `LIASSE RÉGLEMENTAIRE CIMA - EXERCICE ${exercice}`;
     const subtitle = `État prudentiel (${exportConfig.etat === 'ALL' ? 'États E1 + E2' : `État CIMA ${exportConfig.etat}`}) certifié conforme`;
     const metadata = {
-      'Organisme': 'LE PHARE COURTAGE & GESTION D\'ASSURANCES',
+      'Organisme': nomCabinet(),
       'Exercice Fiscal': String(exercice),
       'Norme Réglementaire': 'Code CIMA Livre V - Contrôle Prudentiel CRCA',
       'Signataire & Certification': exportConfig.certifiePar || 'Direction Générale',

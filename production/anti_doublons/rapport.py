@@ -81,6 +81,8 @@ class RapportImport:
     details_erreur: str = ""
     id_devis: int = 0
     duree_secondes: float = 0.0
+    # Totaux du fichier (prime HT, prime TTC, assurés inscrits) : comparés au devis par l'écran
+    totaux_fichier: dict = field(default_factory=dict)
     
     def generer_resume(self) -> dict:
         """Génère un résumé statistique"""

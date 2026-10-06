@@ -111,6 +111,8 @@ class ImportAssuresAPIView(APIView):
                 },
                 'id_devis': id_devis,
                 'hash_fichier': rapport.hash_fichier,
+                # Totaux du fichier (prime HT, prime TTC) comparés par l'écran au devis finalisé
+                'primes_fichier': rapport.totaux_fichier,
             }
             
             # ✅ CORRECTION : Toujours inclure les erreurs si présentes
@@ -207,8 +209,8 @@ class ImportAssuresAPIView(APIView):
                 nb_erreurs = len(rapport.erreurs)
                 
                 if nb_erreurs == 0 and rapport.details_erreur:
-                    # Erreur système sans erreur de ligne
-                    return f"Erreur système : {rapport.details_erreur}"
+                    # Import refusé en entier (contrôle des primes, fichier illisible…)
+                    return f"Import impossible : {rapport.details_erreur}"
                 elif nb_erreurs > 0:
                     # Erreurs sur des lignes spécifiques
                     premiere_erreur = rapport.erreurs[0] if rapport.erreurs else ""
@@ -236,7 +238,7 @@ class ImportAssuresAPIView(APIView):
                 msg_parts.append(f"{len(rapport.assures_ignores)} ignoré(s) (doublons)")
             
             if len(rapport.assures_mis_a_jour) > 0:
-                msg_parts.append(f"{len(rapport.assures_mis_a_jour)} mis à jour")
+                msg_parts.append(f"{len(rapport.assures_mis_a_jour)} assuré(s) déjà connu(s) repris")
             
             if not msg_parts:
                 return "Import terminé : aucun changement"

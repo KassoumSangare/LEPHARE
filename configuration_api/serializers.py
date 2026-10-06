@@ -70,6 +70,8 @@ from .models import (
     QualiteSouscripteurMrh,
     ReductionFlotte,
     RepartitionPrimeSante,
+    StatutJuridique,
+    Apporteur,
     Region,
     Risque,
     SecteurActivite,
@@ -443,6 +445,32 @@ class IntermediaireSerializer(serializers.ModelSerializer):
 class QualiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Qualite
+        fields = "__all__"
+
+
+class ApporteurSerializer(serializers.ModelSerializer):
+    # Code attribué à la création (APP-0001…) s'il n'est pas saisi
+    Code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+    class Meta:
+        model = Apporteur
+        fields = "__all__"
+
+    def validate_Code(self, valeur):
+        valeur = (valeur or "").strip().upper()
+        if valeur and Apporteur.objects.filter(Code=valeur).exclude(pk=getattr(self.instance, "pk", None)).exists():
+            raise serializers.ValidationError("Ce code est déjà attribué à un autre apporteur.")
+        return valeur
+
+    def validate_TauxRetrocession(self, valeur):
+        if valeur is not None and not (0 <= valeur <= 100):
+            raise serializers.ValidationError("Le taux de rétrocession est compris entre 0 et 100 %.")
+        return valeur
+
+
+class StatutJuridiqueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StatutJuridique
         fields = "__all__"
 
 
