@@ -192,8 +192,33 @@ class AuditLogCima(models.Model):
     reference_reglementaire = models.CharField(max_length=100, default="CIMA Art. 13", verbose_name="Règle CIMA")
     details_json = models.JSONField(default=dict, blank=True, verbose_name="Métadonnées d'audit")
     date_creation = models.DateTimeField(auto_now_add=True)
+    # Journal d'audit centralisé de LE PHARE (autorisations/journal.py) : qui, quoi, sur quel objet,
+    # avec quel résultat, d'où, et les valeurs avant / après. La table est en ajout seul
+    # (déclencheur en base : ni modification ni suppression, administrateur compris).
+    utilisateur = models.ForeignKey(
+        "account.UranusUser", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="journal_audit", verbose_name="Utilisateur",
+    )
+    module = models.CharField(max_length=40, blank=True, default="", verbose_name="Module")
+    action = models.CharField(max_length=80, blank=True, default="", verbose_name="Action (droit ou évènement)")
+    objet_type = models.CharField(max_length=60, blank=True, default="", verbose_name="Type d'objet")
+    objet_id = models.CharField(max_length=80, blank=True, default="", verbose_name="Identifiant de l'objet")
+    resultat = models.CharField(max_length=10, blank=True, default="", verbose_name="Résultat (SUCCES, ECHEC, REFUS)")
+    adresse_ip = models.GenericIPAddressField(null=True, blank=True, verbose_name="Adresse IP")
+    methode = models.CharField(max_length=8, blank=True, default="", verbose_name="Méthode HTTP")
+    chemin = models.CharField(max_length=255, blank=True, default="", verbose_name="Route appelée")
+    statut_http = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Code de réponse")
+    valeur_avant = models.JSONField(null=True, blank=True, verbose_name="Valeur avant")
+    valeur_apres = models.JSONField(null=True, blank=True, verbose_name="Valeur après")
+    motif = models.TextField(blank=True, default="", verbose_name="Motif saisi")
 
     class Meta:
+        indexes = [
+            models.Index(fields=["date_creation"], name="audit_date_idx"),
+            models.Index(fields=["utilisateur", "date_creation"], name="audit_utilisateur_idx"),
+            models.Index(fields=["module", "action"], name="audit_module_action_idx"),
+            models.Index(fields=["objet_type", "objet_id"], name="audit_objet_idx"),
+        ]
         verbose_name = "Entrée Journal Audit CIMA"
         verbose_name_plural = "Journal Audit CIMA"
         ordering = ["-date_creation"]

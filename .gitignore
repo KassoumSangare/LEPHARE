@@ -153,3 +153,6 @@ dmypy.json
 # Test media files
 test_media/
 test_static/
+
+# Sauvegardes de la base (données clients, comptes) : jamais dans le dépôt
+backup_oreole_*

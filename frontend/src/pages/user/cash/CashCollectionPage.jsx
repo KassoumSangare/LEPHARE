@@ -8,6 +8,7 @@ import { CreditCard, Check, Receipt } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
 import { printRecuEncaissement } from '../../../utils/exportUtils';
 import {
+  actionReglement,
   ChampsReglement,
   champsReglementApi,
   modesProposes,
@@ -80,6 +81,8 @@ export const CashCollectionPage = () => {
   const [reglement, setReglement] = useState(reglementVide());
   const [enregistrement, setEnregistrement] = useState(false);
   const changerReglement = (champ, valeur) => setReglement((prev) => ({ ...prev, [champ]: valeur }));
+  // Titre et bouton du formulaire selon le mode choisi (décaissement, annulation, compensation…)
+  const action = actionReglement(modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode)));
 
   const handleOpenPayment = (contract) => {
     setSelectedContract(contract);
@@ -268,7 +271,7 @@ export const CashCollectionPage = () => {
       </div>
 
       {/* Payment Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Enregistrement d'un Encaissement">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={action.titre}>
         {selectedContract && (
           <form onSubmit={handleSavePayment}>
             <div style={{ padding: '1rem', borderRadius: 'var(--radius-md)', background: 'rgba(30, 41, 59, 0.6)', marginBottom: '1.25rem' }}>
@@ -321,7 +324,7 @@ export const CashCollectionPage = () => {
                 disabled={enregistrement}
                 style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
               >
-                <Check size={18} /> {enregistrement ? 'Enregistrement…' : "Valider l'Encaissement"}
+                <Check size={18} /> {enregistrement ? 'Enregistrement…' : action.bouton}
               </button>
             </div>
           </form>

@@ -832,6 +832,13 @@ select.form-control {
   .nav-profil-switch {
     display: none !important;
   }
+  .nav-droite {
+    gap: 0.35rem !important;
+  }
+  .nav-carte-utilisateur {
+    gap: 0.3rem !important;
+    padding: 0.2rem 0.35rem !important;
+  }
   .nav-space-btn span {
     display: none;
   }
@@ -846,6 +853,13 @@ select.form-control {
 
   .content-body {
     padding: 0.5rem;
+  }
+}
+
+/* Petits téléphones (< 400px) : logo seul, le nom LE PHARE laisse la place aux boutons du compte */
+@media (max-width: 400px) {
+  .brand-nom {
+    display: none;
   }
 }
 

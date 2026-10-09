@@ -1,0 +1,676 @@
+"""
+Garde centrale de l'API : contrôle des droits côté serveur et journal d'audit automatique.
+
+Branchée une fois pour toutes sur toutes les vues DRF (AutorisationsConfig.ready -> installer),
+elle s'applique après l'authentification, quelle que soit la classe de permission de la vue :
+masquer un bouton à l'écran ne suffit jamais, l'appel direct d'une route est contrôlé ici.
+
+Pour chaque requête /api/ :
+1. route publique (connexion, état du serveur, paramétrage d'affichage) : rien d'autre ;
+2. sinon utilisateur authentifié obligatoire, compte non expiré ;
+3. la première règle de REGLES qui correspond (méthode + route) donne le droit exigé ; une
+   lecture non cartographiée demande seulement d'être connecté, une écriture non cartographiée
+   exige « parametrage.technique » (fermé par défaut) ;
+4. écriture : motif exigé si le droit le demande (en-tête X-Motif, réglage de l'admin),
+   séparation des tâches si réglée (l'auteur de l'objet ne peut pas l'exécuter lui-même),
+   instantané « avant » de l'objet ;
+5. après la réponse : une ligne du journal d'audit (résultat, objet, valeurs avant / après,
+   saisie sans secret, motif, adresse IP). Refus et connexions sont journalisés aussi.
+
+Un nouveau module n'a qu'à déclarer ses droits (catalogue.py) et ses routes ici.
+"""
+
+import re
+from datetime import timedelta
+from urllib.parse import unquote
+
+from django.db import connection
+from django.utils import timezone
+from rest_framework import exceptions, status
+
+from .journal import RESULTAT_ECHEC, RESULTAT_REFUS, RESULTAT_SUCCES, adresse_ip, journaliser, nettoyer
+from .rbac import a_le_droit, compte_expire
+
+LECTURES = {"GET", "HEAD", "OPTIONS"}
+ECRITURES = {"POST", "PUT", "PATCH", "DELETE"}
+TOUTES = LECTURES | ECRITURES
+INTERDIT = "__interdit__"
+CONNECTE = None  # droit « être connecté »
+ECHECS_AVANT_VERROU = 5
+DUREE_VERROU = timedelta(minutes=15)
+MOTIF_LONGUEUR_MIN = 5
+
+
+class MotifRequis(exceptions.APIException):
+    status_code = status.HTTP_428_PRECONDITION_REQUIRED
+    default_code = "motif_requis"
+
+    def __init__(self, droit):
+        super().__init__({
+            "error": f"Motif obligatoire pour « {droit.libelle} ».",
+            "code": "motif_requis",
+            "droit": droit.code,
+            "libelle": droit.libelle,
+        })
+
+
+# ------------------------------------------------------------------ instantanés « avant / après »
+def _une_ligne(sql, params):
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        colonnes = [c[0] for c in cursor.description]
+        ligne = cursor.fetchone()
+    return dict(zip(colonnes, ligne)) if ligne else None
+
+
+def instantane_devis(iddevis):
+    entete = _une_ligne(
+        """
+        SELECT iddevis, numerodevis, idproduit, idcompagnie, idclient, confirme, COALESCE(archive, FALSE) AS archive,
+               dateeffet, dateexpiration, primeannuelle, primenette, accessoire, taxe, fga, cedeao, primettc,
+               primeimposee, idoperateur
+        FROM stddevis WHERE iddevis = %s
+        """,
+        [iddevis],
+    )
+    if not entete:
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT g.idgarantie, sg.libellesousgarantie, g.acquise, g.capital, g.primeannuelle, g.primenette, g.taxe
+            FROM stddevisdetail dd JOIN stddevisdetgarantie g ON g.iddevisdet = dd.iddevisdetail
+            LEFT JOIN stdsousgarantie sg ON sg.idsousgarantie = g.idgarantie
+            WHERE dd.iddevis = %s ORDER BY dd.iddevisdetail, g.idgarantie LIMIT 400
+            """,
+            [iddevis],
+        )
+        entete["garanties"] = [
+            {"garantie": f"{r[0]} {r[1] or ''}".strip(), "acquise": r[2], "capital": r[3],
+             "prime_annuelle": r[4], "prime_nette": r[5], "taxe": r[6]}
+            for r in cursor.fetchall()
+        ]
+    return entete
+
+
+def instantane_contrat(idcontrat):
+    return _une_ligne(
+        """
+        SELECT idcontrat, numeropolice, idproduit, idcompagnie, idclient, idavenant, dateeffet, dateexpiration,
+               primenette, accessoire, taxe, primettc, iddevis
+        FROM stdcontrat WHERE idcontrat = %s
+        """,
+        [idcontrat],
+    )
+
+
+def auteur_devis(iddevis):
+    ligne = _une_ligne("SELECT idoperateur FROM stddevis WHERE iddevis = %s", [iddevis])
+    return ligne and ligne["idoperateur"]
+
+
+def auteur_demande(id_demande):
+    ligne = _une_ligne("SELECT demandeur_id FROM autorisations_demandeautorisation WHERE id = %s", [id_demande])
+    return ligne and ligne["demandeur_id"]
+
+
+# ------------------------------------------------------------------ règles
+class Regle:
+    def __init__(self, methodes, motif, droit, *, lecture=False, objet="", cles=(), instantane=None,
+                 auteur=None, action=""):
+        self.methodes = TOUTES if methodes == "*" else set(methodes.split(","))
+        self.motif = re.compile(motif)
+        self.droit = droit
+        self.lecture = lecture  # écriture technique sans modification (calcul, recherche) : non journalisée
+        self.objet = objet
+        self.cles = cles
+        self.instantane = instantane
+        self.auteur = auteur
+        self.action = action
+
+    def correspond(self, methode, chemin):
+        return methode in self.methodes and self.motif.match(chemin)
+
+
+def _devis_creer_ou_modifier(request, view):
+    """Enregistrement de devis : création si aucun devis n'est désigné, modification sinon."""
+    if request.method in ("PUT", "PATCH", "DELETE") or _valeur(request, view, CLES_DEVIS):
+        return "devis.update"
+    return "devis.create"
+
+
+CLES_DEVIS = ("iddevis", "IdDevis", "id_devis", "devis_id", "idDevis")
+CLES_CONTRAT = ("idcontrat", "IdContrat", "id_contrat", "contrat_id")
+R = Regle
+# Chemins sans le préfixe /api/ ; première règle applicable retenue.
+REGLES = [
+    # ---- sécurité : utilisateurs, rôles, journal (autorisations/views_securite.py)
+    R("GET", r"securite/moi/", CONNECTE),
+    R("POST", r"securite/moi/mot-de-passe/", CONNECTE, objet="utilisateur", action="securite.mot_de_passe"),
+    R("GET", r"securite/utilisateurs/", "users.view"),
+    R("POST", r"securite/utilisateurs/$", "users.create", objet="utilisateur"),
+    R("POST", r"securite/utilisateurs/(?P<pk>\d+)/(activer|desactiver)/", "users.disable", objet="utilisateur", cles=("pk",)),
+    R("POST", r"securite/utilisateurs/(?P<pk>\d+)/mot-de-passe/", "users.password", objet="utilisateur", cles=("pk",)),
+    R("PATCH,PUT", r"securite/utilisateurs/(?P<pk>\d+)/", "users.update", objet="utilisateur", cles=("pk",)),
+    R("GET", r"securite/(roles|droits)", "roles.view"),
+    R("POST,PATCH,PUT,DELETE", r"securite/(roles|droits)", "roles.manage", objet="role", cles=("pk", "code")),
+    R("GET", r"securite/journal/export", "audit.export"),
+    R("GET", r"securite/journal", "audit.view"),
+    # ---- comptes (routes d'URANUS)
+    R("GET", r"users/(user|gethostname)", CONNECTE),
+    R("POST", r"users/(logout|logoutall)", CONNECTE, action="securite.deconnexion"),
+    R("POST", r"users/(changepassword|initiatepasswordchange)", CONNECTE, objet="utilisateur", action="securite.mot_de_passe"),
+    R("POST", r"users/register", "users.create", objet="utilisateur"),
+    R("POST", r"users/resetpassword", "users.password", objet="utilisateur"),
+    R("GET", r"users/profile", "users.view"),
+    R("PUT,PATCH", r"users/profile", "users.update", objet="profil", cles=("pk",)),
+    R("*", r"admin/(groups|users)/", "roles.manage"),
+    R("POST", r"derogations/create", "approbations.decider", objet="derogation"),
+    R("GET,POST", r"derogations/check", CONNECTE, lecture=True),
+    R("PUT,PATCH", r"derogations/(?P<pk>\d+)/consume", CONNECTE, objet="derogation", cles=("pk",),
+      action="approbations.utiliser_derogation"),
+    # ---- journal d'audit : lecture seule pour tout le monde
+    R("GET", r"compliance/audit-trail/(kpis|etats_cima)", "reporting.view"),
+    R("GET", r"compliance/audit-trail", "audit.view"),
+    R("POST,PUT,PATCH,DELETE", r"compliance/audit-trail", INTERDIT),
+    # ---- clients
+    R("GET", r"(client|clientrestreint|clientrecherche|client-depuis-police-sante)(/|$)", "clients.view"),
+    R("GET", r"crm/clients/", "clients.view"),
+    R("POST", r"(client|clientrestreint)/$", "clients.create", objet="client"),
+    R("PUT,PATCH", r"(client|clientrestreint)/(?P<pk>\d+)", "clients.update", objet="client", cles=("pk",)),
+    R("DELETE", r"(client|clientrestreint)/(?P<pk>\d+)", "clients.delete", objet="client", cles=("pk",)),
+    # ---- devis : calculs et recherches sans enregistrement
+    R("POST", r"(calculprime/|calculrepartitionprimesante/|offregarantie(ia|voyage|mrh|rc|mrp)?$|garantieparproduit$|"
+              r"dommages/calcul/|devisvoyage/ligne-tarif/|mrh/calcul/maison/|mrh/validate-parameters/|mrh/devis/accessoire/)",
+      "devis.view", lecture=True),
+    # ---- devis : primes (sensible)
+    R("POST", r"majrecapprimes/", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST", r"correctiondevis/?$", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST,DELETE", r"mrh/devis/(?P<devis_id>\d+)/(maisons/\d+/)?(imposer-prime|imposition-prime)/", "devis.primes",
+      objet="devis", cles=("devis_id",), instantane=instantane_devis),
+    R("POST", r"mrh/devis/(?P<devis_id>\d+)/repartir-garanties/", "devis.primes", objet="devis", cles=("devis_id",),
+      instantane=instantane_devis),
+    # ---- devis : transformation en contrat, archivage
+    R("POST", r"confirmationdevis/?$", "devis.validate", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis,
+      auteur=auteur_devis),
+    R("POST", r"(archivagedevis|annulationsaisiedevis|desarchivagedevis)/?$", "devis.cancel", objet="devis",
+      cles=CLES_DEVIS, instantane=instantane_devis),
+    R("DELETE", r"mrh/devis/(?P<devis_id>\d+)/$", "devis.cancel", objet="devis", cles=("devis_id", "pk"),
+      instantane=instantane_devis),
+    # ---- devis : saisie (création ou modification selon le devis désigné)
+    R("POST", r"(enregistrementdevis(ia|mrh|rc|mrp|sante|voyage|tousrisquesinfo|globaledebanque)?|finalisationdevis(auto|ia)|"
+              r"enregistrementassureia|saisieayantdroitia|saisie(adherent|affilie|filiale)sante|"
+              r"annulationsaisie(vehicule|adherent|affilie|filiale))/?$",
+      _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST", r"(devisia/enregistrement/|devisvoyage/enregistrement/|dommages/devis/$|devissante/|garantiesvehiculeflotte/|"
+              r"creer-devis-ia-minene/|transformer-sante-en-ia/|consolidationdevis/)",
+      _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST,PUT,PATCH,DELETE", r"mrh/devis/", _devis_creer_ou_modifier, objet="devis", cles=("devis_id", "pk"),
+      instantane=instantane_devis),
+    R("POST,PUT,PATCH,DELETE", r"brouillons/", "devis.create", objet="brouillon", cles=("pk",)),
+    R("POST,PUT,PATCH,DELETE", r"devisdetgarantie/", "devis.update", objet="garantie_devis", cles=("pk",)),
+    R("POST", r"devis/(?P<pk>\d+)/attacher_piece_jointe", "devis.update", objet="devis", cles=("pk",)),
+    # ---- imports
+    R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
+    R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
+    R("POST", r"transport/guce/analyse/", "imports.guce", lecture=True),
+    R("POST", r"(transport/guce/import/|importationfichierguce|certificattransport/)", "imports.guce", objet="import"),
+    R("GET", r"(imports-historique|imports-statistiques)", "devis.view"),
+    # ---- devis : lectures
+    R("GET", r"(devis|devisdetail|devisclient|infodevis|infodevisrecherche|garantiesouscritedevis|quittanceproposition|"
+             r"listevehiculedevis|reductionflottedevis|devisvoyage|devisia|devisrisquesdivers|devissante|dommages/|"
+             r"assureiainfo|assureiapardevis|adherents-sante-pour-devis-ia|saisiesanteencours|numerosaisiesante|"
+             r"(adherent|affilie|filiale)(liste)?ensaisie|listeaffiliesante|ayantdroitia|ayantdroitminene|mrh/devis|"
+             r"brouillons|devisdetgarantie)(/|$)", "devis.view"),
+    # ---- contrats
+    R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
+    R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
+    R("POST", r"contrat/(?P<pk>\d+)/attacher_piece_jointe", "contrats.update", objet="contrat", cles=("pk",)),
+    R("POST,PUT,PATCH,DELETE", r"contratdetgarantie/", "contrats.update", objet="garantie_contrat", cles=("pk",)),
+    R("GET", r"(contrat|contratdetail|garantiecontrat|garantiesouscritecontrat|quittancecontrat|listevehiculecontrat|"
+             r"infovehicule|assureiaparcontrat|listecontratclient|listecontratperiode|contratvoyage|transport/|"
+             r"certificattransport|quittance|contratdetgarantie)(/|$)", "contrats.view"),
+    # ---- caisse
+    R("POST", r"(contratpourencaissement/|encaissementrecherche/)", "encaissements.view", lecture=True),
+    R("POST", r"(encaissement/(?P<pk>\d+)/annuler/|cheques/(?P<id_cheque>\d+)/decaissement/)", "encaissements.cancel",
+      objet="encaissement", cles=("pk", "id_cheque")),
+    R("DELETE", r"cheques/(?P<id_cheque>\d+)/", "encaissements.cancel", objet="cheque", cles=("id_cheque",)),
+    R("PUT,PATCH,DELETE", r"encaissement/(?P<pk>\d+)", "encaissements.cancel", objet="encaissement", cles=("pk",)),
+    R("POST", r"(enregistrementencaissement|cheques/echeancier/|initiationpaiementmobile|quittances-cima/$|encaissement/$|"
+              r"encaissement/(?P<pk>\d+)/demander_annulation/)", "encaissements.create", objet="encaissement",
+      cles=("pk", "IdQuittance", "idquittance")),
+    R("GET", r"(encaissement|encaissementrecherche|infoencaissement|listedetailencaissement|cheques|finance/encaissements|"
+             r"paiementmobileinfo|distripaytransaction|quittances-cima|contratpourencaissement)(/|$)", "encaissements.view"),
+    # ---- reversements
+    R("POST", r"(validationreversement|finance/reversements/(?P<id_reversement>\d+)/valider/|reversements-cima/(?P<pk>\d+)/valider/)",
+      "reversements.validate", objet="reversement", cles=("id_reversement", "pk", "IdReversement", "idreversement")),
+    R("PUT,PATCH,DELETE", r"(reversement|reversementnonvalide|reversements-cima)/(?P<pk>\d+)", "reversements.validate",
+      objet="reversement", cles=("pk",)),
+    R("POST", r"(enregistrementreversement|finance/reversements/$|reversement/$|reversementnonvalide/$|reversements-cima/$)",
+      "reversements.create", objet="reversement"),
+    R("GET", r"(reversement|reversementnonvalide|inforeversement|listedetailreversement|contratpourreversement|"
+             r"finance/reversements|reversements-cima)(/|$)", "reversements.view"),
+    # ---- commissions
+    R("POST", r"commissions/(affaires-commission/rechercher_pour_paiement|details-paiement-commission/verifier_selection|"
+              r"notifications/marquer_toutes_lues|dashboard/invalider_cache)", "commissions.view", lecture=True),
+    R("POST", r"(finance/commissions/reclamations/(?P<id_reclamation>\d+)/annuler/|commissions/details-paiement-commission/"
+              r"(\d+/annuler|annuler_selection)|commissions/annulations-commission/)", "commissions.cancel",
+      objet="commission", cles=("id_reclamation",)),
+    R("POST", r"(finance/commissions/reclamations/(?P<id_reclamation>\d+)/paiements/|commissions/paiements-commission/\d+/valider/)",
+      "commissions.validate", objet="commission", cles=("id_reclamation",)),
+    R("POST", r"(finance/commissions/reclamations/$|commissions/)", "commissions.create", objet="commission"),
+    R("PUT,PATCH,DELETE", r"commissions/", "commissions.validate", objet="commission", cles=("pk",)),
+    R("GET", r"(commissions/|finance/commissions)", "commissions.view"),
+    # ---- sinistres
+    R("POST", r"sinistres/(?P<pk>\d+)/reglement/", "sinistres.settle", objet="sinistre", cles=("pk",)),
+    R("POST", r"sinistres/$", "sinistres.create", objet="sinistre"),
+    R("POST,PUT,PATCH,DELETE", r"sinistres/", "sinistres.update", objet="sinistre", cles=("pk",)),
+    R("GET", r"sinistres", "sinistres.view"),
+    # ---- dérogations et approbations (autorisations)
+    R("GET", r"autorisations/(demandes/mes_demandes|jetons/mes_jetons|permissions/mes_permissions)", CONNECTE),
+    R("POST", r"autorisations/demandes/$", CONNECTE, objet="demande_autorisation", action="approbations.demander"),
+    R("POST", r"autorisations/jetons/verifier/", CONNECTE, lecture=True),
+    R("POST", r"autorisations/demandes/(?P<pk>\d+)/(approuver|rejeter)/", "approbations.decider",
+      objet="demande_autorisation", cles=("pk",), auteur=auteur_demande),
+    R("POST,PUT,PATCH,DELETE", r"autorisations/permissions/", "roles.manage", objet="approbateur", cles=("pk",)),
+    R("POST,PUT,PATCH,DELETE", r"autorisations/", "approbations.decider", objet="demande_autorisation", cles=("pk",)),
+    R("GET", r"autorisations/", "approbations.view"),
+    # ---- suivi commercial, documents, ASACI, états
+    R("GET", r"crm/", "crm.view"),
+    R("POST,PUT,PATCH,DELETE", r"crm/", "crm.update", objet="crm", cles=("pk",)),
+    R("GET", r"(ged/|pieces-jointes)", "documents.view"),
+    R("POST,PUT,PATCH,DELETE", r"(ged/|pieces-jointes)", "documents.update", objet="document", cles=("pk",)),
+    R("POST", r"asaci/(verificationstatutdemande|obtentioninfo)", "asaci.attestations", lecture=True),
+    R("POST,PUT,PATCH,DELETE", r"asaci/", "asaci.attestations", objet="attestation", cles=("pk",)),
+    R("GET", r"asaci/", "contrats.view"),
+    R("POST", r"bordereaurecapemission", "reporting.view", lecture=True),
+    R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
+    R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
+    # ---- tarifs et barèmes
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|grillesvoyage/)", "tarifs.update", objet="bareme",
+      cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays")),
+    R("POST,PUT,PATCH,DELETE", r"(tauxtaxegarantie|commissionproduit|accessoire|accessoirecourtier|reductionflotte|"
+                               r"formulesecuriteroutiere|offre|offregarantie|enregistrementoffregarantie|garantie|sousgarantie|"
+                               r"garantierisque|tarif|tarifdetail|tarifecran|offredetail|offrecollegesante|repartitionprimesante|"
+                               r"collegesante|zonevoyage|zonecouverturesante|zonecouvertureoffre|typereduction|typecontratsante|"
+                               r"risque|filialesante|delaiavisecheance)(/|$)", "tarifs.update", objet="bareme", cles=("pk",)),
+    # ---- paramétrage
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/|apporteurs|conventions)", "parametrage.update", objet="parametre",
+      cles=("pk", "cle", "id_compagnie", "id_produit")),
+    R("POST,PUT,PATCH,DELETE", r"(menu|menuparent|utilisateur|groupeutilisateur|numero|parametresite|intermediaire|"
+                               r"periodictaskschedule|crontabschedule|intervalschedule|solarschedule|clockedschedule|"
+                               r"detailquittance|detailencaissement|detailreversement|quittance|systemesecurite|"
+                               r"distripaytransaction)(/|$)", "parametrage.technique", objet="table_technique", cles=("pk",)),
+]
+# Routes ouvertes sans connexion
+PUBLIQUES = [
+    Regle("POST", r"users/login/?$", CONNECTE, action="securite.connexion"),
+    Regle("GET", r"etat-serveur/?$", CONNECTE),
+]
+OBJETS_PAR_MODULE = {
+    "clients": "client", "devis": "devis", "contrats": "contrat", "encaissements": "encaissement",
+    "reversements": "reversement", "commissions": "commission", "sinistres": "sinistre", "tarifs": "bareme",
+    "parametrage": "parametre", "users": "utilisateur", "roles": "role",
+}
+
+
+# ------------------------------------------------------------------ outils
+def _chemin(request):
+    chemin = getattr(request, "path", "") or ""
+    return chemin[5:] if chemin.startswith("/api/") else None
+
+
+def _regle(liste, methode, chemin):
+    for regle in liste:
+        correspondance = regle.correspond(methode, chemin)
+        if correspondance:
+            return regle, correspondance
+    return None, None
+
+
+def _donnees(request):
+    """Saisie de la requête. Le corps est d'abord mis en cache par Django (request.body) : sans cela,
+    l'analyse DRF consommerait le flux et les vues d'URANUS qui relisent le corps elles-mêmes
+    (JSONParser().parse(request), json.loads(request.body)) le trouveraient vide. Les envois de
+    fichiers (multipart) ne sont pas mis en cache : DRF transmet POST et FILES à la requête Django."""
+    brut = getattr(request, "_request", None)
+    if brut is not None and not getattr(brut, "_read_started", False) \
+            and not (brut.META.get("CONTENT_TYPE") or "").lower().startswith("multipart/"):
+        try:
+            brut.body  # noqa: B018 - lecture mise en cache par Django
+        except Exception:
+            pass
+    try:
+        return request.data
+    except Exception:
+        return {}
+
+
+def _valeur(request, view, cles, correspondance=None, reponse=None):
+    """Premier identifiant trouvé : route, paramètres d'URL, corps de la requête, réponse."""
+    sources = []
+    if correspondance is not None:
+        sources.append({k: v for k, v in correspondance.groupdict().items() if v})
+    sources.append(getattr(view, "kwargs", {}) or {})
+    donnees = _donnees(request)
+    if isinstance(donnees, list) and donnees and isinstance(donnees[0], dict):
+        donnees = donnees[0]
+    if hasattr(donnees, "get"):
+        sources.append(donnees)
+    if reponse is not None:
+        corps = getattr(reponse, "data", None)
+        if isinstance(corps, list) and corps and isinstance(corps[0], dict):
+            corps = corps[0]
+        if isinstance(corps, dict):
+            sources.append(corps)
+    for source in sources:
+        for cle in cles:
+            valeur = source.get(cle) if hasattr(source, "get") else None
+            if valeur not in (None, "", 0, "0"):
+                return valeur
+    return None
+
+
+def _valeurs(request, view, cles, correspondance=None):
+    """Tous les identifiants distincts désignés par la requête (route, paramètres d'URL, corps)."""
+    sources = []
+    if correspondance is not None:
+        sources.append({k: v for k, v in correspondance.groupdict().items() if v})
+    sources.append(getattr(view, "kwargs", {}) or {})
+    donnees = _donnees(request)
+    if isinstance(donnees, list):
+        sources.extend(d for d in donnees if isinstance(d, dict))
+    elif hasattr(donnees, "get"):
+        sources.append(donnees)
+    valeurs = set()
+    for source in sources:
+        for cle in cles:
+            valeur = source.get(cle) if hasattr(source, "get") else None
+            if valeur not in (None, "", 0, "0"):
+                valeurs.add(str(valeur).strip())
+    return valeurs
+
+
+def _id_reponse(reponse):
+    corps = getattr(reponse, "data", None)
+    if isinstance(corps, list) and corps and isinstance(corps[0], dict):
+        corps = corps[0]
+    if isinstance(corps, dict):
+        for cle in ("ObjectId", "IdDevis", "iddevis", "IdContrat", "idcontrat", "id", "pk", "code"):
+            valeur = corps.get(cle)
+            if valeur not in (None, "", 0):
+                return valeur
+    return None
+
+
+def _droit(code):
+    from .models import Droit
+
+    if not code or code == INTERDIT:
+        return None
+    return Droit.objects.filter(code=code).first()
+
+
+def _motif(request):
+    brut = request.META.get("HTTP_X_MOTIF", "") if hasattr(request, "META") else ""
+    try:
+        return unquote(brut).strip()[:2000]
+    except Exception:
+        return brut.strip()[:2000]
+
+
+def _module_vue(view, request):
+    """Module qui définit la vue (pour une vue-fonction @api_view : celui de la fonction)."""
+    module = view.__class__.__module__
+    if module.startswith("rest_framework"):
+        gestionnaire = getattr(view, (request.method or "get").lower(), None)
+        module = getattr(gestionnaire, "__module__", "") or module
+    return module
+
+
+def _avant_generique(view):
+    """Objet d'un ViewSet modifié ou supprimé, tel qu'enregistré avant l'opération."""
+    if not hasattr(view, "get_object") or not hasattr(view, "get_serializer"):
+        return None
+    kwargs = getattr(view, "kwargs", {}) or {}
+    cle = getattr(view, "lookup_url_kwarg", None) or getattr(view, "lookup_field", "pk")
+    if cle not in kwargs and "pk" not in kwargs:
+        return None
+    try:
+        return view.get_serializer(view.get_object()).data
+    except Exception:
+        return None
+
+
+def _refuser(request, code, message, *, regle=None, objet_id=None, journal=True):
+    if journal:
+        journaliser(
+            request=request, module=(code or "securite").split(".")[0], action=code or "",
+            description=message, objet_type=(regle.objet if regle else ""), objet_id=objet_id or "",
+            resultat=RESULTAT_REFUS, statut_http=403, details={"saisie": nettoyer(_donnees(request))},
+            motif=_motif(request),
+        )
+    raise exceptions.PermissionDenied(message)
+
+
+# ------------------------------------------------------------------ connexion : verrouillage et journal
+def _securite(email):
+    from account.models import UranusUser
+
+    from .models import SecuriteUtilisateur
+
+    utilisateur = UranusUser.objects.filter(email__iexact=(email or "").strip()).first()
+    if not utilisateur:
+        return None, None
+    securite, _ = SecuriteUtilisateur.objects.get_or_create(utilisateur=utilisateur)
+    return utilisateur, securite
+
+
+def _avant_connexion(request):
+    email = (_donnees(request) or {}).get("email", "") if hasattr(_donnees(request), "get") else ""
+    utilisateur, securite = _securite(email)
+    request._lephare_connexion = {"email": email, "utilisateur": utilisateur, "securite": securite}
+    if not utilisateur:
+        return
+    maintenant = timezone.now()
+    if securite.verrouille_jusqua and securite.verrouille_jusqua > maintenant:
+        heure = timezone.localtime(securite.verrouille_jusqua).strftime("%H:%M")
+        journaliser(request=request, utilisateur=utilisateur, module="securite", action="securite.connexion",
+                    description="Connexion refusée : compte verrouillé après des échecs répétés.",
+                    objet_type="utilisateur", objet_id=utilisateur.pk, resultat=RESULTAT_REFUS, statut_http=403)
+        request._lephare_connexion = None
+        raise exceptions.PermissionDenied(f"Compte verrouillé après plusieurs échecs : réessayez après {heure}.")
+    if compte_expire(utilisateur):
+        journaliser(request=request, utilisateur=utilisateur, module="securite", action="securite.connexion",
+                    description="Connexion refusée : compte expiré.", objet_type="utilisateur",
+                    objet_id=utilisateur.pk, resultat=RESULTAT_REFUS, statut_http=403)
+        request._lephare_connexion = None
+        raise exceptions.PermissionDenied("Compte expiré : adressez-vous à l'administrateur.")
+
+
+def _apres_connexion(request, reponse):
+    contexte = getattr(request, "_lephare_connexion", None)
+    if not contexte:
+        return
+    utilisateur, securite = contexte["utilisateur"], contexte["securite"]
+    reussie = reponse.status_code < 400
+    if securite is not None:
+        if reussie:
+            securite.echecs_connexion = 0
+            securite.verrouille_jusqua = None
+            securite.derniere_connexion_ip = adresse_ip(request)
+            utilisateur.last_login = timezone.now()
+            utilisateur.save(update_fields=["last_login"])
+        else:
+            securite.echecs_connexion += 1
+            if securite.echecs_connexion >= ECHECS_AVANT_VERROU:
+                securite.verrouille_jusqua = timezone.now() + DUREE_VERROU
+                securite.echecs_connexion = 0
+        securite.save()
+    journaliser(
+        request=request, utilisateur=utilisateur if reussie else None,
+        auteur=(getattr(utilisateur, "email", "") or contexte["email"] or "inconnu"),
+        module="securite", action="securite.connexion",
+        description="Connexion réussie." if reussie else (
+            "Échec de connexion" + (" : compte verrouillé 15 minutes." if securite and securite.verrouille_jusqua else ".")),
+        objet_type="utilisateur", objet_id=getattr(utilisateur, "pk", "") or "",
+        resultat=RESULTAT_SUCCES if reussie else RESULTAT_ECHEC, statut_http=reponse.status_code,
+    )
+
+
+# ------------------------------------------------------------------ points d'entrée
+def controler(view, request):
+    """Appelée après l'authentification DRF, avant la vue. Lève 401 / 403 / 428 si besoin."""
+    chemin = _chemin(request)
+    if chemin is None or request.method == "OPTIONS":
+        return
+    regle_publique, _ = _regle(PUBLIQUES, request.method, chemin)
+    if regle_publique is not None:
+        if regle_publique.action == "securite.connexion":
+            _avant_connexion(request)
+        return
+
+    utilisateur = getattr(request, "user", None)
+    if not utilisateur or not getattr(utilisateur, "is_authenticated", False):
+        raise exceptions.NotAuthenticated("Connexion requise.")
+    if compte_expire(utilisateur):
+        raise exceptions.AuthenticationFailed("Compte expiré : adressez-vous à l'administrateur.")
+
+    regle, correspondance = _regle(REGLES, request.method, chemin)
+    ecriture = request.method in ECRITURES and not (regle and regle.lecture)
+    if regle is None:
+        if not ecriture:
+            return
+        # Écriture non cartographiée : listes de référence (configuration_api) -> paramétrage général ;
+        # ailleurs, réservée au paramétrage technique (fermé par défaut)
+        code = ("parametrage.update" if _module_vue(view, request).startswith("configuration_api")
+                else "parametrage.technique")
+    else:
+        code = regle.droit(request, view) if callable(regle.droit) else regle.droit
+
+    objet_id = _valeur(request, view, regle.cles if regle else ("pk", "id"), correspondance)
+    if code == INTERDIT:
+        _refuser(request, "audit.view", "Le journal d'audit est en lecture seule.", regle=regle, objet_id=objet_id)
+    if code and not a_le_droit(utilisateur, code):
+        droit = _droit(code)
+        libelle = droit.libelle if droit else code
+        _refuser(request, code, f"Droit insuffisant : « {libelle} » ({code}).", regle=regle, objet_id=objet_id,
+                 journal=ecriture)
+    if not ecriture:
+        return
+
+    droit = _droit(code)
+    motif = _motif(request)
+    if droit and droit.motif_obligatoire and len(motif) < MOTIF_LONGUEUR_MIN:
+        raise MotifRequis(droit)
+    if droit and droit.separation_taches and regle is not None and regle.auteur:
+        # Tous les identifiants présents sont contrôlés : la vue peut lire un autre nom de clé que le
+        # premier trouvé ici. Plusieurs objets différents, ou un auteur introuvable : refus (contrôle strict).
+        candidats = _valeurs(request, view, regle.cles, correspondance)
+        if len(candidats) > 1:
+            _refuser(request, code, "Séparation des tâches : la demande désigne plusieurs objets différents.",
+                     regle=regle, objet_id=objet_id)
+        for candidat in candidats:
+            auteur = None
+            try:
+                auteur = regle.auteur(candidat)
+            except Exception:
+                _refuser(request, code, "Séparation des tâches : contrôle de l'auteur impossible.",
+                         regle=regle, objet_id=candidat)
+            if auteur and str(auteur) == str(utilisateur.pk):
+                _refuser(request, code, f"Séparation des tâches : vous ne pouvez pas exécuter « {droit.libelle} » "
+                                        "sur une opération que vous avez saisie vous-même.", regle=regle, objet_id=candidat)
+
+    avant = None
+    if regle is not None and regle.instantane and objet_id:
+        try:
+            avant = regle.instantane(objet_id)
+        except Exception:
+            avant = None
+    elif request.method in ("PUT", "PATCH", "DELETE"):
+        avant = _avant_generique(view)
+    request._lephare_audit = {
+        "code": code, "regle": regle, "droit": droit, "objet_id": objet_id, "avant": avant, "motif": motif,
+        "module_vue": _module_vue(view, request), "cartographiee": regle is not None,
+    }
+
+
+def apres_reponse(view, request, reponse):
+    """Appelée sur toute réponse DRF : journalise l'opération d'écriture contrôlée."""
+    chemin = _chemin(request)
+    if chemin is None:
+        return
+    if getattr(request, "_lephare_connexion", None):
+        _apres_connexion(request, reponse)
+        return
+    contexte = getattr(request, "_lephare_audit", None)
+    if not contexte:
+        return
+    request._lephare_audit = None
+    regle, droit, code = contexte["regle"], contexte["droit"], contexte["code"]
+    reussie = reponse.status_code < 400
+    objet_id = contexte["objet_id"] or (_valeur(request, view, regle.cles, reponse=reponse) if regle else None) \
+        or _id_reponse(reponse)
+    apres = None
+    if reussie and regle is not None and regle.instantane and objet_id:
+        try:
+            apres = regle.instantane(objet_id)
+        except Exception:
+            apres = None
+    if apres is None and request.method != "DELETE":
+        apres = getattr(reponse, "data", None)
+    action = (regle.action if regle and regle.action else code) or "operation"
+    module = (action or "").split(".")[0] if "." in (action or "") else "securite"
+    libelle = droit.libelle if droit else {
+        "securite.deconnexion": "Déconnexion", "securite.mot_de_passe": "Changement de mot de passe",
+        "approbations.demander": "Demande d'autorisation",
+        "approbations.utiliser_derogation": "Utilisation d'une dérogation",
+    }.get(action, action)
+    message = ""
+    if not reussie:
+        corps = getattr(reponse, "data", None)
+        if isinstance(corps, dict):
+            message = str(corps.get("error") or corps.get("detail") or corps.get("message") or "")[:500]
+        elif isinstance(corps, list) and corps:
+            message = str(corps[0])[:500]
+    # Précisions apportées par la vue elle-même (completer_audit) : description, objet, avant / après
+    complements = contexte.get("complements") or {}
+    description = complements.get("description") or libelle
+    journaliser(
+        request=request, module=module, action=action,
+        description=f"{description}{' — échec : ' + message if message else ''}"
+                    f"{'' if contexte['cartographiee'] else ' (route non cartographiée : ' + contexte['module_vue'] + ')'}",
+        objet_type=complements.get("objet_type") or (regle.objet if regle and regle.objet else OBJETS_PAR_MODULE.get(module, "")),
+        objet_id=complements.get("objet_id") or objet_id or "", resultat=RESULTAT_SUCCES if reussie else RESULTAT_ECHEC,
+        avant=complements.get("avant", contexte["avant"]),
+        apres=complements.get("apres", apres) if reussie else None, motif=contexte["motif"],
+        statut_http=reponse.status_code, details={"saisie": nettoyer(_donnees(request))},
+    )
+
+
+def installer():
+    """Branche la garde sur toutes les vues DRF (une seule fois)."""
+    from rest_framework.views import APIView
+
+    if getattr(APIView, "_garde_lephare", False):
+        return
+    initial_origine = APIView.initial
+    finaliser_origine = APIView.finalize_response
+
+    def initial(self, request, *args, **kwargs):
+        initial_origine(self, request, *args, **kwargs)
+        controler(self, request)
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = finaliser_origine(self, request, response, *args, **kwargs)
+        try:
+            apres_reponse(self, request, response)
+        except Exception:  # le journal ne bloque jamais la réponse
+            import logging
+
+            logging.getLogger("lephare.audit").exception("Journalisation de la réponse impossible")
+        return response
+
+    APIView.initial = initial
+    APIView.finalize_response = finalize_response
+    APIView._garde_lephare = True

@@ -257,20 +257,22 @@ def valider_sexe(sexe: str) -> str:
 
 def valider_parts_beneficiaires(beneficiaires: List[Dict]) -> None:
     """
-    Valide que la somme des parts des bénéficiaires est égale à 100%.
+    Valide les parts des bénéficiaires : quand l'assuré en a précisé (part > 0), leur somme doit
+    faire 100 % ; quand aucune n'est précisée, les bénéficiaires restent sans part.
 
     Args:
         beneficiaires: Liste des bénéficiaires avec leurs parts
 
     Raises:
-        ValidationError: Si la somme n'est pas égale à 100%
+        ValidationError: Si des parts sont précisées et que leur somme n'est pas égale à 100 %
     """
     if not beneficiaires:
         return
 
-    total_parts = sum(
-        Decimal(str(ben.get("Part", 0))) for ben in beneficiaires
-    )
+    parts = [Decimal(str(ben.get("Part") or 0)) for ben in beneficiaires]
+    if not any(parts):
+        return
+    total_parts = sum(parts)
 
     if total_parts != Decimal("100.00"):
         raise ValidationError(
@@ -366,6 +368,10 @@ def determiner_offre(capital_deces, prime_ttc=0, categorie="") -> int:
             return 0
 
 
+# Part précisée en fin de nom : « 50% », « 50 % », « (33,5%) »
+MOTIF_PART_PRECISEE = re.compile(r"\(?\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*%\s*\)?\s*$")
+
+
 def traiter_ayants_droit(chaine):
     """
     Traite une chaîne contenant des ayants-droits séparés par '/'.
@@ -388,33 +394,22 @@ def traiter_ayants_droit(chaine):
     # 2. Nettoyer les espaces superflus
     ayants_droit = [ayant.strip() for ayant in ayants_droit if ayant.strip()]
 
-    # 3. Transformer chaque ayant-droit en dictionnaire {nom, prenoms}
+    # 3. Transformer chaque ayant-droit en dictionnaire {nom, prenoms, part}. La part n'est retenue que
+    #    si le fichier la précise (ex. « KOUAME JEAN 50% ») : sinon le bénéficiaire reste sans part
+    #    (0 en base), au lieu d'une répartition à parts égales que l'assuré n'a pas demandée.
     resultats = []
     for ayant in ayants_droit:
+        part = 0
+        precisee = MOTIF_PART_PRECISEE.search(ayant)
+        if precisee:
+            part = float(precisee.group(1).replace(",", "."))
+            ayant = ayant[: precisee.start()].strip()
         morceaux = ayant.split()
+        if not morceaux:
+            continue
         nom = morceaux[0]
         prenoms = " ".join(morceaux[1:]) if len(morceaux) > 1 else ""
-        resultats.append({"Nom": nom, "Prenoms": prenoms})
-
-    # 4. Répartition équitable des parts
-    n = len(resultats)
-    if n == 0:
-        return []
-
-    # Part brute
-    part = round(100 / n, 2)
-
-    # Calculer la somme et ajuster le premier en cas de surplus/déficit
-    parts = [part] * n
-    total = sum(parts)
-    ecart = round(100 - total, 2)
-
-    # Reporter l'écart sur le premier ayant-droit
-    parts[0] += ecart
-
-    # 5. Ajouter la part dans chaque dictionnaire
-    for i, ayant in enumerate(resultats):
-        ayant["Part"] = parts[i]
+        resultats.append({"Nom": nom, "Prenoms": prenoms, "Part": part})
 
     return resultats
 

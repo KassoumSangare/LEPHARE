@@ -28,6 +28,31 @@ export const natureMode = (mode) => {
   };
 };
 
+// Libellés de l'opération selon le mode choisi (titre du formulaire, bouton de validation) :
+// décaissement / réencaissement de prime mal affectée, annulation, compensation (CMP…),
+// prélèvement sur salaire ; tout autre mode est un encaissement
+const ACTIONS_REGLEMENT = {
+  encaissement: { titre: "Enregistrement d'un Encaissement", bouton: "Valider l'Encaissement" },
+  decaissement: { titre: "Enregistrement d'un Décaissement", bouton: 'Valider le Décaissement' },
+  reencaissement: { titre: "Enregistrement d'un Réencaissement", bouton: 'Valider le Réencaissement' },
+  contrepartie: { titre: "Enregistrement d'une Contrepartie d'annulation", bouton: 'Valider la Contrepartie' },
+  annulation: { titre: "Enregistrement d'une Annulation", bouton: "Valider l'Annulation" },
+  compensation: { titre: "Enregistrement d'une Compensation", bouton: 'Valider la Compensation' },
+  prelevement: { titre: "Enregistrement d'un Prélèvement sur salaire", bouton: 'Valider le Prélèvement' },
+};
+
+export const actionReglement = (mode) => {
+  const abrege = String(mode?.abregereglement || '').trim().toUpperCase();
+  const libelle = String(mode?.libellemodepaiement || '');
+  if (abrege === 'DMA' || /d.caissement/i.test(libelle)) return ACTIONS_REGLEMENT.decaissement;
+  if (abrege === 'PMA' || /r.encaissement/i.test(libelle)) return ACTIONS_REGLEMENT.reencaissement;
+  if (abrege === 'CPA') return ACTIONS_REGLEMENT.contrepartie;
+  if (abrege === 'ANL') return ACTIONS_REGLEMENT.annulation;
+  if (mode?.compensation || /^CMP\b/i.test(libelle)) return ACTIONS_REGLEMENT.compensation;
+  if (/pr.l.vement/i.test(libelle)) return ACTIONS_REGLEMENT.prelevement;
+  return ACTIONS_REGLEMENT.encaissement;
+};
+
 export const reglementVide = (nomEmetteur = '') => ({
   idMode: '',
   idBanque: '',

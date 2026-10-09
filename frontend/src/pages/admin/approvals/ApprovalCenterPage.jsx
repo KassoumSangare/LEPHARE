@@ -3,7 +3,6 @@ import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { approvalApi } from '../../../api/endpoints';
-import { dataStore } from '../../../api/dataStore';
 import { CheckCheck, Check, X, ShieldAlert, Key } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
@@ -26,7 +25,7 @@ const normalizeDemande = (d) => {
 };
 
 export const ApprovalCenterPage = () => {
-  const [demandes, setDemandes] = useState(() => dataStore.getDerogations());
+  const [demandes, setDemandes] = useState([]);
   const [selectedDemande, setSelectedDemande] = useState(null);
   const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
   const [validiteHeures, setValiditeHeures] = useState(24);
@@ -40,7 +39,8 @@ export const ApprovalCenterPage = () => {
       }
     } catch (e) {
       console.error('Erreur autorisations Django:', e);
-      setDemandes(dataStore.getDerogations());
+      setDemandes([]);
+      error('Impossible de charger les demandes : le serveur ou la base de données ne répond pas.');
     }
   };
 
@@ -67,16 +67,12 @@ export const ApprovalCenterPage = () => {
       }
     } catch (err) {
       console.warn('API approve error:', err.message);
+      error(err.response?.data?.detail || err.response?.data?.message || "La demande n'a pas pu être approuvée.");
+      return;
     }
 
-    dataStore.updateDerogation(selectedDemande.id, {
-      statut: 'APPROVED',
-      statut_label: 'Approuvée',
-      statut_badge: 'emerald',
-      code_jeton: finalToken,
-    });
-    setDemandes(dataStore.getDerogations());
     setIsApproveModalOpen(false);
+    await loadDemandes();
     success(`Demande approuvée avec succès ! Jeton de sécurité officiel : ${finalToken} (valide ${validiteHeures}h)`);
   };
 
@@ -84,14 +80,11 @@ export const ApprovalCenterPage = () => {
     try {
       await approvalApi.rejectDemande(d.id, 'Rejet par la Direction');
     } catch (err) {
-      console.warn('API reject fallback');
+      console.warn('API reject error:', err.message);
+      error(err.response?.data?.detail || err.response?.data?.message || "La demande n'a pas pu être rejetée.");
+      return;
     }
-    dataStore.updateDerogation(d.id, {
-      statut: 'REJECTED',
-      statut_label: 'Rejetée',
-      statut_badge: 'rose',
-    });
-    setDemandes(dataStore.getDerogations());
+    await loadDemandes();
     error(`Demande "${d.objet}" rejetée par la Direction.`);
   };
 

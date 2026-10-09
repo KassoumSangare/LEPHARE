@@ -1,191 +1,167 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authApi } from '../api/endpoints';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { authApi, securiteApi } from '../api/endpoints';
+import { CLE_JETON, CLE_SESSION, EVENEMENT_SESSION_EXPIREE } from '../api/apiClient';
+import { definirDroits, aLeDroit } from '../utils/droits';
+import { ADMIN_MENU } from '../components/layout/adminMenu';
+import { chargerParametrage } from '../utils/parametrage';
 
+// Session de l'utilisateur : jeton Knox (POST /api/users/login) et droits effectifs
+// (GET /api/securite/moi/). Aucune session locale de secours : sans jeton accepté par le serveur,
+// retour à la page de connexion.
 const AuthContext = createContext(null);
 
-const DEFAULT_DJANGO_USER = {
-  id: 1,
-  email: 'franckdelord@hotmail.com',
-  username: 'franckdelord@hotmail.com',
-  name: 'Franck Delord',
-  is_admin: true,
-  role: 'ADMIN',
-  role_label: 'Directeur Général & Administrateur',
-  avatar: 'FD',
+const lireSession = () => {
+  try {
+    const jeton = localStorage.getItem(CLE_JETON);
+    const session = JSON.parse(localStorage.getItem(CLE_SESSION) || 'null');
+    return jeton && session?.user ? session : null;
+  } catch {
+    return null;
+  }
 };
 
-const DEFAULT_DJANGO_TOKEN = '1eec9e04519aff6549b70333008086f228a62e258e7627191df754b9716368c3';
+// Utilisateur affiché à partir de GET /api/securite/moi/
+const utilisateurDepuis = (moi) => {
+  const nom = (moi.nom || moi.email || '').trim();
+  const roles = moi.roles || [];
+  return {
+    id: moi.id,
+    email: moi.email,
+    username: moi.email,
+    name: nom,
+    first_name: nom,
+    is_admin: Boolean(moi.administrateur),
+    roles,
+    role_label: moi.administrateur
+      ? 'Administrateur'
+      : (roles.filter((r) => r.actif).map((r) => r.libelle).join(', ') || 'Aucun rôle'),
+    avatar: (nom || 'LP').split(/\s+/).map((m) => m[0]).join('').slice(0, 2).toUpperCase(),
+  };
+};
+
+// Écrans de l'administration accessibles (hors guide) : l'espace Administration est proposé s'il y en a un
+const ECRANS_ADMIN = ADMIN_MENU.flatMap((g) => g.items).filter((i) => i.to !== '/admin/guide');
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('uranus_user');
-    return saved ? JSON.parse(saved) : DEFAULT_DJANGO_USER;
-  });
+  const [session, setSession] = useState(lireSession);
+  const [verification, setVerification] = useState(Boolean(lireSession()));
+  const [versionDroits, setVersionDroits] = useState(0);
+  const [activeSpace, setActiveSpace] = useState(() => localStorage.getItem('uranus_active_space') || 'user');
 
-  // Helper to determine if a user has Director or Administrator privileges
-  const checkIsDirectorOrAdmin = (u) => {
-    if (!u) return false;
-    if (u.is_admin === true || u.is_superuser === true || u.is_staff === true) return true;
-    const roleStr = (u.role || '').toUpperCase();
-    if (roleStr === 'ADMIN' || roleStr === 'DIRECTEUR' || roleStr === 'DIR_GEN') return true;
-    const labelStr = (u.role_label || '').toLowerCase();
-    if (labelStr.includes('directeur') || labelStr.includes('administrateur') || labelStr.includes('admin')) return true;
-    const usernameStr = (u.username || u.email || '').toLowerCase();
-    if (usernameStr.includes('admin') || usernameStr.includes('directeur') || usernameStr.includes('franckdelord')) return true;
-    return false;
-  };
-
-  const isDirectorOrAdmin = checkIsDirectorOrAdmin(user);
-
-  // Current active workspace: 'user' (Opérateur) or 'admin' (Direction & Paramétrage)
-  const [activeSpace, setActiveSpace] = useState(() => {
-    const saved = localStorage.getItem('uranus_active_space');
-    if (!checkIsDirectorOrAdmin(user ? user : DEFAULT_DJANGO_USER)) {
-      return 'user';
-    }
-    return saved || 'user';
-  });
-
-  const [token, setToken] = useState(() => {
-    const saved = localStorage.getItem('uranus_auth_token');
-    if (!saved) {
-      localStorage.setItem('uranus_auth_token', DEFAULT_DJANGO_TOKEN);
-      return DEFAULT_DJANGO_TOKEN;
-    }
-    return saved;
-  });
-
-  useEffect(() => {
-    if (token) {
-      localStorage.setItem('uranus_auth_token', token);
-    } else {
-      localStorage.removeItem('uranus_auth_token');
-    }
-  }, [token]);
-
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem('uranus_user', JSON.stringify(user));
-      if (!isDirectorOrAdmin && activeSpace !== 'user') {
-        setActiveSpace('user');
-      }
-    } else {
-      localStorage.removeItem('uranus_user');
-    }
-  }, [user, isDirectorOrAdmin, activeSpace]);
-
-  useEffect(() => {
-    localStorage.setItem('uranus_active_space', activeSpace);
-  }, [activeSpace]);
-
-  const login = async (username, password) => {
+  const enregistrer = useCallback((nouvelle) => {
+    setSession(nouvelle);
+    definirDroits(nouvelle?.droits || []);
+    setVersionDroits((v) => v + 1);
     try {
-      const res = await authApi.login({ email: username, password });
-      if (res && res.data && res.data.token) {
-        const u = res.data.user || {};
-        const mappedUser = {
-          id: u.id || 1,
-          email: u.email || username,
-          username: u.email || username,
-          name: u.name || (u.email ? u.email.split('@')[0] : username),
-          is_admin: Boolean(u.is_admin),
-          role: u.is_admin ? 'ADMIN' : 'USER',
-          role_label: u.is_admin ? 'Directeur Général & Administrateur' : 'Opérateur Guichet',
-          avatar: (u.name || u.email || username).substring(0, 2).toUpperCase(),
-        };
-        setUser(mappedUser);
-        setToken(res.data.token);
-        localStorage.setItem('uranus_auth_token', res.data.token);
-        localStorage.setItem('uranus_user', JSON.stringify(mappedUser));
-        if (mappedUser.is_admin) {
-          setActiveSpace('admin');
-        } else {
-          setActiveSpace('user');
-        }
-        return mappedUser;
-      }
-    } catch (err) {
-      console.warn('Connexion API Django échouée, activation session locale secours:', err.response?.data || err.message);
-      const isAdmin = (username || '').toLowerCase().includes('admin') || (username || '').toLowerCase().includes('direction') || (username || '').toLowerCase().includes('franck');
-      const fallbackUser = {
-        id: isAdmin ? 1 : 2,
-        email: username.includes('@') ? username : `${username}@uranus.ci`,
-        username: username,
-        name: isAdmin ? 'FRANCK TOKPA' : 'KOUADIO OLIVIER',
-        first_name: isAdmin ? 'FRANCK' : 'KOUADIO',
-        is_admin: isAdmin,
-        role: isAdmin ? 'ADMIN' : 'USER',
-        role_label: isAdmin ? 'Directeur Général & Administrateur' : 'Opérateur Guichet / Production',
-        avatar: isAdmin ? 'FT' : 'KO',
-      };
-      setUser(fallbackUser);
-      setToken('demo_token_' + Date.now());
-      localStorage.setItem('uranus_auth_token', 'demo_token_' + Date.now());
-      localStorage.setItem('uranus_user', JSON.stringify(fallbackUser));
-      setActiveSpace(isAdmin ? 'admin' : 'user');
-      return fallbackUser;
+      if (nouvelle) localStorage.setItem(CLE_SESSION, JSON.stringify(nouvelle));
+      else localStorage.removeItem(CLE_SESSION);
+    } catch {
+      // stockage indisponible : la session reste en mémoire
     }
+  }, []);
+
+  const fermer = useCallback(() => {
+    try {
+      localStorage.removeItem(CLE_JETON);
+      localStorage.removeItem(CLE_SESSION);
+    } catch {
+      // rien à faire
+    }
+    enregistrer(null);
+  }, [enregistrer]);
+
+  // Droits relus auprès du serveur (au démarrage, après un changement de rôles ou de mot de passe)
+  const rafraichir = useCallback(async () => {
+    const moi = await securiteApi.moi();
+    const nouvelle = {
+      user: utilisateurDepuis(moi),
+      droits: moi.droits || [],
+      doitChangerMotDePasse: Boolean(moi.doit_changer_mot_de_passe),
+    };
+    enregistrer(nouvelle);
+    return nouvelle;
+  }, [enregistrer]);
+
+  useEffect(() => {
+    definirDroits(session?.droits || []);
+    if (!session) return;
+    rafraichir().catch(() => {}).finally(() => setVerification(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Jeton refusé par le serveur (expiré, compte désactivé) : fin de session
+  useEffect(() => {
+    const surExpiration = () => {
+      if (!localStorage.getItem(CLE_JETON)) return;
+      fermer();
+      if (!window.location.pathname.startsWith('/login')) window.location.assign('/login?session=expiree');
+    };
+    window.addEventListener(EVENEMENT_SESSION_EXPIREE, surExpiration);
+    return () => window.removeEventListener(EVENEMENT_SESSION_EXPIREE, surExpiration);
+  }, [fermer]);
+
+  const peut = useCallback((exigence) => aLeDroit(exigence), [versionDroits]); // eslint-disable-line react-hooks/exhaustive-deps
+  const accesAdministration = useMemo(
+    () => Boolean(session) && ECRANS_ADMIN.some((i) => aLeDroit(i.droit)),
+    [session, versionDroits], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  useEffect(() => {
+    const espace = accesAdministration ? activeSpace : 'user';
+    if (espace !== activeSpace) setActiveSpace(espace);
+    localStorage.setItem('uranus_active_space', espace);
+  }, [accesAdministration, activeSpace]);
+
+  /** Connexion : erreurs du serveur remontées telles quelles (mot de passe, compte verrouillé ou expiré). */
+  const login = async (email, password) => {
+    try {
+      localStorage.removeItem(CLE_JETON);
+    } catch {
+      // rien
+    }
+    const res = await authApi.login({ email: (email || '').trim().toLowerCase(), password });
+    const jeton = res?.data?.token;
+    if (!jeton) throw new Error('Réponse du serveur sans jeton de session.');
+    localStorage.setItem(CLE_JETON, jeton);
+    const nouvelle = await rafraichir();
+    chargerParametrage(true);
+    setActiveSpace('user');
+    return nouvelle.user;
   };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('uranus_auth_token');
-    localStorage.removeItem('uranus_user');
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // session déjà fermée côté serveur
+    }
+    fermer();
   };
 
   const switchSpace = (space) => {
-    // Seul le directeur ou administrateur a le droit de basculer vers l'espace admin
-    if (space === 'admin' && !isDirectorOrAdmin) {
-      return;
-    }
+    if (space === 'admin' && !accesAdministration) return;
     setActiveSpace(space);
-  };
-
-  const switchUser = (newUser) => {
-    if (!newUser) return;
-    const isAdmin = Boolean(
-      newUser.is_admin ||
-      newUser.role === 'ADMIN' ||
-      newUser.role_code === 'ADMIN' ||
-      (newUser.username || '').toLowerCase().includes('admin') ||
-      (newUser.username || '').toLowerCase().includes('franckdelord') ||
-      (newUser.role_label || '').toLowerCase().includes('directeur') ||
-      (newUser.role_label || '').toLowerCase().includes('admin')
-    );
-    const mapped = {
-      id: newUser.id || 1,
-      email: newUser.email || `${newUser.username || 'user'}@uranus.ci`,
-      username: newUser.username || newUser.email,
-      name: newUser.name || newUser.first_name || (newUser.email ? newUser.email.split('@')[0] : 'Utilisateur'),
-      is_admin: isAdmin,
-      role: isAdmin ? 'ADMIN' : 'USER',
-      role_label: newUser.role_label || (isAdmin ? 'Directeur Général & Administrateur' : 'Opérateur Guichet'),
-      avatar: (newUser.first_name || newUser.name || newUser.username || 'U').substring(0, 2).toUpperCase(),
-    };
-    setUser(mapped);
-    localStorage.setItem('uranus_user', JSON.stringify(mapped));
-    if (isAdmin) {
-      setActiveSpace('admin');
-    } else {
-      setActiveSpace('user');
-    }
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        token,
+        user: session?.user || null,
+        token: session ? localStorage.getItem(CLE_JETON) : null,
+        droits: session?.droits || [],
+        doitChangerMotDePasse: Boolean(session?.doitChangerMotDePasse),
+        verificationSession: verification,
         activeSpace,
-        isAuthenticated: !!user,
-        isAdmin: isDirectorOrAdmin,
-        isDirectorOrAdmin,
-        canSwitchSpace: isDirectorOrAdmin,
+        isAuthenticated: Boolean(session),
+        // Noms gardés pour les écrans existants : « accès à l'espace Administration »
+        isAdmin: accesAdministration,
+        isDirectorOrAdmin: accesAdministration,
+        canSwitchSpace: accesAdministration,
+        accesAdministration,
+        peut,
         login,
         logout,
         switchSpace,
-        switchUser,
+        rafraichirSession: rafraichir,
       }}
     >
       {children}
@@ -199,14 +175,18 @@ export const useAuth = () => {
     return {
       user: null,
       token: null,
+      droits: [],
       activeSpace: 'user',
       isAuthenticated: false,
       isAdmin: false,
       isDirectorOrAdmin: false,
       canSwitchSpace: false,
-      login: () => {},
+      accesAdministration: false,
+      peut: () => false,
+      login: async () => null,
       logout: () => {},
       switchSpace: () => {},
+      rafraichirSession: async () => null,
     };
   }
   return context;

@@ -4025,3 +4025,59 @@ class ProduitParametre(models.Model):
         verbose_name = "Paramètre d'un produit"
         verbose_name_plural = "Paramètres des produits"
         ordering = ["Ordre", "IdProduit"]
+
+
+class DommageCategorie(models.Model):
+    """Catégorie de la branche Dommages (stdtarif 4xx, produit 9) telle que la propose LE PHARE."""
+
+    TYPES_CHAMP = [
+        ("texte", "Texte court"),
+        ("texte_long", "Texte sur plusieurs lignes"),
+        ("date", "Date"),
+        ("montant", "Montant (FCFA)"),
+        ("liste", "Liste de choix"),
+    ]
+
+    IdTarif = models.IntegerField(primary_key=True, db_column="idtarif")
+    # Catégorie proposée dans l'écran de devis Dommages
+    SaisieOuverte = models.BooleanField(default=True, db_column="saisieouverte")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    # Phrase affichée sous la catégorie dans l'écran de devis
+    Description = models.TextField(blank=True, default="", db_column="description")
+    # Prime au prorata de la durée quand le contrat n'est pas annuel (URANUS : jamais)
+    Prorata = models.BooleanField(default=False, db_column="prorata")
+    # Description du risque demandée à la saisie : [{Cle, Libelle, Type, Obligatoire, Options}]
+    ChampsRisque = models.JSONField(default=list, blank=True, db_column="champsrisque")
+    # Textes de la fiche de cotation imprimée (modèle « Cotation d'assurance » de NSIA) : objet de la
+    # garantie, contre-garanties et mesures préalables, exclusions (une ligne par élément)
+    ObjetGarantie = models.TextField(blank=True, default="", db_column="objetgarantie")
+    ContreGaranties = models.TextField(blank=True, default="", db_column="contregaranties")
+    Exclusions = models.TextField(blank=True, default="", db_column="exclusions")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_dommage_categorie"
+        verbose_name = "Catégorie Dommages"
+        verbose_name_plural = "Catégories Dommages"
+        ordering = ["Ordre", "IdTarif"]
+
+
+class DommageGarantie(models.Model):
+    """Réglages LE PHARE d'une garantie d'offre Dommages (stdoffregarantie) : taux proposé, obligation."""
+
+    IdOffre = models.IntegerField(db_column="idoffre")
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    IdSousGarantie = models.IntegerField(db_column="idsousgarantie")
+    # Taux de prime (% du capital) proposé à la saisie ; vide : prime saisie en montant
+    TauxDefaut = models.DecimalField(max_digits=9, decimal_places=4, null=True, blank=True, db_column="tauxdefaut")
+    # Garantie toujours retenue (case cochée et non décochable)
+    Obligatoire = models.BooleanField(default=False, db_column="obligatoire")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_dommage_garantie"
+        verbose_name = "Garantie Dommages"
+        verbose_name_plural = "Garanties Dommages"
+        constraints = [
+            models.UniqueConstraint(fields=["IdOffre", "IdCompagnie", "IdSousGarantie"], name="lephare_dommage_garantie_unique"),
+        ]

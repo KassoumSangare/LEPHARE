@@ -3,10 +3,17 @@ from rest_framework import routers
 
 from .views_devis_ia import (
     enregistrer_devis_ia_complet,
+    accessoire_devis_ia,
     garanties_devis_ia,
     taux_taxe_devis_ia,
 )
 from .views_devis_risques_divers import lire_devis_risques_divers
+from .views_devis_dommages import (
+    calcul_dommages,
+    catalogue_dommages,
+    enregistrer_devis_dommages_vue,
+    lire_devis_dommages,
+)
 from .views_devis_voyage import (
     attestation_contrat_voyage,
     enregistrer_devis_voyage_vue,
@@ -247,6 +254,12 @@ urlpatterns = [
         taux_taxe_devis_ia,
         name="taux_taxe_devis_ia",
     ),
+    # Accessoire et taxe sur accessoire d'un devis IA groupe (prime TTC affichée avant l'enregistrement)
+    path(
+        r"devisia/accessoire/",
+        accessoire_devis_ia,
+        name="accessoire_devis_ia",
+    ),
     # Garanties enregistrées de chaque assuré d'un devis IA
     path(
         r"devisia/<int:iddevis>/garanties/",
@@ -275,6 +288,11 @@ urlpatterns = [
     path("finance/commissions/reclamations/<int:id_reclamation>/", views_finance.reclamation, name="finance_reclamation"),
     path("finance/commissions/reclamations/<int:id_reclamation>/annuler/", views_finance.annuler_reclamation, name="finance_annuler_reclamation"),
     path("finance/commissions/reclamations/<int:id_reclamation>/paiements/", views_finance.encaisser_commission, name="finance_encaisser_commission"),
+    # Devis Dommages (produit 9, toutes catégories) : catalogue, calcul, création / « Modifier », relecture
+    path(r"dommages/catalogue/", catalogue_dommages, name="dommages_catalogue"),
+    path(r"dommages/calcul/", calcul_dommages, name="dommages_calcul"),
+    path(r"dommages/devis/", enregistrer_devis_dommages_vue, name="dommages_enregistrement"),
+    path(r"dommages/devis/<int:iddevis>/", lire_devis_dommages, name="dommages_lecture"),
     # Devis Voyage (création / « Modifier ») et relecture complète
     path(
         r"devisvoyage/enregistrement/",

@@ -76,9 +76,17 @@ class UranusUser(AbstractBaseUser):
         return self.email
 
     def has_perm(self, perm, obj=None):
-        "A-t-il cette permission?"
-        # Réponse la plus simple: Oui, toujours
-        return True
+        """A-t-il cette permission ? Droits LE PHARE (autorisations/rbac.py) : rôles actifs de
+        l'utilisateur, tous les droits pour un administrateur. Les permissions Django sans
+        équivalent (administration Django) restent réservées aux administrateurs."""
+        from autorisations.catalogue import TOUS
+        from autorisations.rbac import a_le_droit
+
+        equivalences = {"uranus.can_accord_derogation": "approbations.decider"}
+        code = equivalences.get(perm, perm)
+        if code in TOUS:
+            return a_le_droit(self, code)
+        return bool(self.is_active and self.is_admin)
 
     def has_module_perms(self, app_label):
         "A-t-il la permission de voir l'application `app_label`?"

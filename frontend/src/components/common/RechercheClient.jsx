@@ -30,6 +30,7 @@ export const personneDepuisClient = (c) => {
     Adresse: c.Adresse ?? c.Adresse1 ?? c.adresse ?? '',
     AdresseGeographique: c.AdresseGeographique ?? c.Adresse2 ?? '',
     DateNaissance: jour(c.DateNaissance || c.date_naissance),
+    Email: String(c.Email || c.email || '').trim(),
   };
 };
 

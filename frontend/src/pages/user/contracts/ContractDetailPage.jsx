@@ -35,7 +35,7 @@ import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementTab, setMovementTab] = useState('renouvellement');
@@ -50,13 +50,11 @@ export const ContractDetailPage = () => {
   useEffect(() => {
     let isMounted = true;
     if (id) {
-      const local = dataStore.getContractById(id);
-      if (local) setCurrentContract(local);
-
       contractApi.getContractDetail(id).then((bc) => {
         if (isMounted && bc) setCurrentContract(bc);
       }).catch((err) => {
-        console.warn('Fallback contrat local:', err?.message || err);
+        console.warn('Chargement contrat impossible:', err?.message || err);
+        if (isMounted) toastError('Impossible de charger ce contrat : le serveur ou la base de données ne répond pas.');
       });
 
       asaciApi.getAttestations().then((atts) => {
@@ -66,7 +64,7 @@ export const ContractDetailPage = () => {
     return () => { isMounted = false; };
   }, [id]);
 
-  const contract = currentContract || dataStore.getContractById(id) || {};
+  const contract = currentContract || {};
 
   // Contrat Transport : certificats GUCE du bordereau dont il est issu (une ligne de contrat par certificat)
   const contratTransport = estDevisTransport(contract);

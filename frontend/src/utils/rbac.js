@@ -1,184 +1,56 @@
 /**
- * RBAC & Business Rules Engine for LE PHARE (Uranus)
- * Conformité Code des Assurances CIMA & Droit Comptable OHADA
+ * Droits d'action de LE PHARE côté écran, sur les droits effectifs du serveur (utils/droits.js,
+ * chargés par AuthContext depuis GET /api/securite/moi/) et règles de gestion CIMA.
+ *
+ * canUser(user, action, ressource) garde la signature utilisée par les écrans (clients, devis,
+ * contrats, sinistres, CRM…) ; l'ancienne matrice de profils codée en dur est remplacée par la
+ * correspondance ci-dessous vers les droits réglés dans Administration > Rôles. Le serveur contrôle
+ * de toute façon chaque appel (autorisations/garde.py).
  */
+import { aLeDroit } from './droits';
 
-export const ROLES = {
-  ADMIN: 'ADMIN', // Direction Générale & Administrateur
-  DIR_TECH: 'DIR_TECH', // Direction Technique & Souscription
-  DIR_SINISTRES: 'DIR_SINISTRES', // Direction Sinistres & Gestion Déléguée
-  FINANCE: 'FINANCE', // Finance, Trésorerie & Encaissements
-  COMMERCIAL: 'COMMERCIAL', // Conseillère Commerciale & Production
-  BACKOFFICE: 'BACKOFFICE', // Gestionnaire BackOffice & Émissions
-  CONFORMITE: 'CONFORMITE', // Conformité CIMA & Contrôle Interne
+// (ressource, action) de l'écran -> droit(s) du serveur
+const DROITS_ACTIONS = {
+  clients: { view: 'clients.view', create: 'clients.create', edit: 'clients.update', archive: 'clients.update', delete: 'clients.delete', merge: 'clients.merge' },
+  quotes: { view: 'devis.view', create: 'devis.create', edit: 'devis.update', delete: 'devis.cancel', archive: 'devis.cancel', convert: 'devis.validate' },
+  contracts: { view: 'contrats.view', create: 'devis.validate', edit: 'contrats.update', terminate: 'contrats.cancel', cancel: 'contrats.cancel', endorse: 'contrats.avenant' },
+  claims: { view: 'sinistres.view', create: 'sinistres.create', edit: 'sinistres.update', delete: 'sinistres.update', close: 'sinistres.update', settle: 'sinistres.settle' },
+  cash: { view: 'encaissements.view', collect: 'encaissements.create', extourne: 'encaissements.cancel', delete: 'encaissements.cancel' },
+  catalog: { view: 'tarifs.view', create: 'tarifs.update', edit: 'tarifs.update', delete: 'tarifs.update' },
+  conventions: { view: null, create: 'parametrage.update', edit: 'parametrage.update', delete: 'parametrage.update' },
+  remittances: { view: 'reversements.view', create: 'reversements.create', validate: 'reversements.validate', export: 'reversements.view' },
+  users: { view: 'users.view', create: 'users.create', edit: 'users.update', delete: 'users.disable', reset_password: 'users.password' },
+  leads: { view: 'crm.view', create: 'crm.update', edit: 'crm.update', delete: 'crm.update', convert: 'crm.update' },
 };
 
-export const ROLE_LABELS = {
-  [ROLES.ADMIN]: 'Direction Générale (Admin)',
-  [ROLES.DIR_TECH]: 'Direction Technique & Souscription',
-  [ROLES.DIR_SINISTRES]: 'Direction Sinistres & Déléguée',
-  [ROLES.FINANCE]: 'Finance & Trésorerie',
-  [ROLES.COMMERCIAL]: 'Conseillère Commerciale',
-  [ROLES.BACKOFFICE]: 'Gestionnaire BackOffice',
-  [ROLES.CONFORMITE]: 'Conformité CIMA & Audit',
+const LIBELLES_ACTIONS = {
+  view: 'la consultation', edit: 'la modification', delete: 'la suppression', create: 'la création',
+  terminate: 'la résiliation', cancel: "l'annulation", settle: 'le règlement', extourne: "l'extourne",
+  validate: 'la validation', convert: 'la transformation', endorse: "l'avenant", collect: "l'encaissement",
 };
 
-/**
- * Normalize role string from user object
- */
-export const getUserRole = (user) => {
-  if (!user) return ROLES.COMMERCIAL;
-  if (user.is_admin === true || user.is_superuser === true) return ROLES.ADMIN;
-  const roleCode = (user.role_code || user.role || '').toUpperCase();
-  if (ROLES[roleCode]) return ROLES[roleCode];
-  if (roleCode === 'DIR_GEN') return ROLES.ADMIN;
-  if (roleCode === 'COMPTABLE' || roleCode === 'CAISSIER') return ROLES.FINANCE;
-  if (roleCode === 'AGENT' || roleCode === 'USER') return ROLES.COMMERCIAL;
-  return ROLES.COMMERCIAL;
-};
-
-/**
- * Retrieve current user from local storage or fallback
- */
+/** Utilisateur de la session ouverte (localStorage), sans valeur inventée. */
 export const getCurrentUser = () => {
   try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem('uranus_user');
-      if (saved) return JSON.parse(saved);
-    }
-  } catch (e) {
-    // fallback
+    const session = JSON.parse(window.localStorage.getItem('lephare_session') || 'null');
+    return session?.user || null;
+  } catch {
+    return null;
   }
-  return { role: ROLES.ADMIN, username: 'admin', nom: 'Franck Gnogouri' };
 };
 
-/**
- * RBAC Permissions Matrix
- * Resources: 'clients', 'quotes', 'contracts', 'claims', 'cash', 'catalog', 'conventions', 'remittances', 'users', 'leads'
- * Actions: 'view', 'create', 'edit', 'delete', 'terminate', 'approve', 'extourne'
- */
-export const PERMISSIONS_MATRIX = {
-  [ROLES.ADMIN]: {
-    clients: ['view', 'create', 'edit', 'delete', 'archive'],
-    quotes: ['view', 'create', 'edit', 'delete', 'convert'],
-    contracts: ['view', 'create', 'edit', 'terminate', 'cancel', 'endorse'],
-    claims: ['view', 'create', 'edit', 'delete', 'settle', 'close'],
-    cash: ['view', 'collect', 'extourne'],
-    catalog: ['view', 'create', 'edit', 'delete'],
-    conventions: ['view', 'create', 'edit', 'delete'],
-    remittances: ['view', 'create', 'validate', 'export'],
-    users: ['view', 'create', 'edit', 'delete', 'reset_password'],
-    leads: ['view', 'create', 'edit', 'delete', 'convert'],
-  },
-  [ROLES.DIR_TECH]: {
-    clients: ['view', 'create', 'edit'],
-    quotes: ['view', 'create', 'edit', 'delete', 'convert'],
-    contracts: ['view', 'create', 'edit', 'terminate', 'endorse'],
-    claims: ['view', 'edit'],
-    cash: ['view'],
-    catalog: ['view', 'create', 'edit', 'delete'],
-    conventions: ['view', 'edit'],
-    remittances: ['view'],
-    users: ['view'],
-    leads: ['view', 'create', 'edit'],
-  },
-  [ROLES.DIR_SINISTRES]: {
-    clients: ['view'],
-    quotes: ['view'],
-    contracts: ['view', 'endorse'],
-    claims: ['view', 'create', 'edit', 'delete', 'settle', 'close'],
-    cash: ['view'],
-    catalog: ['view'],
-    conventions: ['view'],
-    remittances: ['view'],
-    users: ['view'],
-    leads: ['view'],
-  },
-  [ROLES.FINANCE]: {
-    clients: ['view'],
-    quotes: ['view'],
-    contracts: ['view'],
-    claims: ['view'],
-    cash: ['view', 'collect', 'extourne'],
-    catalog: ['view'],
-    conventions: ['view'],
-    remittances: ['view', 'create', 'validate', 'export'],
-    users: ['view'],
-    leads: ['view'],
-  },
-  [ROLES.COMMERCIAL]: {
-    clients: ['view', 'create', 'edit'],
-    quotes: ['view', 'create', 'edit', 'delete', 'convert'],
-    contracts: ['view', 'create'],
-    claims: ['view', 'create'],
-    cash: ['view'],
-    catalog: ['view'],
-    conventions: ['view'],
-    remittances: [],
-    users: [],
-    leads: ['view', 'create', 'edit', 'delete', 'convert'],
-  },
-  [ROLES.BACKOFFICE]: {
-    clients: ['view', 'create', 'edit'],
-    quotes: ['view', 'create', 'edit', 'convert'],
-    contracts: ['view', 'create', 'endorse'],
-    claims: ['view'],
-    cash: ['view'],
-    catalog: ['view'],
-    conventions: ['view'],
-    remittances: ['view'],
-    users: [],
-    leads: ['view'],
-  },
-  [ROLES.CONFORMITE]: {
-    clients: ['view'],
-    quotes: ['view'],
-    contracts: ['view'],
-    claims: ['view'],
-    cash: ['view'],
-    catalog: ['view'],
-    conventions: ['view'],
-    remittances: ['view'],
-    users: ['view'],
-    leads: ['view'],
-  },
+/** L'utilisateur connecté peut-il faire cette action ? (le premier argument est conservé pour compatibilité) */
+export const canUser = (_user, action, resource) => {
+  const actions = DROITS_ACTIONS[resource];
+  if (!actions || !(action in actions)) return false;
+  return aLeDroit(actions[action]);
 };
 
-/**
- * Check if current user is allowed to perform action on resource
- */
-export const canUser = (user, action, resource) => {
-  const role = getUserRole(user);
-  const userPerms = PERMISSIONS_MATRIX[role] || {};
-  const resourcePerms = userPerms[resource] || [];
-  return resourcePerms.includes(action);
-};
-
-/**
- * Detailed authorization check returning boolean + human-readable justification
- */
 export const checkAuthorization = (user, action, resource) => {
-  const allowed = canUser(user, action, resource);
-  if (allowed) return { allowed: true };
-
-  const role = getUserRole(user);
-  const roleName = ROLE_LABELS[role] || role;
-
-  const labels = {
-    edit: 'la modification',
-    delete: 'la suppression',
-    create: 'la création',
-    terminate: 'la résiliation',
-    cancel: "l'annulation",
-    settle: 'le règlement',
-    extourne: "l'extourne",
-    validate: 'la validation',
-  };
-
-  const actionLabel = labels[action] || action;
+  if (canUser(user, action, resource)) return { allowed: true };
   return {
     allowed: false,
-    reason: `Votre profil actuel (${roleName}) n'est pas habilité pour ${actionLabel} sur cette ressource. Veuillez contacter un administrateur ou la direction concernée.`,
+    reason: `Vos rôles ne vous autorisent pas ${LIBELLES_ACTIONS[action] || action} sur cet élément. Adressez-vous à un administrateur (Administration > Utilisateurs).`,
   };
 };
 

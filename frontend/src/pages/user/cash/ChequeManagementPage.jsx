@@ -7,6 +7,7 @@ import { cashApi, customerApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
 import { printRecuEncaissement } from '../../../utils/exportUtils';
+import { AmountInput } from '../../../components/common/AmountInput';
 import {
   ChampsReglement,
   champsReglementApi,
@@ -16,6 +17,9 @@ import {
 } from '../../../components/cash/ChampsReglement';
 
 const fcfa = (v) => `${Math.round(Number(v) || 0).toLocaleString('fr-FR')} F`;
+// Nom comparé sans majuscules, accents ni espaces en trop
+const normaliserNom = (texte) => String(texte || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\s+/g, ' ').trim().toLowerCase();
 
 // Date du jour au format du champ date (AAAA-MM-JJ), en heure locale
 const aujourdhui = () => {
@@ -53,7 +57,8 @@ const messageErreur = (err, defaut) => {
   return defaut;
 };
 
-const ligneVide = () => ({ numero: '', montant: '', date: '' });
+// Ligne d'échéancier : chaque chèque a sa banque (un client peut remettre des chèques de plusieurs banques)
+const ligneVide = (banque = '') => ({ numero: '', montant: 0, date: '', banque });
 
 // Portefeuille des chèques (stdcheque) : chèques reçus en caisse et chèques remis d'avance par
 // un client avec un échéancier de dépôt ; suivi des impayés (décaissement puis réencaissement).
@@ -115,10 +120,10 @@ export const ChequeManagementPage = () => {
   const [clients, setClients] = useState([]);
   const [chargementClients, setChargementClients] = useState(false);
   const [rechercheClient, setRechercheClient] = useState('');
-  const [echeancier, setEcheancier] = useState({ idClient: '', idBanque: '', observation: '', lignes: [ligneVide()] });
+  const [echeancier, setEcheancier] = useState({ idClient: '', observation: '', lignes: [ligneVide()] });
 
   const ouvrirEcheancier = () => {
-    setEcheancier({ idClient: '', idBanque: '', observation: '', lignes: [ligneVide(), ligneVide(), ligneVide()] });
+    setEcheancier({ idClient: '', observation: '', lignes: [ligneVide(), ligneVide(), ligneVide()] });
     setRechercheClient('');
     setEcheancierOuvert(true);
     if (clients.length === 0 && !chargementClients) {
@@ -133,15 +138,37 @@ export const ChequeManagementPage = () => {
     }
   };
   const clientsFiltres = useMemo(() => {
-    const q = rechercheClient.trim().toLowerCase();
-    return (q ? clients.filter((c) => c.nom.toLowerCase().includes(q)) : clients).slice(0, 200);
+    const q = normaliserNom(rechercheClient);
+    return (q ? clients.filter((c) => normaliserNom(c.nom).includes(q)) : clients).slice(0, 200);
   }, [clients, rechercheClient]);
+  // Nom tapé en entier (ou un seul client correspondant) : client choisi sans passer par la liste ;
+  // un client choisi qui ne correspond plus à la recherche est retiré
+  const homonymes = useMemo(() => {
+    const q = normaliserNom(rechercheClient);
+    return q ? clients.filter((c) => normaliserNom(c.nom) === q) : [];
+  }, [clients, rechercheClient]);
+  useEffect(() => {
+    if (!normaliserNom(rechercheClient)) return;
+    const choix = homonymes.length === 1 ? homonymes[0] : (homonymes.length === 0 && clientsFiltres.length === 1 ? clientsFiltres[0] : null);
+    setEcheancier((prev) => {
+      if (choix) return String(prev.idClient) === String(choix.id) ? prev : { ...prev, idClient: String(choix.id) };
+      if (prev.idClient && !clientsFiltres.some((c) => String(c.id) === String(prev.idClient))) return { ...prev, idClient: '' };
+      return prev;
+    });
+  }, [rechercheClient, homonymes, clientsFiltres]);
+  const clientChoisi = clients.find((c) => String(c.id) === String(echeancier.idClient)) || null;
+  // Banque choisie sur une ligne : reprise par les lignes suivantes qui n'en ont pas encore
   const changerLigne = (index, champ, valeur) => setEcheancier((prev) => ({
     ...prev,
-    lignes: prev.lignes.map((l, i) => (i === index ? { ...l, [champ]: valeur } : l)),
+    lignes: prev.lignes.map((l, i) => {
+      if (i === index) return { ...l, [champ]: valeur };
+      if (champ === 'banque' && i > index && !l.banque) return { ...l, banque: valeur };
+      return l;
+    }),
   }));
-  const lignesSaisies = echeancier.lignes.filter((l) => l.numero.trim() || l.montant || l.date);
+  const lignesSaisies = echeancier.lignes.filter((l) => l.numero.trim() || Number(l.montant) > 0 || l.date);
   const totalEcheancier = lignesSaisies.reduce((s, l) => s + (Number(l.montant) || 0), 0);
+  const nombreBanques = new Set(lignesSaisies.map((l) => l.banque).filter(Boolean)).size;
 
   const enregistrerEcheancier = async (e) => {
     e.preventDefault();
@@ -150,17 +177,23 @@ export const ChequeManagementPage = () => {
       toastError('Choisissez le client qui remet les chèques.');
       return;
     }
-    if (lignesSaisies.length === 0 || lignesSaisies.some((l) => !l.numero.trim() || !(Number(l.montant) > 0) || !l.date)) {
-      toastError('Chaque chèque doit avoir un numéro, un montant et une date de dépôt.');
+    if (lignesSaisies.length === 0 || lignesSaisies.some((l) => !l.numero.trim() || !(Number(l.montant) > 0) || !l.date || !l.banque)) {
+      toastError('Chaque chèque doit avoir une banque, un numéro, un montant et une date de dépôt.');
+      return;
+    }
+    const cles = lignesSaisies.map((l) => `${l.banque}|${l.numero.trim().toUpperCase()}`);
+    if (new Set(cles).size !== cles.length) {
+      toastError('Un même chèque (banque et numéro) est saisi deux fois.');
       return;
     }
     setEnvoi(true);
     try {
       const res = await cashApi.enregistrerEcheancier({
         id_client: Number(echeancier.idClient),
-        id_banque: Number(echeancier.idBanque),
         observation: echeancier.observation.trim(),
-        cheques: lignesSaisies.map((l) => ({ numero_cheque: l.numero.trim(), montant: Number(l.montant), date_echeance: l.date })),
+        cheques: lignesSaisies.map((l) => ({
+          numero_cheque: l.numero.trim(), montant: Number(l.montant), date_echeance: l.date, id_banque: Number(l.banque),
+        })),
       });
       success(res.data?.message || 'Échéancier enregistré.');
       setEcheancierOuvert(false);
@@ -413,46 +446,48 @@ export const ChequeManagementPage = () => {
       {/* Échéancier de chèques d'un client */}
       <Modal isOpen={echeancierOuvert} onClose={() => setEcheancierOuvert(false)} title="Nouvel échéancier de chèques" size="large">
         <form onSubmit={enregistrerEcheancier}>
-          <div className="responsive-form-row">
-            <div className="form-group">
-              <label className="form-label">Client (* requis)</label>
+          <div className="form-group">
+            <label className="form-label">Client (* requis)</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '0.5rem' }}>
               <input
                 type="text"
                 className="form-control"
                 placeholder="Rechercher un client…"
                 value={rechercheClient}
                 onChange={(e) => setRechercheClient(e.target.value)}
-                style={{ marginBottom: '0.4rem' }}
               />
               <select
                 className="form-control"
                 required
                 value={echeancier.idClient}
-                onChange={(e) => setEcheancier((prev) => ({ ...prev, idClient: e.target.value }))}
+                onChange={(e) => {
+                  const choisi = clients.find((c) => String(c.id) === e.target.value);
+                  setEcheancier((prev) => ({ ...prev, idClient: e.target.value }));
+                  if (choisi) setRechercheClient(choisi.nom);
+                }}
               >
                 <option value="">{chargementClients ? 'Chargement des clients…' : '— Choisir —'}</option>
                 {clientsFiltres.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Banque des chèques (* requis)</label>
-              <select
-                className="form-control"
-                required
-                value={echeancier.idBanque}
-                onChange={(e) => setEcheancier((prev) => ({ ...prev, idBanque: e.target.value }))}
-              >
-                <option value="">— Choisir —</option>
-                {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
-              </select>
+            <div style={{ fontSize: '0.75rem', marginTop: '0.3rem', color: clientChoisi ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
+              {clientChoisi
+                ? `Client choisi : ${clientChoisi.nom} (n° ${clientChoisi.id})`
+                : homonymes.length > 1
+                  ? `${homonymes.length} clients portent ce nom : choisissez le bon dans la liste.`
+                  : rechercheClient.trim()
+                    ? `${clientsFiltres.length}${clientsFiltres.length === 200 ? '+' : ''} client(s) correspondent : précisez le nom ou choisissez dans la liste.`
+                    : 'Tapez le nom du client : il est choisi dès qu\'un seul client correspond.'}
             </div>
           </div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', margin: '0.5rem 0 0.75rem' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: '0.85rem', margin: '0.5rem 0 0.75rem' }}>
             <thead>
               <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
+                <th style={{ padding: '0.35rem' }}>Banque</th>
                 <th style={{ padding: '0.35rem' }}>N° du chèque</th>
-                <th style={{ padding: '0.35rem' }}>Montant (FCFA)</th>
+                <th style={{ padding: '0.35rem' }}>Montant</th>
                 <th style={{ padding: '0.35rem' }}>Date de dépôt</th>
                 <th />
               </tr>
@@ -461,12 +496,18 @@ export const ChequeManagementPage = () => {
               {echeancier.lignes.map((l, i) => (
                 // eslint-disable-next-line react/no-array-index-key
                 <tr key={i}>
+                  <td style={{ padding: '0.25rem', minWidth: 170 }}>
+                    <select className="form-control" value={l.banque} onChange={(e) => changerLigne(i, 'banque', e.target.value)}>
+                      <option value="">— Banque —</option>
+                      {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
+                    </select>
+                  </td>
                   <td style={{ padding: '0.25rem' }}>
                     <input type="text" className="form-control" maxLength={50} value={l.numero}
                       onChange={(e) => changerLigne(i, 'numero', e.target.value.replace(/[^\p{L}\p{N} \-/._]/gu, ''))} />
                   </td>
-                  <td style={{ padding: '0.25rem' }}>
-                    <input type="number" className="form-control" min="1" value={l.montant} onChange={(e) => changerLigne(i, 'montant', e.target.value)} />
+                  <td style={{ padding: '0.25rem', minWidth: 150 }}>
+                    <AmountInput value={l.montant} onChange={(v) => changerLigne(i, 'montant', v)} />
                   </td>
                   <td style={{ padding: '0.25rem' }}>
                     <input type="date" className="form-control" value={l.date} onChange={(e) => changerLigne(i, 'date', e.target.value)} />
@@ -487,12 +528,15 @@ export const ChequeManagementPage = () => {
               ))}
             </tbody>
           </table>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
             <button type="button" className="btn btn-secondary" style={{ fontSize: '0.8rem' }}
-              onClick={() => setEcheancier((prev) => ({ ...prev, lignes: [...prev.lignes, ligneVide()] }))}>
+              onClick={() => setEcheancier((prev) => ({ ...prev, lignes: [...prev.lignes, ligneVide(prev.lignes[prev.lignes.length - 1]?.banque || '')] }))}>
               <Plus size={14} /> Ajouter un chèque
             </button>
-            <span style={{ fontSize: '0.85rem' }}>{lignesSaisies.length} chèque(s) · total <strong>{fcfa(totalEcheancier)}</strong></span>
+            <span style={{ fontSize: '0.85rem' }}>
+              {lignesSaisies.length} chèque(s){nombreBanques > 1 ? ` de ${nombreBanques} banques` : ''} · total <strong>{fcfa(totalEcheancier)}</strong>
+            </span>
           </div>
           <div className="form-group">
             <label className="form-label">Observation</label>

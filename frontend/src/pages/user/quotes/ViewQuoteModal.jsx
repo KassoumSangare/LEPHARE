@@ -9,12 +9,14 @@ import {
   printAnnexeFlotte,
   estDevisFlotteAuto,
   estDevisVoyage,
+  estDevisDommages,
   printBordereauTransport,
 } from '../../../utils/exportUtils';
 import { formatDate } from '../../../utils/dateUtils';
+import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
-import { iaApi, santeApi, voyageApi, transportApi, mrhApi } from '../../../api/endpoints';
+import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi } from '../../../api/endpoints';
 import {
   FileText,
   Printer,
@@ -37,6 +39,7 @@ import {
   Users,
   UserPlus,
   Pencil,
+  Layers,
 } from 'lucide-react';
 
 const fcfa = (montant) => `${Number(montant || 0).toLocaleString('fr-FR')} FCFA`;
@@ -74,7 +77,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
       : brancheDevis === 'Santé' ? santeApi.lireDevis(idDevisBase)
         : brancheDevis === 'Voyage' ? voyageApi.lireDevis(idDevisBase)
           : brancheDevis === 'Transport' ? transportApi.getCertificats({ iddevis: idDevisBase })
-            : brancheDevis === 'MRH' ? mrhApi.getMaisons(idDevisBase) : null;
+            : brancheDevis === 'MRH' ? mrhApi.getMaisons(idDevisBase)
+              : brancheDevis === 'Tous Dommages' ? dommagesApi.lireDevis(idDevisBase) : null;
     if (!chargement) return undefined;
     chargement
       .then((d) => { if (actif) setDetailBranche(d); })
@@ -129,6 +133,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     if (b.includes('voyag')) return <Plane size={20} color="#38bdf8" />;
     if (b.includes('transp')) return <Ship size={20} color="#0284c7" />;
     if (b === 'ia') return <UserPlus size={20} color="#a855f7" />;
+    if (b.includes('dommage')) return <Layers size={20} color="#d97706" />;
     return <Shield size={20} color="#8b5cf6" />;
   };
 
@@ -325,7 +330,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
         </div>
 
         {/* Branch Specific Technical Details (IA, Santé, Voyage et Transport : détail lu en base) */}
-        {(Object.keys(details).length > 0 || ['IA', 'Santé', 'Voyage', 'Transport', 'MRH'].includes(quote.branche)) && (
+        {(Object.keys(details).length > 0 || ['IA', 'Santé', 'Voyage', 'Transport', 'MRH', 'Tous Dommages'].includes(quote.branche)) && (
           <div className="glass-panel" style={{ padding: '1.25rem' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem', textTransform: 'uppercase' }}>
               Détails & Paramètres Techniques ({quote.branche})
@@ -477,6 +482,61 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )
+            )}
+
+            {/* Dommages : catégorie, description du risque et garanties enregistrées */}
+            {quote.branche === 'Tous Dommages' && (
+              !detailBranche ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement du risque…</div>
+              ) : detailBranche.erreur ? (
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Détail Dommages indisponible pour ce devis.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
+                    <div><strong>Catégorie :</strong> {detailBranche.Detail?.LibelleTarif || '—'}{detailBranche.Detail?.CodeCategorie ? ` (${detailBranche.Detail.CodeCategorie})` : ''}</div>
+                    <div><strong>Compagnie :</strong> {detailBranche.Compagnie || '—'}</div>
+                    <div><strong>Période :</strong> du {formatDate(detailBranche.DateEffet)} au {formatDate(detailBranche.DateExpiration)}</div>
+                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '—'}</div>
+                    {Number(detailBranche.Detail?.TauxReduction) > 0 && <div><strong>Réduction :</strong> {detailBranche.Detail.TauxReduction} %</div>}
+                    {(detailBranche.Risque || []).map((r) => (
+                      <div key={r.libelle} style={{ gridColumn: String(r.valeur).length > 60 ? '1 / -1' : undefined }}><strong>{r.libelle} :</strong> {r.valeur}</div>
+                    ))}
+                  </div>
+                  {(detailBranche.Garanties || []).length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left' }}>Garantie</th>
+                            <th style={{ textAlign: 'right', paddingRight: '1rem' }}>Capital</th>
+                            <th style={{ textAlign: 'left', paddingLeft: '1rem' }}>Franchise</th>
+                            <th style={{ textAlign: 'right' }}>Prime annuelle</th>
+                            <th style={{ textAlign: 'right' }}>Prime nette</th>
+                            <th style={{ textAlign: 'right' }}>Taxe</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailBranche.Garanties.map((g) => (
+                            <tr key={g.IdSousGarantie}>
+                              <td>{g.Libelle}</td>
+                              <td style={{ textAlign: 'right', paddingRight: '1rem' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '—'}</td>
+                              <td style={{ paddingLeft: '1rem' }}>{g.TexteFranchise && g.TexteFranchise !== 'NEANT' ? g.TexteFranchise : '—'}</td>
+                              <td style={{ textAlign: 'right' }}>{Math.round(g.PrimeAnnuelle || 0).toLocaleString('fr-FR')}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(g.PrimeNette || 0).toLocaleString('fr-FR')}</td>
+                              <td style={{ textAlign: 'right' }}>{Math.round(g.Taxe || 0).toLocaleString('fr-FR')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (devis repris d'URANUS sans détail).</div>
+                  )}
+                  {detailBranche.Saisie?.Origine === 'URANUS' && detailBranche.Detail && (
+                    <div style={{ color: 'var(--text-muted)' }}>Devis enregistré par URANUS : la description du risque n'a pas été saisie.</div>
+                  )}
                 </div>
               )
             )}
@@ -644,13 +704,15 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               type="button"
               className="btn btn-secondary"
               onClick={() => printConditionsParticulieres(quote)}
-              title={estDevisVoyage(quote)
+              title={estDevisDommages(quote)
+                ? "Cotation d'assurance au format de la fiche NSIA (intermédiaire, prospect, cotation, primes, clauses) — enregistrable en PDF"
+                : estDevisVoyage(quote)
                 ? "Proposition d'assurance Voyage (souscripteur, assuré, période, garanties, primes) — enregistrable en PDF"
                 : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF'}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <FileText size={15} />
-              <span>{estDevisVoyage(quote) ? 'Imprimer Proposition' : 'Imprimer Conditions Particulières'}</span>
+              <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : estDevisVoyage(quote) ? 'Imprimer Proposition' : 'Imprimer Conditions Particulières'}</span>
             </button>
 
             {estDevisIaImprimable(quote) && (
@@ -679,7 +741,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               </button>
             )}
 
-            {!isConsolidated && onConvertToContract && (
+            {!isConsolidated && onConvertToContract && aLeDroit('devis.validate') && (
               (() => {
                 const todayStr = new Date().toISOString().split('T')[0];
                 const isExpired = quote.date_expiration ? new Date(quote.date_expiration) < new Date(todayStr) : false;

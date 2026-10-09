@@ -13,7 +13,7 @@ const PRODUITS_ORIGINE = [
   { IdProduit: 6, Libelle: 'TRANSPORT', Onglet: 'Transport', ModuleSaisie: 'transport', SaisieOuverte: true, Ordre: 3 },
   { IdProduit: 4, Libelle: 'MULTIRISQUES HABITATION', Onglet: 'MRH', ModuleSaisie: 'mrh', SaisieOuverte: true, Ordre: 4 },
   { IdProduit: 7, Libelle: 'MULTIRISQUES PROFESSIONNELLE', Onglet: 'MRH', ModuleSaisie: 'mrp', SaisieOuverte: false, Ordre: 5 },
-  { IdProduit: 9, Libelle: 'TOUS DOMMAGES', Onglet: 'MRH', ModuleSaisie: 'tous-dommages', SaisieOuverte: false, Ordre: 6 },
+  { IdProduit: 9, Libelle: 'TOUS DOMMAGES', Onglet: 'Dommages', ModuleSaisie: 'tous-dommages', SaisieOuverte: true, Ordre: 6 },
   { IdProduit: 5, Libelle: 'SANTE', Onglet: 'Santé', ModuleSaisie: 'sante', SaisieOuverte: true, Ordre: 7 },
   { IdProduit: 10, Libelle: 'VIE', Onglet: 'Santé', ModuleSaisie: '', SaisieOuverte: false, Ordre: 8 },
   { IdProduit: 2, Libelle: 'INDIVIDUELLE ACCIDENTS', Onglet: 'IA', ModuleSaisie: 'ia', SaisieOuverte: true, Ordre: 9 },
@@ -157,6 +157,6 @@ export const moduleDuProduit = (idProduit) => produitPar(idProduit)?.ModuleSaisi
 export const moduleOuvert = (module) => etat.Produits.some((p) => p.ModuleSaisie === module && p.SaisieOuverte);
 
 export const libellesModulesOuverts = () => {
-  const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Tous Dommages' };
+  const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Dommages' };
   return [...new Set(etat.Produits.filter((p) => p.SaisieOuverte && p.ModuleSaisie).map((p) => libelles[p.ModuleSaisie] || p.ModuleSaisie))];
 };

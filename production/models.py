@@ -2683,6 +2683,14 @@ class ComplementDevisDetailDommage(models.Model):
         blank=True,
         default=0,
     )
+    # Saisie LE PHARE sans colonne dédiée (sp_creation_devis_dommages) : description du risque,
+    # taux et primes saisis par garantie, prorata et accessoire imposé, pour « Modifier »
+    saisie = models.JSONField(
+        db_column="saisie",
+        verbose_name="Saisie du devis",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         db_table = "stdcomplementdevisdetaildommage"

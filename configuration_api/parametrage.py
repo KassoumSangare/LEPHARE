@@ -28,7 +28,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
-from institutionnel.models import AuditLogCima
+from autorisations.journal import completer_audit
 
 from .models import CompagnieDocument, ParametreGeneral, ParametreSite, Produit, ProduitParametre
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
@@ -88,12 +88,11 @@ def _auteur(request):
 
 
 def _journal(request, description, details):
-    AuditLogCima.objects.create(
-        type_operation="PARAMETRAGE",
-        description=description,
-        auteur=_auteur(request),
-        reference_reglementaire="Paramétrage LE PHARE",
-        details_json=details,
+    """Précise la ligne du journal d'audit centralisé écrite pour cette requête (valeurs avant / après)."""
+    details = details or {}
+    completer_audit(
+        request, module="parametrage", action="parametrage.update", description=description,
+        avant=details.get("avant"), apres=details.get("apres", {k: v for k, v in details.items() if k != "avant"}),
     )
 
 

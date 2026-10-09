@@ -357,6 +357,40 @@ def taux_taxe_devis_ia(request):
 @api_view(["GET"])
 @authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
 @permission_classes([permissions.IsAuthenticated])
+def accessoire_devis_ia(request):
+    """
+    GET /api/devisia/accessoire/?IdCompagnie=1&IdOffre=173&DateEffet=2026-10-01&PrimeNette=250000
+
+    Accessoire (compagnie + cabinet) et taxe sur accessoire que sp_finalisation_devis posera sur
+    un devis IA groupe de cette prime nette totale (fn_get_accessoire, lecture seule) : le
+    récapitulatif affiche la prime TTC avant l'enregistrement.
+    """
+    try:
+        id_compagnie = int(request.query_params.get("IdCompagnie") or 0)
+        id_offre = int(request.query_params.get("IdOffre") or 0)
+        date_effet = _date(request.query_params.get("DateEffet"), "Date d'effet")
+        prime_nette = _montant(request.query_params.get("PrimeNette"))
+    except (ValueError, ErreurDevisIa) as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT accessoire_compagnie, accessoire_intermediaire, taxe_sur_accessoire "
+            "FROM fn_get_accessoire(%s, 2, %s, %s, %s)",
+            [prime_nette, id_offre, id_compagnie, date_effet],
+        )
+        ligne = cursor.fetchone() or (0, 0, 0)
+    compagnie, cabinet, taxe = (Decimal(str(v or 0)) for v in ligne)
+    return Response({
+        "accessoire": float(compagnie + cabinet),
+        "accessoire_compagnie": float(compagnie),
+        "accessoire_intermediaire": float(cabinet),
+        "taxe_accessoire": float(taxe),
+    })
+
+
+@api_view(["GET"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
 def garanties_devis_ia(request, iddevis):
     """
     GET /api/devisia/<iddevis>/garanties/

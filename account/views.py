@@ -65,7 +65,6 @@ class SignUpAPI(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         msg = "Email envoyé. Consulter votre boîte électronique"
-        print("Mot de passe: ", request.data["password"])
         send_email_to_user.delay(request.data["email"], request.data["password"])
         token = AuthToken.objects.create(user)
         return Response(

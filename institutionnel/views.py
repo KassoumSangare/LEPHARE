@@ -26,6 +26,7 @@ from .serializers import (
     QuittanceCimaSerializer,
     BordereauReversementSerializer
 )
+from autorisations.journal import completer_audit
 
 # Optional import of core Uranus models for 360 view
 try:
@@ -553,13 +554,10 @@ class SinistreDelegueViewSet(viewsets.ModelViewSet):
         sinistre.save()
 
         # Enregistrement dans le journal d'audit CIMA
-        AuditLogCima.objects.create(
-            type_operation="SINISTRE_REGLEMENT",
+        completer_audit(
+            request,
             description=f"Règlement ordonnancé sur le sinistre {sinistre.numero_sinistre} pour {montant:,.0f} FCFA (Assuré : {sinistre.assure_nom})",
-            auteur=request.user.username if request.user and request.user.is_authenticated else "Gestionnaire Sinistres",
-            statut_conformite="CONFORME",
-            reference_reglementaire="Mandat Conventionnel Gestion Déléguée CIMA",
-            details_json={"numero_sinistre": sinistre.numero_sinistre, "montant": montant, "compagnie": sinistre.compagnie}
+            apres={"numero_sinistre": sinistre.numero_sinistre, "montant": montant, "compagnie": sinistre.compagnie},
         )
 
         return Response(SinistreDelegueSerializer(sinistre).data)
@@ -578,13 +576,10 @@ class SinistreDelegueViewSet(viewsets.ModelViewSet):
             "action": f"Dossier transmis au siège de {sinistre.compagnie} pour accord préalable / dérogation CIMA : {motif}"
         })
         sinistre.save()
-        AuditLogCima.objects.create(
-            type_operation="SINISTRE_DEMANDE_ACCORD",
+        completer_audit(
+            request,
             description=f"Transmission pour accord préalable compagnie sur {sinistre.numero_sinistre} ({sinistre.montant_reclame:,.0f} FCFA vs plafond)",
-            auteur=request.user.username if request.user and request.user.is_authenticated else "Gestionnaire Sinistres",
-            statut_conformite="CONFORME",
-            reference_reglementaire="Règles de délégation CIMA Livre V",
-            details_json={"numero_sinistre": sinistre.numero_sinistre, "compagnie": sinistre.compagnie}
+            apres={"numero_sinistre": sinistre.numero_sinistre, "compagnie": sinistre.compagnie},
         )
         return Response(SinistreDelegueSerializer(sinistre).data)
 
@@ -668,11 +663,13 @@ class DocumentGEDViewSet(viewsets.ModelViewSet):
 # =========================================================================
 # 6. CONFORMITÉ & AUDIT TRAIL CIMA
 # =========================================================================
-class AuditLogCimaViewSet(viewsets.ModelViewSet):
+class AuditLogCimaViewSet(viewsets.ReadOnlyModelViewSet):
+    # Journal en lecture seule (écriture : autorisations/journal.py ; la table refuse toute
+    # modification ou suppression)
     queryset = AuditLogCima.objects.all().order_by("-date_creation")
     serializer_class = AuditLogCimaSerializer
     pagination_class = ResultsOnlyPagination
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request, *args, **kwargs):
         check_and_seed_data()
@@ -756,13 +753,10 @@ class QuittanceCimaViewSet(viewsets.ModelViewSet):
         self.perform_create(serializer)
         
         # Log in Audit Trail
-        AuditLogCima.objects.create(
-            type_operation="ENCAISSEMENT",
+        completer_audit(
+            request,
             description=f"Émission Quittance CIMA {num} pour {serializer.data.get('souscripteur')} ({serializer.data.get('montant_encaisse')} FCFA)",
-            auteur=request.user.username if request.user and request.user.is_authenticated else "Caisse Centrale LE PHARE",
-            statut_conformite="CONFORME",
-            reference_reglementaire="CIMA Art. 13 - Validité immédiate de garantie",
-            details_json={"numero_quittance": num, "police": serializer.data.get("police_num")}
+            apres={"numero_quittance": num, "police": serializer.data.get("police_num")},
         )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -787,13 +781,10 @@ class BordereauReversementViewSet(viewsets.ModelViewSet):
         bordereau.ordre_virement_ref = f"OV-SGCI-2026-{str(bordereau.id).zfill(4)}"
         bordereau.save()
 
-        AuditLogCima.objects.create(
-            type_operation="REVERSEMENT",
+        completer_audit(
+            request,
             description=f"Validation bordereau {bordereau.reference} vers {bordereau.compagnie} ({bordereau.net_a_reverser:,.0f} FCFA) - Réf virement {bordereau.ordre_virement_ref}",
-            auteur=request.user.username if request.user and request.user.is_authenticated else "Direction Trésorerie LE PHARE",
-            statut_conformite="CONFORME",
-            reference_reglementaire="Règle CIMA de reversement 30 jours",
-            details_json={"reference": bordereau.reference, "compagnie": bordereau.compagnie}
+            apres={"reference": bordereau.reference, "compagnie": bordereau.compagnie},
         )
         return Response(BordereauReversementSerializer(bordereau).data)
 

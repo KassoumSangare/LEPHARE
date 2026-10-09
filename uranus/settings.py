@@ -109,6 +109,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Avant staticfiles : sa commande runserver (démarrage sans base) doit l'emporter
+    "core",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
     "rest_framework",
@@ -129,7 +131,6 @@ INSTALLED_APPS = [
     "phonenumbers",
     "messaging",
     "payment",
-    "core",
     "django_celery_beat",
     "django_celery_results",
     "django_api_admin",
@@ -237,6 +238,8 @@ DATABASES = {
         "PASSWORD": DB_PASSWORD,
         "HOST": DB_HOST,
         "PORT": DB_PORT,
+        # Base injoignable (Smart App Control, service arrêté) : échec en 5 s au lieu d'attendre
+        "OPTIONS": {"connect_timeout": 5},
     }
 }
 

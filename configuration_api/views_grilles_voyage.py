@@ -26,7 +26,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.response import Response
 
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
-from institutionnel.models import AuditLogCima
+from autorisations.journal import completer_audit
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 # Compagnies dont la grille est par offre ; les autres ont une grille par formule et par zone
@@ -67,12 +67,12 @@ def _categorie(id_compagnie):
 
 
 def _journal(request, description, details):
-    AuditLogCima.objects.create(
-        type_operation="TARIF VOYAGE",
+    details = details or {}
+    completer_audit(
+        request,
         description=description,
-        auteur=getattr(request.user, "email", "") or str(request.user),
-        reference_reglementaire="Grilles Voyage",
-        details_json=details,
+        avant=details.get("avant"),
+        apres=details.get("apres", {k: v for k, v in details.items() if k != "avant"}),
     )
 
 

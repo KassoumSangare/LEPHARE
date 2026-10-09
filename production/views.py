@@ -557,7 +557,17 @@ def donnees_conditions_particulieres(objet, contrat=False):
     def adresse(adr1, adr2):
         return clean(" ".join(filter(None, [clean(adr1), clean(adr2)])))
 
+    # Dommages : catégorie et description du risque saisies sur le devis (celui du contrat)
+    risque = None
+    id_produit = objet.idproduit_id if contrat else objet.produit_id
+    if id_produit == 9:
+        from .views_devis_dommages import risque_dommages
+
+        with connection.cursor() as cursor:
+            risque = risque_dommages(cursor, objet.iddevis_id if contrat else objet.pk)
+
     return {
+            "risque": risque,
             "client": {
                 "titre": clean(titre),
                 "nom": nom_complet(c_nom, c_prenoms),
@@ -5469,7 +5479,7 @@ class ChequeEcheancierView(APIView):
         try:
             crees = enregistrer_echeancier_cheques(
                 donnees["id_client"],
-                donnees["id_banque"],
+                donnees.get("id_banque"),
                 donnees["cheques"],
                 donnees.get("observation", ""),
             )

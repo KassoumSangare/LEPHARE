@@ -1,21 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Shield, User, LogOut, Bell, Compass, Settings, Menu, Sun, Moon, Users } from 'lucide-react';
+import { Shield, LogOut, Bell, Compass, Settings, Menu, Sun, Moon, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { dataStore } from '../../api/dataStore';
-import { authApi, cashApi } from '../../api/endpoints';
-import { sortUniqueBy } from '../../utils/sortUtils';
+import { cashApi } from '../../api/endpoints';
+import { ChangementMotDePasse } from '../securite/ChangementMotDePasse';
+import { premierEcranAdmin } from './adminMenu';
 
 export const Navbar = ({ onToggleMobileSidebar }) => {
-  const { user, activeSpace, switchSpace, logout, isDirectorOrAdmin, canSwitchSpace, switchUser } = useAuth();
+  const { user, activeSpace, switchSpace, logout, accesAdministration, peut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [changementMotDePasse, setChangementMotDePasse] = useState(false);
+  const voitCaisse = peut('encaissements.view');
 
-  const [availableUsers, setAvailableUsers] = useState(() => dataStore.getUsers());
   // Chèques de l'échéancier à déposer d'ici un mois ou échus, relus toutes les 10 minutes
   const [alertesCheques, setAlertesCheques] = useState(0);
   useEffect(() => {
+    if (!voitCaisse) return undefined;
     let actif = true;
     const charger = () => cashApi.getChequesAlertes()
       .then((liste) => { if (actif) setAlertesCheques(Array.isArray(liste) ? liste.length : 0); })
@@ -23,54 +25,15 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
     charger();
     const minuterie = setInterval(charger, 10 * 60 * 1000);
     return () => { actif = false; clearInterval(minuterie); };
-  }, []);
+  }, [voitCaisse]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const loadRealUsers = async () => {
-      try {
-        const list = await authApi.getProfiles();
-        if (isMounted && Array.isArray(list) && list.length > 0) {
-          const mapped = list.map((u) => ({
-            id: u.id,
-            username: u.email || u.nom,
-            first_name: u.nom || (u.email ? u.email.split('@')[0] : 'Utilisateur'),
-            role_code: u.is_admin ? 'ADMIN' : 'USER',
-            role: u.is_admin ? 'Directeur / Admin' : 'Opérateur',
-            role_label: u.is_admin ? 'Directeur Général & Administrateur' : 'Opérateur Guichet',
-            is_admin: Boolean(u.is_admin),
-            email: u.email,
-          }));
-          setAvailableUsers(mapped);
-        }
-      } catch (e) {}
-    };
-    loadRealUsers();
-    return () => { isMounted = false; };
-  }, []);
-
-  // Seul le directeur ou l'administrateur peut voir le sélecteur et naviguer entre Opérateur et Admin
-  const isPrivileged = Boolean(
-    canSwitchSpace ||
-    isDirectorOrAdmin ||
-    (user && (
-      user.role === 'ADMIN' ||
-      user.role === 'DIRECTEUR' ||
-      user.role === 'DIR_GEN' ||
-      user.is_admin === true ||
-      user.is_superuser === true ||
-      user.is_staff === true ||
-      user.role_label?.toLowerCase().includes('directeur') ||
-      user.role_label?.toLowerCase().includes('admin') ||
-      user.username?.toLowerCase().includes('admin') ||
-      user.username?.toLowerCase().includes('directeur')
-    ))
-  );
+  // Bascule Production / Administration : seulement si au moins un écran d'administration est permis
+  const isPrivileged = accesAdministration;
 
   const handleSpaceChange = (space) => {
     switchSpace(space);
     if (space === 'admin') {
-      navigate('/admin/dashboard');
+      navigate(premierEcranAdmin(peut));
     } else {
       navigate('/user/dashboard');
     }
@@ -122,7 +85,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
           >
             <Shield size={18} />
           </div>
-          <div>
+          <div className="brand-nom">
             <span style={{ fontWeight: 800, fontSize: '0.975rem', letterSpacing: '-0.02em', color: 'var(--text-primary)', display: 'block', lineHeight: 1.1 }}>
               LE PHARE
             </span>
@@ -195,7 +158,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
       </div>
 
       {/* Right: Theme Toggle, Notifications & User Profile */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+      <div className="nav-droite" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
         {/* Theme Toggle Button (Light / Dark) */}
         <button
           onClick={toggleTheme}
@@ -226,7 +189,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
         </button>
 
         {/* Cloche : chèques de l'échéancier à déposer (alerte un mois avant, rappel 15 jours après) */}
-        <button
+        {voitCaisse && <button
           type="button"
           onClick={() => navigate('/user/cheques')}
           title={alertesCheques > 0
@@ -269,41 +232,11 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
               {alertesCheques}
             </span>
           )}
-        </button>
-
-        {/* Role & Habilitation Quick Switcher (Mode Démo & Audit Métier) */}
-        <div className="nav-profil-switch" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <select
-            value={user?.username || ''}
-            onChange={(e) => {
-              const target = availableUsers.find((u) => (u.username || u.email) === e.target.value);
-              if (target && switchUser) {
-                switchUser(target);
-              }
-            }}
-            title="Changer de profil d'habilitation (Démonstration & Audit RBAC)"
-            style={{
-              fontSize: '0.75rem',
-              padding: '0.25rem 0.5rem',
-              borderRadius: '6px',
-              border: '1px solid var(--border-subtle)',
-              background: 'var(--bg-surface-elevated)',
-              color: 'var(--text-primary)',
-              cursor: 'pointer',
-              fontWeight: 500,
-              maxWidth: '180px',
-            }}
-          >
-            {sortUniqueBy(availableUsers, (u) => u.first_name || u.username || '').map((u) => (
-              <option key={u.username || u.id} value={u.username || u.email}>
-                👤 {u.first_name} ({u.role_code || u.role || 'Utilisateur'})
-              </option>
-            ))}
-          </select>
-        </div>
+        </button>}
 
         {/* User Card */}
         <div
+          className="nav-carte-utilisateur"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -334,15 +267,22 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
 
           <div className="nav-user-text" style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '0.775rem', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-              {user ? `${user.first_name || ''} ${user.last_name || user.username}` : 'Invité'}
+              {user ? (user.name || user.email) : 'Invité'}
             </span>
             <span style={{ fontSize: '0.625rem', color: isPrivileged ? '#c084fc' : '#60a5fa' }}>
-              {user?.role_label || (isPrivileged ? 'Directeur / Admin' : 'Opérateur')}
+              {user?.role_label || 'Aucun rôle'}
             </span>
           </div>
 
           <button
-            onClick={logout}
+            onClick={() => setChangementMotDePasse(true)}
+            title="Changer mon mot de passe"
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', marginLeft: '0.2rem', padding: '0.15rem', borderRadius: '4px' }}
+          >
+            <KeyRound size={14} />
+          </button>
+          <button
+            onClick={async () => { await logout(); navigate('/login', { replace: true }); }}
             title="Déconnexion"
             style={{
               background: 'transparent',
@@ -360,6 +300,7 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
           </button>
         </div>
       </div>
+      {changementMotDePasse && <ChangementMotDePasse onFermer={() => setChangementMotDePasse(false)} />}
     </header>
   );
 };

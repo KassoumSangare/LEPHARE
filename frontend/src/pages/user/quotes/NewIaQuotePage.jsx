@@ -29,6 +29,8 @@ import { AmountInput } from '../../../components/common/AmountInput';
 // 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
 // ayants droit = affiliés)
 const ID_TARIF_MINENE = 103;
+// Tarifs CGA et CI-ENERGIES : accessoire calculé sur la prime de chaque assuré (sp_finalisation_devis)
+const ID_TARIFS_ACCESSOIRE_PAR_ASSURE = [145, 76];
 const ID_OFFRE_MINENE = 66;
 const ID_COMPAGNIE_MINENE = 1;
 const CAPITAUX_MINENE = { CapitalDeces: 2000000, CapitalIpp: 2000000, FraisTraitement: 100000 };
@@ -472,6 +474,41 @@ export const NewIaQuotePage = () => {
 
   // Primes saisies de tous les assurés (tarif personnalisé) : totaux tels que la base les enregistrera
   const primesToutesSaisies = personnalise && assures.length > 0 && assures.every((a) => Number(a.PrimeNette) > 0);
+
+  // Groupe : accessoire et taxe sur accessoire que sp_finalisation_devis posera (fn_get_accessoire sur la
+  // prime nette totale ; CGA et CI-ENERGIES : sur la prime de chaque assuré), pour afficher la prime TTC
+  // avant l'enregistrement. MINENE (montants propres à l'offre) : connu à l'enregistrement seulement.
+  const [accessoireGroupe, setAccessoireGroupe] = useState(null);
+  useEffect(() => {
+    setAccessoireGroupe(null);
+    if (!flotte || primesToutesSaisies || estMinene || step !== 3 || !idOffre || !assures.length || assures.some((a) => !a.prime)) return undefined;
+    const primes = assures.map((a) => Math.round(Number(a.prime.primeNette) || 0));
+    let actif = true;
+    const minuterie = setTimeout(async () => {
+      try {
+        const lire = (primeNette) => iaApi.getAccessoireGroupe({ idCompagnie: compagnieId, idOffre, dateEffet, primeNette });
+        let accessoire = 0;
+        let taxeAccessoire = 0;
+        if (ID_TARIFS_ACCESSOIRE_PAR_ASSURE.includes(Number(idTarif))) {
+          const parPrime = new Map();
+          for (const prime of new Set(primes)) parPrime.set(prime, await lire(prime)); // eslint-disable-line no-await-in-loop
+          primes.forEach((prime) => {
+            accessoire += Number(parPrime.get(prime)?.accessoire) || 0;
+            taxeAccessoire += Number(parPrime.get(prime)?.taxe_accessoire) || 0;
+          });
+        } else {
+          const r = await lire(primes.reduce((s, p) => s + p, 0));
+          accessoire = Number(r?.accessoire) || 0;
+          taxeAccessoire = Number(r?.taxe_accessoire) || 0;
+        }
+        if (actif) setAccessoireGroupe({ accessoire, taxeAccessoire });
+      } catch {
+        // l'accessoire reste annoncé « à l'enregistrement »
+      }
+    }, 300);
+    return () => { actif = false; clearTimeout(minuterie); };
+  }, [flotte, primesToutesSaisies, estMinene, step, idOffre, idTarif, compagnieId, dateEffet, assures]);
+
   const totaux = useMemo(() => {
     if (primesToutesSaisies) {
       const primeNette = assures.reduce((s, a) => s + (Number(a.PrimeNette) || 0), 0);
@@ -483,10 +520,15 @@ export const NewIaQuotePage = () => {
     const taxeLignes = assures.reduce((s, a) => s + (a.prime?.taxe || 0), 0);
     // Individuel : accessoire (et sa taxe) de la ligne calculée ; groupe : fixés par la base à l'enregistrement
     const calcule = !flotte && assures[0]?.prime && !assures[0].prime.enregistree ? assures[0].prime : null;
+    if (flotte && accessoireGroupe) {
+      const accessoire = Math.round(accessoireGroupe.accessoire);
+      const taxe = taxeLignes + Math.round(accessoireGroupe.taxeAccessoire);
+      return { primeNette, taxe, accessoire, primeTtc: Math.round(primeNette + taxe + accessoire) };
+    }
     if (!calcule) return { primeNette, taxe: taxeLignes, accessoire: null, primeTtc: null };
     const taxe = taxeLignes + (calcule.taxeAccessoire || 0);
     return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: primeNette + taxe + calcule.accessoire };
-  }, [assures, flotte, primesToutesSaisies, tauxTaxe]);
+  }, [assures, flotte, primesToutesSaisies, tauxTaxe, accessoireGroupe]);
   // Garanties d'un assuré : celles du calcul en cours (offregarantieia), sinon celles enregistrées
   const garantiesAssure = (a) => {
     if (a.prime?.garanties?.length && !a.prime.enregistree) {
@@ -574,7 +616,8 @@ export const NewIaQuotePage = () => {
     if (!ayantEnCours.Nom.trim()) { toastError('Saisissez le nom de l\'ayant droit.'); return; }
     // Prénoms obligatoires, comme dans URANUS
     if (!ayantEnCours.Prenoms.trim()) { toastError('Saisissez les prénoms de l\'ayant droit.'); return; }
-    if (part <= 0) { toastError('La part de l\'ayant droit doit être supérieure à 0 %.'); return; }
+    // Part facultative : sans indication de l'assuré, le bénéficiaire reste sans part (0 en base)
+    if (part < 0 || part > 100) { toastError('La part de l\'ayant droit doit être comprise entre 0 et 100 %.'); return; }
     const total = assureEnCours.AyantsDroit.reduce((s, d) => s + (Number(d.Part) || 0), 0) + part;
     if (total > 100) { toastError(`Le total des parts dépasserait 100 % (${total} %).`); return; }
     setAssureEnCours((p) => ({
@@ -1290,7 +1333,7 @@ export const NewIaQuotePage = () => {
             {/* Ayants droit de l'assuré */}
             <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
               <h4 style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700, margin: '0 0 0.75rem' }}>
-                Ayants droit (bénéficiaires en cas de décès) — total {totalParts} %
+                Ayants droit (bénéficiaires en cas de décès){totalParts > 0 ? ` — total des parts ${totalParts} %` : ''}
               </h4>
               {assureEnCours.AyantsDroit.length > 0 && (
                 <table className="table" style={{ width: '100%', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
@@ -1309,7 +1352,7 @@ export const NewIaQuotePage = () => {
                         <td style={{ padding: '0.4rem' }}>{libelleQualite(d.IdQualiteAyantDroit)}</td>
                         <td style={{ padding: '0.4rem' }}>{d.Nom}</td>
                         <td style={{ padding: '0.4rem' }}>{d.Prenoms}</td>
-                        <td style={{ padding: '0.4rem', textAlign: 'right' }}>{d.Part} %</td>
+                        <td style={{ padding: '0.4rem', textAlign: 'right' }}>{Number(d.Part) > 0 ? `${d.Part} %` : '—'}</td>
                         <td style={{ padding: '0.4rem', textAlign: 'right' }}>
                           <button type="button" className="btn btn-secondary" title="Retirer" style={{ padding: '0.25rem 0.45rem', color: '#ef4444' }}
                             onClick={() => setAssureEnCours((p) => ({ ...p, AyantsDroit: p.AyantsDroit.filter((_, j) => j !== i) }))}
@@ -1338,10 +1381,10 @@ export const NewIaQuotePage = () => {
                   <input type="text" className="form-control" value={ayantEnCours.Prenoms} onChange={(e) => setAyantEnCours((p) => ({ ...p, Prenoms: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Part (%)</label>
+                  <label className="form-label">Part (%) — facultative</label>
                   <input type="number" min="0" max="100" className="form-control" value={ayantEnCours.Part} onChange={(e) => setAyantEnCours((p) => ({ ...p, Part: e.target.value }))} />
                 </div>
-                <button type="button" className="btn btn-secondary" onClick={ajouterAyant} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }} disabled={totalParts >= 100}>
+                <button type="button" className="btn btn-secondary" onClick={ajouterAyant} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <Plus size={14} /> Ajouter
                 </button>
               </div>
@@ -1538,7 +1581,7 @@ export const NewIaQuotePage = () => {
               ]
               : [
                 ['Prime nette', totaux.primeNette],
-                [flotte ? 'Taxes (hors accessoire)' : 'Taxes', totaux.taxe],
+                [flotte && totaux.accessoire === null ? 'Taxes (hors accessoire)' : 'Taxes', totaux.taxe],
                 ['Accessoires', totaux.accessoire],
                 ['Prime TTC', totaux.primeTtc],
               ]).map(([libelle, valeur]) => (

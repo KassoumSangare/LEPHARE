@@ -45,6 +45,8 @@ import CommissionDashboardPage from './pages/admin/commissions/CommissionDashboa
 import UserManagementPage from './pages/admin/users/UserManagementPage';
 import ProfileManagementPage from './pages/admin/users/ProfileManagementPage';
 import RolesPermissionsPage from './pages/admin/users/RolesPermissionsPage';
+import JournalAuditPage from './pages/admin/users/JournalAuditPage';
+import { premierEcranAdmin } from './components/layout/adminMenu';
 import CatalogCompaniesPage from './pages/admin/settings/CatalogCompaniesPage';
 import CatalogProductsPage from './pages/admin/settings/CatalogProductsPage';
 import CatalogTarifsPage from './pages/admin/settings/CatalogTarifsPage';
@@ -62,6 +64,7 @@ import ParametrageCommissionsPage from './pages/admin/settings/ParametrageCommis
 import ParametrageFlottePage from './pages/admin/settings/ParametrageFlottePage';
 import ParametrageSecuritePage from './pages/admin/settings/ParametrageSecuritePage';
 import ParametrageGrillesVoyagePage from './pages/admin/settings/ParametrageGrillesVoyagePage';
+import ParametrageDommagesPage from './pages/admin/settings/ParametrageDommagesPage';
 
 // New Institutional Modules (LE PHARE V2)
 import CrmPipelinePage from './pages/user/crm/CrmPipelinePage';
@@ -98,11 +101,11 @@ const AdminRoute = ({ children }) => {
 // Default Route Redirector
 const DefaultRedirect = () => {
   const auth = useAuth() || {};
-  const { activeSpace = 'user', isDirectorOrAdmin = false } = auth;
+  const { activeSpace = 'user', isDirectorOrAdmin = false, peut = () => false } = auth;
   if (!isDirectorOrAdmin) {
     return <Navigate to="/user/dashboard" replace />;
   }
-  return <Navigate to={activeSpace === 'admin' ? '/admin/dashboard' : '/user/dashboard'} replace />;
+  return <Navigate to={activeSpace === 'admin' ? premierEcranAdmin(peut) : '/user/dashboard'} replace />;
 };
 
 function App() {
@@ -181,6 +184,7 @@ function App() {
                 <Route path="/admin/users" element={<AdminRoute><UserManagementPage /></AdminRoute>} />
                 <Route path="/admin/profiles" element={<AdminRoute><ProfileManagementPage /></AdminRoute>} />
                 <Route path="/admin/roles-permissions" element={<AdminRoute><RolesPermissionsPage /></AdminRoute>} />
+                <Route path="/admin/audit" element={<AdminRoute><JournalAuditPage /></AdminRoute>} />
                 <Route path="/admin/settings/companies" element={<AdminRoute><CatalogCompaniesPage /></AdminRoute>} />
                 <Route path="/admin/settings/cabinet" element={<AdminRoute><CabinetSettingsPage /></AdminRoute>} />
                 <Route path="/admin/settings/products" element={<AdminRoute><CatalogProductsPage /></AdminRoute>} />
@@ -201,6 +205,7 @@ function App() {
                 <Route path="/admin/settings/flotte" element={<AdminRoute><ParametrageFlottePage /></AdminRoute>} />
                 <Route path="/admin/settings/securite-routiere" element={<AdminRoute><ParametrageSecuritePage /></AdminRoute>} />
                 <Route path="/admin/settings/grilles-voyage" element={<AdminRoute><ParametrageGrillesVoyagePage /></AdminRoute>} />
+                <Route path="/admin/settings/dommages" element={<AdminRoute><ParametrageDommagesPage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}
                 <Route path="/parametrage/garanties" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />

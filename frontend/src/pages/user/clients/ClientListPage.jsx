@@ -270,8 +270,9 @@ export const ClientListPage = () => {
         if (data && Array.isArray(data)) {
           setClients(data);
         }
-      }).catch(() => {
-        setClients(dataStore.getClients());
+      }).catch((err) => {
+        // La liste affichée reste celle de la base : jamais de clients fictifs en repli
+        console.warn('Rechargement clients API impossible:', err);
       });
     };
 
@@ -295,7 +296,7 @@ export const ClientListPage = () => {
     });
 
     customerApi.getClients().then((data) => {
-      if (data && Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         const formatted = data.map((c) => {
           const id = c.IdClient || c.id;
           const isPart = c.Particulier === '1' || c.Particulier === 'V' || c.typeclient === 'Particulier';
@@ -360,11 +361,12 @@ export const ClientListPage = () => {
           };
         });
         setClients(formatted);
-        setLoading(false);
       }
+      setLoading(false);
     }).catch((err) => {
       console.warn('Erreur chargement clients API:', err);
-      setClients(dataStore.getClients());
+      setClients([]);
+      toastError('Impossible de charger les clients : le serveur ou la base de données ne répond pas.');
       setLoading(false);
     });
 

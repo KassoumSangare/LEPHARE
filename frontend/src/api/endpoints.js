@@ -36,6 +36,32 @@ const extractData = (res) => {
 /* =========================================================================
    1. AUTHENTIFICATION & UTILISATEURS (account)
    ========================================================================= */
+/* =========================================================================
+   SÉCURITÉ : utilisateur connecté, utilisateurs, rôles, droits, journal d'audit
+   (autorisations/views_securite.py ; droits exigés : autorisations/garde.py)
+   ========================================================================= */
+export const securiteApi = {
+  moi: async () => (await apiClient.get('/securite/moi/')).data,
+  changerMonMotDePasse: async (ancien, nouveau) => (await apiClient.post('/securite/moi/mot-de-passe/', { ancien, nouveau })).data,
+  utilisateurs: async (filtres = {}) => (await apiClient.get('/securite/utilisateurs/', { params: filtres })).data,
+  utilisateur: async (id) => (await apiClient.get(`/securite/utilisateurs/${id}/`)).data,
+  creerUtilisateur: async (donnees) => (await apiClient.post('/securite/utilisateurs/', donnees)).data,
+  modifierUtilisateur: async (id, donnees) => (await apiClient.patch(`/securite/utilisateurs/${id}/`, donnees)).data,
+  activerUtilisateur: async (id, actif) => (await apiClient.post(`/securite/utilisateurs/${id}/${actif ? 'activer' : 'desactiver'}/`)).data,
+  reinitialiserMotDePasse: async (id, motDePasse) => (await apiClient.post(`/securite/utilisateurs/${id}/mot-de-passe/`, { mot_de_passe: motDePasse })).data,
+  roles: async () => (await apiClient.get('/securite/roles/')).data,
+  role: async (id) => (await apiClient.get(`/securite/roles/${id}/`)).data,
+  creerRole: async (donnees) => (await apiClient.post('/securite/roles/', donnees)).data,
+  modifierRole: async (id, donnees) => (await apiClient.patch(`/securite/roles/${id}/`, donnees)).data,
+  supprimerRole: async (id) => apiClient.delete(`/securite/roles/${id}/`),
+  droits: async () => (await apiClient.get('/securite/droits/')).data,
+  reglerDroit: async (code, donnees) => (await apiClient.patch(`/securite/droits/${encodeURIComponent(code)}/`, donnees)).data,
+  journal: async (filtres = {}) => (await apiClient.get('/securite/journal/', { params: filtres })).data,
+  entreeJournal: async (id) => (await apiClient.get(`/securite/journal/${id}/`)).data,
+  filtresJournal: async () => (await apiClient.get('/securite/journal/filtres/')).data,
+  exporterJournal: async (filtres = {}) => (await apiClient.get('/securite/journal/export/', { params: filtres, responseType: 'blob' })).data,
+};
+
 export const authApi = {
   // POST /api/users/login
   login: (credentials) => apiClient.post('/users/login', credentials),
@@ -525,7 +551,7 @@ const brancheDuProduit = (produitNom) => {
   if (/habitation|\bmrh\b/.test(p)) return 'MRH';
   if (/professionnel/.test(p)) return 'MRP';
   if (/responsabilite/.test(p)) return 'RC';
-  if (/tous dommages/.test(p)) return 'Tous Dommages';
+  if (/dommage/.test(p)) return 'Tous Dommages';
   if (/\bvie\b/.test(p)) return 'Vie';
   return 'Auto';
 };
@@ -909,6 +935,10 @@ export const iaApi = {
   getTauxTaxe: async ({ idCompagnie, idOffre, dateEffet }) => Number((await apiClient.get('/devisia/taux-taxe/', {
     params: { IdCompagnie: Number(idCompagnie) || 1, IdOffre: Number(idOffre), DateEffet: String(dateEffet || '').slice(0, 10) },
   })).data?.taux) || 0,
+  // GET /api/devisia/accessoire/ : accessoire et taxe sur accessoire d'un devis groupe de cette prime nette totale
+  getAccessoireGroupe: async ({ idCompagnie, idOffre, dateEffet, primeNette }) => (await apiClient.get('/devisia/accessoire/', {
+    params: { IdCompagnie: Number(idCompagnie) || 1, IdOffre: Number(idOffre), DateEffet: String(dateEffet || '').slice(0, 10), PrimeNette: Math.round(Number(primeNette) || 0) },
+  })).data,
   // GET /api/devisia/:iddevis/garanties/ : garanties enregistrées de chaque assuré du devis
   getGarantiesDevis: async (idDevis) => (await apiClient.get(`/devisia/${idDevis}/garanties/`)).data || [],
   // GET /api/professionia/ : professions IA (la classe de risque donne le code activité)
@@ -1040,26 +1070,18 @@ export const risquesDiversApi = {
 };
 
 /* =========================================================================
-   4.0 ter TOUS DOMMAGES (produit 9) : Tous Risques Informatique, Caution…
+   4.0 ter DOMMAGES (produit 9) : Caution, Tous Risques Informatiques, Chantiers, Bris de Machines…
+   Toutes catégories, garanties réglées dans l'admin (production/views_devis_dommages.py)
    ========================================================================= */
-// La procédure URANUS attend les dates au format JJ-MM-AAAA
-const dateJourMoisAnnee = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('-') : '');
-
-export const tousDommagesApi = {
-  // GET /api/tarifparproduit/9 : catégories Tous Dommages
-  getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/9')),
-  // GET /api/devisrisquesdivers/:iddevis/ : capitaux, taux et montant de prime enregistrés
-  lireDevis: async (idDevis) => (await apiClient.get(`/devisrisquesdivers/${idDevis}/`)).data,
-  // POST /api/enregistrementdevistousrisquesinfo : création (IdDevis 0) ou modification du devis
-  enregistrer: async (payload) => {
-    const res = await apiClient.post('/enregistrementdevistousrisquesinfo', {
-      ...payload,
-      DateEffet: dateJourMoisAnnee(payload.DateEffet),
-      DateExpiration: dateJourMoisAnnee(payload.DateExpiration),
-      DateEmission: dateJourMoisAnnee(payload.DateEmission),
-    });
-    return Array.isArray(res.data) ? res.data[0] : res.data;
-  },
+export const dommagesApi = {
+  // GET /api/dommages/catalogue/?compagnie= : catégories ouvertes, garanties et taxes de la compagnie
+  getCatalogue: async (idCompagnie) => (await apiClient.get('/dommages/catalogue/', { params: { compagnie: idCompagnie || undefined } })).data,
+  // POST /api/dommages/calcul/ : primes sans enregistrement
+  calculer: async (donnees) => (await apiClient.post('/dommages/calcul/', donnees)).data,
+  // POST /api/dommages/devis/ : création (IdDevis 0) ou modification
+  enregistrer: async (donnees) => (await apiClient.post('/dommages/devis/', donnees)).data,
+  // GET /api/dommages/devis/:id/ : saisie, garanties et montants enregistrés
+  lireDevis: async (idDevis) => (await apiClient.get(`/dommages/devis/${idDevis}/`)).data,
 };
 
 export const mrhApi = {
@@ -1197,6 +1219,12 @@ export const parametrageApi = {
   // Produits (stdproduit) : onglet du registre, formulaire de saisie, saisie ouverte
   getProduits: async () => (await apiClient.get('/parametrage/produits/')).data,
   modifierProduit: async (id, donnees) => (await apiClient.patch(`/parametrage/produits/${id}/`, donnees)).data,
+  // Réglages Dommages (produit 9) : catégories et garanties par compagnie (configuration_api/parametrage_dommages.py)
+  getDommages: async () => (await apiClient.get('/parametrage/dommages/')).data,
+  modifierCategorieDommages: async (idTarif, donnees) => (await apiClient.patch(`/parametrage/dommages/categories/${idTarif}/`, donnees)).data,
+  modifierGarantiesDommages: async (idTarif, idCompagnie, garanties) => (
+    await apiClient.put(`/parametrage/dommages/categories/${idTarif}/compagnies/${idCompagnie}/`, { Garanties: garanties })
+  ).data,
   // Barème d'URANUS (taxes, commissions, accessoires…) : route DRF complète, toutes les lignes
   bareme: (route) => ({
     lister: async () => {

@@ -1,3 +1,5 @@
+from django.db import DatabaseError, connection
+from django.http import JsonResponse
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -66,3 +68,20 @@ class ResultsOnlyPagination(PageNumberPagination):
             return None
 
         return super().paginate_queryset(queryset, request, view)
+
+
+def etat_serveur(request):
+    """
+    GET /api/etat-serveur/ : le serveur répond ; indique si la base PostgreSQL répond aussi.
+    Sans authentification ni accès ORM, pour que le frontend distingue « serveur arrêté »
+    (pas de réponse) et « base inaccessible » (503) au lieu d'afficher des listes vides.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return JsonResponse({"serveur": True, "base": True})
+    except DatabaseError as erreur:
+        return JsonResponse(
+            {"serveur": True, "base": False, "message": str(erreur).strip().splitlines()[0][:300]},
+            status=503,
+        )

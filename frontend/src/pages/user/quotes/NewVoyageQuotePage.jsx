@@ -22,7 +22,7 @@ const ID_COMPAGNIE_PAR_DEFAUT = 21; // AMSA ASSURANCES, compagnie proposée par 
 const REDUCTION_MAX = 35;
 
 const ETAPES = [
-  { num: 1, libelle: 'Souscripteur & assuré', icone: Users },
+  { num: 1, libelle: 'Assuré', icone: Users },
   { num: 2, libelle: 'Voyage', icone: Globe },
   { num: 3, libelle: 'Offre & prime', icone: ShieldCheck },
   { num: 4, libelle: 'Récapitulatif', icone: FileCheck },
@@ -172,6 +172,51 @@ export const NewVoyageQuotePage = () => {
     }).finally(() => { if (actif) setChargementListes(false); });
     return () => { actif = false; };
   }, [compagnie]);
+
+  // Offres de toutes les formules de la compagnie, avec les zones où chacune est proposée : le champ
+  // « Formule » liste ces offres (MONDIAL BASIC, SCHENGEN, EUROPE & SCHENGEN PLUS, AFRIQUE…)
+  const [catalogueOffres, setCatalogueOffres] = useState([]);
+  useEffect(() => {
+    if (!compagnie || !tarifs.length || !paysZone.length) { setCatalogueOffres([]); return undefined; }
+    let actif = true;
+    const zonesCompagnie = [...new Set(paysZone.map((p) => Number(p.id_zone)).filter(Boolean))];
+    Promise.all(tarifs.flatMap((t) => zonesCompagnie.map((z) => voyageApi.getOffresVoyage(compagnie, t.IdTarif, z)
+      .then((res) => (Array.isArray(res) ? res : []).map((o) => ({ ...o, IdTarif: Number(t.IdTarif), LibelleTarif: t.LibelleTarif, IdZone: z })))
+      .catch(() => []))))
+      .then((resultats) => {
+        if (!actif) return;
+        const parOffre = new Map();
+        resultats.flat().forEach((o) => {
+          const id = Number(o.IdOffre);
+          const deja = parOffre.get(id) || { IdOffre: id, LibelleOffre: o.LibelleOffre, IdTarif: o.IdTarif, LibelleTarif: o.LibelleTarif, zones: [] };
+          deja.zones.push(o.IdZone);
+          parOffre.set(id, deja);
+        });
+        const liste = [...parOffre.values()].sort((a, b) => a.IdTarif - b.IdTarif || a.IdOffre - b.IdOffre);
+        setCatalogueOffres(liste);
+        // Offre par défaut : celle du devis ouvert si elle existe, sinon la première de la formule choisie
+        setOffre((o) => {
+          if (liste.some((x) => x.IdOffre === Number(o))) return o;
+          return (liste.find((x) => x.IdTarif === Number(categorie)) || liste[0])?.IdOffre || 0;
+        });
+      });
+    return () => { actif = false; };
+  }, [compagnie, tarifs, paysZone]); // eslint-disable-line react-hooks/exhaustive-deps
+  const offreChoisie = catalogueOffres.find((o) => o.IdOffre === Number(offre)) || null;
+  const choisirOffreFormule = (idOffre) => {
+    const o = catalogueOffres.find((x) => x.IdOffre === Number(idOffre));
+    if (!o) return;
+    setCategorie(o.IdTarif);
+    setOffre(o.IdOffre);
+  };
+  // Pays proposés : ceux des zones couvertes par l'offre choisie
+  const paysProposes = useMemo(
+    () => (offreChoisie ? paysZone.filter((p) => offreChoisie.zones.includes(Number(p.id_zone))) : paysZone),
+    [paysZone, offreChoisie],
+  );
+  useEffect(() => {
+    if (paysDestination && offreChoisie && !paysProposes.some((p) => Number(p.id_pays) === Number(paysDestination))) setPaysDestination(0);
+  }, [paysProposes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const destination = useMemo(
     () => paysZone.find((p) => Number(p.id_pays) === Number(paysDestination)) || null,
@@ -455,7 +500,7 @@ export const NewVoyageQuotePage = () => {
   // ---------------------------------------------------------------- affichage
   const nomCompagnie = compagnies.find((c) => c.id === Number(compagnie))?.nom || '';
   const libelleFormule = tarifs.find((t) => Number(t.IdTarif) === Number(categorie))?.LibelleTarif || '';
-  const libelleOffre = offres.find((o) => o.IdOffre === Number(offre))?.LibelleOffre || '';
+  const libelleOffre = offres.find((o) => o.IdOffre === Number(offre))?.LibelleOffre || offreChoisie?.LibelleOffre || '';
   const libelleNationalite = (p) => p.nationalite && /[a-zà-ÿ]/i.test(p.nationalite) ? p.nationalite : `— (${p.libelle_pays})`;
   const nationalitesTriees = useMemo(() => {
     const comptes = {};
@@ -548,7 +593,7 @@ export const NewVoyageQuotePage = () => {
         <div className="glass-panel" style={{ ...styles.carte, flex: '1 1 620px', minWidth: 0 }}>
           {step === 1 && (
             <>
-              <h2 style={styles.titreCarte}><Users size={18} style={{ color: 'var(--primary-500)' }} /> Souscripteur & assuré</h2>
+              <h2 style={styles.titreCarte}><Users size={18} style={{ color: 'var(--primary-500)' }} /> Assuré</h2>
               <div style={styles.grille}>
                 <RechercheClient
                   label="Souscripteur (client)"
@@ -562,7 +607,7 @@ export const NewVoyageQuotePage = () => {
 
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '1.25rem', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                 <input type="checkbox" checked={assureDifferent} onChange={(e) => setAssureDifferent(e.target.checked)} style={{ width: 17, height: 17, accentColor: 'var(--primary-500)' }} />
-                L'assuré (voyageur) est une autre personne que le souscripteur
+                Souscripteur
               </label>
 
               {assureDifferent && (
@@ -593,10 +638,16 @@ export const NewVoyageQuotePage = () => {
                     {trierParLibelle(compagnies, (c) => c.nom).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                   </select>
                 </Champ>
-                <Champ label="Formule" requis erreur={erreurs.categorie}>
-                  <select className="form-control" value={categorie} onChange={(e) => setCategorie(Number(e.target.value))} disabled={!tarifs.length}>
-                    {!tarifs.length && <option value={0}>{chargementListes ? 'Chargement…' : 'Aucune formule'}</option>}
-                    {tarifs.map((t) => <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>)}
+                <Champ label="Formule" requis erreur={erreurs.categorie || erreurs.offre}>
+                  <select className="form-control" value={offreChoisie ? offre : 0} onChange={(e) => choisirOffreFormule(e.target.value)} disabled={!catalogueOffres.length}>
+                    {!offreChoisie && <option value={0}>{chargementListes || (tarifs.length && !catalogueOffres.length) ? 'Chargement…' : 'Aucune offre'}</option>}
+                    {tarifs.filter((t) => catalogueOffres.some((o) => o.IdTarif === Number(t.IdTarif))).map((t) => (
+                      <optgroup key={t.IdTarif} label={t.LibelleTarif}>
+                        {catalogueOffres.filter((o) => o.IdTarif === Number(t.IdTarif)).map((o) => (
+                          <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </Champ>
                 <Champ label="Numéro de police compagnie" aide="Facultatif">
@@ -606,10 +657,11 @@ export const NewVoyageQuotePage = () => {
 
               <div style={styles.sousTitre}>Destination & voyageur</div>
               <div style={styles.grille}>
-                <Champ label="Pays de destination" requis erreur={erreurs.paysDestination} aide={libelleZone ? undefined : 'La zone tarifaire dépend du pays choisi'}>
-                  <select className="form-control" value={paysDestination} onChange={(e) => setPaysDestination(Number(e.target.value))} disabled={!paysZone.length}>
-                    <option value={0}>{paysZone.length ? '— Choisir —' : (chargementListes ? 'Chargement…' : 'Aucun pays paramétré')}</option>
-                    {paysZone.map((p) => <option key={p.id_pays} value={p.id_pays}>{p.libelle_pays}</option>)}
+                <Champ label="Pays de destination" requis erreur={erreurs.paysDestination}
+                  aide={libelleZone ? undefined : (offreChoisie ? `Pays couverts par l'offre ${offreChoisie.LibelleOffre}` : 'La zone tarifaire dépend du pays choisi')}>
+                  <select className="form-control" value={paysDestination} onChange={(e) => setPaysDestination(Number(e.target.value))} disabled={!paysProposes.length}>
+                    <option value={0}>{paysProposes.length ? '— Choisir —' : (chargementListes ? 'Chargement…' : 'Aucun pays paramétré')}</option>
+                    {paysProposes.map((p) => <option key={p.id_pays} value={p.id_pays}>{p.libelle_pays}</option>)}
                   </select>
                   {libelleZone && <div style={{ marginTop: '0.4rem' }}><span style={styles.pastille}><MapPin size={12} /> {libelleZone}</span></div>}
                 </Champ>
@@ -771,7 +823,7 @@ export const NewVoyageQuotePage = () => {
               <h2 style={styles.titreCarte}><FileCheck size={18} style={{ color: 'var(--primary-500)' }} /> Récapitulatif avant enregistrement</h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem 2rem' }}>
                 <div>
-                  <div style={styles.sousTitre}>Souscripteur & assuré</div>
+                  <div style={styles.sousTitre}>Assuré</div>
                   {ligneRecap('Souscripteur', souscripteur?.Nom)}
                   {ligneRecap('Assuré', assure?.Nom)}
                   {ligneRecap('Né(e) le', dateNaissance ? `${dateFr(dateNaissance)} (${age} ans)` : '')}
@@ -779,7 +831,7 @@ export const NewVoyageQuotePage = () => {
                   {ligneRecap('Passeport', numeroPassport)}
                   <div style={styles.sousTitre}>Contrat</div>
                   {ligneRecap('Compagnie', nomCompagnie)}
-                  {ligneRecap('Formule', libelleFormule)}
+                  {ligneRecap('Formule', offreChoisie ? `${offreChoisie.LibelleOffre} (${libelleFormule})` : libelleFormule)}
                   {ligneRecap('N° police compagnie', numeroPoliceCompagnie)}
                   {ligneRecap('Référence contrat', referenceContrat)}
                   {ligneRecap('N° attestation', numeroAttestation)}

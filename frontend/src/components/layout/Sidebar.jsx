@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 
 export const Sidebar = ({ isOpen, onClose }) => {
-  const { user, activeSpace } = useAuth();
+  const { activeSpace, peut } = useAuth();
   const location = useLocation();
 
   // Collapsible accordion states
@@ -180,7 +180,9 @@ export const Sidebar = ({ isOpen, onClose }) => {
              (même plan que la page « Guide de l'administration »)
              ========================================================================= */
           <>
-            {ADMIN_MENU.map((groupe) => {
+            {ADMIN_MENU.map((groupe) => ({ ...groupe, items: groupe.items.filter((item) => peut(item.droit)) }))
+              .filter((groupe) => groupe.items.length > 0)
+              .map((groupe) => {
               const contientPageActive = groupe.items.some((item) => estActif(location.pathname, item.to));
               const ouvert = contientPageActive || !groupesAdminFermes[groupe.id];
               return (
@@ -231,7 +233,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>Cockpit Opérationnel</span>
             </NavLink>
 
-            <div>
+            {peut(['crm.view', 'clients.view']) && <div>
               <div
                 onClick={() => toggleSubmenu('crm')}
                 className={`sidebar-nav-item ${location.pathname.includes('/user/crm') || location.pathname.includes('/user/clients') ? 'active' : ''}`}
@@ -253,37 +255,37 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
               {openSubmenus.crm && (
                 <div className="sidebar-submenu-tree">
-                  <NavLink to="/user/crm" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                  {peut('crm.view') && <NavLink to="/user/crm" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <TrendingUp size={14} className="nav-icon" />
                     <span>Suivi commercial</span>
-                  </NavLink>
-                  <NavLink to="/user/crm/360" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                  </NavLink>}
+                  {peut('clients.view') && <NavLink to="/user/crm/360" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Contact size={14} className="nav-icon" />
                     <span>Fiche client complète</span>
-                  </NavLink>
-                  <NavLink to="/user/clients" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                  </NavLink>}
+                  {peut('clients.view') && <NavLink to="/user/clients" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Users size={14} className="nav-icon" />
                     <span>Clientèle</span>
-                  </NavLink>
+                  </NavLink>}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* 2. PRODUCTION & SOUSCRIPTION */}
-            <NavLink to="/user/quotes" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('devis.view') && <NavLink to="/user/quotes" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <FileText size={16} className="nav-icon" />
               <span>Production</span>
-            </NavLink>
+            </NavLink>}
 
-            <NavLink to="/user/contracts" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('contrats.view') && <NavLink to="/user/contracts" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <ShieldCheck size={16} className="nav-icon" />
               <span>Contrats</span>
-            </NavLink>
+            </NavLink>}
 
-            <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('contrats.view') && <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <RefreshCw size={16} className="nav-icon" />
               <span>Avenants</span>
-            </NavLink>
+            </NavLink>}
 
             {/* Grisé en attendant l'ouverture des e-attestations */}
             <span className="sidebar-nav-item disabled" aria-disabled="true" title="Module indisponible pour le moment">
@@ -292,11 +294,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
             </span>
 
             {/* 3. FINANCE & CAISSE (ART. 13) */}
-            <div className="sidebar-section-header">
+            {peut('encaissements.view') && <div className="sidebar-section-header">
               <span>Caisse (Art. 13)</span>
-            </div>
+            </div>}
 
-            <div>
+            {peut('encaissements.view') && <div>
               <div
                 onClick={() => toggleSubmenu('cash')}
                 className={`sidebar-nav-item ${location.pathname.includes('/user/cash') || location.pathname.includes('/user/cheques') ? 'active' : ''}`}
@@ -332,32 +334,32 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   </NavLink>
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* 4. INDEMNISATION & GED */}
             <div className="sidebar-section-header">
               <span>Indemnisation & Pièces</span>
             </div>
 
-            <NavLink to="/user/claims" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('sinistres.view') && <NavLink to="/user/claims" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <AlertTriangle size={16} className="nav-icon" />
               <span>Suivi des sinistres</span>
-            </NavLink>
+            </NavLink>}
 
-            <NavLink to="/user/documents" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('documents.view') && <NavLink to="/user/documents" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <FolderOpen size={16} className="nav-icon" />
               <span>Documents (GED)</span>
-            </NavLink>
+            </NavLink>}
 
             <NavLink to="/user/derogations" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <KeyRound size={16} className="nav-icon" />
               <span>Workflows & Dérogations</span>
             </NavLink>
 
-            <NavLink to="/user/archives" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('devis.view') && <NavLink to="/user/archives" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <Archive size={16} className="nav-icon" />
               <span>Archives</span>
-            </NavLink>
+            </NavLink>}
           </>
         )}
       </nav>

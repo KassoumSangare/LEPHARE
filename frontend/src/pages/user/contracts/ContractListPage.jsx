@@ -162,8 +162,8 @@ export const ContractListPage = () => {
       if (Array.isArray(quotesList)) setQuotes(quotesList);
     } catch (err) {
       console.error('Erreur chargement contrats Django:', err);
-      const local = dataStore.getContracts();
-      setContracts(local || []);
+      setContracts([]);
+      toastError('Impossible de charger les contrats : le serveur ou la base de données ne répond pas.');
     } finally {
       setLoading(false);
     }
@@ -916,6 +916,7 @@ export const ContractListPage = () => {
                 ['mrh', Home, '#0ea5e9', 'Habitation MRH'],
                 ['sante', HeartPulse, '#f43f5e', 'Santé Groupe'],
                 ['ia', Activity, '#a855f7', 'Individuelle IA'],
+                ['tous-dommages', Layers, '#d97706', 'Dommages'],
               ].map(([module, Icone, couleur, libelle]) => (
                 <button
                   key={module}

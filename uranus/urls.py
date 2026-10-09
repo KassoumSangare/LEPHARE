@@ -6,9 +6,12 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+from core.views import etat_serveur
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/etat-serveur/", etat_serveur),
     path("api/", include("account.urls")),
     path("api/", include("configuration_api.urls")),
     path("api/", include("customer.urls")),
@@ -18,6 +21,8 @@ urlpatterns = [
     path("api/", include("reporting.urls")),
     path("api/", include("payment.urls")),
     path('api/autorisations/', include('autorisations.urls')),
+    # Utilisateurs, rôles, droits et journal d'audit (autorisations/views_securite.py)
+    path('api/securite/', include('autorisations.urls_securite')),
     # ✨ API Commissions
     path('api/commissions/', include('commissions.urls')),
     # 🏛️ API Institutionnel V2 LE PHARE (CRM, Sinistres, Conventions, GED, Audit CIMA)

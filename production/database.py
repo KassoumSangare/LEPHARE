@@ -13,7 +13,7 @@ from rest_framework.exceptions import APIException, ValidationError
 
 from core.date_parser import date_emission_du_jour, parse_date_string
 from core.services import ServiceError
-from configuration_api.models import ModeEncaissement
+from configuration_api.models import Banque, ModeEncaissement
 from customer.models import Client
 from uranus.settings import MAX_LIMIT_FOR_SEARCH
 
@@ -147,6 +147,44 @@ def get_contract_info_for_sms(id_contrat):
     return contrat_info
 
 
+def verifier_categorie_police(cursor, id_devis):
+    """
+    Le numéro de police (code courtier + code catégorie + année + n° + clé) est attribué à la
+    confirmation d'une affaire nouvelle, d'un remplacement ou d'un transfert, avec le code catégorie
+    du tarif d'une ligne du devis : sans ligne catégorisée, la police sortirait en « 000 ».
+    """
+    cursor.execute(
+        """
+        SELECT TRIM(COALESCE(a.codeavenant, '')),
+               COUNT(x.iddevisdetail),
+               COUNT(x.iddevisdetail) FILTER (
+                   WHERE COALESCE(NULLIF(TRIM(t.codecategorie), ''), '000') <> '000'
+               )
+        FROM stddevis d
+        LEFT JOIN stdavenant a ON a.idavenant = d.idavenant
+        LEFT JOIN stddevisdetail x ON x.iddevis = d.iddevis
+        LEFT JOIN stdtarif t ON t.idtarif = x.idtarif
+        WHERE d.iddevis = %s
+        GROUP BY a.codeavenant
+        """,
+        [id_devis],
+    )
+    row = cursor.fetchone()
+    if not row or row[0] not in ("AFN", "RPP", "TRP"):
+        return
+    _, nb_lignes, nb_lignes_categorisees = row
+    if nb_lignes == 0:
+        raise ValueError(
+            "Ce devis n'a aucune ligne de détail : impossible d'attribuer un numéro de police "
+            "(code courtier + code catégorie + année). Complétez le devis avant de le confirmer."
+        )
+    if nb_lignes_categorisees < nb_lignes:
+        raise ValueError(
+            "Une ligne du devis n'a pas de catégorie de tarif : le numéro de police porterait la "
+            "catégorie 000. Corrigez la catégorie avant de confirmer le devis."
+        )
+
+
 def save_contract(input_data):
     sql_output = None
     error_occured = False
@@ -160,6 +198,7 @@ def save_contract(input_data):
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
+                verifier_categorie_police(cursor, IdDevis)
                 cursor.execute(
                     "CALL sp_confirmation_devis(%s, %s, %s);",
                     (IdDevis, IdContrat, OutputMessage),
@@ -909,7 +948,8 @@ def save_quotation_risques_divers(user_id: int, input_data: dict):
                     # Si prime imposée : persister les valeurs manuelles pour
                     # éviter le recalcul automatique lors de la confirmation.
                     returned_id = row[0]
-                    if returned_id and PrimeNette > 0:
+                    # RC chef de famille MINENE (offre 67) : primes fixées par la base, jamais imposées
+                    if returned_id and PrimeNette > 0 and IdOffre != 67:
                         try:
                             devis_obj = Devis.objects.get(iddevis=returned_id)
                             devis_obj.prime_imposee = True
@@ -2871,24 +2911,35 @@ def enregistrer_echeancier_cheques(id_client, id_banque, cheques, observation=""
         raise ValidationError("Saisissez au moins un chèque.")
     if not Client.objects.filter(IdClient=id_client).exists():
         raise ValidationError("Client introuvable.")
+    # Chaque chèque peut venir d'une banque différente (sinon : banque de l'échéancier)
+    banques = {b.idbanque: b.libelle for b in Banque.objects.all()}
     crees = []
+    vus = set()
     with transaction.atomic():
         for ligne in cheques:
             numero = str(ligne.get("numero_cheque") or "").strip()
             montant = Decimal(str(ligne.get("montant") or 0))
             echeance = ligne.get("date_echeance")
+            banque = ligne.get("id_banque") or id_banque
             if not numero or montant <= 0 or not echeance:
                 raise ValidationError(
                     "Chaque chèque doit avoir un numéro, un montant et une date de dépôt."
                 )
-            if Cheque.objects.filter(numero_cheque=numero, banque_id=id_banque).exists():
+            if not banque or banque not in banques:
+                raise ValidationError(f"Chèque n° {numero} : choisissez sa banque.")
+            if (numero, banque) in vus:
                 raise ValidationError(
-                    f"Le chèque n° {numero} de cette banque est déjà enregistré."
+                    f"Le chèque n° {numero} ({banques[banque]}) est saisi deux fois."
+                )
+            vus.add((numero, banque))
+            if Cheque.objects.filter(numero_cheque=numero, banque_id=banque).exists():
+                raise ValidationError(
+                    f"Le chèque n° {numero} de la banque {banques[banque]} est déjà enregistré."
                 )
             crees.append(
                 Cheque.objects.create(
                     numero_cheque=numero,
-                    banque_id=id_banque,
+                    banque_id=banque,
                     montant_initial=montant,
                     solde_disponible=montant,
                     statut=Cheque.Statut.A_DEPOSER,

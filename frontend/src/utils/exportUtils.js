@@ -2,7 +2,7 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
 import { construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 
@@ -1144,7 +1144,9 @@ const buildConditionsParticulieres = (quote, cp) => {
   const m = cp.montants || {};
   // Détail par véhicule renvoyé en annexe dès qu'il y a plusieurs véhicules
   const enAnnexe = cp.flotte || cp.nb_vehicules > 1;
-  const produit = String(quote.produit || 'AUTOMOBILE').toUpperCase();
+  // Dommages : la catégorie (Tous Risques Chantiers, Caution…) nomme l'assurance
+  const produit = String(cp.risque?.categorie || quote.produit || 'AUTOMOBILE').toUpperCase();
+  const risque = (cp.risque?.description || []).filter((r) => r && r.valeur);
 
   const sommesGaranties = (g) => {
     const capitaux = (g.capitaux || []).filter((c) => Number(c) > 0);
@@ -1232,6 +1234,12 @@ const buildConditionsParticulieres = (quote, cp) => {
         </table>
       </div>
     </div>
+
+    ${risque.length ? `
+    <div class="cp-section-bar">Risque assuré</div>
+    <table class="cadre-unique cp-bloc">
+      ${risque.map((r) => `<tr><td class="label">${echapperHtml(r.libelle)}</td><td>${echapperHtml(r.valeur)}</td></tr>`).join('')}
+    </table>` : ''}
 
     <table class="tableau-garanties cp-garanties">
       <tr class="ligne-labels">
@@ -1785,6 +1793,12 @@ const dateBarre = (x) => (x ? formatFrDate(x) : '');
 const montantIa = (x) => (x !== undefined && x !== null && x !== '' && Number(x) ? fcfaIa(x) : '-');
 const texteIa = (x) => (x === undefined || x === null ? '' : String(x).trim());
 const categorieIa = (q) => texteIa(q.LibelleCategorie) || 'INDIVIDUELLE ACCIDENTS';
+// Parts des bénéficiaires : 0 en base = part non précisée par l'assuré (rien d'imprimé)
+const aDesPartsIa = (ayants) => (ayants || []).some((d) => Number(d.part) > 0);
+const partIa = (part) => {
+  const n = Number(part) || 0;
+  return n > 0 ? `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %` : '';
+};
 const estCategorieGroupe = (q) => /^(PROPOSITION )?INDIVIDUELLE ACCIDENTS GROUPE$/.test(categorieIa(q).replace(/\s+/g, ' ').toUpperCase());
 
 // Références de la quittance (bloc de droite, commun aux deux documents)
@@ -1901,9 +1915,11 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
       <tr><td class="l">Né(e) le</td><td>${dateBarre(a.DateNaissance)}</td></tr>
       <tr><td class="l">A</td><td>${texteIa(a.LieuNaissance)}</td></tr>
     </table>${i < assures.length - 1 ? '<div class="ia-separateur"></div>' : ''}`).join('');
+  // Parts : colonne seulement si l'assuré en a précisé (0 en base = part non précisée)
+  const avecParts = aDesPartsIa(beneficiaires);
   const lignesBeneficiaires = beneficiaires.length
-    ? beneficiaires.map((b) => `<tr><td>${texteIa(b.nom_ayant_droit)}</td><td>${texteIa(b.prenoms_ayant_droit)}</td><td class="n">${b.part ? `${parseInt(b.part, 10)}%` : ''}</td></tr>`).join('')
-    : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
+    ? beneficiaires.map((b) => `<tr><td>${texteIa(b.nom_ayant_droit)}</td><td>${texteIa(b.prenoms_ayant_droit)}</td>${avecParts ? `<td class="n">${partIa(b.part)}</td>` : ''}</tr>`).join('')
+    : `<tr><td>&nbsp;</td><td></td>${avecParts ? '<td></td>' : ''}</tr>`;
   return `
     <div class="ia">
       <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
@@ -1933,7 +1949,7 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
         <div class="ia-boite">
           <div class="ia-rubrique">BENEFICIAIRES EN CAS DE DECES</div>
           <table class="ia-beneficiaires">
-            <tr class="entete"><td>Nom</td><td>Prénoms</td><td class="n">Part(%)</td></tr>
+            <tr class="entete"><td>Nom</td><td>Prénoms</td>${avecParts ? '<td class="n">Part(%)</td>' : ''}</tr>
             ${lignesBeneficiaires}
           </table>
         </div>
@@ -1950,11 +1966,14 @@ const buildFactureIa = (quote, donnees) => {
   const q = quittanceIa(quote, donnees.quittance);
   const ligneValeur = (libelle, valeur) => `
     <div class="iaf-ligne"><div class="iaf-l">${libelle}</div><div class="iaf-v">${valeur}</div></div>`;
-  const assures = (donnees.assures || []).map((a) => `
+  const assures = (donnees.assures || []).map((a) => {
+    const avecParts = aDesPartsIa(a.AyantsDroit);
+    return `
     <tr><td>${texteIa(a.Nom)}</td><td>${dateTiret(a.DateNaissance)}</td><td>${texteIa(a.Profession)}</td><td>${texteIa(a.AdresseGeographique)}</td><td>${texteIa(a.AdressePostale)}</td></tr>
-    <tr class="iaf-ad"><td></td><td>AYANTS DROIT</td><td>Nom et prénoms</td><td>Qualité</td><td>Part</td></tr>
+    <tr class="iaf-ad"><td></td><td>AYANTS DROIT</td><td>Nom et prénoms</td><td>Qualité</td><td>${avecParts ? 'Part' : ''}</td></tr>
     ${(a.AyantsDroit || []).map((d) => `
-    <tr><td></td><td></td><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td><td>${parseInt(d.part, 10) || 0} %</td></tr>`).join('')}`).join('');
+    <tr><td></td><td></td><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td><td>${avecParts ? partIa(d.part) : ''}</td></tr>`).join('')}`;
+  }).join('');
   return `
     <div class="iaf">
       <div class="ia-titre">FACTURE N° ${texteIa(q.NumeroDevis)}</div>
@@ -1994,10 +2013,11 @@ const buildAnnexeIa = (quote, donnees) => {
   };
   const cartes = (donnees.assures || []).map((a) => {
     const ayants = a.AyantsDroit || [];
+    const avecParts = aDesPartsIa(ayants);
     const tableAyants = ayants.length
       ? `<table class="iaa-table">
-          <tr class="entete"><td style="width:55%">Nom et prénoms</td><td style="width:27%">Qualité</td><td>Part</td></tr>
-          ${ayants.map((d, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td><td>${parseInt(d.part, 10) || 0} %</td></tr>`).join('')}
+          <tr class="entete"><td style="width:55%">Nom et prénoms</td><td style="width:${avecParts ? 27 : 45}%">Qualité</td>${avecParts ? '<td>Part</td>' : ''}</tr>
+          ${ayants.map((d, i) => `<tr${i % 2 === 1 ? ' class="alt"' : ''}><td>${texteIa(d.nom_ayant_droit)} ${texteIa(d.prenoms_ayant_droit)}</td><td>${texteIa(d.libelle_qualite)}</td>${avecParts ? `<td>${partIa(d.part)}</td>` : ''}</tr>`).join('')}
         </table>`
       : '<div class="iaa-vide">AUCUNE DONNEE</div>';
     return `
@@ -2220,6 +2240,189 @@ export const printPropositionVoyage = async (quote) => {
     if (fenetre) {
       fenetre.document.open();
       fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger le devis pour la proposition. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
+};
+
+/* =========================================================================
+   DOMMAGES : Cotation d'assurance d'un devis, au format de la fiche « Cotation d'assurance Caution »
+   de NSIA remise par OREOLE (2026-10-08) : intermédiaire, prospect (rubriques du risque et capitaux),
+   cotation (offre, objet, contre-garanties, antécédent, garanties, durée), prime nette / accessoires /
+   taxes / TTC en chiffres et en lettres, clauses et exclusions, délai de validité. Textes propres à la
+   catégorie (objet, contre-garanties, exclusions) : Administration > Réglages Dommages.
+   ========================================================================= */
+export const estDevisDommages = (quote) => /dommage/i.test(String(quote?.branche || quote?.produit || ''));
+
+const DUREES_COTATION = { 1: 'Mensuelle', 2: 'Trimestrielle', 3: 'Semestrielle', 4: 'Annuelle' };
+// Fiche NSIA : validité de l'offre et clause d'aggravation (article 15 du code CIMA)
+const VALIDITE_COTATION = '03 mois';
+const CLAUSE_AGGRAVATION = "En cas d'aggravation du risque en cours de contrat telle que prévue à l'article 15 du code CIMA, "
+  + "outre les réductions proportionnelles d'indemnité visées par ailleurs, l'assureur se réserve le droit de résilier le contrat "
+  + 'ou de proposer de nouvelles conditions tarifaires.';
+const MENTION_PAIEMENT = "Conformément aux dispositions de l'article 13 du code CIMA, la prise d'effet du contrat est subordonnée "
+  + 'au paiement intégral de la prime correspondante.';
+
+const COTATION_STYLES = `
+  body { max-width: 210mm; padding: 0; }
+  .cot { font-family: Calibri, 'Segoe UI', Arial, sans-serif; color: #111827; font-size: 9pt; padding: 5mm 10mm 0; }
+  .cot-page { page-break-after: always; break-after: page; }
+  .cot-page:last-child { page-break-after: auto; break-after: auto; }
+  .cot-entete { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2mm; }
+  .cot-logo { max-height: 17mm; max-width: 55mm; }
+  .cot-ref { text-align: right; font-size: 8.5pt; font-weight: 700; }
+  .cot-titre { font-size: 18pt; font-weight: 800; text-align: right; line-height: 1.1; margin-top: 2mm; letter-spacing: 0.01em; }
+  .cot table.cot-bloc { width: 100%; border-collapse: collapse; margin-top: 2.5mm; }
+  .cot-bloc th { background: #1f2937; color: #fff; text-align: left; font-size: 10.5pt; font-weight: 700; padding: 0.9mm 2mm; }
+  .cot-bloc td { border: 0.6px solid #374151; padding: 0.7mm 2mm; vertical-align: top; line-height: 1.25; }
+  .cot-bloc td.l { width: 44%; font-weight: 700; }
+  .cot-bloc td.v { font-weight: 600; }
+  .cot-bloc td.ombre { background: #e5e7eb; }
+  .cot-bloc ul { margin: 0; padding-left: 4mm; }
+  .cot-primes { text-align: center; margin: 2.5mm 0 1.5mm; font-weight: 700; line-height: 1.4; }
+  .cot-primes .ttc { font-size: 10.5pt; }
+  .cot-lettres { background: #d1d5db; border: 0.6px solid #374151; text-align: center; font-weight: 700; font-style: italic; padding: 1.2mm; font-size: 9pt; }
+  .cot-validite { display: flex; margin-top: 3mm; border: 0.6px solid #374151; }
+  .cot-validite .t { background: #1f2937; color: #fff; font-size: 10.5pt; font-weight: 700; padding: 1.5mm 2mm; width: 44%; }
+  .cot-validite .v { padding: 1.5mm 2mm; font-size: 9pt; }
+  .cot-fait { text-align: center; margin-top: 3mm; }
+  .cot-signatures { display: flex; justify-content: space-between; margin-top: 3mm; font-weight: 700; text-decoration: underline; }
+  .cot-annexe { margin-top: 3mm; }
+  .cot-annexe table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  .cot-annexe th { background: #e5e7eb; border: 0.6px solid #374151; padding: 1mm 1.5mm; text-align: left; }
+  .cot-annexe td { border: 0.6px solid #374151; padding: 1mm 1.5mm; }
+  .cot-annexe td.n { text-align: right; white-space: nowrap; }
+  .cot-pied { margin-top: 8mm; font-size: 7.5pt; color: #4b5563; display: flex; justify-content: space-between; }
+`;
+
+const LIBELLES_CAPITAL_COTATION = {
+  243: 'Montant du cautionnement', 101: 'Valeur des matériels informatiques', 62: 'Frais de reconstitution des médias',
+  102: "Frais supplémentaires d'exploitation",
+};
+
+const dateEnLettres = (iso, avecJour = true) => {
+  if (!iso) return '';
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('fr-FR', { ...(avecJour ? { weekday: 'long' } : {}), day: 'numeric', month: 'long', year: 'numeric' });
+};
+const dateCourte = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+
+export const buildCotationDommages = (quote, d) => {
+  const e = echapperHtml;
+  const f = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/ | /g, ' ');
+  const fiche = d.Fiche || {};
+  const categorie = String(d.Detail?.LibelleTarif || quote.produit || 'DOMMAGES').toUpperCase().replace(/^ASSURANCE\s+/, '');
+  const logo = logoCompagnie(d.Compagnie);
+  const client = d.Client || {};
+  const telephone = [client.Telephone, client.Fax].filter(Boolean).join(' / ');
+  const adresse = [client.Adresse, client.AdresseGeographique, client.Email].filter(Boolean).join(' — ');
+  const garanties = d.Garanties || [];
+  const capitaux = garanties.filter((g) => Number(g.Capital) > 0).map((g) => [
+    LIBELLES_CAPITAL_COTATION[Number(g.IdSousGarantie)] || (garanties.length === 1 ? 'Capital assuré' : `Capital ${String(g.Libelle || '').toLowerCase()}`),
+    f(g.Capital),
+  ]);
+  const debut = String(d.DateEffet || '').slice(0, 10);
+  const fin = String(d.DateExpiration || '').slice(0, 10);
+  const jours = debut && fin ? Math.round((Date.parse(`${fin}T00:00:00Z`) - Date.parse(`${debut}T00:00:00Z`)) / 86400000) + 1 : null;
+  const duree = DUREES_COTATION[Number(d.IdDuree)] || (jours ? `${jours} jours` : '');
+  const periode = debut ? `du ${dateCourte(debut)} au ${dateCourte(fin)}` : '';
+  const antecedent = { 1: 'Affaire nouvelle', 2: 'Renouvellement' }[Number(d.IdAvenant)] || 'Affaire nouvelle';
+  const ligne = (libelle, valeur, classe = '') => `<tr><td class="l">${e(libelle)}</td><td class="v ${classe}">${valeur}</td></tr>`;
+  const liste = (elements) => (elements?.length ? `<ul>${elements.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : '—');
+  const ttc = Math.round(Number(d.PrimeTtc) || 0);
+
+  const entete = (titre) => `
+    <div class="cot-entete">
+      <div>${logo ? `<img class="cot-logo" src="${e(logo)}" alt="${e(d.Compagnie)}" />` : `<div style="font-size:16pt;font-weight:800;">${e(d.Compagnie)}</div>`}</div>
+      <div>
+        <div class="cot-ref">N° ${e(d.NumeroDevis || '')}${d.NumeroPoliceCompagnie ? `<br/>Police ${e(d.NumeroPoliceCompagnie)}` : ''}</div>
+        <div class="cot-titre">${titre}</div>
+      </div>
+    </div>`;
+
+  return `<style>${COTATION_STYLES}</style>
+  <div class="cot cot-page">
+    ${entete(`COTATION D'ASSURANCE<br/>${e(categorie)}`)}
+
+    <table class="cot-bloc">
+      <tr><th colspan="2">Informations sur l'intermédiaire</th></tr>
+      ${ligne("Réseau de l'intermédiaire :", 'COURTAGE')}
+      ${ligne("Nom ou raison sociale de l'intermédiaire :", e(nomCabinet()))}
+      ${ligne('Date de la demande :', e(dateEnLettres(d.DateEmission)))}
+    </table>
+
+    <table class="cot-bloc">
+      <tr><th colspan="2">Informations sur le prospect :</th></tr>
+      ${ligne('Nom ou raison sociale :', e(client.Nom || quote.client_nom || ''))}
+      ${ligne('N° de Téléphone / Fax :', e(telephone || 'A nous communiquer'))}
+      ${ligne('Adresse postale / électronique :', e(adresse || 'A nous communiquer'))}
+      ${(d.Risque || []).map((r) => ligne(`${r.libelle} :`, e(r.valeur))).join('')}
+      ${capitaux.map(([libelle, valeur]) => ligne(`${libelle} :`, e(valeur))).join('')}
+    </table>
+
+    <table class="cot-bloc">
+      <tr><th colspan="2">Informations sur la cotation :</th></tr>
+      ${ligne('Offre proposée :', e(`${d.Compagnie || ''} — ${d.Detail?.LibelleOffre || d.Detail?.LibelleTarif || ''}`.toUpperCase()))}
+      ${ligne('Objet de la garantie :', e(fiche.objet_garantie || '—'))}
+      ${ligne('Contre garanties et mesures préalables à la souscription :', liste(fiche.contre_garanties), 'ombre')}
+      ${ligne("Antécédent de l'affaire :", e(antecedent))}
+      ${ligne('Garanties demandées :', 'Voir tableau de garanties en annexe')}
+      ${ligne('Montant de la prime à payer (selon détail ci-après) :', e(MENTION_PAIEMENT), 'ombre')}
+      ${ligne('Durée du contrat :', e([duree, periode].filter(Boolean).join(', ')))}
+    </table>
+
+    <div class="cot-primes">
+      Prime nette : ${f(d.PrimeNette)}<br/>
+      Accessoires : ${f(d.Accessoire)}<br/>
+      Taxes : ${f(d.Taxe)}<br/>
+      <span class="ttc">Prime TTC : ${f(ttc)}</span>
+    </div>
+    <div class="cot-lettres">${e(numberToFrenchWords(ttc))} FRANCS CFA</div>
+
+    <table class="cot-bloc">
+      <tr><th colspan="2">Clauses et exclusions applicables :</th></tr>
+      ${ligne('Aggravation du risque en cours de contrat :', e(CLAUSE_AGGRAVATION))}
+      ${ligne('Exclusions :', liste(fiche.exclusions))}
+    </table>
+
+    <div class="cot-validite">
+      <div class="t">Délai de validité de l'offre :</div>
+      <div class="v">${e(VALIDITE_COTATION)}<br/>La présente cotation ne saurait engager la compagnie au delà du délai précité.</div>
+    </div>
+
+    <div class="cot-fait">Fait à ${e(villeSignature())}, le ${e(dateEnLettres(d.DateEmission, false))}</div>
+    <div class="cot-signatures"><span>Le rédacteur</span><span>Pour la compagnie</span></div>
+    <div class="cot-pied"><span>${e(nomCabinet())} — courtier</span><span>Page 1 de 2</span></div>
+  </div>
+
+  <div class="cot cot-page">
+    ${entete(`ANNEXE<br/>TABLEAU DES GARANTIES`)}
+    <div class="cot-annexe">
+      <table>
+        <tr><th colspan="5">Annexe : tableau des garanties</th></tr>
+        <tr><th>Garantie</th><th>Capital</th><th>Franchise</th><th>Prime nette</th><th>Taxe</th></tr>
+        ${garanties.map((g) => `<tr><td>${e(g.Libelle)}</td><td class="n">${Number(g.Capital) > 0 ? f(g.Capital) : '—'}</td>
+          <td>${e(g.TexteFranchise && g.TexteFranchise !== 'NEANT' ? g.TexteFranchise : 'Néant')}</td>
+          <td class="n">${f(g.PrimeNette)}</td><td class="n">${f(g.Taxe)}</td></tr>`).join('') || '<tr><td colspan="5">Aucune garantie enregistrée.</td></tr>'}
+      </table>
+    </div>
+    <div class="cot-pied"><span>${e(nomCabinet())} — courtier</span><span>Page 2 de 2</span></div>
+  </div>`;
+};
+
+export const printCotationDommages = async (quote) => {
+  if (!quote) return;
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la cotation…</p>');
+  try {
+    const donnees = await dommagesApi.lireDevis(quote.iddevis || quote.id);
+    openPrintWindow(`Cotation ${quote.numerodevis || donnees.NumeroDevis || ''}`.trim(), buildCotationDommages(quote, donnees), fenetre);
+  } catch (err) {
+    console.error('Erreur cotation Dommages :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de charger le devis pour la cotation. Veuillez réessayer.</p>');
       fenetre.document.close();
     }
   }
@@ -2717,9 +2920,9 @@ const buildSimpleFacture = (quote) => {
     ${isIa ? `
       <div class="bloc-titre">ASSURES, AYANTS DROIT</div>
       <table class="bloc-cadre bloc-tableau">
-        <tr class="ligne-labels"><td>Nom et prénoms</td><td>Qualité</td><td>Part</td></tr>
+        <tr class="ligne-labels"><td>Nom et prénoms</td><td>Qualité</td>${aDesPartsIa(ayantsDroit) ? '<td>Part</td>' : ''}</tr>
         ${ayantsDroit.length > 0
-          ? ayantsDroit.map((a) => `<tr><td>${a.nom || a.nom_prenoms || '—'}</td><td>${a.qualite || '—'}</td><td>${a.part ? `${a.part}%` : '—'}</td></tr>`).join('')
+          ? ayantsDroit.map((a) => `<tr><td>${a.nom || a.nom_prenoms || '—'}</td><td>${a.qualite || '—'}</td>${aDesPartsIa(ayantsDroit) ? `<td>${partIa(a.part)}</td>` : ''}</tr>`).join('')
           : '<tr><td colspan="3" style="text-align:center;color:#94a3b8;">Aucun ayant droit enregistré</td></tr>'}
       </table>
     ` : `
@@ -3247,6 +3450,11 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
   // Devis Voyage : proposition du modèle URANUS (le contrat est l'imprimé remis par l'assureur)
   if (!contrat && estDevisVoyage(quote)) {
     await printPropositionVoyage(quote);
+    return;
+  }
+  // Devis Dommages : cotation au format de la fiche NSIA (le contrat garde ses Conditions Particulières)
+  if (!contrat && estDevisDommages(quote)) {
+    await printCotationDommages(quote);
     return;
   }
   // Devis IA : proposition « groupe » pour une flotte, sinon Conditions Particulières individuelles

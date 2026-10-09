@@ -426,3 +426,87 @@ class Permission(models.Model):
             permissions_autorisation__actif=True,
             is_active=True
         ).distinct()
+
+
+# =========================================================================
+# Rôles et droits de LE PHARE (Utilisateur -> Rôle -> Droit -> Action -> Audit)
+# Les droits sont le catalogue des actions contrôlées par le serveur (autorisations/garde.py) ;
+# les rôles et leur composition se règlent dans l'administration.
+# =========================================================================
+class Droit(models.Model):
+    """Action contrôlée : consulter, créer, modifier, valider… sur un module (ex. devis.validate)."""
+    code = models.CharField(max_length=60, primary_key=True, verbose_name="Code")
+    module = models.CharField(max_length=40, verbose_name="Module")
+    module_libelle = models.CharField(max_length=80, verbose_name="Libellé du module")
+    action = models.CharField(max_length=30, verbose_name="Action")
+    libelle = models.CharField(max_length=150, verbose_name="Libellé")
+    description = models.TextField(blank=True, default="", verbose_name="Description")
+    # Opération sensible : signalée à l'écran et journalisée avec ses valeurs avant / après
+    sensible = models.BooleanField(default=False, verbose_name="Sensible")
+    # Réglable dans l'admin : motif exigé avant d'exécuter l'action
+    motif_obligatoire = models.BooleanField(default=False, verbose_name="Motif obligatoire")
+    # Réglable dans l'admin : l'auteur d'un objet ne peut pas exécuter lui-même cette action dessus
+    separation_taches = models.BooleanField(default=False, verbose_name="Séparation des tâches")
+    # La séparation des tâches n'a de sens que si le serveur sait retrouver l'auteur de l'objet
+    separation_possible = models.BooleanField(default=False, verbose_name="Séparation possible")
+    ordre = models.PositiveSmallIntegerField(default=0, verbose_name="Ordre")
+
+    class Meta:
+        db_table = "lephare_droit"
+        ordering = ["ordre", "code"]
+        verbose_name = "Droit"
+        verbose_name_plural = "Droits"
+
+    def __str__(self):
+        return self.code
+
+
+class Role(models.Model):
+    """Rôle attribué aux utilisateurs : ensemble de droits, réglé dans l'administration."""
+    code = models.CharField(max_length=40, unique=True, verbose_name="Code")
+    libelle = models.CharField(max_length=100, verbose_name="Libellé")
+    description = models.TextField(blank=True, default="", verbose_name="Description")
+    actif = models.BooleanField(default=True, verbose_name="Actif")
+    ordre = models.PositiveSmallIntegerField(default=0, verbose_name="Ordre")
+    droits = models.ManyToManyField(Droit, blank=True, related_name="roles", db_table="lephare_role_droit")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+    modifie_par = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        db_table = "lephare_role"
+        ordering = ["ordre", "libelle"]
+        verbose_name = "Rôle"
+        verbose_name_plural = "Rôles"
+
+    def __str__(self):
+        return self.libelle
+
+
+class UtilisateurRole(models.Model):
+    """Rôle attribué à un utilisateur."""
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="roles_lephare")
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="attributions")
+    date_attribution = models.DateTimeField(auto_now_add=True)
+    attribue_par = models.CharField(max_length=150, blank=True, default="")
+
+    class Meta:
+        db_table = "lephare_utilisateur_role"
+        unique_together = ["utilisateur", "role"]
+        verbose_name = "Rôle d'un utilisateur"
+        verbose_name_plural = "Rôles des utilisateurs"
+
+
+class SecuriteUtilisateur(models.Model):
+    """Sécurité du compte : changement de mot de passe exigé, échecs de connexion, verrouillage."""
+    utilisateur = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name="securite_lephare")
+    doit_changer_mot_de_passe = models.BooleanField(default=False)
+    echecs_connexion = models.PositiveSmallIntegerField(default=0)
+    verrouille_jusqua = models.DateTimeField(null=True, blank=True)
+    derniere_connexion_ip = models.GenericIPAddressField(null=True, blank=True)
+    date_changement_mot_de_passe = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "lephare_utilisateur_securite"
+        verbose_name = "Sécurité d'un compte"
+        verbose_name_plural = "Sécurité des comptes"

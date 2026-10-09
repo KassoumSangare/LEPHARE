@@ -4747,13 +4747,16 @@ class EcheancierChequeLigneSerializer(serializers.Serializer):
     date_echeance = serializers.DateField(
         input_formats=["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"]
     )
+    # Banque du chèque : un échéancier peut réunir des chèques de plusieurs banques
+    id_banque = serializers.IntegerField(required=False, allow_null=True)
 
 
 class EcheancierChequesSerializer(serializers.Serializer):
-    """Chèques remis d'avance par un client, chacun avec sa date de dépôt."""
+    """Chèques remis d'avance par un client, chacun avec sa date de dépôt et sa banque."""
 
     id_client = serializers.IntegerField()
-    id_banque = serializers.IntegerField()
+    # Banque des chèques qui n'indiquent pas la leur
+    id_banque = serializers.IntegerField(required=False, allow_null=True)
     observation = serializers.CharField(
         max_length=255, required=False, allow_blank=True, default=""
     )

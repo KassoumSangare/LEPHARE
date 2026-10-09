@@ -56,19 +56,22 @@ export const ArchivesPage = () => {
   const loadArchives = async () => {
     setLoading(true);
     try {
-      // Clients & Devis & Sinistres : API réelle en priorité, fallback local dataStore.
-      // Contrats : pas d'archivage persisté côté backend pour l'instant → dataStore uniquement
-      // (évite aussi de rapatrier les ~21 000 contrats réels rien que pour filtrer les archivés).
+      // Clients & Devis & Sinistres : API réelle uniquement (jamais de données fictives en repli).
+      // Contrats : pas d'archivage persisté côté backend pour l'instant → archivages faits dans
+      // cet écran (dataStore), sans rapatrier les ~21 000 contrats réels pour filtrer les archivés.
       const [clientsRaw, quotesRaw, claimsRaw] = await Promise.all([
         customerApi.getClients().catch(() => null),
         quoteApi.getQuotes().catch(() => null),
         claimsApi.getClaims().catch(() => null),
       ]);
+      if (clientsRaw === null && quotesRaw === null) {
+        toastError('Impossible de charger les archives : le serveur ou la base de données ne répond pas.');
+      }
 
-      const clients = (clientsRaw && clientsRaw.length > 0 ? clientsRaw : dataStore.getClients()).filter(isArchivedClient);
-      const quotes = (quotesRaw && quotesRaw.length > 0 ? quotesRaw : dataStore.getQuotes()).filter(isArchivedQuote);
+      const clients = (Array.isArray(clientsRaw) ? clientsRaw : []).filter(isArchivedClient);
+      const quotes = (Array.isArray(quotesRaw) ? quotesRaw : []).filter(isArchivedQuote);
       const contracts = dataStore.getContracts().filter(isArchivedContract);
-      const claims = (claimsRaw && claimsRaw.length > 0 ? claimsRaw : dataStore.getClaims()).filter(isArchivedClaim);
+      const claims = (Array.isArray(claimsRaw) ? claimsRaw : []).filter(isArchivedClaim);
 
       const unified = [
         ...clients.map((c) => ({

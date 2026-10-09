@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { isRegistryQuote } from '../../../utils/quoteRegistry';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
-import { moduleDuProduit, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
+import { moduleDuProduit, moduleOuvert, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { RowActions } from '../../../components/common/RowActions';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -72,6 +72,7 @@ const ICONES_ONGLET = {
   IA: <UserPlus size={13} />,
   RC: <Shield size={13} />,
   MRP: <Building2 size={13} />,
+  DOMMAGES: <Layers size={13} />,
 };
 
 export const QuoteListPage = () => {
@@ -181,7 +182,8 @@ export const QuoteListPage = () => {
       setRegistry(sortRecent(all.filter(isRegistryQuote).filter(isWithinLastThreeYears)));
     } catch (err) {
       console.error('Erreur chargement devis Django:', err);
-      setRegistry(sortRecent((dataStore.getQuotes() || []).filter(isRegistryQuote).filter(isWithinLastThreeYears)));
+      setRegistry([]);
+      toastError('Impossible de charger les devis : le serveur ou la base de données ne répond pas.');
     } finally {
       setLoading(false);
     }
@@ -485,6 +487,7 @@ export const QuoteListPage = () => {
       render: (row) => {
         const canEdit = canUser(user, 'edit', 'quotes');
         const canDelete = canUser(user, 'delete', 'quotes');
+        const canConvert = canUser(user, 'convert', 'quotes');
         const isConsolidated = !!row.devis_consolide;
         const todayStr = new Date().toISOString().split('T')[0];
         const isExpired = row.date_expiration ? new Date(row.date_expiration) < new Date(todayStr) : false;
@@ -495,13 +498,13 @@ export const QuoteListPage = () => {
         const idProduit = Number(produit && typeof produit === 'object' ? produit.id_produit : row.raw?.idproduit);
         const moduleProduit = moduleDuProduit(idProduit) || (getBranchOf(row) === 'AUTO' ? 'auto' : null);
         const moduleDevis = MODULES_EDITION_COMPLETE.includes(moduleProduit) ? moduleProduit : null;
-        const moduleFerme = !moduleActif(moduleDevis);
+        const moduleFerme = !moduleOuvert(moduleDevis);
 
         return (
           <RowActions
             onView={() => setViewingQuote(row)}
             viewTitle="Consulter l'intégralité du devis et imprimer la proposition"
-            showConfirm={!isConsolidated}
+            showConfirm={!isConsolidated && canConvert}
             confirmLabel={isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Confirmer'}
             confirmDisabled={isExpired || isPendingApproval}
             confirmTitle={
@@ -550,7 +553,7 @@ export const QuoteListPage = () => {
             Gestion des Devis
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Centralisation, consultation et transformation des devis toutes branches (Auto, Voyage, Transport, MRH, Santé, IA).
+            Centralisation, consultation et transformation des devis toutes branches (Auto, Voyage, Transport, MRH, Santé, IA, Dommages).
           </p>
         </div>
 
@@ -576,7 +579,7 @@ export const QuoteListPage = () => {
             ['ia', UserPlus, 'Devis IA'],
             ['rc', Shield, 'Devis RC'],
             ['mrp', Building2, 'Devis MRP'],
-            ['tous-dommages', Layers, 'Devis Tous Dommages'],
+            ['tous-dommages', Layers, 'Devis Dommages'],
           ].map(([module, Icone, libelle]) => (
             <button
               key={module}

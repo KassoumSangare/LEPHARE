@@ -4,7 +4,6 @@ import { MetricCard } from '../../components/common/MetricCard';
 import { DataTable } from '../../components/common/DataTable';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { approvalApi, remittanceApi } from '../../api/endpoints';
-import { dataStore } from '../../api/dataStore';
 import {
   BarChart3,
   TrendingUp,
@@ -19,8 +18,8 @@ import {
 export const AdminDashboard = () => {
   const navigate = useNavigate();
 
-  const [derogations, setDerogations] = useState(() => dataStore.getDerogations());
-  const [remittances, setRemittances] = useState(() => dataStore.getRemittances());
+  const [derogations, setDerogations] = useState([]);
+  const [remittances, setRemittances] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -31,12 +30,8 @@ export const AdminDashboard = () => {
           remittanceApi.getPendingRemittances().catch(() => []),
         ]);
         if (isMounted) {
-          if (demList && Array.isArray(demList) && demList.length > 0) {
-            setDerogations(demList);
-          }
-          if (remList && Array.isArray(remList) && remList.length > 0) {
-            setRemittances(remList);
-          }
+          if (Array.isArray(demList)) setDerogations(demList);
+          if (Array.isArray(remList)) setRemittances(remList);
         }
       } catch (e) {
         console.error('Erreur dashboard admin Django:', e);

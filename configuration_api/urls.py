@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from . import parametrage, views_grilles_voyage
+from . import parametrage, parametrage_dommages, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -177,6 +177,14 @@ urlpatterns = [
     path("parametrage/compagnies/<int:id_compagnie>/", parametrage.compagnie, name="parametrage-compagnie"),
     path("parametrage/produits/", parametrage.produits, name="parametrage-produits"),
     path("parametrage/produits/<int:id_produit>/", parametrage.produit, name="parametrage-produit"),
+    # Réglages Dommages (catégories, garanties par compagnie) : configuration_api/parametrage_dommages.py
+    path("parametrage/dommages/", parametrage_dommages.dommages, name="parametrage-dommages"),
+    path("parametrage/dommages/categories/<int:id_tarif>/", parametrage_dommages.categorie, name="parametrage-dommages-categorie"),
+    path(
+        "parametrage/dommages/categories/<int:id_tarif>/compagnies/<int:id_compagnie>/",
+        parametrage_dommages.garanties_compagnie,
+        name="parametrage-dommages-garanties",
+    ),
     path("grillesvoyage/", views_grilles_voyage.grilles_voyage, name="grilles-voyage"),
     path("grillesvoyage/<int:id_compagnie>/", views_grilles_voyage.grilles_voyage, name="grilles-voyage-compagnie"),
     path("grillesvoyage/<int:id_compagnie>/lignes/", views_grilles_voyage.creer_ligne, name="grilles-voyage-lignes"),
