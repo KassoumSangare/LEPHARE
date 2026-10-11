@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { contractApi, asaciApi, transportApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -29,12 +29,15 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
-import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, printAttestationVoyage } from '../../../utils/exportUtils';
+import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, estDevisDommages, printCotationDommagesContrat } from '../../../utils/exportUtils';
+import { estDevisSante, imprimerDocumentSante } from '../../../utils/impressionsSante';
+import { ReleveCompteModal } from './ReleveCompteModal';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 
 export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { success, error: toastError } = useToast();
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
@@ -70,6 +73,18 @@ export const ContractDetailPage = () => {
   const contratTransport = estDevisTransport(contract);
   // Contrat Voyage : attestation d'assurance et d'assistance voyage (demande de visa) au lieu de l'attestation auto
   const contratVoyage = estDevisVoyage(contract);
+  // Contrat Dommages : relevé de compte (quittance du modèle OREOLE) et cotation de son devis
+  const contratDommages = estDevisDommages(contract);
+  // Contrat Santé : barème MINENE, liste des assurés et ayants droit de l'IA MINENE (comme URANUS)
+  const contratSante = estDevisSante(contract);
+  const [releveOuvert, setReleveOuvert] = useState(false);
+  // Arrivée depuis la confirmation d'un devis Dommages : le relevé est proposé aussitôt
+  useEffect(() => {
+    if (location.state?.releve && contract.idcontrat) {
+      setReleveOuvert(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, contract.idcontrat]);
   const [bordereauTransport, setBordereauTransport] = useState(null);
   const [certificatsOuverts, setCertificatsOuverts] = useState(false);
   useEffect(() => {
@@ -303,6 +318,38 @@ export const ContractDetailPage = () => {
             Documents
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
+            {contratDommages && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                    <Paperclip size={16} color="#94a3b8" />
+                    <span style={{ color: '#fff' }}>Quittance — relevé de compte</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-link"
+                    style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                    onClick={() => setReleveOuvert(true)}
+                  >
+                    Imprimer
+                  </button>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                    <Paperclip size={16} color="#94a3b8" />
+                    <span style={{ color: '#fff' }}>Cotation d’assurance</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-link"
+                    style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                    onClick={() => printCotationDommagesContrat(contract)}
+                  >
+                    Imprimer
+                  </button>
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <Paperclip size={16} color="#94a3b8" />
@@ -321,7 +368,7 @@ export const ContractDetailPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>Conditions particulières</span>
+                <span style={{ color: '#fff' }}>{contratVoyage ? 'Conditions particulières — attestation d’assurance voyage' : 'Conditions particulières'}</span>
               </span>
               <button
                 type="button"
@@ -333,20 +380,45 @@ export const ContractDetailPage = () => {
               </button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>{contratVoyage ? 'Attestation d’assurance voyage' : 'Editions Attestation'}</span>
-              </span>
-              <button
-                type="button"
-                className="btn-link"
-                style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => (contratVoyage ? printAttestationVoyage(contract) : (setActiveDoc('attestation'), setIsDocModalOpen(true)))}
-              >
-                {contratVoyage ? 'Imprimer' : 'Editer'}
-              </button>
-            </div>
+            {/* Santé MINENE (gabarits URANUS) : barème, liste des assurés, ayants droit de l'IA MINENE de la police */}
+            {contratSante && [
+              ['bareme', 'Barème MINENE'],
+              ['affilies', 'Liste des assurés'],
+              ['ayants', 'Liste des ayants droit (IA MINENE)'],
+            ].map(([type, libelle]) => (
+              <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                  <Paperclip size={16} color="#94a3b8" />
+                  <span style={{ color: '#fff' }}>{libelle}</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                  onClick={() => imprimerDocumentSante(type, { idcontrat: contract.raw?.idcontrat || id })}
+                >
+                  Imprimer
+                </button>
+              </div>
+            ))}
+
+            {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » */}
+            {!contratVoyage && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                  <Paperclip size={16} color="#94a3b8" />
+                  <span style={{ color: '#fff' }}>Editions Attestation</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                  onClick={() => { setActiveDoc('attestation'); setIsDocModalOpen(true); }}
+                >
+                  Editer
+                </button>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
@@ -690,6 +762,9 @@ export const ContractDetailPage = () => {
           dataStore.saveContract(updated);
         }}
       />
+
+      {/* Relevé de compte (quittance remise au client, modèle OREOLE) */}
+      <ReleveCompteModal isOpen={releveOuvert} onClose={() => setReleveOuvert(false)} idContrat={contract.idcontrat || id} />
     </div>
   );
 };

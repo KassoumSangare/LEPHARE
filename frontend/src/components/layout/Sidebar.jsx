@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ADMIN_MENU, estActif } from './adminMenu';
@@ -52,40 +52,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
   const { activeSpace, peut } = useAuth();
   const location = useLocation();
 
-  // Collapsible accordion states
-  const [openSubmenus, setOpenSubmenus] = useState({
-    crm: true,
-    cash: true,
-    conventions: true,
-    compliance: true,
-    users: true,
-    oreole: true,
-  });
+  // Sous-menus repliés tant que l'utilisateur ne les a pas déroulés (y compris celui de la page active)
+  const [openSubmenus, setOpenSubmenus] = useState({});
 
-  useEffect(() => {
-    if (location.pathname.includes('/user/crm') || location.pathname.includes('/user/clients')) {
-      setOpenSubmenus((prev) => ({ ...prev, crm: true }));
-    }
-    if (location.pathname.includes('/user/cash') || location.pathname.includes('/user/cheques')) {
-      setOpenSubmenus((prev) => ({ ...prev, cash: true }));
-    }
-    if (location.pathname.includes('/admin/conventions') || location.pathname.includes('/admin/settings')) {
-      setOpenSubmenus((prev) => ({ ...prev, conventions: true }));
-    }
-    if (location.pathname.includes('/admin/compliance') || location.pathname.includes('/admin/reporting')) {
-      setOpenSubmenus((prev) => ({ ...prev, compliance: true }));
-    }
-    if (
-      location.pathname.includes('/admin/users') ||
-      location.pathname.includes('/admin/profiles') ||
-      location.pathname.includes('/admin/roles-permissions')
-    ) {
-      setOpenSubmenus((prev) => ({ ...prev, users: true }));
-    }
-  }, [location.pathname]);
-
-  // Groupes de l'espace Administration repliés par l'utilisateur (tous ouverts au départ)
-  const [groupesAdminFermes, setGroupesAdminFermes] = useState({});
+  // Groupes de l'espace Administration déroulés par l'utilisateur (tous repliés au départ)
+  const [groupesAdminOuverts, setGroupesAdminOuverts] = useState({});
 
   const toggleSubmenu = (menu) => {
     setOpenSubmenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
@@ -184,12 +155,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
               .filter((groupe) => groupe.items.length > 0)
               .map((groupe) => {
               const contientPageActive = groupe.items.some((item) => estActif(location.pathname, item.to));
-              const ouvert = contientPageActive || !groupesAdminFermes[groupe.id];
+              const ouvert = !!groupesAdminOuverts[groupe.id];
               return (
                 <div key={groupe.id}>
                   <div
-                    className="sidebar-section-header"
-                    onClick={() => setGroupesAdminFermes((prev) => ({ ...prev, [groupe.id]: !prev[groupe.id] }))}
+                    className={`sidebar-section-header ${contientPageActive ? 'active' : ''}`}
+                    onClick={() => setGroupesAdminOuverts((prev) => ({ ...prev, [groupe.id]: !prev[groupe.id] }))}
                     title={groupe.description}
                     style={{ cursor: 'pointer' }}
                   >

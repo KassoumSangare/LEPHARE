@@ -344,6 +344,14 @@ def enregistrer_devis_sante(request):
     )
     if not _entier(data.get("IdDevis")):
         return Response({"error": "Aucune saisie en cours : enregistrez d'abord une couverture."}, status=status.HTTP_400_BAD_REQUEST)
+    # Formule du devis = celle d'une de ses couvertures : l'écran envoie la formule restée choisie dans
+    # la liste, qui peut ne pas avoir été enregistrée (devis 25011 : famille FAMILLE enregistrée en SOLO).
+    # La base tarife chaque famille MINENE selon la formule de sa propre couverture.
+    formules = sorted(
+        {f for f in FilialeSante.objects.filter(devis=_entier(data["IdDevis"])).values_list("offresante_id", flat=True) if f}
+    )
+    if formules and _entier(data.get("IdOffre")) not in formules:
+        data["IdOffre"] = formules[0]
     if not _entier(data.get("IdClient")):
         return Response({"error": "Choisissez le client."}, status=status.HTTP_400_BAD_REQUEST)
     if "NA" in (data["DateEffet"], data["DateExpiration"]):

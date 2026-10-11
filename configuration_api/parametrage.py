@@ -37,6 +37,8 @@ from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 TAILLE_IMAGE_MAX = 600 * 1024
 MOTIF_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=\s]+)$")
 CHAMPS_ATTESTATION_TEXTE = ["Convention", "PaysResidence", "Signataire", "Telephone", "Email", "Whatsapp"]
+# Adresses des QR codes de l'attestation : portail d'assistance, vérification du certificat ({certificat})
+CHAMPS_ATTESTATION_URL = ["PortailAssistance", "VerificationVisa"]
 
 
 class ErreurParametrage(Exception):
@@ -180,6 +182,7 @@ def _document_json(d):
         "PiedPage": d.PiedPage,
         "Visa": d.Visa,
         "MentionLogo": d.MentionLogo,
+        "OrdreCheque": d.OrdreCheque,
         "AttestationVoyage": d.AttestationVoyage or {},
     }
 
@@ -374,6 +377,11 @@ def _valider_attestation(donnees):
     attestation = {"Actif": bool(donnees.get("Actif"))}
     for cle in CHAMPS_ATTESTATION_TEXTE:
         attestation[cle] = _texte(donnees.get(cle), 120, f"Attestation voyage — {cle}")
+    for cle in CHAMPS_ATTESTATION_URL:
+        adresse = _texte(donnees.get(cle), 250, f"Attestation voyage — {cle}")
+        if adresse and not adresse.lower().startswith(("https://", "http://")):
+            raise ErreurParametrage(f"Attestation voyage : l'adresse {cle} doit commencer par https://.")
+        attestation[cle] = adresse
     for cle, maximum in (("Garanties", 12), ("Exemplaires", 5)):
         liste = [_texte(x, 250, f"Attestation voyage — {cle}") for x in (donnees.get(cle) or []) if str(x or "").strip()]
         if len(liste) > maximum:
@@ -455,6 +463,8 @@ def compagnie(request, id_compagnie):
                 document.Visa = _texte(docs["Visa"], 200, "Visa")
             if "MentionLogo" in docs:
                 document.MentionLogo = _texte(docs["MentionLogo"], 100, "Mention sous le logo")
+            if "OrdreCheque" in docs:
+                document.OrdreCheque = _texte(docs["OrdreCheque"], 100, "Chèque à l'ordre de")
             if "AttestationVoyage" in docs:
                 document.AttestationVoyage = _valider_attestation(docs["AttestationVoyage"])
     except ErreurParametrage as erreur:

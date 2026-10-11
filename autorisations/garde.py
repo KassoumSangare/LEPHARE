@@ -212,6 +212,7 @@ REGLES = [
     R("POST", r"devis/(?P<pk>\d+)/attacher_piece_jointe", "devis.update", objet="devis", cles=("pk",)),
     # ---- imports
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
+    R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
     R("POST", r"transport/guce/analyse/", "imports.guce", lecture=True),
     R("POST", r"(transport/guce/import/|importationfichierguce|certificattransport/)", "imports.guce", objet="import"),

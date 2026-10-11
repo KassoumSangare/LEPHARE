@@ -17,7 +17,7 @@ import { quoteApi, contractApi, brouillonApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
-import { exportToPdf } from '../../../utils/exportUtils';
+import { estDevisDommages, exportToPdf } from '../../../utils/exportUtils';
 import {
   FileText,
   Plus,
@@ -223,7 +223,10 @@ export const QuoteListPage = () => {
       const res = await contractApi.createContractFromQuote(selectedQuote.id);
       success(`Devis ${selectedQuote.numerodevis} confirmé : le contrat a bien été créé.`);
       setIsConfirmModalOpen(false);
-      navigate('/user/contracts');
+      // Dommages : fiche du contrat avec son relevé de compte (quittance remise au client)
+      const idContrat = Number(res?.data?.[0]?.ObjectId);
+      if (estDevisDommages(selectedQuote) && idContrat > 0) navigate(`/user/contracts/${idContrat}`, { state: { releve: true } });
+      else navigate('/user/contracts');
     } catch (err) {
       toastError(err.response?.data?.detail || err.response?.data?.message || 'Le devis n\'a pas pu être confirmé. Veuillez réessayer.');
       setIsConfirmModalOpen(false);

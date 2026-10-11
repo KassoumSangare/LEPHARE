@@ -3,8 +3,10 @@
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
 import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
-import { construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, villeSignature } from './parametrage';
+import { construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
+import { estDevisSante, imprimerDocumentSante } from './impressionsSante';
+import QRCode from 'qrcode';
 
 export const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
@@ -1370,7 +1372,7 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
       <div class="cpn-haut">
         ${logo ? `<img src="${logo}" alt="${compagnie}" class="cpn-logo" />` : `<div class="cpn-compagnie">${txt(compagnie)}</div>`}
       </div>
-      <div class="cpn-titre">Conditions Particulières</div>
+      <div class="cpn-titre">${contrat ? 'Conditions Particulières' : `DEVIS N˚ ${txt(q.NumeroDevis || quote.numerodevis)}`}</div>
 
       <div class="cpn-entete">
         <div class="cpn-cadre cpn-client">
@@ -1601,13 +1603,24 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
     .filter((g) => g.acquise && Number(g.prime_nette) && !idsEnColonne.has(g.id_garantie)));
   if (horsColonnes.length) console.warn('CP flotte : garanties sans colonne (comptées dans la prime nette)', horsColonnes);
 
-  // Groupes par catégorie / tarif, dans l'ordre renvoyé (catégorie puis tarif)
+  // Un tableau par catégorie (modèle NSIA : « Catégorie 201 TARIF TOURISME », « Catégorie 202 TARIF
+  // TRANSPORT POUR LE COMPTE DE L'ASSURE »), dans l'ordre renvoyé (catégorie, tarif, ordre de saisie).
+  // Libellé du tarif, sinon celui de la catégorie (libellés de tarif mal encodés en base : « V�HICULES »).
+  const libelleTarif = (v) => {
+    const libelle = String(v.tarif || '').includes('�') ? v.categorie : (v.tarif || v.categorie);
+    const l = String(libelle || '').trim();
+    return l && !/^tarif\b/i.test(l) ? `TARIF ${l}` : l;
+  };
   const groupes = [];
   (vehicules || []).forEach((v) => {
-    let groupe = groupes.find((g) => g.idTarif === v.id_tarif);
-    if (!groupe) groupes.push(groupe = { idTarif: v.id_tarif, code: v.code_categorie, tarif: v.tarif || v.categorie, vehicules: [] });
+    const cle = v.code_categorie || `tarif-${v.id_tarif}`;
+    let groupe = groupes.find((g) => g.cle === cle);
+    if (!groupe) groupes.push(groupe = { cle, code: v.code_categorie, tarif: libelleTarif(v), tarifs: new Set(), vehicules: [] });
+    groupe.tarifs.add(v.id_tarif);
     groupe.vehicules.push(v);
   });
+  // Catégorie couvrant plusieurs tarifs : libellé de la catégorie
+  groupes.filter((g) => g.tarifs.size > 1).forEach((g) => { g.tarif = String(g.vehicules[0].categorie || g.tarif).trim(); });
 
   const nbColonnes = IDENTITE_CP_FLOTTE.length + COLONNES_CP_FLOTTE.length + 1;
   const unites = [...IDENTITE_CP_FLOTTE, ...COLONNES_CP_FLOTTE.map((c) => c.largeur), LARGEUR_PRIME_CP_FLOTTE];
@@ -1632,9 +1645,11 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
       </tr>
     </thead>`;
 
+  // N° : numéro du véhicule dans la flotte (ordre de saisie), conservé dans le tableau de sa catégorie
   let numero = 0;
   const ligneVehicule = (v) => {
     numero += 1;
+    const rang = Number(v.rang) || numero;
     const cellules = COLONNES_CP_FLOTTE.map((col) => ({ col, ...colonne(v, col) }));
     const etat = ({ col, acquise, capital, franchise }) => (col.rc && acquise
       ? `${montant(capital)}<br/>${montant(franchise)}`
@@ -1642,7 +1657,7 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
     return `
       <tbody class="cpf-vehicule">
         <tr>
-          <td rowspan="2">${numero}</td>
+          <td rowspan="2">${rang}</td>
           <td>${t(v.marque)}</td>
           <td class="d">${t(v.puissance)}</td>
           <td class="n">${t(v.immatriculation)}</td>
@@ -1712,8 +1727,9 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
         <div class="cpf-titre">${contrat ? 'CONDITIONS PARTICULIERES' : 'PROPOSITION'} : Liste des véhicules en Automobile</div>
         <div class="cpf-droite">
           <table class="cpf-refs">
-            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'PROPOSITION'}</td><td class="l e">Emise le</td><td>${date(q.DateEmission)}</td></tr>
-            <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td colspan="3">${t(contrat ? q.NumeroPolice : q.NumeroDevis)}</td></tr>
+            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'PROPOSITION'}</td><td class="l e">Emission</td><td>${date(q.DateEmission)}</td></tr>
+            <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td>${t(contrat ? q.NumeroPolice : q.NumeroDevis)}</td>
+              <td class="l e">Avenant N°</td><td>${Number(q.NumeroAvenant) ? Number(q.NumeroAvenant) : t(q.NumeroAvenant)}</td></tr>
             <tr><td class="l">Assuré(e)</td><td colspan="3">${t(q.NomAssure)}</td></tr>
             <tr><td class="l">Effet</td><td>${date(q.DateEffet)}</td><td class="l e">Expiration</td><td>${date(q.DateExpiration)}</td></tr>
           </table>
@@ -2228,9 +2244,9 @@ export const printBordereauTransport = async (filtres) => {
 
 export const estDevisTransport = (quote) => /transport|facult/i.test(String(quote?.branche || quote?.produit || ''));
 
-export const printPropositionVoyage = async (quote) => {
+export const printPropositionVoyage = async (quote, { fenetre: fenetreFournie = null } = {}) => {
   if (!quote) return;
-  const fenetre = window.open('', '_blank');
+  const fenetre = fenetreFournie || window.open('', '_blank');
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la proposition…</p>');
   try {
     const donnees = await impressionVoyageApi.get(quote.iddevis || quote.id);
@@ -2417,6 +2433,8 @@ export const printCotationDommages = async (quote) => {
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la cotation…</p>');
   try {
     const donnees = await dommagesApi.lireDevis(quote.iddevis || quote.id);
+    // Contrat : la cotation porte le numéro de police attribué à la confirmation
+    if (quote.numeropolice && !donnees.NumeroPoliceCompagnie) donnees.NumeroPoliceCompagnie = quote.numeropolice;
     openPrintWindow(`Cotation ${quote.numerodevis || donnees.NumeroDevis || ''}`.trim(), buildCotationDommages(quote, donnees), fenetre);
   } catch (err) {
     console.error('Erreur cotation Dommages :', err);
@@ -2426,6 +2444,130 @@ export const printCotationDommages = async (quote) => {
       fenetre.document.close();
     }
   }
+};
+
+// Cotation d'un contrat Dommages : celle de son devis, avec le numéro de police du contrat
+export const printCotationDommagesContrat = (contract) => {
+  const bc = contract?.raw || {};
+  const iddevis = bc.iddevis && typeof bc.iddevis === 'object' ? (bc.iddevis.iddevis ?? bc.iddevis.IdDevis) : bc.iddevis;
+  if (!iddevis) return;
+  return printCotationDommages({
+    ...contract,
+    iddevis,
+    numerodevis: (typeof bc.iddevis === 'object' && bc.iddevis?.numerodevis) || '',
+    numeropolice: bc.numeropolicecompagnie || contract.numeropolice,
+  });
+};
+
+/* =========================================================================
+   RELEVÉ DE COMPTE : quittance remise au client quand un devis Dommages est confirmé, au format du
+   relevé OREOLE reçu le 2026-10-08 (STEP BY STEP, 13/01/2026) : logo du cabinet, client, une ligne
+   par quittance (période, branche, opération, prime TTC, encaissement, solde), compagnie à l'ordre
+   de laquelle le chèque est établi (cellule fusionnée), total, « Fait à … » et « POUR LA SOCIETE »,
+   mentions légales du cabinet en pied et mention de marque dans la marge gauche.
+   Réglages : Administration > Paramètres (groupe documents) et Compagnies partenaires (chèque à l'ordre de).
+   ========================================================================= */
+const RELEVE_STYLES = `
+  body { max-width: 210mm; padding: 0; }
+  .rlv { position: relative; box-sizing: border-box; width: 210mm; min-height: 296mm; padding: 9mm 18mm 8mm;
+    display: flex; flex-direction: column; font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 7.5pt; }
+  .rlv-logo { height: 15mm; width: auto; align-self: flex-start; margin-left: 2mm; }
+  .rlv-titre { text-align: center; font-weight: 700; font-size: 8pt; margin: 16mm 0 4mm; }
+  .rlv-entete { display: grid; grid-template-columns: 34mm 1fr; row-gap: 2.5mm; margin: 0 0 3mm 32mm; }
+  .rlv-entete b { font-size: 8pt; }
+  .rlv-corps { width: 152mm; margin: 0 auto; }
+  table.rlv-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .rlv-table th { font-weight: 700; border: 0.75pt solid #222; padding: 1.8mm 1mm; text-align: center; vertical-align: middle; }
+  .rlv-table td { border: 0.75pt solid #222; padding: 1.7mm 1mm; text-align: center; vertical-align: middle; line-height: 1.35; }
+  .rlv-table td.op { text-align: left; padding-left: 2mm; }
+  .rlv-table td.n { white-space: nowrap; font-weight: 700; }
+  .rlv-table td.cie { font-weight: 700; }
+  .rlv-table tr.sous-total td { font-weight: 700; background: #f3f4f6; }
+  .rlv-table tr.total td { font-weight: 700; padding: 4mm 1.2mm; }
+  .rlv-fait { text-align: right; margin-top: 2mm; }
+  .rlv-signe { text-align: right; margin: 5mm 18mm 0 0; font-weight: 700; text-decoration: underline; }
+  .rlv-pied { margin-top: auto; padding-top: 16mm; display: flex; gap: 4mm; align-items: flex-end; }
+  .rlv-pied img { height: 10mm; width: auto; flex-shrink: 0; }
+  .rlv-pied div { font-size: 5.8pt; line-height: 1.4; font-weight: 700; white-space: pre-line; }
+  .rlv-marque { position: absolute; left: 5mm; bottom: 70mm; writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 8pt; font-weight: 700; white-space: nowrap; }
+  @media print { .rlv { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+`;
+
+export const buildReleveCompte = (releve, lignes) => {
+  const e = echapperHtml;
+  const f = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+  const periode = (l) => [dateCourte(l.DateEffet), dateCourte(l.DateExpiration)].filter(Boolean).join(' au ');
+  // Une cellule « Compagnie / Chèque à l'ordre de » par compagnie : lignes groupées par compagnie, puis par date
+  const triees = [...lignes].sort((a, b) => String(a.OrdreCheque).localeCompare(String(b.OrdreCheque), 'fr')
+    || String(a.DateEffet).localeCompare(String(b.DateEffet)) || a.IdContrat - b.IdContrat);
+  const blocs = [];
+  triees.forEach((l) => {
+    const dernier = blocs[blocs.length - 1];
+    if (dernier && dernier.ordre === l.OrdreCheque) dernier.lignes.push(l);
+    else blocs.push({ ordre: l.OrdreCheque, lignes: [l] });
+  });
+  const somme = (liste, champ) => liste.reduce((t, l) => t + (Number(l[champ]) || 0), 0);
+  const plusieurs = blocs.length > 1;
+
+  const corps = blocs.map(({ ordre, lignes: ls }) => {
+    // Période et branche fusionnées sur les lignes consécutives identiques, comme sur le relevé
+    const fusions = ls.map((l, i) => {
+      if (i > 0 && periode(ls[i - 1]) === periode(l) && ls[i - 1].Branche === l.Branche) return 0;
+      let n = 1;
+      while (i + n < ls.length && periode(ls[i + n]) === periode(l) && ls[i + n].Branche === l.Branche) n += 1;
+      return n;
+    });
+    const lignesHtml = ls.map((l, i) => `<tr>
+        ${fusions[i] ? `<td rowspan="${fusions[i]}">${e(periode(l))}</td><td rowspan="${fusions[i]}">${e(l.Branche)}</td>` : ''}
+        <td class="op">${e(l.Operation)}</td>
+        <td class="n">${f(l.PrimeTtc)}</td><td class="n">${f(l.Encaissement)}</td><td class="n">${f(l.Solde)}</td>
+        ${i === 0 ? `<td class="cie" rowspan="${ls.length}">${e(ordre)}</td>` : ''}
+      </tr>`).join('');
+    const sousTotal = plusieurs ? `<tr class="sous-total"><td colspan="3">Total ${e(ordre)}</td>
+        <td class="n">${f(somme(ls, 'PrimeTtc'))}</td><td class="n">${f(somme(ls, 'Encaissement'))}</td><td class="n">${f(somme(ls, 'Solde'))}</td><td></td></tr>` : '';
+    return lignesHtml + sousTotal;
+  }).join('');
+
+  const debuts = lignes.map((l) => l.DateEffet).filter(Boolean).sort();
+  const fins = lignes.map((l) => l.DateExpiration).filter(Boolean).sort();
+  const periodeReleve = debuts.length ? `${dateCourte(debuts[0])} au ${dateCourte(fins[fins.length - 1] || debuts[debuts.length - 1])}` : '';
+  const aujourdhui = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    .replace(/ (\p{L})/u, (m, l) => ` ${l.toUpperCase()}`);
+  const mentions = String(parametre('documents.mentions_legales', '') || '').trim();
+  const marque = String(parametre('documents.mention_marque', '') || '').trim();
+
+  return `<style>${RELEVE_STYLES}</style>
+  <div class="rlv">
+    <img class="rlv-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+    <div class="rlv-titre">RELEVE DE COMPTE</div>
+    <div class="rlv-entete">
+      <span>Période du :</span><span>${e(periodeReleve)}</span>
+      <span>Client</span><b>${e(releve.Client?.Nom || '')}</b>
+    </div>
+    <div class="rlv-corps">
+      <table class="rlv-table">
+        <colgroup><col style="width:14%"/><col style="width:10%"/><col style="width:30%"/><col style="width:10%"/><col style="width:12%"/><col style="width:10%"/><col style="width:14%"/></colgroup>
+        <tr><th>Période</th><th>Branche</th><th>Opération</th><th>Prime TTC</th><th>Encaissement</th><th>SOLDE</th><th>Compagnie / Chèque à l'ordre de :</th></tr>
+        ${corps}
+        <tr class="total"><td colspan="3">TOTAL</td><td class="n">${f(somme(lignes, 'PrimeTtc'))}</td>
+          <td class="n">${f(somme(lignes, 'Encaissement'))}</td><td class="n">${f(somme(lignes, 'Solde'))}</td><td></td></tr>
+      </table>
+      <div class="rlv-fait">Fait à ${e(villeSignature())}, le ${e(aujourdhui)}</div>
+      <div class="rlv-signe">POUR LA SOCIETE</div>
+    </div>
+    ${marque ? `<div class="rlv-marque">${e(marque)}</div>` : ''}
+    <div class="rlv-pied">
+      <img src="${e(logoCabinetPied())}" alt="" />
+      ${mentions ? `<div>${e(mentions)}</div>` : ''}
+    </div>
+  </div>`;
+};
+
+/** Imprime le relevé de compte avec les lignes retenues (données de contractApi.getReleveCompte). */
+export const printReleveCompte = (releve, lignes) => {
+  if (!releve || !lignes?.length) return;
+  openPrintWindow(`Releve de compte ${releve.Client?.Nom || ''}`.trim(), buildReleveCompte(releve, lignes));
 };
 
 /* =========================================================================
@@ -2458,7 +2600,18 @@ const ATTESTATION_VOYAGE_STYLES = `
   .atv-puces { margin: 0; padding-left: 5mm; font-size: 8.5pt; color: #374151; }
   .atv-puces li { margin: 1.2mm 0; }
   .atv-texte { font-size: 8.5pt; color: #374151; margin: 1.5mm 0; }
-  .atv-contacts { display: flex; flex-wrap: wrap; gap: 3mm 4mm; margin-top: 3mm; }
+  .atv-confirmation { display: flex; align-items: center; gap: 8mm; }
+  .atv-confirmation .atv-texte { flex: 1; }
+  .atv-qr-visa { width: 21mm; height: 21mm; display: block; }
+  .atv-assistance { display: flex; align-items: center; justify-content: space-between; gap: 3mm; margin-top: 3mm; }
+  .atv-contacts { display: flex; flex-direction: column; gap: 3mm; }
+  .atv-contacts-ligne { display: flex; flex-wrap: nowrap; gap: 3mm; white-space: nowrap; }
+  .atv-contacts .atv-contact { font-size: 8pt; }
+  .atv-portail { display: flex; align-items: center; gap: 2mm; }
+  .atv-portail-texte { display: flex; align-items: center; gap: 1.5mm; width: 44mm; border: 1px solid #e9a23b; border-radius: 4mm;
+    padding: 1.2mm 2.5mm 1.2mm 1.2mm; font-size: 7.5pt; line-height: 1.25; }
+  .atv-portail-texte svg { flex: none; width: 7mm; height: 7mm; }
+  .atv-qr-portail { width: 22mm; height: 22mm; display: block; }
   .atv-contact { display: inline-flex; align-items: center; gap: 2mm; border: 1px solid #e9a23b; border-radius: 4mm;
     padding: 1mm 3mm 1mm 1mm; font-size: 8.5pt; }
   .atv-contact i { display: inline-flex; align-items: center; justify-content: center; width: 5.5mm; height: 5.5mm; border-radius: 50%;
@@ -2480,7 +2633,26 @@ const ATTESTATION_VOYAGE_STYLES = `
 const ICONE_TELEPHONE = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const ICONE_MESSAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
 
-const buildAttestationVoyage = (a, modele) => {
+const ICONE_WWW = '<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#2f3352"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="16" cy="16" r="9"/><ellipse cx="16" cy="16" rx="4" ry="9"/><path d="M7 16h18M8.5 11.5h15M8.5 20.5h15"/></g></svg>';
+
+// QR codes de l'attestation (data URL) : portail d'assistance et, si la compagnie a fourni l'adresse de
+// son service de vérification, vérification du certificat ({certificat} = n° de certificat)
+const qrAttestationVoyage = async (a, modele) => {
+  const qr = {};
+  const image = (texte) => QRCode.toDataURL(texte, { margin: 0, width: 300, errorCorrectionLevel: 'M' });
+  try {
+    if (modele.portail) qr.portail = await image(modele.portail);
+    const certificat = String(a.NumeroCertificat || '').trim();
+    if (modele.verification && certificat) {
+      qr.verification = await image(modele.verification.replace(/\{certificat\}/gi, encodeURIComponent(certificat)));
+    }
+  } catch (err) {
+    console.error('QR code attestation voyage :', err);
+  }
+  return qr;
+};
+
+const buildAttestationVoyage = (a, modele, qr = {}) => {
   const t = (v) => echapperHtml(v === undefined || v === null ? '' : String(v).trim());
   const jma = (v, sep = '/') => (v ? String(v).slice(0, 10).split('-').reverse().join(sep) : '');
   const info = (label, valeur) => `<div class="atv-info"><span>${label} :</span><b>${t(valeur)}</b></div>`;
@@ -2524,17 +2696,32 @@ const buildAttestationVoyage = (a, modele) => {
       </ul>
 
       <div class="atv-section">Confirmation d’assurance voyage pour une demande de visa</div>
-      <p class="atv-texte">Nous certifions que la personne mentionnée bénéficie d’une couverture d’assurance voyage conforme aux
-        garanties énoncées dans le présent certificat. Cette assurance répond aux exigences du règlement (CE)
-        N° 810/2009 et est valable pour une demande de visa auprès des États membres de l’espace Schengen.</p>
+      <div class="atv-confirmation">
+        <p class="atv-texte">Nous certifions que la personne mentionnée bénéficie d’une couverture d’assurance voyage conforme aux
+          garanties énoncées dans le présent certificat. Cette assurance répond aux exigences du règlement (CE)
+          N° 810/2009 et est valable pour une demande de visa auprès des États membres de l’espace Schengen.${qr.verification ? `<br/>
+          Le code QR ci-contre permet aux autorités compétentes de vérifier la validité du contrat.` : ''}</p>
+        ${qr.verification ? `<img src="${qr.verification}" alt="QR code de vérification" class="atv-qr-visa" />` : ''}
+      </div>
 
       <div class="atv-section">Que faire en cas de besoin d’assistance ?</div>
       <p class="atv-texte">En cas de sinistre, et avant d’engager toute dépense, l’assuré (ou toute personne agissant pour son compte) doit
         impérativement contacter la compagnie d’assistance dans les 5 jours suivant l’évènement :</p>
-      <div class="atv-contacts">
-        <span class="atv-contact"><i>${ICONE_TELEPHONE}</i>Tél. : <strong>${t(telephone)}</strong></span>
-        <span class="atv-contact"><i>@</i>E-mail : <strong>${t(email)}</strong></span>
-        <span class="atv-contact"><i>${ICONE_MESSAGE}</i>WhatsApp (messages uniquement) : <strong>${t(whatsapp)}</strong></span>
+      <div class="atv-assistance">
+        <div class="atv-contacts">
+          <div class="atv-contacts-ligne">
+            <span class="atv-contact"><i>${ICONE_TELEPHONE}</i>Tél. : <strong>${t(telephone)}</strong></span>
+            <span class="atv-contact"><i>@</i>E-mail : <strong>${t(email)}</strong></span>
+          </div>
+          <div class="atv-contacts-ligne">
+            <span class="atv-contact"><i>${ICONE_MESSAGE}</i>WhatsApp (messages uniquement) : <strong>${t(whatsapp)}</strong></span>
+          </div>
+        </div>
+        ${qr.portail ? `
+        <div class="atv-portail">
+          <div class="atv-portail-texte">${ICONE_WWW}<span>Scanner le QR code ci-contre pour accéder au (Portail en ligne, WhatsApp Form)</span></div>
+          <img src="${qr.portail}" alt="QR code du portail d'assistance" class="atv-qr-portail" />
+        </div>` : ''}
       </div>
 
       <div class="atv-signatures">
@@ -2550,10 +2737,18 @@ const buildAttestationVoyage = (a, modele) => {
   return `<style>${ATTESTATION_VOYAGE_STYLES}</style>${modele.exemplaires.map(page).join('')}`;
 };
 
-export const printAttestationVoyage = async (contract) => {
-  const idcontrat = contract?.raw?.idcontrat || contract?.idcontrat || contract?.id;
-  if (!idcontrat) return;
-  const fenetre = window.open('', '_blank');
+/**
+ * Attestation d'assurance et d'assistance voyage d'un contrat (ou d'un devis : { devis: true }) ;
+ * c'est aussi la présentation des Conditions Particulières Voyage (décision du 2026-10-11).
+ * Compagnie sans modèle d'attestation : `sansModele(fenetre)` si fourni (document de repli dans la
+ * même fenêtre), sinon un message. Renvoie false dans ce cas.
+ */
+export const printAttestationVoyage = async (objet, { devis = false, fenetre: fenetreFournie = null, sansModele = null } = {}) => {
+  const id = devis
+    ? (objet?.iddevis || objet?.raw?.iddevis || objet?.id)
+    : (objet?.raw?.idcontrat || objet?.idcontrat || objet?.id);
+  if (!id) return false;
+  const fenetre = fenetreFournie || window.open('', '_blank');
   const message = (texte, couleur = '#0f172a') => {
     if (!fenetre) return;
     fenetre.document.open();
@@ -2562,16 +2757,20 @@ export const printAttestationVoyage = async (contract) => {
   };
   message("Préparation de l'attestation…");
   try {
-    const a = await impressionVoyageApi.getAttestation(idcontrat);
+    const a = await impressionVoyageApi.getAttestation(id, { devis });
     const modele = modeleAttestationVoyage(a.IdCompagnie);
     if (!modele) {
-      message(`Aucun modèle d'attestation voyage pour ${echapperHtml(a.Compagnie || 'cette compagnie')} : à renseigner dans Administration &gt; Compagnies partenaires, onglet « Attestation voyage ».`, '#b45309');
-      return;
+      if (sansModele) await sansModele(fenetre);
+      else message(`Aucun modèle d'attestation voyage pour ${echapperHtml(a.Compagnie || 'cette compagnie')} : à renseigner dans Administration &gt; Compagnies partenaires, onglet « Attestation voyage ».`, '#b45309');
+      return false;
     }
-    openPrintWindow(`Attestation voyage ${a.NumeroCertificat || a.NumeroPolice || ''}`.trim(), buildAttestationVoyage(a, modele), fenetre);
+    const qr = await qrAttestationVoyage(a, modele);
+    openPrintWindow(`Attestation voyage ${a.NumeroCertificat || a.NumeroPolice || a.NumeroDevis || ''}`.trim(), buildAttestationVoyage(a, modele, qr), fenetre);
+    return true;
   } catch (err) {
     console.error('Erreur attestation Voyage :', err);
-    message("Impossible de charger le contrat pour l'attestation. Veuillez réessayer.", '#b91c1c');
+    message(`Impossible de charger le ${devis ? 'devis' : 'contrat'} pour l'attestation. Veuillez réessayer.`, '#b91c1c');
+    return false;
   }
 };
 
@@ -2586,7 +2785,10 @@ export const apercuAttestationVoyage = (doc) => {
     Nationalite: 'IVOIRIENNE', NumeroPasseport: '00AA00000', NumeroCertificat: 'APERÇU — NON VALABLE',
     DebutValidite: iso(jour), FinValidite: iso(fin), PaysDestination: 'FRANCE', ZoneCouverture: 'SCHENGEN', DateEmission: iso(jour),
   };
-  openPrintWindow('Aperçu attestation voyage', buildAttestationVoyage(exemple, construireModeleAttestation(doc)));
+  const fenetre = window.open('', '_blank');
+  const modele = construireModeleAttestation(doc);
+  qrAttestationVoyage(exemple, modele)
+    .then((qr) => openPrintWindow('Aperçu attestation voyage', buildAttestationVoyage(exemple, modele, qr), fenetre));
 };
 
 /* =========================================================================
@@ -3447,10 +3649,18 @@ export const printContratConditionsParticulieres = (contract) => {
 export const printConditionsParticulieres = async (quote, { contrat = false } = {}) => {
   if (!quote) return;
   const title = `Conditions Particulieres ${quote.numerodevis || quote.iddevis || ''}`.trim();
-  // Devis Voyage : proposition du modèle URANUS (le contrat est l'imprimé remis par l'assureur)
-  if (!contrat && estDevisVoyage(quote)) {
-    await printPropositionVoyage(quote);
-    return;
+  // Voyage (devis et contrat) : Conditions Particulières au modèle de l'attestation d'assurance et
+  // d'assistance voyage de la compagnie (décision du 2026-10-11). Compagnie sans modèle : proposition
+  // URANUS pour un devis, Conditions Particulières génériques (ci-dessous) pour un contrat.
+  let fenetreRepli = null;
+  if (estDevisVoyage(quote)) {
+    const fenetreVoyage = window.open('', '_blank');
+    const imprime = await printAttestationVoyage(
+      contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : quote,
+      { devis: !contrat, fenetre: fenetreVoyage, sansModele: contrat ? async () => {} : (f) => printPropositionVoyage(quote, { fenetre: f }) },
+    );
+    if (imprime || !contrat) return;
+    fenetreRepli = fenetreVoyage;
   }
   // Devis Dommages : cotation au format de la fiche NSIA (le contrat garde ses Conditions Particulières)
   if (!contrat && estDevisDommages(quote)) {
@@ -3463,7 +3673,15 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
     await imprimerDocumentIa(quote, title, groupe ? buildPropositionIaGroupe : buildConditionsParticulieresIa);
     return;
   }
-  const printWindow = window.open('', '_blank');
+  // Santé MINENE : Conditions Particulières du modèle OREOLE (barème et liste des assurés en annexe) ;
+  // autre offre Santé : modèle générique ci-dessous, dans la même fenêtre
+  let fenetreSante = fenetreRepli;
+  if (!fenetreSante && estDevisSante(quote)) {
+    fenetreSante = window.open('', '_blank');
+    const ids = contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : { iddevis: quote.iddevis || quote.id };
+    if (await imprimerDocumentSante('cp', ids, fenetreSante)) return;
+  }
+  const printWindow = fenetreSante || window.open('', '_blank');
   if (printWindow) {
     printWindow.document.write('<p style="font-family:Arial;padding:20px;">Préparation des Conditions Particulières…</p>');
   }

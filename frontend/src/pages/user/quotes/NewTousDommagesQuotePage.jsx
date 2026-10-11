@@ -452,10 +452,13 @@ export const NewTousDommagesQuotePage = () => {
 
   const confirmerEnContrat = async (devis) => {
     try {
-      await contractApi.createContractFromQuote(devis.iddevis || devis.id);
+      const res = await contractApi.createContractFromQuote(devis.iddevis || devis.id);
       success(`Devis ${devis.numerodevis} confirmé : le contrat a été créé.`);
       setDevisEnregistre(null);
-      navigate('/user/contracts');
+      // Fiche du contrat avec son relevé de compte (quittance remise au client)
+      const idContrat = Number(res?.data?.[0]?.ObjectId);
+      if (idContrat > 0) navigate(`/user/contracts/${idContrat}`, { state: { releve: true } });
+      else navigate('/user/contracts');
     } catch (err) {
       toastError(`Le devis n'a pas pu être confirmé : ${messageErreurApi(err)}`);
     }
@@ -631,8 +634,11 @@ export const NewTousDommagesQuotePage = () => {
                 <input type="number" className="form-control" min={0} max={100} step="0.0001" value={tauxPrime} placeholder="0"
                   onChange={(e) => setTauxPrime(e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value))))} />
               </Champ>
-              <Champ label="Taux de réduction (%)" erreur={erreurs.reduction}>
-                <input type="number" className="form-control" min={0} max={100} step="0.01" value={reduction}
+              {/* Comme URANUS : la réduction ne porte que sur une prime calculée au taux, une prime saisie est reprise telle quelle */}
+              <Champ label="Taux de réduction (%)" erreur={erreurs.reduction}
+                aide={taux > 0 ? undefined : 'Sans effet sur une prime saisie (comme URANUS) : saisissez la prime déjà réduite'}>
+                <input type="number" className="form-control" min={0} max={100} step="0.01" value={taux > 0 ? reduction : 0}
+                  disabled={!(taux > 0)}
                   onChange={(e) => setReduction(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />
               </Champ>
               <Champ label="Prime nette" erreur={erreurs.prime}

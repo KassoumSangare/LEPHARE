@@ -489,6 +489,24 @@ export const impressionIaApi = {
   },
 };
 
+// Impressions Santé MINENE (mêmes sources qu'URANUS) : quittance de la proposition ({ iddevis }) ou
+// du contrat ({ idcontrat }), saisie Santé du devis (couvertures, adhérents), liste des affiliés et,
+// pour un contrat, ayants droit de l'IA MINENE rattachée à la police
+export const impressionSanteApi = {
+  get: async ({ iddevis, idcontrat }) => {
+    const quittance = donneesEntete(await apiClient.get(idcontrat ? `/quittancecontrat/${idcontrat}` : `/quittanceproposition/${iddevis}`)) || {};
+    const idDevis = Number(quittance.IdDevis || iddevis) || 0;
+    const [s, a, ad] = await Promise.all([
+      apiClient.get(`/devissante/${idDevis}/`).catch(() => ({ data: {} })),
+      apiClient.get(`/listeaffiliesante/${idDevis}`).catch(() => ({ data: [] })),
+      idcontrat && quittance.NumeroPolice
+        ? apiClient.get(`/ayantdroitminene/${encodeURIComponent(quittance.NumeroPolice)}`).catch(() => ({ data: {} }))
+        : Promise.resolve({ data: {} }),
+    ]);
+    return { quittance, saisie: s.data || {}, affilies: donneesListe(a), ayantsDroit: ad.data?.ayantdroits || [] };
+  },
+};
+
 // Proposition MRH (gabarit URANUS) : quittance de la proposition et garanties de chaque maison
 // (capital, franchises, primes) lues dans le résumé financier du devis
 // Proposition MRH (gabarit URANUS) : quittance de la proposition, garanties souscrites (cumulées
@@ -516,7 +534,10 @@ export const impressionVoyageApi = {
     return { quittance: donneesEntete(q) || {}, garanties: donneesListe(g), voyage: v.data };
   },
   // GET /api/contratvoyage/:idcontrat/attestation/ (assuré, certificat, validité, destination du contrat)
-  getAttestation: async (idcontrat) => (await apiClient.get(`/contratvoyage/${idcontrat}/attestation/`)).data,
+  // ou /api/devisvoyage/:iddevis/attestation/ (mêmes données lues sur le devis : { devis: true })
+  getAttestation: async (id, { devis = false } = {}) => (
+    await apiClient.get(devis ? `/devisvoyage/${id}/attestation/` : `/contratvoyage/${id}/attestation/`)
+  ).data,
 };
 
 // Annexe d'un devis flotte auto, « Liste des véhicules de la flotte » (mêmes sources qu'URANUS) :
@@ -816,6 +837,19 @@ export const quoteApi = {
   // POST /api/garantiesvehiculeflotte/ (garanties d'un seul véhicule d'une flotte enregistrée :
   // la liste remplace les siennes, puis le devis est retotalisé)
   appliquerGarantiesVehiculeFlotte: (payload) => apiClient.post('/garantiesvehiculeflotte/', payload),
+  // POST /api/flotte/import/analyse/ (fichier Excel des véhicules d'une flotte : lecture seule, rien n'est enregistré)
+  analyserImportFlotte: async (fichier, { idCompagnie, idTarif, idOffre }) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier_excel', fichier);
+    formulaire.append('IdCompagnie', String(idCompagnie || ''));
+    formulaire.append('IdTarif', String(idTarif || ''));
+    formulaire.append('IdOffre', String(idOffre || ''));
+    const { data } = await apiClient.post('/flotte/import/analyse/', formulaire, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+    return data;
+  },
   // GET /api/sousgarantie/ (Sous-garanties disponibles ; 237 en base, au-delà de la page par défaut)
   getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/', { params: { page_size: 1000 } })),
   // GET /api/tauxtaxegarantie/ (taux de taxe par garantie et produit, ceux de fn_calcul_montant_taxe)
@@ -1386,6 +1420,8 @@ export const contractApi = {
   // GET /api/contrat/:id/
   // GET /api/contrat/:id/conditions-particulieres/ (mêmes données que pour un devis, tables du contrat)
   getConditionsParticulieres: async (id) => (await apiClient.get(`/contrat/${id}/conditions-particulieres/`)).data,
+  // GET /api/contrat/:id/releve-compte/ (quittance du contrat + quittances non soldées du client)
+  getReleveCompte: async (id) => (await apiClient.get(`/contrat/${id}/releve-compte/`)).data,
   getContractDetail: async (id) => {
     const res = await apiClient.get(`/contrat/${id}/`);
     return normalizeContrat(res.data);

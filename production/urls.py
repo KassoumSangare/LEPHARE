@@ -8,6 +8,7 @@ from .views_devis_ia import (
     taux_taxe_devis_ia,
 )
 from .views_devis_risques_divers import lire_devis_risques_divers
+from .import_flotte import analyser_import_flotte
 from .views_devis_dommages import (
     calcul_dommages,
     catalogue_dommages,
@@ -16,6 +17,7 @@ from .views_devis_dommages import (
 )
 from .views_devis_voyage import (
     attestation_contrat_voyage,
+    attestation_devis_voyage,
     enregistrer_devis_voyage_vue,
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
@@ -293,6 +295,7 @@ urlpatterns = [
     path(r"dommages/calcul/", calcul_dommages, name="dommages_calcul"),
     path(r"dommages/devis/", enregistrer_devis_dommages_vue, name="dommages_enregistrement"),
     path(r"dommages/devis/<int:iddevis>/", lire_devis_dommages, name="dommages_lecture"),
+    path(r"flotte/import/analyse/", analyser_import_flotte, name="flotte_import_analyse"),
     # Devis Voyage (création / « Modifier ») et relecture complète
     path(
         r"devisvoyage/enregistrement/",
@@ -313,6 +316,11 @@ urlpatterns = [
         r"contratvoyage/<int:idcontrat>/attestation/",
         attestation_contrat_voyage,
         name="attestation_contrat_voyage",
+    ),
+    path(
+        r"devisvoyage/<int:iddevis>/attestation/",
+        attestation_devis_voyage,
+        name="attestation_devis_voyage",
     ),
     path(
         r"enregistrementdevisvoyage",

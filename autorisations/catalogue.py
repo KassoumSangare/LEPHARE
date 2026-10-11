@@ -71,7 +71,7 @@ DROITS = [
     ("approbations.view", "Consulter les demandes d'autorisation", "", False, False, False),
     ("approbations.decider", "Approuver ou rejeter une demande", "Décisions sur les demandes et dérogations accordées.", True, False, True),
 
-    ("imports.excel", "Importer un fichier Excel", "Assurés IA, affiliés Santé.", True, False, False),
+    ("imports.excel", "Importer un fichier Excel", "Assurés IA, affiliés Santé, véhicules d'une flotte.", True, False, False),
     ("imports.guce", "Importer un bordereau GUCE", "Transport : analyse et import des certificats.", True, False, False),
 
     ("crm.view", "Consulter le suivi commercial", "", False, False, False),

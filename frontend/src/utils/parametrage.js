@@ -119,6 +119,10 @@ export const construireModeleAttestation = (doc) => {
     paysResidence: a.PaysResidence || '',
     garanties: a.Garanties || [],
     assistance: { telephone: a.Telephone || '', email: a.Email || '', whatsapp: a.Whatsapp || '' },
+    // QR codes de l'imprimé : portail d'assistance (adresse fixe) et vérification du certificat par
+    // les consulats (adresse de la compagnie, {certificat} remplacé par le n° ; absente : pas de QR)
+    portail: a.PortailAssistance || '',
+    verification: a.VerificationVisa || '',
     exemplaires: a.Exemplaires?.length ? a.Exemplaires : ["Exemplaire de l'Assuré"],
   };
 };

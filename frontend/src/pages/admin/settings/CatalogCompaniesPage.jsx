@@ -44,7 +44,7 @@ const BAREMES = [
   { libelle: 'Grilles Voyage', description: 'Primes Voyage par zone, durée et âge.', chemin: '/admin/settings/grilles-voyage' },
 ];
 
-const ATTESTATION_VIDE = { Actif: false, Convention: '', PaysResidence: "CÔTE D'IVOIRE", Signataire: '', Garanties: [], Telephone: '', Email: '', Whatsapp: '', Exemplaires: ['Exemplaire destiné aux Consulats', "Exemplaire de l'Assuré", 'Exemplaire de la Compagnie'] };
+const ATTESTATION_VIDE = { Actif: false, Convention: '', PaysResidence: "CÔTE D'IVOIRE", Signataire: '', Garanties: [], Telephone: '', Email: '', Whatsapp: '', PortailAssistance: '', VerificationVisa: '', Exemplaires: ['Exemplaire destiné aux Consulats', "Exemplaire de l'Assuré", 'Exemplaire de la Compagnie'] };
 
 const lignesVersListe = (texte) => String(texte || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
@@ -120,6 +120,7 @@ export const CatalogCompaniesPage = () => {
     Visa: s.Documents.Visa,
     PiedPage: s.Documents.PiedPageTexte,
     MentionLogo: s.Documents.MentionLogo,
+    OrdreCheque: s.Documents.OrdreCheque || '',
     AttestationVoyage: s.Documents.AttestationVoyage,
   });
 
@@ -263,6 +264,7 @@ export const CatalogCompaniesPage = () => {
             {onglet === 'documents' && (
               <div>
                 <ChampImage libelle="Logo de la compagnie" aide="Imprimé en haut à droite des devis, factures et conditions particulières de cette compagnie. Sans logo, son nom est imprimé." valeur={s.Documents.Logo} onChange={(v) => changerDoc('Logo', v)} />
+                {champTexte('OrdreCheque', 'Chèque à l\'ordre de', { longueur: 100, valeur: s.Documents.OrdreCheque || '', onChange: (v) => changerDoc('OrdreCheque', v), placeholder: 'ex. NSIA CI', aide: 'Colonne « Compagnie / Chèque à l\'ordre de » du relevé de compte remis au client. Vide : la raison sociale de la compagnie.' })}
                 {champTexte('Visa', 'Visa réglementaire', { longueur: 200, valeur: s.Documents.Visa, onChange: (v) => changerDoc('Visa', v), aide: 'Imprimé sous les mentions des Conditions Particulières Automobile (ex. « Visa: MEF/DGTCP/DA N°736 … »). Vide : rien n\'est imprimé.' })}
                 <div className="form-group">
                   <label className="form-label">Pied de page des Conditions Particulières</label>
@@ -312,6 +314,14 @@ export const CatalogCompaniesPage = () => {
                     {champTexte('Email', 'Assistance — e-mail', { valeur: att.Email, onChange: (v) => changerAttestation('Email', v) })}
                     {champTexte('Whatsapp', 'Assistance — WhatsApp', { valeur: att.Whatsapp, onChange: (v) => changerAttestation('Whatsapp', v) })}
                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', columnGap: '1rem' }}>
+                    {champTexte('PortailAssistance', 'QR code du portail d’assistance (adresse)', { longueur: 250, valeur: att.PortailAssistance, onChange: (v) => changerAttestation('PortailAssistance', v), placeholder: 'https://claims.cover-edge.com/links/' })}
+                    {champTexte('VerificationVisa', 'QR code de vérification du certificat (adresse)', { longueur: 250, valeur: att.VerificationVisa, onChange: (v) => changerAttestation('VerificationVisa', v), placeholder: 'https://…{certificat}' })}
+                  </div>
+                  <span style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                    Le QR code de vérification n’est imprimé que si la compagnie fournit l’adresse de son service de vérification
+                    ({'{certificat}'} y est remplacé par le n° de certificat) ; sans adresse, ni le QR code ni la phrase qui l’annonce ne sont imprimés.
+                  </span>
                   <div className="form-group">
                     <label className="form-label">Exemplaires imprimés</label>
                     <textarea className="form-control" rows={3} value={(att.Exemplaires || []).join('\n')} onChange={(e) => changerAttestation('Exemplaires', e.target.value.split('\n'))} />

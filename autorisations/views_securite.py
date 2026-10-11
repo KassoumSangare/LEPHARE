@@ -188,7 +188,10 @@ def _controler_cible(request, cible):
     qui n'ont pas plus de droits que soi : impossible de prendre la main sur un compte administrateur."""
     if request.user.is_admin or "roles.manage" in droits_utilisateur(request.user) or cible.pk == request.user.pk:
         return
-    if cible.is_admin or droits_utilisateur(cible) - droits_utilisateur(request.user):
+    # Droits que le compte retrouverait une fois réactivé : tous ses rôles, actifs ou non, quel que soit
+    # l'état du compte (un compte désactivé ou expiré n'a aucun droit effectif, mais peut être relancé)
+    potentiels = set(Droit.objects.filter(roles__attributions__utilisateur=cible).values_list("code", flat=True))
+    if cible.is_admin or potentiels - droits_utilisateur(request.user):
         raise Refus("Ce compte a des droits que vous n'avez pas : seul un gestionnaire des rôles peut le modifier.")
 
 

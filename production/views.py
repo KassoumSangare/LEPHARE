@@ -116,6 +116,8 @@ from .database import (
 )
 from .exceltopostgresql import export_excel
 from .import_assures import import_ia_insured, insert_new_assure
+from .releve_compte import releve_compte as donnees_releve_compte
+from .views_devis_ia import completer_assures_devis_ia
 from sante.models import Adherent, Affilie
 from .models import (
     Brouillon,
@@ -415,6 +417,11 @@ def vehicules_conditions_particulieres_flotte(pk, contrat=False):
             for (iddetail, matricule, marque, modele, type_vehicule, puissance, charge, energie,
                  neuve, venale, places, idtarif, tarif, code_categorie, categorie) in cursor.fetchall()
         ]
+        # Numéro du véhicule dans la flotte (ordre de saisie), conservé une fois les véhicules
+        # regroupés par catégorie, comme sur la liste NSIA (catégorie 202 : véhicules 4, 5, 7)
+        rangs = {iddetail: rang for rang, iddetail in enumerate(sorted(v["id"] for v in vehicules), start=1)}
+        for v in vehicules:
+            v["rang"] = rangs[v["id"]]
         cursor.execute(
             f"""
             SELECT dg.{t['garantie_fk']}, dg.idgarantie, dg.acquise, dg.capital, dg.franchise,
@@ -1041,6 +1048,15 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         """Véhicules et garanties d'une flotte (voir vehicules_conditions_particulieres_flotte)."""
         contrat = cast(Contrat, self.get_object())
         return Response(vehicules_conditions_particulieres_flotte(contrat.pk, contrat=True), status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"], url_path="releve-compte")
+    def releve_compte(self, request, pk=None):
+        """Quittance du contrat et quittances non soldées de son client, pour le relevé de compte."""
+        # Hors fenêtre de 3 ans du portefeuille : un contrat ancien a aussi son relevé
+        contrat = get_object_or_404(Contrat.objects.filter(idcontratannulation=0), pk=pk)
+        self.check_object_permissions(request, contrat)
+        with connection.cursor() as cursor:
+            return Response(donnees_releve_compte(cursor, contrat.pk), status=status.HTTP_200_OK)
 
     def get_queryset(self):
         from django.utils import timezone
@@ -2723,10 +2739,9 @@ class AssureIaInfoView(APIView):
         (msg, assureiainfo) = get_assure_ia(iddevis)
         if not msg:
             serializer = AssureIaInfoSerializer(assureiainfo, many=True)
-            # print(serializer.data)
-            return JsonResponse(
-                serializer.data, status=status.HTTP_200_OK, safe=False
-            )
+            # Profession affichée et prime TTC de chaque assuré (fiche devis)
+            assures = completer_assures_devis_ia(iddevis, [dict(a) for a in serializer.data])
+            return JsonResponse(assures, status=status.HTTP_200_OK, safe=False)
         else:
             return JsonResponse(
                 {"Status": "Echec", "Data": msg},

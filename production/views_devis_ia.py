@@ -17,7 +17,7 @@ calculée ici au franc près, pour que le devis garde l'accessoire saisi.
 """
 
 from datetime import date, datetime
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import connection, transaction
 from rest_framework import permissions, status
@@ -97,6 +97,98 @@ def _prime_ttc_imposee(prime_nette, accessoire, taux):
     """TTC dont sp_enregistrement_assure_ia redéduit exactement l'accessoire saisi."""
     taxe = ((prime_nette + accessoire) * taux / 100).quantize(Decimal("1"), ROUND_HALF_UP)
     return prime_nette + accessoire + taxe
+
+
+# Tarifs CGA et CI-ENERGIES : sp_finalisation_devis calcule l'accessoire assuré par assuré
+TARIFS_ACCESSOIRE_PAR_ASSURE = (145, 76)
+
+
+def _repartir_au_prorata(total, poids):
+    """Montant entier réparti au prorata des poids (à parts égales s'ils sont tous nuls), sans
+    écart d'arrondi sur le total (méthode des plus forts restes)."""
+    if not poids:
+        return []
+    somme = sum(poids)
+    if somme <= 0:
+        poids, somme = [Decimal(1)] * len(poids), Decimal(len(poids))
+    bruts = [total * p / somme for p in poids]
+    parts = [b.to_integral_value(rounding=ROUND_FLOOR) for b in bruts]
+    reste = int(total - sum(parts))
+    for i in sorted(range(len(bruts)), key=lambda i: bruts[i] - parts[i], reverse=True)[:reste]:
+        parts[i] += 1
+    return parts
+
+
+def completer_assures_devis_ia(iddevis, lignes):
+    """
+    Ajoute à chaque assuré d'un devis IA (lignes sérialisées de fn_assure_ia_info) la profession
+    à afficher et sa prime TTC, pour la fiche devis.
+
+    Profession : celle choisie sur la ligne (id 0 = « AUTRE »), à défaut la fonction de la fiche
+    de l'assuré, qui porte la colonne FONCTION des fichiers importés (comme les documents IA).
+
+    Prime TTC : tarifs CGA et CI-ENERGIES, prime nette + taxe de la ligne + accessoire et taxe sur
+    accessoire de l'assuré (fn_get_accessoire, comme sp_finalisation_devis). Autres tarifs,
+    l'accessoire porte sur la prime nette totale : la TTC du devis est répartie au prorata des
+    primes nettes (« prime_ttc_au_prorata »), de même quand les TTC par assuré ne retombent pas sur
+    celle du devis (primes corrigées après coup).
+    """
+    from customer.models import Client
+
+    if not lignes:
+        return lignes
+    fonctions = dict(
+        Client.objects.filter(IdClient__in=[l.get("id_assure") for l in lignes])
+        .values_list("IdClient", "Fonction")
+    )
+    for ligne in lignes:
+        fonction = (fonctions.get(ligne.get("id_assure")) or "").strip()
+        if int(ligne.get("id_profession") or 0) or not fonction:
+            ligne["profession"] = ligne.get("libelle_profession") or ""
+        else:
+            ligne["profession"] = fonction
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT primettc, idcompagnie, dateeffet::date FROM stddevis WHERE iddevis = %s", [iddevis]
+        )
+        entete = cursor.fetchone()
+        if not entete or entete[0] is None:
+            return lignes
+        ttc_devis = Decimal(entete[0]).quantize(Decimal("1"), ROUND_HALF_UP)
+        id_compagnie, date_effet = entete[1], entete[2]
+        # Accessoire + taxe sur accessoire propres à chaque ligne (tarifs CGA et CI-ENERGIES seuls)
+        cursor.execute(
+            """
+            SELECT d.iddevisdetail, d.idtarif,
+                   CASE WHEN d.idtarif = ANY(%s) THEN
+                       (SELECT a.accessoire_compagnie + a.accessoire_intermediaire + a.taxe_sur_accessoire
+                        FROM fn_get_accessoire(COALESCE(d.primenette, 0), 2, d.idoffre, %s, %s) AS a)
+                   END
+            FROM stddevisdetail d
+            WHERE d.iddevis = %s
+            """,
+            [list(TARIFS_ACCESSOIRE_PAR_ASSURE), id_compagnie, date_effet, iddevis],
+        )
+        frais_lignes = {r[0]: (r[1], r[2]) for r in cursor.fetchall()}
+
+    primes_nettes = [_montant(l.get("prime_nette")) for l in lignes]
+    ttc = None
+    if all(frais_lignes.get(l.get("id_devis_detail"), (0, None))[0] in TARIFS_ACCESSOIRE_PAR_ASSURE for l in lignes):
+        ttc = [
+            (prime_nette + _montant(ligne.get("taxe")) + Decimal(str(frais_lignes[ligne["id_devis_detail"]][1] or 0)))
+            .quantize(Decimal("1"), ROUND_HALF_UP)
+            for ligne, prime_nette in zip(lignes, primes_nettes)
+        ]
+        if sum(ttc) != ttc_devis:
+            ttc = None
+    au_prorata = ttc is None
+    if au_prorata:
+        ttc = _repartir_au_prorata(ttc_devis, primes_nettes)
+    for ligne, montant in zip(lignes, ttc):
+        ligne["prime_ttc"] = float(montant)
+        ligne["prime_ttc_au_prorata"] = au_prorata
+    return lignes
 
 
 def _enregistrer(data):

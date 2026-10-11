@@ -9,9 +9,11 @@ import {
   printAnnexeFlotte,
   estDevisFlotteAuto,
   estDevisVoyage,
+  printPropositionVoyage,
   estDevisDommages,
   printBordereauTransport,
 } from '../../../utils/exportUtils';
+import { imprimerDocumentSante } from '../../../utils/impressionsSante';
 import { formatDate } from '../../../utils/dateUtils';
 import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
@@ -124,6 +126,10 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     : Number(quote.prime_nette || 0) + Number(quote.cedeao || 0);
   const telephone = details.telephoneClient || raw.numerotelephoneassure || raw.telephoneclient || '—';
   const numeroActe = raw.numeroavenant || details.numeroAvenant || '0000001';
+  // Santé MINENE (offres commerciales 87, 102, 153 ; catégorie 123) : barème et CP du modèle OREOLE
+  const detailSante = quote.branche === 'Santé' ? detailBranche?.detail : null;
+  const santeMinene = Boolean(detailSante) && ([87, 102, 153].includes(Number(detailSante.idtarif))
+    || String(detailSante.codecategorie || '') === '123' || /MINENE/i.test(detailSante.libelle_tarif || ''));
 
   const getBranchIcon = (branche) => {
     const b = String(branche || '').toLowerCase();
@@ -466,6 +472,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                         <th style={{ textAlign: 'right' }}>Infirmité</th>
                         <th style={{ textAlign: 'right' }}>Frais trait.</th>
                         <th style={{ textAlign: 'right' }}>Prime nette</th>
+                        <th style={{ textAlign: 'right' }}>Prime TTC</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -473,15 +480,38 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                         <tr key={a.id_devis_detail}>
                           <td>{a.nom} {a.prenoms}</td>
                           <td>{formatDate(a.date_naissance)}</td>
-                          <td>{a.libelle_profession || '—'}</td>
+                          <td>{a.profession || a.libelle_profession || '—'}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_deces || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_infirmite || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_frais_traitement || 0).toLocaleString('fr-FR')}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(Number(a.prime_nette || 0)).toLocaleString('fr-FR')}</td>
+                          <td style={{ textAlign: 'right' }}>{Math.round(Number(a.prime_nette || 0)).toLocaleString('fr-FR')}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399' }}>
+                            {a.prime_ttc != null ? Math.round(Number(a.prime_ttc)).toLocaleString('fr-FR') : '—'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
+                    {detailBranche.assures.length > 1 && (
+                      <tfoot>
+                        <tr style={{ fontWeight: 700 }}>
+                          <td colSpan={6}>Total ({detailBranche.assures.length} assurés)</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {Math.round(detailBranche.assures.reduce((s, a) => s + Number(a.prime_nette || 0), 0)).toLocaleString('fr-FR')}
+                          </td>
+                          <td style={{ textAlign: 'right', color: '#34d399' }}>
+                            {detailBranche.assures.some((a) => a.prime_ttc != null)
+                              ? Math.round(detailBranche.assures.reduce((s, a) => s + Number(a.prime_ttc || 0), 0)).toLocaleString('fr-FR')
+                              : '—'}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
+                  {detailBranche.assures.length > 1 && detailBranche.assures.some((a) => a.prime_ttc_au_prorata) && (
+                    <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Prime TTC par assuré : quote-part de la prime TTC du devis, au prorata des primes nettes.
+                    </div>
+                  )}
                 </div>
               )
             )}
@@ -707,13 +737,26 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               title={estDevisDommages(quote)
                 ? "Cotation d'assurance au format de la fiche NSIA (intermédiaire, prospect, cotation, primes, clauses) — enregistrable en PDF"
                 : estDevisVoyage(quote)
-                ? "Proposition d'assurance Voyage (souscripteur, assuré, période, garanties, primes) — enregistrable en PDF"
+                ? "Conditions Particulières Voyage au modèle de l'attestation d'assurance et d'assistance voyage de la compagnie — enregistrable en PDF"
                 : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF'}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <FileText size={15} />
-              <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : estDevisVoyage(quote) ? 'Imprimer Proposition' : 'Imprimer Conditions Particulières'}</span>
+              <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : 'Imprimer Conditions Particulières'}</span>
             </button>
+
+            {estDevisVoyage(quote) && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => printPropositionVoyage(quote)}
+                title="Proposition d'assurance Voyage (souscripteur, assuré, période, garanties, primes) — enregistrable en PDF"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <FileText size={15} />
+                <span>Imprimer Proposition</span>
+              </button>
+            )}
 
             {estDevisIaImprimable(quote) && (
               <button
@@ -726,6 +769,33 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 <Users size={15} />
                 <span>Imprimer Annexe</span>
               </button>
+            )}
+
+            {quote.branche === 'Santé' && idDevisBase > 0 && (
+              <>
+                {santeMinene && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => imprimerDocumentSante('bareme', { iddevis: idDevisBase })}
+                    title="Barème MINENE (capitaux IA, garanties RC, plafonds Santé, carences, surprimes) — enregistrable en PDF"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    <FileText size={15} />
+                    <span>Imprimer Barème</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => imprimerDocumentSante('affilies', { iddevis: idDevisBase })}
+                  title="Liste des assurés (adhérents, conjoints, enfants) du devis — enregistrable en PDF"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <Users size={15} />
+                  <span>Imprimer Liste des assurés</span>
+                </button>
+              </>
             )}
 
             {flotteAuto && (

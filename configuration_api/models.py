@@ -3985,6 +3985,8 @@ class CompagnieDocument(models.Model):
     Visa = models.CharField(max_length=200, blank=True, default="", db_column="visa")
     # Mention imprimée sous le logo du pied de page (ex. « depuis 1995 »)
     MentionLogo = models.CharField(max_length=100, blank=True, default="", db_column="mentionlogo")
+    # « Chèque à l'ordre de » du relevé de compte (ex. « NSIA CI ») ; vide : raison sociale
+    OrdreCheque = models.CharField(max_length=100, blank=True, default="", db_column="ordrecheque")
     # Attestation d'assurance voyage : {Actif, Convention, PaysResidence, Signataire,
     # Garanties: [...], Telephone, Email, Whatsapp, Exemplaires: [...]}
     AttestationVoyage = models.JSONField(default=dict, blank=True, db_column="attestationvoyage")

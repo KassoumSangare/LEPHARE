@@ -537,32 +537,57 @@ def attestation_contrat_voyage(request, idcontrat):
     d'assistance voyage, lues sur le contrat (complément voyage copié à la confirmation du devis).
     Les contrats repris d'URANUS n'ont le plus souvent ni complément ni passeport : champs vides.
     """
+    return _attestation_voyage(idcontrat, contrat=True)
+
+
+@api_view(["GET"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def attestation_devis_voyage(request, iddevis):
+    """
+    GET /api/devisvoyage/<iddevis>/attestation/ : mêmes données lues sur le devis, pour imprimer ses
+    Conditions Particulières au modèle de l'attestation (décision de l'utilisateur du 2026-10-11).
+    """
+    return _attestation_voyage(iddevis, contrat=False)
+
+
+# Tables du contrat ou du devis (même complément voyage, copié à la confirmation)
+TABLES_ATTESTATION = {
+    True: {"entete": "stdcontrat", "cle": "idcontrat", "numero": "ct.numeropolice", "assure": "COALESCE(cd.idassure, ct.idassure, ct.idclient)",
+           "detail": "stdcontratdetail", "detail_pk": "idcontratdetail", "complement": "stdcomplementcontratdetailvoyage", "nom": "Contrat"},
+    False: {"entete": "stddevis", "cle": "iddevis", "numero": "ct.numerodevis", "assure": "COALESCE(ct.idassure, ct.idclient)",
+            "detail": "stddevisdetail", "detail_pk": "iddevisdetail", "complement": "stdcomplementdevisdetailvoyage", "nom": "Devis"},
+}
+
+
+def _attestation_voyage(pk, contrat):
+    t = TABLES_ATTESTATION[contrat]
     with connection.cursor() as cursor:
         ligne = _une_ligne(
             cursor,
-            """
-            SELECT ct.idcontrat, ct.numeropolice, ct.idproduit, ct.idcompagnie, cie.raisonsociale,
+            f"""
+            SELECT ct.{t['cle']}, {t['numero']}, ct.idproduit, ct.idcompagnie, cie.raisonsociale,
                    ct.dateemission, ct.dateeffet, ct.dateexpiration, ct.numeropolicecompagnie,
-                   COALESCE(cd.idassure, ct.idassure, ct.idclient), cd.datemec, o.libelleoffre,
+                   {t['assure']}, cd.datemec, o.libelleoffre,
                    v.numeroattestation, v.referencecontrat, v.numeropasseport, v.idpaysdestination,
                    pd.libelle_pays, pv.nationalite
-            FROM stdcontrat ct
+            FROM {t['entete']} ct
             LEFT JOIN stdcompagnie cie ON cie.idcompagnie = ct.idcompagnie
-            LEFT JOIN stdcontratdetail cd ON cd.idcontrat = ct.idcontrat
+            LEFT JOIN {t['detail']} cd ON cd.{t['cle']} = ct.{t['cle']}
             LEFT JOIN stdoffre o ON o.idoffre = cd.idoffre
-            LEFT JOIN stdcomplementcontratdetailvoyage v ON v.idcontratdetail = cd.idcontratdetail
+            LEFT JOIN {t['complement']} v ON v.{t['detail_pk']} = cd.{t['detail_pk']}
             LEFT JOIN stdpays pd ON pd.id_pays = v.idpaysdestination
             LEFT JOIN stdpays pv ON pv.id_pays = v.idpaysvoyageur
-            WHERE ct.idcontrat = %s
-            ORDER BY cd.idcontratdetail
+            WHERE ct.{t['cle']} = %s
+            ORDER BY cd.{t['detail_pk']}
             LIMIT 1
             """,
-            [idcontrat],
+            [pk],
         )
         if not ligne:
-            return Response({"error": f"Contrat {idcontrat} introuvable."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": f"{t['nom']} {pk} introuvable."}, status=status.HTTP_404_NOT_FOUND)
         if ligne[2] != ID_PRODUIT_VOYAGE:
-            return Response({"error": "Ce contrat n'est pas un contrat Voyage."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"Ce {t['nom'].lower()} n'est pas un {t['nom'].lower()} Voyage."}, status=status.HTTP_400_BAD_REQUEST)
         assure = _une_ligne(
             cursor,
             "SELECT TRIM(nom), TRIM(COALESCE(prenoms, '')), datenaissance FROM stdclient WHERE idclient = %s",
@@ -572,8 +597,8 @@ def attestation_contrat_voyage(request, idcontrat):
 
     return Response(
         {
-            "IdContrat": ligne[0],
-            "NumeroPolice": ligne[1] or "",
+            "IdContrat" if contrat else "IdDevis": ligne[0],
+            "NumeroPolice" if contrat else "NumeroDevis": ligne[1] or "",
             "IdCompagnie": ligne[3],
             "Compagnie": ligne[4] or "",
             "DateEmission": _iso(ligne[5]),

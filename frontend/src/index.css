@@ -905,6 +905,13 @@ select.form-control {
   color: var(--text-muted);
   user-select: none;
 }
+/* Groupe replié contenant la page affichée */
+.sidebar-section-header.active {
+  color: #60a5fa;
+}
+[data-theme="light"] .sidebar-section-header.active {
+  color: #2563eb;
+}
 
 .sidebar-nav-item {
   display: flex;

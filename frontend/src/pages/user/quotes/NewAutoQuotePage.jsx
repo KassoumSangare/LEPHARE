@@ -27,9 +27,12 @@ import {
   AlertCircle,
   X,
   Edit3,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { GarantiesVehiculeFlotteModal } from './GarantiesVehiculeFlotteModal';
+import { ImportFlotteModal } from './ImportFlotteModal';
+import { aLeDroit } from '../../../utils/droits';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
@@ -355,7 +358,7 @@ export const NewAutoQuotePage = () => {
   // ----------------------------------------------------
   // ÉCRAN 2 : VÉHICULE & FLOTTE
   // ----------------------------------------------------
-  const [energieId, setEnergieId] = useState(1); // 1: Essence, 2: Diesel, 3: Hybride, 4: Electrique
+  const [energieId, setEnergieId] = useState(1); // stdenergie : 1 Essence, 2 Diésel, 3 Électrique, 4 Hybride
   const [energie, setEnergie] = useState('Essence');
   const [systemeSecuriteId, setSystemeSecuriteId] = useState(1);
   const [systemeSecurite, setSystemeSecurite] = useState('ALARME');
@@ -920,6 +923,61 @@ export const NewAutoQuotePage = () => {
     info(veh.enregistre
       ? `Véhicule ${veh.immatriculation} retiré : il sera supprimé du devis à l'enregistrement.`
       : `Véhicule ${veh.immatriculation} retiré de la flotte.`);
+  };
+
+  // Véhicules lus dans un fichier Excel (ImportFlotteModal) : ajoutés à la liste comme une saisie à la
+  // main (mêmes champs, enregistrés avec le devis). Les garanties de l'offre marquées « Non » dans le
+  // fichier sont retirées du véhicule, comme avec « Garanties de l'offre » (barème moins ces garanties).
+  const [importFlotteOuvert, setImportFlotteOuvert] = useState(false);
+  const importerVehiculesFlotte = async (lignes) => {
+    const defauts = {
+      codeAlarme: Number(systemeSecuriteId) || 0,
+      systemeSecurite,
+      dateMec,
+      remorqueAttelee: false,
+      numeroCarteBrune: '',
+      numeroChassis: '',
+      numeroMoteur: '',
+      carburantAutreMatiere: false,
+      transportEleves: false,
+      transportEmployes: false,
+      transportPassagerSupplementaire: false,
+      nsiaAutoPlus: false,
+    };
+    const ajouts = lignes.map((l) => ({
+      ...defauts,
+      ...l.Vehicule,
+      cle: nouvelleCleVehicule(),
+      idDevisDetail: null,
+      enregistre: false,
+      origine: null,
+      importe: { ligne: l.Ligne, primeNetteFichier: l.Fichier?.PrimeNette ?? null },
+    }));
+    const retirees = new Map(lignes.map((l, i) => [ajouts[i].cle, new Set((l.GarantiesRetirees || []).map(Number))]));
+    const personnalisees = {};
+    const echecs = [];
+    const aPersonnaliser = ajouts.filter((v) => retirees.get(v.cle).size);
+    for (let i = 0; i < aPersonnaliser.length; i += 4) {
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(aPersonnaliser.slice(i, i + 4).map(async (v) => {
+        try {
+          const bareme = await chargerBaremeVehicule(v);
+          const sans = retirees.get(v.cle);
+          personnalisees[v.cle] = {
+            garanties: bareme.map((g) => (sans.has(Number(g.id_garantie)) ? { ...g, acquise: false } : g)),
+            signature: signatureTarif(v),
+          };
+        } catch {
+          echecs.push(v.immatriculation);
+        }
+      }));
+    }
+    setFlotteVehicules((prev) => [...prev, ...ajouts]);
+    setGarantiesFlotte((prev) => ({ ...prev, ...personnalisees }));
+    success(`${ajouts.length} véhicule${ajouts.length > 1 ? 's' : ''} importé${ajouts.length > 1 ? 's' : ''} dans la flotte : enregistrez le devis pour les tarifer définitivement.`);
+    if (echecs.length) {
+      toastError(`Garanties « Non » du fichier non retirées pour ${echecs.join(', ')} : ajustez-les avec « Garanties de l'offre ».`);
+    }
   };
 
   // Estimation du moteur pour le véhicule tel qu'il est saisi (celle d'avant une modification est ignorée)
@@ -2827,7 +2885,7 @@ export const NewAutoQuotePage = () => {
                 value={energie}
                 onChange={(e) => {
                   setEnergie(e.target.value);
-                  const mapEnergie = { Essence: 1, Diesel: 2, Hybride: 3, Électrique: 4 };
+                  const mapEnergie = { Essence: 1, Diesel: 2, Électrique: 3, Hybride: 4 };
                   setEnergieId(mapEnergie[e.target.value] || 1);
                 }}
               >
@@ -3167,6 +3225,18 @@ export const NewAutoQuotePage = () => {
                 <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#38bdf8' }}>
                   LISTE DES VÉHICULES DU PARC FLOTTE ({flotteVehicules.length})
                 </h4>
+                {aLeDroit('imports.excel') && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setImportFlotteOuvert(true)}
+                    disabled={!compagnieId}
+                    title="Importer la liste des véhicules depuis un fichier Excel (modèle « Liste des véhicules en Automobile »)"
+                    style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    <FileSpreadsheet size={16} /> Importer un fichier Excel
+                  </button>
+                )}
               </div>
 
               <div style={{ overflowX: 'auto' }}>
@@ -3187,7 +3257,8 @@ export const NewAutoQuotePage = () => {
                     {flotteVehicules.length === 0 && (
                       <tr>
                         <td colSpan={8} style={{ padding: '1rem 0.8rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          Aucun véhicule : saisissez un véhicule ci-dessus puis « Ajouter le véhicule courant à la flotte ».
+                          Aucun véhicule : saisissez un véhicule ci-dessus puis « Ajouter le véhicule courant à la flotte »,
+                          ou importez la liste des véhicules d'un fichier Excel.
                         </td>
                       </tr>
                     )}
@@ -3204,6 +3275,12 @@ export const NewAutoQuotePage = () => {
                           <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>{veh.genreVehicule}</td>
                           <td style={{ padding: '0.65rem 0.8rem', color: '#cbd5e1' }}>
                             {offresList.find((o) => Number(o.id) === Number(veh.idOffre))?.libelle || veh.offreSelectionnee || `Offre n° ${veh.idOffre}`}
+                            {veh.importe && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                Importé (ligne {veh.importe.ligne})
+                                {veh.importe.primeNetteFichier != null && ` — PN du fichier : ${Number(veh.importe.primeNetteFichier).toLocaleString('fr-FR')} F`}
+                              </div>
+                            )}
                             {garantiesPersonnalisees(veh) && (
                               <div style={{ marginTop: '0.25rem' }}>
                                 <StatusBadge label={garantiesARevoir ? 'Garanties à revoir' : 'Garanties personnalisées'} color={garantiesARevoir ? 'amber' : 'blue'} />
@@ -4259,6 +4336,19 @@ export const NewAutoQuotePage = () => {
           />
         );
       })()}
+
+      {/* Import Excel des véhicules d'une flotte */}
+      <ImportFlotteModal
+        isOpen={importFlotteOuvert}
+        onClose={() => setImportFlotteOuvert(false)}
+        idCompagnie={compagnieId}
+        nomCompagnie={compagnie}
+        idTarif={categorieId}
+        idOffre={offreId}
+        marques={marques}
+        immatriculationsExistantes={new Set(flotteVehicules.map((v) => v.immatriculation))}
+        onImporter={importerVehiculesFlotte}
+      />
 
       {/* Modal de visualisation après création */}
       {createdQuote && (

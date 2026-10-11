@@ -1066,13 +1066,13 @@ export const NewSanteQuotePage = () => {
                   {champ('Date d\'effet', <input type="date" className="form-control" value={formAffilie.dateeffet} onChange={(e) => setFormAffilie((p) => ({ ...p, dateeffet: e.target.value }))} disabled={desactive} />)}
                   {champ('Date début consommation', <input type="date" className="form-control" value={formAffilie.datedebutconsommation} onChange={(e) => setFormAffilie((p) => ({ ...p, datedebutconsommation: e.target.value }))} disabled={desactive} />)}
                   {interrupteur('Pathologie antérieure', formAffilie.handicape, (v) => setFormAffilie((p) => ({ ...p, handicape: v })))}
-                  {interrupteur('Certificat', formAffilie.certificat, (v) => setFormAffilie((p) => ({ ...p, certificat: v })))}
+                  {interrupteur('Certificat de scolarité / rapport médical', formAffilie.certificat, (v) => setFormAffilie((p) => ({ ...p, certificat: v })))}
                   {interrupteur('Surprime', formAffilie.surprimeappliquee, (v) => setFormAffilie((p) => ({ ...p, surprimeappliquee: v })))}
                   {formAffilie.surprimeappliquee && champ('Montant Surprime', <AmountInput value={formAffilie.montantsurprime} onChange={(v) => setFormAffilie((p) => ({ ...p, montantsurprime: v }))} disabled={desactive} />)}
                 </div>
                 {formAffilie.lien === 'E' && (
                   <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Enfant : refusé au-delà de 25 ans ; de 21 à 25 ans, le certificat de scolarité est exigé (contrôles de la base).
+                    Enfant : admis jusqu&apos;à 21 ans ; de 22 à 25 ans, certificat de scolarité de l&apos;année ou rapport médical (handicap réduisant totalement la mobilité) exigé ; refusé au-delà de 25 ans (contrôles de la base).
                   </p>
                 )}
                 <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
@@ -1098,7 +1098,7 @@ export const NewSanteQuotePage = () => {
             </div>
             <p style={{ margin: '0.85rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {estMinene
-                ? 'MINENE : laissez les primes à 0 pour appliquer la prime de base de la formule, les surprimes d\'âge (61–64 ans : 30 %, 65–69 ans : 50 %) et d\'affection chronique (30 % par affection, 3 au maximum).'
+                ? 'MINENE : laissez les primes à 0 pour tarifer chaque famille selon la formule de sa couverture (SOLO : 1 personne, FAMILLE : jusqu\'à 3, FAMILLE PLUS : jusqu\'à 6), avec les surprimes d\'âge à la date d\'effet (61–64 ans : 30 %, 65–69 ans : 50 %, adhérent et conjoint de 69 ans au plus) et d\'affection chronique (30 % par affection, 3 au maximum), et l\'accessoire du barème par famille.'
                 : 'Une seule prime : par famille (× adhérents), par affilié (× affiliés) ou globale.'}
             </p>
 
