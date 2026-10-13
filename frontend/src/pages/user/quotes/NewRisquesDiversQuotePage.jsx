@@ -11,6 +11,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { reglagesMinene } from '../../../utils/parametrage';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
@@ -19,6 +20,12 @@ const PRODUITS = {
 };
 // Offre RC chef de famille MINENE : primes calculées par la base, n° de police Santé connexe exigé
 const ID_OFFRE_MINENE = 67;
+const ID_TARIF_MINENE = 104;
+// Valeurs fixées par URANUS pour MINENE : compagnie NSIA, un an, capitaux du barème OREOLE
+// Capitaux : Administration > Réglages Santé MINENE (50 M / 5 M / 10 M à l'origine)
+const MINENE = { idCompagnie: 1, dureeId: 4 };
+// Réduction commerciale RC plafonnée comme dans URANUS
+const REDUCTION_MAX_RC = 35;
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const aujourdhui = () => new Date().toISOString().split('T')[0];
@@ -86,6 +93,10 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [tarifs, setTarifs] = useState([]);
   const [offres, setOffres] = useState([]);
   const [domaines, setDomaines] = useState([]);
+  // Catégories sans aucune offre (ex. « RESPONSABILITE CIVILE » 100) : non proposées à la saisie
+  const [tarifsSansOffre, setTarifsSansOffre] = useState(() => new Set());
+  // Ajout d'un domaine d'activité depuis le formulaire (null = champ fermé)
+  const [nouveauDomaine, setNouveauDomaine] = useState(null);
   // Offre enregistrée sur le devis modifié : gardée même si la catégorie ne la propose pas
   const [offreDevis, setOffreDevis] = useState(null);
 
@@ -129,6 +140,19 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [accessoire, setAccessoire] = useState(0);
   const [taxe, setTaxe] = useState(0);
   const primeTtc = (Number(primeNette) || 0) + (Number(accessoire) || 0) + (Number(taxe) || 0);
+  // Calcul à partir de la prime nette (bouton « Calculer » d'URANUS, automatique ici) : accessoire du
+  // barème de la compagnie et taxe = taux du produit × (prime nette + accessoire). Un montant retouché à
+  // la main n'est plus recalculé tant qu'on ne le remet pas au barème.
+  const [tauxTaxe, setTauxTaxe] = useState(null);
+  const [accessoireBareme, setAccessoireBareme] = useState(null);
+  const [accessoireManuel, setAccessoireManuel] = useState(false);
+  const [taxeManuelle, setTaxeManuelle] = useState(false);
+  const [calculEnCours, setCalculEnCours] = useState(false);
+  const taxeCalculee = tauxTaxe === null ? null : Math.round((((Number(primeNette) || 0) + (Number(accessoire) || 0)) * tauxTaxe) / 100);
+  // Minimum légal contrôlé par la base (sp_calcul_devis_prime_imposee) : taxe des garanties sur la prime nette
+  const taxeMinimum = tauxTaxe === null ? 0 : Math.round(((Number(primeNette) || 0) * tauxTaxe) / 100);
+  // Pièce jointe du devis (envoyée après l'enregistrement)
+  const [fichier, setFichier] = useState(null);
   const [souscripteurId, setSouscripteurId] = useState(0);
   const [rechercheSouscripteur, setRechercheSouscripteur] = useState('');
   const [listeSouscripteurOuverte, setListeSouscripteurOuverte] = useState(false);
@@ -159,9 +183,15 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setClients((prev) => [...prev.filter((p) => !cls.some((c) => String(c.id) === String(p.id))), ...cls]);
       }
       if (cies && cies.length) setCompanies(cies.map((c) => ({ id: c.IdCompagnie || c.id, nom: c.RaisonSociale || c.nom })));
+      // Une catégorie sans offre ne peut pas être tarifée : elle n'est pas proposée
+      const offresParTarif = await Promise.all((trfs || []).map((t) => risquesDiversApi.getOffres(idProduit, t.IdTarif).catch(() => [])));
+      if (!actif) return;
+      const vides = new Set((trfs || []).filter((t, i) => !(offresParTarif[i] || []).length).map((t) => Number(t.IdTarif)));
+      setTarifsSansOffre(vides);
       setTarifs(trfs || []);
       setDomaines(doms || []);
-      if (!editIddevisParam && trfs && trfs.length) setIdTarif((courant) => courant || Number(trfs[0].IdTarif));
+      const premier = (trfs || []).find((t) => !vides.has(Number(t.IdTarif)));
+      if (!editIddevisParam && premier) setIdTarif((courant) => courant || Number(premier.IdTarif));
     })();
     return () => { actif = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,6 +215,45 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     });
     return () => { actif = false; };
   }, [idProduit, idTarif, offreDevis]);
+
+  // MINENE : compagnie, durée et capitaux fixés comme dans URANUS (à la création)
+  const estMinene = estRc && (Number(idTarif) === ID_TARIF_MINENE || offreMinene);
+  useEffect(() => {
+    if (!estMinene || editIddevisParam) return;
+    setCompagnieId(MINENE.idCompagnie);
+    setDureeId(MINENE.dureeId);
+    const { rc } = reglagesMinene();
+    setCapitalDommageCorporel((v) => Number(v) || rc.corporels);
+    setCapitalIntoxication((v) => Number(v) || rc.intoxications);
+    setCapitalDommageMateriel((v) => Number(v) || rc.materiels);
+  }, [estMinene, editIddevisParam]);
+
+  // Accessoire du barème et taux de taxe pour la prime nette saisie (hors MINENE, calculé par la base)
+  useEffect(() => {
+    if (offreMinene || !idOffre || !(Number(primeNette) > 0) || !dateEffet) return undefined;
+    let actif = true;
+    const minuteur = setTimeout(async () => {
+      setCalculEnCours(true);
+      try {
+        const r = await risquesDiversApi.calculer({ idProduit, idCompagnie: compagnieId, idOffre, primeNette, dateEffet });
+        if (!actif) return;
+        setTauxTaxe(r.tauxTaxe);
+        setAccessoireBareme(r.accessoire);
+        if (!accessoireManuel) setAccessoire(r.accessoire);
+      } catch (err) {
+        if (actif) toastError(`Accessoire et taxe non calculés : ${messageErreurApi(err)}. Saisissez-les.`);
+      } finally {
+        if (actif) setCalculEnCours(false);
+      }
+    }, 350);
+    return () => { actif = false; clearTimeout(minuteur); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idProduit, compagnieId, idOffre, primeNette, dateEffet, offreMinene, accessoireManuel]);
+
+  // Taxe tenue à jour (taux × (prime nette + accessoire)), sauf montant retouché à la main
+  useEffect(() => {
+    if (!taxeManuelle && taxeCalculee !== null) setTaxe(taxeCalculee);
+  }, [taxeCalculee, taxeManuelle]);
 
   // -------------------------------------------------------------
   // GARANTIES DE L'OFFRE (et, en modification, celles enregistrées sur le devis)
@@ -305,6 +374,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setPrimeNette(Math.round(Number(raw.primenette) || 0));
         setAccessoire(Math.round(Number(raw.accessoire) || 0));
         setTaxe(Math.round(Number(raw.taxe) || 0));
+        // Montants enregistrés gardés tels quels ; une nouvelle prime nette recalcule la taxe
+        setAccessoireManuel(true);
+        setTaxeManuelle(true);
 
         // Souscripteur et assuré
         const idClient = Number(raw.client?.IdClient ?? raw.client) || 0;
@@ -358,6 +430,29 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editIddevisParam, idProduit]);
 
+  // Nouveau domaine d'activité (« + » d'URANUS) : libellé en majuscules comme les domaines livrés ;
+  // un domaine déjà présent est simplement sélectionné
+  const ajouterDomaine = async () => {
+    const libelle = String(nouveauDomaine || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    if (!libelle) { toastError('Saisissez le libellé du domaine d\'activité.'); return; }
+    const existant = domaines.find((d) => String(d.libelle || '').trim().toUpperCase() === libelle);
+    if (existant) {
+      setIdDomaineActivite(Number(existant.id_domaine_activite));
+      setNouveauDomaine(null);
+      return;
+    }
+    try {
+      const cree = await risquesDiversApi.creerDomaine(libelle);
+      const liste = await risquesDiversApi.getDomaines().catch(() => [...domaines, cree]);
+      setDomaines(liste);
+      setIdDomaineActivite(Number(cree.id_domaine_activite));
+      setNouveauDomaine(null);
+      success(`Domaine d'activité « ${libelle} » ajouté.`);
+    } catch (err) {
+      toastError(`Domaine d'activité non ajouté : ${messageErreurApi(err)}`);
+    }
+  };
+
   const majGarantie = (id, champ, valeur) => setGaranties((prev) => prev.map((g) => (g.id === id ? { ...g, [champ]: valeur } : g)));
   const garantiesAcquises = garanties.filter((g) => g.acquise);
 
@@ -371,6 +466,12 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     if (!offreMinene && !garantiesAcquises.length) { toastError('Cochez au moins une garantie.'); setStep(2); return; }
     if (!offreMinene && !(Number(primeNette) > 0)) {
       toastError('Saisissez la prime nette : elle est répartie sur les garanties cochées.');
+      setStep(3);
+      return;
+    }
+    // Même contrôle que la base : la taxe couvre au moins celle des garanties (taux × prime nette)
+    if (!offreMinene && tauxTaxe !== null && Number(taxe) < taxeMinimum) {
+      toastError(`Taxe insuffisante : au moins ${fcfa(taxeMinimum)} FCFA (${tauxTaxe} % de la prime nette).`);
       setStep(3);
       return;
     }
@@ -447,6 +548,14 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       if (!devisId) {
         toastError(`Devis ${infos.court} non enregistré : ${res?.OutputMessage || 'réponse du serveur sans numéro de devis.'}`);
         return;
+      }
+      if (fichier) {
+        try {
+          await risquesDiversApi.attacherPieceJointe(devisId, fichier);
+          setFichier(null);
+        } catch (errFichier) {
+          toastError(`Devis enregistré, mais le fichier n'a pas été joint : ${messageErreurApi(errFichier)}`);
+        }
       }
       let devisEnregistre = null;
       try {
@@ -595,7 +704,8 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
             <div className="form-group">
               <label className="form-label">Catégorie (* requis)</label>
               <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))}>
-                {trierParLibelle(tarifs, (t) => t.LibelleTarif).map((t) => (<option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>))}
+                {trierParLibelle(tarifs.filter((t) => !tarifsSansOffre.has(Number(t.IdTarif)) || Number(t.IdTarif) === Number(idTarif)), (t) => t.LibelleTarif)
+                  .map((t) => (<option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>))}
               </select>
             </div>
             <div className="form-group">
@@ -637,8 +747,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
               )}
             </div>
             <div className="form-group">
-              <label className="form-label">Réduction commerciale (%)</label>
-              <input type="number" min="0" max="100" className="form-control" value={reduction} onChange={(e) => setReduction(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />
+              <label className="form-label">Réduction commerciale (%{estRc ? `, ${REDUCTION_MAX_RC} au plus` : ''})</label>
+              <input type="number" min="0" max={estRc ? REDUCTION_MAX_RC : 100} className="form-control" value={reduction}
+                onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? REDUCTION_MAX_RC : 100, Number(e.target.value) || 0)))} />
             </div>
             <div className="form-group">
               <label className="form-label">N° de police compagnie (optionnel)</label>
@@ -661,11 +772,29 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   <input type="text" className="form-control" value={activite} onChange={(e) => setActivite(e.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Domaine d'activité</label>
-                  <select className="form-control" value={idDomaineActivite} onChange={(e) => setIdDomaineActivite(Number(e.target.value))}>
-                    <option value={0}>— Non précisé —</option>
-                    {trierParLibelle(domaines, (d) => d.libelle).map((d) => (<option key={d.id_domaine_activite} value={d.id_domaine_activite}>{d.libelle}</option>))}
-                  </select>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Domaine d'activité</span>
+                    {nouveauDomaine === null && (
+                      <button type="button" onClick={() => setNouveauDomaine('')} title="Ajouter un domaine d'activité à la liste"
+                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                        <Plus size={14} /> Nouveau domaine
+                      </button>
+                    )}
+                  </label>
+                  {nouveauDomaine === null ? (
+                    <select className="form-control" value={idDomaineActivite} onChange={(e) => setIdDomaineActivite(Number(e.target.value))}>
+                      <option value={0}>— Non précisé —</option>
+                      {trierParLibelle(domaines, (d) => d.libelle).map((d) => (<option key={d.id_domaine_activite} value={d.id_domaine_activite}>{d.libelle}</option>))}
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <input type="text" className="form-control" autoFocus placeholder="Ex. : INDUSTRIE ET COMMERCE" value={nouveauDomaine}
+                        onChange={(e) => setNouveauDomaine(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterDomaine(); } if (e.key === 'Escape') setNouveauDomaine(null); }} />
+                      <button type="button" className="btn btn-primary" style={{ background: couleur, padding: '0.4rem 0.7rem' }} onClick={ajouterDomaine}>Ajouter</button>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }} onClick={() => setNouveauDomaine(null)}>Annuler</button>
+                    </div>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Localisation</label>
@@ -688,16 +817,16 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   <input type="number" min="0" step="0.01" className="form-control" value={tauxPrime} onChange={(e) => setTauxPrime(Math.max(0, Number(e.target.value) || 0))} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Capital dommages corporels</label>
-                  <AmountInput value={capitalDommageCorporel} onChange={setCapitalDommageCorporel} />
+                  <label className="form-label">Capital dommages corporels{estMinene ? ' (barème MINENE)' : ''}</label>
+                  <AmountInput value={capitalDommageCorporel} onChange={setCapitalDommageCorporel} disabled={estMinene} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Capital intoxication alimentaire</label>
-                  <AmountInput value={capitalIntoxication} onChange={setCapitalIntoxication} />
+                  <label className="form-label">Capital intoxication alimentaire{estMinene ? ' (barème MINENE)' : ''}</label>
+                  <AmountInput value={capitalIntoxication} onChange={setCapitalIntoxication} disabled={estMinene} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Capital dommages matériels</label>
-                  <AmountInput value={capitalDommageMateriel} onChange={setCapitalDommageMateriel} />
+                  <label className="form-label">Capital dommages matériels{estMinene ? ' (barème MINENE)' : ''}</label>
+                  <AmountInput value={capitalDommageMateriel} onChange={setCapitalDommageMateriel} disabled={estMinene} />
                 </div>
               </div>
             </>
@@ -777,22 +906,48 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
             <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Offre MINENE : les primes sont calculées par la base à l'enregistrement.</p>
           ) : (
             <>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 0 }}>
-                Comme dans URANUS, la prime nette saisie est répartie par la base sur les garanties cochées ; l'accessoire et la taxe sont enregistrés tels que saisis.
+              <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 0, lineHeight: 1.5 }}>
+                Saisissez la prime nette : la base la répartit sur les garanties cochées. L'accessoire est celui du barème de la compagnie
+                et la taxe vaut {tauxTaxe !== null ? `${tauxTaxe} %` : 'le taux du produit'} de (prime nette + accessoire), comme le bouton « Calculer » d'URANUS ;
+                les deux restent modifiables.
                 {primeTarif > 0 && ` Prime calculée au tarif pour ces capitaux : ${fcfa(primeTarif)} FCFA.`}
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
                 <div className="form-group">
                   <label className="form-label">Prime nette (* requis)</label>
-                  <AmountInput value={primeNette} onChange={setPrimeNette} />
+                  <AmountInput value={primeNette} onChange={(v) => { setPrimeNette(v); setTaxeManuelle(false); }} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Accessoire</label>
-                  <AmountInput value={accessoire} onChange={setAccessoire} />
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <span>Accessoire</span>
+                    {accessoireManuel && accessoireBareme !== null && Number(accessoire) !== accessoireBareme && (
+                      <button type="button" onClick={() => { setAccessoireManuel(false); setAccessoire(accessoireBareme); setTaxeManuelle(false); }}
+                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.72rem' }}>
+                        ↺ barème {fcfa(accessoireBareme)}
+                      </button>
+                    )}
+                  </label>
+                  <AmountInput value={accessoire} onChange={(v) => { setAccessoire(v); setAccessoireManuel(true); setTaxeManuelle(false); }} />
+                  <small style={{ color: '#94a3b8', fontSize: '0.72rem' }}>
+                    {calculEnCours ? 'Calcul…' : accessoireBareme !== null ? `Barème de la compagnie : ${fcfa(accessoireBareme)} FCFA${accessoireManuel ? ' (montant saisi conservé)' : ''}` : 'Calculé dès la saisie de la prime nette'}
+                  </small>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Taxe</label>
-                  <AmountInput value={taxe} onChange={setTaxe} />
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <span>Taxe</span>
+                    {taxeManuelle && taxeCalculee !== null && Number(taxe) !== taxeCalculee && (
+                      <button type="button" onClick={() => setTaxeManuelle(false)}
+                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.72rem' }}>
+                        ↺ recalculer {fcfa(taxeCalculee)}
+                      </button>
+                    )}
+                  </label>
+                  <AmountInput value={taxe} onChange={(v) => { setTaxe(v); setTaxeManuelle(true); }} />
+                  <small style={{ color: tauxTaxe !== null && Number(taxe) < taxeMinimum ? '#f87171' : '#94a3b8', fontSize: '0.72rem' }}>
+                    {tauxTaxe !== null
+                      ? `${tauxTaxe} % × (prime nette + accessoire)${Number(taxe) < taxeMinimum ? ` — minimum légal ${fcfa(taxeMinimum)} FCFA` : ''}`
+                      : 'Calculée dès la saisie de la prime nette'}
+                  </small>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Prime TTC</label>
@@ -825,6 +980,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
             <div className="form-group">
               <label className="form-label">Adresse géographique</label>
               <input type="text" className="form-control" value={adresseGeo} onChange={(e) => setAdresseGeo(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Pièce jointe (optionnel)</label>
+              <input type="file" className="form-control" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFichier(e.target.files?.[0] || null)} />
+              {fichier && <small style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Jointe au devis à l'enregistrement : {fichier.name}</small>}
             </div>
           </div>
 

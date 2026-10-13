@@ -141,3 +141,36 @@ class Client(models.Model):
             models.Index(fields=['cle_unique'], name='idx_client_cle_unique'),
             models.Index(fields=['numero_assure'], name='idx_client_numero_assure'),
         ]
+
+
+# Fiche retirée du répertoire par le nettoyage du fichier clients (sans contrat, ou doublon
+# regroupé sur une fiche de référence). Elle reste en base avec ses devis ; un contrat
+# rattaché à la fiche la réactive (déclencheur trg_reactiver_client_archive, migration 0017).
+STATUT_ARCHIVE = "A"
+
+
+class ClientNettoyage(models.Model):
+    """Correspondance du nettoyage du fichier clients : ancienne fiche -> fiche de référence,
+    décision appliquée et valeurs d'avant (pour revenir en arrière fiche par fiche)."""
+
+    CONSERVE, REGROUPE, EXCLU, A_VERIFIER = "conserve", "regroupe", "exclu", "a_verifier"
+    DECISIONS = [
+        (CONSERVE, "Conservé"),
+        (REGROUPE, "Regroupé sur la fiche de référence"),
+        (EXCLU, "Exclu : aucun contrat"),
+        (A_VERIFIER, "À vérifier"),
+    ]
+
+    idclient = models.IntegerField(db_column="idclient", unique=True)
+    idclient_reference = models.IntegerField(db_column="idclient_reference", null=True, blank=True)
+    decision = models.CharField(max_length=12, choices=DECISIONS)
+    motif = models.TextField(blank=True, default="")
+    nom_origine = models.CharField(max_length=310, blank=True, default="")
+    statut_avant = models.CharField(max_length=1, blank=True, default="")
+    # Champs de stdclient remplacés et lignes rattachées à la fiche de référence, par table
+    donnees_avant = models.JSONField(default=dict, blank=True)
+    lot = models.CharField(max_length=120)
+    date_application = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "lephare_client_nettoyage"

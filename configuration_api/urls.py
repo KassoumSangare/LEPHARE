@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from . import parametrage, parametrage_dommages, views_grilles_voyage
+from . import parametrage, parametrage_dommages, parametrage_sante, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -177,6 +177,11 @@ urlpatterns = [
     path("parametrage/compagnies/<int:id_compagnie>/", parametrage.compagnie, name="parametrage-compagnie"),
     path("parametrage/produits/", parametrage.produits, name="parametrage-produits"),
     path("parametrage/produits/<int:id_produit>/", parametrage.produit, name="parametrage-produit"),
+    # Réglages Santé MINENE (formules, paramètres, répartition de la prime) : configuration_api/parametrage_sante.py
+    path("parametrage/sante/", parametrage_sante.sante, name="parametrage-sante"),
+    path("parametrage/sante/formules/<int:id_offre>/", parametrage_sante.formule, name="parametrage-sante-formule"),
+    path("parametrage/sante/parametres/<str:cle>/", parametrage_sante.parametre, name="parametrage-sante-parametre"),
+    path("parametrage/sante/repartitions/<int:id_repartition>/", parametrage_sante.repartition, name="parametrage-sante-repartition"),
     # Réglages Dommages (catégories, garanties par compagnie) : configuration_api/parametrage_dommages.py
     path("parametrage/dommages/", parametrage_dommages.dommages, name="parametrage-dommages"),
     path("parametrage/dommages/categories/<int:id_tarif>/", parametrage_dommages.categorie, name="parametrage-dommages-categorie"),

@@ -77,6 +77,9 @@ export const ContractDetailPage = () => {
   const contratDommages = estDevisDommages(contract);
   // Contrat Santé : barème MINENE, liste des assurés et ayants droit de l'IA MINENE (comme URANUS)
   const contratSante = estDevisSante(contract);
+  // Contrat RC (produit 8) : ni attestation automobile ni carte brune
+  const idProduitContrat = Number(contract.raw?.idproduit?.id_produit ?? contract.raw?.idproduit?.IdProduit ?? contract.raw?.idproduit) || 0;
+  const contratRc = idProduitContrat === 8 || /responsabilit/i.test(String(contract.produit || ''));
   const [releveOuvert, setReleveOuvert] = useState(false);
   // Arrivée depuis la confirmation d'un devis Dommages : le relevé est proposé aussitôt
   useEffect(() => {
@@ -350,25 +353,28 @@ export const ContractDetailPage = () => {
                 </div>
               </>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>Facture</span>
-              </span>
-              <button
-                type="button"
-                className="btn-link"
-                style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => printContratFacture(contract)}
-              >
-                Imprimer
-              </button>
-            </div>
+            {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé */}
+            {!contratVoyage && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                  <Paperclip size={16} color="#94a3b8" />
+                  <span style={{ color: '#fff' }}>Facture</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                  onClick={() => printContratFacture(contract)}
+                >
+                  Imprimer
+                </button>
+              </div>
+            )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: contratVoyage ? 'none' : '1px solid var(--border-subtle)' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>{contratVoyage ? 'Conditions particulières — attestation d’assurance voyage' : 'Conditions particulières'}</span>
+                <span style={{ color: '#fff' }}>{contratVoyage ? 'Attestation d’assurance et d’assistance voyage' : 'Conditions particulières'}</span>
               </span>
               <button
                 type="button"
@@ -403,7 +409,7 @@ export const ContractDetailPage = () => {
             ))}
 
             {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » */}
-            {!contratVoyage && (
+            {!contratVoyage && !contratRc && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />
@@ -420,20 +426,22 @@ export const ContractDetailPage = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>Carte Brune</span>
-              </span>
-              <button
-                type="button"
-                className="btn-link"
-                style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => { setActiveDoc('carte_brune'); setIsDocModalOpen(true); }}
-              >
-                Imprimer
-              </button>
-            </div>
+            {!contratVoyage && !contratRc && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                  <Paperclip size={16} color="#94a3b8" />
+                  <span style={{ color: '#fff' }}>Carte Brune</span>
+                </span>
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                  onClick={() => { setActiveDoc('carte_brune'); setIsDocModalOpen(true); }}
+                >
+                  Imprimer
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -9,7 +9,6 @@ import {
   printAnnexeFlotte,
   estDevisFlotteAuto,
   estDevisVoyage,
-  printPropositionVoyage,
   estDevisDommages,
   printBordereauTransport,
 } from '../../../utils/exportUtils';
@@ -720,15 +719,18 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </button>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => printQuoteFacture(quote)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Printer size={15} />
-              <span>Imprimer Facture Proforma</span>
-            </button>
+            {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé */}
+            {!estDevisVoyage(quote) && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => printQuoteFacture(quote)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Printer size={15} />
+                <span>Imprimer Facture Proforma</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -737,26 +739,13 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               title={estDevisDommages(quote)
                 ? "Cotation d'assurance au format de la fiche NSIA (intermédiaire, prospect, cotation, primes, clauses) — enregistrable en PDF"
                 : estDevisVoyage(quote)
-                ? "Conditions Particulières Voyage au modèle de l'attestation d'assurance et d'assistance voyage de la compagnie — enregistrable en PDF"
+                ? "Attestation d'assurance et d'assistance voyage (demande de visa), au modèle de la compagnie — enregistrable en PDF"
                 : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF'}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
-              <FileText size={15} />
-              <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : 'Imprimer Conditions Particulières'}</span>
+              {estDevisVoyage(quote) ? <Printer size={15} /> : <FileText size={15} />}
+              <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : estDevisVoyage(quote) ? 'Imprimer l’attestation' : 'Imprimer Conditions Particulières'}</span>
             </button>
-
-            {estDevisVoyage(quote) && (
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => printPropositionVoyage(quote)}
-                title="Proposition d'assurance Voyage (souscripteur, assuré, période, garanties, primes) — enregistrable en PDF"
-                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-              >
-                <FileText size={15} />
-                <span>Imprimer Proposition</span>
-              </button>
-            )}
 
             {estDevisIaImprimable(quote) && (
               <button

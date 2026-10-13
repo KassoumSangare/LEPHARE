@@ -33,6 +33,13 @@ from autorisations.journal import completer_audit
 from .models import CompagnieDocument, ParametreGeneral, ParametreSite, Produit, ProduitParametre
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 
+
+def formules_pour_impression():
+    """Formules MINENE lues par les imprimés (import différé : parametrage_sante importe ce module)."""
+    from .parametrage_sante import formules_pour_impression as lire
+
+    return lire()
+
 # Image en data URL acceptée pour un logo : 600 Ko décodés au plus (l'écran la réduit avant envoi)
 TAILLE_IMAGE_MAX = 600 * 1024
 MOTIF_IMAGE = re.compile(r"^data:image/(png|jpeg|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=\s]+)$")
@@ -228,6 +235,8 @@ def parametrage(request):
         "Documents": documents,
         "Produits": _produits(),
         "Modules": [{"Code": c, "Libelle": l} for c, l in ProduitParametre.MODULES if c],
+        # Formules MINENE SANTÉ : barème de soins imprimé (Réglages Santé MINENE)
+        "SanteFormules": formules_pour_impression(),
     })
 
 

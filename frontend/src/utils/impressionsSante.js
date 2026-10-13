@@ -1,15 +1,15 @@
 /* =========================================================================
    SANTÉ MINENE : Conditions Particulières, barème, liste des assurés et liste des ayants droit.
-   Modèles OREOLE (Desktop\_OREOLE ASSURANCE\SANTE : cp_MINENE.pdf, BAREME_70-80.pdf) et gabarits
-   URANUS (scenes/Products/Documents/Sante : CPMinene, BaremeMinene, AffiliesList, AyantsDroitsList).
+   Modèles OREOLE (Desktop\_OREOLE ASSURANCE\SANTE : cp_MINENE.pdf, BAREME_70-80.pdf, BAREMES DE SOINS-
+   MINENE SANTE- 80% Tous actes.docx) et gabarits URANUS (scenes/Products/Documents/Sante : CPMinene,
+   BaremeMinene, AffiliesList, AyantsDroitsList). Montants, plafonds, délais et clauses : Administration >
+   Réglages Santé MINENE (URANUS imprimait le barème 70 %-80 % pour toutes les formules).
    Données : quittance de la proposition ou du contrat, saisie Santé du devis (couvertures,
    adhérents, affiliés) et, pour un contrat, ayants droit de l'IA MINENE rattachée à la police.
    ========================================================================= */
 import { impressionSanteApi } from '../api/endpoints';
-import { logoCabinetEntete, logoCabinetPied, parametre } from './parametrage';
+import { formuleSante, logoCabinetEntete, logoCabinetPied, parametre, reglagesMinene } from './parametrage';
 
-// Formules 80 %-80 % (offre commerciale 153) ; les autres formules MINENE sont en 70 %-80 %
-const FORMULES_80_80 = [175, 176, 181];
 const TARIFS_MINENE = [87, 102, 153];
 
 const MENTIONS_LEGALES = "SARL Unipersonnelle au capital de 5 000 000 FCFA I C.B : SGCI : CI008 01111 011157481298 32 I C.C : 1005723 Y I RCCM : CI-ABJ-01-2009-B13-06768 Centre des impôts de Cocody Contrat R C N°1186583100012N I Siège social : Cocody cité des arts, Bd Latrille, face SODEMI, Imm. « LES 7 COLONNES » BP : 27 B.P 112 Abj 27 Agrément N° 141/MEF/DGTCP/DA du 24 MARS 2010 Tél : +225 27 22 48 76 86 / + 225 27 22 48 73 49 / +225 27 22 48 71 24 / +225 27 22 22 13 57 Cel : +2250102938218 Site web : oreoleassurances-ci.com";
@@ -24,6 +24,15 @@ const date = (x) => {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 };
 const annee = (x) => Number(String(x || '').slice(0, 4)) || new Date().getFullYear();
+const nombre = (x) => Number(x || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }).replace(/[  ]/g, ' ');
+const MILLIONS = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix'];
+// « deux (02) millions » comme sur les CP OREOLE ; autre montant : en chiffres
+const enLettres = (x) => {
+  const n = Number(x) / 1000000;
+  if (Number.isInteger(n) && n >= 1 && n < MILLIONS.length) return `${MILLIONS[n]} (${String(n).padStart(2, '0')}) million${n > 1 ? 's' : ''}`;
+  return `${montant(x)} F CFA`;
+};
+const mois = (n) => String(Math.round(Number(n) || 0)).padStart(2, '0');
 
 // Quittance reconstituée depuis la saisie du devis quand fn_quittance_proposition ne renvoie rien
 // (devis 24697 par exemple)
@@ -61,8 +70,8 @@ const charger = async (ids) => {
     ...d,
     detail,
     formuleAdherent,
+    formules,
     minene,
-    quatreVingt: formules.length > 0 && formules.every((f) => FORMULES_80_80.includes(f)),
     // Option imprimée : la formule si elle est unique, sinon « VOIR LISTE » (liste des assurés en annexe)
     option: formules.length > 1 ? 'VOIR LISTE' : (d.quittance?.LibelleOffre || detail.libelle_offre || ''),
   };
@@ -119,13 +128,14 @@ ${pages.join('')}
 // ------------------------------------------------------------------ Conditions Particulières
 const pagesCp = (d) => {
   const q = d.quittance || {};
+  const r = reglagesMinene();
   const physique = String(q.TypeAssure || 'Personne Physique').toLowerCase().includes('physique');
   const naissance = [date(q.DateNaissanceAssure), q.LieuNaissanceAssure].filter(Boolean).join(' à ');
   const duree = Number(q.Duree) ? Math.max(1, Math.round(Number(q.Duree) / 30.42)) : 12;
   const ligne = (l1, v1, l2, v2) => `<tr><td><b>${l1} :</b> ${v1}</td><td><b>${l2} :</b> ${v2}</td></tr>`;
   const numero = q.NumeroPolice || q.NumeroDevis || '';
   const page1 = `
-    <div class="bandeau">CONDITIONS PARTICULIERES ${q.NumeroPolice ? 'POLICE' : 'DEVIS'} N° ${texte(numero)}</div>
+    <div class="bandeau">${q.NumeroPolice ? 'CONDITIONS PARTICULIERES POLICE' : 'DEVIS'} N° ${texte(numero)}</div>
     <table class="cadre entete">
       ${ligne('Compagnie', texte(q.RaisonSociale), physique ? 'Nom et Prénoms assuré' : 'Raison Sociale', texte(q.NomAssure || q.NomClient))}
       ${ligne('Nature du risque', 'MINENE SANTE', physique ? 'Date et lieu de naissance' : 'Numéro registre de commerce', texte(naissance))}
@@ -151,8 +161,8 @@ const pagesCp = (d) => {
     <p>- Le remboursement des frais engagés par l’Assuré pour les actes ci-après : Frais Médicaux, Frais Pharmaceutiques, Frais d’Hospitalisation, Frais Chirurgicaux, Frais de Soins Dentaires, Frais d’Optique, Frais d’Examens Médicaux</p>
     <p><b>Au titre de l’individuelle accident :</b></p>
     <p>- Le paiement à l’assuré principal d’une indemnité déterminé en fonction du <b>taux d’incapacité retenu par le Médecin- Expert en cas d’incapacité partielle.</b></p>
-    <p>- Le paiement d’une indemnité de deux (02) millions <b>à l’Assuré principal en cas d’incapacité permanente totale</b> à la suite d’un accident survenu après la prise d’effet du contrat;</p>
-    <p>- Le paiement d’un capital de deux (02) millions aux ayants-droits ou au bénéficiaire désigné au contrat conformément à la liste en annexe en cas de <b>décès par accident de l’assuré principal.</b></p>
+    <p>- Le paiement d’une indemnité de ${enLettres(r.ia.ipt)} <b>à l’Assuré principal en cas d’incapacité permanente totale</b> à la suite d’un accident survenu après la prise d’effet du contrat;</p>
+    <p>- Le paiement d’un capital de ${enLettres(r.ia.deces)} aux ayants-droits ou au bénéficiaire désigné au contrat conformément à la liste en annexe en cas de <b>décès par accident de l’assuré principal.</b></p>
     <p><b>Au titre de la Responsabilité Civile Chef de Famille :</b></p>
     <p>- La prise en charge des conséquences pécuniaires de la Responsabilité Civile délictuelle ou quasi-délictuelle pouvant incomber à l’assuré principal, Chef de Famille, en vertu des articles 1382 à 1386 du Code Civil, en raison des Dommages Corporels, Matériels et Immatériels consécutifs à des dommages couverts causés aux tiers par un accident dont l’assuré lui-même, son conjoint, ses enfants mineurs ou enfants à charge poursuivant des études, le personnel de maison, les choses ou animaux qu’il a sous sa garde sont responsables.</p>
     <div class="rubrique">EFFET ET DUREE DU CONTRAT</div>
@@ -162,39 +172,37 @@ const pagesCp = (d) => {
     <p><b>Il est convenu d’accord partie que le barème en annexe fait partie intégrante des présentes conditions particulières.</b></p>`;
   const page2 = `
     <div class="rubrique">DELAI DE CARENCE</div>
-    <p>• <b>03</b> mois pour les soins courants (consultations, pharmacie, analyse biologique et radiologique)<br />
-    • <b>03</b> mois pour les soins dentaires<br />
-    • <b>10</b> mois pour les frais de lunetteries et d’optique médicale<br />
-    • <b>10</b> mois pour la maternité (assuré(e) ou conjoint(e)s)<br />
-    • <b>12</b> mois pour les prothèses dentaires (autres prothèses)<br />
-    • <b>12</b> mois pour toute maladie chronique : maladie du foie et des voies biliaires, du rein et des voies urinaires, des yeux (cataracte, glaucome, etc.) du sang, maladies cardiovasculaires, des ganglions, du système nerveux, des glandes endocrines (diabète, thyroïde, pancréas, etc.), végétations, myxomatose utérine, tumeurs, etc., si elle survient pour la première fois pendant la période de garantie.</p>
+    <p>• <b>${mois(r.carence.soinsCourants)}</b> mois pour les soins courants (consultations, pharmacie, analyse biologique et radiologique)<br />
+    • <b>${mois(r.carence.soinsDentaires)}</b> mois pour les soins dentaires<br />
+    • <b>${mois(r.carence.optique)}</b> mois pour les frais de lunetteries et d’optique médicale<br />
+    • <b>${mois(r.carence.maternite)}</b> mois pour la maternité (assuré(e) ou conjoint(e)s)<br />
+    • <b>${mois(r.carence.protheses)}</b> mois pour les prothèses dentaires (autres prothèses)<br />
+    • <b>${mois(r.carence.maladiesChroniques)}</b> mois pour toute maladie chronique : maladie du foie et des voies biliaires, du rein et des voies urinaires, des yeux (cataracte, glaucome, etc.) du sang, maladies cardiovasculaires, des ganglions, du système nerveux, des glandes endocrines (diabète, thyroïde, pancréas, etc.), végétations, myxomatose utérine, tumeurs, etc., si elle survient pour la première fois pendant la période de garantie.</p>
     <div class="rubrique">ASSURÉS BENEFICIARES DES GARANTIES</div>
     <p>Sont assurées au titre de la présente police, les personnes figurant sur la liste jointe en annexe, ayant rempli et retourné à <b>OREOLE ASSURANCES</b> pour visa, un bulletin d'adhésion.</p>
     <p>Cette liste peut être modifiée en cours de contrat <b>pour les formules Famille et Famille Plus</b> par :</p>
     <p>• Incorporation, après accord préalable de la Compagnie sur le <b>bulletin d'adhésion dûment rempli</b> et paiement intégral ou au moins 50% de la prime d'incorporation avant l'émission.</p>
     <p>• Retrait, suite à la notification écrite du Souscripteur à l'Assureur avec retour de la carte d'assuré en cas de tiers payant, <b>étant précisé que les retraits ne donnent pas lieu au versement d'une ristourne.</b></p>
     <div class="rubrique">BENEFICIAIRES</div>
-    <p>Pourra bénéficier des garanties de <b>MINÉNÉ SANTÉ</b> Toute personne vivant en Côte d’Ivoire et âgée de 69 maximum pour les adultes <b>conformément au barème annexé</b> et de 21 an maximum pour les enfants. Toutefois cet âge peut être porté à 25 ans sur <b>présentation du certificat de scolarité de l’année de l’assurance ou un rapport médical pour l’enfant en situation de handicap réduisant totalement sa mobilité</b></p>
+    <p>Pourra bénéficier des garanties de <b>MINÉNÉ SANTÉ</b> Toute personne vivant en Côte d’Ivoire et âgée de ${r.surprimes.ageMaxAdulte} maximum pour les adultes <b>conformément au barème annexé</b> et de ${r.surprimes.ageMaxEnfant} an maximum pour les enfants. Toutefois cet âge peut être porté à ${r.surprimes.ageMaxEnfantCertificat} ans sur <b>présentation du certificat de scolarité de l’année de l’assurance ou un rapport médical pour l’enfant en situation de handicap réduisant totalement sa mobilité</b></p>
     <p><b>Les pièces à fournir pour la souscription sont :</b><br />
     • Adulte : 01 photo d’identité + 01 copie de la Carte Nationale d’Identité<br />
     • Enfant : 01 photo d’identité + 01 copie de l’extrait d’acte de naissance<br />
     • Un bulletin d’adhésion dument renseigné et signé</p>
     <div class="rubrique">SURPRIMES POUR RISQUES AGGRAVÉS</div>
     <p>Les maladies antérieures à la date d’effet du contrat sont exclues. Toutefois, elles peuvent être couvertes par la présente police moyennant surprime pour risque aggravé après avis du médecin conseil.</p>
-    <p><b>Un taux de 30%</b> de surprime sera appliqué pour chaque affection chronique, avec un maximum de 3 affections acceptées.</p>
+    <p><b>Un taux de ${nombre(r.surprimes.affection)}%</b> de surprime sera appliqué pour chaque affection chronique, avec un maximum de ${r.surprimes.affectionsMax} affections acceptées.</p>
     <p>Par conséquent la prime serait susceptible de changer après analyses et le prospect en sera informé pour validation.</p>
     <div class="rubrique">CLAUSE D’AJUSTEMENT APPLICABLE AUX CONTRATS D’ASSURANCE SANTÉ</div>
     <p>Les primes santé feront l'objet, dans les conditions fixées ci-après, d'un ajustement calculé selon le rapport Sinistres / Primes (S/P) définitif au 30 septembre de l'exercice, majoré de la simulation rapportée au 4ème trimestre, déterminé au plus tard dans un délai de 2 mois après cette échéance, dans lequel :</p>
     <p>- Les Sinistres (S) représentent le montant total <b>des factures des dépenses de santé réglées aux prestataires, sur 12 mois,</b> pendant la période du 1er janvier au 30 septembre de l’année n + une extrapolation sur le dernier trimestre de l’année N en tenant compte de la tendance</p>`;
+  // Clause d'ajustement réglée : « de x à y : » comme sur cp_MINENE.pdf
+  const lignesClause = r.clause.map(({ rapport, ajustement }) => [/^de\s/i.test(rapport) && !/:\s*$/.test(rapport) ? `${rapport} :` : rapport, ajustement]);
   const page3 = `
     <p>- Les les Primes (cotisations) (P) représentent le montant total des primes nettes de taxes et de frais ; émises pendant la période du 1er janvier au 31 décembre de l’année de l'exercice N. Cet Ajustement est effectué sur les bases suivantes :</p>
     <table class="ajustement">
       <tr><td>Rapport S/P de :</td><td>Pourcentage d'ajustement</td></tr>
-      ${[['à 50 %', 'Perte du bénéfice du tiers payant'], ['de 51% à 65%:', 'Réduction de 10%'], ['de 66% à 70% :', 'Aucune modification'],
-    ['de 71 à 80% :', '15% de majoration'], ['de 81% à 90% :', '20% de majoration'], ['de 91% à 100% :', '30% de majoration'],
-    ['de 101% à 110%:', '35% de majoration'], ['de 111% à 115%:', '45% de majoration'],
-    ['Au-delà de 115%', 'Résiliation pour ordre de la police en vue d’une nouvelle étude statistique pour une éventuelle nouvelle offre']]
-    .map(([sp, ajustement]) => `<tr><td>${sp}</td><td>${ajustement}</td></tr>`).join('')}
+      ${lignesClause.map(([sp, ajustement]) => `<tr><td>${texte(sp)}</td><td>${texte(ajustement)}</td></tr>`).join('')}
     </table>
     <p>L'ajustement est calculé <b>à la fin de chaque exercice d'assurance fixée au 31 décembre.</b><br />
     La modification des primes résultant de l'application de la présente clause d'ajustement est notifiée par l'assureur au Souscripteur, <b>au plus tard le 30 novembre de l’année de l’exercice</b> en cours et doit s'appliquer dès le <b>1er janvier de l'exercice suivant.</b><br />
@@ -203,7 +211,7 @@ const pagesCp = (d) => {
     <p>D'un commun accord entre les Parties, il est convenu que les assurés seront pris en charge selon le système " tiers payant " à charge pour eux de s’adresser au réseau de prestataires conventionnés par ${texte(d.detail.gestionnairesante || 'VITALIS SANTÉ')}, dont liste jointe</p>
     <p>Sur présentation de leur carte, ils s’acquitteront du ticket modérateur tel que prévu au contrat</p>
     <p><b>Lorsqu’ils s’adresseront à des prestataires non conventionnés, ils devront s’acquitter des frais et seront remboursés par l’assureur sur présentation des justificatifs selon les termes et dans les limites prévues au contrat.</b></p>
-    <p>Il en sera de même lorsque :<br /><b>- Le taux de sinistralité de l’Assuré atteint le seuil de 50%</b><br />
+    <p>Il en sera de même lorsque :<br /><b>- Le taux de sinistralité de l’Assuré atteint le seuil de ${nombre(r.gestion.seuilSinistralite)}%</b><br />
     - L’assuré ne sera pas à jour du paiement de ses primes. Il ne pourra dans ce cas prétendre au remboursement des frais engagés qu’après paiement intégrale de la prime.</p>
     <p>Les demandes de remboursement doivent être adressées à OREOLE ASSUANCES dans un délai maximum de trois (3) mois après le dépôt des pièces justificatives. Ou alors directement sur la plateforme de ${texte(d.detail.gestionnairesante || 'VITALIS SANTÉ')} pour remboursement dans un délai de 72H.</p>
     <p>Les frais médicaux exposés par l'Assuré hors les centres conventionnés seront remboursés à hauteur du taux de couverture de l'assuré et dans la limite des plafonds définis dans la présente police et ce sur présentation des justificatifs acquittés (note d'honoraires, factures acquittées normalisées, tickets de caisse, etc.) dans un délai maximum de trois (3) jours (72 h) ouvrés après le dépôt des pièces justificatives.</p>
@@ -212,30 +220,58 @@ const pagesCp = (d) => {
 };
 
 // ------------------------------------------------------------------ Barème
+// Plafonds de soins de la formule (Réglages Santé MINENE) : une section SANTÉ par barème différent
+// parmi les formules du devis (options du document OREOLE 80 %, une seule pour le 70 %-80 %)
+const CHAMPS_BAREME = ['TauxSoinsExternes', 'TauxHospitalisation', 'ChambreParJour', 'AmbulanceParCas', 'AccouchementSimple',
+  'AccouchementGemellaire', 'AccouchementChirurgical', 'AccouchementHorsStructure', 'OptiqueAdulte', 'OptiqueEnfant',
+  'DentaireParPersonne', 'PlafondAnnuel'];
+const personnes = (f) => (Number(f.PersonnesMin) === Number(f.PersonnesMax) || !f.PersonnesMin
+  ? `${f.PersonnesMax} personne${Number(f.PersonnesMax) > 1 ? 's' : ''}` : `${f.PersonnesMin} à ${f.PersonnesMax} personnes`);
+
+const sectionsSante = (d) => {
+  const ids = d.formules?.length ? d.formules : [Number(d.detail?.idoffre) || 0];
+  const groupes = [];
+  // Dans l'ordre des options (SOLO, FAMILLE, FAMILLE PLUS), pas dans celui de la saisie des familles
+  ids.map((id) => formuleSante(id)).filter(Boolean).sort((a, b) => (a.Ordre ?? 0) - (b.Ordre ?? 0)).forEach((f) => {
+    const cle = CHAMPS_BAREME.map((c) => Number(f[c])).join('|');
+    const g = groupes.find((x) => x.cle === cle);
+    if (!g) groupes.push({ cle, formules: [f] });
+    else if (!g.formules.some((x) => x.Option === f.Option)) g.formules.push(f);
+  });
+  return groupes;
+};
+
 const pageBareme = (d) => {
+  const r = reglagesMinene();
+  const s = r.surprimes;
   const l = (libelle, valeur) => `<tr><td>${libelle}</td><td>${valeur}</td></tr>`;
-  const taux = d.quatreVingt ? '80 % soins externes et 80 % frais d\'hospitalisations' : '70 % soins externes et 80 % frais d\'hospitalisations';
+  const sante = (f, titre) => `
+      <tr class="section"><td colspan="2">${texte(titre)}</td></tr>
+      ${l('Taux de couverture assurance Maladie', `${nombre(f.TauxSoinsExternes)} % soins externes et ${nombre(f.TauxHospitalisation)} % frais d'hospitalisations`)}${l('Etendue territoriale', texte(r.gestion.etendue))}
+      ${l('Plafond de remboursements :<br /><br />Frais de chambre en hospitalisation<br />Frais de transport en ambulance/SAMU<br />Frais d\'accouchement simple normal<br />Frais d\'accouchement gémellaire normal<br />Frais d\'accouchement par voie chirurgicale<br />Forfait accouchement hors structure privée',
+    `<br /><br />${montant(f.ChambreParJour)} F CFA par jour<br />${montant(f.AmbulanceParCas)} F CFA par cas sur accord préalable<br />${montant(f.AccouchementSimple)} F CFA par cas<br />${montant(f.AccouchementGemellaire)} F CFA par cas<br />${montant(f.AccouchementChirurgical)} F CFA par cas<br />${montant(f.AccouchementHorsStructure)} F CFA par cas`)}
+      ${l('Frais d\'optique', `${montant(f.OptiqueAdulte)} F CFA/Adulte &amp; ${montant(f.OptiqueEnfant)} F CFA/enfant chaque ${r.gestion.optiquePeriodicite} ans`)}
+      ${l('Frais de soins et de prothèse dentaire', `${montant(f.DentaireParPersonne)} F CFA/an/personne avec accord pour les prothèses`)}
+      ${l('Plafond annuel :<br /><br />Par famille toutes prestations confondue', `${montant(f.PlafondAnnuel)} F CFA<br /><br />(Il s'agit de la garantie maximale annuelle que prendra en charge l'assureur pour l'assuré et sa famille. Et non ce que l'assuré a le droit d'exposer comme frais)`)}
+      ${l('Quota d\'alerte automatique', `A partir du ${r.gestion.quotaBons} ème bon de prise en charge<br />A partir de ${montant(r.gestion.quotaPharmacie)} F CFA de frais pharmaceutique`)}
+      ${l('Surveillance du portefeuille', `Basculement systématique en mode remboursement en cours de contrat, si le taux de sinistralité du client est supérieur ou égal à <span class="rouge">${nombre(r.gestion.seuilSinistralite)} %</span>`)}`;
+  const groupes = sectionsSante(d);
+  const santes = groupes.length <= 1
+    ? sante(groupes[0]?.formules[0] || formuleSante(17) || {}, 'SANTE')
+    : groupes.map((g) => sante(g.formules[0], `SANTE — OPTION ${g.formules.map((f) => `${f.Option} : ${personnes(f)}`).join(' / ')}`)).join('');
   return page(`
     <div class="titre-bareme">BAREME</div>
     <table class="bareme">
       <tr class="section"><td colspan="2">CAPITAL INDIVIDUELLE-ACCIDENTS</td></tr>
-      ${l('Décès', '2 000 000 F CFA')}${l('IPT', '2 000 000 F CFA')}${l('Frais Médicaux', '100 000 F CFA')}
+      ${l('Décès', `${montant(r.ia.deces)} F CFA`)}${l('IPT', `${montant(r.ia.ipt)} F CFA`)}${l('Frais Médicaux', `${montant(r.ia.fraisMedicaux)} F CFA`)}
       <tr class="section"><td colspan="2">RC CHEF DE FAMILLE</td></tr>
-      ${l('Dommages corporels', '50 000 000 Franchise néant')}${l('Intoxications alimentaires', '5 000 000 Franchise néant')}
-      ${l('Dommages matériels', '10 000 000 / Franchise: 10% minimum 20 000 &amp; maximum 200 000')}
-      <tr class="section"><td colspan="2">SANTE</td></tr>
-      ${l('Taux de couverture assurance Maladie', taux)}${l('Etendue territoriale', 'Côte d\'ivoire exclusivement')}
-      ${l('Plafond de remboursements :<br /><br />Frais de chambre en hospitalisation<br />Frais de transport en ambulance/SAMU<br />Frais d\'accouchement simple normal<br />Frais d\'accouchement gémellaire normal<br />Frais d\'accouchement par voie chirurgicale<br />Forfait accouchement hors structure privée',
-    '<br /><br />20 000 F CFA par jour<br />20 000 F CFA par cas sur accord préalable<br />150 000 F CFA par cas<br />200 000 F CFA par cas<br />300 000 F CFA par cas<br />50 000 F CFA par cas')}
-      ${l('Frais d\'optique', '50 000 F CFA/Adulte &amp; 40 000 F CFA/enfant chaque 2 ans')}
-      ${l('Frais de soins et de prothèse dentaire', '50 000 F CFA/an/personne avec accord pour les prothèses')}
-      ${l('Plafond annuel :<br /><br />Par famille toutes prestations confondue', '1 000 000 F CFA<br /><br />(Il s\'agit de la garantie maximale annuelle que prendra en charge l\'assureur pour l\'assuré et sa famille. Et non ce que l\'assuré a le droit d\'exposer comme frais)')}
-      ${l('Quota d\'alerte automatique', 'A partir du 15 ème bon de prise en charge<br />A partir de 200 000 F CFA de frais pharmaceutique')}
-      ${l('Surveillance du portefeuille', 'Basculement systématique en mode remboursement en cours de contrat, si le taux de sinistralité du client est supérieur ou égal à <span class="rouge">50 %</span>')}
-      ${l('DELAIS DE CARENCE', '- Les délais de carence sont les suivants<br />- <span class="rouge">03</span> mois pour les soins courants (consultations, pharmacie, analyse biologique et radiologique) ;<br />- 03 mois pour les soins dentaires<br />- 10 mois pour la lunetterie (verres et montures);<br />- 10 mois pour la maternité (assuré(e) ou conjoint(e)s)<br />- 12 mois pour les prothèses dentaires (autres prothèses)<br />- 12 mois pour toutes les maladies chroniques (autres prothèses)')}
-      ${l('Surprime pour chaque affection chronique. (Maxi 3 affections)', '<span class="rouge">30 %</span>')}
-      ${l('Surprime d\'âge : de 61 à 65 ans', '<span class="rouge">30 %</span>')}
-      ${l('Surprime d\'âge : de 65 à 69 ans', '<span class="rouge">50 %</span>')}
+      ${l('Dommages corporels', `${montant(r.rc.corporels)} Franchise néant`)}${l('Intoxications alimentaires', `${montant(r.rc.intoxications)} Franchise néant`)}
+      ${l('Dommages matériels', `${montant(r.rc.materiels)} / Franchise: ${nombre(r.rc.franchiseTaux)}% minimum ${montant(r.rc.franchiseMin)} &amp; maximum ${montant(r.rc.franchiseMax)}`)}
+      ${santes}
+      ${l('DELAIS DE CARENCE', `- Les délais de carence sont les suivants<br />- <span class="rouge">${mois(r.carence.soinsCourants)}</span> mois pour les soins courants (consultations, pharmacie, analyse biologique et radiologique) ;<br />- ${mois(r.carence.soinsDentaires)} mois pour les soins dentaires<br />- ${mois(r.carence.optique)} mois pour la lunetterie (verres et montures);<br />- ${mois(r.carence.maternite)} mois pour la maternité (assuré(e) ou conjoint(e)s)<br />- ${mois(r.carence.protheses)} mois pour les prothèses dentaires (autres prothèses)<br />- ${mois(r.carence.maladiesChroniques)} mois pour toutes les maladies chroniques (autres prothèses)`)}
+      ${l(`Surprime pour chaque affection chronique. (Maxi ${s.affectionsMax} affections)`, `<span class="rouge">${nombre(s.affection)} %</span>`)}
+      ${l(`Surprime d'âge : de ${s.age1Debut} à ${s.age2Debut} ans`, `<span class="rouge">${nombre(s.age1Taux)} %</span>`)}
+      ${l(`Surprime d'âge : de ${s.age2Debut} à ${s.ageMaxAdulte} ans`, `<span class="rouge">${nombre(s.age2Taux)} %</span>`)}
     </table>`);
 };
 
@@ -303,7 +339,9 @@ export const imprimerDocumentSante = async (type, ids, fenetre = window.open('',
       }
       return false;
     }
-    const html = documentHtml(`${doc.titre} ${d.quittance?.NumeroPolice || d.quittance?.NumeroDevis || ''}`.trim(), doc.pages(d));
+    // Conditions Particulières d'un devis : « Devis <n°> » (une proposition est un devis)
+    const titre = type === 'cp' && !d.quittance?.NumeroPolice ? 'Devis' : doc.titre;
+    const html = documentHtml(`${titre} ${d.quittance?.NumeroPolice || d.quittance?.NumeroDevis || ''}`.trim(), doc.pages(d));
     if (fenetre) {
       fenetre.document.open();
       fenetre.document.write(html);

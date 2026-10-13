@@ -60,7 +60,7 @@ export const ArchivesPage = () => {
       // Contrats : pas d'archivage persisté côté backend pour l'instant → archivages faits dans
       // cet écran (dataStore), sans rapatrier les ~21 000 contrats réels pour filtrer les archivés.
       const [clientsRaw, quotesRaw, claimsRaw] = await Promise.all([
-        customerApi.getClients().catch(() => null),
+        customerApi.getClients({ archives: 1 }).catch(() => null),
         quoteApi.getQuotes().catch(() => null),
         claimsApi.getClaims().catch(() => null),
       ]);

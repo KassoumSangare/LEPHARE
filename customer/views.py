@@ -12,8 +12,8 @@ from django.shortcuts import get_object_or_404
 from configuration_api.models import Profession, Qualite, SecteurActivite, StatutJuridique, Ville
 from .activite import annotations_activite, dernieres_operations, dossier_client, synthese_commerciale
 from .serializers import ClientSerializer
-from .models import Client
-from django.db.models import Q
+from .models import STATUT_ARCHIVE, Client, ClientNettoyage
+from django.db.models import OuterRef, Q, Subquery
 import re
 import phonenumbers as pn
 from core.views import ResultsOnlyPagination
@@ -90,9 +90,22 @@ class ClientViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        queryset = super().get_queryset()
+        if self.action == "list":
+            if self.request.query_params.get("archives"):
+                # Page Archives : fiches retirées du répertoire par le nettoyage, avec le motif
+                nettoyage = ClientNettoyage.objects.filter(idclient=OuterRef("pk"))
+                return queryset.filter(Statut=STATUT_ARCHIVE).annotate(
+                    motif_archivage=Subquery(nettoyage.values("motif")[:1]),
+                    date_archivage=Subquery(nettoyage.values("date_application")[:1]),
+                    fiche_reference=Subquery(nettoyage.values("idclient_reference")[:1]),
+                )
+            # Le répertoire ne montre pas les fiches archivées (sans contrat, ou doublons regroupés) ;
+            # elles restent consultables par leur identifiant (devis, dossier 360°)
+            queryset = queryset.exclude(Statut=STATUT_ARCHIVE)
         # Répertoire des clients : devis en cours, polices en vigueur et total des primes de
         # chaque client, calculés dans la même requête que la liste (voir activite.py)
-        return super().get_queryset().annotate(**annotations_activite())
+        return queryset.annotate(**annotations_activite())
 
     @action(detail=True, methods=["get"], url_path="fiche")
     def fiche(self, request, pk=None):
@@ -122,7 +135,7 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 
 class ClientRestreintViewSet(viewsets.ModelViewSet):
-    queryset = Client.objects.filter(~Q(IdClient=0)).order_by("Nom", "Prenoms")[:5000]
+    queryset = Client.objects.filter(~Q(IdClient=0)).exclude(Statut=STATUT_ARCHIVE).order_by("Nom", "Prenoms")[:5000]
     serializer_class = ClientSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ["Nom", "Prenoms"]
@@ -154,6 +167,10 @@ class ClientRechercheView(APIView):
                 clientrecherche = Client.objects.filter(
                     Q(Nom__icontains=criteria) & ~Q(IdClient=0)
                 )
+        # Une fiche sans contrat archivée reste trouvable (à réutiliser plutôt qu'à recréer en
+        # double) ; un doublon regroupé non : tout est passé sur sa fiche de référence
+        regroupes = ClientNettoyage.objects.filter(decision=ClientNettoyage.REGROUPE).values("idclient")
+        clientrecherche = clientrecherche.exclude(Q(Statut=STATUT_ARCHIVE) & Q(IdClient__in=Subquery(regroupes)))
         if clientrecherche:
             clientrecherche = clientrecherche.order_by("Nom", "Prenoms")
 

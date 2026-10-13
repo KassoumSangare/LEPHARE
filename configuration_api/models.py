@@ -4083,3 +4083,43 @@ class DommageGarantie(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["IdOffre", "IdCompagnie", "IdSousGarantie"], name="lephare_dommage_garantie_unique"),
         ]
+
+
+class SanteFormuleMinene(models.Model):
+    """Formule MINENE SANTÉ (offre Santé d'URANUS, stdoffre) : tarif et barème de soins.
+
+    Lue par la base pour tarifer (fn_get_prime_base_minene_sante, fn_minene_personnes_max) et par les
+    imprimés (barème annexé aux conditions particulières). Valeurs d'origine : TARIFICATION MINENE
+    SANTE.xlsx, BAREME_70-80.pdf et BAREMES DE SOINS- MINENE SANTE- 80% Tous actes.docx (OREOLE).
+    """
+
+    IdOffre = models.IntegerField(primary_key=True, db_column="idoffre")
+    # Option imprimée sur le barème (SOLO, FAMILLE, FAMILLE PLUS) et composition de la famille
+    Option = models.CharField(max_length=40, db_column="option")
+    Composition = models.CharField(max_length=200, blank=True, default="", db_column="composition")
+    PersonnesMin = models.PositiveSmallIntegerField(default=1, db_column="personnesmin")
+    PersonnesMax = models.PositiveSmallIntegerField(default=1, db_column="personnesmax")
+    # Prime nette Santé annuelle d'une famille (prime de base des surprimes)
+    PrimeBase = models.DecimalField(max_digits=15, decimal_places=2, db_column="primebase")
+    TauxSoinsExternes = models.DecimalField(max_digits=5, decimal_places=2, db_column="tauxsoinsexternes")
+    TauxHospitalisation = models.DecimalField(max_digits=5, decimal_places=2, db_column="tauxhospitalisation")
+    # Plafonds de remboursement (FCFA)
+    ChambreParJour = models.DecimalField(max_digits=15, decimal_places=2, db_column="chambreparjour")
+    AmbulanceParCas = models.DecimalField(max_digits=15, decimal_places=2, db_column="ambulanceparcas")
+    AccouchementSimple = models.DecimalField(max_digits=15, decimal_places=2, db_column="accouchementsimple")
+    AccouchementGemellaire = models.DecimalField(max_digits=15, decimal_places=2, db_column="accouchementgemellaire")
+    AccouchementChirurgical = models.DecimalField(max_digits=15, decimal_places=2, db_column="accouchementchirurgical")
+    AccouchementHorsStructure = models.DecimalField(max_digits=15, decimal_places=2, db_column="accouchementhorsstructure")
+    OptiqueAdulte = models.DecimalField(max_digits=15, decimal_places=2, db_column="optiqueadulte")
+    OptiqueEnfant = models.DecimalField(max_digits=15, decimal_places=2, db_column="optiqueenfant")
+    DentaireParPersonne = models.DecimalField(max_digits=15, decimal_places=2, db_column="dentaireparpersonne")
+    PlafondAnnuel = models.DecimalField(max_digits=15, decimal_places=2, db_column="plafondannuel")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_sante_formule"
+        verbose_name = "Formule MINENE Santé"
+        verbose_name_plural = "Formules MINENE Santé"
+        ordering = ["Ordre", "IdOffre"]

@@ -20,7 +20,35 @@ const PRODUITS_ORIGINE = [
   { IdProduit: 8, Libelle: 'RESPONSABILITE CIVILE', Onglet: 'RC', ModuleSaisie: 'rc', SaisieOuverte: false, Ordre: 10 },
 ];
 
-let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, charge: false };
+// Formules MINENE SANTÉ (identiques aux valeurs de départ de la migration configuration_api 0083) :
+// barème 70 %-80 % (BAREME_70-80.pdf, aussi pour les formules VTC) et 80 %-80 % par option (document
+// Word OREOLE du 2026-10-12)
+const BAREME_70_80 = {
+  TauxSoinsExternes: 70, TauxHospitalisation: 80, ChambreParJour: 20000, AmbulanceParCas: 20000, AccouchementSimple: 150000,
+  AccouchementGemellaire: 200000, AccouchementChirurgical: 300000, AccouchementHorsStructure: 50000, OptiqueAdulte: 50000,
+  OptiqueEnfant: 40000, DentaireParPersonne: 50000, PlafondAnnuel: 1000000,
+};
+const BAREME_80_SOLO = { ...BAREME_70_80, TauxSoinsExternes: 80, DentaireParPersonne: 80000 };
+const BAREME_80_FAMILLE = {
+  ...BAREME_70_80, TauxSoinsExternes: 80, AccouchementHorsStructure: 80000, OptiqueAdulte: 70000, OptiqueEnfant: 50000,
+  DentaireParPersonne: 100000, PlafondAnnuel: 2000000,
+};
+const SOLO = { Option: 'SOLO', Composition: 'Assuré principal sans enfant, Monsieur ou Madame', PersonnesMin: 1, PersonnesMax: 1 };
+const FAMILLE = { Option: 'FAMILLE', Composition: 'M + Mme + 1 enfant ou Mme + M + 1 enfant ou Mme + 2 enfants ou M + 2 enfants', PersonnesMin: 2, PersonnesMax: 3 };
+const FAMILLE_PLUS = { Option: 'FAMILLE PLUS', Composition: 'M + Mme + 4 enfants ou Mme + M + 4 enfants ou Mme + 5 enfants ou M + 5 enfants', PersonnesMin: 4, PersonnesMax: 6 };
+const FORMULES_SANTE_ORIGINE = [
+  { IdOffre: 17, ...SOLO, PrimeBase: 349148, ...BAREME_70_80 },
+  { IdOffre: 18, ...FAMILLE, PrimeBase: 543556, ...BAREME_70_80 },
+  { IdOffre: 19, ...FAMILLE_PLUS, PrimeBase: 728741, ...BAREME_70_80 },
+  { IdOffre: 175, ...SOLO, PrimeBase: 523722, ...BAREME_80_SOLO },
+  { IdOffre: 176, ...FAMILLE, PrimeBase: 760978, ...BAREME_80_FAMILLE },
+  { IdOffre: 181, ...FAMILLE_PLUS, PrimeBase: 1039122, ...BAREME_80_FAMILLE },
+  { IdOffre: 20, ...SOLO, PrimeBase: 349148, ...BAREME_70_80 },
+  { IdOffre: 21, ...FAMILLE, PrimeBase: 543556, ...BAREME_70_80 },
+  { IdOffre: 22, ...FAMILLE_PLUS, PrimeBase: 728741, ...BAREME_70_80 },
+];
+
+let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, SanteFormules: FORMULES_SANTE_ORIGINE, charge: false };
 let chargement = null;
 const abonnes = new Set();
 
@@ -37,6 +65,7 @@ export const chargerParametrage = (forcer = false) => {
         Documents: Array.isArray(data?.Documents) ? data.Documents : [],
         Produits: Array.isArray(data?.Produits) && data.Produits.length ? data.Produits : PRODUITS_ORIGINE,
         Modules: data?.Modules || [],
+        SanteFormules: Array.isArray(data?.SanteFormules) && data.SanteFormules.length ? data.SanteFormules : FORMULES_SANTE_ORIGINE,
         charge: true,
       };
       abonnes.forEach((f) => f());
@@ -163,4 +192,59 @@ export const moduleOuvert = (module) => etat.Produits.some((p) => p.ModuleSaisie
 export const libellesModulesOuverts = () => {
   const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Dommages' };
   return [...new Set(etat.Produits.filter((p) => p.SaisieOuverte && p.ModuleSaisie).map((p) => libelles[p.ModuleSaisie] || p.ModuleSaisie))];
+};
+
+// ------------------------------------------------------------------ Santé MINENE
+/** Formules MINENE SANTÉ (Administration > Réglages Santé MINENE) : prime, famille, barème de soins. */
+export const formulesSante = () => etat.SanteFormules || FORMULES_SANTE_ORIGINE;
+export const formuleSante = (idOffre) => formulesSante().find((f) => Number(f.IdOffre) === Number(idOffre)) || null;
+
+// Clause d'ajustement d'origine (cp_MINENE.pdf), une tranche par ligne « rapport S/P | ajustement »
+const CLAUSE_AJUSTEMENT_ORIGINE = [
+  'à 50 % | Perte du bénéfice du tiers payant',
+  'de 51% à 65% | Réduction de 10%',
+  'de 66% à 70% | Aucune modification',
+  'de 71 à 80% | 15% de majoration',
+  'de 81% à 90% | 20% de majoration',
+  'de 91% à 100% | 30% de majoration',
+  'de 101% à 110% | 35% de majoration',
+  'de 111% à 115% | 45% de majoration',
+  'Au-delà de 115% | Résiliation pour ordre de la police en vue d’une nouvelle étude statistique pour une éventuelle nouvelle offre',
+].join('\n');
+
+/** Réglages MINENE (paramètres sante.minene.*), avec les valeurs d'origine des documents OREOLE. */
+export const reglagesMinene = () => {
+  const p = (cle, defaut) => parametre(`sante.minene.${cle}`, defaut);
+  const clause = String(p('clause_ajustement', CLAUSE_AJUSTEMENT_ORIGINE)).split(/\r?\n/)
+    .map((ligne) => ligne.split('|').map((x) => x.trim()))
+    .filter(([rapport]) => rapport)
+    .map(([rapport, ajustement = '']) => ({ rapport, ajustement }));
+  return {
+    ia: { deces: p('ia_capital_deces', 2000000), ipt: p('ia_capital_ipt', 2000000), fraisMedicaux: p('ia_frais_medicaux', 100000), prime: p('ia_prime_nette', 14524) },
+    rc: {
+      corporels: p('rc_dommages_corporels', 50000000), intoxications: p('rc_intoxications', 5000000), materiels: p('rc_dommages_materiels', 10000000),
+      franchiseTaux: p('rc_franchise_taux', 10), franchiseMin: p('rc_franchise_minimum', 20000), franchiseMax: p('rc_franchise_maximum', 200000),
+      prime: p('rc_prime_nette', 14524),
+    },
+    surprimes: {
+      affection: p('surprime_affection', 30), affectionsMax: p('affections_max', 3),
+      age1Debut: p('surprime_age_1_debut', 61), age1Taux: p('surprime_age_1_taux', 30),
+      age2Debut: p('surprime_age_2_debut', 65), age2Taux: p('surprime_age_2_taux', 50),
+      ageMaxAdulte: p('age_max_adulte', 69), ageMaxEnfant: p('age_max_enfant', 21), ageMaxEnfantCertificat: p('age_max_enfant_certificat', 25),
+    },
+    carence: {
+      soinsCourants: p('carence_soins_courants', 3), soinsDentaires: p('carence_soins_dentaires', 3), optique: p('carence_optique', 10),
+      maternite: p('carence_maternite', 10), protheses: p('carence_protheses', 12), maladiesChroniques: p('carence_maladies_chroniques', 12),
+    },
+    gestion: {
+      etendue: p('etendue_territoriale', "Côte d'Ivoire exclusivement"), optiquePeriodicite: p('optique_periodicite', 2),
+      quotaBons: p('quota_bons', 15), quotaPharmacie: p('quota_pharmacie', 200000), seuilSinistralite: p('seuil_sinistralite', 50),
+    },
+    clause,
+    // Taux proposés à la saisie du devis : « Réduction de x% » et « x% de majoration » de la clause
+    ajustements: {
+      reduction: clause.map((t) => [Number((t.ajustement.match(/r[ée]duction\s+de\s+(\d+(?:[.,]\d+)?)\s*%/i) || [])[1]?.replace(',', '.')), t.rapport]).filter(([n]) => n > 0),
+      majoration: clause.map((t) => [Number((t.ajustement.match(/(\d+(?:[.,]\d+)?)\s*%\s*de\s+majoration/i) || [])[1]?.replace(',', '.')), t.rapport]).filter(([n]) => n > 0),
+    },
+  };
 };

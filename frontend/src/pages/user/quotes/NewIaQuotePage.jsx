@@ -24,6 +24,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { reglagesMinene } from '../../../utils/parametrage';
 
 // Catégorie IA MINENE (comme URANUS) : NSIA, offre 66, capitaux fixes, durée annuelle ou au
 // 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
@@ -33,7 +34,11 @@ const ID_TARIF_MINENE = 103;
 const ID_TARIFS_ACCESSOIRE_PAR_ASSURE = [145, 76];
 const ID_OFFRE_MINENE = 66;
 const ID_COMPAGNIE_MINENE = 1;
-const CAPITAUX_MINENE = { CapitalDeces: 2000000, CapitalIpp: 2000000, FraisTraitement: 100000 };
+// Capitaux MINENE : Administration > Réglages Santé MINENE (2 000 000 / 2 000 000 / 100 000 à l'origine)
+const capitauxMinene = () => {
+  const { ia } = reglagesMinene();
+  return { CapitalDeces: ia.deces, CapitalIpp: ia.ipt, FraisTraitement: ia.fraisMedicaux };
+};
 const DUREES_MINENE = [4];
 // Réduction plafonnée à 35 % comme dans URANUS
 const REDUCTION_MAX = 35;
@@ -295,7 +300,7 @@ export const NewIaQuotePage = () => {
     setCompagnieId(ID_COMPAGNIE_MINENE);
     setIdOffre(ID_OFFRE_MINENE);
     setDureeId((d) => (Number(d) === 5 || DUREES_MINENE.includes(Number(d)) ? d : DUREES_MINENE[0]));
-    setAssureEnCours((p) => ({ ...p, ...CAPITAUX_MINENE }));
+    setAssureEnCours((p) => ({ ...p, ...capitauxMinene() }));
   }, [estMinene]);
 
   // Taux de taxe de l'offre : taxe et TTC des primes saisies affichées comme la base les calcule
@@ -560,7 +565,7 @@ export const NewIaQuotePage = () => {
   // ÉDITION D'UN ASSURÉ
   // -------------------------------------------------------------
   const reinitialiserEditeur = () => {
-    setAssureEnCours(estMinene ? { ...assureVide(), ...CAPITAUX_MINENE } : assureVide());
+    setAssureEnCours(estMinene ? { ...assureVide(), ...capitauxMinene() } : assureVide());
     setCleEnEdition(null);
     setModeAssure('nouveau');
     setRechercheAssure('');
@@ -650,7 +655,7 @@ export const NewIaQuotePage = () => {
     }
     const assure = {
       ...a,
-      ...(estMinene ? CAPITAUX_MINENE : {}),
+      ...(estMinene ? capitauxMinene() : {}),
       IdAssure: modeAssure === 'existant' ? a.IdAssure : 0,
       Nom: a.Nom.trim().toUpperCase(),
       Prenoms: a.Prenoms.trim().toUpperCase(),
@@ -825,7 +830,7 @@ export const NewIaQuotePage = () => {
           DateExpiration: dateTiret(dateExpiration),
           DateEmission: dateTiret(dateEmission),
           IdTarif: ID_TARIF_MINENE,
-          ...CAPITAUX_MINENE,
+          ...capitauxMinene(),
           TauxReduction: Number(reduction) || 0,
           CodeActivite: '01',
           DateNaissance: dateTiret(majorite.toISOString()),
@@ -1131,7 +1136,7 @@ export const NewIaQuotePage = () => {
                 {creationMinene
                   ? 'Le souscripteur et l\'assuré seront automatiquement déterminés depuis le contrat Santé : chaque adhérent devient un assuré et ses affiliés ses ayants droit.'
                   : 'Assurés repris du contrat Santé.'}
-                {' '}Capitaux MINENE : décès {fcfa(CAPITAUX_MINENE.CapitalDeces)}, infirmité permanente {fcfa(CAPITAUX_MINENE.CapitalIpp)}, frais de traitement {fcfa(CAPITAUX_MINENE.FraisTraitement)} FCFA.
+                {' '}Capitaux MINENE : décès {fcfa(capitauxMinene().CapitalDeces)}, infirmité permanente {fcfa(capitauxMinene().CapitalIpp)}, frais de traitement {fcfa(capitauxMinene().FraisTraitement)} FCFA.
               </p>
               {creationMinene && (
                 <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>

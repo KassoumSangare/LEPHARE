@@ -22,6 +22,7 @@ import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { formulesSante, reglagesMinene } from '../../../utils/parametrage';
 import {
   ID_TERME_PAR_DEFAUT,
   dureeSelonTerme,
@@ -41,12 +42,13 @@ const GESTIONNAIRE_SANTE = 'VITALIS SANTE';
 // Catégories MINENE (code catégorie 123 : tarifs 87, 102 et 153) : prime calculée automatiquement,
 // zone CÔTE D'IVOIRE, durée annuelle
 const CODE_CATEGORIE_MINENE = '123';
-// Barème MINENE 70 %-80 % : surprime de 30 % de la prime de base par affection chronique, 3 au maximum
-const AIDE_AFFECTIONS = 'De 0 à 3 (MINENE : surprime de 30 % de la prime de base par affection).';
-// Clause d'ajustement des CP MINENE (rapport sinistres / primes de l'exercice)
-const AJUSTEMENTS_MINENE = {
-  reduction: [[10, 'S/P de 51 à 65 %']],
-  majoration: [[15, 'S/P de 71 à 80 %'], [20, 'S/P de 81 à 90 %'], [30, 'S/P de 91 à 100 %'], [35, 'S/P de 101 à 110 %'], [45, 'S/P de 111 à 115 %']],
+// Surprimes, âges, taille des familles et clause d'ajustement (taux de réduction / majoration proposés) :
+// Administration > Réglages Santé MINENE (reglagesMinene, formulesSante)
+const aideAffections = (r) => `De 0 à ${r.surprimes.affectionsMax} (MINENE : surprime de ${r.surprimes.affection} % de la prime de base par affection).`;
+const tailleFormules = () => {
+  const vues = new Map();
+  formulesSante().forEach((f) => { if (!vues.has(f.Option)) vues.set(f.Option, f.PersonnesMax); });
+  return [...vues].map(([option, max]) => `${option} : ${max === 1 ? '1 personne' : `jusqu'à ${max}`}`).join(', ');
 };
 const ID_ZONE_COTE_IVOIRE = 1;
 const ID_DUREE_ANNUELLE = 4;
@@ -231,6 +233,9 @@ export const NewSanteQuotePage = () => {
 
   const tarifChoisi = tarifs.find((t) => Number(t.IdTarif) === Number(idTarif));
   const estMinene = String(tarifChoisi?.CodeCategorie || '') === CODE_CATEGORIE_MINENE;
+  const minene = reglagesMinene();
+  const affectionsMax = Math.max(0, Number(minene.surprimes.affectionsMax) || 0);
+  const ajustementsMinene = Object.fromEntries(Object.entries(minene.ajustements).map(([sens, liste]) => [sens, liste.map(([t, sp]) => [t, `S/P ${sp}`])]));
   const formuleChoisie = formules.find((f) => Number(f.IdOffre) === Number(idOffre));
   const zoneImposee = estMinene || contientCoteIvoire(formuleChoisie?.LibelleOffre);
   const client = clients.find((c) => String(c.id) === String(clientId));
@@ -725,11 +730,11 @@ export const NewSanteQuotePage = () => {
                 list={estMinene ? 'ajustements-minene' : undefined}
               />,
               estMinene
-                ? `Clause d'ajustement : ${AJUSTEMENTS_MINENE[ajustement].map(([t, sp]) => `${t} % (${sp})`).join(', ')}.`
+                ? `Clause d'ajustement : ${(ajustementsMinene[ajustement] || []).map(([t, sp]) => `${t} % (${sp})`).join(', ') || 'aucun taux'}.`
                 : 'Hors MINENE, la base enregistre le taux sans l\'appliquer aux primes.')}
             {estMinene && (
               <datalist id="ajustements-minene">
-                {AJUSTEMENTS_MINENE[ajustement].map(([t, sp]) => <option key={t} value={t}>{sp}</option>)}
+                {(ajustementsMinene[ajustement] || []).map(([t, sp]) => <option key={t} value={t}>{sp}</option>)}
               </datalist>
             )}
             {champ('Gestionnaire', <input type="text" className="form-control" value={GESTIONNAIRE_SANTE} disabled readOnly />)}
@@ -934,7 +939,7 @@ export const NewSanteQuotePage = () => {
                   {champ('Adresse', <input type="text" className="form-control" value={formAdherent.adresse || ''} onChange={(e) => setFormAdherent((p) => ({ ...p, adresse: e.target.value }))} disabled={desactive} />)}
                   {champ('Matricule', <input type="text" className="form-control" value={formAdherent.matricule || ''} onChange={(e) => setFormAdherent((p) => ({ ...p, matricule: e.target.value }))} disabled={desactive} />)}
                   {champ('Groupe Sanguin', selectGroupeSanguin(formAdherent.groupesanguin, (v) => setFormAdherent((p) => ({ ...p, groupesanguin: v }))))}
-                  {champ('Nombre d’affections chroniques', <input type="number" min="0" max="3" className="form-control" value={formAdherent.nombrepathologie} onChange={(e) => setFormAdherent((p) => ({ ...p, nombrepathologie: Math.max(0, Math.min(3, Number(e.target.value) || 0)) }))} disabled={desactive} />, AIDE_AFFECTIONS)}
+                  {champ('Nombre d’affections chroniques', <input type="number" min="0" max={affectionsMax} className="form-control" value={formAdherent.nombrepathologie} onChange={(e) => setFormAdherent((p) => ({ ...p, nombrepathologie: Math.max(0, Math.min(affectionsMax, Number(e.target.value) || 0)) }))} disabled={desactive} />, aideAffections(minene))}
                   {champ('Numéro de téléphone *', <input type="tel" className="form-control" value={formAdherent.mobile1 || ''} onChange={(e) => setFormAdherent((p) => ({ ...p, mobile1: e.target.value }))} disabled={desactive} />)}
                   {champ('E-mail *', <input type="email" className="form-control" value={formAdherent.email || ''} onChange={(e) => setFormAdherent((p) => ({ ...p, email: e.target.value }))} disabled={desactive} />)}
                   {champ('Date d\'effet', <input type="date" className="form-control" value={formAdherent.dateeffet} onChange={(e) => setFormAdherent((p) => ({ ...p, dateeffet: e.target.value }))} disabled={desactive} />)}
@@ -1062,7 +1067,7 @@ export const NewSanteQuotePage = () => {
                   {champ('Groupe Sanguin', selectGroupeSanguin(formAffilie.groupesanguin, (v) => setFormAffilie((p) => ({ ...p, groupesanguin: v }))))}
                   {champ('Matricule', <input type="text" className="form-control" value={formAffilie.matricule || ''} onChange={(e) => setFormAffilie((p) => ({ ...p, matricule: e.target.value }))} disabled={desactive} />)}
                   {champ('Observations', <input type="text" className="form-control" value={formAffilie.observations || ''} onChange={(e) => setFormAffilie((p) => ({ ...p, observations: e.target.value }))} disabled={desactive} />)}
-                  {champ('Nombre d’affections chroniques', <input type="number" min="0" max="3" className="form-control" value={formAffilie.nombrepathologie} onChange={(e) => setFormAffilie((p) => ({ ...p, nombrepathologie: Math.max(0, Math.min(3, Number(e.target.value) || 0)) }))} disabled={desactive} />, AIDE_AFFECTIONS)}
+                  {champ('Nombre d’affections chroniques', <input type="number" min="0" max={affectionsMax} className="form-control" value={formAffilie.nombrepathologie} onChange={(e) => setFormAffilie((p) => ({ ...p, nombrepathologie: Math.max(0, Math.min(affectionsMax, Number(e.target.value) || 0)) }))} disabled={desactive} />, aideAffections(minene))}
                   {champ('Date d\'effet', <input type="date" className="form-control" value={formAffilie.dateeffet} onChange={(e) => setFormAffilie((p) => ({ ...p, dateeffet: e.target.value }))} disabled={desactive} />)}
                   {champ('Date début consommation', <input type="date" className="form-control" value={formAffilie.datedebutconsommation} onChange={(e) => setFormAffilie((p) => ({ ...p, datedebutconsommation: e.target.value }))} disabled={desactive} />)}
                   {interrupteur('Pathologie antérieure', formAffilie.handicape, (v) => setFormAffilie((p) => ({ ...p, handicape: v })))}
@@ -1098,7 +1103,7 @@ export const NewSanteQuotePage = () => {
             </div>
             <p style={{ margin: '0.85rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {estMinene
-                ? 'MINENE : laissez les primes à 0 pour tarifer chaque famille selon la formule de sa couverture (SOLO : 1 personne, FAMILLE : jusqu\'à 3, FAMILLE PLUS : jusqu\'à 6), avec les surprimes d\'âge à la date d\'effet (61–64 ans : 30 %, 65–69 ans : 50 %, adhérent et conjoint de 69 ans au plus) et d\'affection chronique (30 % par affection, 3 au maximum), et l\'accessoire du barème par famille.'
+                ? `MINENE : laissez les primes à 0 pour tarifer chaque famille selon la formule de sa couverture (${tailleFormules()}), avec les surprimes d'âge à la date d'effet (${minene.surprimes.age1Debut}–${minene.surprimes.age2Debut - 1} ans : ${minene.surprimes.age1Taux} %, ${minene.surprimes.age2Debut}–${minene.surprimes.ageMaxAdulte} ans : ${minene.surprimes.age2Taux} %, adhérent et conjoint de ${minene.surprimes.ageMaxAdulte} ans au plus) et d'affection chronique (${minene.surprimes.affection} % par affection, ${affectionsMax} au maximum), et l'accessoire du barème par famille.`
                 : 'Une seule prime : par famille (× adhérents), par affilié (× affiliés) ou globale.'}
             </p>
 

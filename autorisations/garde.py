@@ -183,6 +183,8 @@ REGLES = [
     R("POST", r"(calculprime/|calculrepartitionprimesante/|offregarantie(ia|voyage|mrh|rc|mrp)?$|garantieparproduit$|"
               r"dommages/calcul/|devisvoyage/ligne-tarif/|mrh/calcul/maison/|mrh/validate-parameters/|mrh/devis/accessoire/)",
       "devis.view", lecture=True),
+    # Domaine d'activité RC ajouté depuis le formulaire de devis (« + », comme dans URANUS)
+    R("POST", r"domaineactiviterc/?$", "devis.create", objet="domaine_activite_rc"),
     # ---- devis : primes (sensible)
     R("POST", r"majrecapprimes/", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"correctiondevis/?$", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
@@ -288,8 +290,8 @@ REGLES = [
     R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
     R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
     # ---- tarifs et barèmes
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|grillesvoyage/)", "tarifs.update", objet="bareme",
-      cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays")),
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|grillesvoyage/)", "tarifs.update", objet="bareme",
+      cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition")),
     R("POST,PUT,PATCH,DELETE", r"(tauxtaxegarantie|commissionproduit|accessoire|accessoirecourtier|reductionflotte|"
                                r"formulesecuriteroutiere|offre|offregarantie|enregistrementoffregarantie|garantie|sousgarantie|"
                                r"garantierisque|tarif|tarifdetail|tarifecran|offredetail|offrecollegesante|repartitionprimesante|"

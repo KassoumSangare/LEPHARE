@@ -968,6 +968,12 @@ const printDocEntete = (compagnie) => {
   `;
 };
 
+// Une proposition est un devis : tout document imprimé depuis un devis, dans toutes les branches, a pour
+// titre « DEVIS N° <numéro du devis> » (demande du 2026-10-12). Les documents d'un contrat passent par les
+// mêmes gabarits (contratCommeDevis, estContrat) et gardent le leur.
+const estImpressionContrat = (quote) => Boolean(quote?.estContrat);
+const titreDevis = (numero) => `DEVIS N° ${numero || ''}`.trim();
+
 const printDocHeader = (quote, docTitle) => `
   ${printDocEntete(quote.compagnie)}
   <div class="facture-title">${docTitle}</div>
@@ -999,7 +1005,7 @@ const buildAutoFacture = (quote) => {
   // L'assuré peut différer du souscripteur (idassure / nomassure du devis)
   const assure = nomPersonne(raw.assure) || raw.nomassure;
   const numeroFacture = raw.numero_facture;
-  const docTitle = `${isPolice ? 'FACTURE DE PRIME' : 'DEVIS'} N°${txt(numeroFacture)}`;
+  const docTitle = isPolice ? `FACTURE DE PRIME N°${txt(numeroFacture)}` : titreDevis(quote.numerodevis || raw.numerodevis);
   const idLabel = isPolice ? 'Id. Police' : 'Id. Devis';
   const numLabel = isPolice ? 'N° Police' : 'N° Devis';
 
@@ -1202,7 +1208,7 @@ const buildConditionsParticulieres = (quote, cp) => {
     ${printDocHeader(quote, '')}
 
     <div class="titre-cp">
-      <div>CONDITIONS PARTICULIÈRES</div>
+      <div>${estImpressionContrat(quote) ? 'CONDITIONS PARTICULIÈRES' : titreDevis(quote.numerodevis)}</div>
       <div>ASSURANCE ${produit}</div>
     </div>
 
@@ -1372,7 +1378,7 @@ const buildConditionsParticulieresMono = (quote, cp, { contrat = false } = {}) =
       <div class="cpn-haut">
         ${logo ? `<img src="${logo}" alt="${compagnie}" class="cpn-logo" />` : `<div class="cpn-compagnie">${txt(compagnie)}</div>`}
       </div>
-      <div class="cpn-titre">${contrat ? 'Conditions Particulières' : `DEVIS N˚ ${txt(q.NumeroDevis || quote.numerodevis)}`}</div>
+      <div class="cpn-titre">${contrat ? 'Conditions Particulières' : titreDevis(txt(q.NumeroDevis || quote.numerodevis))}</div>
 
       <div class="cpn-entete">
         <div class="cpn-cadre cpn-client">
@@ -1724,10 +1730,10 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
           <div class="cpf-nom">${t([q.TitreClient, q.NomClient].filter((x) => x && String(x).trim()).join(' '))}</div>
           <table class="cpf-refs"><tr><td class="l">Adresse</td><td>${t(q.AdresseClient)}</td></tr></table>
         </div>
-        <div class="cpf-titre">${contrat ? 'CONDITIONS PARTICULIERES' : 'PROPOSITION'} : Liste des véhicules en Automobile</div>
+        <div class="cpf-titre">${contrat ? 'CONDITIONS PARTICULIERES' : titreDevis(t(q.NumeroDevis || quote.numerodevis))} : Liste des véhicules en Automobile</div>
         <div class="cpf-droite">
           <table class="cpf-refs">
-            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'PROPOSITION'}</td><td class="l e">Emission</td><td>${date(q.DateEmission)}</td></tr>
+            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'DEVIS'}</td><td class="l e">Emission</td><td>${date(q.DateEmission)}</td></tr>
             <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td>${t(contrat ? q.NumeroPolice : q.NumeroDevis)}</td>
               <td class="l e">Avenant N°</td><td>${Number(q.NumeroAvenant) ? Number(q.NumeroAvenant) : t(q.NumeroAvenant)}</td></tr>
             <tr><td class="l">Assuré(e)</td><td colspan="3">${t(q.NomAssure)}</td></tr>
@@ -1816,24 +1822,26 @@ const partIa = (part) => {
   return n > 0 ? `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %` : '';
 };
 const estCategorieGroupe = (q) => /^(PROPOSITION )?INDIVIDUELLE ACCIDENTS GROUPE$/.test(categorieIa(q).replace(/\s+/g, ' ').toUpperCase());
+// Titre d'un document IA : « DEVIS N° … » puis la catégorie (sans le « PROPOSITION » de certains libellés)
+const titreDevisIa = (q) => `${titreDevis(texteIa(q.NumeroDevis))}<br/><span style="font-size:11pt">${String(categorieIa(q)).replace(/^\s*PROPOSITION\s+/i, '')}</span>`;
 
 // Références de la quittance (bloc de droite, commun aux deux documents)
 const blocQuittanceIa = (q) => `
   <div class="ia-boite">
     <div class="ia-boite-titre">Références de la Quittance</div>
     <table class="ia-lignes">
-      <tr><td class="l">N° Proposition</td><td>${texteIa(q.NumeroDevis)}</td></tr>
+      <tr><td class="l">N° Devis</td><td>${texteIa(q.NumeroDevis)}</td></tr>
       <tr><td class="l">Adresse</td><td>${texteIa(q.AdresseClient)}</td></tr>
       <tr><td class="l">Effet</td><td>${dateTiret(q.DateEffet)}<span class="ia-ecart"></span><b>Expiration</b>&nbsp; ${dateTiret(q.DateExpiration)}</td></tr>
       <tr><td class="l">Offre</td><td>${texteIa(q.LibelleOffre)}</td></tr>
-      <tr><td class="l">Mouvement</td><td>Proposition</td></tr>
+      <tr><td class="l">Mouvement</td><td>Devis</td></tr>
       <tr><td class="l">Ecriture</td><td>${texteIa(q.LibelleBareme)}<span class="ia-ecart"></span><b>Durée(jours)</b> ${texteIa(q.Duree)}</td></tr>
     </table>
   </div>`;
 
 const paragrapheProposition = (q) => `
   <div class="ia-proposition">
-    <div class="ia-proposition-titre">PROPOSITION</div>
+    <div class="ia-proposition-titre">DEVIS</div>
     <p>Nous avons l’avantage de vous faire connaître par la présente nos meilleures conditions de garantie et de prime pour la couverture des risques précisés dans l’annexe jointe.</p>
     <p>Les capitaux garantis et la liste des assurés sont ceux mentionnés en annexe ci-joint.</p>
     <p>Les garanties sont consenties pour la période du ${dateTiret(q.DateEffet)} au ${dateTiret(q.DateExpiration)} moyennant une prime de ${fcfaIa(q.PrimeTtc)} FCFA frais et taxes compris suivant décompte ci-dessous :</p>
@@ -1893,7 +1901,7 @@ const buildPropositionIaGroupe = (quote, donnees) => {
   return `
     <div class="ia">
       <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
-      <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
+      <div class="ia-titre">${titreDevisIa(q)}</div>
       <div class="ia-refs">
         <div class="ia-boite">
           <div class="ia-boite-titre">Références du Souscripteur</div>
@@ -1939,7 +1947,7 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
   return `
     <div class="ia">
       <img src="${logoCabinetEntete()}" alt="OREOLE Assurances" class="ia-logo" />
-      <div class="ia-titre">PROPOSITION ${categorieIa(q)}</div>
+      <div class="ia-titre">${titreDevisIa(q)}</div>
       <div class="ia-refs">
         <div class="ia-boite">
           <div class="ia-boite-titre">Références du Client</div>
@@ -1992,7 +2000,7 @@ const buildFactureIa = (quote, donnees) => {
   }).join('');
   return `
     <div class="iaf">
-      <div class="ia-titre">FACTURE N° ${texteIa(q.NumeroDevis)}</div>
+      <div class="ia-titre">${titreDevis(texteIa(q.NumeroDevis))}</div>
       <div class="iaf-rubrique">SOUSCRIPTEUR</div>
       ${ligneValeur('Nom', texteIa(q.NomClient))}
       ${ligneValeur('Adresse', texteIa(q.AdresseClient))}
@@ -2126,8 +2134,8 @@ const buildPropositionVoyage = (quote, { quittance: q = {}, garanties = [], voya
   return `
     ${printDocHeader({ ...quote, compagnie: q.RaisonSociale || quote.compagnie }, '')}
     <div class="titre-cp">
-      <div>${String(q.LibelleCategorie || 'ASSURANCE VOYAGE').toUpperCase()}</div>
-      <div>Proposition ${q.RaisonSociale || ''}</div>
+      <div>${titreDevis(q.NumeroDevis || quote.numerodevis)}</div>
+      <div>${String(q.LibelleCategorie || 'ASSURANCE VOYAGE').toUpperCase()} — ${q.RaisonSociale || ''}</div>
     </div>
     <div class="ligne-identifiants">N° CLIENT : ${q.MobileClient || VIDE} | Id. POLICE : ${q.IdDevis || ''} | N° DEVIS : ${q.NumeroDevis || quote.numerodevis || ''}</div>
     <table class="bloc-libre">
@@ -2250,7 +2258,7 @@ export const printPropositionVoyage = async (quote, { fenetre: fenetreFournie = 
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la proposition…</p>');
   try {
     const donnees = await impressionVoyageApi.get(quote.iddevis || quote.id);
-    openPrintWindow(`Proposition ${quote.numerodevis || ''}`.trim(), buildPropositionVoyage(quote, donnees), fenetre);
+    openPrintWindow(`Devis ${quote.numerodevis || ''}`.trim(), buildPropositionVoyage(quote, donnees), fenetre);
   } catch (err) {
     console.error('Erreur proposition Voyage :', err);
     if (fenetre) {
@@ -2359,7 +2367,7 @@ export const buildCotationDommages = (quote, d) => {
 
   return `<style>${COTATION_STYLES}</style>
   <div class="cot cot-page">
-    ${entete(`COTATION D'ASSURANCE<br/>${e(categorie)}`)}
+    ${entete(`${estImpressionContrat(quote) ? 'COTATION D\'ASSURANCE' : e(titreDevis(d.NumeroDevis || quote.numerodevis))}<br/>${e(categorie)}`)}
 
     <table class="cot-bloc">
       <tr><th colspan="2">Informations sur l'intermédiaire</th></tr>
@@ -2435,7 +2443,7 @@ export const printCotationDommages = async (quote) => {
     const donnees = await dommagesApi.lireDevis(quote.iddevis || quote.id);
     // Contrat : la cotation porte le numéro de police attribué à la confirmation
     if (quote.numeropolice && !donnees.NumeroPoliceCompagnie) donnees.NumeroPoliceCompagnie = quote.numeropolice;
-    openPrintWindow(`Cotation ${quote.numerodevis || donnees.NumeroDevis || ''}`.trim(), buildCotationDommages(quote, donnees), fenetre);
+    openPrintWindow(`${estImpressionContrat(quote) ? 'Cotation' : 'Devis'} ${quote.numerodevis || donnees.NumeroDevis || ''}`.trim(), buildCotationDommages(quote, donnees), fenetre);
   } catch (err) {
     console.error('Erreur cotation Dommages :', err);
     if (fenetre) {
@@ -2453,6 +2461,7 @@ export const printCotationDommagesContrat = (contract) => {
   if (!iddevis) return;
   return printCotationDommages({
     ...contract,
+    estContrat: true,
     iddevis,
     numerodevis: (typeof bc.iddevis === 'object' && bc.iddevis?.numerodevis) || '',
     numeropolice: bc.numeropolicecompagnie || contract.numeropolice,
@@ -2564,6 +2573,100 @@ export const buildReleveCompte = (releve, lignes) => {
   </div>`;
 };
 
+/* =========================================================================
+   RC CHEF DE FAMILLE MINENE (offre 67) : Conditions Particulières d'un contrat, gabarit URANUS
+   scenes/Products/Documents/RC/CpRCMinene (contrat connexe à une police Santé MINENE, délivré sans
+   prime : la prime est réglée au titre du contrat Santé). Données : contrat/<id>/conditions-particulieres/.
+   ========================================================================= */
+export const ID_OFFRE_RC_MINENE = 67;
+
+const CP_RC_MINENE_STYLES = `
+  body { max-width: 190mm; }
+  .crm { position: relative; font-family: 'Arial Narrow', Arial, sans-serif; font-size: 9.5pt; color: #111; min-height: 270mm; display: flex; flex-direction: column; }
+  .crm-logo { width: 32mm; opacity: 0.55; margin-bottom: 3mm; }
+  .crm-titre { text-align: center; font-weight: 700; font-size: 11pt; border: 1px solid #111; padding: 2mm; margin-bottom: 3mm; }
+  .crm-cartouche { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; row-gap: 1.6mm; margin-bottom: 3mm; }
+  .crm-cartouche b { font-weight: 700; }
+  .crm-periode { display: flex; justify-content: space-between; border: 1px solid #111; padding: 1.6mm 3mm; margin-bottom: 3mm; }
+  .crm-texte { margin: 1.5mm 2mm; line-height: 1.35; }
+  .crm-table { width: 100%; border-collapse: collapse; margin: 3mm 0; }
+  .crm-table th { border: 1px solid #111; background: #e5e7eb; padding: 1.4mm; font-weight: 700; }
+  .crm-table td { border: 1px solid #111; padding: 1.4mm; text-align: center; }
+  .crm-table td:first-child { text-align: left; }
+  .crm-rubrique { text-align: center; font-weight: 700; margin: 3mm 0 1mm; text-transform: uppercase; }
+  .crm-exclusions { font-weight: 700; text-transform: uppercase; margin: 2mm 2mm 1mm; }
+  .crm-fait { text-align: right; margin: 4mm 2mm 0; }
+  .crm-signatures { display: flex; justify-content: space-between; margin: 12mm 2mm 0; font-weight: 700; text-decoration: underline; }
+  .crm-pied { margin-top: auto; padding-top: 10mm; display: flex; gap: 3mm; align-items: flex-end; }
+  .crm-pied img { height: 8mm; }
+  .crm-pied div { font-size: 5.5pt; line-height: 1.35; white-space: pre-line; }
+  .crm-marque { position: absolute; left: -6mm; bottom: 70mm; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 7.5pt; font-weight: 700; white-space: nowrap; }
+`;
+
+// Libellés et ordre de l'imprimé URANUS (dommages matériels, corporels, intoxication alimentaire)
+const GARANTIES_RC_MINENE = { 61: 'DOMMAGES MATERIELS', 64: 'DOMMAGES CORPORELS', 166: 'INTOXICATION ALIMENTAIRE' };
+
+const buildCpRcMinene = (quote, cp) => {
+  const e = echapperHtml;
+  const q = cp?.quittance || {};
+  const c = cp?.client || {};
+  const jma = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '');
+  const f = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+  const ordre = Object.keys(GARANTIES_RC_MINENE).map(Number);
+  const garanties = [...(cp?.garanties || [])].sort((a, b) => {
+    const ia = ordre.indexOf(Number(a.id_garantie));
+    const ib = ordre.indexOf(Number(b.id_garantie));
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  const franchise = (g) => {
+    const texte = (g.franchises || []).filter(Boolean).join(' / ');
+    return texte && texte.toUpperCase() !== 'NEANT' ? texte.replace(/^Franchise:\s*/i, '') : 'NEANT';
+  };
+  const connexe = q.numero_police_connexe || '';
+  const mentions = String(parametre('documents.mentions_legales', '') || '').trim();
+  const marque = String(parametre('documents.mention_marque', '') || '').trim();
+  const ligne = (libelle, valeur) => `<div>${libelle} : <b>${e(valeur || '')}</b></div>`;
+  return `<style>${CP_RC_MINENE_STYLES}</style>
+  <div class="crm">
+    <img class="crm-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+    <div class="crm-titre">CONTRAT RC CHEF DE FAMILLE N°${e(q.numero_police || quote.numerodevis || '')} CONNEXE MINENE SANTE</div>
+    <div class="crm-cartouche">
+      ${ligne('Compagnie', quote.compagnie || 'NSIA ASSURANCES')}${ligne('Nom et Prénoms assuré', q.assure)}
+      ${ligne('Nature du risque', 'MINENE SANTE')}${ligne('Date de naissance', jma(q.date_naissance_assure))}
+      ${ligne('Souscripteur', c.nom)}${ligne('Profession', c.profession)}
+      ${ligne('Intermédiaire', cp?.intermediaire || nomCabinet())}${ligne('Adresse Postale', c.adresse)}
+      ${ligne('Type de Client', c.type)}${ligne('Adresse Mail', c.email)}
+      ${ligne('Option', q.offre)}${ligne('Numéro Mobile', c.mobile)}
+      <div></div>${ligne('Police Connexe', connexe)}
+    </div>
+    <div class="crm-periode">
+      <span>Date d'effet : <b>${jma(q.date_effet)}</b></span>
+      <span>Date d'échéance : <b>${jma(q.date_expiration)}</b></span>
+      <span>Durée : <b>${e(q.duree_jours ?? '')} JOURS</b></span>
+    </div>
+    <p class="crm-texte">Le présent contrat est conclu pour la période allant du ${jma(q.date_effet)} au ${jma(q.date_expiration)} à minuit heure GMT.
+      A cette date il expire de plein droit sans autre forme d’avis.</p>
+    <table class="crm-table">
+      <tr><th>GARANTIES</th><th>CAPITAUX</th><th>FRANCHISE</th></tr>
+      ${garanties.map((g) => `<tr><td>${e(GARANTIES_RC_MINENE[Number(g.id_garantie)] || g.nature)}</td>
+        <td>${e((g.capitaux || []).filter((x) => Number(x) > 0).map(f).join(' / '))}</td><td>${e(franchise(g))}</td></tr>`).join('')}
+    </table>
+    <div class="crm-rubrique">Conditions de garanties</div>
+    <p class="crm-texte">La victime doit mettre en cause l’assuré et établir qu’il y a eu une faute, un préjudice et qu’il existe un lien de causalité entre les deux.</p>
+    <div class="crm-exclusions">Exclusions</div>
+    <p class="crm-texte">- Les dommages causés à l’assuré ou à ses proches</p>
+    <p class="crm-texte">- Les dommages causés par la pratique d'un sport à moteur</p>
+    <p class="crm-texte">- Les dommages causés par la pratique d'un sport dangereux</p>
+    <p class="crm-texte">- Les dommages causés par une faute intentionnelle</p>
+    <p class="crm-texte">Le présent contrat est délivré sans prime ni frais, la prime ayant été préalablement réglée au titre du contrat MINENE Santé numéro <b>${e(connexe)}</b>.</p>
+    <p class="crm-texte">L’assuré reconnait avoir reçu un exemplaire des présentes conditions particulières et des conditions générales RC Chef de famille.</p>
+    <div class="crm-fait">Fait à ${e(villeSignature())}, le <b>${jma(q.date_emission)}</b>.</div>
+    <div class="crm-signatures"><span>LE SOUSCRIPTEUR</span><span>LA COMPAGNIE</span></div>
+    ${marque ? `<div class="crm-marque">${e(marque)}</div>` : ''}
+    <div class="crm-pied"><img src="${e(logoCabinetPied())}" alt="" />${mentions ? `<div>${e(mentions)}</div>` : ''}</div>
+  </div>`;
+};
+
 /** Imprime le relevé de compte avec les lignes retenues (données de contractApi.getReleveCompte). */
 export const printReleveCompte = (releve, lignes) => {
   if (!releve || !lignes?.length) return;
@@ -2582,66 +2685,116 @@ export const printReleveCompte = (releve, lignes) => {
 // Compagnies partenaires, onglet « Documents imprimés » (AMSA livré avec celui de l'imprimé fourni)
 const NOMBRES_EN_LETTRES = ['un', 'deux', 'trois', 'quatre', 'cinq'];
 
+// Cotes relevées au millimètre sur l'imprimé (scan redressé ramené à l'A4) : chaque bloc est posé à sa
+// place ; une liste de garanties plus longue que celle de l'imprimé (4 lignes) décale la suite (--dec).
 const ATTESTATION_VOYAGE_STYLES = `
-  body { max-width: 210mm; padding: 0; color: #1f2937; }
-  .atv-page { position: relative; box-sizing: border-box; width: 210mm; height: 296mm; padding: 13mm 17mm 10mm 13mm;
-    page-break-after: always; break-after: page; overflow: hidden; font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+  body { max-width: 210mm; padding: 0; }
+  .atv-page { position: relative; box-sizing: border-box; width: 210mm; height: 296mm; overflow: hidden;
+    page-break-after: always; break-after: page; font-family: Calibri, Carlito, 'Segoe UI', Arial, sans-serif;
+    color: #2b2b2e; line-height: 1; --dec: 0mm; }
   .atv-page:last-child { page-break-after: auto; break-after: auto; }
-  .atv-entete { display: flex; align-items: flex-start; gap: 10mm; margin-bottom: 8mm; }
-  .atv-logo { width: 38mm; display: block; }
-  .atv-titres { flex: 1; text-align: center; padding-top: 6mm; }
-  .atv-titre { font-size: 19pt; color: #3a3f6b; padding-bottom: 2mm; border-bottom: 1.2px solid #3a3f6b; }
-  .atv-soustitre { font-size: 9pt; color: #4b5563; margin: 3mm 8mm 0; }
-  .atv-section { font-size: 10.5pt; font-weight: 700; color: #3a3f6b; border-bottom: 1.4px solid #2f3352; padding-bottom: 1mm; margin: 5mm 0 2mm; }
-  .atv-infos { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8mm; row-gap: 1.6mm; }
-  .atv-info { display: flex; align-items: baseline; gap: 2mm; border-bottom: 0.5px solid #e5e7eb; padding: 0.6mm 0; }
-  .atv-info span { font-size: 8.5pt; color: #6b7280; white-space: nowrap; }
-  .atv-info b { font-size: 10.5pt; font-weight: 400; color: #111827; }
-  .atv-puces { margin: 0; padding-left: 5mm; font-size: 8.5pt; color: #374151; }
-  .atv-puces li { margin: 1.2mm 0; }
-  .atv-texte { font-size: 8.5pt; color: #374151; margin: 1.5mm 0; }
-  .atv-confirmation { display: flex; align-items: center; gap: 8mm; }
-  .atv-confirmation .atv-texte { flex: 1; }
-  .atv-qr-visa { width: 21mm; height: 21mm; display: block; }
-  .atv-assistance { display: flex; align-items: center; justify-content: space-between; gap: 3mm; margin-top: 3mm; }
-  .atv-contacts { display: flex; flex-direction: column; gap: 3mm; }
-  .atv-contacts-ligne { display: flex; flex-wrap: nowrap; gap: 3mm; white-space: nowrap; }
-  .atv-contacts .atv-contact { font-size: 8pt; }
-  .atv-portail { display: flex; align-items: center; gap: 2mm; }
-  .atv-portail-texte { display: flex; align-items: center; gap: 1.5mm; width: 44mm; border: 1px solid #e9a23b; border-radius: 4mm;
-    padding: 1.2mm 2.5mm 1.2mm 1.2mm; font-size: 7.5pt; line-height: 1.25; }
-  .atv-portail-texte svg { flex: none; width: 7mm; height: 7mm; }
-  .atv-qr-portail { width: 22mm; height: 22mm; display: block; }
-  .atv-contact { display: inline-flex; align-items: center; gap: 2mm; border: 1px solid #e9a23b; border-radius: 4mm;
-    padding: 1mm 3mm 1mm 1mm; font-size: 8.5pt; }
-  .atv-contact i { display: inline-flex; align-items: center; justify-content: center; width: 5.5mm; height: 5.5mm; border-radius: 50%;
-    background: #2f3352; color: #fff; font-style: normal; font-size: 8pt; font-weight: 700; }
-  .atv-contact svg { width: 3.2mm; height: 3.2mm; }
-  /* Cachet de la compagnie et signature de l'assuré apposés à la main (espace réservé) */
-  .atv-signatures { display: flex; justify-content: space-between; margin-top: 9mm; height: 36mm; font-size: 9.5pt; }
-  .atv-signe-cie { position: relative; width: 58%; }
-  .atv-signe-cie > div:first-child { margin-left: 30mm; }
-  .atv-fait { position: absolute; left: 0; top: 17mm; }
-  .atv-fait b { font-weight: 400; letter-spacing: 0.3px; }
-  .atv-signe-assure { width: 34%; }
-  .atv-onglet { position: absolute; right: 0; top: 112mm; width: 7mm; height: 52mm; background: #3d5a99; color: #fff;
-    display: flex; align-items: center; justify-content: center; border-radius: 2mm 0 0 2mm; }
-  .atv-onglet span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 7.5pt; white-space: nowrap; }
+  .atv-page > * { position: absolute; margin: 0; }
+  .atv-logo { left: 7.9mm; top: 13.8mm; width: 37mm; height: 22.7mm; }
+  .atv-titre { left: 63.5mm; top: 21.2mm; font-size: 17.3pt; color: #3a3f6b; white-space: nowrap; }
+  .atv-filet-titre { left: 47mm; top: 29.9mm; width: 156mm; border-top: 0.3mm solid #4b5080; }
+  .atv-soustitre { left: 57mm; top: 31.5mm; width: 126mm; font-size: 9.3pt; line-height: 4.5mm; text-align: center; white-space: nowrap; }
+  .atv-section { left: 14.5mm; font-size: 10pt; font-weight: 700; color: #3e4766; white-space: nowrap; }
+  .atv-filet { left: 13.2mm; width: 181.5mm; border-top: 0.45mm solid #2f3352; }
+  .atv-infos { left: 14.5mm; top: 57.1mm; width: 184mm; }
+  .atv-ligne { display: flex; height: 5.4mm; line-height: 5.4mm; }
+  .atv-info { width: 91.8mm; display: flex; align-items: baseline; gap: 2mm; white-space: nowrap; }
+  .atv-info span { font-size: 9pt; color: #45454c; }
+  .atv-info b { font-family: Arial, Helvetica, sans-serif; font-size: 9.6pt; font-weight: 400; color: #18181b; }
+  .atv-liste { left: 14.5mm; width: 182mm; list-style: none; padding: 0; font-size: 8.5pt; white-space: nowrap; }
+  .atv-liste li { position: relative; padding-left: 2.4mm; }
+  .atv-liste li::before { content: '•'; position: absolute; left: 0; color: #a1a1aa; font-size: 6.5pt; }
+  .atv-garanties { top: 102.6mm; }
+  .atv-garanties li { line-height: 4.94mm; }
+  .atv-dispositions { top: calc(131.4mm + var(--dec)); }
+  .atv-dispositions li { line-height: 4.58mm; }
+  .atv-dispositions li::before { color: #d4d4d8; }
+  .atv-paragraphe { left: 13.2mm; font-size: 8.5pt; white-space: nowrap; }
+  .atv-confirmation { top: calc(159.4mm + var(--dec)); line-height: 4.58mm; }
+  .atv-qr-visa { left: 174.6mm; top: calc(164.5mm + var(--dec)); width: 10mm; height: 10mm; }
+  .atv-texte-assistance { top: calc(186.7mm + var(--dec)); line-height: 3.97mm; }
+  /* Pastilles de contact : rond sombre à gauche, contour orangé arrondi à droite */
+  .atv-contacts { left: 13.2mm; top: calc(197.7mm + var(--dec)); }
+  .atv-pastilles { display: flex; gap: 2.2mm; height: 5mm; margin-bottom: 3.8mm; }
+  .atv-pastille { display: inline-flex; align-items: center; height: 5mm; font-size: 8.5pt; white-space: nowrap; }
+  .atv-pastille i { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; flex: none;
+    width: 5mm; height: 5mm; border-radius: 50%; background: #3f3f46; color: #fff; font-style: normal; font-size: 8.5pt; font-weight: 700; }
+  .atv-pastille i svg { width: 3mm; height: 3mm; }
+  .atv-pastille span { margin-left: -2.5mm; padding: 0 3.2mm 0 3.5mm; height: 4.4mm; line-height: 4.4mm; box-sizing: border-box;
+    border: 0.25mm solid #e9b64f; border-left: none; border-radius: 0 2.2mm 2.2mm 0; }
+  .atv-pastille b { font-weight: 700; color: #27272a; }
+  .atv-portail-texte { left: 117.7mm; top: calc(197mm + var(--dec)); width: 48.3mm; height: 14.6mm; box-sizing: border-box;
+    border: 0.25mm solid #e9b64f; border-left: none; border-radius: 0 7.3mm 7.3mm 0; padding: 0.4mm 0 0 4.4mm;
+    font-size: 8.5pt; line-height: 3.45mm; white-space: nowrap; }
+  .atv-portail-texte svg { width: 2.4mm; height: 2.6mm; vertical-align: -0.4mm; margin-left: 1mm; }
+  .atv-www { left: 111.9mm; top: calc(201.3mm + var(--dec)); width: 8.2mm; height: 6.6mm; }
+  .atv-qr-portail { left: 171.4mm; top: calc(189mm + var(--dec)); width: 23.6mm; height: 23.6mm; }
+  .atv-qr-portail svg, .atv-www svg { display: block; width: 100%; height: 100%; }
+  /* Cachet de la compagnie et signature de l'assuré apposés à la main */
+  .atv-signe { top: calc(229.25mm + var(--dec)); font-size: 9.7pt; line-height: 3.6mm; white-space: nowrap; }
+  .atv-pour { left: 60.3mm; }
+  .atv-signe-assure { left: 130.7mm; }
+  .atv-fait { left: 17.2mm; top: calc(241.3mm + var(--dec)); font-size: 9.7pt; line-height: 3.95mm; white-space: nowrap; }
+  .atv-fait div + div { padding-left: 11.9mm; }
+  .atv-fait b { font-family: 'Courier New', Courier, monospace; font-size: 9.1pt; font-weight: 400; }
+  .atv-onglet { left: 200.2mm; top: 95.2mm; width: 4mm; height: 42.3mm; background: #4a67a1; color: #fff;
+    display: flex; align-items: center; justify-content: center; border-radius: 1.2mm 0 0 1.2mm; }
+  .atv-onglet span { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 7pt; white-space: nowrap; }
   @media print { .atv-page { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 `;
 
 const ICONE_TELEPHONE = '<svg viewBox="0 0 24 24" fill="#fff"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
-const ICONE_MESSAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>';
+// WhatsApp : bulle et combiné
+const ICONE_MESSAGE = '<svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/><path d="M9.2 7.6c.3-.3.8-.3 1 .1l.9 1.7c.2.3.1.7-.1.9l-.6.6c.6 1.2 1.6 2.2 2.8 2.8l.6-.6c.2-.2.6-.3.9-.1l1.7.9c.4.2.4.7.1 1l-.8.8c-.5.5-1.3.6-2 .3-2.3-1-4.2-2.9-5.2-5.2-.3-.7-.2-1.5.3-2Z" fill="#fff"/></svg>';
 
-const ICONE_WWW = '<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#2f3352"/><g fill="none" stroke="#fff" stroke-width="1.6"><circle cx="16" cy="16" r="9"/><ellipse cx="16" cy="16" rx="4" ry="9"/><path d="M7 16h18M8.5 11.5h15M8.5 20.5h15"/></g></svg>';
+// « ((www » de l'imprimé : ondes à gauche du globe
+const ICONE_WWW = '<svg viewBox="0 0 41 33"><path d="M8 4.5A15 15 0 0 0 8 28.5" fill="none" stroke="#3f3f46" stroke-width="3.4"/><circle cx="24.5" cy="16.5" r="15.5" fill="#3f3f46"/><g fill="none" stroke="#fff" stroke-width="1.3"><ellipse cx="24.5" cy="16.5" rx="6" ry="12"/><path d="M12.5 9.5h24M12.5 23.5h24"/></g><rect x="11" y="12.3" width="27" height="8.4" fill="#3f3f46"/><text x="24.5" y="19.4" text-anchor="middle" font-family="Arial" font-weight="700" font-size="7.6" fill="#fff">www</text></svg>';
 
-// QR codes de l'attestation (data URL) : portail d'assistance et, si la compagnie a fourni l'adresse de
-// son service de vérification, vérification du certificat ({certificat} = n° de certificat)
+// Pointe « ▶ » arrondie après « Scanner le QR code ci-contre »
+const ICONE_POINTE = '<svg viewBox="0 0 10 11"><path d="M0 0h3.5a5.5 5.5 0 0 1 0 11H0z" fill="#3f3f46"/></svg>';
+
+// QR du portail d'assistance dessiné comme sur l'imprimé : repères ronds, modules en points détachés et
+// logo « C » au centre, entouré de quatre équerres (niveau de correction H : le logo masque des modules)
+const qrPortailSvg = (texte) => {
+  const { modules } = QRCode.create(texte, { errorCorrectionLevel: 'H' });
+  const n = modules.size;
+  const cote = Math.round(n * 0.27) | 1;
+  const debut = (n - cote) / 2;
+  const repere = (l, c) => (l < 8 && c < 8) || (l < 8 && c >= n - 8) || (l >= n - 8 && c < 8);
+  const logo = (l, c) => l >= Math.floor(debut) && l <= Math.ceil(debut + cote - 1) && c >= Math.floor(debut) && c <= Math.ceil(debut + cote - 1);
+  let points = '';
+  for (let l = 0; l < n; l += 1) {
+    for (let c = 0; c < n; c += 1) {
+      if (modules.get(l, c) && !repere(l, c) && !logo(l, c)) points += `M${c + 0.1} ${l + 0.1}h0.8v0.8h-0.8z`;
+    }
+  }
+  const rond = (x, y) => `<circle cx="${x + 3.5}" cy="${y + 3.5}" r="3" fill="none" stroke="#27272a" stroke-width="1"/>`
+    + `<circle cx="${x + 3.5}" cy="${y + 3.5}" r="1.55" fill="#27272a"/>`;
+  const m = n / 2;
+  const k = cote / 2 - 0.2;
+  const b = cote * 0.24;
+  const equerres = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => (
+    `<path d="M${m + sx * k} ${m + sy * (k - b)}V${m + sy * k}H${m + sx * (k - b)}" fill="none" stroke="#27272a" stroke-width="0.3"/>`
+  )).join('');
+  const r = cote * 0.25;
+  const point = (deg) => `${(m + r * Math.cos((deg * Math.PI) / 180)).toFixed(3)} ${(m - r * Math.sin((deg * Math.PI) / 180)).toFixed(3)}`;
+  const lettreC = `<path d="M${point(32)}A${r} ${r} 0 1 0 ${point(-32)}" fill="none" stroke="#3f3f46" stroke-width="${(cote * 0.2).toFixed(2)}"/>`
+    + `<path d="M${point(38)}L${(m + r * 1.45).toFixed(3)} ${(m - r * 0.55).toFixed(3)}" stroke="#3f3f46" stroke-width="${(cote * 0.07).toFixed(2)}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}"><path d="${points}" fill="#27272a"/>`
+    + `${rond(0, 0)}${rond(n - 7, 0)}${rond(0, n - 7)}${equerres}${lettreC}</svg>`;
+};
+
+// QR codes de l'attestation : portail d'assistance (SVG au dessin de l'imprimé) et, si la compagnie a fourni
+// l'adresse de son service de vérification, vérification du certificat ({certificat} = n° de certificat)
 const qrAttestationVoyage = async (a, modele) => {
   const qr = {};
   const image = (texte) => QRCode.toDataURL(texte, { margin: 0, width: 300, errorCorrectionLevel: 'M' });
   try {
-    if (modele.portail) qr.portail = await image(modele.portail);
+    if (modele.portail) qr.portail = qrPortailSvg(modele.portail);
     const certificat = String(a.NumeroCertificat || '').trim();
     if (modele.verification && certificat) {
       qr.verification = await image(modele.verification.replace(/\{certificat\}/gi, encodeURIComponent(certificat)));
@@ -2655,95 +2808,110 @@ const qrAttestationVoyage = async (a, modele) => {
 const buildAttestationVoyage = (a, modele, qr = {}) => {
   const t = (v) => echapperHtml(v === undefined || v === null ? '' : String(v).trim());
   const jma = (v, sep = '/') => (v ? String(v).slice(0, 10).split('-').reverse().join(sep) : '');
-  const info = (label, valeur) => `<div class="atv-info"><span>${label} :</span><b>${t(valeur)}</b></div>`;
+  // Valeur trop longue pour sa colonne (nom complet d'une fiche reprise) : police réduite, jamais de débordement
+  const info = (label, valeur) => {
+    const longueur = `${label} : ${valeur ?? ''}`.length;
+    const taille = longueur > 40 ? ` style="font-size:${Math.max(7, (9.6 * 40) / longueur).toFixed(1)}pt"` : '';
+    return `<div class="atv-info"><span>${label} :</span><b${taille}>${t(valeur)}</b></div>`;
+  };
+  const ligne = (gauche, droite) => `<div class="atv-ligne">${gauche}${droite}</div>`;
+  // Fiche reprise d'URANUS, nom complet sans prénoms : nom d'usage (jusqu'au nom qui suit EPSE / NÉE)
+  // en « Nom », le reste en « Prénom », comme sur l'imprimé (« KOUADIO EPSE DA » / « MARTIN YVETTE »)
+  let [nomAssure, prenomsAssure] = [String(a.Nom || '').trim(), String(a.Prenoms || '').trim()];
+  if (!prenomsAssure) {
+    const mots = nomAssure.split(/\s+/).filter(Boolean);
+    const epouse = mots.findIndex((m) => /^(EPSE|EPOUSE|ÉPOUSE|EP|NEE|NÉE|VVE|VEUVE)$/i.test(m));
+    const coupe = epouse >= 0 && epouse + 2 < mots.length ? epouse + 2 : (epouse < 0 ? 1 : mots.length);
+    if (mots.length > coupe) [nomAssure, prenomsAssure] = [mots.slice(0, coupe).join(' '), mots.slice(coupe).join(' ')];
+  }
+  // Section : titre et filet aux cotes de l'imprimé (en mm), décalés après une liste de garanties plus longue
+  const section = (titre, haut, filet, decale = true) => {
+    const pos = (mm) => (decale ? `calc(${mm}mm + var(--dec))` : `${mm}mm`);
+    return `<div class="atv-section" style="top:${pos(haut)}">${titre}</div><div class="atv-filet" style="top:${pos(filet)}"></div>`;
+  };
   const { telephone, email, whatsapp } = modele.assistance;
+  // « Pour AMSA ASSURANCES / COTE D'IVOIRE: » sur deux lignes, comme sur l'imprimé
+  const signataire = String(modele.signataire || '').trim();
+  const coupure = signataire.match(/^(.+?)\s+(C[OÔ]TE D.IVOIRE)$/i)
+    || (signataire.length > 22 ? signataire.match(/^(.{1,22})\s+(.+)$/) : null);
+  const [signe1, signe2] = coupure ? [coupure[1], coupure[2]] : [signataire, ''];
+  const nombre = modele.exemplaires.length;
+  const decalage = (Math.max(modele.garanties.length, 4) - 4) * 4.94;
   const page = (exemplaire) => `
-    <div class="atv-page">
-      <div class="atv-entete">
-        <img src="${modele.logo}" alt="${t(a.Compagnie)}" class="atv-logo" />
-        <div class="atv-titres">
-          <div class="atv-titre">Attestation d’assurance et d’assistance voyage</div>
-          <div class="atv-soustitre">Cette attestation est destinée à valoir et faire valoir ce que de droit dans le cas d’une
-            demande de visa auprès des consulats étrangers.</div>
-        </div>
-      </div>
+    <div class="atv-page" style="--dec:${decalage.toFixed(2)}mm">
+      ${modele.logo
+        ? `<img src="${modele.logo}" alt="${t(a.Compagnie)}" class="atv-logo" />`
+        : `<div class="atv-logo" style="display:flex;align-items:center;justify-content:center;border:0.3mm solid #3a3f6b;font-size:12pt;font-weight:700;color:#3a3f6b;text-align:center">${t(a.Compagnie)}</div>`}
+      <div class="atv-titre">${a.IdDevis && !a.IdContrat ? t(titreDevis(a.NumeroDevis)) : 'Attestation d’assurance et d’assistance voyage'}</div>
+      <div class="atv-filet-titre"></div>
+      <div class="atv-soustitre">Cette attestation est destinée à valoir et faire valoir ce que de droit dans le cas d’une<br/>
+        demande de visa auprès des consulats étrangers.</div>
 
-      <div class="atv-section">Renseignement de l’assuré</div>
+      ${section('Renseignement de l’assuré', 51.95, 56, false)}
       <div class="atv-infos">
-        ${info('Nom', String(a.Nom || '').toUpperCase())}
-        ${info('Convention', modele.convention)}
-        ${info('Prénom', String(a.Prenoms || '').toUpperCase())}
-        ${info('No de certificat', a.NumeroCertificat)}
-        ${info('Date de naissance', jma(a.DateNaissance))}
-        ${info('Début de validité', jma(a.DebutValidite))}
-        ${info('Nationalité', String(a.Nationalite || '').toUpperCase())}
-        ${info('Fin de validité', jma(a.FinValidite))}
-        ${info('No de passeport', a.NumeroPasseport)}
-        ${info('Pays de destination', String(a.PaysDestination || '').toUpperCase())}
-        ${info('Pays de résidence', modele.paysResidence)}
-        ${info('Zone de couverture', a.ZoneCouverture)}
+        ${ligne(info('Nom', nomAssure.toUpperCase()), info('Convention', modele.convention))}
+        ${ligne(info('Prénom', prenomsAssure.toUpperCase()), info('No de certificat', a.NumeroCertificat))}
+        ${ligne(info('Date de naissance', jma(a.DateNaissance)), info('Début de validité', jma(a.DebutValidite)))}
+        ${ligne(info('Nationalité', String(a.Nationalite || '').toUpperCase()), info('Fin de validité', jma(a.FinValidite)))}
+        ${ligne(info('No de passeport', a.NumeroPasseport), info('Pays de destination', String(a.PaysDestination || '').toUpperCase()))}
+        ${ligne(info('Pays de résidence', modele.paysResidence), info('Zone de couverture', a.ZoneCouverture))}
       </div>
 
-      <div class="atv-section">Principales Garanties</div>
-      <ul class="atv-puces">${modele.garanties.map((g) => `<li>${t(g)}</li>`).join('')}</ul>
+      ${section('Principales Garanties', 97.65, 102, false)}
+      <ul class="atv-liste atv-garanties">${modele.garanties.map((g) => `<li>${t(g)}</li>`).join('')}</ul>
 
-      <div class="atv-section">Dispositions Spéciales</div>
-      <ul class="atv-puces">
-        <li>L’Assuré reconnaît avoir reçu les Conditions Générales du contrat et déclare avoir pris connaissance des évènements garantis ainsi que
+      ${section('Dispositions Spéciales', 125.65, 130.1)}
+      <ul class="atv-liste atv-dispositions">
+        <li>L’Assuré reconnaît avoir reçu les Conditions Générales du contrat et déclare avoir pris connaissance des évènements garantis ainsi que<br/>
           des exclusions générales et médicales. L’assuré déclare ne pas effectuer ce voyage à des fins thérapeutiques.</li>
-        <li>Ce certificat ne peut servir en aucun cas de lettre de garantie ou de prise en charge auprès des structures médicales publiques ou privées
+        <li>Ce certificat ne peut servir en aucun cas de lettre de garantie ou de prise en charge auprès des structures médicales publiques ou privées<br/>
           comme de tout autre organisme.</li>
       </ul>
 
-      <div class="atv-section">Confirmation d’assurance voyage pour une demande de visa</div>
-      <div class="atv-confirmation">
-        <p class="atv-texte">Nous certifions que la personne mentionnée bénéficie d’une couverture d’assurance voyage conforme aux
-          garanties énoncées dans le présent certificat. Cette assurance répond aux exigences du règlement (CE)
-          N° 810/2009 et est valable pour une demande de visa auprès des États membres de l’espace Schengen.${qr.verification ? `<br/>
-          Le code QR ci-contre permet aux autorités compétentes de vérifier la validité du contrat.` : ''}</p>
-        ${qr.verification ? `<img src="${qr.verification}" alt="QR code de vérification" class="atv-qr-visa" />` : ''}
-      </div>
+      ${section('Confirmation d’assurance voyage pour une demande de visa', 153.45, 157.9)}
+      <p class="atv-paragraphe atv-confirmation">Nous certifions que la personne mentionnée bénéficie d’une couverture d’assurance voyage conforme aux<br/>
+        garanties énoncées dans le présent certificat. Cette assurance répond aux exigences du règlement (CE)<br/>
+        N° 810/2009 et est valable pour une demande de visa auprès des États membres de l’espace Schengen.${qr.verification ? `<br/>
+        Le code QR ci-contre permet aux autorités compétentes de vérifier la validité du contrat.` : ''}</p>
+      ${qr.verification ? `<img src="${qr.verification}" alt="QR code de vérification" class="atv-qr-visa" />` : ''}
 
-      <div class="atv-section">Que faire en cas de besoin d’assistance ?</div>
-      <p class="atv-texte">En cas de sinistre, et avant d’engager toute dépense, l’assuré (ou toute personne agissant pour son compte) doit
-        impérativement contacter la compagnie d’assistance dans les 5 jours suivant l’évènement :</p>
-      <div class="atv-assistance">
-        <div class="atv-contacts">
-          <div class="atv-contacts-ligne">
-            <span class="atv-contact"><i>${ICONE_TELEPHONE}</i>Tél. : <strong>${t(telephone)}</strong></span>
-            <span class="atv-contact"><i>@</i>E-mail : <strong>${t(email)}</strong></span>
-          </div>
-          <div class="atv-contacts-ligne">
-            <span class="atv-contact"><i>${ICONE_MESSAGE}</i>WhatsApp (messages uniquement) : <strong>${t(whatsapp)}</strong></span>
-          </div>
+      ${section('Que faire en cas de besoin d’assistance ?', 180.45, 184.6)}
+      <p class="atv-paragraphe atv-texte-assistance">En cas de sinistre, et avant d’engager toute dépense, l’assuré (ou toute personne agissant pour son compte) doit<br/>
+        impérativement contacter la compagnie d’assistance dans les 5 jours suivant l’événement :</p>
+      <div class="atv-contacts">
+        <div class="atv-pastilles">
+          ${telephone ? `<span class="atv-pastille"><i>${ICONE_TELEPHONE}</i><span>Tél.: <b>${t(telephone)}</b></span></span>` : ''}
+          ${email ? `<span class="atv-pastille"><i>@</i><span>E-mail : <b>${t(email)}</b></span></span>` : ''}
         </div>
-        ${qr.portail ? `
-        <div class="atv-portail">
-          <div class="atv-portail-texte">${ICONE_WWW}<span>Scanner le QR code ci-contre pour accéder au (Portail en ligne, WhatsApp Form)</span></div>
-          <img src="${qr.portail}" alt="QR code du portail d'assistance" class="atv-qr-portail" />
-        </div>` : ''}
+        <div class="atv-pastilles">
+          ${whatsapp ? `<span class="atv-pastille"><i>${ICONE_MESSAGE}</i><span>WhatsApp (messages uniquement): <b>${t(whatsapp)}</b></span></span>` : ''}
+        </div>
       </div>
+      ${qr.portail ? `
+      <div class="atv-portail-texte">Scanner le QR code ci-contre${ICONE_POINTE}<br/>pour accéder au (Portail en ligne,<br/>WhatsApp Form)</div>
+      <div class="atv-www">${ICONE_WWW}</div>
+      <div class="atv-qr-portail">${qr.portail}</div>` : ''}
 
-      <div class="atv-signatures">
-        <div class="atv-signe-cie">
-          <div>Pour ${t(modele.signataire)} :</div>
-          <div class="atv-fait">Fait, en ${NOMBRES_EN_LETTRES[modele.exemplaires.length - 1] || modele.exemplaires.length} exemplaire${modele.exemplaires.length > 1 ? 's' : ''}, à ${t(villeSignature())} le : <b>${jma(a.DateEmission, '-')}</b></div>
-        </div>
-        <div class="atv-signe-assure">Signature de l’Assuré :</div>
+      <div class="atv-signe atv-pour">Pour ${t(signe1)}${signe2 ? `<br/>${t(signe2)}:` : ':'}</div>
+      <div class="atv-signe atv-signe-assure">Signature de l’Assuré:</div>
+      <div class="atv-fait">
+        <div>Fait, en ${NOMBRES_EN_LETTRES[nombre - 1] || nombre} exemplaire${nombre > 1 ? 's' : ''}, à</div>
+        <div>${t(villeSignature())} le :&nbsp; <b>${jma(a.DateEmission, '-')}</b></div>
       </div>
 
       <div class="atv-onglet"><span>${t(exemplaire)}</span></div>
     </div>`;
-  return `<style>${ATTESTATION_VOYAGE_STYLES}</style>${modele.exemplaires.map(page).join('')}`;
+  // Une seule page imprimée, celle de l'imprimé (« Exemplaire destiné aux Consulats ») ; la mention
+  // « Fait, en trois exemplaires » reste celle du modèle (demande de l'utilisateur du 2026-10-12)
+  return `<style>${ATTESTATION_VOYAGE_STYLES}</style>${page(modele.exemplaires[0] || '')}`;
 };
 
 /**
  * Attestation d'assurance et d'assistance voyage d'un contrat (ou d'un devis : { devis: true }) ;
- * c'est aussi la présentation des Conditions Particulières Voyage (décision du 2026-10-11).
- * Compagnie sans modèle d'attestation : `sansModele(fenetre)` si fourni (document de repli dans la
- * même fenêtre), sinon un message. Renvoie false dans ce cas.
+ * c'est le seul document imprimé en Voyage (décisions des 2026-10-11 et 2026-10-12), quelle que soit
+ * la compagnie. Renvoie false si le devis ou le contrat n'a pas pu être lu.
  */
-export const printAttestationVoyage = async (objet, { devis = false, fenetre: fenetreFournie = null, sansModele = null } = {}) => {
+export const printAttestationVoyage = async (objet, { devis = false, fenetre: fenetreFournie = null } = {}) => {
   const id = devis
     ? (objet?.iddevis || objet?.raw?.iddevis || objet?.id)
     : (objet?.raw?.idcontrat || objet?.idcontrat || objet?.id);
@@ -2758,14 +2926,16 @@ export const printAttestationVoyage = async (objet, { devis = false, fenetre: fe
   message("Préparation de l'attestation…");
   try {
     const a = await impressionVoyageApi.getAttestation(id, { devis });
-    const modele = modeleAttestationVoyage(a.IdCompagnie);
-    if (!modele) {
-      if (sansModele) await sansModele(fenetre);
-      else message(`Aucun modèle d'attestation voyage pour ${echapperHtml(a.Compagnie || 'cette compagnie')} : à renseigner dans Administration &gt; Compagnies partenaires, onglet « Attestation voyage ».`, '#b45309');
-      return false;
-    }
+    // L'attestation est le seul document Voyage : une compagnie sans modèle propre reçoit la même fiche,
+    // à son nom et avec son logo ; convention, garanties et assistance (propres à chaque compagnie) restent
+    // vides tant qu'elles ne sont pas saisies dans Administration > Compagnies partenaires.
+    const modele = modeleAttestationVoyage(a.IdCompagnie) || {
+      ...construireModeleAttestation(documentsCompagnie(a.IdCompagnie) || { RaisonSociale: a.Compagnie }),
+      paysResidence: 'CÔTE D\'IVOIRE',
+      exemplaires: ['Exemplaire destiné aux Consulats', 'Exemplaire de l\'Assuré', 'Exemplaire de la Compagnie'],
+    };
     const qr = await qrAttestationVoyage(a, modele);
-    openPrintWindow(`Attestation voyage ${a.NumeroCertificat || a.NumeroPolice || a.NumeroDevis || ''}`.trim(), buildAttestationVoyage(a, modele, qr), fenetre);
+    openPrintWindow((devis ? `Devis ${a.NumeroDevis || ''}` : `Attestation voyage ${a.NumeroCertificat || a.NumeroPolice || ''}`).trim(), buildAttestationVoyage(a, modele, qr), fenetre);
     return true;
   } catch (err) {
     console.error('Erreur attestation Voyage :', err);
@@ -3111,7 +3281,7 @@ const buildSimpleFacture = (quote) => {
   const ayantsDroit = quote.raw?.ayants_droit || quote.details?.ayantsDroit || [];
 
   return `
-    ${printDocHeader(quote, `FACTURE N° ${numero}`)}
+    ${printDocHeader(quote, estImpressionContrat(quote) ? `FACTURE N° ${numero}` : titreDevis(quote.numerodevis))}
 
     <div class="bloc-titre">SOUSCRIPTEUR</div>
     <table class="bloc-cadre">
@@ -3218,8 +3388,11 @@ const buildMrhFacture = (quote) => {
   return `
     ${printDocHeader(quote, '')}
     <div class="titre-mrh">
+      ${estImpressionContrat(quote) ? `
       <div>Assurance MULTIRISQUES HABITATION</div>
-      <div>Proposition ${(quote.compagnie || 'NSIA CI')}</div>
+      <div>Proposition ${(quote.compagnie || 'NSIA CI')}</div>` : `
+      <div><b>${titreDevis(quote.numerodevis)}</b></div>
+      <div>Assurance MULTIRISQUES HABITATION — ${(quote.compagnie || 'NSIA CI')}</div>`}
     </div>
 
     <div class="ligne-identifiants">
@@ -3545,7 +3718,7 @@ const openPrintWindow = (title, bodyHtml, targetWindow = null) => {
 export const printQuoteFacture = (quote) => {
   if (!quote) return;
   if (estDevisIa(quote)) {
-    return imprimerDocumentIa(quote, `Facture ${quote.numerodevis || ''}`.trim(), buildFactureIa);
+    return imprimerDocumentIa(quote, `Devis ${quote.numerodevis || ''}`.trim(), buildFactureIa);
   }
   // Devis Voyage : numéro d'attestation et adresses lus sur le devis (absents de la liste des devis)
   if (estDevisVoyage(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
@@ -3563,7 +3736,7 @@ export const printQuoteFacture = (quote) => {
         souscripteur: q.NomClient || quote.souscripteur,
       }))
       .catch(() => quote)
-      .then((devis) => openPrintWindow(devis.numerodevis || 'Devis', buildSimpleFacture(devis), fenetre));
+      .then((devis) => openPrintWindow(`Devis ${devis.numerodevis || ''}`.trim(), buildSimpleFacture(devis), fenetre));
     return;
   }
   // Devis MRH : garanties souscrites, capitaux/franchises, adresse et date de naissance lus sur le devis
@@ -3583,7 +3756,7 @@ export const printQuoteFacture = (quote) => {
         souscripteur: q.NomClient || quote.souscripteur,
       }))
       .catch(() => quote)
-      .then((devis) => openPrintWindow(devis.numerodevis || 'Devis', buildMrhFacture(devis), fenetre));
+      .then((devis) => openPrintWindow(`Devis ${devis.numerodevis || ''}`.trim(), buildMrhFacture(devis), fenetre));
     return;
   }
   const branche = String(quote.branche || quote.produit || '').toLowerCase();
@@ -3595,7 +3768,7 @@ export const printQuoteFacture = (quote) => {
   } else {
     bodyHtml = buildSimpleFacture(quote);
   }
-  openPrintWindow(quote.numerodevis || 'Devis', bodyHtml);
+  openPrintWindow(`${estImpressionContrat(quote) ? 'Facture' : 'Devis'} ${quote.numerodevis || ''}`.trim(), bodyHtml);
 };
 
 /**
@@ -3611,6 +3784,7 @@ const contratCommeDevis = (contract) => {
   const produit = bc.idproduit && typeof bc.idproduit === 'object' ? bc.idproduit.libelle_produit : null;
   return {
     ...contract,
+    estContrat: true,
     numerodevis: bc.numeropolice || contract.numeropolice,
     iddevis: bc.idcontrat || contract.id,
     produit: produit || contract.produit,
@@ -3648,19 +3822,15 @@ export const printContratConditionsParticulieres = (contract) => {
  */
 export const printConditionsParticulieres = async (quote, { contrat = false } = {}) => {
   if (!quote) return;
-  const title = `Conditions Particulieres ${quote.numerodevis || quote.iddevis || ''}`.trim();
-  // Voyage (devis et contrat) : Conditions Particulières au modèle de l'attestation d'assurance et
-  // d'assistance voyage de la compagnie (décision du 2026-10-11). Compagnie sans modèle : proposition
-  // URANUS pour un devis, Conditions Particulières génériques (ci-dessous) pour un contrat.
-  let fenetreRepli = null;
+  const title = `${contrat ? 'Conditions Particulieres' : 'Devis'} ${quote.numerodevis || quote.iddevis || ''}`.trim();
+  // Voyage (devis et contrat) : l'attestation d'assurance et d'assistance voyage est le seul document,
+  // quelle que soit la compagnie (décisions des 2026-10-11 et 2026-10-12)
   if (estDevisVoyage(quote)) {
-    const fenetreVoyage = window.open('', '_blank');
-    const imprime = await printAttestationVoyage(
+    await printAttestationVoyage(
       contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : quote,
-      { devis: !contrat, fenetre: fenetreVoyage, sansModele: contrat ? async () => {} : (f) => printPropositionVoyage(quote, { fenetre: f }) },
+      { devis: !contrat, fenetre: window.open('', '_blank') },
     );
-    if (imprime || !contrat) return;
-    fenetreRepli = fenetreVoyage;
+    return;
   }
   // Devis Dommages : cotation au format de la fiche NSIA (le contrat garde ses Conditions Particulières)
   if (!contrat && estDevisDommages(quote)) {
@@ -3675,7 +3845,7 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
   }
   // Santé MINENE : Conditions Particulières du modèle OREOLE (barème et liste des assurés en annexe) ;
   // autre offre Santé : modèle générique ci-dessous, dans la même fenêtre
-  let fenetreSante = fenetreRepli;
+  let fenetreSante = null;
   if (!fenetreSante && estDevisSante(quote)) {
     fenetreSante = window.open('', '_blank');
     const ids = contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : { iddevis: quote.iddevis || quote.id };
@@ -3699,7 +3869,12 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
       const cp = contrat
         ? await contractApi.getConditionsParticulieres(id)
         : await quoteApi.getConditionsParticulieres(id);
-      openPrintWindow(title, buildConditionsParticulieres(quote, cp), printWindow);
+      // Contrat RC chef de famille MINENE : CP du modèle URANUS (contrat connexe à la police Santé)
+      if (contrat && Number(cp?.quittance?.id_offre) === ID_OFFRE_RC_MINENE) {
+        openPrintWindow(`CP RC MINENE ${cp.quittance.numero_police || ''}`.trim(), buildCpRcMinene(quote, cp), printWindow);
+      } else {
+        openPrintWindow(title, buildConditionsParticulieres(quote, cp), printWindow);
+      }
     }
   } catch (err) {
     console.error('Erreur Conditions Particulières:', err);

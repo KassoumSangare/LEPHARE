@@ -307,7 +307,7 @@ export const QuoteListPage = () => {
         'Date d\'édition': today,
         'Édité par': user?.nom ? `${user.nom} (${user.email || ''})` : (user?.email || 'Gestionnaire'),
         'Périmètre': `Filtre actif : ${tabName}`,
-        'Volume coté': `${listToPrint.length} propositions (${Number(countByBranch[branchToUse] || listToPrint.length).toLocaleString('fr-FR')} en base)`,
+        'Volume coté': `${listToPrint.length} devis (${Number(countByBranch[branchToUse] || listToPrint.length).toLocaleString('fr-FR')} en base)`,
         'Total Primes TTC': `${totalMontant.toLocaleString('fr-FR')} FCFA`,
       },
       headers,
@@ -506,7 +506,7 @@ export const QuoteListPage = () => {
         return (
           <RowActions
             onView={() => setViewingQuote(row)}
-            viewTitle="Consulter l'intégralité du devis et imprimer la proposition"
+            viewTitle="Consulter l'intégralité du devis et l'imprimer"
             showConfirm={!isConsolidated && canConvert}
             confirmLabel={isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Confirmer'}
             confirmDisabled={isExpired || isPendingApproval}
@@ -539,7 +539,7 @@ export const QuoteListPage = () => {
               setDeletingQuote(row);
             }}
             archiveDisabled={!canDelete}
-            archiveTitle={canDelete ? 'Archiver la proposition (Conformité CIMA)' : "Non habilité pour l'archivage"}
+            archiveTitle={canDelete ? 'Archiver le devis (Conformité CIMA)' : "Non habilité pour l'archivage"}
           />
         );
       },
@@ -852,7 +852,7 @@ export const QuoteListPage = () => {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-            Êtes-vous sûr de vouloir valider et transformer la proposition{' '}
+            Êtes-vous sûr de vouloir valider et transformer le devis{' '}
             <strong style={{ color: '#fff' }}>{selectedQuote?.numerodevis}</strong> ({selectedQuote?.client_nom}) en contrat d'assurance définitif ?
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
@@ -871,7 +871,7 @@ export const QuoteListPage = () => {
         isOpen={!!deletingQuote}
         onClose={() => setDeletingQuote(null)}
         itemType="devis"
-        itemName={`Proposition ${deletingQuote?.numerodevis} (${deletingQuote?.client_nom})`}
+        itemName={`Devis ${deletingQuote?.numerodevis} (${deletingQuote?.client_nom})`}
         itemCode={deletingQuote?.numerodevis}
         validation={deleteValidation}
         onConfirm={async () => {

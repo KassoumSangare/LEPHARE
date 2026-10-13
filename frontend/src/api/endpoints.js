@@ -239,9 +239,10 @@ export const normalizeClient = (c) => {
 };
 
 export const customerApi = {
-  // GET /api/client/ (Liste des clients réels en BDD)
-  getClients: async () => {
-    const res = await apiClient.get('/client/');
+  // GET /api/client/ (Liste des clients réels en BDD, sans les fiches archivées par le nettoyage ;
+  // { archives: 1 } renvoie au contraire ces seules fiches, avec le motif)
+  getClients: async (params) => {
+    const res = await apiClient.get('/client/', params ? { params } : undefined);
     const list = extractData(res);
     return list.map(normalizeClient);
   },
@@ -1101,6 +1102,28 @@ export const risquesDiversApi = {
     const res = await apiClient.post(CHEMINS_RISQUES_DIVERS[idProduit].enregistrement, payload);
     return Array.isArray(res.data) ? res.data[0] : res.data;
   },
+  // POST /api/calculprime/ (bouton « Calculer » d'URANUS) : accessoire du barème de la compagnie
+  // (fn_get_accessoire) et taux de taxe du produit (fn_get_taux_taxe) pour une prime nette
+  calculer: async ({ idProduit, idCompagnie, idOffre, primeNette, dateEffet }) => {
+    const { data } = await apiClient.post('/calculprime/', {
+      id_produit: Number(idProduit),
+      id_compagnie: Number(idCompagnie),
+      id_offre: Number(idOffre),
+      prime_nette: Math.round(Number(primeNette) || 0),
+      date_effet: dateEffet,
+    });
+    return { accessoire: Math.round(Number(data?.accessoire) || 0), tauxTaxe: Number(data?.taux_taxe) || 0 };
+  },
+  // POST /api/domaineactiviterc/ : nouveau domaine d'activité RC (« + » du formulaire, comme URANUS)
+  creerDomaine: async (libelle) => (await apiClient.post('/domaineactiviterc/', { libelle })).data,
+  // POST /api/devis/:id/attacher_piece_jointe/ : fichier joint au devis (étape « Imposition » d'URANUS)
+  attacherPieceJointe: async (idDevis, fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier', fichier);
+    return (await apiClient.post(`/devis/${idDevis}/attacher_piece_jointe/`, formulaire, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })).data;
+  },
 };
 
 /* =========================================================================
@@ -1259,6 +1282,13 @@ export const parametrageApi = {
   modifierGarantiesDommages: async (idTarif, idCompagnie, garanties) => (
     await apiClient.put(`/parametrage/dommages/categories/${idTarif}/compagnies/${idCompagnie}/`, { Garanties: garanties })
   ).data,
+  // Réglages Santé MINENE : formules, paramètres sante.minene.*, répartition de la prime
+  // (configuration_api/parametrage_sante.py)
+  getSante: async () => (await apiClient.get('/parametrage/sante/')).data,
+  modifierFormuleSante: async (idOffre, donnees) => (await apiClient.patch(`/parametrage/sante/formules/${idOffre}/`, donnees)).data,
+  modifierParametreSante: async (cle, valeur) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametreSante: async (cle) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Retablir: true })).data,
+  modifierRepartitionSante: async (id, donnees) => (await apiClient.patch(`/parametrage/sante/repartitions/${id}/`, donnees)).data,
   // Barème d'URANUS (taxes, commissions, accessoires…) : route DRF complète, toutes les lignes
   bareme: (route) => ({
     lister: async () => {

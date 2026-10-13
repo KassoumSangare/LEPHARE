@@ -38,6 +38,7 @@ import {
   Ship,
   Briefcase,
   Printer,
+  Shield,
 } from 'lucide-react';
 
 // Formate une date en jj/mm/aaaa, quel que soit le format reçu du backend (ISO, etc.)
@@ -69,7 +70,7 @@ export const ContractListPage = () => {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
   // Décompte réel des contrats par branche (calculé sur les contrats chargés)
   const [stats, setStats] = useState(() => {
-    const empty = { ALL: 0, AUTO: 0, SANTE: 0, IA: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0 };
+    const empty = { ALL: 0, AUTO: 0, SANTE: 0, IA: 0, VOYAGE: 0, TRANSPORT: 0, MRH: 0, RC: 0 };
     try { return { ...empty, ...JSON.parse(sessionStorage.getItem('contractStats') || '{}') }; } catch { return empty; }
   });
 
@@ -88,10 +89,10 @@ export const ContractListPage = () => {
 
   const getBranchParams = (branch) => {
     switch (branch) {
-      // Resp. Civile (idproduit 8) est en réalité de l'assurance automobile (garantie au tiers) :
-      // même fiche véhicule (matricule, marque, modèle...) que les devis Automobile classiques,
-      // simplement enregistrée sous un autre code produit historique. Fusionnée avec Automobile.
-      case 'AUTO': return { idproduit: '1,8', page_size: 200 };
+      case 'AUTO': return { idproduit: 1, page_size: 200 };
+      // Responsabilité Civile (8) : RC professionnelle, exploitation, chef de famille MINENE — aucune
+      // police RC ne porte de véhicule (vérifié le 2026-10-12), ce n'est pas de l'automobile
+      case 'RC': return { idproduit: 8, page_size: 200 };
       case 'IA': return { idproduit: 2, page_size: 200 };
       case 'VOYAGE': return { idproduit: 3, page_size: 200 };
       case 'MRH': return { idproduit: '4,7,9', page_size: 200 };
@@ -103,7 +104,7 @@ export const ContractListPage = () => {
 
   // D�compte par branche : le serveur renvoie `count`. Requ�tes une par une, mises en cache.
   const loadStats = async () => {
-    const branches = ['ALL', 'AUTO', 'SANTE', 'IA', 'VOYAGE', 'TRANSPORT', 'MRH'];
+    const branches = ['ALL', 'AUTO', 'SANTE', 'IA', 'VOYAGE', 'TRANSPORT', 'MRH', 'RC'];
     for (const b of branches) {
       try {
         const n = await contractApi.getContractsCount(getBranchParams(b));
@@ -229,6 +230,7 @@ export const ContractListPage = () => {
       case 'VOYAGE': return 'Voyage';
       case 'TRANSPORT': return 'Transport';
       case 'MRH': return 'Multirisque Habitation';
+      case 'RC': return 'Responsabilité Civile';
       default: return 'Tous';
     }
   };
@@ -580,6 +582,7 @@ export const ContractListPage = () => {
     { key: 'VOYAGE', label: 'Voyage', icon: Plane, count: countByBranch.VOYAGE },
     { key: 'TRANSPORT', label: 'Transport', icon: Ship, count: countByBranch.TRANSPORT },
     { key: 'MRH', label: 'Multirisque Habitation', icon: Home, count: countByBranch.MRH },
+    { key: 'RC', label: 'Responsabilité Civile', icon: Shield, count: countByBranch.RC },
   ];
 
   return (

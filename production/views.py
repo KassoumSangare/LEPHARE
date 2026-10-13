@@ -469,11 +469,13 @@ def donnees_conditions_particulieres(objet, contrat=False):
             SELECT c.nom, c.prenoms, c.adresse1, c.adresse2, c.mobile, c.telephone, c.fixe,
                    q.libelle, p.libelle,
                    a.nom, a.prenoms, a.adresse1, a.adresse2,
-                   i.libelleintermediaire, o.idoffre, o.libelleoffre, av.libelleavenant
+                   i.libelleintermediaire, o.idoffre, o.libelleoffre, av.libelleavenant,
+                   d.numeropoliceconnexe, c.email, ta.libelletype, a.datenaissance
             FROM {t['entete']} d
             LEFT JOIN stdclient c ON c.idclient = d.idclient
             LEFT JOIN stdqualite q ON q.idqualite = c.idqualite
             LEFT JOIN stdprofession p ON p.idprofession = c.idprofession
+            LEFT JOIN stdtypeassure ta ON ta.id = c.idtypeassure
             LEFT JOIN stdclient a ON a.idclient = d.idassure
             LEFT JOIN stdintermediaire i ON i.idintermediaire = d.idintermediaire
             LEFT JOIN stdoffre o ON o.idoffre = {t['offre_entete']}
@@ -487,6 +489,7 @@ def donnees_conditions_particulieres(objet, contrat=False):
             titre, profession,
             a_nom, a_prenoms, a_adr1, a_adr2,
             intermediaire, idoffre, libelle_offre, mouvement,
+            police_connexe, c_email, type_client, a_naissance,
         ) = cursor.fetchone()
 
         # Offre non spécifiée au niveau du devis (idoffre 0) : on reprend celle
@@ -494,14 +497,14 @@ def donnees_conditions_particulieres(objet, contrat=False):
         if not idoffre:
             cursor.execute(
                 f"""
-                SELECT DISTINCT o.libelleoffre FROM {t['detail']} dd
+                SELECT DISTINCT o.idoffre, o.libelleoffre FROM {t['detail']} dd
                 JOIN stdoffre o ON o.idoffre = dd.idoffre
                 WHERE dd.{t['cle']} = %s AND dd.idoffre <> 0
                 """,
                 [objet.pk],
             )
-            offres = [r[0] for r in cursor.fetchall()]
-            libelle_offre = offres[0] if len(offres) == 1 else None
+            offres = cursor.fetchall()
+            idoffre, libelle_offre = offres[0] if len(offres) == 1 else (None, None)
 
         cursor.execute(
             f"""
@@ -581,11 +584,18 @@ def donnees_conditions_particulieres(objet, contrat=False):
                 "adresse": adresse(c_adr1, c_adr2),
                 "telephone": clean(c_mobile) or clean(c_tel) or clean(c_fixe),
                 "profession": clean(profession),
+                # Utilisés par la CP RC chef de famille MINENE (modèle URANUS CpRCMinene)
+                "mobile": clean(c_mobile) or clean(c_tel),
+                "email": clean(c_email),
+                "type": clean(type_client),
             },
             "intermediaire": clean(intermediaire),
             "quittance": {
                 "numero_police": clean(objet.numeropolice if contrat else objet.numerodevis),
+                "id_offre": idoffre,
+                "numero_police_connexe": clean(police_connexe) if clean(police_connexe) != "RAS" else None,
                 "assure": nom_complet(a_nom, a_prenoms) or clean(getattr(objet, "nomassure", None)),
+                "date_naissance_assure": a_naissance,
                 "adresse_assure": adresse(a_adr1, a_adr2),
                 "date_effet": objet.dateeffet,
                 "date_expiration": objet.dateexpiration,
@@ -1098,9 +1108,10 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             ).filter(
                 idquittance__police=F("numeropolice"), solde_quittance__gt=0
             ).order_by("-idcontrat")
-        else:
+        elif self.action == "list":
             # Portefeuille des Contrats : seuls les contrats émis durant les 3 dernières
-            # années sont affichés (même fenêtre que le Registre des Devis).
+            # années sont listés (même fenêtre que le Registre des Devis). Un contrat plus ancien
+            # reste consultable et imprimable par son identifiant (fiche contrat, dossier client).
             three_years_ago = timezone.now() - timedelta(days=365 * 3)
             queryset = queryset.filter(dateemission__gte=three_years_ago)
 
@@ -1114,6 +1125,10 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset = queryset.filter(idproduit_id__in=ids)
             elif str(idproduit).isdigit():
                 queryset = queryset.filter(idproduit_id=int(idproduit))
+
+        # Derniers contrats émis en tête : la liste est limitée à 200 lignes, sans ordre la base
+        # renvoyait 200 contrats quelconques et un contrat tout juste émis n'y figurait pas
+        queryset = queryset.order_by("-idcontrat")
 
         # Relations sérialisées (depth=1) et offre boisée chargées dans la même requête :
         # évite 8 à 10 requêtes par contrat sur les listes de 200 lignes

@@ -55,5 +55,9 @@ class ClientSerializer(serializers.ModelSerializer):
                 representation[champ] = int(getattr(instance, champ) or 0)
         if hasattr(instance, "total_primes"):
             representation["total_primes"] = int(round(instance.total_primes or 0))
+        # Fiches archivées par le nettoyage (liste ?archives=1)
+        for champ in ("motif_archivage", "date_archivage", "fiche_reference"):
+            if hasattr(instance, champ):
+                representation[champ] = getattr(instance, champ)
 
         return representation

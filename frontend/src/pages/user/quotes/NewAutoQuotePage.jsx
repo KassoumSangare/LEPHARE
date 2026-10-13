@@ -929,7 +929,9 @@ export const NewAutoQuotePage = () => {
   // main (mêmes champs, enregistrés avec le devis). Les garanties de l'offre marquées « Non » dans le
   // fichier sont retirées du véhicule, comme avec « Garanties de l'offre » (barème moins ces garanties).
   const [importFlotteOuvert, setImportFlotteOuvert] = useState(false);
-  const importerVehiculesFlotte = async (lignes) => {
+  // { remplacer: true } : le fichier remplace la flotte (choix par défaut de la fenêtre d'import) ; les
+  // véhicules déjà enregistrés sont supprimés du devis à l'enregistrement, comme avec « Retirer »
+  const importerVehiculesFlotte = async (lignes, { remplacer = false } = {}) => {
     const defauts = {
       codeAlarme: Number(systemeSecuriteId) || 0,
       systemeSecurite,
@@ -972,9 +974,26 @@ export const NewAutoQuotePage = () => {
         }
       }));
     }
-    setFlotteVehicules((prev) => [...prev, ...ajouts]);
-    setGarantiesFlotte((prev) => ({ ...prev, ...personnalisees }));
-    success(`${ajouts.length} véhicule${ajouts.length > 1 ? 's' : ''} importé${ajouts.length > 1 ? 's' : ''} dans la flotte : enregistrez le devis pour les tarifer définitivement.`);
+    if (remplacer) {
+      const enregistres = flotteVehicules.filter((v) => v.enregistre && v.idDevisDetail);
+      setVehiculesRetires((prev) => [
+        ...prev,
+        ...enregistres
+          .filter((v) => !prev.some((r) => r.idDevisDetail === v.idDevisDetail))
+          .map((v) => ({ idDevisDetail: v.idDevisDetail, immatriculation: v.immatriculation })),
+      ]);
+      // Véhicule de la liste en cours de modification : il n'existe plus
+      if (editingFlotteIndex !== null) handleAnnulerModificationVehicule();
+      setFlotteVehicules(ajouts);
+      setGarantiesFlotte((prev) => ({ ...(prev[CLE_SAISIE] && editingFlotteIndex === null ? { [CLE_SAISIE]: prev[CLE_SAISIE] } : {}), ...personnalisees }));
+      success(`Flotte remplacée par les ${ajouts.length} véhicule${ajouts.length > 1 ? 's' : ''} du fichier`
+        + (enregistres.length ? ` ; ${enregistres.length} véhicule${enregistres.length > 1 ? 's' : ''} déjà enregistré${enregistres.length > 1 ? 's' : ''} supprimé${enregistres.length > 1 ? 's' : ''} du devis à l'enregistrement.` : '.')
+        + ' Enregistrez le devis pour les tarifer définitivement.');
+    } else {
+      setFlotteVehicules((prev) => [...prev, ...ajouts]);
+      setGarantiesFlotte((prev) => ({ ...prev, ...personnalisees }));
+      success(`${ajouts.length} véhicule${ajouts.length > 1 ? 's' : ''} ajouté${ajouts.length > 1 ? 's' : ''} à la flotte : enregistrez le devis pour les tarifer définitivement.`);
+    }
     if (echecs.length) {
       toastError(`Garanties « Non » du fichier non retirées pour ${echecs.join(', ')} : ajustez-les avec « Garanties de l'offre ».`);
     }
@@ -4346,7 +4365,7 @@ export const NewAutoQuotePage = () => {
         idTarif={categorieId}
         idOffre={offreId}
         marques={marques}
-        immatriculationsExistantes={new Set(flotteVehicules.map((v) => v.immatriculation))}
+        vehiculesFlotte={flotteVehicules}
         onImporter={importerVehiculesFlotte}
       />
 

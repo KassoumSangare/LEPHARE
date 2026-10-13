@@ -65,6 +65,7 @@ import ParametrageFlottePage from './pages/admin/settings/ParametrageFlottePage'
 import ParametrageSecuritePage from './pages/admin/settings/ParametrageSecuritePage';
 import ParametrageGrillesVoyagePage from './pages/admin/settings/ParametrageGrillesVoyagePage';
 import ParametrageDommagesPage from './pages/admin/settings/ParametrageDommagesPage';
+import ParametrageSantePage from './pages/admin/settings/ParametrageSantePage';
 
 // New Institutional Modules (LE PHARE V2)
 import CrmPipelinePage from './pages/user/crm/CrmPipelinePage';
@@ -206,6 +207,7 @@ function App() {
                 <Route path="/admin/settings/securite-routiere" element={<AdminRoute><ParametrageSecuritePage /></AdminRoute>} />
                 <Route path="/admin/settings/grilles-voyage" element={<AdminRoute><ParametrageGrillesVoyagePage /></AdminRoute>} />
                 <Route path="/admin/settings/dommages" element={<AdminRoute><ParametrageDommagesPage /></AdminRoute>} />
+                <Route path="/admin/settings/sante" element={<AdminRoute><ParametrageSantePage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}
                 <Route path="/parametrage/garanties" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />

@@ -12,7 +12,7 @@ from django.db.models import Q
 from rapidfuzz import fuzz
 
 from account.models import UranusUser
-from customer.models import Client
+from customer.models import STATUT_ARCHIVE, Client, ClientNettoyage
 
 from .excelhandler import (
     ExcelColumnValidator,
@@ -210,7 +210,9 @@ def get_customer_id(excel_name: str, threshold: int = 85) -> int:
     for kw in keywords[:3]:  # limiter à 3 mots clés
         query = query | Client.objects.filter(Nom__icontains=kw)
 
-    candidates = query.values_list("IdClient", "Nom")
+    # Un doublon regroupé par le nettoyage n'est plus proposé : sa fiche de référence porte tout
+    regroupes = ClientNettoyage.objects.filter(decision=ClientNettoyage.REGROUPE).values("idclient")
+    candidates = query.exclude(Statut=STATUT_ARCHIVE, IdClient__in=regroupes).values_list("IdClient", "Nom")
 
     matches = []
     for client_id, db_name in candidates:

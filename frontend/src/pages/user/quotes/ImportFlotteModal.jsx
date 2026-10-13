@@ -7,14 +7,16 @@ import { sortUniqueBy } from '../../../utils/sortUtils';
 const MODELE = '/assets/modeles/modele_flotte_automobile.xlsx';
 const f = (v) => (v || v === 0 ? Number(v).toLocaleString('fr-FR') : '—');
 const messageErreur = (err) => err?.response?.data?.error || err?.response?.data?.detail || err?.message || 'erreur du serveur';
+// « 2644 EN 01 », « 2644-en-01 » et « 2644EN01 » désignent le même véhicule
+const immat = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 /**
  * Import des véhicules d'une flotte depuis le fichier Excel du modèle OREOLE / NSIA (« Liste des
  * véhicules en Automobile »). Le serveur lit le fichier sans rien enregistrer ; les véhicules retenus
- * rejoignent la liste de la flotte et s'enregistrent avec le devis, comme ceux saisis à la main.
+ * remplacent ceux de la flotte (par défaut) ou s'y ajoutent, et s'enregistrent avec le devis.
  */
 export const ImportFlotteModal = ({
-  isOpen, onClose, idCompagnie, nomCompagnie, idTarif, idOffre, marques, immatriculationsExistantes, onImporter,
+  isOpen, onClose, idCompagnie, nomCompagnie, idTarif, idOffre, marques, vehiculesFlotte = [], onImporter,
 }) => {
   const [fichier, setFichier] = useState(null);
   const [analyse, setAnalyse] = useState(null);
@@ -24,6 +26,11 @@ export const ImportFlotteModal = ({
   const [exclus, setExclus] = useState(new Set());
   // Marque du fichier absente du référentiel → marque choisie (id)
   const [correspondances, setCorrespondances] = useState({});
+  // Le fichier remplace la flotte, sauf choix contraire : réimporter un fichier corrigé ne cumule plus
+  const [mode, setMode] = useState('remplacer');
+  const flotteNonVide = vehiculesFlotte.length > 0;
+  const remplacer = !flotteNonVide || mode === 'remplacer';
+  const dejaEnregistres = vehiculesFlotte.filter((v) => v.enregistre && v.idDevisDetail).length;
 
   const fermer = () => {
     if (import_) return;
@@ -32,6 +39,7 @@ export const ImportFlotteModal = ({
     setErreur('');
     setExclus(new Set());
     setCorrespondances({});
+    setMode('remplacer');
     onClose();
   };
 
@@ -56,20 +64,26 @@ export const ImportFlotteModal = ({
     .filter((v) => !v.Vehicule.idMarque && v.Fichier.Marque)
     .map((v) => v.Fichier.Marque.toUpperCase()))], [analyse]);
 
-  // Lignes telles qu'elles seront importées : marque corrigée, véhicules déjà dans la flotte écartés
-  const lignes = useMemo(() => (analyse?.Vehicules || []).map((v) => {
-    const erreurs = v.Erreurs.filter((e) => !/^Marque « .* » inconnue/.test(e));
-    let vehicule = v.Vehicule;
-    if (!vehicule.idMarque && v.Fichier.Marque) {
-      const choisie = marques.find((m) => Number(m.id) === Number(correspondances[v.Fichier.Marque.toUpperCase()]));
-      if (choisie) vehicule = { ...vehicule, idMarque: Number(choisie.id), marqueVehicule: choisie.libelle };
-      else erreurs.push(`Marque « ${v.Fichier.Marque} » inconnue : choisissez-la ci-dessus.`);
-    }
-    if (vehicule.immatriculation && immatriculationsExistantes.has(vehicule.immatriculation)) {
-      erreurs.push('Déjà dans la flotte.');
-    }
-    return { ...v, Vehicule: vehicule, ErreursAffichees: erreurs };
-  }), [analyse, marques, correspondances, immatriculationsExistantes]);
+  // Lignes telles qu'elles seront importées : marque corrigée ; en ajout, véhicules déjà dans la flotte
+  // écartés ; une immatriculation présente deux fois dans le fichier n'est importée qu'une fois
+  const lignes = useMemo(() => {
+    const existantes = new Set(remplacer ? [] : vehiculesFlotte.map((v) => immat(v.immatriculation)).filter(Boolean));
+    const premiereLigne = new Map();
+    return (analyse?.Vehicules || []).map((v) => {
+      const erreurs = v.Erreurs.filter((e) => !/^Marque « .* » inconnue/.test(e));
+      let vehicule = v.Vehicule;
+      if (!vehicule.idMarque && v.Fichier.Marque) {
+        const choisie = marques.find((m) => Number(m.id) === Number(correspondances[v.Fichier.Marque.toUpperCase()]));
+        if (choisie) vehicule = { ...vehicule, idMarque: Number(choisie.id), marqueVehicule: choisie.libelle };
+        else erreurs.push(`Marque « ${v.Fichier.Marque} » inconnue : choisissez-la ci-dessus.`);
+      }
+      const cle = immat(vehicule.immatriculation);
+      if (cle && existantes.has(cle)) erreurs.push('Déjà dans la flotte.');
+      if (cle && premiereLigne.has(cle)) erreurs.push(`Immatriculation déjà lue ligne ${premiereLigne.get(cle)} du fichier.`);
+      else if (cle) premiereLigne.set(cle, v.Ligne);
+      return { ...v, Vehicule: vehicule, ErreursAffichees: erreurs };
+    });
+  }, [analyse, marques, correspondances, vehiculesFlotte, remplacer]);
 
   const retenues = lignes.filter((l) => !l.ErreursAffichees.length && !exclus.has(l.Ligne));
   const basculer = (ligne) => setExclus((s) => {
@@ -82,7 +96,7 @@ export const ImportFlotteModal = ({
     if (!retenues.length) return;
     setImport(true);
     try {
-      await onImporter(retenues);
+      await onImporter(retenues, { remplacer });
       setImport(false);
       fermer();
     } catch (err) {
@@ -120,6 +134,25 @@ export const ImportFlotteModal = ({
           </a>
         </div>
 
+        {flotteNonVide && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '0.65rem 0.9rem', fontSize: '0.86rem' }}>
+            <span style={{ fontWeight: 700 }}>La flotte compte déjà {vehiculesFlotte.length} véhicule{vehiculesFlotte.length > 1 ? 's' : ''} :</span>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', cursor: 'pointer' }}>
+              <input type="radio" name="mode-import-flotte" checked={mode === 'remplacer'} onChange={() => setMode('remplacer')} />
+              Remplacer les véhicules de la flotte par ceux du fichier
+              {dejaEnregistres > 0 && (
+                <span style={{ color: '#f59e0b' }}>
+                  ({dejaEnregistres} déjà enregistré{dejaEnregistres > 1 ? 's' : ''}, supprimé{dejaEnregistres > 1 ? 's' : ''} du devis à l'enregistrement)
+                </span>
+              )}
+            </label>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', cursor: 'pointer' }}>
+              <input type="radio" name="mode-import-flotte" checked={mode === 'ajouter'} onChange={() => setMode('ajouter')} />
+              Ajouter les véhicules du fichier à ceux de la flotte
+            </label>
+          </div>
+        )}
+
         {erreur && (
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#f87171', fontSize: '0.9rem' }}>
             <AlertTriangle size={18} /> {erreur}
@@ -130,7 +163,7 @@ export const ImportFlotteModal = ({
           <>
             <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.88rem' }}>
               <span><strong>{lignes.length}</strong> véhicule{lignes.length > 1 ? 's' : ''} lu{lignes.length > 1 ? 's' : ''}</span>
-              <span style={{ color: '#34d399' }}><strong>{retenues.length}</strong> à ajouter</span>
+              <span style={{ color: '#34d399' }}><strong>{retenues.length}</strong> à importer</span>
               {lignes.some((l) => l.ErreursAffichees.length) && (
                 <span style={{ color: '#f87171' }}><strong>{lignes.filter((l) => l.ErreursAffichees.length).length}</strong> à corriger (non importés)</span>
               )}
@@ -216,14 +249,16 @@ export const ImportFlotteModal = ({
 
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Les véhicules ajoutés sont tarifés puis enregistrés avec le devis (bouton d'enregistrement habituel).
+            Les véhicules importés sont tarifés puis enregistrés avec le devis (bouton d'enregistrement habituel).
           </span>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button type="button" className="btn btn-secondary" onClick={fermer} disabled={import_}>Fermer</button>
             <button type="button" className="btn btn-primary" disabled={!retenues.length || import_} onClick={importer}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               {import_ ? <Loader2 size={16} className="spin" /> : <CheckCircle size={16} />}
-              Ajouter {retenues.length} véhicule{retenues.length > 1 ? 's' : ''} à la flotte
+              {remplacer && flotteNonVide
+                ? `Remplacer la flotte par ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''}`
+                : `Ajouter ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''} à la flotte`}
             </button>
           </div>
         </div>
