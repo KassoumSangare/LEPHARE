@@ -10,7 +10,7 @@ import { useToast } from '../../../context/ToastContext';
 // Produits (stdproduit) et leur place dans LE PHARE (lephare_produit_parametre) : onglet du
 // registre des devis, formulaire de saisie, saisie ouverte. configuration_api/parametrage.py
 
-const CHAMPS = ['Libelle', 'Actif', 'Onglet', 'ModuleSaisie', 'SaisieOuverte', 'Ordre'];
+const CHAMPS = ['Libelle', 'Actif', 'Onglet', 'ModuleSaisie', 'SaisieOuverte', 'ArrondiTtc', 'Ordre'];
 const identique = (a, b) => CHAMPS.every((c) => String(a[c] ?? '') === String(b[c] ?? ''));
 
 const Interrupteur = ({ actif, onChange, desactive, titre }) => (
@@ -112,6 +112,7 @@ export const CatalogProductsPage = () => {
                 <th style={{ padding: '0.75rem 0.4rem', width: 150 }}>Onglet du registre</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 210 }}>Formulaire de saisie</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 100 }}>Saisie ouverte</th>
+                <th style={{ padding: '0.75rem 0.4rem', width: 100 }} title="Prime TTC arrondie à la pièce (Paramètres du cabinet > Règles de gestion > Arrondi des montants)">Arrondi TTC</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 190 }} />
               </tr>
             </thead>
@@ -143,6 +144,10 @@ export const CatalogProductsPage = () => {
                         titre={l.ModuleSaisie ? 'Ouvrir ou fermer la saisie de ce formulaire' : 'Choisissez d\'abord un formulaire'} />
                     </td>
                     <td style={{ padding: '0.55rem 0.4rem' }}>
+                      <Interrupteur actif={l.ArrondiTtc !== false} onChange={(v) => changer(p.IdProduit, 'ArrondiTtc', v)}
+                        titre={l.ArrondiTtc !== false ? 'Prime TTC arrondie à la pièce : cliquer pour garder la TTC calculée (ex. grilles Voyage des compagnies)' : 'TTC calculée gardée telle quelle : cliquer pour l\'arrondir à la pièce'} />
+                    </td>
+                    <td style={{ padding: '0.55rem 0.4rem' }}>
                       {modifie && (
                         <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end' }}>
                           <button type="button" className="btn btn-secondary" title="Annuler les changements" onClick={() => setSaisie((s) => ({ ...s, [p.IdProduit]: { ...p } }))} style={{ padding: '0.3rem 0.5rem' }}><RotateCcw size={14} /></button>
@@ -161,6 +166,7 @@ export const CatalogProductsPage = () => {
         <datalist id="onglets-registre">{libellesOnglets.map((o) => <option key={o} value={o} />)}</datalist>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.85rem 0 0' }}>
           Un formulaire utilisé par plusieurs produits (ex. Santé) est ouvert dès qu'un de ces produits a la saisie ouverte.
+          « Arrondi TTC » : prime TTC arrondie à la pièce selon Paramètres du cabinet &gt; Règles de gestion &gt; Arrondi des montants (montants déjà enregistrés inchangés).
           Les formulaires eux-mêmes (écrans de saisie) font partie de l'application : un nouveau produit se rattache à l'un d'eux.
         </p>
       </div>

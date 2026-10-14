@@ -9,6 +9,7 @@ from .views_devis_ia import (
 )
 from .views_devis_risques_divers import lire_devis_risques_divers
 from .import_flotte import analyser_import_flotte
+from . import documents_dommages
 from .views_devis_dommages import (
     calcul_dommages,
     catalogue_dommages,
@@ -23,6 +24,8 @@ from .views_devis_voyage import (
     lire_devis_voyage,
 )
 from . import views_finance
+from . import renouvellement as renouvellement_views
+from . import minene_connexes
 from .views_transport_guce import (
     analyser_bordereau,
     certificats_transport,
@@ -295,6 +298,8 @@ urlpatterns = [
     path(r"dommages/calcul/", calcul_dommages, name="dommages_calcul"),
     path(r"dommages/devis/", enregistrer_devis_dommages_vue, name="dommages_enregistrement"),
     path(r"dommages/devis/<int:iddevis>/", lire_devis_dommages, name="dommages_lecture"),
+    # Pièces de production d'un contrat Dommages : facture de prime, documents de la catégorie (Garantie de soumission)
+    path(r"dommages/contrat/<int:pk>/documents/", documents_dommages.documents_contrat, name="dommages_documents_contrat"),
     path(r"flotte/import/analyse/", analyser_import_flotte, name="flotte_import_analyse"),
     # Devis Voyage (création / « Modifier ») et relecture complète
     path(
@@ -558,6 +563,11 @@ urlpatterns = [
         modify_policy,
         name="avenant_renouvellement",
     ),
+    # Renouvellement LE PHARE : préparation (GET) et devis de renouvellement sous la même police (POST)
+    path("renouvellement/<int:pk>/", renouvellement_views.renouvellement, name="renouvellement-contrat"),
+    # IA et RC MINENE rattachées à la police Santé MINENE d'un contrat
+    path("minene/<int:pk>/connexes/", minene_connexes.connexes, name="minene-connexes"),
+    path("minene/ia/apercu/", minene_connexes.apercu_ia, name="minene-ia-apercu"),
     path(
         r"avenant/modificationpriseeffet",
         modify_policy,

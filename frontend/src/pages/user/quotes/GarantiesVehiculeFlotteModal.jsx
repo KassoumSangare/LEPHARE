@@ -104,6 +104,7 @@ export const GarantiesVehiculeFlotteModal = ({
   chargerBareme,
   sousGaranties,
   tauxTaxes,
+  nonAdmise = () => null,
   onAppliquer,
 }) => {
   const [lignes, setLignes] = useState(null);
@@ -329,6 +330,20 @@ export const GarantiesVehiculeFlotteModal = ({
 
         {erreur && <p style={{ color: '#f87171', margin: 0, fontSize: '0.85rem' }}>{erreur}</p>}
 
+        {/* Garanties non admises pour l'âge du véhicule (règles de la compagnie) */}
+        {(lignes || []).some((g) => g.acquise && !estGarantieRc(g) && !estGarantieCedeao(g) && nonAdmise(g.id_garantie)) && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.08)', fontSize: '0.82rem', color: '#f59e0b' }}>
+            <span>⚠ Des garanties acquises ne sont pas admises pour l'âge de ce véhicule (détail sous chaque garantie).</span>
+            <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
+              onClick={() => {
+                setLignes((prec) => prec.map((g) => (g.acquise && !estGarantieRc(g) && !estGarantieCedeao(g) && nonAdmise(g.id_garantie) ? { ...g, acquise: false } : g)));
+                setModifie(true);
+              }}>
+              Retirer les garanties non admises
+            </button>
+          </div>
+        )}
+
         {lignes === null && !erreur ? (
           <div style={{ padding: '2.5rem 1rem', display: 'flex', justifyContent: 'center' }}>
             <LoadingSpinner size={32} />
@@ -365,6 +380,9 @@ export const GarantiesVehiculeFlotteModal = ({
                         {g.nom}
                         {g.is_new_garantie && <span className="badge badge-blue" style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>Ajoutée</span>}
                         {imposee && <span className="badge badge-amber" style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>Prime imposée</span>}
+                        {g.acquise && !verrouillee && nonAdmise(g.id_garantie) && (
+                          <div style={{ fontSize: '0.72rem', fontWeight: 500, color: '#f59e0b' }}>⚠ {nonAdmise(g.id_garantie)}</div>
+                        )}
                       </td>
                       <td style={{ padding: '0.55rem 0.5rem', textAlign: 'center' }}>
                         <input

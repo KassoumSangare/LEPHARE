@@ -15,6 +15,7 @@ import {
   HardHat, Wrench, Cog, TrendingDown, Building2, Gem, Zap, MapPin, Landmark, Monitor,
   FileSignature, Settings2, UserPlus,
 } from 'lucide-react';
+import { arrondirMontant } from '../../../utils/parametrage';
 
 // Production Dommages (produit 9), toutes les catégories de la branche (tarifs 4xx). L'écran suit la
 // fiche « Cotation d'assurance » de NSIA (Caution, document d'OREOLE du 2026-10-08) : en-tête (catégorie,
@@ -683,10 +684,11 @@ export const NewTousDommagesQuotePage = () => {
           {ligneRecap('Taxes', enMontant(cumul?.Taxe))}
           <div style={{ marginTop: '1rem', padding: '0.9rem', borderRadius: '12px', background: 'var(--primary-glow)', border: '1px solid var(--primary-500)' }}>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--primary-500)' }}>Prime TTC</div>
-            <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{cumul && cumul.PrimeNette > 0 ? `${fcfa(cumul.PrimeTtc)} F` : '—'}</div>
+            {/* TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants) */}
+            <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{cumul && cumul.PrimeNette > 0 ? `${fcfa(arrondirMontant(cumul.PrimeTtc, 9))} F` : '—'}</div>
             {cumul && cumul.PrimeNette > 0 && (
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '0.25rem', letterSpacing: '0.02em' }}>
-                {numberToFrenchWords(cumul.PrimeTtc)} FRANCS CFA
+                {numberToFrenchWords(arrondirMontant(cumul.PrimeTtc, 9))} FRANCS CFA
               </div>
             )}
           </div>

@@ -27,6 +27,7 @@ from rest_framework.response import Response
 
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from autorisations.journal import completer_audit
+from autorisations.permissions import DroitDeLaRoute
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 # Compagnies dont la grille est par offre ; les autres ont une grille par formule et par zone
@@ -41,11 +42,9 @@ class ErreurGrille(Exception):
     """Saisie refusée : message affiché tel quel."""
 
 
-class EstAdministrateur(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        return bool(request.user and getattr(request.user, "is_admin", False))
+class EstAdministrateur(DroitDeLaRoute):
+    """Réglages (grilles Voyage, paramètres, produits, Dommages, Santé MINENE, Automobile…) : écriture selon le droit
+    attribué à l'utilisateur pour la route (autorisations.permissions.DroitDeLaRoute), administrateurs compris."""
 
 
 def _franc(valeur):

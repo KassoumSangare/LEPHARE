@@ -48,7 +48,14 @@ const FORMULES_SANTE_ORIGINE = [
   { IdOffre: 22, ...FAMILLE_PLUS, PrimeBase: 728741, ...BAREME_70_80 },
 ];
 
-let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, SanteFormules: FORMULES_SANTE_ORIGINE, charge: false };
+// Garanties admises selon l'âge du véhicule (configuration_api 0085) : NSIA tous risques (DOMMAGES, 7) de 0 à
+// 5 ans, NSIA Auto Plus (175) de 5 à 10 ans ; âge en années révolues, minimum inclus, maximum exclu
+const REGLES_GARANTIES_AUTO_ORIGINE = [
+  { IdCompagnie: 1, IdSousGarantie: 7, AgeMinimum: null, AgeMaximum: 5, Categories: '', Commentaire: 'NSIA : garantie tous risques de 0 à 5 ans' },
+  { IdCompagnie: 1, IdSousGarantie: 175, AgeMinimum: 5, AgeMaximum: 10, Categories: '', Commentaire: 'NSIA : NSIA Auto Plus de 5 à 10 ans' },
+];
+
+let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, SanteFormules: FORMULES_SANTE_ORIGINE, ReglesGarantiesAuto: REGLES_GARANTIES_AUTO_ORIGINE, charge: false };
 let chargement = null;
 const abonnes = new Set();
 
@@ -66,6 +73,7 @@ export const chargerParametrage = (forcer = false) => {
         Produits: Array.isArray(data?.Produits) && data.Produits.length ? data.Produits : PRODUITS_ORIGINE,
         Modules: data?.Modules || [],
         SanteFormules: Array.isArray(data?.SanteFormules) && data.SanteFormules.length ? data.SanteFormules : FORMULES_SANTE_ORIGINE,
+        ReglesGarantiesAuto: Array.isArray(data?.ReglesGarantiesAuto) ? data.ReglesGarantiesAuto : REGLES_GARANTIES_AUTO_ORIGINE,
         charge: true,
       };
       abonnes.forEach((f) => f());
@@ -99,6 +107,33 @@ export const parametre = (cle, defaut) => {
 };
 
 export const villeSignature = () => parametre('documents.ville_signature', 'Abidjan');
+
+/**
+ * Prime TTC arrondie à la pièce, comme à l'enregistrement (fn_lephare_arrondi_montant) : multiple de 5 F, reste
+ * jusqu'à 2 F ramené à l'inférieur, au-delà porté au supérieur (Administration > Paramètres du cabinet > Règles de
+ * gestion > Arrondi des montants ; produit exclu : Administration > Produits). null / vide : rendu tel quel.
+ */
+export const arrondirMontant = (montant, idProduit = null) => {
+  if (montant === null || montant === undefined || montant === '') return montant;
+  const v = Number(montant);
+  if (!Number.isFinite(v)) return montant;
+  if (idProduit && etat.Produits.some((p) => Number(p.IdProduit) === Number(idProduit) && p.ArrondiTtc === false)) return v;
+  const pas = Number(parametre('montants.arrondi_pas', 5)) || 0;
+  if (pas <= 1) return v;
+  const seuil = Number(parametre('montants.arrondi_seuil', 2)) || 0;
+  const entier = Math.round(Math.abs(v));
+  const reste = entier % pas;
+  const arrondi = reste === 0 ? entier : (reste <= seuil ? entier - reste : entier - reste + pas);
+  return Math.sign(v) * arrondi;
+};
+
+/** La TTC enregistrée retombe-t-elle sur la somme des composantes ? Telle quelle, arrondie à la pièce, ou (contrats
+ *  NSIA repris d'URANUS) arrondie au multiple de 5 supérieur. */
+export const ttcRetombe = (ttcEnregistree, somme, { idProduit = null, nsia = false } = {}) => (
+  ttcEnregistree === somme
+  || ttcEnregistree === arrondirMontant(somme, idProduit)
+  || (nsia && ttcEnregistree === Math.ceil(somme / 5) * 5)
+);
 // Identité du cabinet (Administration > Le cabinet, table stdparametresite)
 export const identiteCabinet = () => etat.Cabinet || {};
 export const nomCabinet = () => etat.Cabinet?.RaisonSociale || 'OREOLE ASSURANCES';
@@ -192,6 +227,42 @@ export const moduleOuvert = (module) => etat.Produits.some((p) => p.ModuleSaisie
 export const libellesModulesOuverts = () => {
   const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Dommages' };
   return [...new Set(etat.Produits.filter((p) => p.SaisieOuverte && p.ModuleSaisie).map((p) => libelles[p.ModuleSaisie] || p.ModuleSaisie))];
+};
+
+// ------------------------------------------------------------------ Automobile : garanties admises selon l'âge
+/** Âge du véhicule en années révolues entre sa première mise en circulation et la date d'effet (null si inconnu). */
+export const ageVehiculeAns = (dateMec, dateEffet) => {
+  const mec = new Date(String(dateMec || '').slice(0, 10));
+  const effet = dateEffet ? new Date(String(dateEffet).slice(0, 10)) : new Date();
+  if (Number.isNaN(mec.getTime()) || Number.isNaN(effet.getTime()) || mec.getFullYear() < 1900) return null;
+  let age = effet.getFullYear() - mec.getFullYear();
+  if (effet.getMonth() < mec.getMonth() || (effet.getMonth() === mec.getMonth() && effet.getDate() < mec.getDate())) age -= 1;
+  return Math.max(age, 0);
+};
+
+const reglesGarantie = (idCompagnie, idSousGarantie, codeCategorie) => (etat.ReglesGarantiesAuto || []).filter((r) => (
+  Number(r.IdCompagnie) === Number(idCompagnie) && Number(r.IdSousGarantie) === Number(idSousGarantie)
+  && (!r.Categories || String(r.Categories).split(',').includes(String(codeCategorie || '')))
+));
+const plage = (r) => (r.AgeMinimum === null || r.AgeMinimum === undefined ? `de 0 à ${r.AgeMaximum} ans`
+  : r.AgeMaximum === null || r.AgeMaximum === undefined ? `à partir de ${r.AgeMinimum} ans` : `de ${r.AgeMinimum} à ${r.AgeMaximum} ans`);
+
+/** Âges auxquels la compagnie admet la garantie (« de 0 à 5 ans »), ou null sans règle. */
+export const ageAdmisGarantie = (idCompagnie, idSousGarantie, codeCategorie) => {
+  const regles = reglesGarantie(idCompagnie, idSousGarantie, codeCategorie);
+  return regles.length ? regles.map(plage).join(' ou ') : null;
+};
+
+/** Motif si la garantie n'est pas admise pour un véhicule de cet âge (Administration > Dépréciation et âge
+ * des véhicules), sinon null. Signalé à la saisie : le producteur décoche la garantie. */
+export const garantieNonAdmise = ({ idCompagnie, idSousGarantie, ageAns, codeCategorie }) => {
+  if (ageAns === null || ageAns === undefined) return null;
+  const regles = reglesGarantie(idCompagnie, idSousGarantie, codeCategorie);
+  if (!regles.length) return null;
+  const admise = regles.some((r) => (r.AgeMinimum === null || r.AgeMinimum === undefined || ageAns >= r.AgeMinimum)
+    && (r.AgeMaximum === null || r.AgeMaximum === undefined || ageAns < r.AgeMaximum));
+  if (admise) return null;
+  return `Non admise pour un véhicule de ${ageAns} an${ageAns > 1 ? 's' : ''} (${regles[0].Commentaire || `admise ${plage(regles[0])}`})`;
 };
 
 // ------------------------------------------------------------------ Santé MINENE

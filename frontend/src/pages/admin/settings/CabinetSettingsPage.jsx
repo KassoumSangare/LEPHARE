@@ -22,7 +22,47 @@ const GROUPES_REGLES = [
   { id: 'devis', titre: 'Devis', description: 'Registre des devis et propositions.' },
   { id: 'voyage', titre: 'Voyage', description: 'Contrôles appliqués à l\'enregistrement des devis Voyage.' },
   { id: 'finance', titre: 'Encaissements et reversements', description: 'Suivi des primes encaissées et reversées aux compagnies.' },
+  { id: 'montants', titre: 'Arrondi des montants', description: 'Primes TTC des devis, contrats et quittances arrondies à la pièce (5 F en Côte d\'Ivoire). Un produit peut en être exclu dans « Produits ».' },
 ];
+
+// Aperçu de l'arrondi des primes TTC avec les réglages enregistrés (même règle que fn_lephare_arrondi_montant)
+const EXEMPLES_ARRONDI = [13451, 13452, 13453, 13454, 13456, 13458];
+const ApercuArrondi = ({ parametres }) => {
+  const valeur = (cle, defaut) => {
+    const v = Number(String(parametres.find((p) => p.Cle === cle)?.Valeur ?? '').replace(',', '.'));
+    return Number.isFinite(v) && String(parametres.find((p) => p.Cle === cle)?.Valeur ?? '').trim() !== '' ? v : defaut;
+  };
+  const pas = valeur('montants.arrondi_pas', 5);
+  const seuil = valeur('montants.arrondi_seuil', 2);
+  const arrondir = (m) => {
+    if (pas <= 1) return m;
+    const reste = m % pas;
+    return reste === 0 ? m : (reste <= seuil ? m - reste : m - reste + pas);
+  };
+  const f = (m) => m.toLocaleString('fr-FR');
+  return (
+    <div style={{ marginTop: '0.9rem', padding: '0.75rem 0.9rem', borderRadius: 8, border: '1px dashed var(--border-medium)', fontSize: '0.8rem' }}>
+      <div style={{ fontWeight: 700, marginBottom: '0.45rem' }}>
+        {pas <= 1 ? 'Aucun arrondi : les primes TTC sont gardées telles que calculées.' : `Aperçu avec les réglages enregistrés (multiple de ${f(pas)} F, reste jusqu'à ${f(seuil)} F ramené à l'inférieur)`}
+      </div>
+      {pas > 1 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem 1.1rem', fontFamily: 'var(--font-mono)' }}>
+          {EXEMPLES_ARRONDI.map((m) => {
+            const r = arrondir(m);
+            return (
+              <span key={m}>
+                {f(m)} F → <strong style={{ color: r < m ? 'var(--accent-amber)' : r > m ? 'var(--accent-emerald)' : 'var(--text-primary)' }}>{f(r)} F</strong>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ color: 'var(--text-muted)', marginTop: '0.45rem' }}>
+        S'applique à l'enregistrement des devis, contrats et quittances ; les montants déjà enregistrés ne changent pas. Un produit peut être exclu dans « Produits » (colonne « Arrondi TTC »).
+      </div>
+    </div>
+  );
+};
 
 const CHAMPS_IDENTITE = [
   { cle: 'RaisonSociale', libelle: 'Raison sociale', requis: true, longueur: 50, aide: 'Imprimée dans l\'en-tête des états réglementaires et de gestion.' },
@@ -170,6 +210,7 @@ export const CabinetSettingsPage = () => {
       {onglet === 'regles' && GROUPES_REGLES.filter((g) => parGroupe[g.id]?.length).map((g) => (
         <SectionParametrage key={g.id} icone={SlidersHorizontal} titre={g.titre} description={g.description}>
           {parGroupe[g.id].map((p) => <LigneParametre key={p.Cle} parametre={p} onEnregistre={remplacer} />)}
+          {g.id === 'montants' && <ApercuArrondi parametres={parGroupe.montants} />}
         </SectionParametrage>
       ))}
 

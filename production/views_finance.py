@@ -33,6 +33,7 @@ from rest_framework.response import Response
 
 from configuration_api.parametrage import valeur_parametre
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
+from autorisations.permissions import DroitDeLaRoute
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 # Premier jour des encaissements saisis dans LE PHARE (avant : reprise d'URANUS) ; réglable dans
@@ -49,14 +50,9 @@ class ErreurFinance(Exception):
     """Saisie refusée : message affiché tel quel."""
 
 
-class EcrituresAdministrateur(permissions.BasePermission):
-    """Lecture pour tout utilisateur connecté ; reversements, réclamations et règlements de
-    commissions réservés aux administrateurs (direction financière)."""
-
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        return bool(request.user and getattr(request.user, "is_admin", False))
+class EcrituresAdministrateur(DroitDeLaRoute):
+    """Lecture pour tout utilisateur connecté ; reversements, réclamations et règlements de commissions selon les
+    droits attribués (reversements, commissions : DroitDeLaRoute, séparation des tâches de la garde)."""
 
 
 def _franc(valeur):

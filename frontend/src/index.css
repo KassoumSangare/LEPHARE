@@ -966,16 +966,123 @@ select.form-control {
   color: #2563eb;
 }
 
-/* Tree-like Submenu */
+/* Tree-like Submenu : filet bleu rattachant les pages à leur menu, une branche devant chaque page */
 .sidebar-submenu-tree {
   margin-left: 1.25rem;
   padding-left: 0.65rem;
-  border-left: 1.5px solid var(--border-subtle);
+  border-left: 1.5px solid rgba(59, 130, 246, 0.35);
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
   margin-top: 0.15rem;
   margin-bottom: 0.35rem;
+  animation: sidebar-deroule 0.16s ease-out;
+}
+.sidebar-submenu-tree .sidebar-sublink-item::before {
+  content: '';
+  position: absolute;
+  left: -0.65rem;
+  top: 50%;
+  width: 0.5rem;
+  border-top: 1.5px solid rgba(59, 130, 246, 0.35);
+}
+
+/* Menus déroulants rendus évidents : pastille « nombre de pages + chevron » à droite de la ligne, teintée
+   et chevron retourné quand le menu est ouvert ; la ligne d'un menu ouvert reste légèrement surlignée */
+.sidebar-deroulant {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.12rem 0.28rem 0.12rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-medium);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+[data-theme="light"] .sidebar-deroulant {
+  background: rgba(15, 23, 42, 0.04);
+}
+.sidebar-deroulant-chevron {
+  transition: transform 0.2s ease;
+}
+.sidebar-deroulant.ouvert {
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.14);
+}
+[data-theme="light"] .sidebar-deroulant.ouvert {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.08);
+}
+.sidebar-deroulant.ouvert .sidebar-deroulant-chevron {
+  transform: rotate(180deg);
+}
+.sidebar-nav-item.has-submenu:hover .sidebar-deroulant,
+.sidebar-section-header.deroulant:hover .sidebar-deroulant {
+  color: var(--text-primary);
+  border-color: #3b82f6;
+}
+.sidebar-nav-item.has-submenu.deplie:not(.active) {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-theme="light"] .sidebar-nav-item.has-submenu.deplie:not(.active) {
+  background: rgba(15, 23, 42, 0.03);
+}
+.sidebar-nav-item.has-submenu:focus-visible,
+.sidebar-section-header.deroulant:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+/* Groupes de l'administration : titre cliquable comme un bouton, pages du groupe rattachées par un filet */
+.sidebar-section-header.deroulant {
+  cursor: pointer;
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sidebar-section-header.deroulant:hover,
+.sidebar-section-header.deroulant.ouvert {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-theme="light"] .sidebar-section-header.deroulant:hover,
+[data-theme="light"] .sidebar-section-header.deroulant.ouvert {
+  background: rgba(15, 23, 42, 0.04);
+}
+.sidebar-section-header.deroulant.active {
+  color: #60a5fa;
+}
+[data-theme="light"] .sidebar-section-header.deroulant.active {
+  color: #2563eb;
+}
+.sidebar-groupe-contenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.15rem 0 0.35rem 0.6rem;
+  padding-left: 0.35rem;
+  border-left: 1.5px solid rgba(59, 130, 246, 0.35);
+  animation: sidebar-deroule 0.16s ease-out;
+}
+@keyframes sidebar-deroule {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-submenu-tree, .sidebar-groupe-contenu { animation: none; }
+  .sidebar-deroulant-chevron { transition: none; }
 }
 
 .sidebar-sublink-item {

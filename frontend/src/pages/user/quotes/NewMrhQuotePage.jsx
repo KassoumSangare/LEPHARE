@@ -13,6 +13,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
+import { arrondirMontant } from '../../../utils/parametrage';
 
 // Production Multirisques Habitation d'URANUS (Contrat, Maisons, Offre/récapitulatif, Souscripteur) :
 // un devis porte une ou plusieurs maisons ; chaque maison a un usage (statut d'occupation) qui fixe
@@ -323,7 +324,7 @@ export const NewMrhQuotePage = () => {
     let taxes = taxesGaranties + taxeAccessoire;
     const taxeImposee = isImpositionActive && cleanNum(imposedTaxe) > 0;
     if (taxeImposee) taxes = cleanNum(imposedTaxe);
-    return { primeNette, taxesGaranties, taxeAccessoire, taxeImposee, taxes, accessoires, primeTtc: primeNette + taxes + accessoires };
+    return { primeNette, taxesGaranties, taxeAccessoire, taxeImposee, taxes, accessoires, primeTtc: arrondirMontant(primeNette + taxes + accessoires, 4) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maisons, isImpositionActive, imposedPrimesParMaison, imposedTaxe, imposedAccessoire, accessoireBareme]);
 

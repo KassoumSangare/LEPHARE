@@ -328,11 +328,15 @@ def enregistrer_devis_sante(request):
     négatif = majoration). La date d'émission est celle du jour.
     """
     data = dict(request.data)
+    # Devis d'avenant (renouvellement…) : il garde son avenant, sinon sa confirmation ouvrirait une nouvelle police.
+    # Un devis initialisé par sp_initialisation_devis_sante porte l'affaire nouvelle.
+    avenant_devis = Devis.objects.filter(pk=_entier(data.get("IdDevis"))).values_list("avenant_id", flat=True).first() or 0
     data.update(
         {
             "IdIntermediaire": ID_INTERMEDIAIRE,
             "IdProduit": ID_PRODUIT_SANTE,
-            "IdAvenant": _entier(data.get("IdAvenant")) or ID_AVENANT_AFFAIRE_NOUVELLE,
+            "IdAvenant": avenant_devis if avenant_devis > ID_AVENANT_AFFAIRE_NOUVELLE
+            else (_entier(data.get("IdAvenant")) or ID_AVENANT_AFFAIRE_NOUVELLE),
             "IdAssure": _entier(data.get("IdAssure")) or _entier(data.get("IdClient")),
             "Flotte": False,
             "Coassurance": False,
@@ -414,8 +418,14 @@ def lire_devis_sante(request, iddevis):
                    d.dateexpiration::date AS dateexpiration, d.idduree, d.idterme,
                    COALESCE(d.numeropolicecompagnie, '') AS numeropolicecompagnie,
                    d.primenette, d.taxe, d.accessoire, d.primettc, COALESCE(d.primeimposee, false) AS primeimposee,
-                   n.idoperateur AS operateur_saisie, COALESCE(n.saisieencours, false) AS saisie_en_cours
+                   n.idoperateur AS operateur_saisie, COALESCE(n.saisieencours, false) AS saisie_en_cours,
+                   av.codeavenant AS code_avenant,
+                   -- Renouvellement : taux d'ajustement de l'an dernier, déjà appliqué à la prime de base MINENE
+                   (SELECT cp.tauxreductioncommerciale FROM stddevisdetail dp
+                    JOIN stdcomplementdevisdetailsante cp ON cp.iddevisdetail = dp.iddevisdetail
+                    WHERE dp.iddevis = d.idoldhist ORDER BY dp.iddevisdetail LIMIT 1) AS taux_reduction_precedent
             FROM stddevis d
+            LEFT JOIN stdavenant av ON av.idavenant = d.idavenant
             LEFT JOIN stdcompagnie c ON c.idcompagnie = d.idcompagnie
             LEFT JOIN stdclient cl ON cl.idclient = d.idclient
             LEFT JOIN stdnumerosaisiesante n ON n.iddevis = d.iddevis
@@ -510,6 +520,8 @@ def lire_devis_sante(request, iddevis):
         personne["fichierpiece"] = _url_fichier(personne.get("fichierpiece"))
     for cle in ("primenette", "taxe", "accessoire", "primettc"):
         devis[cle] = float(devis[cle] or 0)
+    if devis["taux_reduction_precedent"] is not None:
+        devis["taux_reduction_precedent"] = float(devis["taux_reduction_precedent"])
     return Response(
         {
             "devis": devis,

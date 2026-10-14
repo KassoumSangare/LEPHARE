@@ -5,18 +5,21 @@ import { quoteApi } from '../../../api/endpoints';
 import { sortUniqueBy } from '../../../utils/sortUtils';
 
 const MODELE = '/assets/modeles/modele_flotte_automobile.xlsx';
+// Formulaire assurance auto d'OREOLE (compte rendu du 12-10-2026), rempli par le client : mono ou flotte
+const FORMULAIRE = '/assets/modeles/formulaire_assurance_auto.xlsx';
 const f = (v) => (v || v === 0 ? Number(v).toLocaleString('fr-FR') : '—');
 const messageErreur = (err) => err?.response?.data?.error || err?.response?.data?.detail || err?.message || 'erreur du serveur';
 // « 2644 EN 01 », « 2644-en-01 » et « 2644EN01 » désignent le même véhicule
 const immat = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 /**
- * Import des véhicules d'une flotte depuis le fichier Excel du modèle OREOLE / NSIA (« Liste des
- * véhicules en Automobile »). Le serveur lit le fichier sans rien enregistrer ; les véhicules retenus
- * remplacent ceux de la flotte (par défaut) ou s'y ajoutent, et s'enregistrent avec le devis.
+ * Import des véhicules depuis un fichier Excel : « Formulaire assurance auto » d'OREOLE (un véhicule :
+ * devis mono, plusieurs : flotte ; valeur vénale contrôlée par le tableau de dépréciation) ou liste NSIA
+ * « Liste des véhicules en Automobile » (garanties Oui / Non). Le serveur lit le fichier sans rien
+ * enregistrer ; les véhicules retenus remplacent ceux de la flotte (par défaut) ou s'y ajoutent.
  */
 export const ImportFlotteModal = ({
-  isOpen, onClose, idCompagnie, nomCompagnie, idTarif, idOffre, marques, vehiculesFlotte = [], onImporter,
+  isOpen, onClose, idCompagnie, nomCompagnie, idTarif, idOffre, marques, vehiculesFlotte = [], dateEffet, onImporter,
 }) => {
   const [fichier, setFichier] = useState(null);
   const [analyse, setAnalyse] = useState(null);
@@ -49,7 +52,7 @@ export const ImportFlotteModal = ({
     setErreur('');
     setAnalyse(null);
     try {
-      const resultat = await quoteApi.analyserImportFlotte(fichier, { idCompagnie, idTarif, idOffre });
+      const resultat = await quoteApi.analyserImportFlotte(fichier, { idCompagnie, idTarif, idOffre, dateEffet });
       setAnalyse(resultat);
       setExclus(new Set());
       setCorrespondances({});
@@ -96,7 +99,7 @@ export const ImportFlotteModal = ({
     if (!retenues.length) return;
     setImport(true);
     try {
-      await onImporter(retenues, { remplacer });
+      await onImporter(retenues, { remplacer, format: analyse?.Format });
       setImport(false);
       fermer();
     } catch (err) {
@@ -109,10 +112,15 @@ export const ImportFlotteModal = ({
   const nombre = { ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' };
 
   return (
-    <Modal isOpen={isOpen} onClose={fermer} title="Importer les véhicules de la flotte" subtitle={nomCompagnie ? `Compagnie : ${nomCompagnie}` : undefined} maxWidth="1200px">
+    <Modal isOpen={isOpen} onClose={fermer} title="Importer les véhicules (formulaire Excel)" subtitle={nomCompagnie ? `Compagnie : ${nomCompagnie}` : undefined} maxWidth="1200px">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Fichier Excel au format de la « Liste des véhicules en Automobile » : une ligne « Catégorie 201 … » par bloc,
+          <strong>Formulaire assurance auto</strong> rempli par le client : un véhicule donne un devis mono, plusieurs un devis flotte.
+          La catégorie et l'offre sont celles de l'écran (toutes les garanties de l'offre, à décocher ensuite) ; la valeur vénale
+          du fichier est comparée au tableau de dépréciation et proposée par lui si elle manque.
+        </p>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Accepté aussi : la « Liste des véhicules en Automobile » (NSIA) : une ligne « Catégorie 201 … » par bloc,
           l'en-tête N° / Marque / Type / Puissance / CU / Immatriculation / Énergie / Zone / Valeurs / Nombre de places puis
           une colonne par garantie (Oui / Non). Un véhicule tient sur une ligne (valeurs séparées par « / ») ou sur trois
           (prime, Oui / Non, capital). L'offre de chaque véhicule est choisie d'après ses garanties « Oui » ; celles marquées « Non » lui sont retirées.
@@ -129,8 +137,11 @@ export const ImportFlotteModal = ({
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             {enCours ? <Loader2 size={16} className="spin" /> : <Upload size={16} />} Analyser le fichier
           </button>
-          <a href={MODELE} download="Modele_flotte_automobile.xlsx" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: '#3b82f6' }}>
-            <Download size={15} /> Télécharger le modèle vierge
+          <a href={FORMULAIRE} download="Formulaire_assurance_auto.xlsx" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', color: '#3b82f6' }}>
+            <Download size={15} /> Formulaire assurance auto (vierge)
+          </a>
+          <a href={MODELE} download="Modele_flotte_automobile.xlsx" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <Download size={14} /> Liste NSIA (vierge)
           </a>
         </div>
 
@@ -200,6 +211,7 @@ export const ImportFlotteModal = ({
                     <th style={cellule}>Catégorie</th>
                     <th style={cellule}>Marque / Type</th>
                     <th style={cellule}>Puiss. / CU</th>
+                    {analyse.Format === 'formulaire' && <th style={cellule}>1re MEC</th>}
                     <th style={cellule}>Énergie</th>
                     <th style={{ ...cellule, textAlign: 'right' }}>Neuf / Vénale</th>
                     <th style={cellule}>Pl.</th>
@@ -223,9 +235,15 @@ export const ImportFlotteModal = ({
                         <td style={{ ...cellule, fontWeight: 700, color: '#38bdf8' }}>{v.immatriculation || '—'}</td>
                         <td style={cellule}>{v.codeCategorie} {v.categorieContrat}</td>
                         <td style={cellule}>{v.marqueVehicule}<div style={{ color: 'var(--text-muted)' }}>{l.Fichier.Type} → {v.genreVehicule}</div></td>
-                        <td style={cellule}>{v.puissanceFiscale || '—'} CV{v.chargeUtile ? ` / ${f(v.chargeUtile)}` : ''}</td>
+                        <td style={cellule}>{v.puissanceFiscale || '—'} CV{v.chargeUtile ? ` / ${f(v.chargeUtile)} kg` : ''}</td>
+                        {analyse.Format === 'formulaire' && <td style={cellule}>{l.Fichier.DateMec ? l.Fichier.DateMec.split('-').reverse().join('/') : '—'}</td>}
                         <td style={cellule}>{v.energie}</td>
-                        <td style={nombre}>{f(v.valeurNeuf)}<div>{f(v.valeurVenale)}</div></td>
+                        <td style={nombre}>
+                          {f(v.valeurNeuf)}<div>{f(v.valeurVenale)}</div>
+                          {l.Fichier.ValeurVenaleTableau !== undefined && l.Fichier.ValeurVenaleTableau !== null && Number(l.Fichier.ValeurVenaleTableau) !== Number(v.valeurVenale) && (
+                            <div style={{ color: '#f59e0b', fontSize: '0.72rem' }} title={l.Fichier.ExplicationTableau || ''}>tableau : {f(l.Fichier.ValeurVenaleTableau)}</div>
+                          )}
+                        </td>
                         <td style={cellule}>{v.nombrePlace}</td>
                         <td style={cellule}>
                           {v.offreSelectionnee || '—'}
@@ -256,9 +274,11 @@ export const ImportFlotteModal = ({
             <button type="button" className="btn btn-primary" disabled={!retenues.length || import_} onClick={importer}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               {import_ ? <Loader2 size={16} className="spin" /> : <CheckCircle size={16} />}
-              {remplacer && flotteNonVide
-                ? `Remplacer la flotte par ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''}`
-                : `Ajouter ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''} à la flotte`}
+              {analyse?.Format === 'formulaire' && retenues.length === 1 && !flotteNonVide
+                ? 'Reprendre ce véhicule (devis mono)'
+                : remplacer && flotteNonVide
+                  ? `Remplacer la flotte par ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''}`
+                  : `Ajouter ${retenues.length} véhicule${retenues.length > 1 ? 's' : ''} à la flotte`}
             </button>
           </div>
         </div>

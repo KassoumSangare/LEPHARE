@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from . import parametrage, parametrage_dommages, parametrage_sante, views_grilles_voyage
+from . import parametrage, parametrage_auto, parametrage_dommages, parametrage_sante, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -177,6 +177,16 @@ urlpatterns = [
     path("parametrage/compagnies/<int:id_compagnie>/", parametrage.compagnie, name="parametrage-compagnie"),
     path("parametrage/produits/", parametrage.produits, name="parametrage-produits"),
     path("parametrage/produits/<int:id_produit>/", parametrage.produit, name="parametrage-produit"),
+    # Réglages Automobile (dépréciation des véhicules) et valeur vénale : configuration_api/parametrage_auto.py
+    path("parametrage/auto/depreciation/", parametrage_auto.depreciation, name="parametrage-auto-depreciation"),
+    path("parametrage/auto/depreciation/classes/<str:code>/", parametrage_auto.classe, name="parametrage-auto-depreciation-classe"),
+    path("parametrage/auto/depreciation/regles/", parametrage_auto.regles, name="parametrage-auto-depreciation-regles"),
+    path("parametrage/auto/regles-garanties/", parametrage_auto.regles_garanties, name="parametrage-auto-regles-garanties"),
+    path("parametrage/auto/pool-tpv/", parametrage_auto.pool_tpv, name="parametrage-auto-pool-tpv"),
+    path("parametrage/auto/pool-tpv/tranches/", parametrage_auto.pool_tpv_tranches, name="parametrage-auto-pool-tpv-tranches"),
+    path("parametrage/auto/pool-tpv/parametres/<str:cle>/", parametrage_auto.pool_tpv_parametre, name="parametrage-auto-pool-tpv-parametre"),
+    path("parametrage/auto/depreciation/parametres/<str:cle>/", parametrage_auto.parametre, name="parametrage-auto-depreciation-parametre"),
+    path("auto/valeur-venale/", parametrage_auto.valeur_venale, name="auto-valeur-venale"),
     # Réglages Santé MINENE (formules, paramètres, répartition de la prime) : configuration_api/parametrage_sante.py
     path("parametrage/sante/", parametrage_sante.sante, name="parametrage-sante"),
     path("parametrage/sante/formules/<int:id_offre>/", parametrage_sante.formule, name="parametrage-sante-formule"),
@@ -185,6 +195,11 @@ urlpatterns = [
     # Réglages Dommages (catégories, garanties par compagnie) : configuration_api/parametrage_dommages.py
     path("parametrage/dommages/", parametrage_dommages.dommages, name="parametrage-dommages"),
     path("parametrage/dommages/categories/<int:id_tarif>/", parametrage_dommages.categorie, name="parametrage-dommages-categorie"),
+    path(
+        "parametrage/dommages/categories/<int:id_tarif>/documents/",
+        parametrage_dommages.documents,
+        name="parametrage-dommages-documents",
+    ),
     path(
         "parametrage/dommages/categories/<int:id_tarif>/compagnies/<int:id_compagnie>/",
         parametrage_dommages.garanties_compagnie,

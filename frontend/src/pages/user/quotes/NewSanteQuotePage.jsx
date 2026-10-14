@@ -169,6 +169,8 @@ export const NewSanteQuotePage = () => {
   const [lectureSeule, setLectureSeule] = useState('');
   const [numeroDevis, setNumeroDevis] = useState('');
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
+  // Devis de renouvellement : taux d'ajustement de l'an dernier (déjà compris dans la prime de base MINENE)
+  const [tauxPrecedent, setTauxPrecedent] = useState(null);
   const [garanties, setGaranties] = useState([]);
 
   const [step, setStep] = useState(1);
@@ -365,6 +367,7 @@ export const NewSanteQuotePage = () => {
         setTotauxEnregistres({
           primeNette: devis.primenette, taxe: devis.taxe, accessoire: devis.accessoire, primeTtc: devis.primettc,
         });
+        setTauxPrecedent(devis.code_avenant === 'REN' && devis.taux_reduction_precedent !== null ? Number(devis.taux_reduction_precedent) : null);
         if (detail) {
           setIdTarif(Number(detail.idtarif) || 0);
           setIdOffre(Number(detail.idoffre) || 0);
@@ -730,7 +733,9 @@ export const NewSanteQuotePage = () => {
                 list={estMinene ? 'ajustements-minene' : undefined}
               />,
               estMinene
-                ? `Clause d'ajustement : ${(ajustementsMinene[ajustement] || []).map(([t, sp]) => `${t} % (${sp})`).join(', ') || 'aucun taux'}.`
+                ? `${tauxPrecedent !== null && tauxPrecedent !== 0
+                  ? `Renouvellement : ${tauxPrecedent > 0 ? 'réduction' : 'majoration'} de ${Math.abs(tauxPrecedent)} % de l'an dernier déjà appliquée à la prime de base ; saisissez l'ajustement de cette année (0 : même tarif). `
+                  : ''}Clause d'ajustement : ${(ajustementsMinene[ajustement] || []).map(([t, sp]) => `${t} % (${sp})`).join(', ') || 'aucun taux'}.`
                 : 'Hors MINENE, la base enregistre le taux sans l\'appliquer aux primes.')}
             {estMinene && (
               <datalist id="ajustements-minene">

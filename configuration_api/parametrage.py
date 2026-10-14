@@ -34,6 +34,12 @@ from .models import CompagnieDocument, ParametreGeneral, ParametreSite, Produit,
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 
 
+def regles_garanties_auto():
+    from .parametrage_auto import regles_garanties_json
+
+    return regles_garanties_json()
+
+
 def formules_pour_impression():
     """Formules MINENE lues par les imprimés (import différé : parametrage_sante importe ce module)."""
     from .parametrage_sante import formules_pour_impression as lire
@@ -206,6 +212,7 @@ def _produits():
             "Onglet": p.Onglet if p else "",
             "ModuleSaisie": p.ModuleSaisie if p else "",
             "SaisieOuverte": bool(p and p.SaisieOuverte),
+            "ArrondiTtc": p.ArrondiTtc if p else True,
             "Ordre": p.Ordre if p else 99,
         })
     return sorted(lignes, key=lambda x: (x["Ordre"], x["IdProduit"]))
@@ -237,6 +244,8 @@ def parametrage(request):
         "Modules": [{"Code": c, "Libelle": l} for c, l in ProduitParametre.MODULES if c],
         # Formules MINENE SANTÉ : barème de soins imprimé (Réglages Santé MINENE)
         "SanteFormules": formules_pour_impression(),
+        # Automobile : garanties admises selon l'âge du véhicule (signalées à la saisie)
+        "ReglesGarantiesAuto": regles_garanties_auto(),
     })
 
 
@@ -508,7 +517,7 @@ def produits(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EstAdministrateur])
 def produit(request, id_produit):
-    """PATCH /api/parametrage/produits/<id>/ {Libelle, Actif, Onglet, ModuleSaisie, SaisieOuverte, Ordre}."""
+    """PATCH /api/parametrage/produits/<id>/ {Libelle, Actif, Onglet, ModuleSaisie, SaisieOuverte, ArrondiTtc, Ordre}."""
     try:
         ligne = Produit.objects.get(id_produit=id_produit)
     except Produit.DoesNotExist:
@@ -530,6 +539,8 @@ def produit(request, id_produit):
             param.ModuleSaisie = module
         if "SaisieOuverte" in request.data:
             param.SaisieOuverte = bool(request.data["SaisieOuverte"])
+        if "ArrondiTtc" in request.data:
+            param.ArrondiTtc = bool(request.data["ArrondiTtc"])
         if "Ordre" in request.data:
             try:
                 param.Ordre = max(0, min(999, int(request.data["Ordre"])))

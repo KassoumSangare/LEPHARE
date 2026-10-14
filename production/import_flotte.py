@@ -15,6 +15,17 @@ Un véhicule tient sur 1 à 3 lignes (prime / Oui-Non / capital par garantie, co
 sur une seule ligne aux valeurs séparées par « / » (« TOYOTA / VP »). Les colonnes sont reconnues par
 leur intitulé, dans n'importe quel ordre ; les colonnes de garanties absentes sont simplement ignorées.
 
+Second format, le « FORMULAIRE ASSURANCE AUTO » d'OREOLE (compte rendu de la séance du 12-10-2026), rempli
+par le client pour un ou plusieurs véhicules (un véhicule : devis mono, plusieurs : flotte) :
+
+    FICHE POUR TARIFICATION - ASSURANCE AUTOMOBILE
+    N° | Marque | Type de véhicule | N°Immatriculation | Date de 1ère mise en circulation | GENRE (cocher :
+    Véhicule particulier, Camionnette, Camion, Engin de chantier, 02 Roues) | Energie | Puissance fiscale /
+    Charge utile / Cylindrée | Nombre de places | Valeur neuve | Valeur vénale
+
+Pas de garanties ni de catégorie : celles de l'écran s'appliquent (toutes les garanties de l'offre, que le
+producteur décoche) ; valeur vénale du fichier comparée au tableau de dépréciation (CIEAMI).
+
 Rien n'est écrit : l'analyse renvoie, pour chaque véhicule, les champs de l'écran Véhicule (référentiels
 résolus : catégorie, marque, genre, carrosserie, usage, énergie) et l'offre de la catégorie qui couvre
 le mieux les garanties marquées « Oui » sans celles marquées « Non » ; les garanties de l'offre marquées
@@ -28,7 +39,7 @@ from datetime import date, datetime, time
 from io import BytesIO
 
 import openpyxl
-from openpyxl.utils.datetime import to_excel
+from openpyxl.utils.datetime import from_excel, to_excel
 from django.db import connection
 from rest_framework import permissions, status
 from rest_framework.authentication import BasicAuthentication
@@ -567,13 +578,269 @@ def analyser_flotte(contenu, id_compagnie, id_tarif_defaut=None, id_offre_defaut
     }
 
 
+# ------------------------------------------------------------------ formulaire OREOLE (mono ou flotte)
+COLONNES_FORMULAIRE = [
+    ("numero", r"^n\s*[°o]?\.?$|^numero$|^no$"),
+    ("marque", r"marque"),
+    ("type", r"^type"),
+    ("immatriculation", r"immatric"),
+    ("date_mec", r"circulation|m\.?\s*e\.?\s*c\.?"),
+    ("energie", r"energie|carburant"),
+    ("puissance", r"puissance|charge|cylindr"),
+    ("places", r"place"),
+    ("valeur_neuve", r"valeur\s*(neuve|a neuf|catalogue)"),
+    ("valeur_venale", r"venale"),
+]
+# Colonnes « GENRE (cocher la bonne case) » → libellés des référentiels (genre, type, carrosserie, usage)
+GENRES_FORMULAIRE = [
+    (r"camion\s*nette|camionnette", "Camionnette", ("Camionnette", "Véhicule Utilitaire", "CAMIONNETTE", "VEHICULE UTILITAIRE")),
+    (r"camion", "Camion", ("Camion", "Véhicule Utilitaire", "CAMION", "VEHICULE UTILITAIRE")),
+    (r"engin", "Engin de chantier", ("Engins de chantiers", "Véhicule Utilitaire", "ENGINS MOBILE DE CHANTIERS", "AUTRES ENGINS MOBILES DE CHANTIERS")),
+    (r"roue|cyclo|moto", "02 roues", ("Cyclomoteur (2/3 Roues)", "Cyclomoteur", "MOTOCYCLETTE", "SCOOTER, CYCLOMOTEURS, MOBILETTE, MOTOCYCLETTE")),
+    (r"particulier|tourisme", "Véhicule particulier", TYPE_PAR_DEFAUT),
+]
+
+
+def _date_formulaire(valeur):
+    """Date de mise en circulation : cellule date, « 01/05/2018 », « 2018-05-01 » ou année seule (1er janvier)."""
+    if isinstance(valeur, datetime):
+        return valeur.date(), None
+    if isinstance(valeur, date):
+        return valeur, None
+    if isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+        if 1950 <= valeur <= 2100:
+            return date(int(valeur), 1, 1), "Année de mise en circulation seule : 1er janvier retenu."
+        try:  # numéro de série Excel
+            return from_excel(valeur).date(), None
+        except Exception:  # noqa: BLE001
+            return None, None
+    texte = str(valeur or "").strip()
+    for format_ in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d/%m/%y", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(texte[:10], format_).date(), None
+        except ValueError:
+            continue
+    annee = re.fullmatch(r"(19[5-9]\d|20\d\d)", texte)
+    if annee:
+        return date(int(annee.group(1)), 1, 1), "Année de mise en circulation seule : 1er janvier retenu."
+    return None, None
+
+
+def _puissance_formulaire(valeur, genre):
+    """« Puissance fiscale (CV) / Charge utile (kg ou t) / Cylindrée (cm³) » → (puissance, charge kg, cylindrée, alerte)."""
+    puissance = charge = cylindree = None
+    alerte = None
+    for morceau in _morceaux(valeur):
+        texte = _norme(morceau)
+        chiffres = re.sub(r"[^\d.,]", "", texte).replace(",", ".")
+        if not re.fullmatch(r"\d+(\.\d+)?", chiffres or ""):
+            continue
+        nombre = float(chiffres)
+        if re.search(r"cm|cc", texte):
+            cylindree = int(round(nombre))
+        elif "kg" in texte:
+            charge = int(round(nombre))
+        elif re.search(r"tonne|\d\s*t$|\bt\b", texte):
+            charge = int(round(nombre * 1000))
+        elif "cv" in texte:
+            puissance = int(round(nombre))
+        elif genre in ("Camion", "Camionnette") and nombre > 100:
+            charge = int(round(nombre))
+        elif genre == "02 roues" and nombre > 40:
+            cylindree = int(round(nombre))
+        elif puissance is None:
+            puissance = int(round(nombre))
+            if genre in ("Camion", "Camionnette"):
+                alerte = "Puissance lue sans unité : charge utile du camion à vérifier."
+    return puissance, charge, cylindree, alerte
+
+
+def lire_formulaire(contenu):
+    """Lignes du formulaire OREOLE : [{ligne, valeurs: {clé: valeur}, genres}], ou None s'il n'est pas à ce format."""
+    try:
+        classeur = openpyxl.load_workbook(BytesIO(contenu), data_only=True, read_only=True)
+    except Exception:  # noqa: BLE001
+        raise ErreurImportFlotte("Fichier illisible : enregistrez le formulaire au format Excel .xlsx.")
+    lignes = []
+    trouve = False
+    for feuille in classeur.worksheets:
+        colonnes, genres, attente_genres = None, {}, False
+        for numero, ligne in enumerate(feuille.iter_rows(values_only=True), start=1):
+            ligne = list(ligne)
+            textes = [_norme(c) for c in ligne]
+            if colonnes is None:
+                if any("immatric" in t for t in textes) and any(re.search(r"circulation|m\.?\s*e\.?\s*c", t) for t in textes):
+                    colonnes, prises = {}, set()
+                    for i, t in enumerate(textes):
+                        if not t:
+                            continue
+                        for cle, motif in COLONNES_FORMULAIRE:
+                            if cle not in prises and re.search(motif, t):
+                                colonnes[i] = cle
+                                prises.add(cle)
+                                break
+                    attente_genres = True
+                    trouve = True
+                continue
+            if attente_genres and any(re.search(r"particulier|camion|engin|roue", t) for t in textes):
+                for i, t in enumerate(textes):
+                    for motif, libelle, _ in GENRES_FORMULAIRE:
+                        if t and re.search(motif, t):
+                            genres[i] = libelle
+                            break
+                attente_genres = False
+                continue
+            attente_genres = False
+            valeurs = {cle: ligne[i] for i, cle in colonnes.items() if i < len(ligne) and not _vide(ligne[i])}
+            coches = [libelle for i, libelle in genres.items() if i < len(ligne) and not _vide(ligne[i])]
+            if not ({"marque", "immatriculation", "type", "valeur_neuve"} & set(valeurs)) and not coches:
+                continue  # ligne numérotée vide du modèle
+            lignes.append({"ligne": numero, "valeurs": valeurs, "genres": coches})
+    classeur.close()
+    return lignes if trouve else None
+
+
+def analyser_formulaire(lignes, id_compagnie, id_tarif_defaut=None, id_offre_defaut=None, date_effet=None):
+    from configuration_api.parametrage_auto import calculer_valeurs_venales
+
+    vehicules = []
+    with connection.cursor() as cursor:
+        ref = _referentiels(cursor, id_compagnie)
+        id_tarif, libelle_tarif, code_tarif = next(((i, n, c) for i, n, c in ref["tarifs"] if i == id_tarif_defaut), (None, None, None))
+        offres = _offres_tarif(cursor, ref, id_tarif) if id_tarif else []
+        id_offre, libelle_offre = next(((i, n) for i, n in offres if i == id_offre_defaut), offres[0] if offres else (None, None))
+        vues = set()
+        for l in lignes:
+            v = l["valeurs"]
+            alertes, erreurs = [], []
+            marque_txt = str(v.get("marque") or "").strip()
+            type_txt = str(v.get("type") or "").strip()
+            immatriculation = re.sub(r"\s+", "", str(v.get("immatriculation") or "")).upper()
+            if not immatriculation:
+                erreurs.append("Immatriculation absente.")
+            elif immatriculation in vues:
+                erreurs.append(f"Immatriculation {immatriculation} en double dans le fichier.")
+            vues.add(immatriculation)
+            if not id_tarif:
+                erreurs.append("Choisissez la catégorie du véhicule à l'écran avant d'importer le formulaire (il ne la donne pas).")
+            elif not id_offre:
+                erreurs.append(f"Aucune offre de la catégorie {libelle_tarif} n'est paramétrée pour cette compagnie.")
+
+            id_marque, libelle_marque = _marque(ref, marque_txt)
+            if not marque_txt:
+                erreurs.append("Marque absente.")
+            elif not id_marque:
+                erreurs.append(f"Marque « {marque_txt} » inconnue du référentiel.")
+
+            if len(l["genres"]) > 1:
+                alertes.append(f"Plusieurs genres cochés ({', '.join(l['genres'])}) : {l['genres'][0]} retenu.")
+            genre_coche = l["genres"][0] if l["genres"] else None
+            if genre_coche:
+                libelles = next(lib for _, nom, lib in GENRES_FORMULAIRE if nom == genre_coche)
+            else:
+                libelles = next((lib for motif, lib in TYPES_VEHICULE if re.search(motif, _norme(type_txt))), TYPE_PAR_DEFAUT)
+                alertes.append("Genre non coché : déduit du type de véhicule." if type_txt else "Genre non coché : véhicule particulier retenu.")
+            genre, type_vehicule, carrosserie, usage = libelles
+            id_genre, genre = _par_libelle(ref["genres"], genre)
+            id_type, type_vehicule = _par_libelle(ref["types"], type_vehicule, debut=True)
+            id_carrosserie, carrosserie = _par_libelle(ref["carrosseries"], carrosserie)
+            id_usage, usage = _par_libelle(ref["usages"], usage)
+            # Le formulaire ne donne pas la catégorie : celle de l'écran, à vérifier si le genre ne lui correspond pas
+            if id_tarif and ((genre_coche in ("Camion", "Camionnette", "Engin de chantier") and code_tarif in ("201", "212"))
+                             or (genre_coche == "02 roues" and code_tarif != "205")
+                             or (genre_coche == "Engin de chantier" and code_tarif != "209")):
+                alertes.append(f"{genre_coche} importé dans la catégorie {code_tarif} {libelle_tarif} : catégorie à vérifier.")
+
+            energie_txt = str(v.get("energie") or "").strip()
+            energie_cle = next((cle for motif, cle in ENERGIES if re.search(motif, _norme(energie_txt))), None)
+            id_energie = next((i for i, n in ref["energies"] if energie_cle and _norme(n).startswith(energie_cle[:4])), None)
+            if not energie_cle:
+                alertes.append(f"Énergie « {energie_txt} » non reconnue : Essence retenue." if energie_txt else "Énergie absente : Essence retenue.")
+                energie_cle, id_energie = "essence", 1
+
+            date_mec, alerte_date = _date_formulaire(v.get("date_mec"))
+            if alerte_date:
+                alertes.append(alerte_date)
+            if not date_mec:
+                alertes.append("Date de 1ère mise en circulation absente ou illisible : valeur vénale non contrôlée.")
+            puissance, charge, cylindree, alerte_puissance = _puissance_formulaire(v.get("puissance"), genre_coche)
+            if alerte_puissance:
+                alertes.append(alerte_puissance)
+            if not puissance and genre_coche != "02 roues":
+                alertes.append("Puissance fiscale absente.")
+            places = _nombre(v.get("places"))
+            if not places:
+                places = 2 if genre_coche == "02 roues" else 5
+                alertes.append(f"Nombre de places absent : {places} retenu.")
+            neuve, venale_fichier = _nombre(v.get("valeur_neuve")), _nombre(v.get("valeur_venale"))
+            if not neuve:
+                alertes.append("Valeur neuve absente.")
+
+            tableau = {}
+            if neuve and date_mec:
+                tableau = calculer_valeurs_venales([{
+                    "IdGenre": id_genre, "IdTypeVehicule": id_type, "IdCarrosserie": id_carrosserie, "IdTarif": id_tarif,
+                    "ChargeUtile": charge or 0, "ValeurNeuve": neuve, "DateMec": date_mec}], date_effet)[0]
+            venale_tableau = tableau.get("ValeurVenale")
+            venale = venale_fichier or venale_tableau or 0
+            montant = lambda x: f"{x:,} F".replace(",", " ")  # noqa: E731
+            if venale_fichier and venale_tableau and abs(venale_fichier - venale_tableau) > max(venale_tableau * 0.01, 1000):
+                alertes.append(f"Valeur vénale du fichier ({montant(venale_fichier)}) différente du tableau de dépréciation "
+                               f"({montant(venale_tableau)} : {tableau.get('Explication')}).")
+            elif not venale_fichier and venale_tableau:
+                alertes.append(f"Valeur vénale absente du fichier : tableau de dépréciation appliqué ({tableau.get('Explication')}).")
+            elif not venale_fichier and neuve and date_mec and venale_tableau is None:
+                alertes.append(f"Valeur vénale absente : {tableau.get('Explication') or 'tableau de dépréciation non applicable'}, à saisir.")
+            if neuve and venale > neuve:
+                alertes.append("Valeur vénale supérieure à la valeur neuve.")
+
+            vehicules.append({
+                "Ligne": l["ligne"],
+                "Numero": str(v.get("numero") or ""),
+                "Erreurs": erreurs,
+                "Avertissements": alertes,
+                "Fichier": {
+                    "Categorie": "", "Marque": marque_txt, "Type": type_txt, "Energie": energie_txt, "Zone": "",
+                    "PrimeNette": None, "Garanties": [], "Genre": genre_coche or "",
+                    "DateMec": date_mec.isoformat() if date_mec else None, "Cylindree": cylindree,
+                    "ValeurVenale": venale_fichier, "ValeurVenaleTableau": venale_tableau,
+                    "ExplicationTableau": tableau.get("Explication"),
+                },
+                "Vehicule": {
+                    "idTarif": id_tarif, "categorieContrat": libelle_tarif or "", "codeCategorie": code_tarif or "",
+                    "codeUsage": id_usage or 1, "usageVehicule": usage or "",
+                    "idCarrosserie": id_carrosserie or 1, "carrosserie": carrosserie or "",
+                    "idOffre": id_offre, "offreSelectionnee": libelle_offre or "",
+                    "codeCarburant": id_energie or 1, "energie": LIBELLES_ENERGIE_ECRAN[energie_cle],
+                    "codeFormuleSecuriteRoutiere": "AUCUNE", "idOptionAssistance": 0,
+                    "idMarque": id_marque, "marqueVehicule": libelle_marque or marque_txt,
+                    "idGenreVehicule": id_genre or 0, "genreVehicule": genre or "",
+                    "idTypeVehicule": id_type or 0, "typeCommercial": type_vehicule or "",
+                    "modeleVehicule": type_txt.upper(),
+                    "puissanceFiscale": puissance or 0, "chargeUtile": charge or 0, "nombrePlace": places,
+                    "valeurNeuf": neuve or 0, "valeurVenale": venale, "valeurAccessoire": 0,
+                    "immatriculation": immatriculation,
+                    **({"dateMec": date_mec.isoformat()} if date_mec else {}),
+                },
+                "GarantiesRetirees": [],
+                "ColonnesRetirees": [],
+            })
+    return {
+        "Format": "formulaire",
+        "Vehicules": vehicules,
+        "Avertissements": [] if vehicules else ["Aucun véhicule renseigné dans le formulaire."],
+        "Valides": sum(1 for x in vehicules if not x["Erreurs"]),
+    }
+
+
 # ------------------------------------------------------------------ route
 @api_view(["POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def analyser_import_flotte(request):
-    """POST /api/flotte/import/analyse/ (fichier_excel, IdCompagnie, IdTarif et IdOffre de l'écran) — n'écrit rien."""
+    """POST /api/flotte/import/analyse/ (fichier_excel, IdCompagnie, IdTarif, IdOffre et DateEffet de l'écran) —
+    n'écrit rien. Formulaire OREOLE (un ou plusieurs véhicules) ou liste NSIA des véhicules d'une flotte."""
     fichier = request.FILES.get("fichier_excel")
     if not fichier:
         return Response({"error": "Sélectionnez le fichier Excel des véhicules de la flotte."}, status=status.HTTP_400_BAD_REQUEST)
@@ -589,6 +856,11 @@ def analyser_import_flotte(request):
     if not entier("IdCompagnie"):
         return Response({"error": "Choisissez la compagnie du devis avant d'importer les véhicules."}, status=status.HTTP_400_BAD_REQUEST)
     try:
-        return Response(analyser_flotte(fichier.read(), entier("IdCompagnie"), entier("IdTarif"), entier("IdOffre")))
+        contenu = fichier.read()
+        formulaire = lire_formulaire(contenu)
+        if formulaire is not None:
+            return Response(analyser_formulaire(formulaire, entier("IdCompagnie"), entier("IdTarif"), entier("IdOffre"),
+                                                request.data.get("DateEffet") or None))
+        return Response({"Format": "liste", **analyser_flotte(contenu, entier("IdCompagnie"), entier("IdTarif"), entier("IdOffre"))})
     except ErreurImportFlotte as erreur:
         return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)

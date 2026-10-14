@@ -219,6 +219,8 @@ REGLES = [
     R("POST", r"transport/guce/analyse/", "imports.guce", lecture=True),
     R("POST", r"(transport/guce/import/|importationfichierguce|certificattransport/)", "imports.guce", objet="import"),
     R("GET", r"(imports-historique|imports-statistiques)", "devis.view"),
+    # ---- contrat Dommages : pièces de production (avant la lecture des devis, qui couvre dommages/)
+    R("GET", r"dommages/contrat/\d+/documents/?$", "contrats.view"),
     # ---- devis : lectures
     R("GET", r"(devis|devisdetail|devisclient|infodevis|infodevisrecherche|garantiesouscritedevis|quittanceproposition|"
              r"listevehiculedevis|reductionflottedevis|devisvoyage|devisia|devisrisquesdivers|devissante|dommages/|"
@@ -226,6 +228,10 @@ REGLES = [
              r"(adherent|affilie|filiale)(liste)?ensaisie|listeaffiliesante|ayantdroitia|ayantdroitminene|mrh/devis|"
              r"brouillons|devisdetgarantie)(/|$)", "devis.view"),
     # ---- contrats
+    R("GET", r"renouvellement/\d+/?$", "contrats.view"),
+    R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
+    R("GET", r"minene/ia/apercu/?$", "devis.view"),
+    R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"contrat/(?P<pk>\d+)/attacher_piece_jointe", "contrats.update", objet="contrat", cles=("pk",)),
@@ -290,8 +296,10 @@ REGLES = [
     R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
     R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
     # ---- tarifs et barèmes
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|grillesvoyage/)", "tarifs.update", objet="bareme",
-      cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition")),
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/auto/|grillesvoyage/)", "tarifs.update", objet="bareme",
+      cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition", "code")),
+    # Valeur vénale d'après le tableau de dépréciation (calcul sans écriture, écrans de devis)
+    R("POST", r"auto/valeur-venale/?$", "devis.view", lecture=True),
     R("POST,PUT,PATCH,DELETE", r"(tauxtaxegarantie|commissionproduit|accessoire|accessoirecourtier|reductionflotte|"
                                r"formulesecuriteroutiere|offre|offregarantie|enregistrementoffregarantie|garantie|sousgarantie|"
                                r"garantierisque|tarif|tarifdetail|tarifecran|offredetail|offrecollegesante|repartitionprimesante|"
@@ -522,6 +530,21 @@ def _apres_connexion(request, reponse):
 
 
 # ------------------------------------------------------------------ points d'entrée
+def droit_exige(view, request):
+    """Droit que la garde exige pour cette requête (None : être connecté ; INTERDIT : refusée), pour les classes de
+    permission des vues qui veulent le vérifier elles aussi (autorisations.permissions.DroitDeLaRoute)."""
+    chemin = _chemin(request)
+    if chemin is None:
+        return None
+    regle, _ = _regle(REGLES, request.method, chemin)
+    if regle is None:
+        if request.method not in ECRITURES:
+            return None
+        return ("parametrage.update" if _module_vue(view, request).startswith("configuration_api")
+                else "parametrage.technique")
+    return regle.droit(request, view) if callable(regle.droit) else regle.droit
+
+
 def controler(view, request):
     """Appelée après l'authentification DRF, avant la vue. Lève 401 / 403 / 428 si besoin."""
     chemin = _chemin(request)

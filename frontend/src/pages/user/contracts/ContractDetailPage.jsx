@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { contractApi, asaciApi, transportApi } from '../../../api/endpoints';
+import { contractApi, asaciApi, transportApi, dommagesApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
-import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, estDevisDommages, printCotationDommagesContrat } from '../../../utils/exportUtils';
+import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, estDevisDommages, printCotationDommagesContrat, printPieceDommages } from '../../../utils/exportUtils';
 import { estDevisSante, imprimerDocumentSante } from '../../../utils/impressionsSante';
 import { ReleveCompteModal } from './ReleveCompteModal';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
@@ -37,6 +37,13 @@ import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  // MINENE SANTÉ : IA et RC rattachées à la police Santé de ce contrat
+  const [mineneConnexes, setMineneConnexes] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    contractApi.getMineneConnexes(id).then((d) => { if (actif) setMineneConnexes(d); }).catch(() => {});
+    return () => { actif = false; };
+  }, [id]);
   const location = useLocation();
   const { success, error: toastError } = useToast();
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -81,6 +88,20 @@ export const ContractDetailPage = () => {
   const idProduitContrat = Number(contract.raw?.idproduit?.id_produit ?? contract.raw?.idproduit?.IdProduit ?? contract.raw?.idproduit) || 0;
   const contratRc = idProduitContrat === 8 || /responsabilit/i.test(String(contract.produit || ''));
   const [releveOuvert, setReleveOuvert] = useState(false);
+  // Contrat Dommages : documents de production de la catégorie (ex. « Garantie de soumission » d'une caution de
+  // soumission, Réglages Dommages), proposés d'après le risque saisi
+  const [documentsDommages, setDocumentsDommages] = useState([]);
+  useEffect(() => {
+    let actif = true;
+    setDocumentsDommages([]);
+    const idContrat = contract.idcontrat || id;
+    if (idContrat && contratDommages) {
+      dommagesApi.documentsContrat(idContrat)
+        .then((d) => { if (actif) setDocumentsDommages(d.Documents || []); })
+        .catch(() => {});
+    }
+    return () => { actif = false; };
+  }, [id, contract.idcontrat, contratDommages]);
   // Arrivée depuis la confirmation d'un devis Dommages : le relevé est proposé aussitôt
   useEffect(() => {
     if (location.state?.releve && contract.idcontrat) {
@@ -142,12 +163,8 @@ export const ContractDetailPage = () => {
               boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
               cursor: 'pointer',
             }}
-            onClick={() => {
-              setInitialOp(null);
-              setMovementTab('renouvellement');
-              setIsMovementModalOpen(true);
-            }}
-            title="Renouveler la police d'assurance et imprimer le certificat CIMA"
+            onClick={() => navigate(`/user/contracts/${id}/renouvellement`)}
+            title="Préparer le renouvellement : nouvelle période, liste à jour (incorporations, retraits), valeurs vénales selon l'âge ; même numéro de police"
           >
             <RefreshCw size={16} />
             <span>Renouveler la Police</span>
@@ -351,10 +368,29 @@ export const ContractDetailPage = () => {
                     Imprimer
                   </button>
                 </div>
+                {/* Pièces de production (compte rendu du 12-10-2026) : facture de prime au modèle OREOLE et
+                    documents de la catégorie, ex. « Garantie de soumission » */}
+                {[['facture', 'Facture de prime'], ...documentsDommages.map((d) => [d.Id, d.Titre.charAt(0) + d.Titre.slice(1).toLowerCase()])].map(([piece, libelle]) => (
+                  <div key={piece} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                      <Paperclip size={16} color="#94a3b8" />
+                      <span style={{ color: '#fff' }}>{libelle}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-link"
+                      style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
+                      onClick={() => printPieceDommages(contract.idcontrat || id, piece)}
+                    >
+                      Imprimer
+                    </button>
+                  </div>
+                ))}
               </>
             )}
-            {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé */}
-            {!contratVoyage && (
+            {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé ;
+                Dommages : la facture de prime est celle du modèle OREOLE ci-dessus */}
+            {!contratVoyage && !contratDommages && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />
@@ -409,7 +445,7 @@ export const ContractDetailPage = () => {
             ))}
 
             {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » */}
-            {!contratVoyage && !contratRc && (
+            {!contratVoyage && !contratRc && !contratDommages && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />
@@ -426,7 +462,7 @@ export const ContractDetailPage = () => {
               </div>
             )}
 
-            {!contratVoyage && !contratRc && (
+            {!contratVoyage && !contratRc && !contratDommages && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />
@@ -538,6 +574,42 @@ export const ContractDetailPage = () => {
         </div>
       )}
 
+      {/* MINENE SANTÉ : IA et RC chef de famille rattachées à la police Santé (créées depuis cette police) */}
+      {mineneConnexes?.Minene && (
+        <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', marginBottom: '1.5rem', border: '1px solid rgba(249, 115, 22, 0.35)' }}>
+          <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '0.35rem' }}>MINENE SANTÉ : Individuelle Accidents et RC chef de famille</div>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+            Trois assurances indissociables : l'IA et la RC sont émises sur cette police Santé ({mineneConnexes.Adherents} adhérent{mineneConnexes.Adherents > 1 ? 's' : ''}, tarifés chacun), sans ressaisie.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
+            {[['IA', 'Individuelle Accidents MINENE', 'ia'], ['RC', 'RC chef de famille MINENE', 'rc']].map(([cle, libelle, module]) => {
+              const lies = mineneConnexes[cle] || [];
+              const parametres = new URLSearchParams({
+                minene: mineneConnexes.NumeroPolice, effet: mineneConnexes.DateEffet, expiration: mineneConnexes.DateExpiration,
+                client: String(mineneConnexes.IdClient || ''), nom: mineneConnexes.Client || '',
+              }).toString();
+              return (
+                <div key={cle} style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '0.7rem 0.9rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: '0.4rem' }}>{libelle}</div>
+                  {lies.length === 0 && <div style={{ fontSize: '0.8rem', color: '#f59e0b', marginBottom: '0.5rem' }}>Pas encore émise sur cette police.</div>}
+                  {lies.map((l) => (
+                    <div key={l.IdDevis} style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>
+                      {l.IdContrat
+                        ? <span>Contrat <strong>{l.NumeroPolice}</strong> — {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: '0.8rem' }} onClick={() => navigate(`/user/contracts/${l.IdContrat}`)}>Ouvrir</button></span>
+                        : <span>Devis <strong>{l.NumeroDevis}</strong> non confirmé — {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC</span>}
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/quotes/${module}?${parametres}`)}
+                    style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', marginTop: '0.25rem' }}>
+                    {lies.length ? `Émettre une autre ${cle} MINENE` : `Créer l'${cle === 'IA' ? 'IA' : 'RC'} MINENE`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Historique des Avenants & Renouvellements CIMA */}
       <div className="glass-panel" style={{ padding: '1.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -566,11 +638,7 @@ export const ContractDetailPage = () => {
                 boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)',
                 cursor: 'pointer',
               }}
-              onClick={() => {
-                setInitialOp(null);
-                setMovementTab('renouvellement');
-                setIsMovementModalOpen(true);
-              }}
+              onClick={() => navigate(`/user/contracts/${id}/renouvellement`)}
             >
               <RefreshCw size={14} />
               <span>Nouveau Renouvellement</span>

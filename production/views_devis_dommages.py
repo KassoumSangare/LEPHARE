@@ -766,6 +766,9 @@ def risque_dommages(cursor, iddevis):
         "objet_garantie": (reglage.ObjetGarantie if reglage else "") or "",
         "contre_garanties": [l.strip() for l in ((reglage.ContreGaranties if reglage else "") or "").splitlines() if l.strip()],
         "exclusions": [l.strip() for l in ((reglage.Exclusions if reglage else "") or "").splitlines() if l.strip()],
+        # Tableau des garanties en annexe de la cotation (Caution : non, compte rendu du 12-10-2026)
+        "annexe_garanties": reglage.AnnexeCotation if reglage else True,
     }
-    return {"categorie": ligne[1] or "", "description": lignes, "fiche": fiche,
-            "valeurs": {c: valeurs.get(c) for c in libelles if valeurs.get(c)}}
+    return {"categorie": ligne[1] or "", "description": lignes, "fiche": fiche, "idtarif": ligne[0],
+            "valeurs": {c: valeurs.get(c) for c in libelles if valeurs.get(c)}, "types": types,
+            "reference_facture": (reglage.ReferenceFacture if reglage else "") or ""}

@@ -839,18 +839,26 @@ export const quoteApi = {
   // la liste remplace les siennes, puis le devis est retotalisé)
   appliquerGarantiesVehiculeFlotte: (payload) => apiClient.post('/garantiesvehiculeflotte/', payload),
   // POST /api/flotte/import/analyse/ (fichier Excel des véhicules d'une flotte : lecture seule, rien n'est enregistré)
-  analyserImportFlotte: async (fichier, { idCompagnie, idTarif, idOffre }) => {
+  analyserImportFlotte: async (fichier, { idCompagnie, idTarif, idOffre, dateEffet }) => {
     const formulaire = new FormData();
     formulaire.append('fichier_excel', fichier);
     formulaire.append('IdCompagnie', String(idCompagnie || ''));
     formulaire.append('IdTarif', String(idTarif || ''));
     formulaire.append('IdOffre', String(idOffre || ''));
+    // Date d'effet du devis : âge du véhicule pour le tableau de dépréciation (formulaire OREOLE)
+    if (dateEffet) formulaire.append('DateEffet', String(dateEffet));
     const { data } = await apiClient.post('/flotte/import/analyse/', formulaire, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120000,
     });
     return data;
   },
+  // POST /api/auto/valeur-venale/ : valeur vénale du tableau de dépréciation (CIEAMI, réglé dans l'admin)
+  // pour une liste de véhicules [{ Cle, IdGenre, IdTypeVehicule, IdCarrosserie, IdTarif | CodeCategorie,
+  // ChargeUtile, ValeurNeuve, DateMec }] ; n'écrit rien
+  calculerValeursVenales: async (vehicules, dateEffet) => (
+    await apiClient.post('/auto/valeur-venale/', { Vehicules: vehicules, DateEffet: dateEffet || undefined })
+  ).data?.Vehicules || [],
   // GET /api/sousgarantie/ (Sous-garanties disponibles ; 237 en base, au-delà de la page par défaut)
   getSousGaranties: async () => extractData(await apiClient.get('/sousgarantie/', { params: { page_size: 1000 } })),
   // GET /api/tauxtaxegarantie/ (taux de taxe par garantie et produit, ceux de fn_calcul_montant_taxe)
@@ -1028,6 +1036,8 @@ export const iaApi = {
   // POST /api/creer-devis-ia-minene/ : devis MINENE créé depuis le contrat Santé connexe
   // (souscripteur, assurés = adhérents, ayants droit = affiliés)
   creerDevisMinene: async (payload) => (await apiClient.post('/creer-devis-ia-minene/', payload)).data,
+  // GET /api/minene/ia/apercu/ : assurés repris de la police Santé et primes calculées par la base (lecture seule)
+  apercuMinene: async (police, effet) => (await apiClient.get('/minene/ia/apercu/', { params: { police, effet } })).data,
 };
 
 /* =========================================================================
@@ -1139,6 +1149,9 @@ export const dommagesApi = {
   enregistrer: async (donnees) => (await apiClient.post('/dommages/devis/', donnees)).data,
   // GET /api/dommages/devis/:id/ : saisie, garanties et montants enregistrés
   lireDevis: async (idDevis) => (await apiClient.get(`/dommages/devis/${idDevis}/`)).data,
+  // GET /api/dommages/contrat/:id/documents/ : facture de prime et documents de production du contrat
+  // (production/documents_dommages.py)
+  documentsContrat: async (idContrat) => (await apiClient.get(`/dommages/contrat/${idContrat}/documents/`)).data,
 };
 
 export const mrhApi = {
@@ -1279,6 +1292,8 @@ export const parametrageApi = {
   // Réglages Dommages (produit 9) : catégories et garanties par compagnie (configuration_api/parametrage_dommages.py)
   getDommages: async () => (await apiClient.get('/parametrage/dommages/')).data,
   modifierCategorieDommages: async (idTarif, donnees) => (await apiClient.patch(`/parametrage/dommages/categories/${idTarif}/`, donnees)).data,
+  // Documents de production de la catégorie (ex. « Garantie de soumission ») : liste complète remplacée
+  modifierDocumentsDommages: async (idTarif, documents) => (await apiClient.put(`/parametrage/dommages/categories/${idTarif}/documents/`, { Documents: documents })).data,
   modifierGarantiesDommages: async (idTarif, idCompagnie, garanties) => (
     await apiClient.put(`/parametrage/dommages/categories/${idTarif}/compagnies/${idCompagnie}/`, { Garanties: garanties })
   ).data,
@@ -1289,6 +1304,18 @@ export const parametrageApi = {
   modifierParametreSante: async (cle, valeur) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Valeur: valeur })).data,
   retablirParametreSante: async (cle) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Retablir: true })).data,
   modifierRepartitionSante: async (id, donnees) => (await apiClient.patch(`/parametrage/sante/repartitions/${id}/`, donnees)).data,
+  // Réglages Automobile : dépréciation des véhicules (configuration_api/parametrage_auto.py)
+  getDepreciation: async () => (await apiClient.get('/parametrage/auto/depreciation/')).data,
+  modifierClasseDepreciation: async (code, donnees) => (await apiClient.patch(`/parametrage/auto/depreciation/classes/${code}/`, donnees)).data,
+  modifierReglesDepreciation: async (regles) => (await apiClient.put('/parametrage/auto/depreciation/regles/', { Regles: regles })).data,
+  modifierParametreDepreciation: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/depreciation/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametreDepreciation: async (cle) => (await apiClient.patch(`/parametrage/auto/depreciation/parametres/${cle}/`, { Retablir: true })).data,
+  modifierReglesGarantiesAuto: async (regles) => (await apiClient.put('/parametrage/auto/regles-garanties/', { Regles: regles })).data,
+  // Pool TPV (catégorie 204) : tarif, paramètres, primes dues au Pool
+  getPoolTpv: async ({ du, au } = {}) => (await apiClient.get('/parametrage/auto/pool-tpv/', { params: { du: du || undefined, au: au || undefined } })).data,
+  modifierTranchesPoolTpv: async (tranches) => (await apiClient.put('/parametrage/auto/pool-tpv/tranches/', { Tranches: tranches })).data,
+  modifierParametrePoolTpv: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/pool-tpv/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametrePoolTpv: async (cle) => (await apiClient.patch(`/parametrage/auto/pool-tpv/parametres/${cle}/`, { Retablir: true })).data,
   // Barème d'URANUS (taxes, commissions, accessoires…) : route DRF complète, toutes les lignes
   bareme: (route) => ({
     lister: async () => {
@@ -1469,6 +1496,14 @@ export const contractApi = {
   },
   // POST /api/avenant/renouvellement
   renewContract: (data) => apiClient.post('/avenant/renouvellement', data),
+  // Renouvellement LE PHARE (production/renouvellement.py) : préparation (lecture seule) puis devis de
+  // renouvellement sous la même police
+  preparerRenouvellement: async (idContrat, { dateEffet, dateExpiration } = {}) => (await apiClient.get(`/renouvellement/${idContrat}/`, {
+    params: { date_effet: dateEffet || undefined, date_expiration: dateExpiration || undefined },
+  })).data,
+  creerRenouvellement: async (idContrat, donnees) => (await apiClient.post(`/renouvellement/${idContrat}/`, donnees)).data,
+  // IA et RC MINENE rattachées à la police Santé MINENE du contrat (production/minene_connexes.py)
+  getMineneConnexes: async (idContrat) => (await apiClient.get(`/minene/${idContrat}/connexes/`)).data,
   // POST /api/avenant/initiationmouvement
   createEndorsement: (data) => apiClient.post('/avenant/initiationmouvement', data),
   // GET /api/avenant/

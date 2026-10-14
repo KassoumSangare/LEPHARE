@@ -4020,6 +4020,9 @@ class ProduitParametre(models.Model):
     ModuleSaisie = models.CharField(max_length=30, blank=True, default="", choices=MODULES, db_column="modulesaisie")
     SaisieOuverte = models.BooleanField(default=False, db_column="saisieouverte")
     Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    # Prime TTC arrondie à la pièce (fn_lephare_arrondi_montant, réglages « montants.arrondi_* ») ; non : TTC des
+    # grilles de la compagnie gardée telle quelle
+    ArrondiTtc = models.BooleanField(default=True, db_column="arrondittc")
     DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
 
     class Meta:
@@ -4055,6 +4058,12 @@ class DommageCategorie(models.Model):
     ObjetGarantie = models.TextField(blank=True, default="", db_column="objetgarantie")
     ContreGaranties = models.TextField(blank=True, default="", db_column="contregaranties")
     Exclusions = models.TextField(blank=True, default="", db_column="exclusions")
+    # Cotation imprimée : tableau des garanties en annexe (page 2) ; sinon les garanties sont citées dans la
+    # cotation même (Caution : annexe supprimée, compte rendu du 12-10-2026)
+    AnnexeCotation = models.BooleanField(default=True, db_column="annexecotation")
+    # Référence imprimée entre parenthèses après la catégorie sur la facture de prime : texte libre et champs
+    # du risque entre accolades (Caution : « {numero_appel_offres} {beneficiaire} »)
+    ReferenceFacture = models.CharField(max_length=200, blank=True, default="", db_column="referencefacture")
     DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
 
     class Meta:
@@ -4062,6 +4071,35 @@ class DommageCategorie(models.Model):
         verbose_name = "Catégorie Dommages"
         verbose_name_plural = "Catégories Dommages"
         ordering = ["Ordre", "IdTarif"]
+
+
+class DommageDocument(models.Model):
+    """Document de production d'une catégorie Dommages imprimé depuis le contrat (ex. « Garantie de soumission »
+    d'une caution) : texte dont les champs entre accolades ({beneficiaire}, {numero_police}, {capital_lettres}…)
+    sont remplacés par les données du contrat et du risque saisi."""
+
+    IdTarif = models.IntegerField(db_column="idtarif")
+    # Compagnie émettrice (0 : toutes les compagnies) : son logo et son pied de page encadrent le document
+    IdCompagnie = models.IntegerField(default=0, db_column="idcompagnie")
+    Titre = models.CharField(max_length=120, db_column="titre")
+    # Document proposé seulement si le champ du risque contient la valeur (ex. type_cautionnement /
+    # « SOUMISSION ») ; vide : toujours proposé
+    ConditionChamp = models.CharField(max_length=40, blank=True, default="", db_column="conditionchamp")
+    ConditionValeur = models.CharField(max_length=120, blank=True, default="", db_column="conditionvaleur")
+    # Texte : paragraphes séparés par une ligne vide, **gras**, ligne en retrait si elle commence par des espaces
+    Corps = models.TextField(db_column="corps")
+    # Signataire : une ligne par ligne imprimée (nom puis fonction)
+    Signataire = models.TextField(blank=True, default="", db_column="signataire")
+    MentionSignature = models.CharField(max_length=200, blank=True, default="", db_column="mentionsignature")
+    Actif = models.BooleanField(default=True, db_column="actif")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_dommage_document"
+        verbose_name = "Document de production Dommages"
+        verbose_name_plural = "Documents de production Dommages"
+        ordering = ["IdTarif", "Ordre", "id"]
 
 
 class DommageGarantie(models.Model):
@@ -4123,3 +4161,91 @@ class SanteFormuleMinene(models.Model):
         verbose_name = "Formule MINENE Santé"
         verbose_name_plural = "Formules MINENE Santé"
         ordering = ["Ordre", "IdOffre"]
+
+
+class DepreciationClasse(models.Model):
+    """Ligne du tableau de dépréciation des véhicules (CIEAMI, « Tableau de dépréciation applicable aux
+    véhicules terrestres à moteur en Côte d'Ivoire ») : taux de dépréciation par âge du véhicule.
+
+    Taux : {"<âge en mois>": [taux] ou [taux minimum, taux maximum]}, par exemple {"18": [30, 35]}.
+    Lu par fn_lephare_depreciation (valeur vénale à la saisie, à l'import et au renouvellement).
+    """
+
+    Code = models.CharField(max_length=30, primary_key=True, db_column="code")
+    Libelle = models.CharField(max_length=100, db_column="libelle")
+    Kilometrage = models.CharField(max_length=100, blank=True, default="", db_column="kilometrage")
+    Taux = models.JSONField(default=dict, blank=True, db_column="taux")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_depreciation_classe"
+        verbose_name = "Ligne du tableau de dépréciation"
+        verbose_name_plural = "Tableau de dépréciation"
+        ordering = ["Ordre", "Code"]
+
+
+class DepreciationRegle(models.Model):
+    """Ligne du tableau de dépréciation retenue pour un véhicule : première règle (par ordre) dont tous
+    les critères renseignés correspondent (genre, type, carrosserie, catégorie tarifaire, charge utile)."""
+
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    Classe = models.ForeignKey(DepreciationClasse, on_delete=models.CASCADE, db_column="classe", related_name="regles")
+    IdGenre = models.IntegerField(null=True, blank=True, db_column="idgenre")
+    IdTypeVehicule = models.IntegerField(null=True, blank=True, db_column="idtypevehicule")
+    IdCarrosserie = models.IntegerField(null=True, blank=True, db_column="idcarrosserie")
+    CodeCategorie = models.CharField(max_length=3, blank=True, default="", db_column="codecategorie")
+    # Charge utile strictement supérieure à (kg) ; vide : sans condition
+    ChargeUtileSuperieureA = models.IntegerField(null=True, blank=True, db_column="chargeutilesuperieurea")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_depreciation_regle"
+        verbose_name = "Règle de classement (dépréciation)"
+        verbose_name_plural = "Règles de classement (dépréciation)"
+        ordering = ["Ordre", "id"]
+
+
+class AutoRegleGarantie(models.Model):
+    """Règle de gestion Automobile : garantie admise selon l'âge du véhicule (années révolues depuis la
+    première mise en circulation, à la date d'effet), par compagnie. Ex. NSIA : tous risques (DOMMAGES)
+    de 0 à 5 ans, NSIA Auto Plus de 5 à 10 ans. Signalée à la saisie ; le producteur décoche."""
+
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    IdSousGarantie = models.IntegerField(db_column="idsousgarantie")
+    # Âge minimum inclus, âge maximum exclu (années révolues) ; vide : sans limite
+    AgeMinimum = models.PositiveSmallIntegerField(null=True, blank=True, db_column="ageminimum")
+    AgeMaximum = models.PositiveSmallIntegerField(null=True, blank=True, db_column="agemaximum")
+    # Codes de catégorie concernés, séparés par des virgules (vide : toutes)
+    Categories = models.CharField(max_length=100, blank=True, default="", db_column="categories")
+    Commentaire = models.CharField(max_length=200, blank=True, default="", db_column="commentaire")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+
+    class Meta:
+        db_table = "lephare_auto_regle_garantie"
+        verbose_name = "Garantie admise selon l'âge du véhicule"
+        verbose_name_plural = "Garanties admises selon l'âge du véhicule"
+        ordering = ["IdCompagnie", "IdSousGarantie"]
+
+
+class PoolTpvTranche(models.Model):
+    """Tranche du tarif du POOL TPV (transport public de voyageurs, catégorie 204) : prime RC annuelle selon le
+    nombre de places et accessoires selon la durée (1 à 12 mois). Le Recours (défense recours) vaut un
+    pourcentage de la RC ; la prime d'une durée = prime annuelle × fraction de la durée (paramètres
+    auto.pool_tpv.*). Lu par la base (fn_pool_tpv) pour l'offre « POOL TPV (CAT 204) »."""
+
+    PlacesMin = models.PositiveSmallIntegerField(db_column="placesmin")
+    PlacesMax = models.PositiveSmallIntegerField(null=True, blank=True, db_column="placesmax")
+    PrimeRcAnnuelle = models.DecimalField(max_digits=15, decimal_places=2, db_column="primercannuelle")
+    # Accessoires par durée : [1 mois, 2 mois, …, 12 mois]
+    Accessoires = models.JSONField(default=list, blank=True, db_column="accessoires")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_pool_tpv_tranche"
+        verbose_name = "Tranche du tarif Pool TPV"
+        verbose_name_plural = "Tarif Pool TPV"
+        ordering = ["Ordre", "PlacesMin"]

@@ -24,7 +24,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, reglagesMinene } from '../../../utils/parametrage';
 
 // Catégorie IA MINENE (comme URANUS) : NSIA, offre 66, capitaux fixes, durée annuelle ou au
 // 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
@@ -146,6 +146,8 @@ export const NewIaQuotePage = () => {
   // « Modifier » depuis le registre des devis : /user/quotes/ia?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  // Devis de renouvellement (page Renouvellement) : tous les assurés sont retarifés à l'enregistrement
+  const renouvellementParam = searchParams.get('renouvellement') === '1';
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [idDevisEdite, setIdDevisEdite] = useState(null);
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
@@ -208,6 +210,8 @@ export const NewIaQuotePage = () => {
   };
   // Création MINENE : les assurés viennent du contrat Santé, rien n'est saisi à l'écran
   const creationMinene = estMinene && !editIddevisParam;
+  // Récapitulatif d'une création MINENE : adhérents de la police Santé et primes calculées par la base
+  const [apercuMinene, setApercuMinene] = useState(null);
   const dateExpiration = useMemo(
     () => expirationPour(dateEffet, dureeId, expirationPersonnalisee, estMinene),
     [dateEffet, dureeId, expirationPersonnalisee, estMinene]
@@ -293,6 +297,32 @@ export const NewIaQuotePage = () => {
     });
     return () => { actif = false; };
   }, [idTarif]);
+
+  // Création depuis le contrat Santé MINENE (?minene=<police>&effet=&expiration=) : catégorie MINENE, police
+  // connexe et période de la police Santé, sans ressaisie
+  const policeMineneParam = searchParams.get('minene');
+  useEffect(() => {
+    if (!policeMineneParam || editIddevisParam) return;
+    setIdTarif(ID_TARIF_MINENE);
+    setNumeroPoliceConnexe(policeMineneParam);
+    const effet = searchParams.get('effet');
+    const expiration = searchParams.get('expiration');
+    if (effet) setDateEffet(effet);
+    if (expiration) {
+      setDureeId(5);
+      setExpirationPersonnalisee(expiration);
+    }
+  }, [policeMineneParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Récapitulatif d'une création MINENE : aperçu lu à l'étape 3 (police connexe et date d'effet connues)
+  useEffect(() => {
+    if (!creationMinene || step !== 3 || !numeroPoliceConnexe.trim()) { setApercuMinene(null); return undefined; }
+    let actif = true;
+    iaApi.apercuMinene(numeroPoliceConnexe.trim(), dateEffet)
+      .then((d) => { if (actif) setApercuMinene(d); })
+      .catch((err) => { if (actif) setApercuMinene({ erreur: messageErreurApi(err) }); });
+    return () => { actif = false; };
+  }, [creationMinene, step, numeroPoliceConnexe, dateEffet]);
 
   // MINENE : compagnie NSIA, offre MINENE et capitaux fixes, durée annuelle ou au 31/12 (URANUS)
   useEffect(() => {
@@ -420,7 +450,7 @@ export const NewIaQuotePage = () => {
             },
             garantiesEnregistrees: garantiesLigne.length ? garantiesLigne : null,
           };
-          assure.origine = empreinteLigne(assure);
+          assure.origine = renouvellementParam ? null : empreinteLigne(assure);
           return assure;
         }));
         if (!actif) return;
@@ -519,7 +549,7 @@ export const NewIaQuotePage = () => {
       const primeNette = assures.reduce((s, a) => s + (Number(a.PrimeNette) || 0), 0);
       const accessoire = assures.reduce((s, a) => s + (Number(a.Accessoire) || 0), 0);
       const taxe = assures.reduce((s, a) => s + taxeImposee(a.PrimeNette, a.Accessoire, tauxTaxe), 0);
-      return { primeNette, taxe, accessoire, primeTtc: primeNette + accessoire + taxe };
+      return { primeNette, taxe, accessoire, primeTtc: arrondirMontant(primeNette + accessoire + taxe, 2) };
     }
     const primeNette = assures.reduce((s, a) => s + (a.prime?.primeNette || 0), 0);
     const taxeLignes = assures.reduce((s, a) => s + (a.prime?.taxe || 0), 0);
@@ -528,11 +558,11 @@ export const NewIaQuotePage = () => {
     if (flotte && accessoireGroupe) {
       const accessoire = Math.round(accessoireGroupe.accessoire);
       const taxe = taxeLignes + Math.round(accessoireGroupe.taxeAccessoire);
-      return { primeNette, taxe, accessoire, primeTtc: Math.round(primeNette + taxe + accessoire) };
+      return { primeNette, taxe, accessoire, primeTtc: arrondirMontant(primeNette + taxe + accessoire, 2) };
     }
     if (!calcule) return { primeNette, taxe: taxeLignes, accessoire: null, primeTtc: null };
     const taxe = taxeLignes + (calcule.taxeAccessoire || 0);
-    return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: primeNette + taxe + calcule.accessoire };
+    return { primeNette, taxe, accessoire: calcule.accessoire, primeTtc: arrondirMontant(primeNette + taxe + calcule.accessoire, 2) };
   }, [assures, flotte, primesToutesSaisies, tauxTaxe, accessoireGroupe]);
   // Garanties d'un assuré : celles du calcul en cours (offregarantieia), sinon celles enregistrées
   const garantiesAssure = (a) => {
@@ -1515,6 +1545,26 @@ export const NewIaQuotePage = () => {
               </tr>
             </thead>
             <tbody>
+              {/* Création MINENE : adhérents de la police Santé, assurés à l'enregistrement */}
+              {creationMinene && apercuMinene?.erreur && (
+                <tr><td colSpan={4} style={{ padding: '0.75rem', color: 'var(--accent-rose)' }}>Aperçu impossible : {apercuMinene.erreur}</td></tr>
+              )}
+              {creationMinene && apercuMinene?.Adherents?.map((a) => (
+                <tr key={a.IdAdherent} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <td style={{ padding: '0.6rem', fontWeight: 600 }}>
+                    {a.Nom}
+                    <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                      {' '}— {a.AyantsDroit ? `${a.AyantsDroit} ayant${a.AyantsDroit > 1 ? 's' : ''} droit` : 'sans ayant droit'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(apercuMinene.Unitaire.PrimeNette)}</td>
+                  <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(apercuMinene.Unitaire.Taxe)}</td>
+                  <td style={{ padding: '0.6rem', color: 'var(--text-muted)' }}>{a.Actif ? 'Repris de la police Santé' : 'Adhérent inactif (compté dans la prime)'}</td>
+                </tr>
+              ))}
+              {creationMinene && apercuMinene && !apercuMinene.erreur && !apercuMinene.Adherents?.length && (
+                <tr><td colSpan={4} style={{ padding: '0.75rem', color: 'var(--accent-amber)' }}>Aucun adhérent sur la police Santé {numeroPoliceConnexe} : l'IA MINENE ne peut pas être créée.</td></tr>
+              )}
               {assures.map((a) => {
                 const garantiesLigne = garantiesAssure(a);
                 const ouvert = Boolean(garantiesOuvertes[a.cle]);
@@ -1577,7 +1627,14 @@ export const NewIaQuotePage = () => {
           </table>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-            {(rienAModifier && totauxEnregistres
+            {(creationMinene && apercuMinene?.Totaux
+              ? [
+                ['Prime nette', apercuMinene.Totaux.PrimeNette],
+                ['Taxes', apercuMinene.Totaux.Taxe],
+                ['Accessoires', apercuMinene.Totaux.Accessoire + apercuMinene.Totaux.FraisGestion],
+                ['Prime TTC', apercuMinene.Totaux.PrimeTtc],
+              ]
+              : rienAModifier && totauxEnregistres
               ? [
                 ['Prime nette', totauxEnregistres.primeNette],
                 ['Taxes', totauxEnregistres.taxe],
@@ -1598,6 +1655,15 @@ export const NewIaQuotePage = () => {
                 </div>
               ))}
           </div>
+
+          {creationMinene && apercuMinene?.Totaux && (
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>
+              Par adhérent : prime {fcfa(apercuMinene.Unitaire.PrimeNette)}, accessoire {fcfa(apercuMinene.Unitaire.Accessoire)},
+              frais de gestion MINENE {fcfa(apercuMinene.Unitaire.FraisGestion)}, taxe {String(apercuMinene.TauxTaxe).replace('.', ',')} % ({fcfa(apercuMinene.Unitaire.Taxe)}),
+              soit {fcfa(apercuMinene.Unitaire.PrimeTtc)} F TTC × {apercuMinene.Nombre} adhérent{apercuMinene.Nombre > 1 ? 's' : ''} de la police Santé
+              (Administration &gt; Réglages Santé MINENE). Montants confirmés à l'enregistrement.
+            </div>
+          )}
 
           <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setStep(2)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

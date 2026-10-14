@@ -48,6 +48,29 @@ import {
   ListChecks,
 } from 'lucide-react';
 
+// Repère d'un menu déroulant : nombre de pages et chevron dans une pastille, qui se teinte et pivote à l'ouverture
+const IndicateurDeroulant = ({ ouvert, nombre }) => (
+  <span className={`sidebar-deroulant ${ouvert ? 'ouvert' : ''}`} aria-hidden="true">
+    {nombre > 0 && <span className="sidebar-deroulant-nombre">{nombre}</span>}
+    <ChevronDown size={13} className="sidebar-deroulant-chevron" />
+  </span>
+);
+
+// Ligne qui déroule un menu : bouton accessible au clavier (Entrée, Espace), état ouvert annoncé
+const proprietesDeroulant = (ouvert, nombre, basculer) => ({
+  role: 'button',
+  tabIndex: 0,
+  'aria-expanded': ouvert,
+  title: `${ouvert ? 'Masquer' : 'Afficher'} ${nombre > 1 ? `les ${nombre} pages` : 'la page'} de ce menu`,
+  onClick: basculer,
+  onKeyDown: (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      basculer();
+    }
+  },
+});
+
 export const Sidebar = ({ isOpen, onClose }) => {
   const { activeSpace, peut } = useAuth();
   const location = useLocation();
@@ -61,6 +84,8 @@ export const Sidebar = ({ isOpen, onClose }) => {
   const toggleSubmenu = (menu) => {
     setOpenSubmenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
   };
+  // Pages du sous-menu « Relations Clients » visibles avec les droits de l'utilisateur
+  const nombreCrm = [peut('crm.view'), peut('clients.view'), peut('clients.view')].filter(Boolean).length;
 
   const handleLinkClick = () => {
     if (window.innerWidth <= 1024 && onClose) {
@@ -159,18 +184,13 @@ export const Sidebar = ({ isOpen, onClose }) => {
               return (
                 <div key={groupe.id}>
                   <div
-                    className={`sidebar-section-header ${contientPageActive ? 'active' : ''}`}
-                    onClick={() => setGroupesAdminOuverts((prev) => ({ ...prev, [groupe.id]: !prev[groupe.id] }))}
-                    title={groupe.description}
-                    style={{ cursor: 'pointer' }}
+                    className={`sidebar-section-header deroulant ${ouvert ? 'ouvert' : ''} ${contientPageActive ? 'active' : ''}`}
+                    {...proprietesDeroulant(ouvert, groupe.items.length, () => setGroupesAdminOuverts((prev) => ({ ...prev, [groupe.id]: !prev[groupe.id] })))}
                   >
-                    <span>{groupe.titre}</span>
-                    <ChevronDown
-                      size={12}
-                      style={{ transform: ouvert ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}
-                    />
+                    <span title={groupe.description}>{groupe.titre}</span>
+                    <IndicateurDeroulant ouvert={ouvert} nombre={groupe.items.length} />
                   </div>
-                  {ouvert && groupe.items.map((item) => {
+                  {ouvert && <div className="sidebar-groupe-contenu">{groupe.items.map((item) => {
                     const Icone = item.icon;
                     return (
                       <NavLink
@@ -184,7 +204,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                         <span>{item.label}</span>
                       </NavLink>
                     );
-                  })}
+                  })}</div>}
                 </div>
               );
             })}
@@ -206,22 +226,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             {peut(['crm.view', 'clients.view']) && <div>
               <div
-                onClick={() => toggleSubmenu('crm')}
-                className={`sidebar-nav-item ${location.pathname.includes('/user/crm') || location.pathname.includes('/user/clients') ? 'active' : ''}`}
-                style={{ justifyContent: 'space-between' }}
+                {...proprietesDeroulant(!!openSubmenus.crm, nombreCrm, () => toggleSubmenu('crm'))}
+                className={`sidebar-nav-item has-submenu ${openSubmenus.crm ? 'deplie' : ''} ${location.pathname.includes('/user/crm') || location.pathname.includes('/user/clients') ? 'active' : ''}`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <Users size={16} className="nav-icon" />
-                  <span>Relations Clients</span>
-                </div>
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: openSubmenus.crm ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                    color: 'var(--text-muted)',
-                  }}
-                />
+                <Users size={16} className="nav-icon" />
+                <span>Relations Clients</span>
+                <IndicateurDeroulant ouvert={!!openSubmenus.crm} nombre={nombreCrm} />
               </div>
 
               {openSubmenus.crm && (
@@ -271,22 +281,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             {peut('encaissements.view') && <div>
               <div
-                onClick={() => toggleSubmenu('cash')}
-                className={`sidebar-nav-item ${location.pathname.includes('/user/cash') || location.pathname.includes('/user/cheques') ? 'active' : ''}`}
-                style={{ justifyContent: 'space-between' }}
+                {...proprietesDeroulant(!!openSubmenus.cash, 3, () => toggleSubmenu('cash'))}
+                className={`sidebar-nav-item has-submenu ${openSubmenus.cash ? 'deplie' : ''} ${location.pathname.includes('/user/cash') || location.pathname.includes('/user/cheques') ? 'active' : ''}`}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <CreditCard size={16} className="nav-icon" />
-                  <span>Encaissements</span>
-                </div>
-                <ChevronDown
-                  size={14}
-                  style={{
-                    transform: openSubmenus.cash ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                    color: 'var(--text-muted)',
-                  }}
-                />
+                <CreditCard size={16} className="nav-icon" />
+                <span>Encaissements</span>
+                <IndicateurDeroulant ouvert={!!openSubmenus.cash} nombre={3} />
               </div>
 
               {openSubmenus.cash && (

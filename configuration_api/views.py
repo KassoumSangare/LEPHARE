@@ -21,6 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .parametrage import JournalModificationsMixin
+from autorisations.permissions import DroitDeLaRoute
 from .models import (
     Accessoire,
     AccessoireCourtierParCompagnie,
@@ -205,17 +206,17 @@ class SettingsModelViewSet(viewsets.ModelViewSet):
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "list": (permissions.IsAuthenticated,),
         "retrieve": (permissions.IsAuthenticated,),
         "update": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "destroy": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "search": (permissions.IsAuthenticated,),
     }
@@ -516,17 +517,17 @@ class OffreGarantieViewSet(viewsets.ModelViewSet):
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "list": (permissions.IsAuthenticated,),
         "retrieve": (permissions.IsAuthenticated,),
         "update": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "destroy": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "search": (permissions.IsAuthenticated,),
     }
@@ -552,17 +553,17 @@ class AvenantViewSet(viewsets.ModelViewSet):
     permission_classes_by_action = {
         "create": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "list": (permissions.IsAuthenticated,),
         "retrieve": (permissions.IsAuthenticated,),
         "update": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "destroy": (
             permissions.IsAuthenticated,
-            permissions.IsAdminUser,
+            DroitDeLaRoute,
         ),
         "search": (permissions.IsAuthenticated,),
     }
@@ -896,13 +897,8 @@ class QualiteViewSet(viewsets.ModelViewSet):
     ]
 
 
-class EcrituresAdministrateur(permissions.BasePermission):
-    """Lecture pour tout utilisateur connecté, écriture réservée aux administrateurs."""
-
-    def has_permission(self, request, view):
-        if request.method in permissions.SAFE_METHODS:
-            return True
-        return bool(request.user and getattr(request.user, "is_admin", False))
+class EcrituresAdministrateur(DroitDeLaRoute):
+    """Lecture pour tout utilisateur connecté, écriture selon le droit attribué pour la route (DroitDeLaRoute)."""
 
 
 class ApporteurViewSet(viewsets.ModelViewSet):
@@ -1247,7 +1243,7 @@ def get_garantie_voyage(request):
 ##########################################################################
 @api_view(["POST"])
 @authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
-@permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
+@permission_classes([permissions.IsAuthenticated, DroitDeLaRoute])
 def create_offre_garantie(request):
     enregistrementoffregarantie_data = JSONParser().parse(request)
     # print("JSON de la requête:", enregistrementoffregarantie_data)
@@ -1278,7 +1274,7 @@ def create_offre_garantie(request):
 ##########################################################################
 @api_view(["POST"])
 @authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
-@permission_classes([permissions.IsAuthenticated, permissions.IsAdminUser])
+@permission_classes([permissions.IsAuthenticated, DroitDeLaRoute])
 def get_garantie_par_produit(request):
     demandegarantie_data = JSONParser().parse(request)
     # print("JSON de la requête:", demandegarantie_data)

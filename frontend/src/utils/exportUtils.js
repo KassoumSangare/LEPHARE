@@ -3,7 +3,7 @@
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
 import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
-import { construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, villeSignature } from './parametrage';
+import { arrondirMontant, construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, ttcRetombe, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 import { estDevisSante, imprimerDocumentSante } from './impressionsSante';
 import QRCode from 'qrcode';
@@ -1021,7 +1021,8 @@ const buildAutoFacture = (quote) => {
   const [pnStockee, accessoire, taxe, fga, cedeao] = composantes.map((v) => Math.round(Number(v)));
   const ttcEnregistre = montantValide(raw.primettc) ? Math.round(Number(raw.primettc)) : null;
   const estNsia = Number(idCompagnie) === 1;
-  const correspond = (somme) => ttcEnregistre === somme || (estNsia && ttcEnregistre === Math.ceil(somme / 5) * 5);
+  // TTC enregistrée : somme des composantes, arrondie à la pièce de 5 F, ou (historique NSIA) au multiple de 5 supérieur
+  const correspond = (somme) => ttcRetombe(ttcEnregistre, somme, { idProduit: 1, nsia: estNsia });
   // La CEDEAO est incluse dans la prime nette stockée par le parcours tarifé, mais saisie à part
   // par le parcours « prime imposée » (sp_maj_manuelle_primes) : on retient le modèle qui
   // retombe sur la TTC enregistrée, le modèle tarifé par défaut
@@ -1032,7 +1033,7 @@ const buildAutoFacture = (quote) => {
   }
   const sommeComposantes = primeNetteAffichee !== null ? primeNetteAffichee + accessoire + taxe + fga + cedeao : null;
   const ttcCalcule = sommeComposantes === null ? null
-    : (estNsia && ttcEnregistre === Math.ceil(sommeComposantes / 5) * 5 ? ttcEnregistre : sommeComposantes);
+    : (ttcRetombe(ttcEnregistre, sommeComposantes, { idProduit: 1, nsia: estNsia }) ? ttcEnregistre : arrondirMontant(sommeComposantes, 1));
   const ecartTtc = ttcCalcule !== null && ttcEnregistre !== null && ttcCalcule !== ttcEnregistre;
   const montant = (v) => (montantValide(v) ? fcfa(v) : VIDE);
 
@@ -1179,8 +1180,9 @@ const buildConditionsParticulieres = (quote, cp) => {
   const sommeTtc = primeNette + (m.accessoire || 0) + (m.taxe || 0) + (m.fga || 0) + (m.cedeao || 0);
   // NSIA : TTC éventuellement arrondie au multiple de 5 supérieur (historique Uranus) ; on reprend
   // l'arrondi uniquement s'il correspond à la TTC enregistrée sur le devis
-  const ttcArrondiNsia = Number(idCompagnie) === 1 ? Math.ceil(sommeTtc / 5) * 5 : null;
-  const primeTtc = ttcArrondiNsia !== null && m.prime_ttc_enregistree === ttcArrondiNsia ? ttcArrondiNsia : sommeTtc;
+  // TTC arrondie à la pièce de 5 F (Règles de gestion > Arrondi des montants) ou, historique NSIA, au multiple supérieur
+  const primeTtc = ttcRetombe(m.prime_ttc_enregistree, sommeTtc, { idProduit: 1, nsia: Number(idCompagnie) === 1 })
+    ? m.prime_ttc_enregistree : arrondirMontant(sommeTtc, 1);
   // Prime imposée ou corrigée : les garanties ne retombent pas sur la TTC enregistrée (celle de la
   // facture) — écart signalé à l'écran, comme sur la facture proforma
   const ttcEnregistree = Number(m.prime_ttc_enregistree) || 0;
@@ -2355,6 +2357,12 @@ export const buildCotationDommages = (quote, d) => {
   const ligne = (libelle, valeur, classe = '') => `<tr><td class="l">${e(libelle)}</td><td class="v ${classe}">${valeur}</td></tr>`;
   const liste = (elements) => (elements?.length ? `<ul>${elements.map((x) => `<li>${e(x)}</li>`).join('')}</ul>` : '—');
   const ttc = Math.round(Number(d.PrimeTtc) || 0);
+  // Tableau des garanties en annexe (page 2) selon la catégorie (Réglages Dommages) ; Caution : garanties
+  // citées dans la cotation, sans annexe (compte rendu du 12-10-2026)
+  const annexe = fiche.annexe_garanties !== false;
+  const garantiesCitees = garanties.length
+    ? `<ul>${garanties.map((g) => `<li>${e(g.Libelle)}${Number(g.Capital) > 0 ? ` : ${f(g.Capital)} FCFA` : ''}</li>`).join('')}</ul>`
+    : '—';
 
   const entete = (titre) => `
     <div class="cot-entete">
@@ -2391,7 +2399,7 @@ export const buildCotationDommages = (quote, d) => {
       ${ligne('Objet de la garantie :', e(fiche.objet_garantie || '—'))}
       ${ligne('Contre garanties et mesures préalables à la souscription :', liste(fiche.contre_garanties), 'ombre')}
       ${ligne("Antécédent de l'affaire :", e(antecedent))}
-      ${ligne('Garanties demandées :', 'Voir tableau de garanties en annexe')}
+      ${ligne('Garanties demandées :', annexe ? 'Voir tableau de garanties en annexe' : garantiesCitees)}
       ${ligne('Montant de la prime à payer (selon détail ci-après) :', e(MENTION_PAIEMENT), 'ombre')}
       ${ligne('Durée du contrat :', e([duree, periode].filter(Boolean).join(', ')))}
     </table>
@@ -2417,9 +2425,9 @@ export const buildCotationDommages = (quote, d) => {
 
     <div class="cot-fait">Fait à ${e(villeSignature())}, le ${e(dateEnLettres(d.DateEmission, false))}</div>
     <div class="cot-signatures"><span>Le rédacteur</span><span>Pour la compagnie</span></div>
-    <div class="cot-pied"><span>${e(nomCabinet())} — courtier</span><span>Page 1 de 2</span></div>
+    <div class="cot-pied"><span>${e(nomCabinet())} — courtier</span><span>Page 1 de ${annexe ? 2 : 1}</span></div>
   </div>
-
+  ${annexe ? `
   <div class="cot cot-page">
     ${entete(`ANNEXE<br/>TABLEAU DES GARANTIES`)}
     <div class="cot-annexe">
@@ -2432,7 +2440,7 @@ export const buildCotationDommages = (quote, d) => {
       </table>
     </div>
     <div class="cot-pied"><span>${e(nomCabinet())} — courtier</span><span>Page 2 de 2</span></div>
-  </div>`;
+  </div>` : ''}`;
 };
 
 export const printCotationDommages = async (quote) => {
@@ -2466,6 +2474,216 @@ export const printCotationDommagesContrat = (contract) => {
     numerodevis: (typeof bc.iddevis === 'object' && bc.iddevis?.numerodevis) || '',
     numeropolice: bc.numeropolicecompagnie || contract.numeropolice,
   });
+};
+
+/* =========================================================================
+   PIÈCES DE PRODUCTION D'UN CONTRAT DOMMAGES (compte rendu du 12-10-2026, ASSURANCE CAUTION) :
+   - Facture de prime au modèle OREOLE « FACTURE DE PRIME N° 000034/07/26 » : logo du cabinet, numéro de
+     facture, « ASSURANCE <CATÉGORIE> (<référence de la catégorie>) », compagnie, souscripteur et assuré,
+     références de la police, primes, montant en lettres à l'ordre de la compagnie, « Fait à … »,
+     « Pour la société », mentions légales et marque du cabinet.
+   - Documents de la catégorie (Réglages Dommages > Documents de production), ex. « GARANTIE DE SOUMISSION »
+     de NSIA : texte dont les champs entre accolades ({beneficiaire}, {capital_lettres}…, {champ:maj} en
+     majuscules) sont remplacés par les données du contrat et du risque ; logo et pied de page de la compagnie.
+   Données : /api/dommages/contrat/<id>/documents/ (production/documents_dommages.py).
+   ========================================================================= */
+const PIECES_DOMMAGES_STYLES = `
+  body { max-width: 210mm; padding: 0; }
+  .fp, .pd { position: relative; box-sizing: border-box; width: 210mm; min-height: 296mm; display: flex; flex-direction: column;
+    font-family: 'Times New Roman', Times, serif; color: #111; }
+  .fp { padding: 12mm 18mm 8mm 22mm; font-size: 11pt; }
+  .fp-logo { height: 16mm; width: auto; align-self: flex-start; }
+  .fp-titre { text-align: center; font-weight: 700; font-size: 13pt; margin: 16mm 0 9mm; }
+  .fp-objet { font-weight: 700; font-size: 11.5pt; margin: 0 0 6mm 2mm; }
+  table.fp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .fp-table td, .fp-table th { border: 0.75pt solid #222; padding: 2.4mm 1.5mm; text-align: center; vertical-align: middle; font-weight: 400; }
+  .fp-table td.cie { text-align: left; padding-left: 2mm; }
+  .fp-table td.pers { font-weight: 700; line-height: 1.35; padding: 4mm 2mm; }
+  .fp-table td.v { font-weight: 700; }
+  .fp-table td.blanc { height: 7mm; }
+  .fp-texte { margin: 7mm 0 0 2mm; line-height: 1.35; }
+  .fp-fait { text-align: right; margin-top: 9mm; }
+  .fp-signe { text-align: right; margin: 6mm 18mm 0 0; font-weight: 700; }
+  .fp-pied { margin-top: auto; padding-top: 14mm; display: flex; gap: 4mm; align-items: flex-end; }
+  .fp-pied img { height: 10mm; width: auto; flex-shrink: 0; }
+  .fp-pied div { font-family: Arial, Helvetica, sans-serif; font-size: 5.8pt; line-height: 1.4; font-weight: 700; white-space: pre-line; }
+  .fp-marque { position: absolute; left: 6mm; bottom: 70mm; writing-mode: vertical-rl; transform: rotate(180deg);
+    font-family: Arial, Helvetica, sans-serif; font-size: 8pt; font-weight: 700; white-space: nowrap; }
+  .pd { padding: 10mm 18mm 8mm 22mm; font-family: Verdana, Tahoma, Arial, sans-serif; font-size: 10pt; }
+  .pd-logo { height: 18mm; width: auto; align-self: flex-start; }
+  .pd-cie { font-size: 16pt; font-weight: 800; }
+  .pd-titre { text-align: center; font-weight: 700; font-size: 14pt; margin: 6mm 0 6mm; }
+  .pd-texte { text-align: justify; line-height: 1.35; }
+  .pd-par { margin: 0 0 3.5mm; }
+  .pd-par .puce { padding-left: 5mm; text-indent: -5mm; }
+  .pd-par .retrait { padding-left: 14mm; }
+  .pd-par .retrait.puce { padding-left: 19mm; }
+  .pd-signature { margin-top: 8mm; font-weight: 700; }
+  .pd-signature .fonction { text-decoration: underline; }
+  .pd-signature .espace { height: 18mm; }
+  .pd-signature .mention { text-decoration: underline; }
+  .pd-pied { margin-top: auto; padding-top: 10mm; font-size: 6.5pt; line-height: 1.35; color: #333; border-top: 0.5pt solid #999; }
+  @media print { .fp, .pd { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+`;
+
+// Montant en lettres dans une phrase : « Sept cent cinquante mille »
+const montantEnLettresPhrase = (n) => {
+  const m = numberToFrenchWords(n).toLowerCase();
+  return m.charAt(0).toUpperCase() + m.slice(1);
+};
+
+/** Valeurs des champs entre accolades : contrat, compagnie, parties, capital, primes et rubriques du risque
+ *  (date : jj/mm/aaaa et _lettres ; montant : 750 000 et _lettres). */
+export const valeursPiecesDommages = (p) => {
+  const d = p.Devis || {};
+  const c = p.Contrat || {};
+  const fmt = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+  const valeurs = {};
+  Object.entries(p.Valeurs || {}).forEach(([cle, brute]) => {
+    const texte = String(brute ?? '').trim();
+    if (!texte) return;
+    const type = p.Types?.[cle];
+    if (type === 'date' && /^\d{4}-\d{2}-\d{2}/.test(texte)) {
+      valeurs[cle] = dateCourte(texte);
+      valeurs[`${cle}_lettres`] = dateEnLettres(texte, false);
+    } else if (type === 'montant' && /^\d+(\.\d+)?$/.test(texte)) {
+      valeurs[cle] = fmt(texte);
+      valeurs[`${cle}_lettres`] = montantEnLettresPhrase(texte);
+    } else {
+      valeurs[cle] = texte;
+    }
+  });
+  const capital = (d.Garanties || []).reduce((t, g) => t + (Number(g.Capital) || 0), 0);
+  Object.assign(valeurs, {
+    compagnie: d.Compagnie || '',
+    souscripteur: d.Client?.Nom || '',
+    assure: (d.Assure || d.Client)?.Nom || '',
+    numero_police: c.NumeroPolice || '',
+    numero_police_compagnie: c.NumeroPoliceCompagnie || '',
+    numero_facture: c.NumeroFacture || '',
+    categorie: d.Detail?.LibelleTarif || '',
+    capital: capital ? fmt(capital) : '',
+    capital_lettres: capital ? montantEnLettresPhrase(capital) : '',
+    prime_nette: fmt(c.PrimeNette),
+    prime_ttc: fmt(c.PrimeTtc),
+    prime_ttc_lettres: montantEnLettresPhrase(c.PrimeTtc),
+  });
+  [['date_effet', c.DateEffet], ['date_expiration', c.DateExpiration], ['date_emission', c.DateEmission]].forEach(([cle, iso]) => {
+    valeurs[cle] = iso ? dateCourte(iso) : '';
+    valeurs[`${cle}_lettres`] = iso ? dateEnLettres(iso, false) : '';
+  });
+  return valeurs;
+};
+
+const remplacerChamps = (texte, valeurs, vide, echapper) => String(texte || '')
+  .replace(/\{([a-z0-9_]+)(?::(maj))?\}/g, (m, cle, filtre) => {
+    const v = valeurs[cle];
+    if (v === undefined || v === null || String(v).trim() === '') return vide;
+    const brut = filtre === 'maj' ? String(v).toUpperCase() : String(v);
+    return echapper ? echapperHtml(brut) : brut;
+  });
+
+/** Texte d'un document (déjà échappé) : champs entre accolades remplacés, vide → pointillés à compléter. */
+export const remplirChampsDocument = (texte, valeurs, vide = '……………………') => remplacerChamps(texte, valeurs, vide, true);
+
+// Paragraphes séparés par une ligne vide ; « a) », « 1. » en liste ; espaces en tête : retrait ; **gras**
+const corpsDocumentHtml = (corps, valeurs) => remplirChampsDocument(echapperHtml(String(corps || '').replace(/\r\n?/g, '\n')), valeurs)
+  .split(/\n[ \t]*\n/)
+  .map((bloc) => `<div class="pd-par">${bloc.split('\n').map((ligne) => {
+    const classes = [/^[ \t]+\S/.test(ligne) ? 'retrait' : '', /^\s*([a-z]\)|\d+\.)\s/.test(ligne) ? 'puce' : ''].filter(Boolean).join(' ');
+    return `<div${classes ? ` class="${classes}"` : ''}>${ligne.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</div>`;
+  }).join('')}</div>`)
+  .join('');
+
+export const buildFacturePrimeDommages = (p) => {
+  const e = echapperHtml;
+  const d = p.Devis || {};
+  const c = p.Contrat || {};
+  const valeurs = valeursPiecesDommages(p);
+  const f = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
+  const categorie = String(d.Detail?.LibelleTarif || 'DOMMAGES').toUpperCase();
+  const reference = e(remplacerChamps(p.ReferenceFacture, valeurs, '', false).replace(/\s+/g, ' ').trim().toUpperCase());
+  const objet = `${/^ASSURANCE\b/.test(categorie) ? '' : 'ASSURANCE '}${e(categorie)}${reference ? ` (${reference})` : ''}`;
+  const personne = (x) => [x?.Nom, x?.Adresse, x?.Telephone].map((v) => String(v || '').trim()).filter(Boolean).map(e).join('<br/>');
+  const ttc = Math.round(Number(c.PrimeTtc) || 0);
+  const fait = (c.DateEmission ? dateEnLettres(c.DateEmission, false) : new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }))
+    .replace(/ (\p{L})/u, (m, l) => ` ${l.toUpperCase()}`);
+  const mentions = String(parametre('documents.mentions_legales', '') || '').trim();
+  const marque = String(parametre('documents.mention_marque', '') || '').trim();
+  return `<style>${PIECES_DOMMAGES_STYLES}</style>
+  <div class="fp">
+    <img class="fp-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+    <div class="fp-titre">FACTURE DE PRIME N° ${e(c.NumeroFacture || '')}</div>
+    <div class="fp-objet">${objet}</div>
+    <table class="fp-table">
+      <colgroup><col style="width:18%"/><col style="width:22%"/><col style="width:17%"/><col style="width:9%"/><col style="width:17%"/><col style="width:17%"/></colgroup>
+      <tr><td class="cie" colspan="6">Compagnie : <b>${e(p.OrdreCheque || d.Compagnie || '')}</b></td></tr>
+      <tr><th colspan="3">SOUSCRIPTEUR</th><th colspan="3">ASSURE</th></tr>
+      <tr><td class="pers" colspan="3">${personne(d.Client)}</td><td class="pers" colspan="3">${personne(d.Assure || d.Client)}</td></tr>
+      <tr><th>Id. Police</th><th>N°Police</th><th>Effet</th><th>N° Acte</th><th>Effet Acte</th><th>Expiration</th></tr>
+      <tr><td class="v">${e(c.IdContrat || '')}</td><td class="v">${e(c.NumeroPolice || '')}</td><td class="v">${e(dateCourte(c.DateEffet))}</td>
+        <td class="v">${e(c.NumeroActe ?? '0')}</td><td class="v">${e(dateCourte(c.DateEffet))}</td><td class="v">${e(dateCourte(c.DateExpiration))}</td></tr>
+      <tr><td class="blanc" colspan="6"></td></tr>
+      <tr><th>PRIME NETTE</th><th>ACCESSOIRE</th><th colspan="2">TAXES</th><th colspan="2">PRIME TTC</th></tr>
+      <tr><td class="v">${f(c.PrimeNette)}</td><td class="v">${f(c.Accessoire)}</td><td class="v" colspan="2">${f(c.Taxe)}</td><td class="v" colspan="2">${f(ttc)}</td></tr>
+    </table>
+    <div class="fp-texte">En votre règlement par chèque à l'ordre de <b>${e(p.OrdreCheque || d.Compagnie || '')}</b> de la somme de <b>${e(numberToFrenchWords(ttc))} FRANCS CFA.</b></div>
+    <div class="fp-texte">Dans cette attente, nous vous prions d'agréer, nos distinguées salutations.</div>
+    <div class="fp-fait">Fait à ${e(villeSignature())}, le ${e(fait)}</div>
+    <div class="fp-signe">Pour la société</div>
+    ${marque ? `<div class="fp-marque">${e(marque)}</div>` : ''}
+    <div class="fp-pied">
+      <img src="${e(logoCabinetPied())}" alt="" />
+      ${mentions ? `<div>${e(mentions)}</div>` : ''}
+    </div>
+  </div>`;
+};
+
+export const buildDocumentDommages = (p, document) => {
+  const e = echapperHtml;
+  const d = p.Devis || {};
+  const valeurs = valeursPiecesDommages(p);
+  const logo = logoCompagnie(d.Compagnie);
+  const pied = String(documentsCompagnie(Number(p.Contrat?.IdCompagnie || d.IdCompagnie))?.PiedPage || '')
+    .split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const signataire = String(document.Signataire || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  return `<style>${PIECES_DOMMAGES_STYLES}</style>
+  <div class="pd">
+    ${logo ? `<img class="pd-logo" src="${e(logo)}" alt="${e(d.Compagnie || '')}" />` : `<div class="pd-cie">${e(d.Compagnie || '')}</div>`}
+    <div class="pd-titre">${e(document.Titre || '')}</div>
+    <div class="pd-texte">${corpsDocumentHtml(document.Corps, valeurs)}</div>
+    <div class="pd-signature">
+      ${signataire.map((l, i) => `<div${i ? ' class="fonction"' : ''}>${e(l)}</div>`).join('')}
+      <div class="espace"></div>
+      ${document.MentionSignature ? `<div class="mention">${e(document.MentionSignature)}</div>` : ''}
+    </div>
+    ${pied.length ? `<div class="pd-pied">${pied.map(e).join('<br/>')}</div>` : ''}
+  </div>`;
+};
+
+/** Pièce de production d'un contrat Dommages : 'facture' ou identifiant d'un document de la catégorie. */
+export const printPieceDommages = async (idContrat, piece = 'facture') => {
+  if (!idContrat) return;
+  const fenetre = window.open('', '_blank');
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
+  try {
+    const p = await dommagesApi.documentsContrat(idContrat);
+    const numero = p.Contrat?.NumeroPolice || '';
+    if (piece === 'facture') {
+      openPrintWindow(`Facture de prime ${p.Contrat?.NumeroFacture || numero}`.trim(), buildFacturePrimeDommages(p), fenetre);
+      return;
+    }
+    const document = (p.Documents || []).find((x) => Number(x.Id) === Number(piece));
+    if (!document) throw new Error('Document non proposé pour ce contrat.');
+    openPrintWindow(`${document.Titre} ${numero}`.trim(), buildDocumentDommages(p, document), fenetre);
+  } catch (err) {
+    console.error('Erreur pièce Dommages :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de préparer le document du contrat. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
 };
 
 /* =========================================================================

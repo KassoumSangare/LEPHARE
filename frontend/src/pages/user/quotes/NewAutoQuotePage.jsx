@@ -46,6 +46,7 @@ import {
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { ageAdmisGarantie, ageVehiculeAns, arrondirMontant, garantieNonAdmise, parametre } from '../../../utils/parametrage';
 import {
   baseAccessoireAuto,
   calculerTotauxDevisAuto,
@@ -376,6 +377,10 @@ export const NewAutoQuotePage = () => {
   const [nombrePlace, setNombrePlace] = useState(5);
   const [valeurNeuf, setValeurNeuf] = useState(0);
   const [valeurVenale, setValeurVenale] = useState(0);
+  // Valeur vénale du tableau de dépréciation (CIEAMI, Administration > Dépréciation des véhicules) :
+  // proposée tant que le producteur n'a pas saisi la sienne (véhicule rouvert : valeur enregistrée gardée)
+  const [valeurVenaleTableau, setValeurVenaleTableau] = useState(null);
+  const [valeurVenaleSaisie, setValeurVenaleSaisie] = useState(false);
   const [valeurAccessoire, setValeurAccessoire] = useState(0);
   const [immatriculation, setImmatriculation] = useState('');
   const [numeroCarteBrune, setNumeroCarteBrune] = useState('');
@@ -494,7 +499,8 @@ export const NewAutoQuotePage = () => {
     const calculatedTtc = composanteSaisie
       ? finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire
       : base.ttc;
-    const finalTtc = imposer('ttc', calculatedTtc);
+    // TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants)
+    const finalTtc = arrondirMontant(imposer('ttc', calculatedTtc), 1);
 
     return {
       primeAnnuelle: finalPA,
@@ -553,6 +559,8 @@ export const NewAutoQuotePage = () => {
     ? categories.find((cat) => Number(cat.id) === Number(categorieId))
     : null;
   const idTarifCalcul = categorieSelectionnee?.id || offreSelectionneeObj?.idTarif || 1;
+  // Catégorie 204 : offre « POOL TPV (CAT 204) » (tarif du Pool, Administration > Réglages Automobile > Pool TPV)
+  const idOffrePool = Number(parametre('auto.pool_tpv.offre', 0)) || 0;
   const grilleOffre = categories.find((cat) => Number(cat.id) === Number(offreSelectionneeObj?.idTarif));
   const categoriePersonneMorale = categories.find((cat) => cat.code === '212');
 
@@ -667,6 +675,35 @@ export const NewAutoQuotePage = () => {
     formuleAssistanceId,
   ]);
 
+  // Valeur vénale du tableau de dépréciation pour le véhicule en saisie (genre, type, carrosserie,
+  // catégorie, charge utile, valeur neuve, mise en circulation, date d'effet)
+  useEffect(() => {
+    if (!(Number(valeurNeuf) > 0) || !dateMec) {
+      setValeurVenaleTableau(null);
+      return undefined;
+    }
+    let actif = true;
+    const minuterie = setTimeout(async () => {
+      try {
+        const [r] = await quoteApi.calculerValeursVenales([{
+          IdGenre: Number(genreId) || null,
+          IdTypeVehicule: typesVehicules.find((tv) => tv.libelle === typeCommercial)?.id ?? null,
+          IdCarrosserie: Number(carrosserieId) || null,
+          IdTarif: Number(categorieId) || null,
+          ChargeUtile: Number(chargeUtile) || 0,
+          ValeurNeuve: Number(valeurNeuf) || 0,
+          DateMec: dateMec,
+        }], dateEffet);
+        if (!actif) return;
+        setValeurVenaleTableau(r || null);
+        if (r?.ValeurVenale !== null && r?.ValeurVenale !== undefined && !valeurVenaleSaisie) setValeurVenale(r.ValeurVenale);
+      } catch {
+        if (actif) setValeurVenaleTableau(null);
+      }
+    }, 400);
+    return () => { actif = false; clearTimeout(minuterie); };
+  }, [valeurNeuf, dateMec, genreId, typeCommercial, carrosserieId, categorieId, chargeUtile, dateEffet, valeurVenaleSaisie, typesVehicules]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Appel dynamique au backend /api/offregarantie si disponible
   const handleRecalculateApi = async (silent = false) => {
     // Plusieurs calculs peuvent se chevaucher (compagnie, catégorie, offre chargées coup sur
@@ -773,6 +810,7 @@ export const NewAutoQuotePage = () => {
     setNombrePlace(v.nombrePlace);
     setValeurNeuf(v.valeurNeuf);
     setValeurVenale(v.valeurVenale);
+    setValeurVenaleSaisie(Number(v.valeurVenale) > 0);
     setValeurAccessoire(v.valeurAccessoire);
     setImmatriculation(v.immatriculation || '');
     setNumeroCarteBrune(v.numeroCarteBrune || '');
@@ -829,7 +867,22 @@ export const NewAutoQuotePage = () => {
     nsiaAutoPlus: (l.garanties_enregistrees || []).some(
       (g) => Number(g.IdGarantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS && g.Acquise,
     ),
+    // Garanties acquises enregistrées (contrôle des garanties admises selon l'âge)
+    idsGarantiesEnregistrees: (l.garanties_enregistrees || []).filter((g) => g.Acquise).map((g) => Number(g.IdGarantie)),
   });
+
+  // Garanties non admises pour l'âge du véhicule (règles de la compagnie) : motif par sous-garantie
+  const nonAdmisePour = (v) => {
+    const ageAns = ageVehiculeAns(v?.dateMec, dateEffet);
+    const codeCategorie = categories.find((cat) => Number(cat.id) === Number(v?.idTarif))?.code || '';
+    return (idSousGarantie) => garantieNonAdmise({ idCompagnie: compagnieId, idSousGarantie, ageAns, codeCategorie });
+  };
+  // Garanties acquises d'un véhicule de flotte : personnalisées, estimées ou enregistrées
+  const garantiesAcquisesFlotte = (v) => {
+    const perso = garantiesPersonnalisees(v);
+    if (perso) return perso.garanties.filter((g) => g.acquise).map((g) => Number(g.id_garantie));
+    return estimationVehicule(v)?.ids || v.idsGarantiesEnregistrees || [];
+  };
 
   // Véhicule à (r)envoyer à sp_creation_devis : nouveau, modifié, en-tête du devis modifié
   // (enteteModifiee, calculé plus bas avec le souscripteur) ou garanties remises au barème
@@ -929,23 +982,38 @@ export const NewAutoQuotePage = () => {
   // main (mêmes champs, enregistrés avec le devis). Les garanties de l'offre marquées « Non » dans le
   // fichier sont retirées du véhicule, comme avec « Garanties de l'offre » (barème moins ces garanties).
   const [importFlotteOuvert, setImportFlotteOuvert] = useState(false);
+  // Champs du véhicule que les fichiers ne donnent pas
+  const defautsImport = () => ({
+    codeAlarme: Number(systemeSecuriteId) || 0,
+    systemeSecurite,
+    dateMec,
+    remorqueAttelee: false,
+    numeroCarteBrune: '',
+    numeroChassis: '',
+    numeroMoteur: '',
+    carburantAutreMatiere: false,
+    transportEleves: false,
+    transportEmployes: false,
+    transportPassagerSupplementaire: false,
+    nsiaAutoPlus: false,
+  });
+  // Formulaire assurance auto d'OREOLE (compte rendu du 12-10-2026) : le même fichier sert au devis mono
+  // (un véhicule, repris dans l'écran Véhicule) et au devis flotte (plusieurs véhicules)
+  const importerFichierVehicules = async (lignes, options = {}) => {
+    if (options.format === 'formulaire' && lignes.length === 1 && !flotteVehicules.length) {
+      setTypeContrat('MONO');
+      chargerVehicule({ ...defautsImport(), ...lignes[0].Vehicule });
+      setValeurVenaleSaisie(Number(lignes[0].Fichier?.ValeurVenale) > 0);
+      success(`Véhicule ${lignes[0].Vehicule.immatriculation} repris du formulaire (devis mono) : vérifiez-le à l'écran Véhicule.`);
+      return;
+    }
+    if (typeContrat !== 'FLOTTE') setTypeContrat('FLOTTE');
+    await importerVehiculesFlotte(lignes, options);
+  };
   // { remplacer: true } : le fichier remplace la flotte (choix par défaut de la fenêtre d'import) ; les
   // véhicules déjà enregistrés sont supprimés du devis à l'enregistrement, comme avec « Retirer »
   const importerVehiculesFlotte = async (lignes, { remplacer = false } = {}) => {
-    const defauts = {
-      codeAlarme: Number(systemeSecuriteId) || 0,
-      systemeSecurite,
-      dateMec,
-      remorqueAttelee: false,
-      numeroCarteBrune: '',
-      numeroChassis: '',
-      numeroMoteur: '',
-      carburantAutreMatiere: false,
-      transportEleves: false,
-      transportEmployes: false,
-      transportPassagerSupplementaire: false,
-      nsiaAutoPlus: false,
-    };
+    const defauts = defautsImport();
     const ajouts = lignes.map((l) => ({
       ...defauts,
       ...l.Vehicule,
@@ -1101,6 +1169,7 @@ export const NewAutoQuotePage = () => {
             empreinte,
             totaux: garantiesVehicule.length ? calculerTotauxDevisAuto({ garanties: garantiesVehicule }) : null,
             sansGarantie: garantiesVehicule.length === 0,
+            ids: garantiesVehicule.filter((g) => g.acquise).map((g) => Number(g.id_garantie)),
           }];
         } catch (e) {
           // Motif du refus conservé (ex. valeur accessoire supérieure à la valeur vénale), que
@@ -1163,6 +1232,8 @@ export const NewAutoQuotePage = () => {
   // ----------------------------------------------------
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  // Devis de renouvellement (page Renouvellement) : véhicules retarifés à l'enregistrement (âge, valeurs vénales)
+  const renouvellementParam = searchParams.get('renouvellement') === '1';
   const [editIddevis, setEditIddevis] = useState(null);
   const [editIdDevisDetail, setEditIdDevisDetail] = useState(null);
   const [editIdAvenant, setEditIdAvenant] = useState(null);
@@ -1437,7 +1508,8 @@ export const NewAutoQuotePage = () => {
                 cedeao,
               },
             };
-            return { ...v, origine: empreinteVehicule(v) };
+            // Renouvellement : aucun véhicule n'est « inchangé », tous repartent au barème à l'enregistrement
+            return { ...v, origine: renouvellementParam ? null : empreinteVehicule(v) };
           });
           setFlotteVehicules(vehicules);
           setVehiculesRetires([]);
@@ -1487,7 +1559,9 @@ export const NewAutoQuotePage = () => {
           // que l'enregistrement repasse ces primes au lieu de les recalculer au barème. Pas en
           // flotte : sp_correction_devis appliquerait les garanties d'un véhicule à tous les autres
           // (les véhicules inchangés d'une flotte gardent de toute façon leurs primes enregistrées).
-          setPrimesImposees(!d.flotte && Boolean(d.prime_imposee));
+          setPrimesImposees(!d.flotte && Boolean(d.prime_imposee) && !renouvellementParam);
+          // Renouvellement : garanties recalculées par le moteur (nouvelles dates, valeur vénale selon l'âge)
+          if (renouvellementParam) garantiesChargeesDuDevisRef.current = false;
 
           // Totaux de l'en-tête (stddevis). stddevis.primenette inclut le FGA, et la CEDEAO pour un
           // devis calculé (TTC = prime nette + accessoire + taxe) ; un devis à primes imposées
@@ -2467,6 +2541,18 @@ export const NewAutoQuotePage = () => {
               <option value="FLOTTE">FLOTTE (MULTI-VÉHICULES)</option>
               <option value="MONO">MONO-VÉHICULE</option>
             </select>
+            {aLeDroit('imports.excel') && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setImportFlotteOuvert(true)}
+                disabled={!compagnieId}
+                title="Formulaire assurance auto rempli par le client : un véhicule (devis mono) ou plusieurs (devis flotte). Choisissez d'abord la compagnie et la catégorie."
+                style={{ marginTop: '0.6rem', fontSize: '0.82rem', padding: '0.45rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <FileSpreadsheet size={15} /> Importer le formulaire auto (Excel)
+              </button>
+            )}
           </div>
 
           {/* Ligne 1 : Numéro police compagnie | Compagnie d'Assurance | (Catégorie & Usage uniquement si MONO) */}
@@ -2648,6 +2734,14 @@ export const NewAutoQuotePage = () => {
                 />
                 NSIA Auto Plus (Garantie Complémentaire Spécifique NSIA)
               </label>
+              {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS) && (
+                <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Admise pour les véhicules {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)} (mise en circulation à l'écran Véhicule).
+                  {nsiaAutoPlus && typeContrat === 'MONO' && nonAdmisePour(instantaneVehicule())(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS) && (
+                    <span style={{ color: '#f59e0b', display: 'block' }}>⚠ {nonAdmisePour(instantaneVehicule())(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)}</span>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2841,7 +2935,21 @@ export const NewAutoQuotePage = () => {
 
                 <div className="form-group">
                   <label className="form-label" htmlFor="offre-vehicule-flotte">Formule d'Offre pour ce véhicule</label>
-                  <select
+                  {categorieSelectionnee?.code === '204' && idOffrePool > 0 && (
+                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.86rem' }}>
+                  <span style={{ fontWeight: 700 }}>Transport public de voyageurs :</span>
+                  <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', cursor: 'pointer' }}>
+                    <input type="radio" name="tarif-tpv" checked={Number(offreId) === idOffrePool} onChange={() => choisirOffre(idOffrePool)} />
+                    Pool TPV (tarif du Pool, RC + Recours dus au Pool)
+                  </label>
+                  <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', cursor: 'pointer' }}>
+                    <input type="radio" name="tarif-tpv" checked={Number(offreId) !== idOffrePool}
+                      onChange={() => { const autre = offresProposees.find((o) => Number(o.id) !== idOffrePool); if (autre) choisirOffre(autre.id); }} />
+                    Assureur (primes de la compagnie, à imposer)
+                  </label>
+                </div>
+              )}
+              <select
                     id="offre-vehicule-flotte"
                     className="form-control"
                     value={Number(offreId) || ''}
@@ -3125,7 +3233,18 @@ export const NewAutoQuotePage = () => {
 
             <div className="form-group">
               <label className="form-label">Valeur vénale</label>
-              <AmountInput value={valeurVenale} onChange={setValeurVenale} />
+              <AmountInput value={valeurVenale} onChange={(v) => { setValeurVenale(v); setValeurVenaleSaisie(true); }} />
+              {valeurVenaleTableau && (
+                <span style={{ fontSize: '0.72rem', color: valeurVenaleTableau.ValeurVenale !== null && Number(valeurVenaleTableau.ValeurVenale) !== Number(valeurVenale) ? '#b45309' : 'var(--text-muted)', display: 'block', marginTop: 4 }}>
+                  {valeurVenaleTableau.ValeurVenale === null
+                    ? valeurVenaleTableau.Explication
+                    : <>Tableau de dépréciation : {Number(valeurVenaleTableau.ValeurVenale).toLocaleString('fr-FR')} F ({valeurVenaleTableau.Explication}, {valeurVenaleTableau.AgeMois} mois)</>}
+                  {valeurVenaleTableau.ValeurVenale !== null && Number(valeurVenaleTableau.ValeurVenale) !== Number(valeurVenale) && (
+                    <button type="button" className="btn btn-secondary" onClick={() => { setValeurVenale(valeurVenaleTableau.ValeurVenale); setValeurVenaleSaisie(false); }}
+                      style={{ marginLeft: 6, padding: '0.1rem 0.45rem', fontSize: '0.7rem' }}>Appliquer</button>
+                  )}
+                </span>
+              )}
             </div>
 
             <div className="form-group">
@@ -3451,6 +3570,13 @@ export const NewAutoQuotePage = () => {
                       </td>
                       <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
                         {offresList.find((o) => Number(o.id) === Number(v.idOffre))?.libelle || `Offre n° ${v.idOffre}`}
+                        {(() => {
+                          const motif = nonAdmisePour(v);
+                          const ids = garantiesAcquisesFlotte(v).filter((id) => motif(id));
+                          if (!ids.length) return null;
+                          const nom = (id) => sousGarantiesAll.find((sg) => Number(sg.IdSousGarantie ?? sg.id) === id)?.LibelleSousGarantie || `garantie ${id}`;
+                          return <div style={{ fontSize: '0.72rem', color: '#f59e0b' }}>⚠ {ids.map((id) => `${nom(id)} : ${motif(id)}`).join(' ; ')} — à retirer dans « Garanties ».</div>;
+                        })()}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
                         {garantiesAReviser(v) ? <StatusBadge label="Garanties à revoir" color="amber" />
@@ -3629,7 +3755,21 @@ export const NewAutoQuotePage = () => {
           </h3>
 
           {/* Sélection de l'offre */}
-          <div style={{ maxWidth: '440px', marginBottom: '1.75rem' }}>
+          <div style={{ maxWidth: '640px', marginBottom: '1.75rem' }}>
+            {categorieSelectionnee?.code === '204' && idOffrePool > 0 && (
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.5rem', fontSize: '0.86rem' }}>
+            <span style={{ fontWeight: 700 }}>Transport public de voyageurs :</span>
+            <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', cursor: 'pointer' }}>
+              <input type="radio" name="tarif-tpv" checked={Number(offreId) === idOffrePool} onChange={() => choisirOffre(idOffrePool)} />
+              Pool TPV (tarif du Pool, RC + Recours dus au Pool)
+            </label>
+            <label style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', cursor: 'pointer' }}>
+              <input type="radio" name="tarif-tpv" checked={Number(offreId) !== idOffrePool}
+                onChange={() => { const autre = offresProposees.find((o) => Number(o.id) !== idOffrePool); if (autre) choisirOffre(autre.id); }} />
+              Assureur (primes de la compagnie, à imposer)
+            </label>
+            </div>
+            )}
             <select
               className="form-control"
               value={Number(offreId) || ''}
@@ -3659,6 +3799,34 @@ export const NewAutoQuotePage = () => {
               </p>
             )}
           </div>
+
+          {/* Garanties acquises non admises pour l'âge du véhicule (règles de la compagnie) : le producteur les retire */}
+          {(() => {
+            const motif = nonAdmisePour(instantaneVehicule());
+            const nonAdmises = garanties.filter((g) => g.acquise && !estGarantieRc(g) && motif(g.id_garantie));
+            if (!nonAdmises.length) return null;
+            return (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.08)', fontSize: '0.84rem' }}>
+                <span style={{ color: '#f59e0b' }}>
+                  ⚠ Garantie{nonAdmises.length > 1 ? 's' : ''} non admise{nonAdmises.length > 1 ? 's' : ''} pour l'âge du véhicule : {nonAdmises.map((g) => `${g.nom} — ${motif(g.id_garantie)}`).join(' ; ')}
+                </span>
+                <button type="button" className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
+                  onClick={() => {
+                    setGaranties((prev) => prev.map((g) => (g.acquise && !estGarantieRc(g) && motif(g.id_garantie) ? { ...g, acquise: false } : g)));
+                    libererTotauxDependants();
+                  }}>
+                  Retirer les garanties non admises
+                </button>
+              </div>
+            );
+          })()}
+
+          {Number(offreId) === idOffrePool && idOffrePool > 0 && (
+            <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.9rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.07)', fontSize: '0.84rem' }}>
+              Pool TPV : RC et Recours au tarif du Pool (selon les places et la durée), accessoire du Pool. Part due au Pool :{' '}
+              <strong>{Math.round(garanties.filter((g) => g.acquise && [1, 4].includes(Number(g.id_garantie))).reduce((s, g) => s + (Number(g.primeNette) || 0), 0)).toLocaleString('fr-FR')} F</strong> (RC + Recours, hors taxes).
+            </div>
+          )}
 
           {/* Tableau des Garanties : GARANTIE | ACQUISE | CAPITAL | FRANCHISE | FORMULE | PLACE | PRIME ANNUELLE | PRIME NETTE | ACTIONS */}
           <div style={{ overflowX: 'auto', marginBottom: '2rem', border: '1px solid var(--border-subtle)', borderRadius: '8px' }}>
@@ -3690,6 +3858,9 @@ export const NewAutoQuotePage = () => {
                         <span className="badge badge-blue" style={{ marginLeft: '0.5rem', fontSize: '0.65rem' }}>
                           Ajoutée
                         </span>
+                      )}
+                      {g.acquise && !estGarantieRc(g) && nonAdmisePour(instantaneVehicule())(g.id_garantie) && (
+                        <div style={{ fontSize: '0.72rem', fontWeight: 500, color: '#f59e0b' }}>⚠ {nonAdmisePour(instantaneVehicule())(g.id_garantie)}</div>
                       )}
                     </td>
 
@@ -4351,6 +4522,7 @@ export const NewAutoQuotePage = () => {
             chargerBareme={() => chargerBaremeVehicule(v)}
             sousGaranties={sousGarantiesAll}
             tauxTaxes={tauxTaxesAuto}
+            nonAdmise={nonAdmisePour(v)}
             onAppliquer={(resultat) => appliquerGarantiesVehicule(garantiesOuvertes.cle, resultat)}
           />
         );
@@ -4366,7 +4538,8 @@ export const NewAutoQuotePage = () => {
         idOffre={offreId}
         marques={marques}
         vehiculesFlotte={flotteVehicules}
-        onImporter={importerVehiculesFlotte}
+        dateEffet={dateEffet}
+        onImporter={importerFichierVehicules}
       />
 
       {/* Modal de visualisation après création */}

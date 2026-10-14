@@ -3,6 +3,9 @@ Réglages Dommages (produit 9) dans l'admin : ce que l'écran de devis Dommages 
 
 - Catégories (stdtarif 4xx) : proposée ou non à la saisie, ordre, description, prime au prorata,
   description du risque demandée (lephare_dommage_categorie).
+- Imprimés : tableau des garanties en annexe de la cotation ou non, référence de la facture de prime,
+  documents de production imprimés depuis le contrat (ex. « Garantie de soumission » d'une caution,
+  lephare_dommage_document).
 - Garanties de chaque catégorie, par compagnie : garanties de l'offre (stdoffregarantie, table URANUS
   lue par le calcul), franchise, taux de prime proposé et garantie obligatoire (lephare_dommage_garantie),
   taxe d'enregistrement du produit 9 créée si la garantie n'en a pas (stdtauxtaxegarantieproduit ;
@@ -21,7 +24,7 @@ from rest_framework import permissions
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
-from .models import DommageCategorie, DommageGarantie
+from .models import DommageCategorie, DommageDocument, DommageGarantie
 from .parametrage import ErreurParametrage, _journal, _reponse_erreur, _texte
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 
@@ -31,6 +34,7 @@ OPTIONS_MAXIMUM = 30
 # Textes de la fiche de cotation imprimée, réglables par catégorie
 TEXTES_FICHE = ("ObjetGarantie", "ContreGaranties", "Exclusions")
 MOTIF_CLE = re.compile(r"^[a-z0-9_]{1,40}$")
+DOCUMENTS_MAXIMUM = 10
 TYPES_CHAMP = {code for code, _ in DommageCategorie.TYPES_CHAMP}
 
 
@@ -120,7 +124,15 @@ def _taxes(cursor):
     return {i: float(t) for i, t in cursor.fetchall()}
 
 
-def _categorie_json(ligne, reglage, garanties, compagnies, nb_devis):
+def _document_json(d):
+    return {
+        "Id": d.id, "IdCompagnie": d.IdCompagnie, "Titre": d.Titre, "ConditionChamp": d.ConditionChamp,
+        "ConditionValeur": d.ConditionValeur, "Corps": d.Corps, "Signataire": d.Signataire,
+        "MentionSignature": d.MentionSignature, "Actif": d.Actif, "Ordre": d.Ordre,
+    }
+
+
+def _categorie_json(ligne, reglage, garanties, compagnies, nb_devis, documents=()):
     id_tarif, libelle, code, id_offre, libelle_offre = ligne
     return {
         "IdTarif": id_tarif,
@@ -136,6 +148,9 @@ def _categorie_json(ligne, reglage, garanties, compagnies, nb_devis):
         "ObjetGarantie": reglage.ObjetGarantie if reglage else "",
         "ContreGaranties": reglage.ContreGaranties if reglage else "",
         "Exclusions": reglage.Exclusions if reglage else "",
+        "AnnexeCotation": reglage.AnnexeCotation if reglage else True,
+        "ReferenceFacture": reglage.ReferenceFacture if reglage else "",
+        "Documents": [_document_json(d) for d in documents],
         "NbDevis": nb_devis.get(id_tarif, 0),
         # Garanties par compagnie : seulement les compagnies qui en ont pour cette offre
         "Compagnies": {
@@ -168,8 +183,12 @@ def _lire_tout(cursor):
     nb_devis = dict(cursor.fetchall())
     garanties = _garanties_par_offre(cursor)
     reglages = {c.IdTarif: c for c in DommageCategorie.objects.all()}
+    documents = {}
+    for d in DommageDocument.objects.all():
+        documents.setdefault(d.IdTarif, []).append(d)
     ids_compagnies = [c[0] for c in compagnies]
-    categories = [_categorie_json(l, reglages.get(l[0]), garanties, ids_compagnies, nb_devis) for l in lignes]
+    categories = [_categorie_json(l, reglages.get(l[0]), garanties, ids_compagnies, nb_devis, documents.get(l[0], []))
+                  for l in lignes]
     categories.sort(key=lambda c: (c["Ordre"], c["Libelle"]))
     return categories, compagnies
 
@@ -243,19 +262,24 @@ def _champs_risque(valeur):
 @permission_classes([permissions.IsAuthenticated, EstAdministrateur])
 def categorie(request, id_tarif):
     """PATCH /api/parametrage/dommages/categories/<idtarif>/ {SaisieOuverte, Ordre, Description, Prorata, ChampsRisque,
-    ObjetGarantie, ContreGaranties, Exclusions}."""
+    ObjetGarantie, ContreGaranties, Exclusions, AnnexeCotation, ReferenceFacture}."""
     try:
         with connection.cursor() as cursor:
             libelle, _ = _offre_du_tarif(cursor, id_tarif)
         reglage = DommageCategorie.objects.filter(IdTarif=id_tarif).first() or DommageCategorie(IdTarif=id_tarif, Ordre=999)
         avant = {"SaisieOuverte": reglage.SaisieOuverte, "Ordre": reglage.Ordre, "Description": reglage.Description,
                  "Prorata": reglage.Prorata, "ChampsRisque": reglage.ChampsRisque,
+                 "AnnexeCotation": reglage.AnnexeCotation, "ReferenceFacture": reglage.ReferenceFacture,
                  **{t: getattr(reglage, t) for t in TEXTES_FICHE}}
         donnees = request.data
         if "SaisieOuverte" in donnees:
             reglage.SaisieOuverte = bool(donnees["SaisieOuverte"])
         if "Prorata" in donnees:
             reglage.Prorata = bool(donnees["Prorata"])
+        if "AnnexeCotation" in donnees:
+            reglage.AnnexeCotation = bool(donnees["AnnexeCotation"])
+        if "ReferenceFacture" in donnees:
+            reglage.ReferenceFacture = _texte(donnees["ReferenceFacture"], 200, "Référence de la facture")
         if "Description" in donnees:
             reglage.Description = _texte(donnees["Description"], 400, "Description")
         if "Ordre" in donnees:
@@ -273,11 +297,83 @@ def categorie(request, id_tarif):
     reglage.save()
     apres = {"SaisieOuverte": reglage.SaisieOuverte, "Ordre": reglage.Ordre, "Description": reglage.Description,
              "Prorata": reglage.Prorata, "ChampsRisque": reglage.ChampsRisque,
+             "AnnexeCotation": reglage.AnnexeCotation, "ReferenceFacture": reglage.ReferenceFacture,
              **{t: getattr(reglage, t) for t in TEXTES_FICHE}}
     _journal(request, f"Dommages : catégorie « {libelle} » modifiée", {"idtarif": id_tarif, "avant": avant, "apres": apres})
     with connection.cursor() as cursor:
         categories, _ = _lire_tout(cursor)
     return Response(next(c for c in categories if c["IdTarif"] == id_tarif))
+
+
+@api_view(["PUT"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated, EstAdministrateur])
+def documents(request, id_tarif):
+    """PUT /api/parametrage/dommages/categories/<idtarif>/documents/ {Documents: [{Id?, IdCompagnie, Titre,
+    ConditionChamp, ConditionValeur, Corps, Signataire, MentionSignature, Actif, Ordre}]} : remplace les documents
+    de production de la catégorie (un document absent de la liste est supprimé)."""
+    liste = request.data.get("Documents")
+    try:
+        if not isinstance(liste, list):
+            raise ErreurParametrage("Documents : liste attendue.")
+        if len(liste) > DOCUMENTS_MAXIMUM:
+            raise ErreurParametrage(f"Documents : {DOCUMENTS_MAXIMUM} au plus par catégorie.")
+        with connection.cursor() as cursor:
+            libelle, _ = _offre_du_tarif(cursor, id_tarif)
+            cursor.execute("SELECT idcompagnie FROM stdcompagnie WHERE idcompagnie <> 0")
+            compagnies = {l[0] for l in cursor.fetchall()}
+        reglage = DommageCategorie.objects.filter(IdTarif=id_tarif).first()
+        cles = {c.get("Cle") for c in (reglage.ChampsRisque if reglage else []) if isinstance(c, dict)}
+        existants = {d.id: d for d in DommageDocument.objects.filter(IdTarif=id_tarif)}
+        propres = []
+        for i, doc in enumerate(liste, start=1):
+            if not isinstance(doc, dict):
+                raise ErreurParametrage(f"Document {i} : fiche attendue.")
+            titre = _texte(doc.get("Titre"), 120, f"Document {i} : titre", obligatoire=True)
+            corps = _texte(doc.get("Corps"), 12000, f"« {titre} » : texte", obligatoire=True)
+            try:
+                id_compagnie = int(doc.get("IdCompagnie") or 0)
+            except (TypeError, ValueError) as erreur:
+                raise ErreurParametrage(f"« {titre} » : compagnie invalide.") from erreur
+            if id_compagnie and id_compagnie not in compagnies:
+                raise ErreurParametrage(f"« {titre} » : compagnie inconnue.")
+            champ = str(doc.get("ConditionChamp") or "").strip()
+            if champ and champ not in cles:
+                raise ErreurParametrage(f"« {titre} » : la condition porte sur un champ du risque inconnu ({champ}).")
+            try:
+                id_doc = int(doc.get("Id") or 0)
+                ordre = max(0, min(999, int(doc.get("Ordre") or i)))
+            except (TypeError, ValueError) as erreur:
+                raise ErreurParametrage(f"« {titre} » : nombre entier attendu.") from erreur
+            if id_doc and id_doc not in existants:
+                raise ErreurParametrage(f"« {titre} » : document introuvable (rechargez la page).")
+            propres.append({
+                "id": id_doc or None, "IdCompagnie": id_compagnie, "Titre": titre,
+                "ConditionChamp": champ,
+                "ConditionValeur": _texte(doc.get("ConditionValeur"), 120, f"« {titre} » : valeur de la condition") if champ else "",
+                "Corps": corps,
+                "Signataire": _texte(doc.get("Signataire"), 400, f"« {titre} » : signataire"),
+                "MentionSignature": _texte(doc.get("MentionSignature"), 200, f"« {titre} » : mention sous la signature"),
+                "Actif": bool(doc.get("Actif", True)), "Ordre": ordre,
+            })
+    except ErreurParametrage as erreur:
+        return _reponse_erreur(erreur)
+    avant = [_document_json(d) for d in existants.values()]
+    with transaction.atomic():
+        gardes = set()
+        for p in propres:
+            document = existants.get(p.pop("id")) if p.get("id") else None
+            if document is None:
+                p.pop("id", None)
+                document = DommageDocument(IdTarif=id_tarif)
+            for cle, valeur in p.items():
+                setattr(document, cle, valeur)
+            document.save()
+            gardes.add(document.id)
+        DommageDocument.objects.filter(IdTarif=id_tarif).exclude(id__in=gardes).delete()
+    apres = [_document_json(d) for d in DommageDocument.objects.filter(IdTarif=id_tarif)]
+    _journal(request, f"Dommages : documents de production de « {libelle} » modifiés", {"idtarif": id_tarif, "avant": avant, "apres": apres})
+    return Response({"Documents": apres})
 
 
 @api_view(["PUT"])

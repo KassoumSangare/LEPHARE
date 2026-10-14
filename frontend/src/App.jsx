@@ -66,6 +66,9 @@ import ParametrageSecuritePage from './pages/admin/settings/ParametrageSecuriteP
 import ParametrageGrillesVoyagePage from './pages/admin/settings/ParametrageGrillesVoyagePage';
 import ParametrageDommagesPage from './pages/admin/settings/ParametrageDommagesPage';
 import ParametrageSantePage from './pages/admin/settings/ParametrageSantePage';
+import ParametrageDepreciationPage from './pages/admin/settings/ParametrageDepreciationPage';
+import ParametragePoolTpvPage from './pages/admin/settings/ParametragePoolTpvPage';
+import RenouvellementPage from './pages/user/contracts/RenouvellementPage';
 
 // New Institutional Modules (LE PHARE V2)
 import CrmPipelinePage from './pages/user/crm/CrmPipelinePage';
@@ -152,6 +155,7 @@ function App() {
                 {/* ===== MODULE E – PORTEFEUILLE CONTRATS ===== */}
                 <Route path="/user/contracts" element={<ContractListPage />} />
                 <Route path="/user/contracts/:id" element={<ContractDetailPage />} />
+                <Route path="/user/contracts/:id/renouvellement" element={<RenouvellementPage />} />
                 <Route path="/user/endorsements" element={<EndorsementPage />} />
                 <Route path="/user/asaci" element={<AsaciPage />} />
 
@@ -208,6 +212,8 @@ function App() {
                 <Route path="/admin/settings/grilles-voyage" element={<AdminRoute><ParametrageGrillesVoyagePage /></AdminRoute>} />
                 <Route path="/admin/settings/dommages" element={<AdminRoute><ParametrageDommagesPage /></AdminRoute>} />
                 <Route path="/admin/settings/sante" element={<AdminRoute><ParametrageSantePage /></AdminRoute>} />
+                <Route path="/admin/settings/depreciation" element={<AdminRoute><ParametrageDepreciationPage /></AdminRoute>} />
+                <Route path="/admin/settings/pool-tpv" element={<AdminRoute><ParametragePoolTpvPage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}
                 <Route path="/parametrage/garanties" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />

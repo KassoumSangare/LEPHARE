@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Layers, Save, Loader2, RotateCcw, Plus, Trash2, ArrowUp, ArrowDown, ShieldCheck, ClipboardList, Copy,
-  Percent, Receipt, Coins, Boxes, AlertTriangle, Lock, Search,
+  Percent, Receipt, Coins, Boxes, AlertTriangle, Lock, Search, FileText,
 } from 'lucide-react';
 import { EnTeteParametrage, SectionParametrage } from '../../../components/admin/EnTeteParametrage';
 import { AmountInput } from '../../../components/common/AmountInput';
@@ -34,7 +34,17 @@ const copieCategorie = (c) => ({
   SaisieOuverte: c.SaisieOuverte, Ordre: c.Ordre, Description: c.Description || '', Prorata: c.Prorata,
   ChampsRisque: (c.ChampsRisque || []).map((x) => ({ ...x, OptionsTexte: (x.Options || []).join('\n') })),
   ObjetGarantie: c.ObjetGarantie || '', ContreGaranties: c.ContreGaranties || '', Exclusions: c.Exclusions || '',
+  AnnexeCotation: c.AnnexeCotation !== false, ReferenceFacture: c.ReferenceFacture || '',
 });
+// Documents de production (ex. « Garantie de soumission ») : copie modifiable
+const copieDocuments = (liste) => (liste || []).map((d) => ({ ...d, cle: `doc-${d.Id}` }));
+// Champs entre accolades communs à toutes les catégories (frontend/src/utils/exportUtils.js, valeursPiecesDommages)
+const CHAMPS_DOCUMENT = [
+  ['compagnie', 'compagnie'], ['souscripteur', 'souscripteur (candidat)'], ['assure', 'assuré'],
+  ['numero_police', 'n° de police'], ['numero_facture', 'n° de facture'], ['date_effet', "date d'effet"],
+  ['date_expiration', "date d'expiration"], ['date_emission', "date d'émission"], ['capital', 'capital garanti'],
+  ['capital_lettres', 'capital en lettres'], ['prime_ttc', 'prime TTC'], ['prime_ttc_lettres', 'prime TTC en lettres'],
+];
 const copieGaranties = (liste) => (liste || []).map((g) => ({
   ...g,
   TauxDefaut: g.TauxDefaut ?? '',
@@ -56,6 +66,7 @@ export const ParametrageDommagesPage = () => {
   const [garantiesSaisies, setGarantiesSaisies] = useState([]);
   const [envoi, setEnvoi] = useState('');
   const [recherche, setRecherche] = useState('');
+  const [documentsSaisis, setDocumentsSaisis] = useState([]);
 
   const charger = async () => {
     setChargement(true);
@@ -89,6 +100,10 @@ export const ParametrageDommagesPage = () => {
 
   const garantiesEnregistrees = useMemo(() => copieGaranties(categorie?.Compagnies?.[String(idCompagnie)] || []), [categorie, idCompagnie]);
   useEffect(() => { setGarantiesSaisies(garantiesEnregistrees); }, [garantiesEnregistrees]);
+
+  const documentsEnregistres = useMemo(() => copieDocuments(categorie?.Documents), [categorie]);
+  useEffect(() => { setDocumentsSaisis(documentsEnregistres); }, [documentsEnregistres]);
+  const documentsModifies = !memesValeurs(documentsEnregistres, documentsSaisis);
 
   const categorieModifiee = categorie && categorieSaisie && !memesValeurs(copieCategorie(categorie), categorieSaisie);
   const garantiesModifiees = !memesValeurs(garantiesEnregistrees, garantiesSaisies);
@@ -137,6 +152,25 @@ export const ParametrageDommagesPage = () => {
       const maj = await parametrageApi.modifierCategorieDommages(c.IdTarif, { SaisieOuverte: !c.SaisieOuverte });
       setDonnees((d) => ({ ...d, Categories: d.Categories.map((x) => (x.IdTarif === maj.IdTarif ? maj : x)) }));
       success(`« ${maj.Libelle} » ${maj.SaisieOuverte ? 'proposée' : 'retirée'} à la saisie des devis.`);
+    } catch (err) {
+      toastError(messageErreurApi(err));
+    } finally {
+      setEnvoi('');
+    }
+  };
+
+  // ---------------------------------------------------------------- documents de production
+  const changerDocument = (index, cle, valeur) => setDocumentsSaisis((l) => l.map((d, i) => (i === index ? { ...d, [cle]: valeur } : d)));
+  const ajouterDocument = () => setDocumentsSaisis((l) => [...l, {
+    cle: `nouveau-${Date.now()}`, Id: null, IdCompagnie: idCompagnie || 0, Titre: '', ConditionChamp: '', ConditionValeur: '',
+    Corps: '', Signataire: '', MentionSignature: '', Actif: true, Ordre: l.length + 1,
+  }]);
+  const enregistrerDocuments = async () => {
+    setEnvoi('documents');
+    try {
+      const res = await parametrageApi.modifierDocumentsDommages(idTarif, documentsSaisis.map(({ cle, ...d }) => ({ ...d, Ordre: Number(d.Ordre) || 0 })));
+      setDonnees((d) => ({ ...d, Categories: d.Categories.map((c) => (c.IdTarif === idTarif ? { ...c, Documents: res.Documents } : c)) }));
+      success(`Documents de production de « ${categorie.Libelle} » enregistrés.`);
     } catch (err) {
       toastError(messageErreurApi(err));
     } finally {
@@ -347,7 +381,106 @@ export const ParametrageDommagesPage = () => {
                       <textarea className="form-control" rows={4} maxLength={2000} value={categorieSaisie[cle]} placeholder={aide} onChange={(e) => changerCategorie(cle, e.target.value)} />
                     </div>
                   ))}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Tableau des garanties en annexe</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minHeight: '2.4rem' }}>
+                      <Interrupteur actif={categorieSaisie.AnnexeCotation} onChange={(v) => changerCategorie('AnnexeCotation', v)} />
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {categorieSaisie.AnnexeCotation ? 'Oui : page « Annexe — tableau des garanties »' : 'Non : garanties citées dans la cotation (une seule page)'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Référence sur la facture de prime</label>
+                    <input className="form-control" maxLength={200} value={categorieSaisie.ReferenceFacture} placeholder="Ex. {numero_appel_offres} {beneficiaire}"
+                      onChange={(e) => changerCategorie('ReferenceFacture', e.target.value)} />
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Imprimée entre parenthèses après « ASSURANCE {categorie.Libelle.replace(/^ASSURANCE\s+/i, '')} » ; champs du risque entre accolades.</span>
+                  </div>
                 </div>
+              </SectionParametrage>
+
+              <SectionParametrage
+                icone={FileText}
+                titre="Documents de production"
+                description="Documents imprimés depuis la fiche d'un contrat de cette catégorie, en plus de la cotation, du relevé de compte et de la facture de prime (ex. « Garantie de soumission » d'une caution). Le texte reprend les données du contrat et du risque saisi : écrivez un champ entre accolades, il sera remplacé à l'impression (champ vide : pointillés à compléter à la main)."
+                actions={documentsModifies && (
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <button type="button" className="btn btn-secondary" title="Annuler les changements" onClick={() => setDocumentsSaisis(documentsEnregistres)} style={{ padding: '0.3rem 0.5rem' }}><RotateCcw size={14} /></button>
+                    <button type="button" className="btn btn-primary" disabled={envoi === 'documents'} onClick={enregistrerDocuments} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                      {envoi === 'documents' ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Enregistrer
+                    </button>
+                  </div>
+                )}
+              >
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.6, padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid var(--border-subtle)', marginBottom: '0.9rem' }}>
+                  <strong>Champs disponibles :</strong>{' '}
+                  {[...CHAMPS_DOCUMENT, ...categorieSaisie.ChampsRisque.filter((c) => c.Cle && !c.nouveau).flatMap((c) => [
+                    [c.Cle, c.Libelle.toLowerCase()],
+                    ...(c.Type === 'date' || c.Type === 'montant' ? [[`${c.Cle}_lettres`, `${c.Libelle.toLowerCase()} en lettres`]] : []),
+                  ])].map(([cle, libelle], i) => (
+                    <span key={cle}>{i ? ' • ' : ''}<code style={{ fontSize: '0.72rem' }}>{`{${cle}}`}</code> {libelle}</span>
+                  ))}
+                  <br />
+                  <code style={{ fontSize: '0.72rem' }}>{'{champ:maj}'}</code> : en majuscules • <code style={{ fontSize: '0.72rem' }}>**texte**</code> : en gras •
+                  ligne vide : nouveau paragraphe • « a) », « 1. » : liste • espaces en début de ligne : retrait.
+                </div>
+                {!documentsSaisis.length && <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Aucun document de production pour cette catégorie.</div>}
+                {documentsSaisis.map((d, i) => (
+                  <div key={d.cle} style={{ border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '0.85rem', marginBottom: '0.85rem', opacity: d.Actif ? 1 : 0.65 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem 1rem', alignItems: 'end' }}>
+                      <div className="form-group" style={{ margin: 0, gridColumn: 'span 2' }}>
+                        <label className="form-label">Titre imprimé</label>
+                        <input className="form-control" maxLength={120} value={d.Titre} placeholder="Ex. GARANTIE DE SOUMISSION" onChange={(e) => changerDocument(i, 'Titre', e.target.value)} />
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">Compagnie (logo, pied de page)</label>
+                        <select className="form-control" value={d.IdCompagnie} onChange={(e) => changerDocument(i, 'IdCompagnie', Number(e.target.value))}>
+                          <option value={0}>Toutes les compagnies</option>
+                          {donnees.Compagnies.map((c) => <option key={c.IdCompagnie} value={c.IdCompagnie}>{c.RaisonSociale}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">Proposé si le champ…</label>
+                        <select className="form-control" value={d.ConditionChamp} onChange={(e) => changerDocument(i, 'ConditionChamp', e.target.value)}>
+                          <option value="">Toujours proposé</option>
+                          {categorieSaisie.ChampsRisque.filter((c) => c.Cle && !c.nouveau).map((c) => <option key={c.Cle} value={c.Cle}>{c.Libelle}</option>)}
+                        </select>
+                      </div>
+                      {d.ConditionChamp && (
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label">…contient</label>
+                          <input className="form-control" maxLength={120} value={d.ConditionValeur} placeholder="Ex. SOUMISSION" onChange={(e) => changerDocument(i, 'ConditionValeur', e.target.value)} />
+                        </div>
+                      )}
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">Actif</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minHeight: '2.4rem' }}>
+                          <Interrupteur actif={Boolean(d.Actif)} onChange={(v) => changerDocument(i, 'Actif', v)} />
+                          <input type="number" className="form-control" min={0} max={999} value={d.Ordre} title="Ordre d'affichage" onChange={(e) => changerDocument(i, 'Ordre', e.target.value)} style={{ width: 70 }} />
+                          <button type="button" className="btn btn-secondary" title="Supprimer ce document" onClick={() => setDocumentsSaisis((l) => l.filter((_, j) => j !== i))} style={{ padding: '0.3rem 0.45rem', color: 'var(--accent-rose)' }}><Trash2 size={13} /></button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ margin: '0.75rem 0 0' }}>
+                      <label className="form-label">Texte</label>
+                      <textarea className="form-control" rows={14} maxLength={12000} value={d.Corps} onChange={(e) => changerDocument(i, 'Corps', e.target.value)}
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', lineHeight: 1.45 }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '0.75rem 1rem', marginTop: '0.75rem' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">Signataire (nom, puis fonction)</label>
+                        <textarea className="form-control" rows={2} maxLength={400} value={d.Signataire} onChange={(e) => changerDocument(i, 'Signataire', e.target.value)} />
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label">Mention sous la signature</label>
+                        <input className="form-control" maxLength={200} value={d.MentionSignature} placeholder="Ex. NSIA ASSURANCES COTE D'IVOIRE" onChange={(e) => changerDocument(i, 'MentionSignature', e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button type="button" className="btn btn-secondary" onClick={ajouterDocument} disabled={documentsSaisis.length >= 10} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                  <Plus size={14} /> Ajouter un document
+                </button>
               </SectionParametrage>
 
               <SectionParametrage

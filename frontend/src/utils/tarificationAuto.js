@@ -1,3 +1,4 @@
+import { ttcRetombe } from './parametrage';
 // Totaux d'un devis automobile, alignés sur URANUS (fn_garantie_offre + sp_finalisation_devis).
 //
 // Le moteur CIMA (fn_garantie_offre) applique déjà réduction commerciale, BNS, prorata de durée
@@ -27,7 +28,7 @@ export const estGarantieCedeao = (g) => Number(g.id_garantie) === ID_SOUS_GARANT
 export const cedeaoDansPrimeNette = ({ primenette, accessoire, taxe, cedeao, primettc, primeImposee = false, arrondiNsia = false }) => {
   const entier = (x) => Math.round(Number(x) || 0);
   const ttc = entier(primettc);
-  const retombe = (somme) => ttc === somme || (arrondiNsia && ttc === Math.ceil(somme / 5) * 5);
+  const retombe = (somme) => ttcRetombe(ttc, somme, { idProduit: 1, nsia: arrondiNsia });
   const sansCedeao = entier(primenette) + entier(accessoire) + entier(taxe);
   if (retombe(sansCedeao)) return true;
   if (entier(cedeao) > 0 && retombe(sansCedeao + entier(cedeao))) return false;

@@ -11,7 +11,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, reglagesMinene } from '../../../utils/parametrage';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
@@ -139,7 +139,8 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [primeNette, setPrimeNette] = useState(0);
   const [accessoire, setAccessoire] = useState(0);
   const [taxe, setTaxe] = useState(0);
-  const primeTtc = (Number(primeNette) || 0) + (Number(accessoire) || 0) + (Number(taxe) || 0);
+  // TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants)
+  const primeTtc = arrondirMontant((Number(primeNette) || 0) + (Number(accessoire) || 0) + (Number(taxe) || 0), idProduit);
   // Calcul à partir de la prime nette (bouton « Calculer » d'URANUS, automatique ici) : accessoire du
   // barème de la compagnie et taxe = taux du produit × (prime nette + accessoire). Un montant retouché à
   // la main n'est plus recalculé tant qu'on ne le remet pas au barème.
@@ -216,12 +217,37 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     return () => { actif = false; };
   }, [idProduit, idTarif, offreDevis]);
 
+  // Création depuis le contrat Santé MINENE (?minene=<police>&client=&nom=&effet=&expiration=) : tarif MINENE,
+  // police connexe, souscripteur et période de la police Santé, sans ressaisie
+  const policeMineneParam = estRc ? searchParams.get('minene') : null;
+  useEffect(() => {
+    if (!policeMineneParam || editIddevisParam) return;
+    setIdTarif(ID_TARIF_MINENE);
+    setNumeroPoliceConnexe(policeMineneParam);
+    const client = Number(searchParams.get('client')) || 0;
+    const nom = searchParams.get('nom') || '';
+    if (client) {
+      setSouscripteurId(client);
+      setRechercheSouscripteur(nom);
+      setAssureId(client);
+      setRechercheAssure(nom);
+    }
+    if (searchParams.get('effet')) setDateEffet(searchParams.get('effet'));
+  }, [policeMineneParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // MINENE : compagnie, durée et capitaux fixés comme dans URANUS (à la création)
   const estMinene = estRc && (Number(idTarif) === ID_TARIF_MINENE || offreMinene);
   useEffect(() => {
     if (!estMinene || editIddevisParam) return;
     setCompagnieId(MINENE.idCompagnie);
-    setDureeId(MINENE.dureeId);
+    // Créée depuis la police Santé : jusqu'à l'échéance de la police Santé
+    const expirationSante = policeMineneParam ? searchParams.get('expiration') : null;
+    if (expirationSante) {
+      setDureeId(5);
+      setExpirationPersonnalisee(expirationSante);
+    } else {
+      setDureeId(MINENE.dureeId);
+    }
     const { rc } = reglagesMinene();
     setCapitalDommageCorporel((v) => Number(v) || rc.corporels);
     setCapitalIntoxication((v) => Number(v) || rc.intoxications);

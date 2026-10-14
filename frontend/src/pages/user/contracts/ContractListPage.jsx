@@ -451,11 +451,8 @@ export const ContractListPage = () => {
                 boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
                 cursor: 'pointer',
               }}
-              onClick={() => {
-                setActionContract(row);
-                setMovementModalTab('renouvellement');
-              }}
-              title="Renouveler la police, proroger la période et imprimer le certificat officiel CIMA"
+              onClick={() => navigate(`/user/contracts/${row.id}/renouvellement`)}
+              title="Préparer le renouvellement : nouvelle période, liste à jour, valeurs vénales selon l'âge ; même numéro de police"
             >
               <RefreshCw size={13} />
               <span>Renouveler</span>

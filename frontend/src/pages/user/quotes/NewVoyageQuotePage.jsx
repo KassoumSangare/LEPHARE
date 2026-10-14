@@ -12,6 +12,7 @@ import {
   Plane, Globe, Users, ShieldCheck, FileCheck, CheckCircle2, ChevronLeft, ChevronRight,
   AlertTriangle, Loader2, CalendarDays, MapPin,
 } from 'lucide-react';
+import { arrondirMontant } from '../../../utils/parametrage';
 
 // Parcours de production Voyage d'URANUS (Contrat, Offre, Souscripteur/Assuré), réorganisé en étapes.
 // Listes, offres, garanties et primes viennent de la base : tarifvoyage, payszone, offrevoyage,
@@ -291,8 +292,9 @@ export const NewVoyageQuotePage = () => {
     const primeNette = Number(c.PrimeNette) || 0;
     const accessoire = Number(c.MontantAccessoire) || 0;
     const taxe = Number(c.Taxe) || 0;
-    // Prime TTC arrondie comme sp_creation_devis_voyage : ROUND(prime nette + accessoire + taxe)
-    return { primeAnnuelle, primeNette, accessoire, taxe, reduction: primeAnnuelle - primeNette, primeTtc: Math.round(primeNette + accessoire + taxe) };
+    // Prime TTC comme à l'enregistrement : ROUND(prime nette + accessoire + taxe) (sp_creation_devis_voyage), puis
+    // arrondie à la pièce de 5 F si le produit Voyage l'applique (Administration > Produits)
+    return { primeAnnuelle, primeNette, accessoire, taxe, reduction: primeAnnuelle - primeNette, primeTtc: arrondirMontant(Math.round(primeNette + accessoire + taxe), 3) };
   }, [calcul]);
 
   // ---------------------------------------------------------------- Modifier (?edit=)
