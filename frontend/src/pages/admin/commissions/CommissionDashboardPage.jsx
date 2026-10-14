@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { saisirTexte } from '../../../utils/dialogue';
 import { Ban, CheckCircle2, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Plus, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
 import { apporteurApi, financeApi, settingsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
@@ -345,7 +346,16 @@ export const CommissionDashboardPage = () => {
   };
 
   const annuler = async (rc) => {
-    const motif = window.prompt(`Motif de l'annulation du bordereau ${rc.Reference} :`);
+    const motif = await saisirTexte({
+      ton: 'danger',
+      titre: `Annuler le bordereau ${rc.Reference} ?`,
+      message: "Indiquez, si vous le souhaitez, le motif de l'annulation : il sera ajouté aux notes du bordereau.",
+      consequences: 'Ses quittances redeviendront à réclamer.',
+      placeholder: "Motif de l'annulation (facultatif)…",
+      minimum: 0,
+      confirmer: 'Annuler le bordereau',
+      annuler: 'Garder le bordereau',
+    });
     if (motif === null) return;
     try {
       await financeApi.annulerReclamation(rc.IdReclamation, motif);

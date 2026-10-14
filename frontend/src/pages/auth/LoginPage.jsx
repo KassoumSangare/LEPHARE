@@ -50,7 +50,7 @@ export const LoginPage = () => {
         </div>
 
         {params.get('session') === 'expiree' && !erreur && (
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', padding: '0.6rem 0.75rem', borderRadius: 8, border: '1px solid var(--accent-amber)', color: '#fcd34d', fontSize: '0.8rem', marginBottom: '1rem' }}>
+          <div className="bandeau-anime" role="status" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', padding: '0.6rem 0.75rem', borderRadius: 8, border: '1px solid var(--accent-amber)', color: '#fcd34d', fontSize: '0.8rem', marginBottom: '1rem' }}>
             <AlertTriangle size={16} style={{ flexShrink: 0 }} /> Votre session a expiré ou a été fermée : reconnectez-vous.
           </div>
         )}

@@ -1,4 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { confirmer } from '../../../utils/dialogue';
+
+// Fiche modifiée et non enregistrée : l'utilisateur choisit de continuer la saisie ou d'abandonner
+const confirmerAbandon = (libelle) => confirmer({
+  ton: 'attention',
+  titre: 'Modifications non enregistrées',
+  message: 'Les modifications apportées à cette fiche ne sont pas encore enregistrées.',
+  consequences: 'Si vous continuez, elles seront perdues.',
+  confirmer: libelle,
+  annuler: 'Continuer la saisie',
+});
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Loader2, Save, IdCard, Printer, Plane, Calculator, ExternalLink, Eye, CheckCircle2,
@@ -147,8 +158,8 @@ export const CatalogCompaniesPage = () => {
     }
   };
 
-  const fermer = () => {
-    if (modifiee && !window.confirm('Des modifications ne sont pas enregistrées. Fermer quand même ?')) return;
+  const fermer = async () => {
+    if (modifiee && !(await confirmerAbandon('Fermer sans enregistrer'))) return;
     setFiche(null);
   };
 
@@ -342,7 +353,7 @@ export const CatalogCompaniesPage = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.6rem' }}>
                   {BAREMES.map((b) => (
                     <button key={b.libelle} type="button" className="btn btn-secondary"
-                      onClick={() => { if (!modifiee || window.confirm('Des modifications ne sont pas enregistrées. Quitter la fiche ?')) navigate(`${b.chemin}?${b.extra ? `${b.extra}&` : ''}compagnie=${s.IdCompagnie}`); }}
+                      onClick={async () => { if (!modifiee || await confirmerAbandon('Quitter sans enregistrer')) navigate(`${b.chemin}?${b.extra ? `${b.extra}&` : ''}compagnie=${s.IdCompagnie}`); }}
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, textAlign: 'left', padding: '0.65rem 0.8rem' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>{b.libelle} <ExternalLink size={12} /></span>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>{b.description}</span>

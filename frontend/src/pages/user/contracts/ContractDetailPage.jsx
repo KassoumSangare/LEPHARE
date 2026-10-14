@@ -16,7 +16,6 @@ import {
   RefreshCw,
   CheckCircle,
   Download,
-  Sparkles,
   Layers,
   Calendar,
   Paperclip,
@@ -170,35 +169,9 @@ export const ContractDetailPage = () => {
             <span>Renouveler la Police</span>
           </button>
 
-          {/* Action Avenant */}
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              setInitialOp(null);
-              setMovementTab('avenant');
-              setIsMovementModalOpen(true);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#60a5fa', borderColor: 'rgba(96, 165, 250, 0.35)' }}
-            title="Émettre un avenant de modification contractuelle"
-          >
-            <FileText size={16} />
-            <span>Émettre un Avenant</span>
-          </button>
-
-          {/* Action Transformation */}
-          <button
-            className="btn btn-secondary"
-            onClick={() => {
-              setInitialOp(null);
-              setMovementTab('transformation');
-              setIsMovementModalOpen(true);
-            }}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#c084fc', borderColor: 'rgba(192, 132, 252, 0.35)' }}
-            title="Transformer la formule ou changer de compagnie"
-          >
-            <Sparkles size={16} />
-            <span>Transformer</span>
-          </button>
+          {/* Avenant et transformation retirés le 2026-10-14 : ils n'enregistraient rien en base
+              (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
+              d'avenant de modification n'existent pas encore (sp_avenant_modification) */}
 
           {/* Action Imprimer Quittance */}
           <button className="btn btn-secondary" onClick={() => setIsReceiptModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>

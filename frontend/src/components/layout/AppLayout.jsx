@@ -28,7 +28,7 @@ export const AppLayout = () => {
       const texte = String(e.detail || '');
       if (!texte || (texte === dernier.texte && Date.now() - dernier.instant < 3000)) return;
       dernier = { texte, instant: Date.now() };
-      toastRef.current?.error(texte);
+      toastRef.current?.error(texte, { titre: 'Action non autorisée' });
     };
     window.addEventListener(EVENEMENT_ACCES_REFUSE, surRefus);
     return () => window.removeEventListener(EVENEMENT_ACCES_REFUSE, surRefus);
@@ -68,7 +68,10 @@ export const AppLayout = () => {
           />
           <main className="main-content">
             <div className="content-body">
-              {peut(droitEcran) ? <Outlet /> : <AccesRefuse droit={droitEcran} />}
+              {/* Un conteneur par écran : apparition douce à chaque changement d'écran (index.css) */}
+              <div key={location.pathname} className="page-transition">
+                {peut(droitEcran) ? <Outlet /> : <AccesRefuse droit={droitEcran} />}
+              </div>
             </div>
           </main>
         </div>

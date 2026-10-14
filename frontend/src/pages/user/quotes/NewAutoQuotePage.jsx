@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, customerApi, settingsApi, contractApi, brouillonApi } from '../../../api/endpoints';
@@ -963,9 +964,15 @@ export const NewAutoQuotePage = () => {
     viderSaisieVehicule();
   };
 
-  const handleRetirerVehicule = (idx) => {
+  const handleRetirerVehicule = async (idx) => {
     const veh = flotteVehicules[idx];
-    if (!veh || !window.confirm(`Retirer le véhicule ${veh.immatriculation} de la flotte ?`)) return;
+    if (!veh || !(await confirmer({
+      ton: 'attention',
+      titre: `Retirer le véhicule ${veh.immatriculation} ?`,
+      message: 'Le véhicule sera retiré de la flotte de ce devis.',
+      consequences: veh.enregistre ? "Le retrait sera pris en compte à l'enregistrement du devis." : undefined,
+      confirmer: 'Retirer le véhicule',
+    }))) return;
     if (veh.enregistre && veh.idDevisDetail) {
       setVehiculesRetires((prev) => [...prev, { idDevisDetail: veh.idDevisDetail, immatriculation: veh.immatriculation }]);
     }
@@ -1921,14 +1928,19 @@ export const NewAutoQuotePage = () => {
   }, [clientsProposes]);
 
   // Actions de modification / suppression de garanties
-  const handleDeleteGarantie = (idx) => {
+  const handleDeleteGarantie = async (idx) => {
     const target = garanties[idx];
     if (!target) return;
     if (estGarantieRc(target)) {
       toastError('La Responsabilité Civile (RC) est légalement obligatoire selon le Code CIMA et ne peut être supprimée.');
       return;
     }
-    if (window.confirm(`Voulez-vous vraiment supprimer la garantie "${target.nom}" ?`)) {
+    if (await confirmer({
+      ton: 'attention',
+      titre: `Retirer la garantie « ${target.nom} » ?`,
+      message: 'La garantie sera retirée du devis et les totaux seront recalculés.',
+      confirmer: 'Retirer la garantie',
+    })) {
       setDeletedGaranties((prev) => [...prev, target.id_garantie]);
       setGaranties((prev) => prev.filter((_, i) => i !== idx));
       libererTotauxDependants();

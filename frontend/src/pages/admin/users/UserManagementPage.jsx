@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import {
   Users, UserPlus, Search, Loader2, Check, X, Lock, Unlock, KeyRound, ShieldCheck, Activity, Save, AlertTriangle,
 } from 'lucide-react';
@@ -94,7 +95,13 @@ export const UserManagementPage = () => {
   };
 
   const basculerActivation = async (u) => {
-    if (u.actif && !window.confirm(`Désactiver le compte de ${u.nom || u.email} ? Ses sessions ouvertes seront fermées immédiatement.`)) return;
+    if (u.actif && !(await confirmer({
+      ton: 'attention',
+      titre: `Désactiver le compte de ${u.nom || u.email} ?`,
+      message: "L'utilisateur ne pourra plus se connecter tant que le compte n'est pas réactivé.",
+      consequences: 'Ses sessions ouvertes seront fermées immédiatement.',
+      confirmer: 'Désactiver le compte',
+    }))) return;
     setEnvoi(`activation-${u.id}`);
     try {
       const maj = await securiteApi.activerUtilisateur(u.id, !u.actif);

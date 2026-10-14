@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import { useNavigate } from 'react-router-dom';
 import { MetricCard } from '../../../components/common/MetricCard';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -143,7 +144,12 @@ export const CrmPipelinePage = () => {
       toastError(`${regle.reason} ${regle.suggestion || ''}`.trim());
       return;
     }
-    if (!window.confirm(`Supprimer définitivement le prospect ${lead.id_lead} — ${lead.nom_prospect} ?`)) return;
+    if (!(await confirmer({
+      ton: 'danger',
+      titre: `Supprimer le prospect ${lead.nom_prospect} ?`,
+      message: `Le prospect ${lead.id_lead} et son suivi seront supprimés définitivement.`,
+      confirmer: 'Supprimer le prospect',
+    }))) return;
     try {
       await crmApi.deleteLead(lead.id);
       setLeads((prev) => prev.filter((l) => l.id !== lead.id));
@@ -441,8 +447,13 @@ export const CrmPipelinePage = () => {
                               disabled={enCours === lead.id}
                               style={{ padding: '0.25rem 0.45rem', fontSize: '0.7rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                               title="Classer l'affaire comme perdue"
-                              onClick={() => {
-                                if (window.confirm(`Classer l'affaire « ${lead.nom_prospect} » comme perdue ?`)) changerEtape(lead, 'Perdu');
+                              onClick={async () => {
+                                if (await confirmer({
+                                  ton: 'attention',
+                                  titre: `Classer « ${lead.nom_prospect} » comme perdue ?`,
+                                  message: "L'affaire passera à l'étape « Perdu » du pipeline.",
+                                  confirmer: 'Classer comme perdue',
+                                })) changerEtape(lead, 'Perdu');
                               }}
                             >
                               <XCircle size={12} /> Perdue

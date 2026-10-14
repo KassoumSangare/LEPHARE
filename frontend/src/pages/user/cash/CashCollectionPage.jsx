@@ -7,6 +7,7 @@ import { useToast } from '../../../context/ToastContext';
 import { CreditCard, Check, Receipt } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
 import { printRecuEncaissement } from '../../../utils/exportUtils';
+import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
 import {
   actionReglement,
   ChampsReglement,
@@ -26,9 +27,9 @@ const aujourdhui = () => {
 // Quittance générée à la confirmation du devis (sp_confirmation_devis → sp_generation_quittance)
 const numeroQuittance = (contract) => contract?.raw?.idquittance?.numeroquittance || '';
 
-// Fenêtre du reçu ouverte au clic : ouverte après les appels API, le navigateur la bloquerait
+// Aperçu du reçu ouvert au clic, rempli une fois l'encaissement enregistré
 const ouvrirFenetreRecu = (message) => {
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write(`<p style="font-family:Arial;padding:20px;">${message}</p>`);
   return fenetre;
 };

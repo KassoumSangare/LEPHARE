@@ -1,4 +1,4 @@
-import { LoadingSpinner } from './LoadingSpinner';
+import { SqueletteLignes } from './Squelette';
 import React, { useState, useMemo } from 'react';
 import { Search, ChevronLeft, ChevronRight, Inbox, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -147,6 +147,7 @@ export const DataTable = ({
       )}
 
       {/* Table Content */}
+      {loading && <span className="visuellement-cache" role="status">{loadingText || 'Chargement en cours…'}</span>}
       <div className="table-wrapper">
         <table className="data-table">
           <thead>
@@ -182,11 +183,7 @@ export const DataTable = ({
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                  <LoadingSpinner {...(loadingText ? { text: loadingText } : {})} size={32} />
-                </td>
-              </tr>
+              <SqueletteLignes colonnes={columns.length} lignes={Math.min(itemsPerPage, 6)} />
             ) : paginatedData.length > 0 ? (
               paginatedData.map((row, rowIdx) => (
                 <tr key={rowIdx}>
@@ -200,7 +197,7 @@ export const DataTable = ({
             ) : (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3.5rem 1rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <div className="etat-anime" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                     <Inbox size={36} color="var(--text-muted)" />
                     <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{searchTerm ? 'Aucun résultat ne correspond à votre recherche.' : 'Aucun élément disponible.'}</p>
                     <p style={{ fontSize: '0.775rem', color: 'var(--text-muted)' }}>

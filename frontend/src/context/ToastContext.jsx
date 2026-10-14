@@ -1,69 +1,234 @@
-import React, { createContext, useContext, useState } from 'react';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { useAuth } from './AuthContext';
+
+/* =========================================================================
+   NOTIFICATIONS DE LE PHARE
+   useToast() → { success, error, warning, info, addToast, fermer }. Chaque fonction accepte
+   (message, options) : options = durée en ms, ou { titre, duree } (duree 0 = jusqu'à fermeture).
+   - durée adaptée au type et à la longueur du texte, mise en pause au survol et au focus ;
+   - un même message déjà affiché n'est pas répété : il est rappelé (×2, ×3…) et sa durée repart ;
+   - 4 notifications au plus, les plus anciennes se retirent ;
+   - un message technique (code HTTP, trace, erreur JavaScript) n'est jamais montré tel quel : il est
+     remplacé par une phrase claire et gardé dans la console pour le diagnostic.
+   - chaque message est aussi consigné dans le journal de la cloche (useJournalMessages) : le badge
+     compte les messages non lus de la session, un message répété augmente le compte de son entrée.
+   Apparence et animations : section « MOTION DESIGN » de index.css.
+   ========================================================================= */
+
+const TYPES = {
+  success: { classe: 'succes', titre: 'Opération réussie', icone: CheckCircle2, duree: 4500, role: 'status' },
+  error: { classe: 'erreur', titre: 'Erreur', icone: XCircle, duree: 7000, role: 'alert' },
+  warning: { classe: 'attention', titre: 'Attention', icone: AlertTriangle, duree: 6500, role: 'alert' },
+  info: { classe: 'info', titre: 'Information', icone: Info, duree: 5000, role: 'status' },
+};
+const MAX_VISIBLES = 4;
+const DUREE_MAX = 16000;
+const DUREE_SORTIE = 180;
+
+// Messages techniques à ne pas montrer aux utilisateurs (erreurs et avertissements seulement)
+const TECHNIQUE = /request failed with status code|network error|timeout of \d+ms|\beconn\w*|\berr_\w+|unexpected token|is not a function|cannot read propert|is not defined|undefined is not|null is not|syntaxerror|typeerror|referenceerror|traceback|<!doctype|<html|psycopg|errno|internal server error|\[object object\]/i;
+
+const messageLisible = (message, type) => {
+  if (React.isValidElement(message)) return message;
+  let texte = message instanceof Error ? message.message : message;
+  texte = texte === null || texte === undefined ? '' : String(texte).trim();
+  if (type !== 'error' && type !== 'warning') return texte;
+  if (!texte) return 'Une erreur est survenue. Veuillez réessayer.';
+  if (!TECHNIQUE.test(texte)) return texte;
+  console.warn('[notification] message technique remplacé pour l’utilisateur :', texte);
+  if (/status code 5\d\d|network error|timeout of|econn|internal server error/i.test(texte)) {
+    return 'Le serveur ne répond pas pour le moment. Vérifiez la connexion puis réessayez.';
+  }
+  if (/status code 401/i.test(texte)) return 'Votre session a expiré : reconnectez-vous.';
+  if (/status code 403/i.test(texte)) return "Vous n'avez pas les droits nécessaires pour cette opération.";
+  if (/status code 404/i.test(texte)) return "L'élément demandé est introuvable : il a peut-être été retiré entre-temps.";
+  if (/status code 4\d\d/i.test(texte)) return "La demande n'a pas été acceptée. Vérifiez les informations saisies.";
+  return 'Une erreur inattendue est survenue. Veuillez réessayer ; si le problème persiste, contactez le support.';
+};
+
+// Temps de lecture : au moins la durée du type, plus ~1/4 s par mot
+const dureeDeLecture = (type, message) => {
+  const mots = typeof message === 'string' ? message.split(/\s+/).filter(Boolean).length : 12;
+  return Math.min(DUREE_MAX, Math.max(TYPES[type].duree, 2500 + mots * 260));
+};
 
 const ToastContext = createContext(null);
+let compteurId = 0;
 
-let toastIdCounter = 0;
+// Journal de la cloche : messages de la session de l'utilisateur connecté (onglet en cours)
+const JOURNAL_MAX = 50;
+const JournalContext = createContext({ messages: [], nonLus: 0, marquerLus: () => {}, effacer: () => {} });
+const cleJournal = (idUtilisateur) => `lephare_messages_${idUtilisateur}`;
+const lireJournal = (idUtilisateur) => {
+  if (!idUtilisateur) return [];
+  try {
+    const liste = JSON.parse(sessionStorage.getItem(cleJournal(idUtilisateur)) || '[]');
+    return Array.isArray(liste) ? liste : [];
+  } catch {
+    return [];
+  }
+};
 
 export const ToastProvider = ({ children }) => {
-  const [toasts, setToasts] = useState([]);
+  const { user } = useAuth();
+  const idUtilisateur = user?.id || null;
+  const [journal, setJournal] = useState(() => lireJournal(idUtilisateur));
+  // Autre utilisateur ou déconnexion : journal de cet utilisateur (vide sans session)
+  useEffect(() => { setJournal(lireJournal(idUtilisateur)); }, [idUtilisateur]);
+  useEffect(() => {
+    if (!idUtilisateur) return;
+    try { sessionStorage.setItem(cleJournal(idUtilisateur), JSON.stringify(journal)); } catch { /* stockage indisponible */ }
+  }, [journal, idUtilisateur]);
+  const consigner = useCallback((type, titre, message) => {
+    const texte = typeof message === 'string' ? message : titre;
+    setJournal((avant) => {
+      const [dernier] = avant;
+      // Même message que le dernier consigné, encore non lu : son compte augmente
+      if (dernier && !dernier.lu && dernier.type === type && dernier.texte === texte && dernier.titre === titre) {
+        return [{ ...dernier, compte: dernier.compte + 1, instant: Date.now() }, ...avant.slice(1)];
+      }
+      return [{ id: `${Date.now()}-${++compteurId}`, type, titre, texte, instant: Date.now(), compte: 1, lu: false }, ...avant].slice(0, JOURNAL_MAX);
+    });
+  }, []);
+  const journalValeur = useMemo(() => ({
+    messages: journal,
+    nonLus: journal.reduce((s, m) => s + (m.lu ? 0 : m.compte), 0),
+    marquerLus: () => setJournal((avant) => (avant.some((m) => !m.lu) ? avant.map((m) => ({ ...m, lu: true })) : avant)),
+    effacer: () => setJournal([]),
+  }), [journal]);
 
-  const addToast = (message, type = 'info', duration = 4000) => {
-    const id = ++toastIdCounter;
-    setToasts((prev) => [...prev, { id, message, type }]);
+  // Liste tenue dans une référence (doublons et limite décidés sans attendre un rendu)
+  const liste = useRef([]);
+  const [, rafraichir] = useReducer((n) => n + 1, 0);
+  const maj = useCallback((transformer) => {
+    liste.current = transformer(liste.current);
+    rafraichir();
+  }, []);
 
-    if (duration > 0) {
-      setTimeout(() => {
-        removeToast(id);
-      }, duration);
+  // Minuteries : fermeture automatique (avec pause), retrait après l'animation de sortie, rappel
+  const minuteries = useRef(new Map());
+  const autres = useRef(new Set());
+  const differer = (fn, delai) => {
+    const h = setTimeout(() => { autres.current.delete(h); fn(); }, delai);
+    autres.current.add(h);
+  };
+  useEffect(() => () => {
+    minuteries.current.forEach((m) => clearTimeout(m.handle));
+    autres.current.forEach(clearTimeout);
+  }, []);
+
+  const fermer = useCallback((id) => {
+    const m = minuteries.current.get(id);
+    if (m) clearTimeout(m.handle);
+    minuteries.current.delete(id);
+    if (!liste.current.some((t) => t.id === id && !t.sortie)) return;
+    maj((l) => l.map((t) => (t.id === id ? { ...t, sortie: true } : t)));
+    differer(() => maj((l) => l.filter((t) => t.id !== id)), DUREE_SORTIE);
+  }, [maj]);
+
+  const programmer = useCallback((id, duree) => {
+    const avant = minuteries.current.get(id);
+    if (avant) clearTimeout(avant.handle);
+    if (!duree) return;
+    minuteries.current.set(id, { restant: duree, depart: Date.now(), handle: setTimeout(() => fermer(id), duree), pauses: 0 });
+  }, [fermer]);
+
+  const pause = (id) => {
+    const m = minuteries.current.get(id);
+    if (!m) return;
+    m.pauses += 1;
+    if (m.pauses > 1) return;
+    clearTimeout(m.handle);
+    m.restant -= Date.now() - m.depart;
+  };
+  const reprise = (id) => {
+    const m = minuteries.current.get(id);
+    if (!m || m.pauses === 0) return;
+    m.pauses -= 1;
+    if (m.pauses > 0) return;
+    m.depart = Date.now();
+    m.handle = setTimeout(() => fermer(id), Math.max(m.restant, 1200));
+  };
+
+  const addToast = useCallback((message, type = 'info', options = {}) => {
+    const genre = TYPES[type] ? type : 'info';
+    const opts = typeof options === 'number' ? { duree: options } : (options || {});
+    const texte = messageLisible(message, genre);
+    if (texte === '' || texte === null) return null;
+    const duree = opts.duree !== undefined ? opts.duree : dureeDeLecture(genre, texte);
+    const titre = opts.titre || TYPES[genre].titre;
+    consigner(genre, titre, texte);
+
+    // Même message déjà à l'écran : rappel plutôt qu'une seconde notification
+    const existant = typeof texte === 'string'
+      && liste.current.find((t) => !t.sortie && t.type === genre && t.message === texte && t.titre === titre);
+    if (existant) {
+      maj((l) => l.map((t) => (t.id === existant.id ? { ...t, compte: t.compte + 1, version: t.version + 1, rappel: true, duree } : t)));
+      differer(() => maj((l) => l.map((t) => (t.id === existant.id ? { ...t, rappel: false } : t))), 400);
+      programmer(existant.id, duree);
+      return existant.id;
     }
-  };
 
-  const removeToast = (id) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+    const id = ++compteurId;
+    const visibles = liste.current.filter((t) => !t.sortie);
+    if (visibles.length >= MAX_VISIBLES) fermer(visibles[0].id);
+    maj((l) => [...l, { id, type: genre, titre, message: texte, duree, compte: 1, version: 0, rappel: false, sortie: false }]);
+    programmer(id, duree);
+    return id;
+  }, [consigner, fermer, maj, programmer]);
 
-  const success = (msg) => addToast(msg, 'success');
-  const error = (msg) => addToast(msg, 'error');
-  const info = (msg) => addToast(msg, 'info');
+  const valeur = useMemo(() => ({
+    addToast,
+    fermer,
+    success: (message, options) => addToast(message, 'success', options),
+    error: (message, options) => addToast(message, 'error', options),
+    warning: (message, options) => addToast(message, 'warning', options),
+    info: (message, options) => addToast(message, 'info', options),
+  }), [addToast, fermer]);
 
   return (
-    <ToastContext.Provider value={{ addToast, success, error, info }}>
-      {children}
-      {/* Toast container */}
-      <div style={{ position: 'fixed', bottom: '1.5rem', right: '1.5rem', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: '400px' }}>
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.85rem 1.1rem',
-              background: toast.type === 'success' ? '#064e3b' : toast.type === 'error' ? '#881337' : '#1e293b',
-              color: '#fff',
-              borderRadius: '8px',
-              border: `1px solid ${toast.type === 'success' ? '#059669' : toast.type === 'error' ? '#e11d48' : '#475569'}`,
-              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
-              fontSize: '0.875rem',
-              animation: 'slideUp 0.2s ease-out',
-            }}
-          >
-            {toast.type === 'success' && <CheckCircle2 size={18} color="#34d399" />}
-            {toast.type === 'error' && <AlertCircle size={18} color="#fb7185" />}
-            {toast.type === 'info' && <Info size={18} color="#60a5fa" />}
-            <span style={{ flex: 1 }}>{toast.message}</span>
-            <button
-              onClick={() => removeToast(toast.id)}
-              style={{ background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+    <ToastContext.Provider value={valeur}>
+      <JournalContext.Provider value={journalValeur}>
+        {children}
+      </JournalContext.Provider>
+      <div className="notifications" role="region" aria-label="Notifications">
+        {liste.current.map((t) => {
+          const type = TYPES[t.type];
+          const Icone = type.icone;
+          return (
+            <div
+              key={t.id}
+              className={`notification ${type.classe}${t.sortie ? ' sortie' : ''}${t.rappel ? ' rappel' : ''}`}
+              role={type.role}
+              aria-live={type.role === 'alert' ? 'assertive' : 'polite'}
+              aria-atomic="true"
+              onMouseEnter={() => pause(t.id)}
+              onMouseLeave={() => reprise(t.id)}
+              onFocus={() => pause(t.id)}
+              onBlur={() => reprise(t.id)}
             >
-              <X size={14} />
-            </button>
-          </div>
-        ))}
+              <span className="notification-icone" aria-hidden="true"><Icone size={17} /></span>
+              <div className="notification-texte">
+                <div className="notification-titre">
+                  {t.titre}
+                  {t.compte > 1 && <span className="notification-compte" aria-label={`${t.compte} fois`}>×{t.compte}</span>}
+                </div>
+                <div className="notification-message">{t.message}</div>
+              </div>
+              <button type="button" className="notification-fermer" onClick={() => fermer(t.id)} aria-label="Fermer la notification">
+                <X size={15} />
+              </button>
+              {t.duree > 0 && !t.sortie && (
+                <span key={t.version} className="notification-duree" style={{ animationDuration: `${t.duree}ms` }} aria-hidden="true" />
+              )}
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
 };
 
 export const useToast = () => useContext(ToastContext);
+export const useJournalMessages = () => useContext(JournalContext);

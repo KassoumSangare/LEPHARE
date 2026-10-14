@@ -1439,6 +1439,10 @@ export const normalizeContrat = (bc) => {
     taux_commission: Number(bc.taux_commission || 0),
     statut_contrat: bc.statut_contrat || (bc.dateexpiration && new Date(bc.dateexpiration) < new Date() ? 'Expiré' : 'En cours'),
     statut_contrat_badge: bc.dateexpiration && new Date(bc.dateexpiration) < new Date() ? 'amber' : 'emerald',
+    // Statut du Portefeuille des Contrats calculé par le serveur (liste /api/contrat/ seulement)
+    statut_portefeuille: bc.statut_portefeuille || null,
+    // Mouvement de ce contrat (Affaire nouvelle, Renouvellement, Modification, Résiliation…)
+    mouvement: bc.idavenant && typeof bc.idavenant === 'object' ? (bc.idavenant.LibelleAvenant || '') : '',
     statut_encaissement: isSolde ? 'Soldé' : 'À Encaisser',
     statut_encaissement_badge: isSolde ? 'emerald' : 'rose',
     attestation_asaci: bc.attestation_asaci || 'Délivrée',
@@ -1474,6 +1478,14 @@ export const contractApi = {
     const list = extractData(res);
     return list.map(normalizeContrat);
   },
+  // GET /api/contrat/ paginé pour le Portefeuille des Contrats : une page de contrats et le total.
+  // Paramètres serveur : page, page_size, idproduit, statut, recherche, effet_du/au, echeance_du/au, ordre
+  getPortefeuille: async (params = {}) => {
+    const res = await apiClient.get('/contrat/', { params });
+    return { contrats: extractData(res).map(normalizeContrat), total: Number(res?.data?.count ?? 0) };
+  },
+  // GET /api/contrat/synthese/ : compteurs par produit et par statut pour la recherche et les périodes
+  getSynthesePortefeuille: async (params = {}) => (await apiClient.get('/contrat/synthese/', { params })).data,
   // GET /api/contrat/:id/
   // GET /api/contrat/:id/conditions-particulieres/ (mêmes données que pour un devis, tables du contrat)
   getConditionsParticulieres: async (id) => (await apiClient.get(`/contrat/${id}/conditions-particulieres/`)).data,

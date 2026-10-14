@@ -6,6 +6,7 @@ import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsP
 import { arrondirMontant, construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, ttcRetombe, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 import { estDevisSante, imprimerDocumentSante } from './impressionsSante';
+import { ouvrirApercuImpression } from './apercuImpression';
 import QRCode from 'qrcode';
 
 export const downloadBlob = (blob, filename) => {
@@ -335,7 +336,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   `;
 
   // 1. Open instant Print-to-PDF Window
-  const printWindow = window.open('', '_blank');
+  const printWindow = ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.open();
     printWindow.document.write(docHtml);
@@ -544,13 +545,13 @@ const buildFicheClient = ({ client: c = {}, synthese: s = {}, operations = [] },
 /**
  * Impression de la fiche client (personne physique ou morale) : une page A4, avec l'en-tête des
  * devis, les données réelles du client (/api/client/:id/fiche/) et sa synthèse commerciale.
- * Document d'information : aucune zone de signature ni de cachet. La fenêtre est ouverte dès
- * le clic pour ne pas être bloquée par le navigateur pendant l'appel API.
+ * Document d'information : aucune zone de signature ni de cachet. L'aperçu d'impression s'ouvre dès
+ * le clic (« Préparation… ») puis reçoit la fiche à la fin de l'appel API.
  */
 export const printFicheClient = async (client) => {
   const id = client?.IdClient || client?.id;
   if (!id) return;
-  const printWindow = window.open('', '_blank');
+  const printWindow = ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la fiche client…</p>');
   }
@@ -708,7 +709,7 @@ export const exportBordereauPdf = ({ filename, title, subtitle, metadata = {}, g
 </html>
   `;
 
-  const printWindow = window.open('', '_blank');
+  const printWindow = ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.open();
     printWindow.document.write(docHtml);
@@ -2080,9 +2081,9 @@ const buildAnnexeIa = (quote, donnees) => {
     </div>`;
 };
 
-// Ouvre la fenêtre tout de suite (sinon bloquée pendant l'appel API), puis la remplit
+// Ouvre l'aperçu d'impression tout de suite, puis le remplit à la fin de l'appel API
 const imprimerDocumentIa = async (quote, titre, construire) => {
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
   try {
     const donnees = await impressionIaApi.get(Number(quote.iddevis || quote.raw?.iddevis));
@@ -2237,7 +2238,7 @@ const buildBordereauTransport = (donnees) => {
 
 // filtres : { idimportation } (bordereau), { iddevis } ou { idcontrat } (contrat issu du bordereau)
 export const printBordereauTransport = async (filtres) => {
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du bordereau…</p>');
   try {
     const donnees = await transportApi.getCertificats(filtres);
@@ -2256,7 +2257,7 @@ export const estDevisTransport = (quote) => /transport|facult/i.test(String(quot
 
 export const printPropositionVoyage = async (quote, { fenetre: fenetreFournie = null } = {}) => {
   if (!quote) return;
-  const fenetre = fenetreFournie || window.open('', '_blank');
+  const fenetre = fenetreFournie || ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la proposition…</p>');
   try {
     const donnees = await impressionVoyageApi.get(quote.iddevis || quote.id);
@@ -2445,7 +2446,7 @@ export const buildCotationDommages = (quote, d) => {
 
 export const printCotationDommages = async (quote) => {
   if (!quote) return;
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la cotation…</p>');
   try {
     const donnees = await dommagesApi.lireDevis(quote.iddevis || quote.id);
@@ -2664,7 +2665,7 @@ export const buildDocumentDommages = (p, document) => {
 /** Pièce de production d'un contrat Dommages : 'facture' ou identifiant d'un document de la catégorie. */
 export const printPieceDommages = async (idContrat, piece = 'facture') => {
   if (!idContrat) return;
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
   try {
     const p = await dommagesApi.documentsContrat(idContrat);
@@ -3134,7 +3135,7 @@ export const printAttestationVoyage = async (objet, { devis = false, fenetre: fe
     ? (objet?.iddevis || objet?.raw?.iddevis || objet?.id)
     : (objet?.raw?.idcontrat || objet?.idcontrat || objet?.id);
   if (!id) return false;
-  const fenetre = fenetreFournie || window.open('', '_blank');
+  const fenetre = fenetreFournie || ouvrirApercuImpression();
   const message = (texte, couleur = '#0f172a') => {
     if (!fenetre) return;
     fenetre.document.open();
@@ -3173,7 +3174,7 @@ export const apercuAttestationVoyage = (doc) => {
     Nationalite: 'IVOIRIENNE', NumeroPasseport: '00AA00000', NumeroCertificat: 'APERÇU — NON VALABLE',
     DebutValidite: iso(jour), FinValidite: iso(fin), PaysDestination: 'FRANCE', ZoneCouverture: 'SCHENGEN', DateEmission: iso(jour),
   };
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   const modele = construireModeleAttestation(doc);
   qrAttestationVoyage(exemple, modele)
     .then((qr) => openPrintWindow('Aperçu attestation voyage', buildAttestationVoyage(exemple, modele, qr), fenetre));
@@ -3383,12 +3384,12 @@ const buildAnnexeFlotte = (quote, { quittance, vehicules, details, tauxReduction
     </div>`;
 };
 
-// Bouton « Imprimer Annexe » d'un devis flotte : la fenêtre s'ouvre dès le clic (sinon bloquée
-// pendant les appels API), puis reçoit l'annexe
+// Bouton « Imprimer Annexe » d'un devis flotte : l'aperçu d'impression s'ouvre dès le clic, puis
+// reçoit l'annexe à la fin des appels API
 export const printAnnexeFlotte = async (quote) => {
   const iddevis = Number(quote?.iddevis || quote?.raw?.iddevis);
   if (!iddevis) return;
-  const fenetre = window.open('', '_blank');
+  const fenetre = ouvrirApercuImpression();
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de l\'annexe…</p>');
   try {
     const donnees = await annexeFlotteApi.get(iddevis);
@@ -3463,8 +3464,8 @@ const buildRecuEncaissement = (info) => {
     <div class="rq">${exemplaire}<div class="rq-separateur"></div>${exemplaire}</div>`;
 };
 
-// Reçu d'une ligne d'encaissement. La fenêtre est ouverte par l'appelant au moment du clic
-// (ouverte après les appels API, elle serait bloquée par le navigateur).
+// Reçu d'une ligne d'encaissement. L'aperçu d'impression est ouvert par l'appelant au moment du clic
+// (« Enregistrement… » pendant les appels API).
 export const printRecuEncaissement = async (iddetailencaissement, fenetre = null) => {
   const erreur = (message) => {
     if (!fenetre) return;
@@ -3919,7 +3920,7 @@ const openPrintWindow = (title, bodyHtml, targetWindow = null) => {
 </html>
   `;
 
-  const printWindow = targetWindow || window.open('', '_blank');
+  const printWindow = targetWindow || ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.open();
     printWindow.document.write(docHtml);
@@ -3940,7 +3941,7 @@ export const printQuoteFacture = (quote) => {
   }
   // Devis Voyage : numéro d'attestation et adresses lus sur le devis (absents de la liste des devis)
   if (estDevisVoyage(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
-    const fenetre = window.open('', '_blank');
+    const fenetre = ouvrirApercuImpression();
     impressionVoyageApi.get(quote.iddevis || quote.id)
       .then(({ quittance: q, voyage }) => ({
         ...quote,
@@ -3959,7 +3960,7 @@ export const printQuoteFacture = (quote) => {
   }
   // Devis MRH : garanties souscrites, capitaux/franchises, adresse et date de naissance lus sur le devis
   if (estDevisMrh(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
-    const fenetre = window.open('', '_blank');
+    const fenetre = ouvrirApercuImpression();
     impressionMrhApi.get(quote.iddevis || quote.id)
       .then(({ quittance: q, garanties, resume }) => ({
         ...quote,
@@ -4034,9 +4035,8 @@ export const printContratConditionsParticulieres = (contract) => {
 
 /**
  * Conditions Particulières (modèle NSIA/OREOLE) : récupère les données réelles
- * du devis puis ouvre la fenêtre d'impression (« Enregistrer au format PDF »).
- * La fenêtre est ouverte immédiatement au clic pour ne pas être bloquée par le
- * navigateur pendant l'appel API.
+ * du devis puis les affiche dans l'aperçu d'impression (« Enregistrer au format PDF »).
+ * L'aperçu est ouvert immédiatement au clic et rempli à la fin de l'appel API.
  */
 export const printConditionsParticulieres = async (quote, { contrat = false } = {}) => {
   if (!quote) return;
@@ -4046,7 +4046,7 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
   if (estDevisVoyage(quote)) {
     await printAttestationVoyage(
       contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : quote,
-      { devis: !contrat, fenetre: window.open('', '_blank') },
+      { devis: !contrat, fenetre: ouvrirApercuImpression() },
     );
     return;
   }
@@ -4065,11 +4065,11 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
   // autre offre Santé : modèle générique ci-dessous, dans la même fenêtre
   let fenetreSante = null;
   if (!fenetreSante && estDevisSante(quote)) {
-    fenetreSante = window.open('', '_blank');
+    fenetreSante = ouvrirApercuImpression();
     const ids = contrat ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id } : { iddevis: quote.iddevis || quote.id };
     if (await imprimerDocumentSante('cp', ids, fenetreSante)) return;
   }
-  const printWindow = fenetreSante || window.open('', '_blank');
+  const printWindow = fenetreSante || ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.write('<p style="font-family:Arial;padding:20px;">Préparation des Conditions Particulières…</p>');
   }
@@ -4542,7 +4542,7 @@ export const printEtatDecisionnelDocument = ({
 </html>
   `;
 
-  const printWindow = window.open('', '_blank');
+  const printWindow = ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.open();
     printWindow.document.write(docHtml);

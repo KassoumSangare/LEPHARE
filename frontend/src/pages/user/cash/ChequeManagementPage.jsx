@@ -7,6 +7,8 @@ import { cashApi, customerApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
 import { printRecuEncaissement } from '../../../utils/exportUtils';
+import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
+import { confirmer } from '../../../utils/dialogue';
 import { AmountInput } from '../../../components/common/AmountInput';
 import {
   ChampsReglement,
@@ -206,8 +208,12 @@ export const ChequeManagementPage = () => {
   };
 
   const retirerCheque = async (cheque) => {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Retirer le chèque n° ${cheque.numero_cheque} de l'échéancier ?`)) return;
+    if (!(await confirmer({
+      ton: 'danger',
+      titre: `Retirer le chèque n° ${cheque.numero_cheque} ?`,
+      message: "Le chèque sera retiré de l'échéancier des encaissements.",
+      confirmer: 'Retirer le chèque',
+    }))) return;
     try {
       await cashApi.supprimerCheque(cheque.id);
       success(`Chèque n° ${cheque.numero_cheque} retiré de l'échéancier.`);
@@ -276,8 +282,8 @@ export const ChequeManagementPage = () => {
       toastError('Indiquez le montant réencaissé sur au moins une quittance.');
       return;
     }
-    // Fenêtre du reçu ouverte au clic : ouverte après les appels API, le navigateur la bloquerait
-    const fenetre = window.open('', '_blank');
+    // Aperçu du reçu ouvert au clic, rempli une fois le réencaissement enregistré
+    const fenetre = ouvrirApercuImpression();
     if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Enregistrement du réencaissement…</p>');
     setEnvoi(true);
     try {

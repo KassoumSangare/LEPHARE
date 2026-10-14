@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import { UserCog, Plus, Save, Loader2, RotateCcw, Copy, Trash2, AlertTriangle, Users } from 'lucide-react';
 import { EnTeteParametrage, SectionParametrage } from '../../../components/admin/EnTeteParametrage';
 import { securiteApi } from '../../../api/endpoints';
@@ -88,7 +89,12 @@ export const ProfileManagementPage = () => {
   };
 
   const supprimer = async () => {
-    if (!window.confirm(`Supprimer le rôle « ${saisie.libelle} » ?`)) return;
+    if (!(await confirmer({
+      ton: 'danger',
+      titre: `Supprimer le rôle « ${saisie.libelle} » ?`,
+      message: "Le rôle et les droits qu'il regroupe seront supprimés.",
+      confirmer: 'Supprimer le rôle',
+    }))) return;
     try {
       await securiteApi.supprimerRole(saisie.id);
       success('Rôle supprimé.');

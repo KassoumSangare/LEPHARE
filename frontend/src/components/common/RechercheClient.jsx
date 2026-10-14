@@ -9,8 +9,6 @@ const jour = (v) => (v ? String(v).slice(0, 10) : '');
 const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
 
 const stylesChamp = {
-  aide: { fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.3rem' },
-  erreur: { fontSize: '0.75rem', color: 'var(--accent-rose)', marginTop: '0.3rem', fontWeight: 600 },
   listeDeroulante: {
     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: 'var(--bg-surface-elevated)',
     border: '1px solid var(--border-medium)', borderRadius: '8px', maxHeight: '240px', overflowY: 'auto',
@@ -35,10 +33,14 @@ export const personneDepuisClient = (c) => {
 };
 
 export const Champ = ({ label, requis, aide, erreur, children, large }) => (
-  <div className="form-group" style={{ margin: 0, ...(large ? { gridColumn: '1 / -1' } : {}) }}>
-    <label className="form-label">{label}{requis && <span style={{ color: 'var(--accent-rose)' }}> *</span>}</label>
+  <div className={`form-group${erreur ? ' champ-en-erreur' : ''}`} style={{ margin: 0, ...(large ? { gridColumn: '1 / -1' } : {}) }}>
+    <label className="form-label">
+      {label}
+      {requis && <span style={{ color: 'var(--accent-rose)' }} aria-hidden="true"> *</span>}
+      {requis && <span className="visuellement-cache"> (obligatoire)</span>}
+    </label>
     {children}
-    {erreur ? <div style={stylesChamp.erreur}>{erreur}</div> : aide ? <div style={stylesChamp.aide}>{aide}</div> : null}
+    {erreur ? <div className="champ-message erreur" role="alert">{erreur}</div> : aide ? <div className="champ-message aide">{aide}</div> : null}
   </div>
 );
 

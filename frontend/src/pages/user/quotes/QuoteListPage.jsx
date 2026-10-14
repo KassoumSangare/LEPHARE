@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { isRegistryQuote } from '../../../utils/quoteRegistry';
@@ -103,7 +104,12 @@ export const QuoteListPage = () => {
       .catch((e) => console.warn('Chargement des brouillons impossible', e));
   }, []);
   const supprimerBrouillon = async (brouillon) => {
-    if (!window.confirm(`Supprimer définitivement le brouillon « ${brouillon.libelle || brouillon.id} » ?`)) return;
+    if (!(await confirmer({
+      ton: 'danger',
+      titre: `Supprimer le brouillon « ${brouillon.libelle || brouillon.id} » ?`,
+      message: 'Le brouillon et sa saisie seront supprimés définitivement.',
+      confirmer: 'Supprimer le brouillon',
+    }))) return;
     try {
       await brouillonApi.remove(brouillon.id);
       setBrouillons((prev) => prev.filter((b) => b.id !== brouillon.id));

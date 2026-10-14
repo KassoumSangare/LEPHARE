@@ -1068,56 +1068,31 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         with connection.cursor() as cursor:
             return Response(donnees_releve_compte(cursor, contrat.pk), status=status.HTTP_200_OK)
 
-    def get_queryset(self):
-        from django.utils import timezone
-        from datetime import timedelta
+    # Portefeuille des Contrats : statut de chaque contrat, une seule définition pour les badges,
+    # les onglets et leurs compteurs (_statut_portefeuille). Par ordre de priorité :
+    #   annule        annulé par un avenant d'annulation (IdContratAnnulation, règle URANUS)
+    #   resilie       mouvement de résiliation (avenant RES)
+    #   renouvele     un renouvellement (avenant REN) plus récent existe sur la même police
+    #   echu          échéance passée
+    #   a_renouveler  échéance dans les DELAI_RENOUVELLEMENT_JOURS jours
+    #   en_cours      autres contrats
+    STATUTS_PORTEFEUILLE = ("en_cours", "a_renouveler", "echu", "renouvele", "resilie", "annule")
+    DELAI_RENOUVELLEMENT_JOURS = 30
+    # Tri du portefeuille (?ordre=effet, ?ordre=-prime…), le dernier contrat émis départageant
+    ORDRES_PORTEFEUILLE = {
+        "police": "numeropolice",
+        "client": "idclient__Nom",
+        "produit": "idproduit__libelle_produit",
+        "compagnie": "idcompagnie__RaisonSociale",
+        "effet": "dateeffet",
+        "echeance": "dateexpiration",
+        "emission": "dateemission",
+        "prime": "primettc",
+    }
 
-        # Statut du contrat (Portefeuille des Contrats : onglets « En cours »,
-        # « À Renouveler / Échues », « Résiliées »). Par défaut (aucun statut
-        # demandé), on garde le comportement historique : contrats non résiliés,
-        # quelle que soit leur échéance.
-        statut = self.request.query_params.get("statut")
-        if statut == "resilie":
-            # Les résiliés/annulés sont exclus du queryset de base : on repart
-            # d'une requête neuve plutôt que d'essayer de retirer ce filtre.
-            queryset = Contrat.objects.prefetch_related("piece_jointe").filter(
-                ~Q(idcontratannulation=0)
-            )
-        else:
-            queryset = super().get_queryset()
-            if statut in ("actif", "echeance"):
-                seuil = timezone.now() + timedelta(days=30)
-                if statut == "echeance":
-                    queryset = queryset.filter(dateexpiration__lte=seuil)
-                else:
-                    queryset = queryset.filter(
-                        Q(dateexpiration__isnull=True) | Q(dateexpiration__gt=seuil)
-                    )
-
-        if self.request.query_params.get("a_encaisser") in ("1", "true"):
-            # Caisse : même règle que fn_liste_contrat_encaissement (URANUS), la quittance du
-            # contrat n'est pas soldée. Sans fenêtre de 3 ans : un devis ancien confirmé
-            # aujourd'hui garde sa date d'émission. Derniers contrats confirmés en tête, sinon
-            # ils sortent des 200 lignes de la page.
-            from django.db.models import Value
-            from django.db.models.functions import Coalesce
-
-            queryset = queryset.annotate(
-                solde_quittance=F("idquittance__primettc")
-                - Coalesce(F("idquittance__mt_encaisse"), Value(Decimal(0)))
-            ).filter(
-                idquittance__police=F("numeropolice"), solde_quittance__gt=0
-            ).order_by("-idcontrat")
-        elif self.action == "list":
-            # Portefeuille des Contrats : seuls les contrats émis durant les 3 dernières
-            # années sont listés (même fenêtre que le Registre des Devis). Un contrat plus ancien
-            # reste consultable et imprimable par son identifiant (fiche contrat, dossier client).
-            three_years_ago = timezone.now() - timedelta(days=365 * 3)
-            queryset = queryset.filter(dateemission__gte=three_years_ago)
-
-        # Filtre par produit (Portefeuille des Contrats : onglets par branche).
-        # Le paramètre idproduit peut être un identifiant unique ou une liste
-        # séparée par des virgules (ex. "4,7,9" pour MRH/MRP/Tous Dommages).
+    def _filtre_produit(self, queryset):
+        # Onglets par branche : un identifiant ou une liste séparée par des virgules
+        # (ex. "4,7,9" pour MRH/MRP/Tous Dommages)
         idproduit = self.request.query_params.get("idproduit")
         if idproduit:
             if "," in str(idproduit):
@@ -1125,10 +1100,111 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset = queryset.filter(idproduit_id__in=ids)
             elif str(idproduit).isdigit():
                 queryset = queryset.filter(idproduit_id=int(idproduit))
+        return queryset
 
-        # Derniers contrats émis en tête : la liste est limitée à 200 lignes, sans ordre la base
-        # renvoyait 200 contrats quelconques et un contrat tout juste émis n'y figurait pas
-        queryset = queryset.order_by("-idcontrat")
+    def _filtres_portefeuille(self, queryset):
+        """Recherche et périodes du portefeuille (paramètres communs à la liste et à synthese/)."""
+        from datetime import date, timedelta
+
+        params = self.request.query_params
+        recherche = (params.get("recherche") or "").strip()
+        if recherche:
+            # Chaque mot se retrouve dans le n° de police, le client, le produit ou la compagnie.
+            # Une recherche porte sur tout l'historique : un contrat ancien se retrouve par son numéro.
+            for mot in recherche.split()[:6]:
+                queryset = queryset.filter(
+                    Q(numeropolice__icontains=mot)
+                    | Q(id_police_pegas__icontains=mot)
+                    | Q(idclient__Nom__icontains=mot)
+                    | Q(idclient__Prenoms__icontains=mot)
+                    | Q(idproduit__libelle_produit__icontains=mot)
+                    | Q(idcompagnie__RaisonSociale__icontains=mot)
+                )
+        else:
+            # Sans recherche : contrats émis durant les 3 dernières années (même fenêtre que le
+            # Registre des Devis) ; un contrat plus ancien reste consultable par son identifiant
+            queryset = queryset.filter(dateemission__gte=timezone.now() - timedelta(days=365 * 3))
+        for champ, parametre, operateur in (
+            ("dateeffet", "effet_du", "gte"),
+            ("dateeffet", "effet_au", "lte"),
+            ("dateexpiration", "echeance_du", "gte"),
+            ("dateexpiration", "echeance_au", "lte"),
+        ):
+            try:
+                jour = date.fromisoformat(str(params.get(parametre) or "")[:10])
+            except ValueError:
+                continue
+            queryset = queryset.filter(**{f"{champ}__date__{operateur}": jour})
+        return queryset
+
+    def _statut_portefeuille(self, queryset):
+        from datetime import timedelta
+
+        from django.db.models import Case, CharField, Exists, OuterRef, Value, When
+
+        aujourdhui = timezone.localdate()
+        renouvellement_posterieur = Contrat.objects.filter(
+            numeropolice=OuterRef("numeropolice"),
+            idcontratannulation=0,
+            idavenant__CodeAvenant="REN",
+            dateeffet__gt=OuterRef("dateeffet"),
+        )
+        return queryset.annotate(
+            statut_portefeuille=Case(
+                When(~Q(idcontratannulation=0), then=Value("annule")),
+                When(idavenant__CodeAvenant="RES", then=Value("resilie")),
+                When(Exists(renouvellement_posterieur), then=Value("renouvele")),
+                When(dateexpiration__date__lt=aujourdhui, then=Value("echu")),
+                When(
+                    dateexpiration__date__lte=aujourdhui + timedelta(days=self.DELAI_RENOUVELLEMENT_JOURS),
+                    then=Value("a_renouveler"),
+                ),
+                default=Value("en_cours"),
+                output_field=CharField(),
+            )
+        )
+
+    def get_queryset(self):
+        params = self.request.query_params
+
+        if params.get("a_encaisser") in ("1", "true"):
+            # Caisse : même règle que fn_liste_contrat_encaissement (URANUS), la quittance du
+            # contrat n'est pas soldée. Sans fenêtre de 3 ans : un devis ancien confirmé
+            # aujourd'hui garde sa date d'émission. Derniers contrats confirmés en tête, sinon
+            # ils sortent des 200 lignes de la page.
+            from django.db.models import Value
+            from django.db.models.functions import Coalesce
+
+            queryset = super().get_queryset().annotate(
+                solde_quittance=F("idquittance__primettc")
+                - Coalesce(F("idquittance__mt_encaisse"), Value(Decimal(0)))
+            ).filter(
+                idquittance__police=F("numeropolice"), solde_quittance__gt=0
+            )
+            queryset = self._filtre_produit(queryset).order_by("-idcontrat")
+        elif self.action != "list":
+            # Fiche, impressions et actions d'un contrat : sans fenêtre de 3 ans
+            queryset = self._filtre_produit(super().get_queryset()).order_by("-idcontrat")
+        else:
+            # Portefeuille des Contrats. Sans statut demandé : contrats non annulés (comportement
+            # historique) ; ?statut=annule liste les contrats annulés.
+            statut = params.get("statut")
+            queryset = Contrat.objects.prefetch_related("piece_jointe")
+            if statut != "annule":
+                queryset = queryset.filter(idcontratannulation=0)
+            queryset = self._statut_portefeuille(
+                self._filtres_portefeuille(self._filtre_produit(queryset))
+            )
+            if statut in self.STATUTS_PORTEFEUILLE:
+                queryset = queryset.filter(statut_portefeuille=statut)
+            # Derniers contrats émis en tête par défaut : sans ordre, la base renvoyait 200 contrats
+            # quelconques et un contrat tout juste émis n'y figurait pas
+            ordre = params.get("ordre") or ""
+            champ = self.ORDRES_PORTEFEUILLE.get(ordre.lstrip("-"))
+            if champ:
+                queryset = queryset.order_by(f"{'-' if ordre.startswith('-') else ''}{champ}", "-idcontrat")
+            else:
+                queryset = queryset.order_by("-idcontrat")
 
         # Relations sérialisées (depth=1) et offre boisée chargées dans la même requête :
         # évite 8 à 10 requêtes par contrat sur les listes de 200 lignes
@@ -1136,6 +1212,28 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             "iddevis", "idcompagnie", "idintermediaire", "idproduit",
             "idclient", "idavenant", "idquittance", "piece_jointe",
         ).annotate(offreboisee_annotee=OffreAutomobileBoisee(F("iddevis__offre__IdOffre")))
+
+    @action(detail=False, methods=["get"])
+    def synthese(self, request):
+        """
+        GET /api/contrat/synthese/ : compteurs du Portefeuille des Contrats pour la recherche et les
+        périodes en cours, en une requête — contrats non annulés par produit (onglets de branche) et
+        contrats par statut pour les produits demandés (?idproduit=, onglets de statut).
+        """
+        from django.db.models import Count
+
+        queryset = self._filtres_portefeuille(Contrat.objects.all())
+        par_produit = {
+            str(ligne["idproduit_id"]): ligne["n"]
+            for ligne in queryset.filter(idcontratannulation=0)
+            .values("idproduit_id").annotate(n=Count("pk")).order_by()
+        }
+        par_statut = {
+            ligne["statut_portefeuille"]: ligne["n"]
+            for ligne in self._statut_portefeuille(self._filtre_produit(queryset))
+            .values("statut_portefeuille").annotate(n=Count("pk")).order_by()
+        }
+        return Response({"par_produit": par_produit, "par_statut": par_statut}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):

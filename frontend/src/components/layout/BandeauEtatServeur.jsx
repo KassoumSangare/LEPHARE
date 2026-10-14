@@ -68,6 +68,7 @@ export const BandeauEtatServeur = () => {
   return (
     <div
       role="alert"
+      className="bandeau-anime"
       style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px',
         background: 'var(--bg-surface-elevated)', borderBottom: `2px solid ${couleur}`,

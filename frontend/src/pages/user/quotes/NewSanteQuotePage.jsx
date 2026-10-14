@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { confirmer } from '../../../utils/dialogue';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { quoteApi, customerApi, settingsApi, contractApi, santeApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -452,9 +453,13 @@ export const NewSanteQuotePage = () => {
     success(res.message || 'Collège enregistré.');
   }, 'Collège non enregistré');
 
-  const supprimer = (type, idObjet, libelle) => {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Retirer ${libelle} de la saisie ?`)) return;
+  const supprimer = async (type, idObjet, libelle) => {
+    if (!(await confirmer({
+      ton: 'attention',
+      titre: `Retirer ${libelle} ?`,
+      message: 'Cet élément sera retiré de la saisie de ce devis.',
+      confirmer: 'Retirer',
+    }))) return;
     executer(async () => {
       const res = await santeApi.supprimer({ type, id_devis: idDevis, id_objet: idObjet });
       await recharger();

@@ -601,6 +601,8 @@ class ContratSerializer(serializers.ModelSerializer):
         source="piece_jointe", read_only=True
     )
     duree_terme_jours = serializers.ReadOnlyField()
+    # Statut du Portefeuille des Contrats (ContratViewSet._statut_portefeuille), sur la liste seulement
+    statut_portefeuille = serializers.SerializerMethodField()
 
     class Meta:
         model = Contrat
@@ -611,6 +613,9 @@ class ContratSerializer(serializers.ModelSerializer):
             "piece_jointe_info",
             "duree_terme_jours",
         ]
+
+    def get_statut_portefeuille(self, obj):
+        return getattr(obj, "statut_portefeuille", None)
 
     def get_offreboisee(self, obj):
         # Valeur précalculée par ContratViewSet.get_queryset (une seule requête pour la liste)

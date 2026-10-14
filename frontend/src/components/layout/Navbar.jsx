@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Shield, LogOut, Bell, Compass, Settings, Menu, Sun, Moon, KeyRound } from 'lucide-react';
+import { Shield, LogOut, Compass, Settings, Menu, Sun, Moon, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cashApi } from '../../api/endpoints';
 import { ChangementMotDePasse } from '../securite/ChangementMotDePasse';
 import { premierEcranAdmin } from './adminMenu';
+import { ClocheNotifications } from './ClocheNotifications';
 
 export const Navbar = ({ onToggleMobileSidebar }) => {
   const { user, activeSpace, switchSpace, logout, accesAdministration, peut } = useAuth();
@@ -188,51 +189,8 @@ export const Navbar = ({ onToggleMobileSidebar }) => {
           )}
         </button>
 
-        {/* Cloche : chèques de l'échéancier à déposer (alerte un mois avant, rappel 15 jours après) */}
-        {voitCaisse && <button
-          type="button"
-          onClick={() => navigate('/user/cheques')}
-          title={alertesCheques > 0
-            ? `${alertesCheques} chèque${alertesCheques > 1 ? 's' : ''} à déposer (échéancier)`
-            : 'Aucun chèque à déposer'}
-          style={{
-            position: 'relative',
-            background: 'var(--bg-surface-elevated)',
-            border: '1px solid var(--border-subtle)',
-            color: 'var(--text-secondary)',
-            width: '32px',
-            height: '32px',
-            borderRadius: '9999px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          <Bell size={15} />
-          {alertesCheques > 0 && (
-            <span
-              style={{
-                position: 'absolute',
-                top: '-4px',
-                right: '-4px',
-                minWidth: '16px',
-                height: '16px',
-                padding: '0 4px',
-                borderRadius: '9999px',
-                background: '#f43f5e',
-                color: '#fff',
-                fontSize: '0.62rem',
-                fontWeight: 700,
-                lineHeight: '16px',
-                textAlign: 'center',
-              }}
-            >
-              {alertesCheques}
-            </span>
-          )}
-        </button>}
+        {/* Cloche : messages de la session (chaque notification l'incrémente) et chèques à déposer */}
+        <ClocheNotifications alertesCheques={alertesCheques} voitCaisse={voitCaisse} />
 
         {/* User Card */}
         <div

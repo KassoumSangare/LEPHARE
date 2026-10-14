@@ -9,6 +9,7 @@
    ========================================================================= */
 import { impressionSanteApi } from '../api/endpoints';
 import { formuleSante, logoCabinetEntete, logoCabinetPied, parametre, reglagesMinene } from './parametrage';
+import { ouvrirApercuImpression } from './apercuImpression';
 
 const TARIFS_MINENE = [87, 102, 153];
 
@@ -78,9 +79,11 @@ const charger = async (ids) => {
 };
 
 const STYLES = `
-  @page { size: A4; margin: 10mm 14mm 8mm; }
+  @page { size: A4 portrait; margin: 10mm 14mm 8mm; }
   * { box-sizing: border-box; }
-  body { font-family: 'Arial Narrow', Arial, sans-serif; font-size: 9.5pt; color: #111; margin: 0; }
+  /* Fenêtre d'impression calée sur la largeur utile d'une page A4 portrait (210 mm moins les marges) :
+     sans ça, le document s'étire sur toute la largeur de l'écran et paraît en paysage */
+  body { font-family: 'Arial Narrow', Arial, sans-serif; font-size: 9.5pt; color: #111; margin: 0 auto; max-width: 182mm; }
   /* Chaque section est un tableau : l'en-tête (logo) et l'espace du pied se répètent sur chaque page
      imprimée, le pied (mentions légales) est fixé en bas de chaque page */
   .feuille { width: 100%; border-collapse: collapse; page-break-after: always; }
@@ -88,7 +91,7 @@ const STYLES = `
   .feuille > thead td, .feuille > tfoot td, .feuille > tbody > tr > td { padding: 0; border: none; }
   .logo { height: 46px; margin-bottom: 12px; }
   .espace-pied { height: 17mm; }
-  .pied { position: fixed; bottom: 0; left: 0; right: 0; display: flex; gap: 10px; align-items: center; font-size: 6.2pt; color: #333; }
+  .pied { position: fixed; bottom: 0; left: 0; right: 0; max-width: 182mm; margin: 0 auto; display: flex; gap: 10px; align-items: center; font-size: 6.2pt; color: #333; }
   .pied img { height: 24px; }
   .bandeau { background: #2a7dd1; color: #fff; text-align: center; font-weight: 700; font-size: 11pt; padding: 3px 0; }
   .titre-bareme { background: #dbeafe; text-align: center; font-weight: 700; font-size: 12pt; padding: 4px 0; margin-bottom: 14px; }
@@ -322,11 +325,11 @@ const DOCUMENTS = {
 
 /**
  * Imprime un document Santé MINENE d'un devis ({ iddevis }) ou d'un contrat ({ idcontrat }).
- * La fenêtre est ouverte au clic (sinon bloquée pendant l'appel API). Renvoie false si le devis
+ * L'aperçu d'impression est ouvert au clic et rempli à la fin de l'appel API. Renvoie false si le devis
  * n'est pas un devis MINENE et que le document lui est réservé (CP, barème) : l'appelant imprime alors
- * son document générique dans la fenêtre fournie.
+ * son document générique dans l'aperçu fourni.
  */
-export const imprimerDocumentSante = async (type, ids, fenetre = window.open('', '_blank')) => {
+export const imprimerDocumentSante = async (type, ids, fenetre = ouvrirApercuImpression()) => {
   const doc = DOCUMENTS[type];
   if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
   try {

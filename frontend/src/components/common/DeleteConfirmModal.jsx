@@ -16,8 +16,6 @@ export const DeleteConfirmModal = ({
   confirmLabel = "Archiver l'enregistrement",
   isSubmitting = false,
 }) => {
-  if (!isOpen) return null;
-
   const isBlocked = !validation.allowed;
 
   return (

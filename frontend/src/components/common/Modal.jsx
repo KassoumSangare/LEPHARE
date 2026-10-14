@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { X } from 'lucide-react';
 import { nomCabinet } from '../../utils/parametrage';
@@ -6,8 +6,42 @@ import { nomCabinet } from '../../utils/parametrage';
 // Largeurs associées à la prop `size` (utilisée par de nombreux écrans) ; `maxWidth` reste prioritaire
 const SIZE_WIDTHS = { small: '480px', medium: '720px', large: '960px' };
 
+// Durée de l'animation de fermeture (index.css : .modal-sortie)
+const DUREE_FERMETURE = 150;
+
 export const Modal = ({ isOpen, onClose, title, subtitle, children, size, maxWidth }) => {
   const width = maxWidth || SIZE_WIDTHS[size] || '620px';
+  const idTitre = useId();
+  const contenuRef = useRef(null);
+
+  // Fermeture animée : la fenêtre reste affichée DUREE_FERMETURE ms avec le dernier contenu affiché
+  // ouvert (les écrans vident souvent leurs données à la fermeture : le contenu figé évite de
+  // l'afficher sans données). Décidé pendant le rendu pour ne pas démonter puis remonter le contenu.
+  const [ouvertPrecedent, setOuvertPrecedent] = useState(isOpen);
+  const [fermeture, setFermeture] = useState(false);
+  if (ouvertPrecedent !== isOpen) {
+    setOuvertPrecedent(isOpen);
+    setFermeture(!isOpen);
+  }
+  useEffect(() => {
+    if (!fermeture) return undefined;
+    const minuterie = setTimeout(() => setFermeture(false), DUREE_FERMETURE);
+    return () => clearTimeout(minuterie);
+  }, [fermeture]);
+  const instantane = useRef(null);
+  if (isOpen) instantane.current = { title, subtitle, children };
+  const affiche = isOpen ? { title, subtitle, children } : (instantane.current || {});
+
+  // Focus : posé dans la fenêtre à l'ouverture (sauf si un champ l'a déjà pris), rendu ensuite
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const avant = document.activeElement;
+    const contenu = contenuRef.current;
+    if (contenu && !contenu.contains(document.activeElement)) contenu.focus({ preventScroll: true });
+    return () => {
+      if (avant && typeof avant.focus === 'function' && document.contains(avant)) avant.focus({ preventScroll: true });
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -25,13 +59,18 @@ export const Modal = ({ isOpen, onClose, title, subtitle, children, size, maxWid
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !fermeture) return null;
 
   const modalElement = (
-    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+    <div className={`modal-backdrop${isOpen ? '' : ' modal-sortie'}`} onClick={isOpen ? onClose : undefined}>
       <div
+        ref={contenuRef}
         className="modal-content"
-        style={{ maxWidth: width }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={idTitre}
+        tabIndex={-1}
+        style={{ maxWidth: width, outline: 'none' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Official CIMA / Institutional Print Header */}
@@ -51,46 +90,27 @@ export const Modal = ({ isOpen, onClose, title, subtitle, children, size, maxWid
         {/* Modal Header */}
         <div className="modal-header">
           <div>
-            <h3 className="modal-title" style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              {title}
+            <h3 id={idTitre} className="modal-title" style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+              {affiche.title}
             </h3>
-            {subtitle && (
+            {affiche.subtitle && (
               <p className="modal-subtitle" style={{ fontSize: '0.825rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0' }}>
-                {subtitle}
+                {affiche.subtitle}
               </p>
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Fermer"
             className="modal-close-btn no-print"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '0.4rem',
-              borderRadius: '8px',
-              transition: 'all 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--text-primary)';
-              e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--text-muted)';
-              e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
-            }}
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">{affiche.children}</div>
 
         {/* Official CIMA / Institutional Print Footer */}
         <div className="modal-print-footer print-only">
