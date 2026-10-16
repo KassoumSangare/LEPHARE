@@ -70,11 +70,14 @@ from .exceltopostgresql import (
     map_columns,
     max_file_size,
 )
+from configuration_api.parametrage import valeur_parametre
 from .models import CertificatTransport, HistoriqueImportationCertificat
 from rapidfuzz import fuzz
 
 TABLE_CERTIFICATS = "stdcertificattransport"
-ACCESSOIRE_CLIENT_PAR_CERTIFICAT = Decimal("500")  # part AFS-CI, règle de sp_generation_devis_transport_client
+# Part AFS-CI par certificat (règle de sp_generation_devis_transport_client) quand le fichier ne la donne pas :
+# réglage « transport.part_afs_ci » (Administration > Le cabinet & règles de gestion), 500 F à l'origine
+ACCESSOIRE_CLIENT_PAR_CERTIFICAT = Decimal("500")
 COLONNES_MONTANTS = ["valeurassurance", "primenette", "accessoire", "taxe", "primettc", "accessoireafsci"]
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 
@@ -154,9 +157,18 @@ def _premiere_ligne(valeur):
     return _texte(valeur).split("\n")[0].split(" / ")[0].strip()
 
 
+def part_afs_ci():
+    """Part AFS-CI d'un certificat : réglage transport.part_afs_ci (500 F à l'origine)."""
+    try:
+        return Decimal(str(valeur_parametre("transport.part_afs_ci", ACCESSOIRE_CLIENT_PAR_CERTIFICAT)))
+    except Exception:  # noqa: BLE001 — réglage illisible
+        return ACCESSOIRE_CLIENT_PAR_CERTIFICAT
+
+
 def accessoire_client(accessoire):
-    """500 F par certificat dont l'accessoire atteint 500 F (CASE WHEN accessoire < 500 THEN 0 ELSE 500)."""
-    return ACCESSOIRE_CLIENT_PAR_CERTIFICAT if Decimal(str(_nombre(accessoire))) >= ACCESSOIRE_CLIENT_PAR_CERTIFICAT else Decimal("0")
+    """Part AFS-CI par certificat dont l'accessoire l'atteint (CASE WHEN accessoire < part THEN 0 ELSE part)."""
+    part = part_afs_ci()
+    return part if Decimal(str(_nombre(accessoire))) >= part else Decimal("0")
 
 
 # ------------------------------------------------------------------ période
@@ -847,7 +859,7 @@ def liste_bordereaux(request):
                    h.succes, u.name, u.email,
                    COUNT(t.idcertificat), COALESCE(SUM(t.valeurassurance), 0), COALESCE(SUM(t.primenette), 0),
                    COALESCE(SUM(t.accessoire), 0), COALESCE(SUM(t.taxe), 0), COALESCE(SUM(t.primettc), 0),
-                   COALESCE(SUM(CASE WHEN t.accessoire < 500 THEN 0 ELSE 500 END), 0),
+                   COALESCE(SUM(CASE WHEN t.accessoire < %(part)s THEN 0 ELSE %(part)s END), 0),
                    STRING_AGG(DISTINCT TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')), ', '),
                    STRING_AGG(DISTINCT TRIM(SPLIT_PART(REPLACE(t.nomsouscripteur, CHR(13), ''), CHR(10), 1)), ', ')
             FROM stdhistoriqueimportationcertificat h
@@ -856,7 +868,8 @@ def liste_bordereaux(request):
             LEFT JOIN stdclient cl ON cl.idclient = t.idclienturanus
             GROUP BY h.idimportation, u.name, u.email
             ORDER BY h.datedebutperiode DESC
-            """
+            """,
+            {"part": part_afs_ci()},
         )
         lignes = cursor.fetchall()
     resultat = []

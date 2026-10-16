@@ -12,7 +12,7 @@ import {
   Plane, Globe, Users, ShieldCheck, FileCheck, CheckCircle2, ChevronLeft, ChevronRight,
   AlertTriangle, Loader2, CalendarDays, MapPin,
 } from 'lucide-react';
-import { arrondirMontant } from '../../../utils/parametrage';
+import { arrondirMontant, parametre } from '../../../utils/parametrage';
 
 // Parcours de production Voyage d'URANUS (Contrat, Offre, Souscripteur/Assuré), réorganisé en étapes.
 // Listes, offres, garanties et primes viennent de la base : tarifvoyage, payszone, offrevoyage,
@@ -20,7 +20,9 @@ import { arrondirMontant } from '../../../utils/parametrage';
 // (POST /api/devisvoyage/enregistrement/). Un devis Voyage couvre un seul voyageur.
 const ID_PRODUIT_VOYAGE = 3;
 const ID_COMPAGNIE_PAR_DEFAUT = 21; // AMSA ASSURANCES, compagnie proposée par URANUS
-const REDUCTION_MAX = 35;
+// Réduction maximale : Administration > Le cabinet & règles de gestion (voyage.taux_reduction_max, contrôlée aussi
+// par le serveur ; 35 % à l'origine)
+const reductionMax = () => parametre('voyage.taux_reduction_max', 35);
 
 const ETAPES = [
   { num: 1, libelle: 'Assuré', icone: Users },
@@ -381,7 +383,7 @@ export const NewVoyageQuotePage = () => {
     }
     if (n === 3) {
       if (!offre) e.offre = 'Aucune offre pour cette formule et cette destination.';
-      if (Number(reduction) < 0 || Number(reduction) > REDUCTION_MAX) e.reduction = `Réduction comprise entre 0 et ${REDUCTION_MAX} %.`;
+      if (Number(reduction) < 0 || Number(reduction) > reductionMax()) e.reduction = `Réduction comprise entre 0 et ${reductionMax()} %.`;
       if (calculEnCours) e.prime = 'Calcul de la prime en cours…';
       else if (calcul?.erreur) e.prime = `Prime non calculée : ${calcul.erreur}`;
       else if (!montants || montants.primeNette <= 0) {
@@ -740,9 +742,9 @@ export const NewVoyageQuotePage = () => {
                     {offres.map((o) => <option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>)}
                   </select>
                 </Champ>
-                <Champ label="Réduction (%)" requis erreur={erreurs.reduction} aide={`De 0 à ${REDUCTION_MAX} %`}>
-                  <input type="number" className="form-control" min={0} max={REDUCTION_MAX} step="0.01" value={reduction}
-                    onChange={(e) => setReduction(Math.max(0, Math.min(REDUCTION_MAX, Number(e.target.value) || 0)))} />
+                <Champ label="Réduction (%)" requis erreur={erreurs.reduction} aide={`De 0 à ${reductionMax()} %`}>
+                  <input type="number" className="form-control" min={0} max={reductionMax()} step="0.01" value={reduction}
+                    onChange={(e) => setReduction(Math.max(0, Math.min(reductionMax(), Number(e.target.value) || 0)))} />
                 </Champ>
               </div>
 

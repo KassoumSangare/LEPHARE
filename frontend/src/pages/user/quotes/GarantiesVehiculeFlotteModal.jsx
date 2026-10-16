@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '../../../components/common/Modal';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -8,6 +8,7 @@ import {
   calculerTotauxDevisAuto,
   estGarantieCedeao,
   estGarantieRc,
+  noteCalculGarantie,
   taxeGarantie,
 } from '../../../utils/tarificationAuto';
 import { AlertCircle, Check, Edit3, Plus, RotateCcw, Trash2, X } from 'lucide-react';
@@ -26,14 +27,15 @@ const calculerTaxe = (g, tauxTaxes) => {
 };
 
 // Primes différentes de celles du barème (ou de l'enregistrement) dont la ligne est partie
-const estImposee = (g) => !g.is_new_garantie
+// Une prime ajustée par une règle entre garanties (offerte, forfait : primeAvantRegle) n'est pas imposée
+const estImposee = (g) => !g.is_new_garantie && !g.primeAvantRegle
   && (Number(g.primeNette) !== Number(g.primeNetteRef) || Number(g.primeAnnuelle) !== Number(g.primeAnnuelleRef));
 
 // Lignes telles que chargées : leurs primes deviennent la référence des primes imposées
 const avecReference = (garanties) => (garanties || []).map((g) => ({
   ...g,
-  primeAnnuelleRef: g.primeAnnuelleRef ?? (Number(g.primeAnnuelle) || 0),
-  primeNetteRef: g.primeNetteRef ?? (Number(g.primeNette) || 0),
+  primeAnnuelleRef: g.primeAnnuelleRef ?? (Number(g.primeAvantRegle?.pa ?? g.primeAnnuelle) || 0),
+  primeNetteRef: g.primeNetteRef ?? (Number(g.primeAvantRegle?.pn ?? g.primeNette) || 0),
 }));
 
 // Barème recalculé après un changement du véhicule : les retraits, primes imposées et
@@ -77,7 +79,7 @@ const MontantCellule = ({ valeur, onChange, label, couleur }) => {
   );
 };
 
-const FORMULAIRE_AJOUT_VIDE = { idSousGarantie: '', capital: 0, primeAnnuelle: 0, primeNette: 0 };
+const FORMULAIRE_AJOUT_VIDE = { idSousGarantie: '', capital: 0, primeAnnuelle: 0, primeNette: 0, franchise: '' };
 
 const ORIGINES = {
   bareme: { libelle: "Barème de l'offre", couleur: 'slate' },
@@ -94,6 +96,7 @@ const ORIGINES = {
  *
  * initial : { origine: 'bareme' | 'enregistrees' | 'personnalisees' | 'perimees', garanties }
  * ('perimees' : personnalisation faite avant un changement du véhicule, reportée sur le barème)
+ * calculerGarantie(id) : primes d'une garantie ajoutée au véhicule (/api/auto/prime-garantie/), pour pré-remplir
  */
 export const GarantiesVehiculeFlotteModal = ({
   isOpen,
@@ -105,6 +108,9 @@ export const GarantiesVehiculeFlotteModal = ({
   sousGaranties,
   tauxTaxes,
   nonAdmise = () => null,
+  calculerGarantie = null,
+  // Règles entre garanties de la compagnie (obligatoire, offerte si, exige…) appliquées à chaque changement
+  appliquerRegles = (liste) => liste,
   onAppliquer,
 }) => {
   const [lignes, setLignes] = useState(null);
@@ -117,6 +123,9 @@ export const GarantiesVehiculeFlotteModal = ({
   const [imposition, setImposition] = useState(false);
   const [ajoutOuvert, setAjoutOuvert] = useState(false);
   const [ajout, setAjout] = useState(FORMULAIRE_AJOUT_VIDE);
+  // Calcul des primes de la garantie choisie : { enCours, note } ; seul le dernier calcul demandé est appliqué
+  const [calculAjout, setCalculAjout] = useState(null);
+  const dernierCalculAjoutRef = useRef(0);
 
   const charger = (nouvelles, nouvelleOrigine, dejaModifie = false) => {
     const reference = avecReference(nouvelles);
@@ -154,6 +163,7 @@ export const GarantiesVehiculeFlotteModal = ({
     setImposition(false);
     setAjoutOuvert(false);
     setAjout(FORMULAIRE_AJOUT_VIDE);
+    setCalculAjout(null);
     setAvertissement('');
     setErreur('');
     setLignes(null);
@@ -179,12 +189,16 @@ export const GarantiesVehiculeFlotteModal = ({
   const totauxAvant = useMemo(() => calculerTotauxDevisAuto({ garanties: avecTaxes(lignesChargees) }), [lignesChargees, tauxTaxes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modifierLigne = (idx, changements) => {
-    setLignes((prec) => prec.map((g, i) => (i === idx ? { ...g, ...changements } : g)));
+    // Prime saisie à la main : les règles ne la modifient plus
+    const prime = 'primeNette' in changements || 'primeAnnuelle' in changements;
+    setLignes((prec) => appliquerRegles(prec.map((g, i) => (
+      i === idx ? { ...g, ...changements, ...(prime ? { primeSaisie: true, primeAvantRegle: undefined } : {}) } : g
+    ))));
     setModifie(true);
   };
 
   const retirerAjout = (idx) => {
-    setLignes((prec) => prec.filter((_, i) => i !== idx));
+    setLignes((prec) => appliquerRegles(prec.filter((_, i) => i !== idx)));
     setModifie(true);
   };
 
@@ -197,28 +211,56 @@ export const GarantiesVehiculeFlotteModal = ({
     (sg) => sg.LibelleSousGarantie || sg.libelle,
   );
 
+  // Garantie choisie : ses primes pour ce véhicule pré-remplissent la saisie (toujours modifiables)
+  const choisirGarantieAjoutee = async (idSousGarantie) => {
+    setAjout({ ...FORMULAIRE_AJOUT_VIDE, idSousGarantie });
+    const numero = ++dernierCalculAjoutRef.current;
+    if (!idSousGarantie || !calculerGarantie) {
+      setCalculAjout(null);
+      return;
+    }
+    setCalculAjout({ enCours: true });
+    try {
+      const r = await calculerGarantie(idSousGarantie);
+      if (numero !== dernierCalculAjoutRef.current) return;
+      if (r?.Trouvee) {
+        setAjout((a) => (a.idSousGarantie !== idSousGarantie ? a : {
+          ...a,
+          capital: Math.round(Number(r.Capital) || 0),
+          primeAnnuelle: Math.round(Number(r.PrimeAnnuelle) || 0),
+          primeNette: Math.round(Number(r.PrimeNette) || 0),
+          franchise: r.TexteFranchise && r.TexteFranchise.toUpperCase() !== 'NEANT' ? r.TexteFranchise : '',
+        }));
+      }
+      setCalculAjout({ note: noteCalculGarantie(r) });
+    } catch (e) {
+      if (numero === dernierCalculAjoutRef.current) setCalculAjout({ note: `Primes non calculées (${e?.response?.data?.error || e.message}) : saisissez-les.` });
+    }
+  };
+
   const ajouterGarantie = () => {
     const sg = garantiesAjoutables.find((x) => String(x.IdSousGarantie ?? x.id) === String(ajout.idSousGarantie));
     if (!sg) return;
     const id = Number(sg.IdSousGarantie ?? sg.id);
     const capital = Number(ajout.capital) || 0;
-    setLignes((prec) => [...prec, {
+    setLignes((prec) => appliquerRegles([...prec, {
       id_garantie: id,
       code: `GAR_${id}`,
       nom: sg.LibelleSousGarantie || sg.libelle,
       acquise: true,
       capital: capital ? `${capital.toLocaleString('fr-FR')} F` : 'Néant',
       capitalMontant: capital,
-      franchise: 'Néant',
+      franchise: ajout.franchise || 'Néant',
       primeAnnuelle: Number(ajout.primeAnnuelle) || 0,
       primeNette: Number(ajout.primeNette) || 0,
       primeAnnuelleRef: 0,
       primeNetteRef: 0,
       taxe: 0,
       is_new_garantie: true,
-    }]);
+    }]));
     setModifie(true);
     setAjout(FORMULAIRE_AJOUT_VIDE);
+    setCalculAjout(null);
     setAjoutOuvert(false);
   };
 
@@ -295,7 +337,7 @@ export const GarantiesVehiculeFlotteModal = ({
                 id="ajout-garantie"
                 className="form-control"
                 value={ajout.idSousGarantie}
-                onChange={(e) => setAjout((a) => ({ ...a, idSousGarantie: e.target.value }))}
+                onChange={(e) => choisirGarantieAjoutee(e.target.value)}
               >
                 <option value="">-- Choisir une garantie --</option>
                 {garantiesAjoutables.map((sg) => (
@@ -325,24 +367,15 @@ export const GarantiesVehiculeFlotteModal = ({
                 Fermer
               </button>
             </div>
+            {calculAjout && (
+              <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {calculAjout.enCours ? 'Calcul des primes de la garantie pour ce véhicule…' : calculAjout.note}
+              </p>
+            )}
           </div>
         )}
 
         {erreur && <p style={{ color: '#f87171', margin: 0, fontSize: '0.85rem' }}>{erreur}</p>}
-
-        {/* Garanties non admises pour l'âge du véhicule (règles de la compagnie) */}
-        {(lignes || []).some((g) => g.acquise && !estGarantieRc(g) && !estGarantieCedeao(g) && nonAdmise(g.id_garantie)) && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.6rem 0.85rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.08)', fontSize: '0.82rem', color: '#f59e0b' }}>
-            <span>⚠ Des garanties acquises ne sont pas admises pour l'âge de ce véhicule (détail sous chaque garantie).</span>
-            <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }}
-              onClick={() => {
-                setLignes((prec) => prec.map((g) => (g.acquise && !estGarantieRc(g) && !estGarantieCedeao(g) && nonAdmise(g.id_garantie) ? { ...g, acquise: false } : g)));
-                setModifie(true);
-              }}>
-              Retirer les garanties non admises
-            </button>
-          </div>
-        )}
 
         {lignes === null && !erreur ? (
           <div style={{ padding: '2.5rem 1rem', display: 'flex', justifyContent: 'center' }}>
@@ -365,7 +398,7 @@ export const GarantiesVehiculeFlotteModal = ({
               </thead>
               <tbody>
                 {lignesTaxees.map((g, idx) => {
-                  const verrouillee = estGarantieRc(g) || estGarantieCedeao(g);
+                  const verrouillee = estGarantieRc(g) || estGarantieCedeao(g) || g.obligatoire || (g.bloquee && !g.acquise);
                   const imposee = g.acquise && estImposee(g);
                   return (
                     <tr
@@ -380,8 +413,18 @@ export const GarantiesVehiculeFlotteModal = ({
                         {g.nom}
                         {g.is_new_garantie && <span className="badge badge-blue" style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>Ajoutée</span>}
                         {imposee && <span className="badge badge-amber" style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>Prime imposée</span>}
-                        {g.acquise && !verrouillee && nonAdmise(g.id_garantie) && (
-                          <div style={{ fontSize: '0.72rem', fontWeight: 500, color: '#f59e0b' }}>⚠ {nonAdmise(g.id_garantie)}</div>
+                        {/* Garantie non admise pour l'âge du véhicule : non cochée d'office, l'utilisateur peut l'accorder */}
+                        {!verrouillee && nonAdmise(g.id_garantie) && (
+                          <div style={{ fontSize: '0.72rem', fontWeight: 500, color: g.acquise ? '#f59e0b' : 'var(--text-muted)' }}>
+                            {nonAdmise(g.id_garantie)} : {g.acquise ? 'accordée quand même' : 'non cochée d\'office'}
+                          </div>
+                        )}
+                        {/* Règle entre garanties : offerte, forfait, exige, exclue, non commercialisée */}
+                        {g.motifRegle && (
+                          <div style={{ fontSize: '0.72rem', fontWeight: 500, color: g.offerte ? '#10b981' : (g.bloquee || !g.acquise ? '#f59e0b' : '#93c5fd') }}>
+                            {g.offerte && <span className="badge badge-emerald" style={{ fontSize: '0.62rem', marginRight: '0.35rem' }}>Offerte</span>}
+                            {g.motifRegle}
+                          </div>
                         )}
                       </td>
                       <td style={{ padding: '0.55rem 0.5rem', textAlign: 'center' }}>
@@ -391,7 +434,7 @@ export const GarantiesVehiculeFlotteModal = ({
                           disabled={verrouillee}
                           onChange={() => modifierLigne(idx, { acquise: !g.acquise })}
                           aria-label={`${g.nom} acquise`}
-                          title={verrouillee ? 'Garantie obligatoire' : 'Décocher pour retirer la garantie du véhicule'}
+                          title={verrouillee ? (g.motifRegle || 'Garantie obligatoire') : 'Décocher pour retirer la garantie du véhicule'}
                           style={{ width: '16px', height: '16px', cursor: verrouillee ? 'not-allowed' : 'pointer' }}
                         />
                       </td>

@@ -808,6 +808,14 @@ export const quoteApi = {
   },
   // POST /api/offregarantie (Calcul dynamique des garanties auto CIMA)
   calculateOffreGarantie: (payload) => apiClient.post('/offregarantie', payload),
+  // POST /api/auto/prime-garantie/ : primes d'une garantie ajoutée au véhicule (moteur CIMA, offre de la compagnie
+  // qui la contient), pour pré-remplir la saisie ; taux de taxe de la garantie joint
+  calculerPrimeGarantieAuto: async (payload, idSousGarantie) => (
+    await apiClient.post('/auto/prime-garantie/', { ...payload, IdSousGarantie: Number(idSousGarantie) })
+  ).data,
+  // POST /api/auto/tarif-direct/ : primes du tarif à lecture directe de la compagnie (grille réglée dans l'admin)
+  // applicable au véhicule, à l'offre et à la durée ; { Trouve: false, Motif } sinon
+  chercherTarifDirectAuto: async (payload) => (await apiClient.post('/auto/tarif-direct/', payload)).data,
   // POST /api/calculprime/ : accessoire Automobile (fn_get_accessoire, tranche de prime nette) et
   // taux de taxe, pour une prime nette CEDEAO et FGA compris
   calculerAccessoireAuto: async ({ primeNette, idOffre, idCompagnie, dateEffet }) => {
@@ -1068,8 +1076,9 @@ export const santeApi = {
   enregistrerAffilie: async (formData) => (await apiClient.post('/devissante/affilie/', formData, multipart)).data,
   // POST /api/devissante/suppression/ : { type: ADH | AFF | FIL, id_devis, id_objet }
   supprimer: async (payload) => (await apiClient.post('/devissante/suppression/', payload)).data,
-  // POST /api/importationaffilie/ (multipart) : adhérents et affiliés d'un fichier Excel dans une filiale
-  importerAffilies: async (formData) => (await apiClient.post('/importationaffilie/', formData, multipart)).data,
+  // POST /api/devissante/importation/ (multipart : devis, filiale, date_effet, fichier_excel) : adhérents et affiliés d'un fichier
+  // Excel dans une couverture ; compte rendu par ligne (importé, dérogation à la limite d'âge, refusé, ignoré)
+  importerAffilies: async (formData) => (await apiClient.post('/devissante/importation/', formData, multipart)).data,
   // POST /api/devissante/enregistrement/ : « Enregistrer le devis » (sp_creation_devis_sante)
   enregistrerDevis: async (payload) => (await apiClient.post('/devissante/enregistrement/', payload)).data,
   // GET /api/devissante/:iddevis/ : tout ce qui a été saisi sur le devis
@@ -1086,6 +1095,8 @@ const CHEMINS_RISQUES_DIVERS = {
 };
 
 export const risquesDiversApi = {
+  // GET /api/minene/rc/apercu/ : RC chef de famille MINENE, primes par adhérent de la police Santé (lecture seule)
+  apercuMinene: async (police, effet) => (await apiClient.get('/minene/rc/apercu/', { params: { police, effet } })).data,
   // GET /api/tarifparproduit/:idproduit : catégories du produit
   getTarifs: async (idProduit) => extractData(await apiClient.get(`/tarifparproduit/${idProduit}`)),
   // GET /api/offreparproduit/?idproduit=&idtarif= : offres de la catégorie
@@ -1152,6 +1163,8 @@ export const dommagesApi = {
   // GET /api/dommages/contrat/:id/documents/ : facture de prime et documents de production du contrat
   // (production/documents_dommages.py)
   documentsContrat: async (idContrat) => (await apiClient.get(`/dommages/contrat/${idContrat}/documents/`)).data,
+  // Documents de la catégorie imprimés depuis un devis, à la place de la facture proforma (Garantie de soumission)
+  documentsDevis: async (idDevis) => (await apiClient.get(`/dommages/devis/${idDevis}/documents/`)).data,
 };
 
 export const mrhApi = {
@@ -1311,6 +1324,16 @@ export const parametrageApi = {
   modifierParametreDepreciation: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/depreciation/parametres/${cle}/`, { Valeur: valeur })).data,
   retablirParametreDepreciation: async (cle) => (await apiClient.patch(`/parametrage/auto/depreciation/parametres/${cle}/`, { Retablir: true })).data,
   modifierReglesGarantiesAuto: async (regles) => (await apiClient.put('/parametrage/auto/regles-garanties/', { Regles: regles })).data,
+  // Règles entre garanties Automobile (obligatoire, offerte si, exige, exclue si, prime forfaitaire, non commercialisée)
+  getReglesInteractions: async () => (await apiClient.get('/parametrage/auto/regles-interactions/')).data,
+  modifierReglesInteractions: async (regles) => (await apiClient.put('/parametrage/auto/regles-interactions/', { Regles: regles })).data,
+  // Tarifs Automobile à lecture directe (grilles par compagnie) et coefficients de durée
+  getTarifsDirects: async () => (await apiClient.get('/parametrage/auto/tarifs-directs/')).data,
+  creerTarifDirect: async (grille) => (await apiClient.post('/parametrage/auto/tarifs-directs/grilles/', grille)).data,
+  modifierTarifDirect: async (id, grille) => (await apiClient.put(`/parametrage/auto/tarifs-directs/grilles/${id}/`, grille)).data,
+  supprimerTarifDirect: async (id) => apiClient.delete(`/parametrage/auto/tarifs-directs/grilles/${id}/`),
+  modifierParametreTarifsDirects: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/tarifs-directs/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametreTarifsDirects: async (cle) => (await apiClient.patch(`/parametrage/auto/tarifs-directs/parametres/${cle}/`, { Retablir: true })).data,
   // Pool TPV (catégorie 204) : tarif, paramètres, primes dues au Pool
   getPoolTpv: async ({ du, au } = {}) => (await apiClient.get('/parametrage/auto/pool-tpv/', { params: { du: du || undefined, au: au || undefined } })).data,
   modifierTranchesPoolTpv: async (tranches) => (await apiClient.put('/parametrage/auto/pool-tpv/tranches/', { Tranches: tranches })).data,
@@ -1516,6 +1539,9 @@ export const contractApi = {
   creerRenouvellement: async (idContrat, donnees) => (await apiClient.post(`/renouvellement/${idContrat}/`, donnees)).data,
   // IA et RC MINENE rattachées à la police Santé MINENE du contrat (production/minene_connexes.py)
   getMineneConnexes: async (idContrat) => (await apiClient.get(`/minene/${idContrat}/connexes/`)).data,
+  // Police Santé MINENE par son numéro (client, période, durée, IA et RC liées) ; recherche par numéro ou client
+  getPoliceMinene: async (numero) => (await apiClient.get('/minene/police/', { params: { numero } })).data,
+  rechercherPolicesMinene: async (q) => (await apiClient.get('/minene/police/', { params: { q } })).data?.Resultats || [],
   // POST /api/avenant/initiationmouvement
   createEndorsement: (data) => apiClient.post('/avenant/initiationmouvement', data),
   // GET /api/avenant/

@@ -491,7 +491,7 @@ export const NewTransportQuotePage = () => {
             <Tuile libelle="Accessoires" valeur={`${fcfa(t.Accessoire)} F`} />
             <Tuile libelle="Taxe" valeur={`${fcfa(t.Taxe)} F`} />
             <Tuile libelle="Prime totale" valeur={`${fcfa(t.PrimeTtc)} F`} />
-            <Tuile libelle={`Part AFS-CI (500 F × ${t.Certificats})`} valeur={`- ${fcfa(t.AccessoireClient)} F`} />
+            <Tuile libelle={`Part AFS-CI (${t.Certificats} certificat${t.Certificats > 1 ? 's' : ''})`} valeur={`- ${fcfa(t.AccessoireClient)} F`} />
             <Tuile libelle="Total général" valeur={`${fcfa(t.TotalGeneral)} F`} couleur="var(--primary-500)" fort />
           </div>
 

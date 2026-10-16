@@ -64,7 +64,9 @@ def compute_rate(bns, date_effet, date_expiration):
     return Decimal(taux * contract_duration / year_length)
 
 
-def get_garantie_offre(request_data):
+def parametres_garantie_offre(request_data):
+    """Paramètres de fn_garantie_offre (moteur Automobile), dans l'ordre, d'après une demande
+    /api/offregarantie (DemandeGarantieSerializer)."""
     IdCompagnie = 1
     if "IdCompagnie" in request_data:
         if request_data["IdCompagnie"]:
@@ -140,39 +142,41 @@ def get_garantie_offre(request_data):
         request_data["DateExpiration"], "%d-%m-%Y"
     ).date()
     Bns = Decimal(request_data["Bns"])
+    return [
+        IdCompagnie,
+        IdOffre,
+        IdTarif,
+        ValNeuve,
+        ValVenale,
+        ValAccessoire,
+        Puissance,
+        CodeCarburant,
+        Tonnage,
+        TauxReduction,
+        CodeAlarme,
+        DateEffet,
+        DateExpiration,
+        Bns,
+        DateMec,
+        RemorqueAttelee,
+        CodeFormuleSecuriteRoutiere,
+        IdOptionAssistance,
+        NombrePlace,
+        CodeUsage,
+        CarburantAutreMatiere,
+        TransportEleves,
+        TransportEmployes,
+        TansportPassagerSupplementaire,
+        NsiaAutoPlus,
+    ]
+
+
+def get_garantie_offre(request_data):
+    parametres = parametres_garantie_offre(request_data)
     try:
         status = 0
         with connection.cursor() as cursor:
-            cursor.callproc(
-                "fn_garantie_offre",
-                [
-                    IdCompagnie,
-                    IdOffre,
-                    IdTarif,
-                    ValNeuve,
-                    ValVenale,
-                    ValAccessoire,
-                    Puissance,
-                    CodeCarburant,
-                    Tonnage,
-                    TauxReduction,
-                    CodeAlarme,
-                    DateEffet,
-                    DateExpiration,
-                    Bns,
-                    DateMec,
-                    RemorqueAttelee,
-                    CodeFormuleSecuriteRoutiere,
-                    IdOptionAssistance,
-                    NombrePlace,
-                    CodeUsage,
-                    CarburantAutreMatiere,
-                    TransportEleves,
-                    TransportEmployes,
-                    TansportPassagerSupplementaire,
-                    NsiaAutoPlus,
-                ],
-            )
+            cursor.callproc("fn_garantie_offre", parametres)
 
             result = cursor.fetchall()
             garantie_proposee_list = []

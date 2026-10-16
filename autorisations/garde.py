@@ -204,6 +204,8 @@ REGLES = [
               r"enregistrementassureia|saisieayantdroitia|saisie(adherent|affilie|filiale)sante|"
               r"annulationsaisie(vehicule|adherent|affilie|filiale))/?$",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    # Import des adhérents et affiliés Santé (avant la règle générale de devissante/)
+    R("POST", r"devissante/importation/", "imports.excel", objet="import"),
     R("POST", r"(devisia/enregistrement/|devisvoyage/enregistrement/|dommages/devis/$|devissante/|garantiesvehiculeflotte/|"
               r"creer-devis-ia-minene/|transformer-sante-en-ia/|consolidationdevis/)",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
@@ -223,14 +225,15 @@ REGLES = [
     R("GET", r"dommages/contrat/\d+/documents/?$", "contrats.view"),
     # ---- devis : lectures
     R("GET", r"(devis|devisdetail|devisclient|infodevis|infodevisrecherche|garantiesouscritedevis|quittanceproposition|"
-             r"listevehiculedevis|reductionflottedevis|devisvoyage|devisia|devisrisquesdivers|devissante|dommages/|"
+             r"listevehiculedevis|reductionflottedevis|devisvoyage|devisia|devisrisquesdivers|devissante|dommages|"
              r"assureiainfo|assureiapardevis|adherents-sante-pour-devis-ia|saisiesanteencours|numerosaisiesante|"
              r"(adherent|affilie|filiale)(liste)?ensaisie|listeaffiliesante|ayantdroitia|ayantdroitminene|mrh/devis|"
              r"brouillons|devisdetgarantie)(/|$)", "devis.view"),
     # ---- contrats
     R("GET", r"renouvellement/\d+/?$", "contrats.view"),
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
-    R("GET", r"minene/ia/apercu/?$", "devis.view"),
+    R("GET", r"minene/(ia|rc)/apercu/?$", "devis.view"),
+    R("GET", r"minene/police/?$", "devis.view"),
     R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
@@ -298,8 +301,9 @@ REGLES = [
     # ---- tarifs et barèmes
     R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/auto/|grillesvoyage/)", "tarifs.update", objet="bareme",
       cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition", "code")),
-    # Valeur vénale d'après le tableau de dépréciation (calcul sans écriture, écrans de devis)
-    R("POST", r"auto/valeur-venale/?$", "devis.view", lecture=True),
+    # Valeur vénale d'après le tableau de dépréciation, primes d'un tarif à lecture directe (calculs sans écriture,
+    # écrans de devis)
+    R("POST", r"auto/(valeur-venale|tarif-direct)/?$", "devis.view", lecture=True),
     R("POST,PUT,PATCH,DELETE", r"(tauxtaxegarantie|commissionproduit|accessoire|accessoirecourtier|reductionflotte|"
                                r"formulesecuriteroutiere|offre|offregarantie|enregistrementoffregarantie|garantie|sousgarantie|"
                                r"garantierisque|tarif|tarifdetail|tarifecran|offredetail|offrecollegesante|repartitionprimesante|"

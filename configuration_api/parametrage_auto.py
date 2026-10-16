@@ -16,12 +16,17 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
-from .models import AutoRegleGarantie, DepreciationClasse, DepreciationRegle, ParametreGeneral, PoolTpvTranche
+from .models import (
+    AutoRegleGarantie, AutoRegleInteraction, DepreciationClasse, DepreciationRegle, ParametreGeneral, PoolTpvTranche,
+    TarifAutoGrille, TarifAutoGrilleLigne,
+)
+from .serializers import DemandeGarantieSerializer
+from .utils import parametres_garantie_offre
 from .parametrage import ErreurParametrage, _auteur, _cache, _journal, _parametre_json, _reponse_erreur, _texte, _valider_parametre
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 
@@ -236,6 +241,103 @@ def regles_garanties(request):
     return Response(apres)
 
 
+# ------------------------------------------------------------------ règles entre garanties
+TYPES_AVEC_LIEES = ("REQUIERT", "EXCLUE_SI", "OFFERTE_SI", "PRIME_SI")
+
+
+def _libelles_sous_garanties():
+    return {l["id"]: (l["libelle"] or "").strip() for l in _lignes(
+        "SELECT idsousgarantie AS id, libellesousgarantie AS libelle FROM stdsousgarantie")}
+
+
+# Règles que le barème peut appliquer lui-même (fn_lephare_regle_auto) aux offres qui contiennent une garantie liée
+TYPES_BAREME = ("OFFERTE_SI", "PRIME_SI")
+
+
+def interactions_garanties_json(libelles=None):
+    """Règles entre garanties (lues aussi au démarrage de l'application, appliquées par l'écran de devis Auto)."""
+    try:
+        regles = list(AutoRegleInteraction.objects.all())
+    except Exception:  # noqa: BLE001 — base sans la migration configuration_api 0090
+        return []
+    libelles = libelles if libelles is not None else _libelles_sous_garanties()
+    return [{
+        "Id": r.id, "IdCompagnie": r.IdCompagnie, "IdSousGarantie": r.IdSousGarantie,
+        "Libelle": libelles.get(r.IdSousGarantie, f"Garantie {r.IdSousGarantie}"), "Type": r.Type,
+        "Liees": r.Liees or "", "LibellesLiees": [libelles.get(int(x), f"Garantie {x}") for x in _codes(r.Liees) if x.isdigit()],
+        "Categories": r.Categories or "", "PrimeAnnuelle": None if r.PrimeAnnuelle is None else float(r.PrimeAnnuelle),
+        "Commentaire": r.Commentaire or "", "Actif": r.Actif, "Ordre": r.Ordre,
+        "AppliqueeBareme": bool(r.AppliqueeBareme and r.Type in TYPES_BAREME),
+    } for r in regles]
+
+
+@api_view(["GET", "PUT"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated, EstAdministrateur])
+def regles_interactions(request):
+    """GET /api/parametrage/auto/regles-interactions/ : règles, types, garanties Auto, compagnies ;
+    PUT {Regles: [...]} : liste complète des règles entre garanties."""
+    libelles = _libelles_sous_garanties()
+    if request.method == "GET":
+        return Response({
+            "Regles": interactions_garanties_json(libelles),
+            "Types": [{"Code": c, "Libelle": l} for c, l in AutoRegleInteraction.TYPES],
+            "Garanties": _lignes(
+                'SELECT DISTINCT sg.idsousgarantie AS "Id", sg.libellesousgarantie AS "Libelle" FROM stdsousgarantie AS sg'
+                " JOIN stdoffregarantie AS og ON og.idsousgarantie = sg.idsousgarantie"
+                " JOIN stdoffre AS o ON o.idoffre = og.idoffre JOIN stdtarif AS t ON t.idtarif = o.idtarif"
+                " WHERE t.codecategorie LIKE %s ORDER BY 2", ["2%"]),
+            "Compagnies": _lignes(
+                'SELECT DISTINCT c.idcompagnie AS "Id", c.raisonsociale AS "Nom" FROM stdcompagnie AS c'
+                " JOIN stdoffregarantie AS og ON og.idcompagnie = c.idcompagnie ORDER BY 2"),
+        })
+    liste = request.data.get("Regles")
+    if not isinstance(liste, list):
+        return _reponse_erreur(ErreurParametrage("Règles : liste attendue."))
+    avant = interactions_garanties_json(libelles)
+    types = dict(AutoRegleInteraction.TYPES)
+    nouvelles = []
+    try:
+        for i, r in enumerate(liste, start=1):
+            compagnie = _entier_ou_vide(r.get("IdCompagnie"), f"Règle {i}, compagnie")
+            garantie = _entier_ou_vide(r.get("IdSousGarantie"), f"Règle {i}, garantie")
+            type_ = str(r.get("Type") or "")
+            if not compagnie or not garantie or type_ not in types:
+                raise ErreurParametrage(f"Règle {i} : choisissez la compagnie, la garantie et le type de règle.")
+            nom = libelles.get(garantie, f"Garantie {garantie}")
+            liees = [x for x in _codes(r.get("Liees"))]
+            if any(not x.isdigit() for x in liees):
+                raise ErreurParametrage(f"{nom} : garanties liées invalides.")
+            if type_ in TYPES_AVEC_LIEES and not liees:
+                raise ErreurParametrage(f"{nom} : choisissez au moins une garantie liée ({types[type_].lower()}).")
+            if str(garantie) in liees:
+                raise ErreurParametrage(f"{nom} : une garantie ne peut pas dépendre d'elle-même.")
+            categories = ",".join(_codes(r.get("Categories")))
+            if categories and not re.fullmatch(r"\d{3}(,\d{3})*", categories):
+                raise ErreurParametrage(f"{nom} : catégories attendues sous la forme 201, 202.")
+            if type_ == "NON_PROPOSEE" and not categories:
+                raise ErreurParametrage(f"{nom} : indiquez les catégories où la garantie n'est pas commercialisée.")
+            prime = _nombre(r.get("PrimeAnnuelle")) if r.get("PrimeAnnuelle") not in (None, "") else None
+            if type_ == "PRIME_SI" and (prime is None or prime < 0):
+                raise ErreurParametrage(f"{nom} : prime annuelle forfaitaire attendue.")
+            nouvelles.append(AutoRegleInteraction(
+                IdCompagnie=compagnie, IdSousGarantie=garantie, Type=type_,
+                Liees=",".join(liees) if type_ in TYPES_AVEC_LIEES else "", Categories=categories,
+                PrimeAnnuelle=prime if type_ == "PRIME_SI" else None,
+                Commentaire=_chaine(r.get("Commentaire"), 300), Actif=bool(r.get("Actif", True)), Ordre=i,
+                AppliqueeBareme=bool(r.get("AppliqueeBareme")) and type_ in TYPES_BAREME,
+                ModifiePar=_auteur(request),
+            ))
+    except ErreurParametrage as erreur:
+        return _reponse_erreur(erreur)
+    with transaction.atomic():
+        AutoRegleInteraction.objects.all().delete()
+        AutoRegleInteraction.objects.bulk_create(nouvelles)
+    apres = interactions_garanties_json(libelles)
+    _journal(request, "Automobile : règles entre garanties modifiées", {"avant": avant, "apres": apres})
+    return Response(apres)
+
+
 @api_view(["PATCH"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EstAdministrateur])
@@ -266,6 +368,12 @@ def parametre(request, cle):
 
 # ------------------------------------------------------------------ Pool TPV (catégorie 204)
 PREFIXE_POOL = "auto.pool_tpv."
+
+
+def _pourcentage_texte(nombre):
+    """Decimal -> texte sans zéros décimaux inutiles (10 reste 10, 10.50 devient 10.5)."""
+    texte = f"{nombre:f}"
+    return texte.rstrip("0").rstrip(".") if "." in texte else texte
 
 
 def _tranche_json(t):
@@ -391,7 +499,7 @@ def pool_tpv_parametre(request, cle):
                 raise ErreurParametrage("Fractions : douze pourcentages séparés par « / » attendus.") from erreur
             if len(nombres) != 12 or any(not 0 < n <= 100 for n in nombres) or nombres != sorted(nombres):
                 raise ErreurParametrage("Fractions : douze pourcentages croissants entre 0 et 100, séparés par « / ».")
-            parametre_.Valeur = "/".join(f"{n:f}".rstrip("0").rstrip(".") for n in nombres)
+            parametre_.Valeur = "/".join(_pourcentage_texte(n) for n in nombres)
         else:
             parametre_.Valeur = _valider_parametre(parametre_, request.data.get("Valeur"))
     except ErreurParametrage as erreur:
@@ -463,3 +571,391 @@ def valeur_venale(request):
     if not isinstance(vehicules, list):
         return Response({"error": "Vehicules : liste attendue."}, status=status.HTTP_400_BAD_REQUEST)
     return Response({"Vehicules": calculer_valeurs_venales(vehicules, request.data.get("DateEffet"))})
+
+
+# Garantie ajoutée à un véhicule (devis Automobile) : offres essayées au plus, NSIA Auto Plus
+OFFRES_ESSAYEES_MAX = 12
+ID_SOUS_GARANTIE_NSIA_AUTO_PLUS = 175
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def prime_garantie(request):
+    """POST /api/auto/prime-garantie/ {demande de /api/offregarantie, IdSousGarantie} : primes d'une garantie ajoutée
+    à un véhicule, pour pré-remplir la saisie (n'écrit rien).
+
+    Le moteur (fn_garantie_offre) ne tarife que les garanties d'une offre : la garantie est calculée avec une offre
+    active de la compagnie qui la contient (l'offre du véhicule d'abord, puis celles de sa grille et de sa catégorie),
+    pour le même véhicule, la même période et les mêmes réductions. L'offre du véhicule fait foi si elle contient la
+    garantie ; sinon la première prime nette non nulle est retenue. Le taux de taxe de la garantie est joint, pour
+    taxer une prime saisie à la main."""
+    try:
+        id_sous_garantie = int(request.data.get("IdSousGarantie"))
+    except (TypeError, ValueError):
+        return Response({"error": "IdSousGarantie : garantie attendue."}, status=status.HTTP_400_BAD_REQUEST)
+    demande = DemandeGarantieSerializer(data=request.data)
+    if not demande.is_valid():
+        return Response(demande.errors, status=status.HTTP_400_BAD_REQUEST)
+    donnees = dict(request.data)
+    # NSIA Auto Plus n'est tarifée par le moteur que demandée (case « NSIA Auto Plus »)
+    if id_sous_garantie == ID_SOUS_GARANTIE_NSIA_AUTO_PLUS:
+        donnees["NsiaAutoPlus"] = True
+    try:
+        parametres = parametres_garantie_offre(donnees)
+    except (KeyError, TypeError, ValueError, InvalidOperation) as erreur:
+        return Response({"error": f"Demande incomplète : {erreur}."}, status=status.HTTP_400_BAD_REQUEST)
+    id_compagnie, id_offre, id_tarif, date_effet = parametres[0], parametres[1], parametres[2], parametres[11]
+
+    offres = _lignes(
+        "SELECT o.idoffre, o.libelleoffre FROM stdoffre AS o"
+        " LEFT JOIN stdtarif AS t ON t.idtarif = o.idtarif"
+        " WHERE o.actif AND EXISTS (SELECT 1 FROM stdoffregarantie AS og"
+        "   WHERE og.idoffre = o.idoffre AND og.idcompagnie = %s AND og.idsousgarantie = %s)"
+        " ORDER BY o.idoffre = %s DESC, o.idtarif = %s DESC NULLS LAST,"
+        " t.codecategorie = (SELECT codecategorie FROM stdtarif WHERE idtarif = %s) DESC NULLS LAST, o.idoffre"
+        " LIMIT %s",
+        [id_compagnie, id_sous_garantie, id_offre, id_tarif, id_tarif, OFFRES_ESSAYEES_MAX],
+    )
+    retenue = None
+    erreur_moteur = None
+    for offre in offres:
+        parametres[1] = offre["idoffre"]
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.callproc("fn_garantie_offre", parametres)
+                colonnes = [c[0] for c in cursor.description]
+                lignes = [dict(zip(colonnes, ligne)) for ligne in cursor.fetchall()]
+        except DatabaseError as erreur:
+            # Refus du moteur (ex. valeur accessoire supérieure à la valeur vénale) : le même pour toutes les offres
+            erreur_moteur = str(erreur).split("\n")[0]
+            break
+        ligne = next((l for l in lignes if l["idsousgarantie"] == id_sous_garantie), None)
+        if ligne is None:
+            continue
+        # L'offre du véhicule fait foi : une garantie peut y être comprise dans une autre, à prime nulle (bris de
+        # glace avec les dommages). Ailleurs, la première prime nette (celle facturée) non nulle est retenue.
+        if retenue is None or offre["idoffre"] == id_offre or ligne["primenette"]:
+            retenue = (offre, ligne)
+        if offre["idoffre"] == id_offre or ligne["primenette"]:
+            break
+
+    taux = _lignes(
+        "SELECT tauxtaxe FROM stdtauxtaxegarantieproduit WHERE idproduit = 1 AND idgarantie = %s"
+        " AND %s BETWEEN debutvalidite AND finvalidite ORDER BY debutvalidite DESC LIMIT 1",
+        [id_sous_garantie, date_effet],
+    )
+    reponse = {
+        "IdSousGarantie": id_sous_garantie,
+        "TauxTaxe": float(taux[0]["tauxtaxe"]) if taux else 0.0,
+        "Trouvee": retenue is not None,
+    }
+    if retenue is None:
+        reponse["Message"] = erreur_moteur or (
+            "Garantie tarifée par aucune offre de cette compagnie : primes à saisir." if not offres
+            else "Garantie non retenue par le tarif pour ce véhicule : primes à saisir."
+        )
+        return Response(reponse)
+    offre, ligne = retenue
+    nombre = lambda cle: float(ligne[cle] or 0)  # noqa: E731
+    reponse.update({
+        "IdOffre": offre["idoffre"], "Offre": offre["libelleoffre"],
+        "Capital": nombre("capital"), "PrimeAnnuelle": nombre("primeannuelle"), "PrimeNette": nombre("primenette"),
+        "Taxe": nombre("taxe"), "TauxFranchise": nombre("tauxfranchise"), "FranchiseMinimum": nombre("franchiseminimum"),
+        "FranchiseMaximum": nombre("franchisemaximum"), "TexteFranchise": ligne["franchisetexte"] or "",
+    })
+    return Response(reponse)
+
+
+# ------------------------------------------------------------------ tarifs à lecture directe
+# Grilles de primes toutes faites d'une compagnie (NSIA : VP essence, VP diesel, TPC, TPM ; documents d'OREOLE du
+# 16/10/2026) : pour les offres choisies, la tranche du véhicule et la durée donnent directement prime nette,
+# accessoires, taxes, FGA, CEDEAO et TTC, sans saisie. Hors grille (autre offre, autre durée, véhicule hors tranche),
+# le devis est calculé au barème (fn_garantie_offre).
+CLE_COEFFICIENTS = "auto.coefficients_duree"
+MONTANTS_TARIF = ("PrimeNette", "Accessoire", "Taxe", "Fga", "Cedeao", "PrimeTtc")
+ECART_TTC_TOLERE = Decimal("2")  # composantes arrondies une à une par la compagnie : TTC à 1 F de leur somme
+
+
+def _chaine(valeur, longueur):
+    return ("" if valeur is None else str(valeur).strip())[:longueur]
+
+
+def _codes(texte):
+    return [x.strip() for x in re.split(r"[,;\s]+", str(texte or "")) if x.strip()]
+
+
+def _ligne_tarif_json(l):
+    return {
+        "Id": l.id, "Libelle": l.Libelle, "BorneMin": l.BorneMin, "BorneMax": l.BorneMax, "Usages": l.Usages,
+        "DureeMois": l.DureeMois, "Ordre": l.Ordre, **{m: float(getattr(l, m)) for m in MONTANTS_TARIF},
+    }
+
+
+def _grille_json(g):
+    return {
+        "Id": g.id, "IdCompagnie": g.IdCompagnie, "Libelle": g.Libelle, "Categories": g.Categories, "IdEnergie": g.IdEnergie,
+        "Critere": g.Critere, "Offres": g.Offres, "Actif": g.Actif, "Source": g.Source, "Ordre": g.Ordre,
+        "DateModification": g.DateModification.isoformat() if g.DateModification else None, "ModifiePar": g.ModifiePar,
+        "Lignes": [_ligne_tarif_json(l) for l in g.lignes.all()],
+    }
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def tarifs_directs(request):
+    """GET /api/parametrage/auto/tarifs-directs/ : grilles, offres Automobile par compagnie, énergies, coefficients."""
+    return Response({
+        "Grilles": [_grille_json(g) for g in TarifAutoGrille.objects.prefetch_related("lignes")],
+        "Compagnies": _lignes(
+            'SELECT DISTINCT c.idcompagnie AS "Id", c.raisonsociale AS "Nom" FROM stdcompagnie AS c'
+            " JOIN stdoffregarantie AS og ON og.idcompagnie = c.idcompagnie ORDER BY 2"
+        ),
+        "Offres": _lignes(
+            'SELECT DISTINCT og.idcompagnie AS "IdCompagnie", o.idoffre AS "Id", o.libelleoffre AS "Libelle",'
+            ' o.actif AS "Actif", TRIM(t.codecategorie) AS "Categorie"'
+            " FROM stdoffre AS o JOIN stdoffregarantie AS og ON og.idoffre = o.idoffre"
+            " JOIN stdtarif AS t ON t.idtarif = o.idtarif WHERE t.codecategorie LIKE %s ORDER BY 5, 2",
+            ["2%"],
+        ),
+        "Energies": _lignes('SELECT idenergie AS "Id", libelle AS "Libelle" FROM stdenergie WHERE idenergie > 0 ORDER BY 1'),
+        "Parametres": [_parametre_json(p) for p in ParametreGeneral.objects.filter(Cle=CLE_COEFFICIENTS)],
+    })
+
+
+def _montant_tarif(valeur, libelle):
+    montant = _nombre(valeur)
+    if montant is None or montant < 0:
+        raise ErreurParametrage(f"{libelle} : montant positif ou nul attendu.")
+    return montant.quantize(Decimal("1"))
+
+
+def _lire_grille(donnees):
+    """Grille saisie dans l'admin -> (champs de l'en-tête, lignes non enregistrées), contrôlée."""
+    try:
+        id_compagnie = int(donnees.get("IdCompagnie"))
+    except (TypeError, ValueError) as erreur:
+        raise ErreurParametrage("Compagnie : à choisir.") from erreur
+    if not _lignes("SELECT 1 FROM stdcompagnie WHERE idcompagnie = %s", [id_compagnie]):
+        raise ErreurParametrage("Compagnie inconnue.")
+    libelle = _chaine(donnees.get("Libelle"), 100)
+    if not libelle:
+        raise ErreurParametrage("Nom de la grille : à renseigner.")
+    categories = _codes(donnees.get("Categories"))
+    if not categories or any(not re.fullmatch(r"\d{3}", c) for c in categories):
+        raise ErreurParametrage("Catégories : codes à trois chiffres séparés par des virgules (ex. 201).")
+    energie = str(donnees.get("IdEnergie") or "").strip()
+    energie = int(energie) if energie.isdigit() and int(energie) > 0 else None
+    critere = str(donnees.get("Critere") or "PUISSANCE")
+    if critere not in dict(TarifAutoGrille.CRITERES):
+        raise ErreurParametrage("Critère des tranches : puissance fiscale ou charge utile.")
+    offres = _codes(donnees.get("Offres"))
+    if any(not o.isdigit() for o in offres):
+        raise ErreurParametrage("Offres : identifiants d'offres attendus.")
+    unite = "CV" if critere == "PUISSANCE" else "kg"
+    infini = float("inf")
+
+    lignes, vues = [], {}
+    for i, l in enumerate(donnees.get("Lignes") or [], start=1):
+        nom = _chaine(l.get("Libelle"), 60)
+        if not nom:
+            raise ErreurParametrage(f"Ligne {i} : nom de la tranche à renseigner.")
+        try:
+            duree = int(l.get("DureeMois"))
+        except (TypeError, ValueError) as erreur:
+            raise ErreurParametrage(f"{nom} : durée en mois attendue.") from erreur
+        if not 1 <= duree <= 12:
+            raise ErreurParametrage(f"{nom} : durée de 1 à 12 mois.")
+        usages = ",".join(_codes(l.get("Usages")))
+        mini = _entier_ou_vide(l.get("BorneMin"), f"{nom}, minimum")
+        maxi = _entier_ou_vide(l.get("BorneMax"), f"{nom}, maximum")
+        if not usages:
+            if mini is None or mini < 0:
+                raise ErreurParametrage(f"{nom} ({duree} mois) : minimum ({unite}) attendu.")
+            if maxi is not None and maxi < mini:
+                raise ErreurParametrage(f"{nom} ({duree} mois) : le maximum doit être au moins égal au minimum.")
+        montants = {m: _montant_tarif(l.get(m), f"{nom} ({duree} mois), {m}") for m in MONTANTS_TARIF}
+        if montants["PrimeNette"] <= 0:
+            raise ErreurParametrage(f"{nom} ({duree} mois) : prime nette attendue.")
+        somme = sum(montants[m] for m in MONTANTS_TARIF if m != "PrimeTtc")
+        if abs(montants["PrimeTtc"] - somme) > ECART_TTC_TOLERE:
+            raise ErreurParametrage(
+                f"{nom} ({duree} mois) : la prime TTC ({montants['PrimeTtc']:,.0f} F) ne correspond pas à la somme des "
+                f"montants ({somme:,.0f} F).".replace(",", " "))
+        # Tranches d'une même durée sans chevauchement ; une seule ligne par usage
+        for autre in vues.get(duree, []):
+            if usages or autre["usages"]:
+                if usages and autre["usages"] and set(usages.split(",")) & set(autre["usages"].split(",")):
+                    raise ErreurParametrage(f"{nom} et {autre['nom']} ({duree} mois) : même usage deux fois.")
+                continue
+            if mini <= (infini if autre["maxi"] is None else autre["maxi"]) and autre["mini"] <= (infini if maxi is None else maxi):
+                raise ErreurParametrage(f"{nom} chevauche {autre['nom']} ({duree} mois).")
+        vues.setdefault(duree, []).append({"nom": nom, "mini": mini, "maxi": maxi, "usages": usages})
+        lignes.append(TarifAutoGrilleLigne(Libelle=nom, BorneMin=None if usages else mini, BorneMax=None if usages else maxi,
+                                           Usages=usages, DureeMois=duree, Ordre=i, **montants))
+    if not lignes:
+        raise ErreurParametrage("La grille doit compter au moins une tranche.")
+    entete = dict(IdCompagnie=id_compagnie, Libelle=libelle, Categories=",".join(categories), IdEnergie=energie,
+                  Critere=critere, Offres=",".join(offres), Actif=bool(donnees.get("Actif", True)),
+                  Source=_chaine(donnees.get("Source"), 200))
+    return entete, lignes
+
+
+def _enregistrer_grille(request, grille, entete, lignes):
+    avant = _grille_json(grille) if grille.pk else None
+    with transaction.atomic():
+        for champ, valeur in entete.items():
+            setattr(grille, champ, valeur)
+        grille.ModifiePar = _auteur(request)
+        if not grille.pk:
+            grille.Ordre = TarifAutoGrille.objects.filter(IdCompagnie=grille.IdCompagnie).count() + 1
+        grille.save()
+        grille.lignes.all().delete()
+        for ligne in lignes:
+            ligne.Grille = grille
+        TarifAutoGrilleLigne.objects.bulk_create(lignes)
+    apres = _grille_json(TarifAutoGrille.objects.prefetch_related("lignes").get(pk=grille.pk))
+    _journal(request, f"Tarif à lecture directe « {grille.Libelle} » {'modifié' if avant else 'créé'}", {"avant": avant, "apres": apres})
+    return apres
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated, EstAdministrateur])
+def tarifs_directs_grilles(request):
+    """POST /api/parametrage/auto/tarifs-directs/grilles/ {en-tête, Lignes: [...]} : nouvelle grille."""
+    try:
+        entete, lignes = _lire_grille(request.data)
+    except ErreurParametrage as erreur:
+        return _reponse_erreur(erreur)
+    return Response(_enregistrer_grille(request, TarifAutoGrille(), entete, lignes), status=status.HTTP_201_CREATED)
+
+
+@api_view(["PUT", "DELETE"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated, EstAdministrateur])
+def tarifs_directs_grille(request, id_tarif):
+    """PUT /api/parametrage/auto/tarifs-directs/grilles/<id>/ : grille complète (en-tête et tranches) ; DELETE : retrait."""
+    grille = TarifAutoGrille.objects.filter(pk=id_tarif).first()
+    if not grille:
+        return Response({"error": "Grille introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if request.method == "DELETE":
+        avant = _grille_json(grille)
+        grille.delete()
+        _journal(request, f"Tarif à lecture directe « {avant['Libelle']} » supprimé", {"avant": avant, "apres": None})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    try:
+        entete, lignes = _lire_grille(request.data)
+    except ErreurParametrage as erreur:
+        return _reponse_erreur(erreur)
+    return Response(_enregistrer_grille(request, grille, entete, lignes))
+
+
+@api_view(["PATCH"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated, EstAdministrateur])
+def tarifs_directs_parametre(request, cle):
+    """PATCH /api/parametrage/auto/tarifs-directs/parametres/<cle>/ {Valeur} ou {Retablir: true} : coefficients de durée."""
+    parametre_ = ParametreGeneral.objects.filter(Cle=cle).first() if cle == CLE_COEFFICIENTS else None
+    if not parametre_:
+        return Response({"error": f"Réglage {cle} inconnu ou non modifiable ici."}, status=status.HTTP_404_NOT_FOUND)
+    avant = parametre_.Valeur
+    try:
+        if request.data.get("Retablir"):
+            parametre_.Valeur = parametre_.ValeurOrigine
+        else:
+            morceaux = [m.strip().replace(",", ".") for m in str(request.data.get("Valeur") or "").split("/")]
+            try:
+                nombres = [Decimal(m) for m in morceaux]
+            except InvalidOperation as erreur:
+                raise ErreurParametrage("Coefficients : treize pourcentages séparés par « / » attendus.") from erreur
+            if len(nombres) != 13 or any(not 0 < n <= 100 for n in nombres) or nombres != sorted(nombres):
+                raise ErreurParametrage("Coefficients : treize pourcentages croissants entre 0 et 100, séparés par « / » "
+                                        "(15 jours ou moins, puis 1 à 12 mois).")
+            parametre_.Valeur = "/".join(_pourcentage_texte(n) for n in nombres)
+    except ErreurParametrage as erreur:
+        return _reponse_erreur(erreur)
+    parametre_.ModifiePar = _auteur(request)
+    parametre_.save()
+    _cache.pop(cle, None)
+    _journal(request, f"Automobile : « {parametre_.Libelle} » modifié", {"cle": cle, "avant": avant, "apres": parametre_.Valeur})
+    return Response(_parametre_json(parametre_))
+
+
+def duree_en_mois(date_effet, date_expiration):
+    """Durée d'un contrat comptée comme les coefficients de prime (fn_calcul_taux_prime_fractionnee) : mois entiers
+    entre l'effet et l'échéance, un mois entamé comptant pour un mois ; None au-delà d'un an."""
+    from dateutil.relativedelta import relativedelta
+
+    if not date_effet or not date_expiration or date_expiration < date_effet:
+        return None
+    ecart = relativedelta(date_expiration, date_effet)
+    mois = ecart.years * 12 + ecart.months
+    if mois > 12 or (mois == 12 and ecart.days > 0):
+        return None
+    return min(mois + (1 if ecart.days > 0 else 0), 12) or 1
+
+
+def chercher_tarif_direct(id_compagnie, id_offre, id_tarif, id_energie, puissance, charge_utile, id_usage, date_effet, date_expiration):
+    """Ligne d'un tarif à lecture directe applicable au véhicule ({grille, ligne, duree, annuelle}), ou None et le motif."""
+    duree = duree_en_mois(date_effet, date_expiration)
+    if duree is None:
+        return None, "Durée du contrat hors des tarifs à lecture directe."
+    categorie = _lignes("SELECT TRIM(codecategorie) AS c FROM stdtarif WHERE idtarif = %s", [id_tarif])
+    categorie = categorie[0]["c"] if categorie else ""
+    code_usage = _lignes("SELECT TRIM(codeusage) AS c FROM stdusage WHERE idusage = %s", [id_usage]) if id_usage else []
+    code_usage = code_usage[0]["c"] if code_usage else ""
+    grilles = [
+        g for g in TarifAutoGrille.objects.filter(IdCompagnie=id_compagnie, Actif=True).prefetch_related("lignes")
+        if str(id_offre) in _codes(g.Offres) and categorie in _codes(g.Categories)
+        and (g.IdEnergie is None or g.IdEnergie == id_energie)
+    ]
+    if not grilles:
+        return None, "Aucun tarif à lecture directe pour cette compagnie, cette offre et ce véhicule."
+    for grille in grilles:
+        valeur = puissance if grille.Critere == "PUISSANCE" else charge_utile
+        lignes = list(grille.lignes.all())
+        usages_cibles = {u for l in lignes for u in _codes(l.Usages)}
+
+        def tranche(l, duree_, valeur=valeur, lignes_usages=usages_cibles):
+            if l.DureeMois != duree_:
+                return False
+            # Usage visé par une ligne (tracteur routier) : cette ligne, quelle que soit la tranche
+            if code_usage and code_usage in lignes_usages:
+                return code_usage in _codes(l.Usages)
+            return (not l.Usages and valeur is not None and l.BorneMin is not None and l.BorneMin <= valeur
+                    and (l.BorneMax is None or valeur <= l.BorneMax))
+
+        ligne = next((l for l in lignes if tranche(l, duree)), None)
+        if ligne is None:
+            continue
+        annuelle = next((l for l in lignes if tranche(l, 12)), None)
+        return {"grille": grille, "ligne": ligne, "duree": duree, "annuelle": annuelle}, ""
+    return None, f"Véhicule ou durée ({duree} mois) absents du tarif à lecture directe."
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def tarif_direct(request):
+    """POST /api/auto/tarif-direct/ {demande de /api/offregarantie} : primes du tarif à lecture directe applicable au
+    véhicule (n'écrit rien). {Trouve: false, Motif} si l'offre, la durée ou le véhicule ne relèvent d'aucune grille."""
+    d = request.data
+    entier = lambda cle: int(_nombre(d.get(cle)) or 0)  # noqa: E731
+    resultat, motif = chercher_tarif_direct(
+        entier("IdCompagnie"), entier("IdOffre"), entier("IdTarif"), entier("CodeCarburant"),
+        entier("Puissance"), entier("Tonnage"), entier("CodeUsage"), _date(d.get("DateEffet")), _date(d.get("DateExpiration")),
+    )
+    if not resultat:
+        return Response({"Trouve": False, "Motif": motif})
+    grille, ligne, annuelle = resultat["grille"], resultat["ligne"], resultat["annuelle"]
+    compagnie = _lignes("SELECT raisonsociale AS n FROM stdcompagnie WHERE idcompagnie = %s", [grille.IdCompagnie])
+    nom_compagnie = (compagnie[0]["n"] or "").strip() if compagnie else ""
+    return Response({
+        "Trouve": True, "IdGrille": grille.id, "Grille": grille.Libelle, "IdLigne": ligne.id, "Tranche": ligne.Libelle,
+        "DureeMois": resultat["duree"], "Compagnie": nom_compagnie, "Source": grille.Source,
+        "PrimeAnnuelle": float(annuelle.PrimeNette if annuelle else ligne.PrimeNette),
+        **{m: float(getattr(ligne, m)) for m in MONTANTS_TARIF},
+        "Message": f"Tarif {nom_compagnie} à lecture directe : {grille.Libelle}, {ligne.Libelle}, {resultat['duree']} mois",
+    })

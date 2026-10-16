@@ -35,6 +35,7 @@ from .views_devis_sante import (
     enregistrer_devis_sante,
     enregistrer_filiale,
     initialiser_devis_sante,
+    importer_affilies,
     lire_devis_sante,
     supprimer_objet_saisie,
 )
@@ -120,6 +121,7 @@ urlpatterns = [
     path(r"devissante/adherent/", enregistrer_adherent, name="adherent_devis_sante"),
     path(r"devissante/affilie/", enregistrer_affilie, name="affilie_devis_sante"),
     path(r"devissante/suppression/", supprimer_objet_saisie, name="suppression_saisie_sante"),
+    path(r"devissante/importation/", importer_affilies, name="importation_saisie_sante"),
     path(r"devissante/enregistrement/", enregistrer_devis_sante, name="enregistrement_devis_sante_lephare"),
     path(r"devissante/<int:iddevis>/", lire_devis_sante, name="lecture_devis_sante"),
 

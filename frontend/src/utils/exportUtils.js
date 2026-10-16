@@ -2177,7 +2177,7 @@ const buildPropositionVoyage = (quote, { quittance: q = {}, garanties = [], voya
    TRANSPORT : bordereau de ressortie de primes facultés (modèle OREOLE « RESSORTIE DE PRIME
    FACULTES … », 29 colonnes GUCE). Impression sous forme condensée (colonnes principales,
    A4 paysage) ; l'export Excel du bordereau reprend les 29 colonnes. TOTAL GENERAL = prime
-   totale diminuée de 500 F par certificat (part AFS-CI), comme le contrat généré.
+   totale diminuée de la part AFS-CI de chaque certificat (réglage transport.part_afs_ci), comme le contrat généré.
    ========================================================================= */
 const libelleNumeroBordereau = (debutIso) => {
   if (!debutIso) return '';
@@ -2229,7 +2229,7 @@ const buildBordereauTransport = (donnees) => {
     </table>
     <table class="recap-vertical" style="margin-left:auto;">
       <tr><td class="label">Prime totale</td><td style="text-align:right;">${fcfa(t.PrimeTtc)} FCFA</td></tr>
-      <tr><td class="label">Part AFS-CI (500 F × ${t.Certificats || 0})</td><td style="text-align:right;">- ${fcfa(t.AccessoireClient)} FCFA</td></tr>
+      <tr><td class="label">Part AFS-CI (${t.Certificats || 0} certificat${(t.Certificats || 0) > 1 ? 's' : ''})</td><td style="text-align:right;">- ${fcfa(t.AccessoireClient)} FCFA</td></tr>
       <tr class="ligne-total"><td class="label">TOTAL GENERAL</td><td style="text-align:right;">${fcfa(t.TotalGeneral)} FCFA</td></tr>
     </table>
     <div class="bloc-signature-simple">Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(new Date())}</strong>.</div>
@@ -2580,7 +2580,8 @@ const remplacerChamps = (texte, valeurs, vide, echapper) => String(texte || '')
   .replace(/\{([a-z0-9_]+)(?::(maj))?\}/g, (m, cle, filtre) => {
     const v = valeurs[cle];
     if (v === undefined || v === null || String(v).trim() === '') return vide;
-    const brut = filtre === 'maj' ? String(v).toUpperCase() : String(v);
+    // Majuscules, unités de surface et de volume gardées en minuscules (« 12 m² » comme sur la fiche NSIA)
+    const brut = filtre === 'maj' ? String(v).toUpperCase().replace(/(\d\s*)M([²³])/g, '$1m$2') : String(v);
     return echapper ? echapperHtml(brut) : brut;
   });
 
@@ -2660,6 +2661,33 @@ export const buildDocumentDommages = (p, document) => {
     </div>
     ${pied.length ? `<div class="pd-pied">${pied.map(e).join('<br/>')}</div>` : ''}
   </div>`;
+};
+
+/** Libellé d'un document de la catégorie pour un bouton : « GARANTIE DE SOUMISSION » → « Garantie de soumission ». */
+export const libelleDocumentDommages = (titre) => {
+  const t = String(titre || '').trim().toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/** Document de la catégorie (ex. Garantie de soumission) imprimé depuis un devis Dommages, à la place de la facture
+ *  proforma ; numéro de la garantie : police de la compagnie saisie sur le devis, sinon numéro du devis. */
+export const printDocumentDevisDommages = async (idDevis, idDocument) => {
+  if (!idDevis) return;
+  const fenetre = ouvrirApercuImpression();
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation du document…</p>');
+  try {
+    const p = await dommagesApi.documentsDevis(idDevis);
+    const document = (p.Documents || []).find((x) => Number(x.Id) === Number(idDocument));
+    if (!document) throw new Error('Document non proposé pour ce devis.');
+    openPrintWindow(`${document.Titre} ${p.Contrat?.NumeroPolice || ''}`.trim(), buildDocumentDommages(p, document), fenetre);
+  } catch (err) {
+    console.error('Erreur document du devis Dommages :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de préparer le document du devis. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
 };
 
 /** Pièce de production d'un contrat Dommages : 'facture' ou identifiant d'un document de la catégorie. */

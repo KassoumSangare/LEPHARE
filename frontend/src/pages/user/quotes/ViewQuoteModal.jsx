@@ -11,6 +11,8 @@ import {
   estDevisVoyage,
   estDevisDommages,
   printBordereauTransport,
+  libelleDocumentDommages,
+  printDocumentDevisDommages,
 } from '../../../utils/exportUtils';
 import { imprimerDocumentSante } from '../../../utils/impressionsSante';
 import { formatDate } from '../../../utils/dateUtils';
@@ -84,6 +86,22 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     chargement
       .then((d) => { if (actif) setDetailBranche(d); })
       .catch(() => { if (actif) setDetailBranche({ erreur: true }); });
+    return () => { actif = false; };
+  }, [isOpen, idDevisBase, brancheDevis]);
+
+  // Devis Dommages : documents de la catégorie (ex. Garantie de soumission d'une caution de soumission), imprimés
+  // à la place de la facture proforma ; null pendant la lecture, [] si la catégorie n'en a pas pour ce devis
+  const [documentsDommages, setDocumentsDommages] = useState([]);
+  useEffect(() => {
+    let actif = true;
+    if (!isOpen || !idDevisBase || brancheDevis !== 'Tous Dommages') {
+      setDocumentsDommages([]);
+      return undefined;
+    }
+    setDocumentsDommages(null);
+    dommagesApi.documentsDevis(idDevisBase)
+      .then((r) => { if (actif) setDocumentsDommages(r?.Documents || []); })
+      .catch(() => { if (actif) setDocumentsDommages([]); });
     return () => { actif = false; };
   }, [isOpen, idDevisBase, brancheDevis]);
 
@@ -325,6 +343,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             <Champ libelle="Accessoire">{fcfa(quote.accessoires)}</Champ>
             <Champ libelle="Taxes">{fcfa(quote.taxes)}</Champ>
             <Champ libelle="FDG">{fcfa(quote.fga)}</Champ>
+            {/* Frais de gestion MINENE (IA, RC chef de famille : 1 500 F par adhérent), compris dans la prime TTC */}
+            {Number(raw.accessoiregestionnaire) > 0 && <Champ libelle="Frais de gestion">{fcfa(raw.accessoiregestionnaire)}</Champ>}
             <Champ libelle="Prime TTC" couleur="#34d399" libelleColore className="fiche-devis-ttc">{fcfa(quote.prime_totale)}</Champ>
           </div>
 
@@ -690,10 +710,17 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             Documents du devis
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            <div>
-              <strong style={{ color: '#fff' }}>Facture proforma</strong>
-              <div>Souscripteur, assuré, période, référence, détail prime nette, accessoires, taxes, FGA/CEDEAO et total TTC.</div>
-            </div>
+            {documentsDommages?.length ? documentsDommages.map((d) => (
+              <div key={d.Id}>
+                <strong style={{ color: '#fff' }}>{libelleDocumentDommages(d.Titre)}</strong>
+                <div>Fiche de la compagnie : bénéficiaire, candidat, appel d'offres, montant garanti en lettres, conditions d'appel, validité et signataire.</div>
+              </div>
+            )) : (
+              <div>
+                <strong style={{ color: '#fff' }}>Facture proforma</strong>
+                <div>Souscripteur, assuré, période, référence, détail prime nette, accessoires, taxes, FGA/CEDEAO et total TTC.</div>
+              </div>
+            )}
             <div>
               <strong style={{ color: '#fff' }}>Conditions particulières</strong>
               <div>Risque assuré, caractéristiques techniques, garanties, plafonds, franchises, réductions, prime comptant et signatures.</div>
@@ -719,8 +746,23 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </button>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {/* Caution (Dommages) : la fiche de la compagnie (Garantie de soumission) remplace la facture proforma */}
+            {documentsDommages?.map((d) => (
+              <button
+                key={d.Id}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => printDocumentDevisDommages(idDevisBase, d.Id)}
+                title={`${libelleDocumentDommages(d.Titre)} au modèle de la compagnie, avec les données du devis — enregistrable en PDF`}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Printer size={15} />
+                <span>Imprimer {libelleDocumentDommages(d.Titre)}</span>
+              </button>
+            ))}
+
             {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé */}
-            {!estDevisVoyage(quote) && (
+            {!estDevisVoyage(quote) && documentsDommages?.length === 0 && (
               <button
                 type="button"
                 className="btn btn-secondary"

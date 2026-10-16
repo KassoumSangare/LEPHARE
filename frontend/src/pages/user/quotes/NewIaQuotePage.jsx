@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, customerApi, settingsApi, contractApi, iaApi } from '../../../api/endpoints';
@@ -18,13 +18,14 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
+import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { arrondirMontant, reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, parametre, reglagesMinene } from '../../../utils/parametrage';
 
 // Catégorie IA MINENE (comme URANUS) : NSIA, offre 66, capitaux fixes, durée annuelle ou au
 // 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
@@ -40,14 +41,14 @@ const capitauxMinene = () => {
   return { CapitalDeces: ia.deces, CapitalIpp: ia.ipt, FraisTraitement: ia.fraisMedicaux };
 };
 const DUREES_MINENE = [4];
-// Réduction plafonnée à 35 % comme dans URANUS
-const REDUCTION_MAX = 35;
-// Clauses du tarif IA NSIA (document « TARIF IA_NSIA CI », feuille Clauses) : personnes de plus de
-// 60 ans à la souscription non garanties sauf dérogation de l'assureur ; indemnité limitée à
-// 200 millions par assuré et par sinistre. Avertissements, la dérogation restant possible.
+// Réduction plafonnée (35 % à l'origine, comme dans URANUS) et clauses du tarif IA NSIA (document « TARIF IA_NSIA
+// CI », feuille Clauses : personnes de plus de 60 ans à la souscription non garanties sauf dérogation de l'assureur,
+// indemnité limitée à 200 millions par assuré et par sinistre) : Administration > Le cabinet & règles de gestion.
+// Avertissements, la dérogation restant possible.
+const reductionMax = () => parametre('devis.reduction_max_ia', 35);
 const ID_COMPAGNIE_NSIA = 1;
-const AGE_MAX_NSIA = 60;
-const INDEMNITE_MAX_NSIA = 200000000;
+const ageMaxNsia = () => parametre('ia.nsia_age_max', 60);
+const indemniteMaxNsia = () => parametre('ia.nsia_indemnite_max', 200000000);
 const ageAu = (naissance, date) => {
   if (!naissance || !date) return null;
   const n = new Date(naissance);
@@ -78,10 +79,11 @@ const messageErreurApi = (err) => {
 };
 
 // Date d'expiration : date d'effet + durée - 1 jour (même règle que la base). Durée libre :
-// date saisie, sauf en MINENE où elle tombe au 31/12 de l'année d'effet (« Divers » d'URANUS)
+// date saisie ; en MINENE, échéance de la police Santé connexe, à défaut le 31/12 de l'année d'effet
+// (« Divers » d'URANUS)
 const expirationPour = (dateEffet, dureeId, personnalisee, minene = false) => {
   if (!dateEffet) return '';
-  if (Number(dureeId) === 5 && minene) return `${String(dateEffet).slice(0, 4)}-12-31`;
+  if (Number(dureeId) === 5 && minene) return personnalisee || `${String(dateEffet).slice(0, 4)}-12-31`;
   if (Number(dureeId) === 5) return personnalisee || '';
   const mois = { 1: 1, 2: 3, 3: 6, 4: 12 }[Number(dureeId)] || 12;
   const d = new Date(dateEffet);
@@ -200,10 +202,10 @@ export const NewIaQuotePage = () => {
     if (Number(compagnieId) !== ID_COMPAGNIE_NSIA || estMinene) return [];
     const alertes = [];
     const ageEffet = ageAu(a.DateNaissance, dateEffet);
-    if (ageEffet !== null && ageEffet > AGE_MAX_NSIA) {
-      alertes.push(`${ageEffet} ans à la date d'effet : NSIA ne garantit pas les personnes de plus de ${AGE_MAX_NSIA} ans à la souscription, sauf dérogation de l'assureur.`);
+    if (ageEffet !== null && ageEffet > ageMaxNsia()) {
+      alertes.push(`${ageEffet} ans à la date d'effet : NSIA ne garantit pas les personnes de plus de ${ageMaxNsia()} ans à la souscription, sauf dérogation de l'assureur.`);
     }
-    if (Number(a.CapitalDeces) > INDEMNITE_MAX_NSIA || Number(a.CapitalIpp) > INDEMNITE_MAX_NSIA) {
+    if (Number(a.CapitalDeces) > indemniteMaxNsia() || Number(a.CapitalIpp) > indemniteMaxNsia()) {
       alertes.push('NSIA limite l\'indemnité à 200 000 000 FCFA par assuré et par sinistre.');
     }
     return alertes;
@@ -314,6 +316,27 @@ export const NewIaQuotePage = () => {
     }
   }, [policeMineneParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // N° de police Santé MINENE saisi (ou choisi) à la création : l'IA reprend ce qu'elle a en commun avec la police
+  // Santé (client souscripteur, date d'effet, échéance, durée, terme) ; un devis rouvert garde les siennes
+  // (une fois par police : revenir à l'étape du champ ne défait pas ce que l'utilisateur a changé depuis)
+  const policeRepriseRef = useRef('');
+  const reprendrePoliceMinene = (p) => {
+    if (editIddevisParam || !p || policeRepriseRef.current === p.NumeroPolice) return;
+    policeRepriseRef.current = p.NumeroPolice;
+    if (p.DateEffet) setDateEffet(p.DateEffet);
+    if (p.DateEffet && p.DateExpiration) {
+      const annuelle = expirationPour(p.DateEffet, 4, '') === p.DateExpiration;
+      setDureeId(annuelle ? 4 : 5);
+      setExpirationPersonnalisee(annuelle ? '' : p.DateExpiration);
+    }
+    if (p.IdTerme) setTermeId(p.IdTerme);
+    if (p.IdClient) {
+      setSouscripteurId(p.IdClient);
+      setRechercheSouscripteur(p.Client || '');
+    }
+    info(`Police Santé ${p.NumeroPolice} : client, date d'effet et échéance repris.`);
+  };
+
   // Récapitulatif d'une création MINENE : aperçu lu à l'étape 3 (police connexe et date d'effet connues)
   useEffect(() => {
     if (!creationMinene || step !== 3 || !numeroPoliceConnexe.trim()) { setApercuMinene(null); return undefined; }
@@ -387,6 +410,8 @@ export const NewIaQuotePage = () => {
           primeNette: Number(raw.primenette) || 0,
           taxe: Number(raw.taxe) || 0,
           accessoire: Number(raw.accessoire) || 0,
+          // Frais de gestion MINENE (1 500 F par adhérent), compris dans la prime TTC
+          fraisGestion: Number(raw.accessoiregestionnaire) || 0,
           primeTtc: Number(raw.primettc) || 0,
         });
         setCompagnieId(entete.compagnieId);
@@ -1136,11 +1161,11 @@ export const NewIaQuotePage = () => {
               <input
                 type="number"
                 min="0"
-                max={REDUCTION_MAX}
+                max={reductionMax()}
                 className="form-control"
                 value={reduction}
-                onChange={(e) => setReduction(Math.max(0, Math.min(REDUCTION_MAX, Number(e.target.value) || 0)))}
-                title={`De 0 à ${REDUCTION_MAX} %`}
+                onChange={(e) => setReduction(Math.max(0, Math.min(reductionMax(), Number(e.target.value) || 0)))}
+                title={`De 0 à ${reductionMax()} %`}
               />
             </div>
           </div>
@@ -1158,9 +1183,14 @@ export const NewIaQuotePage = () => {
           {estMinene && (
             <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px', border: '1px solid rgba(249, 115, 22, 0.45)' }}>
               <h3 style={{ ...titreSection, color: '#f97316' }}>Contrat Santé MINENE connexe</h3>
-              <div className="form-group" style={{ maxWidth: '560px' }}>
-                <label className="form-label">Numéro de police Santé connexe (* requis)</label>
-                <input type="text" className="form-control" value={numeroPoliceConnexe} onChange={(e) => setNumeroPoliceConnexe(e.target.value)} placeholder="Ex: 1186123263114M" />
+              <div style={{ maxWidth: '560px' }}>
+                <PoliceMineneConnexe
+                  value={numeroPoliceConnexe}
+                  onChange={setNumeroPoliceConnexe}
+                  onPolice={reprendrePoliceMinene}
+                  produit="IA"
+                  libelle="Numéro de police Santé connexe (* requis)"
+                />
               </div>
               <p style={{ fontSize: '0.85rem', color: '#fb923c', margin: '0.5rem 0 0' }}>
                 {creationMinene
@@ -1626,12 +1656,13 @@ export const NewIaQuotePage = () => {
             </tbody>
           </table>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '1rem' }}>
             {(creationMinene && apercuMinene?.Totaux
               ? [
                 ['Prime nette', apercuMinene.Totaux.PrimeNette],
                 ['Taxes', apercuMinene.Totaux.Taxe],
-                ['Accessoires', apercuMinene.Totaux.Accessoire + apercuMinene.Totaux.FraisGestion],
+                ['Accessoires', apercuMinene.Totaux.Accessoire],
+                ['Frais de gestion', apercuMinene.Totaux.FraisGestion],
                 ['Prime TTC', apercuMinene.Totaux.PrimeTtc],
               ]
               : rienAModifier && totauxEnregistres
@@ -1639,6 +1670,7 @@ export const NewIaQuotePage = () => {
                 ['Prime nette', totauxEnregistres.primeNette],
                 ['Taxes', totauxEnregistres.taxe],
                 ['Accessoires', totauxEnregistres.accessoire],
+                ...(totauxEnregistres.fraisGestion > 0 ? [['Frais de gestion', totauxEnregistres.fraisGestion]] : []),
                 ['Prime TTC', totauxEnregistres.primeTtc],
               ]
               : [

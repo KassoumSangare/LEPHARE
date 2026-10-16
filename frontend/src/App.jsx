@@ -68,6 +68,8 @@ import ParametrageDommagesPage from './pages/admin/settings/ParametrageDommagesP
 import ParametrageSantePage from './pages/admin/settings/ParametrageSantePage';
 import ParametrageDepreciationPage from './pages/admin/settings/ParametrageDepreciationPage';
 import ParametragePoolTpvPage from './pages/admin/settings/ParametragePoolTpvPage';
+import ParametrageTarifsDirectsPage from './pages/admin/settings/ParametrageTarifsDirectsPage';
+import ParametrageReglesGarantiesPage from './pages/admin/settings/ParametrageReglesGarantiesPage';
 import RenouvellementPage from './pages/user/contracts/RenouvellementPage';
 
 // New Institutional Modules (LE PHARE V2)
@@ -214,6 +216,8 @@ function App() {
                 <Route path="/admin/settings/sante" element={<AdminRoute><ParametrageSantePage /></AdminRoute>} />
                 <Route path="/admin/settings/depreciation" element={<AdminRoute><ParametrageDepreciationPage /></AdminRoute>} />
                 <Route path="/admin/settings/pool-tpv" element={<AdminRoute><ParametragePoolTpvPage /></AdminRoute>} />
+                <Route path="/admin/settings/tarifs-directs" element={<AdminRoute><ParametrageTarifsDirectsPage /></AdminRoute>} />
+                <Route path="/admin/settings/regles-garanties" element={<AdminRoute><ParametrageReglesGarantiesPage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}
                 <Route path="/parametrage/garanties" element={<Navigate to="/admin/settings/garanties-oreole" replace />} />

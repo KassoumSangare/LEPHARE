@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, customerApi, settingsApi, contractApi, risquesDiversApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { ArrowLeft, ArrowRight, Check, Plus, Shield, AlertTriangle } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
+import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { arrondirMontant, reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, parametre, reglagesMinene } from '../../../utils/parametrage';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
@@ -25,7 +26,8 @@ const ID_TARIF_MINENE = 104;
 // Capitaux : Administration > Réglages Santé MINENE (50 M / 5 M / 10 M à l'origine)
 const MINENE = { idCompagnie: 1, dureeId: 4 };
 // Réduction commerciale RC plafonnée comme dans URANUS
-const REDUCTION_MAX_RC = 35;
+// Réduction maximale RC : Administration > Le cabinet & règles de gestion (35 % à l'origine)
+const reductionMaxRc = () => parametre('devis.reduction_max_rc', 35);
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const aujourdhui = () => new Date().toISOString().split('T')[0];
@@ -72,7 +74,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const infos = PRODUITS[idProduit];
   const estRc = idProduit === 8;
   const navigate = useNavigate();
-  const { success, error: toastError } = useToast();
+  const { success, error: toastError, info } = useToast();
 
   // « Modifier » depuis le registre des devis : ?edit=<iddevis>
   const [searchParams] = useSearchParams();
@@ -234,6 +236,41 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     }
     if (searchParams.get('effet')) setDateEffet(searchParams.get('effet'));
   }, [policeMineneParam]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // N° de police Santé MINENE saisi (ou choisi) à la création : la RC reprend ce qu'elle a en commun avec la
+  // police Santé (client souscripteur et assuré, date d'effet, échéance, durée, terme) ; un devis rouvert garde les siennes
+  // (une fois par police : revenir à l'étape du champ ne défait pas ce que l'utilisateur a changé depuis)
+  const policeRepriseRef = useRef('');
+  const reprendrePoliceMinene = (p) => {
+    if (editIddevisParam || !p || policeRepriseRef.current === p.NumeroPolice) return;
+    policeRepriseRef.current = p.NumeroPolice;
+    if (p.DateEffet) setDateEffet(p.DateEffet);
+    if (p.DateEffet && p.DateExpiration) {
+      const annuelle = expirationPour(p.DateEffet, 4, '') === p.DateExpiration;
+      setDureeId(annuelle ? 4 : 5);
+      setExpirationPersonnalisee(annuelle ? '' : p.DateExpiration);
+    }
+    if (p.IdTerme) setTermeId(p.IdTerme);
+    if (p.IdClient) {
+      setSouscripteurId(p.IdClient);
+      setRechercheSouscripteur(p.Client || '');
+      setAssureId(p.IdClient);
+      setRechercheAssure(p.Client || '');
+    }
+    info(`Police Santé ${p.NumeroPolice} : client, date d'effet et échéance repris.`);
+  };
+
+  // Primes d'une RC MINENE avant l'enregistrement : par adhérent de la police Santé (prime, accessoire, frais de
+  // gestion, taxe), lues à l'étape 3 (production/minene_connexes.py, mêmes fonctions que la base)
+  const [apercuMinene, setApercuMinene] = useState(null);
+  useEffect(() => {
+    if (!offreMinene || step !== 3 || !numeroPoliceConnexe.trim()) { setApercuMinene(null); return undefined; }
+    let actif = true;
+    risquesDiversApi.apercuMinene(numeroPoliceConnexe.trim(), dateEffet)
+      .then((d) => { if (actif) setApercuMinene(d); })
+      .catch((err) => { if (actif) setApercuMinene({ erreur: messageErreurApi(err) }); });
+    return () => { actif = false; };
+  }, [offreMinene, step, numeroPoliceConnexe, dateEffet]);
 
   // MINENE : compagnie, durée et capitaux fixés comme dans URANUS (à la création)
   const estMinene = estRc && (Number(idTarif) === ID_TARIF_MINENE || offreMinene);
@@ -773,19 +810,21 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
               )}
             </div>
             <div className="form-group">
-              <label className="form-label">Réduction commerciale (%{estRc ? `, ${REDUCTION_MAX_RC} au plus` : ''})</label>
-              <input type="number" min="0" max={estRc ? REDUCTION_MAX_RC : 100} className="form-control" value={reduction}
-                onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? REDUCTION_MAX_RC : 100, Number(e.target.value) || 0)))} />
+              <label className="form-label">Réduction commerciale (%{estRc ? `, ${reductionMaxRc()} au plus` : ''})</label>
+              <input type="number" min="0" max={estRc ? reductionMaxRc() : 100} className="form-control" value={reduction}
+                onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? reductionMaxRc() : 100, Number(e.target.value) || 0)))} />
             </div>
             <div className="form-group">
               <label className="form-label">N° de police compagnie (optionnel)</label>
               <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
             </div>
             {offreMinene && (
-              <div className="form-group">
-                <label className="form-label">N° de police Santé MINENE (* requis)</label>
-                <input type="text" className="form-control" value={numeroPoliceConnexe} onChange={(e) => setNumeroPoliceConnexe(e.target.value)} />
-              </div>
+              <PoliceMineneConnexe
+                value={numeroPoliceConnexe}
+                onChange={setNumeroPoliceConnexe}
+                onPolice={reprendrePoliceMinene}
+                produit="RC"
+              />
             )}
           </div>
 
@@ -929,7 +968,36 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
           <h3 style={titreSection}>Primes</h3>
           {offreMinene ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Offre MINENE : les primes sont calculées par la base à l'enregistrement.</p>
+            <div>
+              {apercuMinene?.Totaux ? (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
+                    {[
+                      ['Prime nette', apercuMinene.Totaux.PrimeNette],
+                      ['Accessoires', apercuMinene.Totaux.Accessoire],
+                      ['Frais de gestion', apercuMinene.Totaux.FraisGestion],
+                      ['Taxes', apercuMinene.Totaux.Taxe],
+                      ['Prime TTC', apercuMinene.Totaux.PrimeTtc],
+                    ].map(([libelle, valeur]) => (
+                      <div key={libelle} style={{ background: libelle === 'Prime TTC' ? 'rgba(14, 165, 233, 0.1)' : 'var(--bg-surface-elevated)', padding: '0.9rem', borderRadius: '8px', border: libelle === 'Prime TTC' ? `2px solid ${couleur}` : '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{libelle}</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{fcfa(valeur)} FCFA</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.75rem 0 0' }}>
+                    Par adhérent : prime {fcfa(apercuMinene.Unitaire.PrimeNette)}, accessoire {fcfa(apercuMinene.Unitaire.Accessoire)},
+                    frais de gestion MINENE {fcfa(apercuMinene.Unitaire.FraisGestion)}, taxe {String(apercuMinene.TauxTaxe).replace('.', ',')} % ({fcfa(apercuMinene.Unitaire.Taxe)}),
+                    soit {fcfa(apercuMinene.Unitaire.PrimeTtc)} F TTC × {apercuMinene.Nombre} adhérent{apercuMinene.Nombre > 1 ? 's' : ''} de la police Santé
+                    {' '}{apercuMinene.Police} (Administration &gt; Réglages Santé MINENE). Montants confirmés par la base à l&apos;enregistrement.
+                  </p>
+                </>
+              ) : (
+                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
+                  {apercuMinene?.erreur || "Offre MINENE : les primes sont calculées par la base à l'enregistrement, pour chaque adhérent de la police Santé."}
+                </p>
+              )}
+            </div>
           ) : (
             <>
               <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 0, lineHeight: 1.5 }}>

@@ -40,6 +40,8 @@ import {
   UserCog,
   UserPlus,
   Users,
+  Table2,
+  Link2,
 } from 'lucide-react';
 
 export const ADMIN_MENU = [
@@ -59,7 +61,7 @@ export const ADMIN_MENU = [
     titre: 'Le cabinet',
     description: "Identité du cabinet, ce que reprennent les documents imprimés et les règles de gestion.",
     items: [
-      { to: '/admin/settings/cabinet', droit: 'parametrage.update', label: 'Le cabinet & règles de gestion', icon: Landmark, description: "Coordonnées, logos et mentions des documents, règles de gestion (registre des devis, réduction Voyage, reversements) et délais d'avis d'échéance." },
+      { to: '/admin/settings/cabinet', droit: 'parametrage.update', label: 'Le cabinet & règles de gestion', icon: Landmark, description: "Coordonnées, logos et mentions des documents ; règles de gestion de toutes les branches : réductions commerciales maximales (Auto, IA, RC, Voyage), clauses IA NSIA, gestionnaire Santé, part AFS-CI du Transport, registre des devis, reversements, arrondi des primes ; délais d'avis d'échéance." },
     ],
   },
   {
@@ -98,8 +100,10 @@ export const ADMIN_MENU = [
       { to: '/admin/settings/marques', droit: 'parametrage.update', label: 'Marques de véhicules', icon: Tag, description: 'Liste des marques proposées lors de la saisie du véhicule.' },
       { to: '/admin/settings/flotte', droit: 'tarifs.view', label: 'Réductions flotte', icon: Truck, description: "Remise accordée automatiquement selon le nombre de véhicules d'un devis flotte, par compagnie." },
       { to: '/admin/settings/securite-routiere', droit: 'tarifs.view', label: 'Sécurité routière', icon: TrafficCone, description: 'Formules de la garantie des personnes transportées, par compagnie : capitaux et prime nette.' },
+      { to: '/admin/settings/regles-garanties', droit: 'tarifs.view', label: 'Règles des garanties', icon: Link2, description: "Liens entre garanties par compagnie : obligatoires, offertes ou à prime forfaitaire selon celles souscrites, exigées, exclues, non commercialisées dans une catégorie (tarif annoté NSIA). Les règles marquées « Barème » sont aussi appliquées par le calcul des primes (NSIA : défense-recours 4 200 F, bris de glace et recours anticipé offerts avec les dommages ou la collision)." },
+      { to: '/admin/settings/tarifs-directs', droit: 'tarifs.view', label: 'Tarifs à lecture directe', icon: Table2, description: "Primes toutes faites de chaque compagnie (NSIA : VP essence, VP diesel, TPC, TPM) par tranche et par durée, appliquées d'office aux offres cochées ; coefficients des contrats de moins d'un an." },
       { to: '/admin/settings/pool-tpv', droit: 'tarifs.view', label: 'Pool TPV (catégorie 204)', icon: Bus, description: "Tarif du Pool des transports publics de voyageurs (RC selon les places, Recours, fractions selon la durée, accessoires) et primes RC + Recours dues au Pool." },
-      { to: '/admin/settings/depreciation', droit: 'tarifs.view', label: 'Dépréciation et âge des véhicules', icon: TrendingDown, description: "Tableau de la CIEAMI (valeur vénale proposée à la saisie, à l'import et au renouvellement) et garanties admises selon l'âge du véhicule (NSIA : tous risques de 0 à 5 ans, Auto Plus de 5 à 10 ans)." },
+      { to: '/admin/settings/depreciation', droit: 'tarifs.view', label: 'Dépréciation et âge des véhicules', icon: TrendingDown, description: "Tableau de la CIEAMI (valeur vénale proposée à la saisie, à l'import et au renouvellement) et garanties admises selon l'âge du véhicule (NSIA : tous risques de 0 à 5 ans, Auto Plus de 5 à 10 ans : cochée d'office à l'écran, âge minimum suivi par le calcul des primes)." },
     ],
   },
   {

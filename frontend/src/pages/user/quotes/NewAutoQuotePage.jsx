@@ -47,8 +47,11 @@ import {
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { ageAdmisGarantie, ageVehiculeAns, arrondirMontant, garantieNonAdmise, parametre } from '../../../utils/parametrage';
 import {
+  ageAdmisGarantie, ageRestreintGaranties, ageVehiculeAns, arrondirMontant, garantieNonAdmise, parametre, reglesInteractionsAuto,
+} from '../../../utils/parametrage';
+import {
+  appliquerReglesGaranties,
   baseAccessoireAuto,
   calculerTotauxDevisAuto,
   cedeaoDansPrimeNette,
@@ -56,6 +59,8 @@ import {
   extraireLigneCumul,
   ID_SOUS_GARANTIE_NSIA_AUTO_PLUS,
   ID_SOUS_GARANTIE_CEDEAO,
+  noteCalculGarantie,
+  sansGarantiesNonAdmises,
 } from '../../../utils/tarificationAuto';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
@@ -172,6 +177,9 @@ const garantiesDepuisMoteur = (lignes, places = 5) => (lignes || [])
     code: `GAR_${item.IdSousGarantie || item.IdGarantie}`,
     nom: item.LibelleSousGarantie,
     acquise: Boolean(item.Acquise ?? true),
+    // Acquise au barème : une garantie décochée ensuite (âge du véhicule, choix de l'utilisateur)
+    // fait corriger le devis enregistré
+    acquiseBareme: Boolean(item.Acquise ?? true),
     capital: item.Capital ? `${Number(item.Capital).toLocaleString('fr-FR')} F` : 'Néant',
     franchise: item.TexteFranchise || (item.Franchise ? `${item.Franchise} F` : 'Néant'),
     formule: item.Formule || 'CIMA Standard',
@@ -215,6 +223,25 @@ const empreinteVehicule = (v) => JSON.stringify(CHAMPS_VEHICULE.map((champ) => {
   if (typeof valeur === 'number') return valeur;
   return String(valeur ?? '').trim().toUpperCase();
 }));
+
+// Saisie d'une garantie ajoutée (devis mono) ; texte_franchise et taux_taxe viennent du calcul de ses primes
+const FORMULAIRE_GARANTIE_VIDE = {
+  capital: '0',
+  prime_annuelle: '0',
+  prime_nette: '0',
+  montant_franchise: '0',
+  taux_franchise: '0',
+  franchise_minimum: '0',
+  franchise_maximum: '0',
+  capital_deces: '0',
+  capital_ipp: '0',
+  capital_ft: '0',
+  reduction_commerciale: '0',
+  reduction_bns: '0',
+  acquise: true,
+  texte_franchise: '',
+  taux_taxe: null,
+};
 
 // Clé des garanties personnalisées du véhicule saisi à l'écran Véhicule, pas encore dans la flotte
 const CLE_SAISIE = '__saisie__';
@@ -279,21 +306,10 @@ export const NewAutoQuotePage = () => {
   const [newMarqueInput, setNewMarqueInput] = useState('');
   const [isAddGarantieModalOpen, setIsAddGarantieModalOpen] = useState(false);
   const [selectedSousGarantieId, setSelectedSousGarantieId] = useState('');
-  const [newGarantieForm, setNewGarantieForm] = useState({
-    capital: '0',
-    prime_annuelle: '0',
-    prime_nette: '0',
-    montant_franchise: '0',
-    taux_franchise: '0',
-    franchise_minimum: '0',
-    franchise_maximum: '0',
-    capital_deces: '0',
-    capital_ipp: '0',
-    capital_ft: '0',
-    reduction_commerciale: '0',
-    reduction_bns: '0',
-    acquise: true,
-  });
+  const [newGarantieForm, setNewGarantieForm] = useState(FORMULAIRE_GARANTIE_VIDE);
+  // Calcul des primes de la garantie choisie : { enCours, note } ; seul le dernier calcul demandé est appliqué
+  const [calculGarantieAjoutee, setCalculGarantieAjoutee] = useState(null);
+  const dernierCalculGarantieRef = useRef(0);
 
   // ----------------------------------------------------
   // ÉCRAN 1 : CONTRAT
@@ -309,6 +325,8 @@ export const NewAutoQuotePage = () => {
   const [carrosserieId, setCarrosserieId] = useState(1);
   const [carrosserie, setCarrosserie] = useState('CAMIONNETTE');
   const [reductionCommerciale, setReductionCommerciale] = useState(0);
+  // Réduction commerciale maximale : Administration > Le cabinet & règles de gestion (35 % à l'origine, comme URANUS)
+  const reductionMaxAuto = parametre('devis.reduction_max_auto', 35);
   const [bonusMalus, setBonusMalus] = useState(0);
   const [termeContrat, setTermeContrat] = useState(libelleTerme(ID_TERME_PAR_DEFAUT));
   const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
@@ -436,9 +454,35 @@ export const NewAutoQuotePage = () => {
   // Vide au départ : les garanties viennent uniquement de l'offre (moteur CIMA / stdoffregarantie)
   // ou du devis rouvert — plus de liste figée avec des primes fictives.
   const [garanties, setGaranties] = useState([]);
+  // Garanties non admises pour l'âge du véhicule que l'utilisateur a cochées quand même : un
+  // recalcul du barème ne les décoche plus
+  const garantiesAccordeesRef = useRef(new Set());
 
   // Tuiles financières éditables en mode Imposition
   const [editedExtras, setEditedExtras] = useState(TUILES_NON_IMPOSEES);
+
+  // Tarif à lecture directe de la compagnie (Administration > Réglages Automobile > Tarifs à lecture directe) :
+  // ligne de grille applicable au véhicule, à l'offre et à la durée (POST /api/auto/tarif-direct/). Appliquée d'office
+  // à un nouveau devis ; un devis rouvert ou renouvelé garde ses montants tant que l'utilisateur ne l'applique pas.
+  // Une garantie retirée, décochée, ajoutée ou dont la prime est saisie suspend la grille (retour au barème).
+  const [tarifDirect, setTarifDirect] = useState(null);
+  const [choixTarifDirect, setChoixTarifDirect] = useState({ idLigne: null, actif: true, suspendu: false });
+  const [tarifDirectParDefaut] = useState(() => {
+    const parametres = new URLSearchParams(window.location.search);
+    return !parametres.get('edit') && parametres.get('renouvellement') !== '1';
+  });
+  const tarifDirectActif = typeContrat !== 'FLOTTE' && Boolean(tarifDirect)
+    && (choixTarifDirect.idLigne === tarifDirect.IdLigne ? choixTarifDirect.actif : tarifDirectParDefaut);
+  const choisirTarifDirect = (actif) => {
+    if (!tarifDirect) return;
+    setChoixTarifDirect({ idLigne: tarifDirect.IdLigne, actif, suspendu: false });
+    if (actif) {
+      // La grille remplace les primes imposées à la main
+      setIsEditingPrimes(false);
+      setPrimesImposees(false);
+      setEditedExtras(TUILES_NON_IMPOSEES);
+    }
+  };
 
   // Ligne cumul (IdGarantie = 0) renvoyée par fn_garantie_offre : accessoire (fn_get_accessoire,
   // fonction de la tranche de prime nette) et taxe sur accessoire — introuvables autrement côté écran.
@@ -481,10 +525,16 @@ export const NewAutoQuotePage = () => {
       || ligneCumul
       || (typeContrat !== 'FLOTTE' ? accessoireGaranties : null);
 
-    // Devis rouvert et garanties intactes : on reprend exactement les totaux enregistrés
-    const base = totauxEnregistres && garanties === garantiesEnregistreesRef.current
-      ? totauxEnregistres
-      : calculerTotauxDevisAuto({ garanties, ligneCumul: cumulAccessoire, vehiculesCount });
+    // Tarif à lecture directe appliqué : ses montants tels que publiés par la compagnie. Sinon, devis rouvert et
+    // garanties intactes : on reprend exactement les totaux enregistrés
+    const base = tarifDirectActif
+      ? {
+        pa: tarifDirect.PrimeAnnuelle, pn: tarifDirect.PrimeNette, taxe: tarifDirect.Taxe, fga: tarifDirect.Fga,
+        accessoire: tarifDirect.Accessoire, cedeao: tarifDirect.Cedeao, ttc: tarifDirect.PrimeTtc,
+      }
+      : totauxEnregistres && garanties === garantiesEnregistreesRef.current
+        ? totauxEnregistres
+        : calculerTotauxDevisAuto({ garanties, ligneCumul: cumulAccessoire, vehiculesCount });
 
     const finalPA = imposer('pa', base.pa);
     const finalPN = imposer('pn', base.pn);
@@ -526,6 +576,8 @@ export const NewAutoQuotePage = () => {
     accessoireGaranties,
     baseAccessoire,
     totauxEnregistres,
+    tarifDirectActif,
+    tarifDirect,
   ]);
 
   // Valeur affichée dans une tuile éditable : la saisie si elle existe, sinon le total calculé
@@ -541,9 +593,13 @@ export const NewAutoQuotePage = () => {
   // Une prime de garantie a changé : les totaux qui en découlent reprennent le calcul pour
   // refléter la modification en temps réel. Un accessoire saisi à la main reste imposé ; sinon
   // il suit déjà la tranche de la nouvelle prime nette (accessoireGaranties).
-  const libererTotauxDependants = () => setEditedExtras((prev) => ({
-    ...prev, pa: null, pn: null, taxe: null, fga: null, ttc: null,
-  }));
+  const libererTotauxDependants = () => {
+    // Garanties personnalisées : le tarif à lecture directe ne vaut plus, retour au barème
+    if (tarifDirectActif) setChoixTarifDirect({ idLigne: tarifDirect.IdLigne, actif: false, suspendu: true });
+    setEditedExtras((prev) => ({
+      ...prev, pa: null, pn: null, taxe: null, fga: null, ttc: null,
+    }));
+  };
 
   // Paramètres transmis au moteur CIMA (fn_garantie_offre). Mémorisés pour relancer le calcul
   // dès qu'une donnée d'entrée change : auparavant seuls offre/tarif/compagnie déclenchaient
@@ -676,6 +732,24 @@ export const NewAutoQuotePage = () => {
     formuleAssistanceId,
   ]);
 
+  // Tarif à lecture directe applicable (un véhicule) : recherché à chaque changement des données de tarification
+  useEffect(() => {
+    if (typeContrat === 'FLOTTE' || !compagnieId || !offreId || !dateEffet) {
+      setTarifDirect(null);
+      return undefined;
+    }
+    let actif = true;
+    const minuterie = setTimeout(() => {
+      quoteApi.chercherTarifDirectAuto(calculPayload)
+        .then((r) => { if (actif) setTarifDirect(r?.Trouve ? r : null); })
+        .catch((e) => {
+          console.warn('Tarif à lecture directe indisponible : calcul au barème', e);
+          if (actif) setTarifDirect(null);
+        });
+    }, 300);
+    return () => { actif = false; clearTimeout(minuterie); };
+  }, [calculPayload, typeContrat, compagnieId, offreId, dateEffet]);
+
   // Valeur vénale du tableau de dépréciation pour le véhicule en saisie (genre, type, carrosserie,
   // catégorie, charge utile, valeur neuve, mise en circulation, date d'effet)
   useEffect(() => {
@@ -722,14 +796,20 @@ export const NewAutoQuotePage = () => {
         // elle n'a aucune garantie configurée pour cette compagnie (résultat vide) :
         // ne rien faire ici laissait affichées les garanties de l'offre précédente,
         // donnant l'impression que le tableau ne changeait jamais.
-        const mapped = garantiesDepuisMoteur(res.data, nombrePlace);
+        // Garanties non admises pour l'âge du véhicule : décochées, sauf celles que l'utilisateur a accordées
+        const motif = retireeDOffice(instantaneVehicule());
+        const mapped = avecReglesGaranties(sansGarantiesNonAdmises(
+          garantiesDepuisMoteur(res.data, nombrePlace),
+          (id) => !garantiesAccordeesRef.current.has(Number(id)) && motif(id),
+        ), instantaneVehicule(), true);
 
         setLigneCumul(extraireLigneCumul(res.data));
         setGaranties(mapped);
         if (!silent) {
-          // Retour au barème : les primes imposées sont abandonnées
+          // Retour au barème : les primes imposées et le tarif à lecture directe sont abandonnés
           setPrimesImposees(false);
           setEditedExtras(TUILES_NON_IMPOSEES);
+          if (tarifDirect) setChoixTarifDirect({ idLigne: tarifDirect.IdLigne, actif: false, suspendu: false });
           if (mapped.length > 0) {
             info('Garanties et primes mises à jour depuis le moteur de tarification CIMA !');
           } else {
@@ -868,22 +948,68 @@ export const NewAutoQuotePage = () => {
     nsiaAutoPlus: (l.garanties_enregistrees || []).some(
       (g) => Number(g.IdGarantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS && g.Acquise,
     ),
-    // Garanties acquises enregistrées (contrôle des garanties admises selon l'âge)
-    idsGarantiesEnregistrees: (l.garanties_enregistrees || []).filter((g) => g.Acquise).map((g) => Number(g.IdGarantie)),
   });
 
   // Garanties non admises pour l'âge du véhicule (règles de la compagnie) : motif par sous-garantie
+  const contexteAge = (v) => ({
+    idCompagnie: compagnieId,
+    ageAns: ageVehiculeAns(v?.dateMec, dateEffet),
+    codeCategorie: categories.find((cat) => Number(cat.id) === Number(v?.idTarif))?.code || '',
+  });
   const nonAdmisePour = (v) => {
-    const ageAns = ageVehiculeAns(v?.dateMec, dateEffet);
-    const codeCategorie = categories.find((cat) => Number(cat.id) === Number(v?.idTarif))?.code || '';
-    return (idSousGarantie) => garantieNonAdmise({ idCompagnie: compagnieId, idSousGarantie, ageAns, codeCategorie });
+    const contexte = contexteAge(v);
+    return (idSousGarantie) => garantieNonAdmise({ ...contexte, idSousGarantie });
   };
-  // Garanties acquises d'un véhicule de flotte : personnalisées, estimées ou enregistrées
-  const garantiesAcquisesFlotte = (v) => {
-    const perso = garantiesPersonnalisees(v);
-    if (perso) return perso.garanties.filter((g) => g.acquise).map((g) => Number(g.id_garantie));
-    return estimationVehicule(v)?.ids || v.idsGarantiesEnregistrees || [];
+  // Règles entre garanties de la compagnie pour la catégorie du véhicule (Administration > Réglages Automobile >
+  // Règles des garanties) : obligatoires, offertes, exigées, exclues, non commercialisées…
+  const reglesGarantiesPour = (v) => reglesInteractionsAuto(compagnieId, contexteAge(v).codeCategorie);
+  const avecReglesGaranties = (liste, v, initial = false) => appliquerReglesGaranties(
+    liste, reglesGarantiesPour(v), { codeCategorie: contexteAge(v).codeCategorie, initial },
+  );
+  const reglesGarantiesEcran = reglesGarantiesPour({ idTarif: idTarifCalcul });
+  // Garanties proposées à l'ajout : sans celles que la compagnie ne commercialise pas dans la catégorie
+  const codeCategorieEcran = contexteAge({ idTarif: idTarifCalcul }).codeCategorie;
+  const garantiesAjoutables = sousGarantiesAll.filter((sg) => !reglesGarantiesEcran.some((r) => (
+    r.Type === 'NON_PROPOSEE' && Number(r.IdSousGarantie) === Number(sg.IdSousGarantie || sg.id)
+    && String(r.Categories || '').split(',').includes(String(codeCategorieEcran))
+  )));
+  // NSIA Auto Plus demandée d'office pour un véhicule NSIA de 5 ans et plus, dans l'âge que la compagnie admet
+  // (fiche « NSIA AUTO PLUS » : 5 à 10 ans, Administration > Dépréciation et âge des véhicules) ; la case reste
+  // modifiable. Le moteur ne la retient pas dans les offres tous risques (dommages).
+  const autoPlusDOffice = (v) => {
+    if (!isNsiaCompany) return false;
+    const age = ageVehiculeAns(v?.dateMec, dateEffet);
+    return age !== null && age >= 5 && !nonAdmisePour(v)(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS);
   };
+  // Garanties non admises non accordées d'office : sauf NSIA Auto Plus quand sa case est cochée,
+  // l'utilisateur l'ayant demandée
+  const retireeDOffice = (v) => {
+    const motif = nonAdmisePour(v);
+    return (idSousGarantie) => !(v?.nsiaAutoPlus && Number(idSousGarantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)
+      && motif(idSousGarantie);
+  };
+  // Mise en circulation saisie à l'écran Véhicule : NSIA Auto Plus cochée ou décochée d'office selon l'âge
+  // (pas au chargement d'un devis, qui garde son choix ; délai : la date se tape chiffre par chiffre)
+  const mecSaisieRef = useRef(false);
+  useEffect(() => {
+    if (!mecSaisieRef.current) return undefined;
+    const minuterie = setTimeout(() => {
+      mecSaisieRef.current = false;
+      const age = ageVehiculeAns(dateMec, dateEffet);
+      if (!isNsiaCompany || age === null) return;
+      const doffice = autoPlusDOffice({ dateMec, idTarif: idTarifCalcul });
+      if (doffice === Boolean(nsiaAutoPlus)) return;
+      setNsiaAutoPlus(doffice);
+      info(doffice
+        ? `Véhicule de ${age} ans : NSIA Auto Plus ajoutée d'office (NSIA, véhicules de ${ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)?.replace(/^de /, '') || '5 ans et plus'}). Décochez-la à l'écran Contrat si besoin.`
+        : `Véhicule de ${age} an${age > 1 ? 's' : ''} : NSIA Auto Plus retirée (hors de l'âge admis par NSIA).`);
+    }, 700);
+    return () => clearTimeout(minuterie);
+  }, [dateMec]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Garanties d'un véhicule de flotte telles qu'elles seront enregistrées : personnalisées, estimées
+  // (barème selon l'âge du véhicule) ou enregistrées
+  const garantiesConnuesFlotte = (v) => garantiesPersonnalisees(v)?.garanties
+    || (vehiculeAEnvoyer(v) ? estimationVehicule(v)?.garanties : v.garantiesEnregistrees) || [];
 
   // Véhicule à (r)envoyer à sp_creation_devis : nouveau, modifié, en-tête du devis modifié
   // (enteteModifiee, calculé plus bas avec le souscripteur) ou garanties remises au barème
@@ -1002,14 +1128,16 @@ export const NewAutoQuotePage = () => {
     transportEleves: false,
     transportEmployes: false,
     transportPassagerSupplementaire: false,
-    nsiaAutoPlus: false,
+    // Case « NSIA Auto Plus » de l'écran Contrat : elle vaut pour toute la flotte
+    nsiaAutoPlus: Boolean(nsiaAutoPlus),
   });
   // Formulaire assurance auto d'OREOLE (compte rendu du 12-10-2026) : le même fichier sert au devis mono
   // (un véhicule, repris dans l'écran Véhicule) et au devis flotte (plusieurs véhicules)
   const importerFichierVehicules = async (lignes, options = {}) => {
     if (options.format === 'formulaire' && lignes.length === 1 && !flotteVehicules.length) {
       setTypeContrat('MONO');
-      chargerVehicule({ ...defautsImport(), ...lignes[0].Vehicule });
+      const vehicule = { ...defautsImport(), ...lignes[0].Vehicule };
+      chargerVehicule({ ...vehicule, nsiaAutoPlus: vehicule.nsiaAutoPlus || (Boolean(lignes[0].Vehicule?.dateMec) && autoPlusDOffice(vehicule)) });
       setValeurVenaleSaisie(Number(lignes[0].Fichier?.ValeurVenale) > 0);
       success(`Véhicule ${lignes[0].Vehicule.immatriculation} repris du formulaire (devis mono) : vérifiez-le à l'écran Véhicule.`);
       return;
@@ -1024,6 +1152,8 @@ export const NewAutoQuotePage = () => {
     const ajouts = lignes.map((l) => ({
       ...defauts,
       ...l.Vehicule,
+      // NSIA Auto Plus : case de l'écran Contrat, sinon d'office selon l'âge du véhicule (date du fichier)
+      nsiaAutoPlus: defauts.nsiaAutoPlus || (Boolean(l.Vehicule?.dateMec) && autoPlusDOffice({ ...defauts, ...l.Vehicule })),
       cle: nouvelleCleVehicule(),
       idDevisDetail: null,
       enregistre: false,
@@ -1123,11 +1253,15 @@ export const NewAutoQuotePage = () => {
     success(`Garanties du véhicule ${nom} personnalisées : elles seront enregistrées avec le devis.`);
   };
 
-  // Garanties de l'offre d'un véhicule calculées par le moteur CIMA (fn_garantie_offre)
+  // Garanties de l'offre d'un véhicule calculées par le moteur CIMA (fn_garantie_offre) ; celles que
+  // la compagnie n'admet pas pour l'âge du véhicule ne sont pas accordées d'office
+  const baremeSelonAge = (lignes, v) => avecReglesGaranties(
+    sansGarantiesNonAdmises(garantiesDepuisMoteur(lignes, v.nombrePlace), retireeDOffice(v)), v, true,
+  );
   const chargerBaremeVehicule = async (v) => {
     try {
       const res = await quoteApi.calculateOffreGarantie(payloadMoteur(v));
-      return garantiesDepuisMoteur(res?.data, v.nombrePlace);
+      return baremeSelonAge(res?.data, v);
     } catch (e) {
       throw new Error(messageEnregistrement(e));
     }
@@ -1170,13 +1304,13 @@ export const NewAutoQuotePage = () => {
         const empreinte = `${empreinteVehicule(v)}|${enteteDevis}`;
         try {
           const res = await quoteApi.calculateOffreGarantie(payloadMoteur(v));
-          const garantiesVehicule = garantiesDepuisMoteur(res?.data, v.nombrePlace);
+          const garantiesVehicule = baremeSelonAge(res?.data, v);
           // Offre sans garantie paramétrée pour cette compagnie : pas de prime à afficher (0 F tromperait)
           return [v.cle, {
             empreinte,
             totaux: garantiesVehicule.length ? calculerTotauxDevisAuto({ garanties: garantiesVehicule }) : null,
             sansGarantie: garantiesVehicule.length === 0,
-            ids: garantiesVehicule.filter((g) => g.acquise).map((g) => Number(g.id_garantie)),
+            garanties: garantiesVehicule,
           }];
         } catch (e) {
           // Motif du refus conservé (ex. valeur accessoire supérieure à la valeur vénale), que
@@ -1489,6 +1623,11 @@ export const NewAutoQuotePage = () => {
 
         // Contrat & tarification
         setTypeContrat(d.flotte ? 'FLOTTE' : 'MONO');
+        // Flotte : la case « NSIA Auto Plus » vaut pour tous les véhicules ; cochée si un véhicule au moins a
+        // la garantie (un véhicule trop récent ne l'a pas, même case cochée)
+        const autoPlusFlotte = lignes.some((l) => (l.garanties_enregistrees || []).some(
+          (g) => Number(g.IdGarantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS && g.Acquise,
+        ));
         if (d.flotte) {
           // Chaque véhicule enregistré, avec ses garanties : inchangé, il ne sera pas renvoyé
           // (ses primes enregistrées sont conservées) ; modifié ou retiré, il le sera à l'enregistrement
@@ -1500,6 +1639,7 @@ export const NewAutoQuotePage = () => {
               .reduce((s, g) => s + (Number(g.PrimeNette) || 0), 0);
             const v = {
               ...vehiculeDepuisDetail(l),
+              nsiaAutoPlus: autoPlusFlotte,
               cle: `d${l.iddevisdetail}`,
               idDevisDetail: l.iddevisdetail,
               enregistre: true,
@@ -1546,7 +1686,7 @@ export const NewAutoQuotePage = () => {
 
         // Véhicule (le premier pour une flotte) ; devis sans véhicule en base : seule l'offre
         // de l'en-tête est reprise, le reste de l'écran Véhicule est à compléter
-        if (lignes.length) chargerVehicule(vehiculeDepuisDetail(dd));
+        if (lignes.length) chargerVehicule(d.flotte ? { ...vehiculeDepuisDetail(dd), nsiaAutoPlus: autoPlusFlotte } : vehiculeDepuisDetail(dd));
         const idOffreDevis = dd.idoffre || d.offre?.IdOffre || d.offre;
         if (idOffreDevis) setOffreId(Number(idOffreDevis));
 
@@ -1935,6 +2075,10 @@ export const NewAutoQuotePage = () => {
       toastError('La Responsabilité Civile (RC) est légalement obligatoire selon le Code CIMA et ne peut être supprimée.');
       return;
     }
+    if (target.obligatoire) {
+      toastError(`« ${target.nom} » est une garantie obligatoire : elle ne peut pas être retirée.`);
+      return;
+    }
     if (await confirmer({
       ton: 'attention',
       titre: `Retirer la garantie « ${target.nom} » ?`,
@@ -1942,7 +2086,7 @@ export const NewAutoQuotePage = () => {
       confirmer: 'Retirer la garantie',
     })) {
       setDeletedGaranties((prev) => [...prev, target.id_garantie]);
-      setGaranties((prev) => prev.filter((_, i) => i !== idx));
+      setGaranties((prev) => avecReglesGaranties(prev.filter((_, i) => i !== idx), instantaneVehicule()));
       libererTotauxDependants();
       info(`Garantie "${target.nom}" supprimée.`);
     }
@@ -1951,17 +2095,63 @@ export const NewAutoQuotePage = () => {
   const handleToggleGarantie = (idx) => {
     const target = garanties[idx];
     if (estGarantieRc(target)) return; // RC toujours obligatoire
-    setGaranties((prev) =>
-      prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g))
-    );
+    // Règles entre garanties : obligatoire, ou bloquée (non commercialisée, exige / exclue une autre garantie)
+    if (target.obligatoire || (target.bloquee && !target.acquise)) {
+      if (target.motifRegle || target.obligatoire) info(`« ${target.nom} » : ${target.motifRegle || 'garantie obligatoire'}.`);
+      return;
+    }
+    // Garantie non admise pour l'âge du véhicule : le choix de l'utilisateur survit aux recalculs
+    if (nonAdmisePour(instantaneVehicule())(target.id_garantie)) {
+      if (target.acquise) garantiesAccordeesRef.current.delete(Number(target.id_garantie));
+      else garantiesAccordeesRef.current.add(Number(target.id_garantie));
+    }
+    setGaranties((prev) => avecReglesGaranties(
+      prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g)), instantaneVehicule(),
+    ));
     libererTotauxDependants();
   };
 
   const handleUpdateGarantieField = (idx, field, val) => {
+    const prime = field === 'primeAnnuelle' || field === 'primeNette';
     setGaranties((prev) =>
-      prev.map((g, i) => (i === idx ? { ...g, [field]: val } : g))
+      prev.map((g, i) => (i === idx ? { ...g, [field]: val, ...(prime ? { primeSaisie: true, primeAvantRegle: undefined } : {}) } : g))
     );
     if (field === 'primeAnnuelle' || field === 'primeNette') libererTotauxDependants();
+  };
+
+  // Garantie choisie : ses primes pour le véhicule saisi (moteur CIMA) pré-remplissent la saisie, modifiable
+  const choisirGarantieAjoutee = async (idSousGarantie) => {
+    setSelectedSousGarantieId(idSousGarantie);
+    setNewGarantieForm(FORMULAIRE_GARANTIE_VIDE);
+    const numero = ++dernierCalculGarantieRef.current;
+    if (!idSousGarantie) {
+      setCalculGarantieAjoutee(null);
+      return;
+    }
+    setCalculGarantieAjoutee({ enCours: true });
+    try {
+      const r = await quoteApi.calculerPrimeGarantieAuto(calculPayload, idSousGarantie);
+      if (numero !== dernierCalculGarantieRef.current) return;
+      const montant = (x) => String(Math.round(Number(x) || 0));
+      setNewGarantieForm({
+        ...FORMULAIRE_GARANTIE_VIDE,
+        taux_taxe: Number(r?.TauxTaxe) || 0,
+        ...(r?.Trouvee ? {
+          capital: montant(r.Capital),
+          prime_annuelle: montant(r.PrimeAnnuelle),
+          prime_nette: montant(r.PrimeNette),
+          franchise_minimum: montant(r.FranchiseMinimum),
+          franchise_maximum: montant(r.FranchiseMaximum),
+          taux_franchise: String(Number(r.TauxFranchise) || 0),
+          texte_franchise: r.TexteFranchise && r.TexteFranchise.toUpperCase() !== 'NEANT' ? r.TexteFranchise : '',
+        } : {}),
+      });
+      setCalculGarantieAjoutee({ note: noteCalculGarantie(r) });
+    } catch (e) {
+      if (numero === dernierCalculGarantieRef.current) {
+        setCalculGarantieAjoutee({ note: `Primes non calculées (${e?.response?.data?.error || e.message}) : saisissez-les.` });
+      }
+    }
   };
 
   // Ajout d'une nouvelle garantie personnalisée
@@ -1983,39 +2173,36 @@ export const NewAutoQuotePage = () => {
     );
     const libelle = sgMeta?.LibelleSousGarantie || `Garantie Optionnelle ${selectedSousGarantieId}`;
 
+    const capital = Number(String(newGarantieForm.capital).replace(/[^0-9]/g, ''));
+    const montantFranchise = Number(String(newGarantieForm.montant_franchise).replace(/[^0-9]/g, ''));
+    const primeNette = Number(newGarantieForm.prime_nette) || 0;
     const newG = {
       id_garantie: Number(selectedSousGarantieId),
       code: `GAR_${selectedSousGarantieId}`,
       nom: libelle,
       acquise: Boolean(newGarantieForm.acquise),
-      capital: newGarantieForm.capital || 'Valeur Vénale',
-      franchise: newGarantieForm.montant_franchise ? `${newGarantieForm.montant_franchise} F` : 'Néant',
+      capital: capital > 0 ? `${capital.toLocaleString('fr-FR')} F` : (newGarantieForm.capital || 'Valeur Vénale'),
+      franchise: montantFranchise > 0 ? `${montantFranchise.toLocaleString('fr-FR')} F` : (newGarantieForm.texte_franchise || 'Néant'),
       formule: 'Complémentaire',
       place: nombrePlace || 5,
       primeAnnuelle: Number(newGarantieForm.prime_annuelle) || 0,
-      primeNette: Number(newGarantieForm.prime_nette) || 0,
+      primeNette,
+      // Taxe au taux de la garantie ; suit la prime nette si elle est modifiée ensuite (taxeGarantie)
+      taxe: newGarantieForm.taux_taxe ? Math.round((primeNette * newGarantieForm.taux_taxe) / 100) : 0,
+      primeNetteOrigine: primeNette,
       is_new_garantie: true,
     };
 
-    setGaranties((prev) => [...prev, newG]);
+    const avecAjout = avecReglesGaranties([...garanties, newG], instantaneVehicule());
+    setGaranties(avecAjout);
+    // Garantie ajoutée mais refusée par une règle (non commercialisée, exige le vol…) : on le dit
+    const ajoutee = avecAjout.find((g) => String(g.id_garantie) === String(selectedSousGarantieId));
+    if (newG.acquise && ajoutee && !ajoutee.acquise && ajoutee.motifRegle) info(`« ${libelle} » ajoutée mais non cochée : ${ajoutee.motifRegle}.`);
     libererTotauxDependants();
     setIsAddGarantieModalOpen(false);
     setSelectedSousGarantieId('');
-    setNewGarantieForm({
-      capital: '0',
-      prime_annuelle: '0',
-      prime_nette: '0',
-      montant_franchise: '0',
-      taux_franchise: '0',
-      franchise_minimum: '0',
-      franchise_maximum: '0',
-      capital_deces: '0',
-      capital_ipp: '0',
-      capital_ft: '0',
-      reduction_commerciale: '0',
-      reduction_bns: '0',
-      acquise: true,
-    });
+    setNewGarantieForm(FORMULAIRE_GARANTIE_VIDE);
+    setCalculGarantieAjoutee(null);
     success(`Garantie "${libelle}" ajoutée avec succès !`);
   };
 
@@ -2097,6 +2284,27 @@ export const NewAutoQuotePage = () => {
     let idDevis = editIddevis || 0;
     let aFinaliser = finalisationFlotteEnAttente;
     const aEnvoyer = vehicules.filter(vehiculeAEnvoyer);
+
+    // Garanties non admises pour l'âge d'un véhicule tarifé au barème : sp_creation_devis les accorde,
+    // elles sont retirées ensuite comme des garanties personnalisées. Gardées dans l'état pour qu'un
+    // nouvel essai les retire encore d'un véhicule enregistré avant l'échec.
+    const selonAge = {};
+    for (const v of aEnvoyer) {
+      if (garantiesPersonnalisees(v) || !ageRestreintGaranties(contexteAge(v))) continue;
+      let garantiesVehicule;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        garantiesVehicule = estimationVehicule(v)?.garanties || await chargerBaremeVehicule(v);
+      } catch (e) {
+        toastError(`Garanties du véhicule ${v.immatriculation} non calculées : ${e.message}.`);
+        return null;
+      }
+      if (garantiesVehicule.some((g) => g.acquiseBareme && !g.acquise)) {
+        selonAge[v.cle] = { garanties: garantiesVehicule, signature: signatureTarif(v) };
+      }
+    }
+    if (Object.keys(selonAge).length) setGarantiesFlotte((prev) => ({ ...prev, ...selonAge }));
+
     let enregistres = 0;
     for (const v of aEnvoyer) {
       let obj = null;
@@ -2163,8 +2371,9 @@ export const NewAutoQuotePage = () => {
     // Garanties personnalisées (« Garanties de l'offre ») : appliquées à leur seul véhicule, une
     // fois celui-ci enregistré (son enregistrement les remet au barème). Elles restent en attente
     // jusqu'à la fin de l'enregistrement : un nouvel essai les réapplique (sans effet si déjà faites).
+    // Même chose pour les garanties retirées selon l'âge du véhicule.
     for (const v of vehicules) {
-      const perso = garantiesPersonnalisees(v);
+      const perso = garantiesPersonnalisees(v) || selonAge[v.cle];
       if (!perso) continue;
       try {
         const res = await quoteApi.appliquerGarantiesVehiculeFlotte({
@@ -2384,9 +2593,12 @@ export const NewAutoQuotePage = () => {
       setBrouillonId(null);
     }
 
-    // 3. Si des primes ont été modifiées/imposées ou des garanties ajoutées/supprimées, appeler /api/correctiondevis/.
+    // 3. Si des primes ont été modifiées/imposées ou des garanties ajoutées/supprimées/décochées, appeler /api/correctiondevis/.
     // Jamais pour une flotte : sp_correction_devis appliquerait cette liste de garanties à tous ses véhicules.
-    if (typeContrat !== 'FLOTTE' && (impositionActive || deletedGaranties.length > 0 || garanties.some((g) => g.is_new_garantie))) {
+    // Une garantie du barème décochée (âge du véhicule, choix de l'utilisateur) a été accordée par sp_creation_devis.
+    const garantiesDecochees = garanties.some((g) => g.acquiseBareme && !g.acquise);
+    // Tarif à lecture directe appliqué : ses montants remplacent ceux du barème, comme des primes imposées
+    if (typeContrat !== 'FLOTTE' && (impositionActive || tarifDirectActif || deletedGaranties.length > 0 || garantiesDecochees || garanties.some((g) => g.is_new_garantie))) {
       try {
         const correctionPayload = {
           id_devis: Number(devisApiId),
@@ -2406,7 +2618,9 @@ export const NewAutoQuotePage = () => {
           reduction_commerciale: Number(reductionCommerciale) || 0,
           reduction_bns: Number(bonusMalus) || 0,
           reduction_flotte: typeContrat === 'FLOTTE' ? 5.0 : 0.0,
-          liste_garantie: garanties.map((g) => ({
+          // Une garantie décochée est omise, donc supprimée : le serveur additionne toutes les lignes
+          // d'un véhicule, acquises ou non
+          liste_garantie: garanties.filter((g) => g.acquise).map((g) => ({
             id_garantie: Number(g.id_garantie) || 1,
             id_devis_detail: null,
             acquise: Boolean(g.acquise),
@@ -2691,7 +2905,7 @@ export const NewAutoQuotePage = () => {
               <input
                 type="number"
                 min="0"
-                max="35"
+                max={reductionMaxAuto}
                 className="form-control"
                 value={reductionCommerciale}
                 onChange={(e) => {
@@ -2700,7 +2914,7 @@ export const NewAutoQuotePage = () => {
                     setReductionCommerciale('');
                     return;
                   }
-                  const clamped = Math.max(0, Math.min(35, Number(raw)));
+                  const clamped = Math.max(0, Math.min(reductionMaxAuto, Number(raw)));
                   setReductionCommerciale(clamped);
                 }}
               />
@@ -2741,16 +2955,29 @@ export const NewAutoQuotePage = () => {
                 <input
                   type="checkbox"
                   checked={nsiaAutoPlus}
-                  onChange={(e) => setNsiaAutoPlus(e.target.checked)}
+                  onChange={(e) => {
+                    const coche = e.target.checked;
+                    setNsiaAutoPlus(coche);
+                    // Flotte : la case vaut pour tous les véhicules, retarifés à l'enregistrement
+                    const aChanger = typeContrat === 'FLOTTE' ? flotteVehicules.filter((v) => Boolean(v.nsiaAutoPlus) !== coche).length : 0;
+                    if (aChanger) {
+                      setFlotteVehicules((prev) => prev.map((v) => ({ ...v, nsiaAutoPlus: coche })));
+                      info(`NSIA Auto Plus ${coche ? 'demandé' : 'retiré'} pour ${aChanger} véhicule${aChanger > 1 ? 's' : ''} de la flotte : garanties recalculées.`);
+                    }
+                  }}
                   style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
                 />
                 NSIA Auto Plus (Garantie Complémentaire Spécifique NSIA)
               </label>
               {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS) && (
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                  Admise pour les véhicules {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)} (mise en circulation à l'écran Véhicule).
+                  Admise pour les véhicules {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)} : cochée d'office quand la mise en circulation saisie à l'écran Véhicule donne 5 ans et plus.
+                  {typeContrat === 'FLOTTE' && ' Cochée, elle est demandée pour tous les véhicules de la flotte.'}
                   {nsiaAutoPlus && typeContrat === 'MONO' && nonAdmisePour(instantaneVehicule())(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS) && (
-                    <span style={{ color: '#f59e0b', display: 'block' }}>⚠ {nonAdmisePour(instantaneVehicule())(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)}</span>
+                    <span style={{ color: '#f59e0b', display: 'block' }}>
+                      {nonAdmisePour(instantaneVehicule())(ID_SOUS_GARANTIE_NSIA_AUTO_PLUS)} : {garanties.some((g) => Number(g.id_garantie) === ID_SOUS_GARANTIE_NSIA_AUTO_PLUS && g.acquise)
+                        ? 'accordée quand même (case cochée)' : 'non retenue par le tarif NSIA'}
+                    </span>
                   )}
                 </div>
               )}
@@ -3317,7 +3544,7 @@ export const NewAutoQuotePage = () => {
                 type="date"
                 className="form-control"
                 value={dateMec}
-                onChange={(e) => setDateMec(e.target.value)}
+                onChange={(e) => { mecSaisieRef.current = true; setDateMec(e.target.value); }}
               />
             </div>
           </div>
@@ -3583,11 +3810,29 @@ export const NewAutoQuotePage = () => {
                       <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
                         {offresList.find((o) => Number(o.id) === Number(v.idOffre))?.libelle || `Offre n° ${v.idOffre}`}
                         {(() => {
+                          // Garanties non admises pour l'âge du véhicule : non accordées d'office, ou cochées par l'utilisateur
                           const motif = nonAdmisePour(v);
-                          const ids = garantiesAcquisesFlotte(v).filter((id) => motif(id));
-                          if (!ids.length) return null;
-                          const nom = (id) => sousGarantiesAll.find((sg) => Number(sg.IdSousGarantie ?? sg.id) === id)?.LibelleSousGarantie || `garantie ${id}`;
-                          return <div style={{ fontSize: '0.72rem', color: '#f59e0b' }}>⚠ {ids.map((id) => `${nom(id)} : ${motif(id)}`).join(' ; ')} — à retirer dans « Garanties ».</div>;
+                          const concernees = garantiesConnuesFlotte(v).filter((g) => !estGarantieRc(g) && motif(g.id_garantie));
+                          if (!concernees.length) return null;
+                          const age = ageVehiculeAns(v.dateMec, dateEffet);
+                          const duree = `${age} an${age > 1 ? 's' : ''}`;
+                          const retirees = concernees.filter((g) => !g.acquise);
+                          const accordees = concernees.filter((g) => g.acquise);
+                          const accord = (liste) => (liste.length > 1 ? 'es' : 'e');
+                          return (
+                            <div style={{ fontSize: '0.72rem' }}>
+                              {retirees.length > 0 && (
+                                <div style={{ color: 'var(--text-muted)' }}>
+                                  {retirees.map((g) => g.nom).join(', ')} non accordé{accord(retirees)} d'office (véhicule de {duree})
+                                </div>
+                              )}
+                              {accordees.length > 0 && (
+                                <div style={{ color: '#f59e0b' }}>
+                                  {accordees.map((g) => g.nom).join(', ')} accordé{accord(accordees)} malgré l'âge du véhicule ({duree})
+                                </div>
+                              )}
+                            </div>
+                          );
                         })()}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
@@ -3717,7 +3962,13 @@ export const NewAutoQuotePage = () => {
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={() => setIsAddGarantieModalOpen(true)}
+                onClick={() => {
+                  // Saisie vide : des primes calculées pour un véhicule modifié depuis ne doivent pas resservir
+                  setSelectedSousGarantieId('');
+                  setNewGarantieForm(FORMULAIRE_GARANTIE_VIDE);
+                  setCalculGarantieAjoutee(null);
+                  setIsAddGarantieModalOpen(true);
+                }}
                 style={{
                   padding: '0.65rem 1.25rem',
                   fontWeight: 700,
@@ -3761,6 +4012,34 @@ export const NewAutoQuotePage = () => {
               </span>
             )}
           </div>
+
+          {/* Tarif à lecture directe de la compagnie (grille réglée dans l'admin) */}
+          {tarifDirect && (
+            <div className="page-transition" role="status" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap',
+              padding: '0.75rem 1rem', marginBottom: '1.25rem', borderRadius: '10px', fontSize: '0.86rem',
+              border: `1px solid ${tarifDirectActif ? 'rgba(16, 185, 129, 0.45)' : 'rgba(245, 158, 11, 0.45)'}`,
+              background: tarifDirectActif ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.55rem' }}>
+                {tarifDirectActif ? <CheckCircle2 size={18} color="#059669" style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={18} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />}
+                <div>
+                  <div style={{ fontWeight: 700 }}>{tarifDirect.Message}</div>
+                  <div style={{ color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                    {tarifDirectActif
+                      ? `Appliqué : prime nette ${Math.round(tarifDirect.PrimeNette).toLocaleString('fr-FR')} F, accessoires ${Math.round(tarifDirect.Accessoire).toLocaleString('fr-FR')} F, taxes ${Math.round(tarifDirect.Taxe).toLocaleString('fr-FR')} F, FGA ${Math.round(tarifDirect.Fga).toLocaleString('fr-FR')} F, CEDEAO ${Math.round(tarifDirect.Cedeao).toLocaleString('fr-FR')} F, TTC ${Math.round(tarifDirect.PrimeTtc).toLocaleString('fr-FR')} F.`
+                      : choixTarifDirect.idLigne === tarifDirect.IdLigne && choixTarifDirect.suspendu
+                        ? 'Suspendu : les garanties ont été modifiées, le devis est calculé au barème.'
+                        : `Non appliqué : le devis est calculé au barème${tarifDirectParDefaut ? '' : ' (devis rouvert : montants enregistrés conservés)'}.`}
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={() => choisirTarifDirect(!tarifDirectActif)}
+                style={{ padding: '0.45rem 0.9rem', fontWeight: 700, borderRadius: '8px', whiteSpace: 'nowrap' }}>
+                {tarifDirectActif ? 'Calculer au barème' : 'Appliquer le tarif'}
+              </button>
+            </div>
+          )}
 
           <h3 style={{ color: '#3b82f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', fontSize: '1.05rem' }}>
             OFFRE D'ASSURANCE
@@ -3812,27 +4091,6 @@ export const NewAutoQuotePage = () => {
             )}
           </div>
 
-          {/* Garanties acquises non admises pour l'âge du véhicule (règles de la compagnie) : le producteur les retire */}
-          {(() => {
-            const motif = nonAdmisePour(instantaneVehicule());
-            const nonAdmises = garanties.filter((g) => g.acquise && !estGarantieRc(g) && motif(g.id_garantie));
-            if (!nonAdmises.length) return null;
-            return (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem', padding: '0.65rem 0.9rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.08)', fontSize: '0.84rem' }}>
-                <span style={{ color: '#f59e0b' }}>
-                  ⚠ Garantie{nonAdmises.length > 1 ? 's' : ''} non admise{nonAdmises.length > 1 ? 's' : ''} pour l'âge du véhicule : {nonAdmises.map((g) => `${g.nom} — ${motif(g.id_garantie)}`).join(' ; ')}
-                </span>
-                <button type="button" className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
-                  onClick={() => {
-                    setGaranties((prev) => prev.map((g) => (g.acquise && !estGarantieRc(g) && motif(g.id_garantie) ? { ...g, acquise: false } : g)));
-                    libererTotauxDependants();
-                  }}>
-                  Retirer les garanties non admises
-                </button>
-              </div>
-            );
-          })()}
-
           {Number(offreId) === idOffrePool && idOffrePool > 0 && (
             <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.9rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.07)', fontSize: '0.84rem' }}>
               Pool TPV : RC et Recours au tarif du Pool (selon les places et la durée), accessoire du Pool. Part due au Pool :{' '}
@@ -3862,7 +4120,11 @@ export const NewAutoQuotePage = () => {
                     </td>
                   </tr>
                 )}
-                {garanties.map((g, idx) => (
+                {garanties.map((g, idx) => {
+                  // Règles entre garanties : obligatoire (aussi pour un devis rouvert), bloquée, offerte
+                  const obligatoire = estGarantieRc(g) || g.obligatoire || reglesGarantiesEcran.some((r) => r.Type === 'OBLIGATOIRE' && Number(r.IdSousGarantie) === Number(g.id_garantie));
+                  const verrouillee = obligatoire || (g.bloquee && !g.acquise);
+                  return (
                   <tr key={g.code || idx} style={{ borderTop: '1px solid var(--border-subtle)', background: idx % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'transparent' }}>
                     <td style={{ padding: '0.85rem 1rem', fontWeight: 600, color: '#fff' }}>
                       {g.nom}
@@ -3871,8 +4133,20 @@ export const NewAutoQuotePage = () => {
                           Ajoutée
                         </span>
                       )}
-                      {g.acquise && !estGarantieRc(g) && nonAdmisePour(instantaneVehicule())(g.id_garantie) && (
-                        <div style={{ fontSize: '0.72rem', fontWeight: 500, color: '#f59e0b' }}>⚠ {nonAdmisePour(instantaneVehicule())(g.id_garantie)}</div>
+                      {/* Garantie non admise pour l'âge du véhicule : non cochée d'office, l'utilisateur peut l'accorder */}
+                      {!estGarantieRc(g) && nonAdmisePour(instantaneVehicule())(g.id_garantie) && (
+                        <div style={{ fontSize: '0.72rem', fontWeight: 500, color: g.acquise ? '#f59e0b' : 'var(--text-muted)' }}>
+                          {nonAdmisePour(instantaneVehicule())(g.id_garantie)} : {g.acquise ? 'accordée quand même' : 'non cochée d\'office'}
+                        </div>
+                      )}
+                      {g.motifRegle && (
+                        <div style={{ fontSize: '0.72rem', fontWeight: 500, color: g.offerte ? '#10b981' : (g.bloquee || !g.acquise ? '#f59e0b' : '#93c5fd') }}>
+                          {g.offerte && <span className="badge badge-emerald" style={{ fontSize: '0.62rem', marginRight: '0.35rem' }}>Offerte</span>}
+                          {g.motifRegle}
+                        </div>
+                      )}
+                      {obligatoire && !estGarantieRc(g) && !g.motifRegle && (
+                        <div style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--text-muted)' }}>Garantie obligatoire</div>
                       )}
                     </td>
 
@@ -3880,9 +4154,10 @@ export const NewAutoQuotePage = () => {
                       <input
                         type="checkbox"
                         checked={g.acquise}
-                        disabled={estGarantieRc(g)}
+                        disabled={verrouillee}
+                        title={verrouillee ? (g.motifRegle || 'Garantie obligatoire') : undefined}
                         onChange={() => handleToggleGarantie(idx)}
-                        style={{ width: '16px', height: '16px', cursor: estGarantieRc(g) ? 'not-allowed' : 'pointer' }}
+                        style={{ width: '16px', height: '16px', cursor: verrouillee ? 'not-allowed' : 'pointer' }}
                       />
                     </td>
 
@@ -3945,7 +4220,7 @@ export const NewAutoQuotePage = () => {
 
                     {isEditingPrimes && (
                       <td style={{ padding: '0.85rem 0.5rem', textAlign: 'center' }}>
-                        {g.code !== 'RC' && (
+                        {g.code !== 'RC' && !obligatoire && (
                           <button
                             type="button"
                             onClick={() => handleDeleteGarantie(idx)}
@@ -3959,7 +4234,8 @@ export const NewAutoQuotePage = () => {
                       </td>
                     )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -4405,12 +4681,12 @@ export const NewAutoQuotePage = () => {
               <select
                 className="form-control"
                 value={selectedSousGarantieId}
-                onChange={(e) => setSelectedSousGarantieId(e.target.value)}
+                onChange={(e) => choisirGarantieAjoutee(e.target.value)}
                 style={{ fontWeight: 600 }}
               >
                 <option value="">-- Choisir une garantie disponible --</option>
-                {sousGarantiesAll.length > 0 ? (
-                  trierParLibelle(sousGarantiesAll, (sg) => sg.LibelleSousGarantie || sg.libelle).map((sg) => (
+                {garantiesAjoutables.length > 0 ? (
+                  trierParLibelle(garantiesAjoutables, (sg) => sg.LibelleSousGarantie || sg.libelle).map((sg) => (
                     <option key={sg.IdSousGarantie || sg.id} value={sg.IdSousGarantie || sg.id}>
                       {sg.LibelleSousGarantie || sg.libelle}
                     </option>
@@ -4425,6 +4701,11 @@ export const NewAutoQuotePage = () => {
                   </>
                 )}
               </select>
+              {calculGarantieAjoutee && (
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {calculGarantieAjoutee.enCours ? 'Calcul des primes de la garantie pour ce véhicule…' : calculGarantieAjoutee.note}
+                </p>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
@@ -4532,9 +4813,14 @@ export const NewAutoQuotePage = () => {
             libelleOffre={offresList.find((o) => Number(o.id) === Number(v.idOffre))?.libelle || v.offreSelectionnee}
             initial={garantiesInitiales(v)}
             chargerBareme={() => chargerBaremeVehicule(v)}
-            sousGaranties={sousGarantiesAll}
+            sousGaranties={sousGarantiesAll.filter((sg) => !reglesGarantiesPour(v).some((r) => (
+              r.Type === 'NON_PROPOSEE' && Number(r.IdSousGarantie) === Number(sg.IdSousGarantie || sg.id)
+              && String(r.Categories || '').split(',').includes(String(contexteAge(v).codeCategorie))
+            )))}
             tauxTaxes={tauxTaxesAuto}
             nonAdmise={nonAdmisePour(v)}
+            appliquerRegles={(liste) => avecReglesGaranties(liste, v)}
+            calculerGarantie={(idSousGarantie) => quoteApi.calculerPrimeGarantieAuto(payloadMoteur(v), idSousGarantie)}
             onAppliquer={(resultat) => appliquerGarantiesVehicule(garantiesOuvertes.cle, resultat)}
           />
         );

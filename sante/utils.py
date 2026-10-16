@@ -106,6 +106,9 @@ def load_people_data_from_excel(filename, index=0):
         # Remove unwanted data, especially blank colums
         # d = remove_unwanted_keys(d)
 
+        # Ligne du fichier, pour le compte rendu de l'import
+        d["_ligne"] = row_index
+
         # Keep only the date not the time
         d["datenaissance"] = d["datenaissance"][:10]
         d["dateeffet"] = d["dateeffet"][:10]
@@ -116,11 +119,26 @@ def load_people_data_from_excel(filename, index=0):
 
 
 # Import insured people from Excel File
-def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
+def import_insured(filename, user_id, id_devis, date_effet, id_filiale, derogation_age=False, details=None, lignes=None):
+    """Adhérents et affiliés d'un fichier Excel. date_effet : date d'effet du devis à l'écran, à laquelle s'apprécie
+    l'âge ; derogation_age : limites d'âge levées (utilisateur habilité).
+    details (liste) reçoit le compte rendu de chaque ligne : {Ligne, Nom, Lien, Statut (importé, dérogation, refusé,
+    ignoré), Message} ; lignes : personnes déjà lues dans le fichier (load_people_data_from_excel)."""
     messages = []
     error_count = 0
+
+    def rendre_compte(item, statut, message):
+        if details is not None:
+            details.append({
+                "Ligne": item.get("_ligne"),
+                "Nom": " ".join(str(item.get(c, "")).strip() for c in ("nom", "prenoms") if str(item.get(c, "")).strip() not in ("", "NA")),
+                "Lien": str(item.get("lienparente", "")).strip(),
+                "Statut": statut,
+                "Message": message,
+            })
+
     try:
-        request_data_list = load_people_data_from_excel(
+        request_data_list = lignes if lignes is not None else load_people_data_from_excel(
             filename=filename, index=0
         )
 
@@ -150,6 +168,7 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
                 current_request_data["idadherent"] = 0
             else:
                 if id_adherent == -1:
+                    rendre_compte(item, "ignoré", "Adhérent de la famille refusé : affilié non importé.")
                     continue
                 current_request_data["idaffilie"] = 0
                 current_request_data["adherent"] = id_adherent
@@ -193,7 +212,7 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
 
             if current_request_data["lien"] == "A":
                 (err, qryset) = enregistrer_adherent_sante(
-                    user_id, current_request_data
+                    user_id, current_request_data, derogation_age=derogation_age, date_reference=date_effet
                 )
                 message = AdherentSanteInsertionSerializer(
                     qryset, many=True
@@ -204,7 +223,7 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
                     id_adherent = -1
             else:
                 (err, qryset) = enregistrer_affilie_sante(
-                    user_id, current_request_data
+                    user_id, current_request_data, derogation_age=derogation_age, date_reference=date_effet
                 )
                 message = AffilieSanteInsertionSerializer(
                     qryset, many=True
@@ -213,6 +232,8 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale):
             # (err, qryset) = enregistrer_adherent_sante(user_id, fichier_piece, request.POST)
             if err:
                 error_count += 1
+            texte = (message[0].get("outputmessage") if message else "") or ""
+            rendre_compte(item, "refusé" if err else ("dérogation" if "Dérogation" in texte else "importé"), texte)
 
             messages.append(message)
 
@@ -393,7 +414,63 @@ def save_quotation_sante(user_id, input_data):
     )
 
 
-def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
+# Formules MINENE (limite d'âge des adultes : sp_saisie_adherent_sante, sp_saisie_affilie_sante)
+OFFRES_MINENE = (17, 18, 19, 20, 21, 22, 175, 176, 181)
+
+
+def _date_iso(valeur):
+    """Date AAAA-MM-JJ d'une date saisie, ou '' si absente ou illisible."""
+    if valeur in (None, "", "NA", "N/A", "N-A"):
+        return ""
+    try:
+        return convert_to_date(valeur).isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _poser_derogation_age(cursor, derogation_age, date_reference=None):
+    """Lues par les procédures de saisie Santé, posées pour l'appel puis retirées : dérogation aux limites d'âge
+    (utilisateur habilité, droit devis.derogation_age : lephare.derogation_age) et date d'effet du devis saisie à
+    l'écran, à laquelle s'apprécie l'âge (lephare.date_effet_age ; à défaut, celle de la couverture)."""
+    cursor.execute(
+        "SELECT set_config('lephare.derogation_age', %s, false), set_config('lephare.date_effet_age', %s, false);",
+        ["on" if derogation_age else "", _date_iso(date_reference)],
+    )
+
+
+def assures_hors_limites_age(id_devis, date_effet):
+    """Assurés d'un devis Santé au-delà des limites d'âge des conditions à la date d'effet, mêmes règles que la
+    saisie : adhérent et conjoint MINENE (69 ans), enfant (21 ans, 25 avec certificat). [(nom, âge, limite)]."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT fn_lephare_parametre_nombre('sante.minene.age_max_adulte', 69)::int,"
+            " fn_lephare_parametre_nombre('sante.minene.age_max_enfant', 21)::int,"
+            " fn_lephare_parametre_nombre('sante.minene.age_max_enfant_certificat', 25)::int;"
+        )
+        adulte, enfant, enfant_certificat = cursor.fetchone()
+        cursor.execute(
+            "SELECT TRIM(AF.nom || ' ' || COALESCE(AF.prenom, '')), AF.lien, COALESCE(AF.certificat, false),"
+            " EXTRACT(YEAR FROM AGE(%s::date, AF.datenaissance))::int, SF.idoffresante"
+            " FROM stdaffilie AS AF"
+            " INNER JOIN stdadherent AS AD ON AD.idadherent = AF.idadherent"
+            " INNER JOIN stdfiliale AS SF ON SF.idfiliale = AD.idfiliale"
+            " WHERE AF.iddevis = %s AND AF.datenaissance IS NOT NULL ORDER BY AF.idadherent, AF.idaffilie;",
+            [date_effet, id_devis],
+        )
+        lignes = cursor.fetchall()
+    hors = []
+    for nom, lien, certificat, age, offre in lignes:
+        lien = (lien or "").strip()
+        if lien in ("A", "C") and offre in OFFRES_MINENE and age > adulte:
+            hors.append((nom, age, adulte))
+        elif lien == "E" and age > enfant_certificat:
+            hors.append((nom, age, enfant_certificat))
+        elif lien == "E" and age > enfant and not certificat:
+            hors.append((nom, age, enfant))
+    return hors
+
+
+def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None, derogation_age=False, date_reference=None):
     sql_output = None
     error_occurred = False
     # print(type(input_data))
@@ -484,6 +561,7 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
         queryset_vide = AdherentSanteInsertionResult.objects.none()
 
         with connection.cursor() as cursor:
+            _poser_derogation_age(cursor, derogation_age, date_reference)
             cursor.execute(
                 "CALL sp_saisie_adherent_sante(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
@@ -514,6 +592,7 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
             )
             connection.commit()
             row = cursor.fetchone()
+            _poser_derogation_age(cursor, False)
             sql_output = AdherentSanteInsertionResult(
                 idadherent=row[0], devis=row[1], outputmessage=row[2]
             )
@@ -557,7 +636,7 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None):
 #########################################################################
 #
 # Enregistrer les affiliés
-def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
+def enregistrer_affilie_sante(userid, input_data, fichier_piece=None, derogation_age=False, date_reference=None):
     sql_output = None
     error_occurred = False
     # print(type(input_data))
@@ -658,6 +737,7 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
         queryset_vide = AffilieSanteInsertionResult.objects.none()
 
         with connection.cursor() as cursor:
+            _poser_derogation_age(cursor, derogation_age, date_reference)
             cursor.execute(
                 "CALL sp_saisie_affilie_sante(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (
@@ -689,6 +769,7 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None):
             )
             connection.commit()
             row = cursor.fetchone()
+            _poser_derogation_age(cursor, False)
             sql_output = AffilieSanteInsertionResult(
                 idaffilie=row[0],
                 adherent=row[1],

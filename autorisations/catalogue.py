@@ -44,6 +44,9 @@ DROITS = [
     ("devis.validate", "Transformer un devis en contrat", "Confirmation du devis : police et quittance émises.", True, False, True),
     ("devis.cancel", "Archiver un devis", "Archivage, désarchivage et abandon d'une saisie.", True, False, False),
     ("devis.primes", "Imposer ou corriger les primes", "Primes imposées, correction des primes, répartition des garanties.", True, True, False),
+    ("devis.derogation_age", "Déroger à la limite d'âge",
+     "Admettre un assuré au-delà des limites d'âge des conditions (Santé MINENE : adulte, enfant), en saisie ou à l'import.",
+     True, False, False),
 
     ("contrats.view", "Consulter les contrats", "Portefeuille, quittances, garanties, véhicules, certificats.", False, False, False),
     ("contrats.update", "Modifier un contrat", "Garanties du contrat, pièces jointes.", True, False, False),

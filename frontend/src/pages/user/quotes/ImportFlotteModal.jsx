@@ -116,7 +116,7 @@ export const ImportFlotteModal = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           <strong>Formulaire assurance auto</strong> rempli par le client : un véhicule donne un devis mono, plusieurs un devis flotte.
-          La catégorie et l'offre sont celles de l'écran (toutes les garanties de l'offre, à décocher ensuite) ; la valeur vénale
+          La catégorie et l'offre sont celles de l'écran (garanties de l'offre, sans celles que la compagnie n'admet pas pour l'âge du véhicule) ; la valeur vénale
           du fichier est comparée au tableau de dépréciation et proposée par lui si elle manque.
         </p>
         <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>

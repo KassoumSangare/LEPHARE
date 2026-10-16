@@ -277,28 +277,26 @@ export const ContractDetailPage = () => {
             Décompte financier
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Prime nette</span>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.prime_nette || (contract.prime_totale ? Math.round(contract.prime_totale * 0.85) : 337137)).toLocaleString('fr-FR')} FCFA
-              </strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Accessoire</span>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.accessoire || 9000).toLocaleString('fr-FR')} FCFA
-              </strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Taxe</span>
-              <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.taxe || (contract.prime_totale ? Math.max(0, contract.prime_totale - (contract.prime_nette || Math.round(contract.prime_totale * 0.85)) - (contract.accessoire || 9000)) : 49714)).toLocaleString('fr-FR')} FCFA
-              </strong>
-            </div>
+            {/* Montants enregistrés du contrat (prime nette + accessoire + taxe + FGA + frais de gestion = prime TTC) */}
+            {[
+              ['Prime nette', contract.prime_nette - contract.fga, true],
+              ['Accessoire', contract.accessoire, true],
+              ['Taxe', contract.taxe, true],
+              ['FGA', contract.fga, contract.fga > 0],
+              // Frais de gestion MINENE (IA, RC chef de famille : 1 500 F par adhérent), compris dans la prime TTC
+              ['Frais de gestion', Number(contract.raw?.accessoiregestionnaire) || 0, Number(contract.raw?.accessoiregestionnaire) > 0],
+            ].filter(([, , visible]) => visible).map(([libelle, montant]) => (
+              <div key={libelle} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>{libelle}</span>
+                <strong style={{ color: '#fff', fontFamily: 'var(--font-mono)' }}>
+                  {Math.round(Number(montant) || 0).toLocaleString('fr-FR')} FCFA
+                </strong>
+              </div>
+            ))}
             <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem', fontSize: '1.05rem' }}>
               <span style={{ fontWeight: 700, color: '#fff' }}>Prime TTC</span>
               <strong style={{ color: '#34d399', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                {Number(contract.prime_totale || 396851).toLocaleString('fr-FR')} FCFA
+                {Math.round(Number(contract.prime_totale) || 0).toLocaleString('fr-FR')} FCFA
               </strong>
             </div>
           </div>

@@ -150,7 +150,7 @@ export const ParametrageDepreciationPage = () => {
         icone={TrendingDown}
         titre="Dépréciation et âge des véhicules"
         description="Tableau de dépréciation applicable aux véhicules terrestres à moteur en Côte d'Ivoire (CIEAMI) : taux selon le genre du véhicule et son âge depuis la première mise en circulation. Garanties admises par chaque compagnie selon l'âge du véhicule."
-        usage="Valeur vénale = valeur neuve × (1 − taux) : proposée à la saisie d'un véhicule et à l'import du formulaire, recalculée à chaque renouvellement (le producteur peut toujours la corriger). Une garantie non admise pour l'âge du véhicule est signalée à la saisie, le producteur la décoche."
+        usage="Valeur vénale = valeur neuve × (1 − taux) : proposée à la saisie d'un véhicule et à l'import du formulaire, recalculée à chaque renouvellement (le producteur peut toujours la corriger). Une garantie non admise pour l'âge du véhicule n'est pas cochée d'office à la saisie ; le producteur peut l'accorder quand même."
       />
 
       {!donnees && <div style={{ color: 'var(--text-muted)' }}><Loader2 size={15} className="spin" /> Chargement…</div>}

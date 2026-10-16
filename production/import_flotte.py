@@ -23,8 +23,8 @@ par le client pour un ou plusieurs véhicules (un véhicule : devis mono, plusie
     Véhicule particulier, Camionnette, Camion, Engin de chantier, 02 Roues) | Energie | Puissance fiscale /
     Charge utile / Cylindrée | Nombre de places | Valeur neuve | Valeur vénale
 
-Pas de garanties ni de catégorie : celles de l'écran s'appliquent (toutes les garanties de l'offre, que le
-producteur décoche) ; valeur vénale du fichier comparée au tableau de dépréciation (CIEAMI).
+Pas de garanties ni de catégorie : celles de l'écran s'appliquent (garanties de l'offre, sans celles que la
+compagnie n'admet pas pour l'âge du véhicule) ; valeur vénale du fichier comparée au tableau de dépréciation (CIEAMI).
 
 Rien n'est écrit : l'analyse renvoie, pour chaque véhicule, les champs de l'écran Véhicule (référentiels
 résolus : catégorie, marque, genre, carrosserie, usage, énergie) et l'offre de la catégorie qui couvre

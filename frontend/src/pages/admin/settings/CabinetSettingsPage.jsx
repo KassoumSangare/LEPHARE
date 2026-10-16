@@ -20,7 +20,11 @@ const ONGLETS = [
 // Groupes de règles de gestion (lephare_parametre.groupe), dans l'ordre d'affichage
 const GROUPES_REGLES = [
   { id: 'devis', titre: 'Devis', description: 'Registre des devis et propositions.' },
+  { id: 'reductions', titre: 'Réductions commerciales maximales', description: 'Réduction la plus élevée acceptée à la saisie des devis, par branche.' },
   { id: 'voyage', titre: 'Voyage', description: 'Contrôles appliqués à l\'enregistrement des devis Voyage.' },
+  { id: 'ia', titre: 'Individuelle Accidents', description: 'Clauses du tarif IA de la compagnie, rappelées à la saisie des assurés.' },
+  { id: 'sante', titre: 'Santé', description: 'Données reprises sur les contrats et les conditions particulières Santé.' },
+  { id: 'transport', titre: 'Transport', description: 'Import des bordereaux GUCE et contrats générés.' },
   { id: 'finance', titre: 'Encaissements et reversements', description: 'Suivi des primes encaissées et reversées aux compagnies.' },
   { id: 'montants', titre: 'Arrondi des montants', description: 'Primes TTC des devis, contrats et quittances arrondies à la pièce (5 F en Côte d\'Ivoire). Un produit peut en être exclu dans « Produits ».' },
 ];

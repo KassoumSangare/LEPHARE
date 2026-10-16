@@ -31,6 +31,8 @@ from rest_framework.decorators import (
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from autorisations.rbac import a_le_droit
+from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from production.database import enregistrer_terme_devis
@@ -42,14 +44,25 @@ from .utils import (
     enregistrer_adherent_sante,
     enregistrer_affilie_sante,
     enregistrer_filiale_sante,
+    assures_hors_limites_age,
     get_quotation_id,
+    import_insured,
+    load_people_data_from_excel,
     save_quotation_sante,
 )
 
 ID_PRODUIT_SANTE = 5
+# Droit des utilisateurs habilités à admettre un assuré au-delà des limites d'âge des conditions
+DROIT_DEROGATION_AGE = "devis.derogation_age"
+# Colonnes du fichier d'import (modèle d'URANUS), en minuscules comme les lit load_people_data_from_excel
+COLONNES_IMPORT = (
+    "nom", "prenoms", "numerocni", "datenaissance", "numerocmu", "sexe", "numerotelephone", "lienparente", "dateeffet",
+    "dateentree", "adresseadherent", "emailadherent", "nombreaffection", "matricule", "groupesanguin",
+)
 ID_INTERMEDIAIRE = 1
 ID_AVENANT_AFFAIRE_NOUVELLE = 1
-# Gestionnaire des contrats Santé dans URANUS (champ non modifiable de l'écran Contrat)
+# Gestionnaire des contrats Santé (champ non modifiable de l'écran Contrat) : réglage « sante.gestionnaire »
+# (Administration > Le cabinet & règles de gestion), VITALIS SANTE à défaut
 GESTIONNAIRE_SANTE = "VITALIS SANTE"
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
@@ -211,7 +224,10 @@ def enregistrer_adherent(request):
     if donnees["datenaissance"] == "NA":
         return Response({"error": "La date de naissance de l'adhérent est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
     fichier = request.FILES.get("fichierpiece")
-    err, lignes = enregistrer_adherent_sante(request.user.id, donnees, fichier)
+    err, lignes = enregistrer_adherent_sante(
+        request.user.id, donnees, fichier, derogation_age=a_le_droit(request.user, DROIT_DEROGATION_AGE),
+        date_reference=data.get("dateeffetdevis"),
+    )
     return _reponse_procedure(err, (lignes or [None])[0], "idadherent")
 
 
@@ -259,8 +275,66 @@ def enregistrer_affilie(request):
     if donnees["datenaissance"] == "NA":
         return Response({"error": "La date de naissance de l'affilié est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
     fichier = request.FILES.get("fichierpiece")
-    err, lignes = enregistrer_affilie_sante(request.user.id, donnees, fichier)
+    err, lignes = enregistrer_affilie_sante(
+        request.user.id, donnees, fichier, derogation_age=a_le_droit(request.user, DROIT_DEROGATION_AGE),
+        date_reference=data.get("dateeffetdevis"),
+    )
     return _reponse_procedure(err, (lignes or [None])[0], "idaffilie")
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def importer_affilies(request):
+    """
+    POST /api/devissante/importation/  (multipart : devis, filiale, date_effet, fichier_excel)
+
+    Adhérents et affiliés d'un fichier Excel (modèle d'URANUS), ligne par ligne, par les procédures de saisie. Les
+    âges s'apprécient à la date d'effet du devis saisie à l'écran (date_effet). Un assuré au-delà des limites d'âge des conditions est admis par dérogation si l'utilisateur est habilité
+    (droit devis.derogation_age), refusé sinon. Les lignes acceptées restent enregistrées même si d'autres sont
+    refusées. Réponse : {Importes, Derogations, Refuses, Ignores, Derogation, Lignes: [{Ligne, Nom, Lien, Statut,
+    Message}]}.
+    """
+    devis = _entier(request.data.get("devis"))
+    filiale = _entier(request.data.get("filiale"))
+    fichier = request.FILES.get("fichier_excel")
+    if not (devis and filiale):
+        return Response({"error": "Choisissez la couverture (filiale) des personnes importées."}, status=status.HTTP_400_BAD_REQUEST)
+    if not fichier:
+        return Response({"error": "Choisissez le fichier Excel."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        lignes = load_people_data_from_excel(fichier, index=0)
+    except KeyError as manque:
+        return Response({"error": f"Colonne {manque} absente de la 1re ligne du fichier."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:  # fichier illisible
+        return Response({"error": f"Fichier Excel illisible : {str(exc).splitlines()[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+    if not lignes:
+        return Response({"error": "Le fichier ne contient aucune personne (lignes 2 et suivantes)."}, status=status.HTTP_400_BAD_REQUEST)
+    manquantes = [c for c in COLONNES_IMPORT if c not in lignes[0]]
+    if manquantes:
+        return Response(
+            {"error": "Colonnes absentes de la 1re ligne du fichier : " + ", ".join(manquantes) + "."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    derogation = a_le_droit(request.user, DROIT_DEROGATION_AGE)
+    details = []
+    erreurs, messages = import_insured(
+        None, request.user.id, devis, request.data.get("date_effet"), filiale,
+        derogation_age=derogation, details=details, lignes=lignes,
+    )
+    if erreurs and not details:
+        texte = next((m.get("message") for m in messages if isinstance(m, dict) and m.get("message")), "")
+        return Response({"error": f"Import interrompu : {texte or 'erreur inattendue'}."}, status=status.HTTP_400_BAD_REQUEST)
+    compte = lambda statut: sum(1 for d in details if d["Statut"] == statut)  # noqa: E731
+    return Response({
+        "Importes": compte("importé") + compte("dérogation"),
+        "Derogations": compte("dérogation"),
+        "Refuses": compte("refusé"),
+        "Ignores": compte("ignoré"),
+        "Derogation": derogation,
+        "Lignes": details,
+    })
 
 
 @api_view(["POST"])
@@ -343,7 +417,7 @@ def enregistrer_devis_sante(request):
             "DateEmission": date_emission_du_jour().strftime("%d-%m-%Y"),
             "DateEffet": _date_jj_mm_aaaa(data.get("DateEffet")),
             "DateExpiration": _date_jj_mm_aaaa(data.get("DateExpiration")),
-            "GestionnaireSante": _texte(data.get("GestionnaireSante")) or GESTIONNAIRE_SANTE,
+            "GestionnaireSante": _texte(data.get("GestionnaireSante")) or valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE),
         }
     )
     if not _entier(data.get("IdDevis")):
@@ -364,6 +438,20 @@ def enregistrer_devis_sante(request):
     serializer = EnregistrementDevisSanteSerializer(data=data)
     if not serializer.is_valid():
         return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    # Limites d'âge des conditions vérifiées à la date d'effet définitive (elle a pu changer depuis la saisie des
+    # assurés) : au-delà, seul un utilisateur habilité enregistre le devis
+    try:
+        date_effet = datetime.strptime(data["DateEffet"], "%d-%m-%Y").date()
+    except ValueError:
+        return Response({"error": "Date d'effet illisible."}, status=status.HTTP_400_BAD_REQUEST)
+    hors_limites = assures_hors_limites_age(_entier(data["IdDevis"]), date_effet)
+    texte_hors_limites = " ; ".join(f"{nom} ({age} ans, {limite} au plus)" for nom, age, limite in hors_limites)
+    if hors_limites and not a_le_droit(request.user, DROIT_DEROGATION_AGE):
+        return Response(
+            {"error": f"Limite d'âge dépassée au {date_effet:%d/%m/%Y} : {texte_hors_limites}. Seul un utilisateur "
+                      "habilité (« Déroger à la limite d'âge ») peut enregistrer ce devis."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     err, lignes = save_quotation_sante(request.user.id, data)
     ligne = (list(lignes) or [None])[0]
     if err or not ligne or not ligne.ObjectId:
@@ -378,7 +466,8 @@ def enregistrer_devis_sante(request):
         {
             "devis_id": devis.iddevis,
             "numero_devis": devis.numerodevis or "",
-            "message": ligne.OutputMessage,
+            "message": ligne.OutputMessage
+            + (f" Dérogation à la limite d'âge : {texte_hors_limites}." if hors_limites else ""),
             "totaux": {
                 "prime_nette": float(devis.primenette or 0),
                 "taxe": float(devis.taxe or 0),

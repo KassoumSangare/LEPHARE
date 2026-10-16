@@ -3,6 +3,7 @@ import { confirmer } from '../../../utils/dialogue';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { quoteApi, customerApi, settingsApi, contractApi, santeApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
+import { aLeDroit } from '../../../utils/droits';
 import {
   HeartPulse,
   ArrowRight,
@@ -23,7 +24,7 @@ import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { formulesSante, reglagesMinene } from '../../../utils/parametrage';
+import { formulesSante, parametre, reglagesMinene } from '../../../utils/parametrage';
 import {
   ID_TERME_PAR_DEFAUT,
   dureeSelonTerme,
@@ -38,8 +39,9 @@ import { sortUniqueBy } from '../../../utils/sortUtils';
 // par un devis initialisé au premier enregistrement (numéro de saisie d'URANUS) ; les primes sont
 // calculées par la base (sp_creation_devis_sante). Libellés et valeurs : ceux d'URANUS et de la base.
 
-// Gestionnaire des contrats Santé dans URANUS (champ non modifiable)
-const GESTIONNAIRE_SANTE = 'VITALIS SANTE';
+// Gestionnaire des contrats Santé (champ non modifiable à l'écran, comme dans URANUS) :
+// Administration > Le cabinet & règles de gestion (sante.gestionnaire)
+const gestionnaireSante = () => parametre('sante.gestionnaire', 'VITALIS SANTE');
 // Catégories MINENE (code catégorie 123 : tarifs 87, 102 et 153) : prime calculée automatiquement,
 // zone CÔTE D'IVOIRE, durée annuelle
 const CODE_CATEGORIE_MINENE = '123';
@@ -161,7 +163,7 @@ const versFormData = (objet) => {
 
 export const NewSanteQuotePage = () => {
   const navigate = useNavigate();
-  const { success, error: toastError } = useToast();
+  const { success, error: toastError, warning } = useToast();
 
   // « Modifier » depuis le registre : /user/quotes/sante?edit=<iddevis>
   const [searchParams] = useSearchParams();
@@ -493,7 +495,8 @@ export const NewSanteQuotePage = () => {
     if (!a.filiale) { toastError('Choisissez la filiale de l\'adhérent.'); return; }
     if (!a.nom.trim()) { toastError('Saisissez le nom de l\'adhérent.'); return; }
     if (!a.datenaissance) { toastError('Saisissez la date de naissance de l\'adhérent.'); return; }
-    const res = await santeApi.enregistrerAdherent(versFormData({ ...a, devis: idDevis, vip: true }));
+    // dateeffetdevis : date d'effet du devis, à laquelle s'apprécie l'âge (limites des conditions)
+    const res = await santeApi.enregistrerAdherent(versFormData({ ...a, devis: idDevis, vip: true, dateeffetdevis: dateEffet }));
     const donnees = await recharger();
     setFormAdherent(null);
     if (!a.idadherent && res.id) setAdherentOuvert(Number(res.id));
@@ -528,7 +531,7 @@ export const NewSanteQuotePage = () => {
     const f = formAffilie;
     if (!f.nom.trim()) { toastError('Saisissez le nom de l\'affilié.'); return; }
     if (!f.datenaissance) { toastError('Saisissez la date de naissance de l\'affilié.'); return; }
-    const res = await santeApi.enregistrerAffilie(versFormData({ ...f, devis: idDevis }));
+    const res = await santeApi.enregistrerAffilie(versFormData({ ...f, devis: idDevis, dateeffetdevis: dateEffet }));
     await recharger();
     setFormAffilie(null);
     success(res.message || 'Affilié enregistré.');
@@ -538,15 +541,27 @@ export const NewSanteQuotePage = () => {
     if (!filialeImport) { toastError('Choisissez la filiale des personnes importées.'); return; }
     if (!fichierImport) { toastError('Choisissez le fichier Excel.'); return; }
     const fd = new FormData();
-    fd.append('id_devis', idDevis);
+    fd.append('devis', idDevis);
+    fd.append('filiale', filialeImport);
     fd.append('date_effet', dateEffet);
-    fd.append('id_filiale', filialeImport);
     fd.append('fichier_excel', fichierImport);
-    await santeApi.importerAffilies(fd);
+    const r = await santeApi.importerAffilies(fd);
+    // Les lignes acceptées sont enregistrées même si d'autres sont refusées : la liste est toujours relue
     await recharger();
-    setFichierImport(null);
-    setImportOuvert(false);
-    success('Importation des adhérents et affiliés réalisée.');
+    const lignes = r?.Lignes || [];
+    const detail = (statut) => lignes.filter((l) => l.Statut === statut)
+      .map((l) => `ligne ${l.Ligne} ${l.Nom} : ${l.Message}`).join(' ; ');
+    if (r?.Importes) {
+      success(`${r.Importes} personne${r.Importes > 1 ? 's' : ''} importée${r.Importes > 1 ? 's' : ''}.`);
+    }
+    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge — ${detail('dérogation')}`);
+    if (r?.Refuses || r?.Ignores) {
+      toastError(`${r.Refuses + r.Ignores} personne${r.Refuses + r.Ignores > 1 ? 's' : ''} non importée${r.Refuses + r.Ignores > 1 ? 's' : ''} — `
+        + [detail('refusé'), detail('ignoré')].filter(Boolean).join(' ; '));
+    } else {
+      setFichierImport(null);
+      setImportOuvert(false);
+    }
   }, 'Import refusé');
 
   const enregistrerDevis = () => executer(async () => {
@@ -571,7 +586,7 @@ export const NewSanteQuotePage = () => {
       TypeContrat: Number(typeContrat),
       // Convention URANUS : positif = réduction, négatif = majoration
       TauxReduction: (ajustement === 'majoration' ? -1 : 1) * (Number(taux) || 0),
-      GestionnaireSante: GESTIONNAIRE_SANTE,
+      GestionnaireSante: gestionnaireSante(),
       DateEffet: dateEffet,
       DateExpiration: dateExpiration,
       IdDuree: Number(dureeId),
@@ -747,7 +762,7 @@ export const NewSanteQuotePage = () => {
                 {(ajustementsMinene[ajustement] || []).map(([t, sp]) => <option key={t} value={t}>{sp}</option>)}
               </datalist>
             )}
-            {champ('Gestionnaire', <input type="text" className="form-control" value={GESTIONNAIRE_SANTE} disabled readOnly />)}
+            {champ('Gestionnaire', <input type="text" className="form-control" value={gestionnaireSante()} disabled readOnly />)}
             {champ('Terme du contrat',
               <TermeContratSelect
                 value={termeId}
@@ -922,6 +937,10 @@ export const NewSanteQuotePage = () => {
                 </div>
                 <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   Colonnes attendues (1re ligne) : {COLONNES_IMPORT}. Chaque adhérent (lien A) précède ses affiliés.
+                  {' '}Âges appréciés à la date d'effet du devis ; au-delà des limites des conditions,{' '}
+                  {aLeDroit('devis.derogation_age')
+                    ? 'les assurés sont admis par dérogation (vous êtes habilité).'
+                    : 'les assurés sont refusés (seul un utilisateur habilité « Déroger à la limite d\'âge » peut les admettre).'}
                 </p>
               </div>
             )}

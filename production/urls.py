@@ -300,6 +300,8 @@ urlpatterns = [
     path(r"dommages/devis/<int:iddevis>/", lire_devis_dommages, name="dommages_lecture"),
     # Pièces de production d'un contrat Dommages : facture de prime, documents de la catégorie (Garantie de soumission)
     path(r"dommages/contrat/<int:pk>/documents/", documents_dommages.documents_contrat, name="dommages_documents_contrat"),
+    # Devis Dommages : documents de la catégorie à la place de la facture proforma (Garantie de soumission)
+    path(r"dommages/devis/<int:pk>/documents/", documents_dommages.documents_devis, name="dommages_documents_devis"),
     path(r"flotte/import/analyse/", analyser_import_flotte, name="flotte_import_analyse"),
     # Devis Voyage (création / « Modifier ») et relecture complète
     path(
@@ -568,6 +570,8 @@ urlpatterns = [
     # IA et RC MINENE rattachées à la police Santé MINENE d'un contrat
     path("minene/<int:pk>/connexes/", minene_connexes.connexes, name="minene-connexes"),
     path("minene/ia/apercu/", minene_connexes.apercu_ia, name="minene-ia-apercu"),
+    path("minene/rc/apercu/", minene_connexes.apercu_rc, name="minene-rc-apercu"),
+    path("minene/police/", minene_connexes.police, name="minene-police"),
     path(
         r"avenant/modificationpriseeffet",
         modify_policy,

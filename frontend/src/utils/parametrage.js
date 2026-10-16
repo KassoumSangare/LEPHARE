@@ -55,7 +55,7 @@ const REGLES_GARANTIES_AUTO_ORIGINE = [
   { IdCompagnie: 1, IdSousGarantie: 175, AgeMinimum: 5, AgeMaximum: 10, Categories: '', Commentaire: 'NSIA : NSIA Auto Plus de 5 à 10 ans' },
 ];
 
-let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, SanteFormules: FORMULES_SANTE_ORIGINE, ReglesGarantiesAuto: REGLES_GARANTIES_AUTO_ORIGINE, charge: false };
+let etat = { Cabinet: {}, Parametres: {}, Documents: [], Produits: PRODUITS_ORIGINE, SanteFormules: FORMULES_SANTE_ORIGINE, ReglesGarantiesAuto: REGLES_GARANTIES_AUTO_ORIGINE, InteractionsGarantiesAuto: [], charge: false };
 let chargement = null;
 const abonnes = new Set();
 
@@ -74,6 +74,7 @@ export const chargerParametrage = (forcer = false) => {
         Modules: data?.Modules || [],
         SanteFormules: Array.isArray(data?.SanteFormules) && data.SanteFormules.length ? data.SanteFormules : FORMULES_SANTE_ORIGINE,
         ReglesGarantiesAuto: Array.isArray(data?.ReglesGarantiesAuto) ? data.ReglesGarantiesAuto : REGLES_GARANTIES_AUTO_ORIGINE,
+        InteractionsGarantiesAuto: Array.isArray(data?.InteractionsGarantiesAuto) ? data.InteractionsGarantiesAuto : [],
         charge: true,
       };
       abonnes.forEach((f) => f());
@@ -254,7 +255,7 @@ export const ageAdmisGarantie = (idCompagnie, idSousGarantie, codeCategorie) => 
 };
 
 /** Motif si la garantie n'est pas admise pour un véhicule de cet âge (Administration > Dépréciation et âge
- * des véhicules), sinon null. Signalé à la saisie : le producteur décoche la garantie. */
+ * des véhicules), sinon null. Une telle garantie n'est pas accordée d'office : l'utilisateur peut la cocher. */
 export const garantieNonAdmise = ({ idCompagnie, idSousGarantie, ageAns, codeCategorie }) => {
   if (ageAns === null || ageAns === undefined) return null;
   const regles = reglesGarantie(idCompagnie, idSousGarantie, codeCategorie);
@@ -262,8 +263,21 @@ export const garantieNonAdmise = ({ idCompagnie, idSousGarantie, ageAns, codeCat
   const admise = regles.some((r) => (r.AgeMinimum === null || r.AgeMinimum === undefined || ageAns >= r.AgeMinimum)
     && (r.AgeMaximum === null || r.AgeMaximum === undefined || ageAns < r.AgeMaximum));
   if (admise) return null;
-  return `Non admise pour un véhicule de ${ageAns} an${ageAns > 1 ? 's' : ''} (${regles[0].Commentaire || `admise ${plage(regles[0])}`})`;
+  return `Non admise pour un véhicule de ${ageAns} an${ageAns > 1 ? 's' : ''}`;
 };
+
+/** Règles entre garanties de la compagnie applicables à la catégorie (Administration > Réglages Automobile >
+ * Règles des garanties) : obligatoire, exige, exclue si, offerte si, prime forfaitaire si, non commercialisée,
+ * non cochée d'office. Appliquées par appliquerReglesGaranties (utils/tarificationAuto). */
+export const reglesInteractionsAuto = (idCompagnie, codeCategorie) => (etat.InteractionsGarantiesAuto || []).filter((r) => (
+  r.Actif !== false && Number(r.IdCompagnie) === Number(idCompagnie)
+  && (r.Type === 'NON_PROPOSEE' || !r.Categories || String(r.Categories).split(',').includes(String(codeCategorie || '')))
+));
+
+/** Une garantie au moins de la compagnie est-elle refusée à un véhicule de cet âge ? */
+export const ageRestreintGaranties = ({ idCompagnie, ageAns, codeCategorie }) => (etat.ReglesGarantiesAuto || [])
+  .some((r) => Number(r.IdCompagnie) === Number(idCompagnie)
+    && garantieNonAdmise({ idCompagnie, idSousGarantie: r.IdSousGarantie, ageAns, codeCategorie }));
 
 // ------------------------------------------------------------------ Santé MINENE
 /** Formules MINENE SANTÉ (Administration > Réglages Santé MINENE) : prime, famille, barème de soins. */

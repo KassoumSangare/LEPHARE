@@ -40,6 +40,12 @@ def regles_garanties_auto():
     return regles_garanties_json()
 
 
+def interactions_garanties_auto():
+    from .parametrage_auto import interactions_garanties_json
+
+    return interactions_garanties_json()
+
+
 def formules_pour_impression():
     """Formules MINENE lues par les imprimés (import différé : parametrage_sante importe ce module)."""
     from .parametrage_sante import formules_pour_impression as lire
@@ -246,6 +252,7 @@ def parametrage(request):
         "SanteFormules": formules_pour_impression(),
         # Automobile : garanties admises selon l'âge du véhicule (signalées à la saisie)
         "ReglesGarantiesAuto": regles_garanties_auto(),
+        "InteractionsGarantiesAuto": interactions_garanties_auto(),
     })
 
 

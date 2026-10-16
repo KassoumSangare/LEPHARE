@@ -4210,7 +4210,7 @@ class DepreciationRegle(models.Model):
 class AutoRegleGarantie(models.Model):
     """Règle de gestion Automobile : garantie admise selon l'âge du véhicule (années révolues depuis la
     première mise en circulation, à la date d'effet), par compagnie. Ex. NSIA : tous risques (DOMMAGES)
-    de 0 à 5 ans, NSIA Auto Plus de 5 à 10 ans. Signalée à la saisie ; le producteur décoche."""
+    de 0 à 5 ans, NSIA Auto Plus de 5 à 10 ans. Non cochée d'office à la saisie ; le producteur peut l'accorder."""
 
     IdCompagnie = models.IntegerField(db_column="idcompagnie")
     IdSousGarantie = models.IntegerField(db_column="idsousgarantie")
@@ -4228,6 +4228,49 @@ class AutoRegleGarantie(models.Model):
         verbose_name_plural = "Garanties admises selon l'âge du véhicule"
         ordering = ["IdCompagnie", "IdSousGarantie"]
 
+
+
+class AutoRegleInteraction(models.Model):
+    """Règle de gestion Automobile entre garanties, par compagnie (tarif annoté NSIA : « interaction avec les autres
+    garanties ») : appliquée à l'écran à chaque garantie cochée, décochée, ajoutée ou retirée.
+
+    OBLIGATOIRE : ne peut être ni décochée ni retirée. REQUIERT : ne peut être cochée sans une des garanties liées.
+    EXCLUE_SI : décochée tant qu'une des garanties liées est souscrite. OFFERTE_SI : prime nulle quand une des garanties
+    liées est souscrite. PRIME_SI : prime annuelle forfaitaire quand une des garanties liées est souscrite.
+    NON_PROPOSEE : non commercialisée dans les catégories indiquées. NON_COCHEE : proposée sans être cochée d'office."""
+
+    TYPES = [
+        ("OBLIGATOIRE", "Obligatoire"),
+        ("REQUIERT", "Exige une des garanties liées"),
+        ("EXCLUE_SI", "Exclue si une des garanties liées est souscrite"),
+        ("OFFERTE_SI", "Offerte si une des garanties liées est souscrite"),
+        ("PRIME_SI", "Prime forfaitaire si une des garanties liées est souscrite"),
+        ("NON_PROPOSEE", "Non commercialisée"),
+        ("NON_COCHEE", "Proposée sans être cochée d'office"),
+    ]
+
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    IdSousGarantie = models.IntegerField(db_column="idsousgarantie")
+    Type = models.CharField(max_length=20, choices=TYPES, db_column="type")
+    # Sous-garanties liées, séparées par des virgules (REQUIERT, EXCLUE_SI, OFFERTE_SI, PRIME_SI)
+    Liees = models.CharField(max_length=100, blank=True, default="", db_column="liees")
+    # Codes de catégorie concernés, séparés par des virgules (vide : toutes)
+    Categories = models.CharField(max_length=100, blank=True, default="", db_column="categories")
+    PrimeAnnuelle = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, db_column="primeannuelle")
+    Commentaire = models.CharField(max_length=300, blank=True, default="", db_column="commentaire")
+    Actif = models.BooleanField(default=True, db_column="actif")
+    # OFFERTE_SI / PRIME_SI appliquées aussi par le barème (fn_lephare_regle_auto) aux offres qui contiennent une des
+    # garanties liées ; sinon à l'écran seulement, quand l'utilisateur ajoute la garantie liée
+    AppliqueeBareme = models.BooleanField(default=False, db_column="appliqueebareme")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_auto_regle_interaction"
+        verbose_name = "Règle entre garanties (Automobile)"
+        verbose_name_plural = "Règles entre garanties (Automobile)"
+        ordering = ["IdCompagnie", "Ordre", "id"]
 
 class PoolTpvTranche(models.Model):
     """Tranche du tarif du POOL TPV (transport public de voyageurs, catégorie 204) : prime RC annuelle selon le
@@ -4249,3 +4292,61 @@ class PoolTpvTranche(models.Model):
         verbose_name = "Tranche du tarif Pool TPV"
         verbose_name_plural = "Tarif Pool TPV"
         ordering = ["Ordre", "PlacesMin"]
+
+
+class TarifAutoGrille(models.Model):
+    """Tarif automobile « à lecture directe » d'une compagnie (ex. NSIA : VP essence, VP diesel, TPC, TPM) : primes
+    toutes faites par tranche de puissance ou de charge utile et par durée, appliquées sans saisie aux offres
+    choisies (Administration > Réglages Automobile > Tarifs à lecture directe). Une durée absente de la grille,
+    une autre offre ou un véhicule hors tranche : calcul du barème (fn_garantie_offre)."""
+
+    CRITERES = [("PUISSANCE", "Puissance fiscale (CV)"), ("CHARGE_UTILE", "Charge utile (kg)")]
+
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    Libelle = models.CharField(max_length=100, db_column="libelle")
+    # Codes de catégorie tarifaire concernés, séparés par des virgules (ex. « 201 »)
+    Categories = models.CharField(max_length=100, db_column="categories")
+    # Énergie du véhicule (stdenergie : 1 essence, 2 diesel) ; vide : toutes
+    IdEnergie = models.IntegerField(null=True, blank=True, db_column="idenergie")
+    Critere = models.CharField(max_length=20, choices=CRITERES, default="PUISSANCE", db_column="critere")
+    # Offres (stdoffre) tarifées par cette grille, séparées par des virgules
+    Offres = models.CharField(max_length=200, blank=True, default="", db_column="offres")
+    Actif = models.BooleanField(default=True, db_column="actif")
+    Source = models.CharField(max_length=200, blank=True, default="", db_column="source")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_auto_tarif_grille"
+        verbose_name = "Tarif automobile à lecture directe"
+        verbose_name_plural = "Tarifs automobiles à lecture directe"
+        ordering = ["IdCompagnie", "Ordre", "id"]
+
+
+class TarifAutoGrilleLigne(models.Model):
+    """Tranche d'un tarif à lecture directe pour une durée : montants tels que publiés par la compagnie (chaque
+    composante arrondie à part, d'où un TTC parfois différent de 1 F de leur somme)."""
+
+    Grille = models.ForeignKey(TarifAutoGrille, on_delete=models.CASCADE, db_column="grille", related_name="lignes")
+    Libelle = models.CharField(max_length=60, db_column="libelle")
+    # Bornes incluses de la puissance (CV) ou de la charge utile (kg) ; maximum vide : sans limite
+    BorneMin = models.IntegerField(null=True, blank=True, db_column="bornemin")
+    BorneMax = models.IntegerField(null=True, blank=True, db_column="bornemax")
+    # Usages (stdusage.codeusage, ex. « 017,022 » tracteur routier) : la ligne vaut pour ces usages quelle que
+    # soit la tranche ; vide : tranche ordinaire
+    Usages = models.CharField(max_length=60, blank=True, default="", db_column="usages")
+    DureeMois = models.PositiveSmallIntegerField(db_column="dureemois")
+    PrimeNette = models.DecimalField(max_digits=15, decimal_places=2, db_column="primenette")
+    Accessoire = models.DecimalField(max_digits=15, decimal_places=2, db_column="accessoire")
+    Taxe = models.DecimalField(max_digits=15, decimal_places=2, db_column="taxe")
+    Fga = models.DecimalField(max_digits=15, decimal_places=2, db_column="fga")
+    Cedeao = models.DecimalField(max_digits=15, decimal_places=2, db_column="cedeao")
+    PrimeTtc = models.DecimalField(max_digits=15, decimal_places=2, db_column="primettc")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+
+    class Meta:
+        db_table = "lephare_auto_tarif_grille_ligne"
+        verbose_name = "Tranche d'un tarif à lecture directe"
+        verbose_name_plural = "Tranches des tarifs à lecture directe"
+        ordering = ["Grille", "-DureeMois", "Ordre", "id"]
