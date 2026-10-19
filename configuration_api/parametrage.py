@@ -203,6 +203,7 @@ def _document_json(d):
         "MentionLogo": d.MentionLogo,
         "OrdreCheque": d.OrdreCheque,
         "AttestationVoyage": d.AttestationVoyage or {},
+        "Reversement": d.Reversement or {},
     }
 
 
@@ -422,6 +423,29 @@ def _valider_attestation(donnees):
     return attestation
 
 
+CHAMPS_REVERSEMENT = ("NomBordereau", "Destinataire", "Service", "Ville", "AttentionDe", "Appellation")
+
+
+def _valider_reversement(donnees):
+    """Reversements et courriers d'une compagnie : part du cabinet dans les accessoires (%, vide : barème des
+    accessoires du cabinet) et destinataire des courriers (production/views_bordereaux.py)."""
+    if not isinstance(donnees, dict):
+        raise ErreurParametrage("Reversements : données attendues sous forme de fiche.")
+    reglages = {cle: _texte(donnees.get(cle), 120, f"Reversements — {cle}") for cle in CHAMPS_REVERSEMENT}
+    part = donnees.get("PartAccessoiresCourtier")
+    if part in (None, ""):
+        reglages["PartAccessoiresCourtier"] = None
+    else:
+        try:
+            part = float(str(part).replace(",", "."))
+        except ValueError as erreur:
+            raise ErreurParametrage("Part du cabinet dans les accessoires : pourcentage attendu.") from erreur
+        if not 0 <= part <= 100:
+            raise ErreurParametrage("Part du cabinet dans les accessoires : entre 0 et 100 %.")
+        reglages["PartAccessoiresCourtier"] = int(part) if part == int(part) else part
+    return reglages
+
+
 @api_view(["GET", "POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EstAdministrateur])
@@ -492,6 +516,8 @@ def compagnie(request, id_compagnie):
                 document.OrdreCheque = _texte(docs["OrdreCheque"], 100, "Chèque à l'ordre de")
             if "AttestationVoyage" in docs:
                 document.AttestationVoyage = _valider_attestation(docs["AttestationVoyage"])
+            if "Reversement" in docs:
+                document.Reversement = _valider_reversement(docs["Reversement"])
     except ErreurParametrage as erreur:
         return _reponse_erreur(erreur)
 

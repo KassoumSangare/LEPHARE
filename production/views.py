@@ -623,6 +623,8 @@ def donnees_conditions_particulieres(objet, contrat=False):
                 "fga": int(objet.fga or 0),
                 "cedeao": int(objet.cedeao or 0),
                 "prime_ttc_enregistree": int(objet.primettc or 0),
+                # Prime imposée : la TTC enregistrée est celle à imprimer (pas la somme recalculée des garanties)
+                "prime_imposee": bool(getattr(objet, "prime_imposee", False)),
             },
         }
 

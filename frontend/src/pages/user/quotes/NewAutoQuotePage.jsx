@@ -2698,7 +2698,7 @@ export const NewAutoQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Car size={26} color="#3b82f6" />
-            {editIddevis ? `Modifier le Devis Automobile [${editNumeroDevis || editIddevis}]` : 'Nouveau Devis Automobile & Flotte'}
+            {editIddevis ? `Modifier le Devis Automobile [${editNumeroDevis || editIddevis}]` : 'Nouveau Devis Automobile'}
           </h1>
           {avertissementReprise && (
             <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
@@ -2971,7 +2971,7 @@ export const NewAutoQuotePage = () => {
                   }}
                   style={{ width: '16px', height: '16px', accentColor: '#2563eb' }}
                 />
-                NSIA Auto Plus (Garantie Complémentaire Spécifique NSIA)
+                NSIA Auto Plus
               </label>
               {ageAdmisGarantie(compagnieId, ID_SOUS_GARANTIE_NSIA_AUTO_PLUS) && (
                 <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 4 }}>

@@ -13,7 +13,7 @@ const confirmerAbandon = (libelle) => confirmer({
 import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Search, Loader2, Save, IdCard, Printer, Plane, Calculator, ExternalLink, Eye, CheckCircle2,
-  AlertTriangle, Image as ImageIcon, FileText,
+  AlertTriangle, Image as ImageIcon, FileText, Send,
 } from 'lucide-react';
 import { EnTeteParametrage } from '../../../components/admin/EnTeteParametrage';
 import { ChampImage } from '../../../components/admin/ChampImage';
@@ -41,6 +41,7 @@ const ONGLETS_FICHE = [
   { id: 'identite', libelle: 'Identité', icone: IdCard },
   { id: 'documents', libelle: 'Documents imprimés', icone: Printer },
   { id: 'attestation', libelle: 'Attestation voyage', icone: Plane },
+  { id: 'reversements', libelle: 'Reversements et courriers', icone: Send },
   { id: 'baremes', libelle: 'Barèmes', icone: Calculator },
 ];
 
@@ -56,6 +57,14 @@ const BAREMES = [
 ];
 
 const ATTESTATION_VIDE = { Actif: false, Convention: '', PaysResidence: "CÔTE D'IVOIRE", Signataire: '', Garanties: [], Telephone: '', Email: '', Whatsapp: '', PortailAssistance: '', VerificationVisa: '', Exemplaires: ['Exemplaire destiné aux Consulats', "Exemplaire de l'Assuré", 'Exemplaire de la Compagnie'] };
+
+// Reversements (production/views_bordereaux.py) : part du cabinet dans les accessoires (vide : barème « Accessoires du
+// cabinet »), nom imprimé sur les bordereaux et destinataire des courriers de règlement de prime
+const REVERSEMENT_VIDE = { PartAccessoiresCourtier: '', NomBordereau: '', Destinataire: '', Service: '', Ville: 'ABIDJAN', AttentionDe: '', Appellation: 'Monsieur' };
+const avecReversement = (documents) => ({
+  ...REVERSEMENT_VIDE,
+  ...Object.fromEntries(Object.entries(documents?.Reversement || {}).map(([k, v]) => [k, v ?? ''])),
+});
 
 const lignesVersListe = (texte) => String(texte || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
@@ -110,6 +119,7 @@ export const CatalogCompaniesPage = () => {
           ...c.Documents,
           PiedPageTexte: c.Documents.PiedPage || '',
           AttestationVoyage: { ...ATTESTATION_VIDE, ...(c.Documents.AttestationVoyage || {}) },
+          Reversement: avecReversement(c.Documents),
         },
       };
       setFiche({ origine: JSON.stringify(saisie), saisie });
@@ -126,6 +136,11 @@ export const CatalogCompaniesPage = () => {
     saisie: { ...f.saisie, Documents: { ...f.saisie.Documents, AttestationVoyage: { ...f.saisie.Documents.AttestationVoyage, [cle]: valeur } } },
   }));
 
+  const changerReversement = (cle, valeur) => setFiche((f) => ({
+    ...f,
+    saisie: { ...f.saisie, Documents: { ...f.saisie.Documents, Reversement: { ...f.saisie.Documents.Reversement, [cle]: valeur } } },
+  }));
+
   const corpsDocuments = (s) => ({
     Logo: s.Documents.Logo,
     Visa: s.Documents.Visa,
@@ -133,6 +148,7 @@ export const CatalogCompaniesPage = () => {
     MentionLogo: s.Documents.MentionLogo,
     OrdreCheque: s.Documents.OrdreCheque || '',
     AttestationVoyage: s.Documents.AttestationVoyage,
+    Reversement: s.Documents.Reversement,
   });
 
   const enregistrer = async () => {
@@ -146,7 +162,7 @@ export const CatalogCompaniesPage = () => {
         Active: s.Active,
         Documents: corpsDocuments(s),
       });
-      const saisie = { ...c, Documents: { ...c.Documents, PiedPageTexte: c.Documents.PiedPage || '', AttestationVoyage: { ...ATTESTATION_VIDE, ...(c.Documents.AttestationVoyage || {}) } } };
+      const saisie = { ...c, Documents: { ...c.Documents, PiedPageTexte: c.Documents.PiedPage || '', AttestationVoyage: { ...ATTESTATION_VIDE, ...(c.Documents.AttestationVoyage || {}) }, Reversement: avecReversement(c.Documents) } };
       setFiche({ origine: JSON.stringify(saisie), saisie });
       success(`${c.RaisonSociale} enregistrée : les prochains documents imprimés en tiennent compte.`);
       chargerParametrage(true);
@@ -296,6 +312,32 @@ export const CatalogCompaniesPage = () => {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {onglet === 'reversements' && (
+              <div>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 0 }}>
+                  Repris par les bordereaux de reversement / de réclamation de commission et par les courriers de règlement de prime
+                  (Finance &gt; Reversements aux compagnies).
+                </p>
+                <div className="form-group">
+                  <label className="form-label">Part du cabinet dans les accessoires (%)</label>
+                  <input type="number" min={0} max={100} step="0.01" className="form-control" style={{ maxWidth: 160 }} value={s.Documents.Reversement.PartAccessoiresCourtier}
+                    onChange={(e) => changerReversement('PartAccessoiresCourtier', e.target.value)} placeholder="Barème" />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Colonne « Acc. Courtier » du bordereau, appliquée à chaque contrat enregistré (NSIA et SUNU : 50, partage 50/50 des accessoires).
+                    Vide : barème « Accessoires du cabinet » par tranche de prime.
+                  </span>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', columnGap: '1rem' }}>
+                  {champTexte('NomBordereau', 'Nom imprimé sur les bordereaux', { valeur: s.Documents.Reversement.NomBordereau, onChange: (v) => changerReversement('NomBordereau', v), placeholder: 'ex. NSIA CI', aide: 'Sous le titre du bordereau et dans « POUR … ». Vide : raison sociale.' })}
+                  {champTexte('Destinataire', 'Destinataire du courrier', { valeur: s.Documents.Reversement.Destinataire, onChange: (v) => changerReversement('Destinataire', v), placeholder: 'ex. NSIA-CI' })}
+                  {champTexte('Service', 'Service', { valeur: s.Documents.Reversement.Service, onChange: (v) => changerReversement('Service', v), placeholder: 'ex. DIRECTION COURTAGE' })}
+                  {champTexte('Ville', 'Ville', { valeur: s.Documents.Reversement.Ville, onChange: (v) => changerReversement('Ville', v), placeholder: 'ABIDJAN' })}
+                  {champTexte('AttentionDe', "À l'attention de", { valeur: s.Documents.Reversement.AttentionDe, onChange: (v) => changerReversement('AttentionDe', v), placeholder: 'ex. Monsieur TANO FULGENCE' })}
+                  {champTexte('Appellation', "Formule d'appel", { valeur: s.Documents.Reversement.Appellation, onChange: (v) => changerReversement('Appellation', v), placeholder: 'Monsieur', aide: '« Monsieur, » en tête du courrier et dans la formule de politesse.' })}
+                </div>
               </div>
             )}
 

@@ -254,6 +254,19 @@ REGLES = [
     R("GET", r"(encaissement|encaissementrecherche|infoencaissement|listedetailencaissement|cheques|finance/encaissements|"
              r"paiementmobileinfo|distripaytransaction|quittances-cima|contratpourencaissement)(/|$)", "encaissements.view"),
     # ---- reversements
+    # Bordereaux et courriers au modèle d'OREOLE (production/views_bordereaux.py) : émission (un bordereau de
+    # réclamation est payé d'office, chèques du client transmis), décharge, ordre d'un règlement, police de la
+    # compagnie ; annulation d'un bordereau = droit de validation
+    R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/annuler/", "reversements.validate", objet="reversement",
+      cles=("id_reversement",)),
+    R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/decharge/", "reversements.create", objet="reversement",
+      cles=("id_reversement",)),
+    R("POST", r"finance/bordereaux/$", "reversements.create", objet="reversement"),
+    R("POST", r"finance/encaissements/(?P<id_encaissement>\d+)/ordre/", "reversements.create", objet="encaissement",
+      cles=("id_encaissement",)),
+    R("PATCH", r"finance/contrats/(?P<id_contrat>\d+)/police-compagnie/", "reversements.create", objet="contrat",
+      cles=("id_contrat",)),
+    R("GET", r"finance/(bordereaux|tableau-reversement)", "reversements.view"),
     R("POST", r"(validationreversement|finance/reversements/(?P<id_reversement>\d+)/valider/|reversements-cima/(?P<pk>\d+)/valider/)",
       "reversements.validate", objet="reversement", cles=("id_reversement", "pk", "IdReversement", "idreversement")),
     R("PUT,PATCH,DELETE", r"(reversement|reversementnonvalide|reversements-cima)/(?P<pk>\d+)", "reversements.validate",

@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileSpreadsheet, FileText, ListChecks, Loader2, RefreshCw } from 'lucide-react';
+import { FileSpreadsheet, FileText, ListChecks, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { financeApi, settingsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
-import { aujourdhui, dateFr, exporterEtatEncaissements, fcfa, messageErreurApi } from '../../../utils/financeUtils';
+import {
+  aujourdhui, correspondRecherche, dateFr, exporterEtatEncaissements, fcfa, messageErreurApi, recentsDabord,
+} from '../../../utils/financeUtils';
 import { trierParLibelle } from '../../../utils/sortUtils';
 
 // État récapitulatif des encaissements : montant, mode, référence et statut de chaque quittance
@@ -32,6 +34,7 @@ export const EtatEncaissementsPage = () => {
   const [filtres, setFiltres] = useState({ du: `${new Date().getFullYear()}-01-01`, au: aujourdhui(), compagnie: '', mode: '', statut: '' });
   const [etat, setEtat] = useState(null);
   const [chargement, setChargement] = useState(false);
+  const [recherche, setRecherche] = useState('');
 
   useEffect(() => {
     settingsApi.getCompanies().then((l) => setCompagnies(Array.isArray(l) ? l : [])).catch(() => {});
@@ -53,7 +56,29 @@ export const EtatEncaissementsPage = () => {
     [compagnies, filtres.compagnie],
   );
   const champ = (cle) => (e) => setFiltres((f) => ({ ...f, [cle]: e.target.value }));
-  const exporter = (format) => etat && exporterEtatEncaissements(etat, { libelleCompagnie }, format);
+
+  // Recherche libre dans les lignes chargées (client, quittance, pièce, chèque, banque, date, montant…), du plus récent
+  // au plus ancien ; totaux et exports portent sur les lignes trouvées
+  const lignesVisibles = useMemo(() => (etat?.Lignes || [])
+    .filter((l) => correspondRecherche(recherche, [
+      l.Client, l.NumeroQuittance, l.NumeroPolice, l.NumeroPiece, l.Compagnie, l.Branche, l.Mode, l.Reference, l.Banque,
+      l.LibelleStatut, l.MotifAnnulation, dateFr(l.DateEncaissement), l.Montant,
+    ]))
+    .sort(recentsDabord((l) => l.DateEncaissement, (l) => l.IdDetailEncaissement)), [etat, recherche]);
+  const filtre = Boolean(recherche.trim());
+  const valides = lignesVisibles.filter((l) => !['ANNULE', 'IMPAYE'].includes(l.Statut));
+  const somme = (ls, cle) => ls.reduce((t, l) => t + (Number(l[cle]) || 0), 0);
+  const etatAffiche = etat && filtre ? {
+    ...etat,
+    Lignes: lignesVisibles,
+    Total: { Nombre: valides.length, Montant: somme(valides, 'Montant'), Reverse: somme(valides, 'MontantReverse'), ResteAReverser: somme(valides, 'ResteAReverser') },
+    ParMode: Object.values(valides.reduce((acc, l) => {
+      const g = acc[l.Mode || '—'] || { Libelle: l.Mode || '—', Nombre: 0, Montant: 0, Reverse: 0 };
+      g.Nombre += 1; g.Montant += l.Montant; g.Reverse += l.MontantReverse;
+      return { ...acc, [g.Libelle]: g };
+    }, {})),
+  } : (etat && { ...etat, Lignes: lignesVisibles });
+  const exporter = (format) => etatAffiche && exporterEtatEncaissements(etatAffiche, { libelleCompagnie }, format);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
@@ -101,7 +126,7 @@ export const EtatEncaissementsPage = () => {
           <button type="button" className="btn btn-primary" onClick={charger} disabled={chargement} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             {chargement ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} Afficher
           </button>
-          <button type="button" className="btn btn-secondary" onClick={() => exporter('excel')} disabled={!etat} title="Exporter en Excel"><FileSpreadsheet size={15} /></button>
+          <button type="button" className="btn btn-secondary" onClick={() => exporter('excel')} disabled={!etat} title="Exporter en Excel (lignes affichées)"><FileSpreadsheet size={15} /></button>
           <button type="button" className="btn btn-secondary" onClick={() => exporter('pdf')} disabled={!etat} title="Imprimer / PDF"><FileText size={15} /></button>
         </div>
       </div>
@@ -137,6 +162,23 @@ export const EtatEncaissementsPage = () => {
           </div>
 
           <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+            <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.8rem' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 280 }}>
+                <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input type="text" className="form-control" style={{ paddingLeft: '2rem', paddingRight: '2rem' }} value={recherche}
+                  onChange={(e) => setRecherche(e.target.value)} aria-label="Rechercher dans les encaissements"
+                  placeholder="Rechercher : client, quittance, n° de pièce, chèque, banque, date (jj/mm/aaaa), montant…" />
+                {recherche && (
+                  <button type="button" onClick={() => setRecherche('')} aria-label="Effacer la recherche"
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, display: 'flex' }}>
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                {filtre ? `${lignesVisibles.length} ligne(s) sur ${etat.Lignes.length} — encaissé net ${fcfa(etatAffiche.Total.Montant)} F` : `${etat.Lignes.length} ligne(s)`} — du plus récent au plus ancien
+              </span>
+            </div>
             <div className="table-wrapper">
               <table className="data-table">
                 <thead>
@@ -146,7 +188,7 @@ export const EtatEncaissementsPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {etat.Lignes.map((l) => (
+                  {lignesVisibles.map((l) => (
                     <tr key={l.IdDetailEncaissement}>
                       <td>{dateFr(l.DateEncaissement)}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{l.NumeroPiece}</td>
@@ -160,8 +202,10 @@ export const EtatEncaissementsPage = () => {
                       <td title={l.MotifAnnulation || undefined} style={{ whiteSpace: 'nowrap' }}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
                     </tr>
                   ))}
-                  {!etat.Lignes.length && (
-                    <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>Aucun encaissement pour ces critères.</td></tr>
+                  {!lignesVisibles.length && (
+                    <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                      {etat.Lignes.length ? 'Aucun encaissement ne correspond à la recherche.' : 'Aucun encaissement pour ces critères.'}
+                    </td></tr>
                   )}
                 </tbody>
               </table>

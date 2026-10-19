@@ -1688,6 +1688,35 @@ export const financeApi = {
   annulerReclamation: async (id, motif) => (await apiClient.post(`/finance/commissions/reclamations/${id}/annuler/`, { Motif: motif })).data,
   // POST { DatePaiement, Mode: CHQ|VIR, IdBanque, ReferencePaiement, Montant, Notes }
   encaisserCommission: async (id, payload) => (await apiClient.post(`/finance/commissions/reclamations/${id}/paiements/`, payload)).data,
+
+  // Bordereaux et courriers au modèle d'OREOLE (production/views_bordereaux.py)
+  // GET /api/finance/bordereaux/a-transmettre/?compagnie : primes encaissées à transmettre, ordre du règlement
+  aTransmettre: async (compagnie) => (await apiClient.get('/finance/bordereaux/a-transmettre/', { params: { compagnie } })).data,
+  // GET /api/finance/bordereaux/?compagnie&du&au&nature
+  bordereaux: async (params) => (await apiClient.get('/finance/bordereaux/', { params })).data,
+  bordereau: async (idReversement) => (await apiClient.get(`/finance/bordereaux/${idReversement}/`)).data,
+  // POST { IdCompagnie, DateBordereau, Numero, Lignes: [IdDetailEncaissement], Paiement: { IdMode, IdBanque, NumeroCheque, DatePaiement } }
+  emettreBordereaux: async (payload) => (await apiClient.post('/finance/bordereaux/', payload)).data,
+  dechargeBordereau: async (idReversement, dateDecharge) => (await apiClient.post(`/finance/bordereaux/${idReversement}/decharge/`, { DateDecharge: dateDecharge })).data,
+  annulerBordereau: async (idReversement, motif) => (await apiClient.post(`/finance/bordereaux/${idReversement}/annuler/`, { Motif: motif })).data,
+  // POST { Ordre: CABINET | COMPAGNIE } : à l'ordre de qui était le chèque (saisi sans son ordre)
+  ordreEncaissement: async (idEncaissement, ordre) => (await apiClient.post(`/finance/encaissements/${idEncaissement}/ordre/`, { Ordre: ordre })).data,
+  // PATCH { NumeroPoliceCompagnie, NumeroAvenantCompagnie } : colonnes « N°Police » et « Avt » des bordereaux
+  policeCompagnie: async (idContrat, payload) => (await apiClient.patch(`/finance/contrats/${idContrat}/police-compagnie/`, payload)).data,
+  // GET /api/finance/tableau-reversement/?compagnie&du&au&feuille
+  tableauReversement: async (params) => (await apiClient.get('/finance/tableau-reversement/', { params })).data,
+  // Classeur COMMI-MOIS : une feuille par état (tableau, primes soldées / non soldées, commissions perçues / non perçues)
+  telechargerTableauReversement: async (params, nomFichier) => {
+    const res = await apiClient.get('/finance/tableau-reversement/excel/', { params, responseType: 'blob', timeout: 120000 });
+    const url = URL.createObjectURL(res.data);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nomFichier || 'Tableau de reversement.xlsx';
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
 };
 
 // Apporteurs d'affaires codifiés (commissions versées par le cabinet)

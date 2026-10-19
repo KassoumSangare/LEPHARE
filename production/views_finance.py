@@ -14,8 +14,11 @@ Flux financiers du cabinet après l'encaissement des primes (Code CIMA) :
    lignes du bordereau ; états des commissions payées et non payées (chiffre d'affaires du
    cabinet = commissions, pas émissions).
 
-Commission due d'une quittance = commission du contrat (stdcontrat.commissionintermediaire, la
-colonne « Comm. Interm. » du bordereau) au prorata de la prime reversée sur la prime TTC.
+Commission due d'une quittance = commission du contrat (prime HT hors FGA et CEDEAO x taux,
+stdcontrat.commissionintermediaire) + accessoires du cabinet (stdcontrat.accessoireintermediaire), réclamée entière
+dès le premier reversement de la quittance, comme sur les bordereaux d'OREOLE (1175 : commission entière au 1er
+acompte) ; les reversements suivants de la quittance (solde) ne portent plus de commission. Bordereaux, courriers et
+tableau de reversement au modèle d'OREOLE : production/views_bordereaux.py.
 
 Encaissements repris d'URANUS (saisis en décembre 2025, encaissés jusqu'au 14/11/2025) : réputés
 reversés hors LE PHARE, ils ne sont pas proposés au reversement (DEBUT_REVERSEMENTS).
@@ -133,13 +136,14 @@ SQL_LIGNES_ENCAISSEMENT = """
            q.idquittance, q.numeroquittance, q.numeropolice, q.dateemission, q.dateeffet::date AS dateeffet,
            q.dateexpiration::date AS dateexpiration, q.primenette, q.accessoire, q.taxe, q.primettc,
            ct.idcontrat, ct.numeroavenant, COALESCE(ct.commissionintermediaire, 0) AS commission,
+           COALESCE(ct.accessoireintermediaire, 0) AS acccourtier,
            cie.idcompagnie, cie.raisonsociale AS compagnie, p.libelleproduit AS branche,
            TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client,
            ch.statut AS statutcheque
     FROM stddetailencaissement de
     JOIN stdencaissement e ON e.idencaissement = de.idencaissement
     JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
-    LEFT JOIN LATERAL (SELECT c.idcontrat, c.numeroavenant, c.commissionintermediaire, c.idcompagnie
+    LEFT JOIN LATERAL (SELECT c.idcontrat, c.numeroavenant, c.commissionintermediaire, c.accessoireintermediaire, c.idcompagnie
                        FROM stdcontrat c WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
     LEFT JOIN stdcompagnie cie ON cie.idcompagnie = COALESCE(ct.idcompagnie, q.idaperiteur)
     LEFT JOIN stdproduit p ON p.idproduit = q.idproduit
@@ -367,16 +371,27 @@ def _entete_reversement(ligne):
     }
 
 
+# Commission due au cabinet sur une ligne de reversement : commission et accessoires du cabinet en entier sur le premier
+# reversement (non annulé) de la quittance, rien sur les suivants
+COMMISSION_DUE = """CASE WHEN {d}.iddetailreversement = (
+        SELECT MIN(d1.iddetailreversement) FROM stddetailreversement d1
+        JOIN stdreversementcompagnie r1 ON r1.idreversement = d1.idreversement AND NOT COALESCE(r1.pieceannulee, FALSE)
+        JOIN stddetailencaissement de1 ON de1.iddetailencaissement = d1.iddetailencaissement
+        WHERE de1.numeroquittance = {de}.numeroquittance)
+    THEN COALESCE({ct}.commissionintermediaire, 0) + COALESCE({ct}.accessoireintermediaire, 0) ELSE 0 END"""
+
+
 SQL_REVERSEMENTS = """
     SELECT r.idreversement, r.numeroreversement, r.datereversement, r.idcompagnie, cie.raisonsociale AS compagnie,
            r.montantreversement, r.valide, r.datevalidation, r.numerocheque, r.comptecompensation,
            m.libellemodepaiement AS mode, NULLIF(TRIM(b.libelle), '') AS banque,
            (SELECT COUNT(*) FROM stddetailreversement d WHERE d.idreversement = r.idreversement) AS nombre,
-           (SELECT COALESCE(SUM(CASE WHEN q.primettc > 0 THEN ROUND(COALESCE(ct.commissionintermediaire, 0) * d.montantreverse / q.primettc, 0) ELSE 0 END), 0)
+           (SELECT COALESCE(SUM(""" + COMMISSION_DUE.format(d="d", de="de", ct="ct") + """), 0)
             FROM stddetailreversement d
             JOIN stddetailencaissement de ON de.iddetailencaissement = d.iddetailencaissement
             JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
-            LEFT JOIN LATERAL (SELECT c.commissionintermediaire FROM stdcontrat c WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
+            LEFT JOIN LATERAL (SELECT c.commissionintermediaire, c.accessoireintermediaire FROM stdcontrat c
+                               WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
             WHERE d.idreversement = r.idreversement) AS commissions
     FROM stdreversementcompagnie r
     LEFT JOIN stdcompagnie cie ON cie.idcompagnie = r.idcompagnie
@@ -394,13 +409,13 @@ def _lire_reversement(id_reversement):
         SQL_LIGNES_ENCAISSEMENT.replace(
             "FROM stddetailencaissement de",
             "FROM stddetailreversement dr JOIN stddetailencaissement de ON de.iddetailencaissement = dr.iddetailencaissement",
-        ).replace("SELECT de.iddetailencaissement,", "SELECT dr.iddetailreversement, dr.montantreverse AS montantdetailreverse, de.iddetailencaissement,")
+        ).replace("SELECT de.iddetailencaissement,", "SELECT dr.iddetailreversement, dr.montantreverse AS montantdetailreverse, "
+                  + COMMISSION_DUE.format(d="dr", de="de", ct="ct") + " AS commissiondue, de.iddetailencaissement,")
         + " WHERE dr.idreversement = %s ORDER BY e.dateencaissement, de.iddetailencaissement",
         [id_reversement],
     )
     details = []
     for l in lignes:
-        part = (l["montantdetailreverse"] / l["primettc"]) if l["primettc"] else ZERO
         details.append({
             **_ligne_bordereau(l),
             "IdDetailReversement": l["iddetailreversement"],
@@ -409,7 +424,7 @@ def _lire_reversement(id_reversement):
             "Mode": l["mode"] or "",
             "Reference": l["reference"] or "",
             "MontantReverse": _nombre(l["montantdetailreverse"]),
-            "CommissionDue": _nombre(_franc(Decimal(l["commission"]) * part)),
+            "CommissionDue": _nombre(l["commissiondue"]),
         })
     return {**_entete_reversement(entetes[0]), "Lignes": details}
 
@@ -529,9 +544,16 @@ def valider_reversement(request, id_reversement):
 SQL_COMMISSIONS = """
     SELECT d.iddetailreversement, r.idreversement, r.numeroreversement, r.datereversement, r.idcompagnie,
            cie.raisonsociale AS compagnie, d.montantreverse, q.idquittance, q.numeroquittance, q.numeropolice,
-           q.primenette, q.primettc, q.dateeffet::date AS dateeffet, p.libelleproduit AS branche,
+           q.primenette, q.primettc, q.dateeffet::date AS dateeffet, q.dateexpiration::date AS dateexpiration,
+           q.idproduit, p.libelleproduit AS branche,
            TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client, ct.numeroavenant,
-           CASE WHEN q.primettc > 0 THEN ROUND(COALESCE(ct.commissionintermediaire, 0) * d.montantreverse / q.primettc, 0) ELSE 0 END AS commissiondue,
+           CASE WHEN UPPER(TRIM(COALESCE(ct.numeropolicecompagnie, ''))) IN ('', 'RAS', 'NEANT') THEN NULL
+                ELSE TRIM(ct.numeropolicecompagnie) END AS policecompagnie,
+           COALESCE(ct.taux_commission, 0) AS taux, COALESCE(ct.commissionintermediaire, 0) AS commissionht,
+           COALESCE(ct.accessoireintermediaire, 0) AS acccourtier,
+           public.fn_lephare_prime_ht(ct.primenette, ct.accessoire, ct.taxe, ct.fga, ct.cedeao, ct.primettc, ct.primeimposee) AS primeht,
+           bo.numero AS numerobordereau, COALESCE(bo.datebordereau, r.datereversement) AS datebordereau,
+           """ + COMMISSION_DUE.format(d="d", de="de", ct="ct") + """ AS commissiondue,
            rc.id AS idreclamation, rc.reference AS reclamation,
            COALESCE((SELECT SUM(dp.montant_commission_paye) FROM std_detail_paiement_commission dp
                      WHERE dp.detail_reversement_id = d.iddetailreversement AND NOT dp.est_annule), 0) AS commissionpayee
@@ -539,8 +561,8 @@ SQL_COMMISSIONS = """
     JOIN stdreversementcompagnie r ON r.idreversement = d.idreversement
     JOIN stddetailencaissement de ON de.iddetailencaissement = d.iddetailencaissement
     JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
-    LEFT JOIN LATERAL (SELECT c.numeroavenant, c.commissionintermediaire FROM stdcontrat c
-                       WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
+    LEFT JOIN LATERAL (SELECT c.* FROM stdcontrat c WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
+    LEFT JOIN lephare_bordereau_reversement bo ON bo.idreversement = r.idreversement
     LEFT JOIN stdcompagnie cie ON cie.idcompagnie = r.idcompagnie
     LEFT JOIN stdproduit p ON p.idproduit = q.idproduit
     LEFT JOIN stdclient cl ON cl.idclient = q.idclient
@@ -548,7 +570,7 @@ SQL_COMMISSIONS = """
                        JOIN std_reclamation_commission x ON x.id = dx.reclamation_id
                        WHERE dx.detail_reversement_id = d.iddetailreversement AND x.statut <> 'ANNULEE'
                        ORDER BY x.id DESC LIMIT 1) rc ON TRUE
-    WHERE r.valide AND NOT COALESCE(r.pieceannulee, FALSE)
+    WHERE r.valide AND NOT COALESCE(r.pieceannulee, FALSE) AND NOT COALESCE(bo.annule, FALSE)
 """
 
 LIBELLES_COMMISSION = {
@@ -583,8 +605,17 @@ def _ligne_commission(l):
         "Branche": l["branche"] or "",
         "Client": l["client"] or "",
         "DateEffet": _iso(l["dateeffet"]),
+        "DateExpiration": _iso(l["dateexpiration"]),
+        "IdProduit": l["idproduit"],
+        "PoliceCompagnie": l["policecompagnie"] or "",
+        "NumeroBordereau": l["numerobordereau"],
+        "DateBordereau": _iso(l["datebordereau"]),
         "PrimeNette": _nombre(l["primenette"]),
+        "PrimeHT": _nombre(round(l["primeht"] or 0)),
         "PrimeTtc": _nombre(l["primettc"]),
+        "Taux": _nombre(l["taux"]),
+        "CommissionHT": _nombre(l["commissionht"]),
+        "AccCourtier": _nombre(l["acccourtier"]),
         "MontantReverse": _nombre(l["montantreverse"]),
         "CommissionDue": _nombre(due),
         "CommissionPayee": _nombre(payee),
@@ -614,7 +645,8 @@ def _commissions(id_compagnie=None, du=None, au=None, ids=None, id_reclamation=N
         conditions.append("d.iddetailreversement IN (SELECT detail_reversement_id FROM std_detail_reclamation_commission WHERE reclamation_id = %s)")
         params.append(id_reclamation)
     sql = SQL_COMMISSIONS + "".join(f" AND {c}" for c in conditions) + " ORDER BY r.datereversement, d.iddetailreversement"
-    return [_ligne_commission(l) for l in _lignes(sql, params)]
+    # Reversements suivants d'une quittance (solde) : sans commission, la commission entière étant due au premier
+    return [_ligne_commission(l) for l in _lignes(sql, params) if l["commissiondue"] or l["commissionpayee"]]
 
 
 def _totaux_commissions(lignes):

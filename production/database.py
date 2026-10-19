@@ -2705,6 +2705,17 @@ def save_premium_collection(user, input_data):
     motif_compensation = texte("motif_compensation") if compensation else ""
     reference_reencaissement = texte("reference_reencaissement")
     id_cheque_impaye = input_data.get("id_cheque_impaye")
+    # Ordre du règlement (titre du bordereau remis à la compagnie, production/views_bordereaux.py) : un chèque ou un
+    # versement à l'ordre de la compagnie lui est transmis tel quel ; mode URANUS « A la compagnie » : toujours
+    ordre_reglement = Encaissement.ORDRE_COMPAGNIE if (
+        texte("ordre_reglement").upper() == Encaissement.ORDRE_COMPAGNIE or (mode and mode.libellemodepaiement or "").strip().lower() == "a la compagnie"
+    ) else Encaissement.ORDRE_CABINET
+    date_cheque = None
+    if texte("date_cheque"):
+        try:
+            date_cheque = datetime.strptime(texte("date_cheque")[:10], "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Date du chèque invalide.")
 
     if compensation and not motif_compensation:
         raise ValidationError("Le motif de la compensation doit être précisé.")
@@ -2721,6 +2732,21 @@ def save_premium_collection(user, input_data):
     ).date()
     liste_quittance = list(input_data["liste_quittance"])
     liste_q = ";".join([d["numero_quittance"] for d in liste_quittance])
+    if ordre_reglement == Encaissement.ORDRE_COMPAGNIE:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(DISTINCT COALESCE(ct.idcompagnie, q.idaperiteur)) FROM stdquittance q
+                LEFT JOIN LATERAL (SELECT c.idcompagnie FROM stdcontrat c WHERE c.idquittance = q.idquittance
+                                   ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
+                WHERE q.numeroquittance = ANY(%s)
+                """,
+                [[d["numero_quittance"] for d in liste_quittance]],
+            )
+            if cursor.fetchone()[0] > 1:
+                raise ValidationError(
+                    "Un règlement à l'ordre d'une compagnie ne peut régler que des primes de cette compagnie."
+                )
     liste_m = ";".join(
         [str(d["montant_encaissement"]) for d in liste_quittance]
     )
@@ -2821,6 +2847,8 @@ def save_premium_collection(user, input_data):
             motif_compensation=motif_compensation or None,
             reference_reencaissement=reference_reencaissement or None,
             cheque_impaye=cheque_impaye,
+            ordre_reglement=ordre_reglement,
+            date_cheque=date_cheque,
         )
 
         # 4. Mise à jour du chèque et enregistrement de l'opération

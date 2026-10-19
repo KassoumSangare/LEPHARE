@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { saisirTexte } from '../../../utils/dialogue';
-import { Ban, CheckCircle2, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Plus, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
+import { Ban, CheckCircle2, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Mail, Plus, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
 import { apporteurApi, financeApi, settingsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
 import { exportToExcel, exportToPdf } from '../../../utils/exportUtils';
 import { aujourdhui, bornesMois, dateFr, exporterReclamation, fcfa, messageErreurApi } from '../../../utils/financeUtils';
+import { imprimerCourrierReclamation, imprimerRecapitulatifReclamation } from '../../../utils/impressionsFinance';
+import { documentsCompagnie } from '../../../utils/parametrage';
 import { trierParLibelle } from '../../../utils/sortUtils';
 
 // Commissions du cabinet (son chiffre d'affaires, pas les émissions). Après le reversement de la
@@ -161,6 +163,9 @@ const ReclamationModal = ({ reclamation, onClose, onRegler, onAnnuler }) => (
           )}
           <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'excel')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileSpreadsheet size={15} /> Excel</button>
           <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'pdf')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={15} /> Imprimer / PDF</button>
+          {/* Courrier de réclamation de commission et son bordereau récapitulatif, au modèle des courriers d'OREOLE */}
+          <button type="button" className="btn btn-secondary" onClick={() => imprimerRecapitulatifReclamation(reclamation, documentsCompagnie(reclamation.IdCompagnie)?.Reversement || {})} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={15} /> Bordereau récapitulatif</button>
+          <button type="button" className="btn btn-secondary" onClick={() => imprimerCourrierReclamation(reclamation, documentsCompagnie(reclamation.IdCompagnie)?.Reversement || {})} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Mail size={15} /> Courrier de réclamation</button>
           {reclamation.Reste > 0 && reclamation.Statut !== 'ANNULEE' && (
             <button type="button" className="btn btn-primary" onClick={() => onRegler(reclamation)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Wallet size={15} /> Encaisser un règlement</button>
           )}

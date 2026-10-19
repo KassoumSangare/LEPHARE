@@ -1048,8 +1048,10 @@ const buildAutoFacture = (quote) => {
     primeNetteAffichee = pnStockee - fga - (cedeaoHorsPrimeNette ? 0 : cedeao);
   }
   const sommeComposantes = primeNetteAffichee !== null ? primeNetteAffichee + accessoire + taxe + fga + cedeao : null;
+  // Prime imposée : la TTC enregistrée (imposée) est celle de la facture, jamais remplacée par le calcul du système
   const ttcCalcule = sommeComposantes === null ? null
-    : (ttcRetombe(ttcEnregistre, sommeComposantes, { idProduit: 1, nsia: estNsia }) ? ttcEnregistre : arrondirMontant(sommeComposantes, 1));
+    : ((raw.prime_imposee && ttcEnregistre) || ttcRetombe(ttcEnregistre, sommeComposantes, { idProduit: 1, nsia: estNsia })
+      ? ttcEnregistre : arrondirMontant(sommeComposantes, 1));
   const ecartTtc = ttcCalcule !== null && ttcEnregistre !== null && ttcCalcule !== ttcEnregistre;
   const montant = (v) => (montantValide(v) ? fcfa(v) : VIDE);
 
@@ -1197,7 +1199,9 @@ const buildConditionsParticulieres = (quote, cp) => {
   // NSIA : TTC éventuellement arrondie au multiple de 5 supérieur (historique Uranus) ; on reprend
   // l'arrondi uniquement s'il correspond à la TTC enregistrée sur le devis
   // TTC arrondie à la pièce de 5 F (Règles de gestion > Arrondi des montants) ou, historique NSIA, au multiple supérieur
-  const primeTtc = ttcRetombe(m.prime_ttc_enregistree, sommeTtc, { idProduit: 1, nsia: Number(idCompagnie) === 1 })
+  // Prime imposée : la TTC enregistrée (imposée) est imprimée telle quelle, jamais remplacée par le calcul du système
+  const primeTtc = (m.prime_imposee && Number(m.prime_ttc_enregistree) > 0)
+    || ttcRetombe(m.prime_ttc_enregistree, sommeTtc, { idProduit: 1, nsia: Number(idCompagnie) === 1 })
     ? m.prime_ttc_enregistree : arrondirMontant(sommeTtc, 1);
   // Prime imposée ou corrigée : les garanties ne retombent pas sur la TTC enregistrée (celle de la
   // facture) — écart signalé à l'écran, comme sur la facture proforma

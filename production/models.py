@@ -1121,6 +1121,10 @@ class Contrat(models.Model):
         null=True,
         db_column="numeropolicecompagnie",
     )
+    # Avenant de la compagnie (colonne « Avt » des bordereaux d'OREOLE), distinct du numéro d'avenant LE PHARE
+    numero_avenant_compagnie = models.CharField(
+        max_length=20, blank=True, null=True, db_column="numeroavenantcompagnie"
+    )
     prime_imposee = models.BooleanField(
         default=False, blank=True, null=True, db_column="primeimposee"
     )
@@ -1891,6 +1895,15 @@ class Encaissement(models.Model):
         related_name="reencaissements",
         db_column="idchequeimpaye",
     )
+    # Chèque ou virement à l'ordre du cabinet (reversé ensuite par OREOLE : bordereau de reversement de prime) ou de la
+    # compagnie (transmis tel quel : bordereau de réclamation de commission, « Direct »)
+    ORDRE_CABINET = "CABINET"
+    ORDRE_COMPAGNIE = "COMPAGNIE"
+    ORDRES_REGLEMENT = [(ORDRE_CABINET, "À l'ordre du cabinet"), (ORDRE_COMPAGNIE, "À l'ordre de la compagnie")]
+    ordre_reglement = models.CharField(
+        max_length=10, choices=ORDRES_REGLEMENT, default=ORDRE_CABINET, db_column="ordrereglement"
+    )
+    date_cheque = models.DateField(blank=True, null=True, db_column="datecheque")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2183,6 +2196,43 @@ class ReversementCompagnie(models.Model):
         db_table = "stdreversementcompagnie"
         verbose_name = "Reversement de primes"
         verbose_name_plural = "Reversements de primes"
+
+
+class BordereauReversement(models.Model):
+    """Bordereau d'OREOLE remis à la compagnie avec un reversement (production/views_bordereaux.py) : numéro de la
+    suite d'OREOLE, nature selon l'ordre des règlements transmis, date du courrier et date de décharge (cachet
+    « courrier arrivé » de la compagnie)."""
+
+    NATURE_REVERSEMENT = "REVERSEMENT"
+    NATURE_RECLAMATION = "RECLAMATION"
+    NATURES = [
+        (NATURE_REVERSEMENT, "Bordereau de reversement de prime"),  # primes encaissées par le cabinet, reversées par son chèque
+        (NATURE_RECLAMATION, "Bordereau de réclamation de commission"),  # chèques du client à l'ordre de la compagnie
+    ]
+
+    id_reversement = models.IntegerField(unique=True, db_column="idreversement")
+    numero = models.PositiveIntegerField(db_column="numero")
+    nature = models.CharField(max_length=12, choices=NATURES, db_column="nature")
+    date_bordereau = models.DateField(db_column="datebordereau")
+    date_decharge = models.DateField(null=True, blank=True, db_column="datedecharge")
+    annule = models.BooleanField(default=False, db_column="annule")
+    motif_annulation = models.CharField(max_length=255, blank=True, default="", db_column="motifannulation")
+    date_annulation = models.DateTimeField(null=True, blank=True, db_column="dateannulation")
+    cree_par = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="bordereaux_reversement", db_column="creepar"
+    )
+    cree_le = models.DateTimeField(auto_now_add=True, db_column="creele")
+
+    def __str__(self):
+        return f"Bordereau n° {self.numero} ({self.get_nature_display()})"
+
+    class Meta:
+        db_table = "lephare_bordereau_reversement"
+        verbose_name = "Bordereau de reversement"
+        verbose_name_plural = "Bordereaux de reversement"
+        constraints = [
+            UniqueConstraint(fields=["numero"], condition=Q(annule=False), name="lephare_bordereau_numero_actif"),
+        ]
 
 
 class DetailReversement(models.Model):

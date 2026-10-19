@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cashApi } from '../../api/endpoints';
+import { nomCabinet } from '../../utils/parametrage';
 
 // Champs du mode de règlement d'un encaissement, communs à l'encaissement des primes et au
 // réencaissement d'un chèque impayé. Chaque mode n'affiche que ce qui le concerne :
 //   Espèces : n° de bordereau ; Chèque / Virement / Traite : banque et numéro (le montant
 //   initial seulement pour un chèque, qui entre au portefeuille) ; Paiement mobile : n° du
 //   reçu de l'opérateur ; Compensation : référence et motif.
+// Chèque, virement, traite ou versement d'espèces : à l'ordre du cabinet (reversé ensuite par son chèque : bordereau
+// de reversement de prime) ou de la compagnie (transmis tel quel : bordereau de réclamation de commission).
 
 // « Report d'encaissement » n'est pas un mode de paiement proposé à la caisse
 export const modesProposes = (listeModes) => {
@@ -24,6 +27,8 @@ export const natureMode = (mode) => {
     mobile: abrege === 'PYM',
     bancaire: Boolean(mode?.banque),
     compensation: Boolean(mode?.compensation),
+    // Mode d'URANUS « A la compagnie » : chèque du client toujours à l'ordre de la compagnie
+    aLaCompagnie: /^a la compagnie$/i.test(String(mode?.libellemodepaiement || '').trim()),
     libelleNumero: abrege === 'VIR' ? 'Numéro de virement' : abrege === 'TRT' ? 'Numéro de traite' : 'Numéro du chèque',
   };
 };
@@ -62,6 +67,8 @@ export const reglementVide = (nomEmetteur = '') => ({
   numeroRecuOperateur: '',
   referenceCompensation: '',
   motifCompensation: '',
+  ordre: 'CABINET',
+  dateCheque: '',
   nomEmetteur,
 });
 
@@ -80,6 +87,8 @@ export const champsReglementApi = (valeurs, mode) => {
     numero_recu_operateur: nature.mobile ? valeurs.numeroRecuOperateur.trim() : '',
     reference_compensation: nature.compensation ? valeurs.referenceCompensation.trim() : '',
     motif_compensation: nature.compensation ? valeurs.motifCompensation.trim() : '',
+    ordre_reglement: nature.aLaCompagnie ? 'COMPAGNIE' : ((nature.bancaire || nature.especes) && valeurs.ordre === 'COMPAGNIE' ? 'COMPAGNIE' : 'CABINET'),
+    date_cheque: nature.cheque && valeurs.dateCheque ? valeurs.dateCheque : '',
     nom_emetteur: valeurs.nomEmetteur.trim(),
   };
 };
@@ -181,6 +190,29 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
                 readOnly={Boolean(chequeConnu?.existe)}
                 title={chequeConnu?.existe ? 'Montant fixé au premier usage du chèque' : undefined}
               />
+            </div>
+          )}
+        </div>
+      )}
+
+      {(nature.bancaire || nature.especes) && (
+        <div className="responsive-form-row">
+          <div className="form-group">
+            <label className="form-label">{nature.especes ? 'Versé au compte de' : "À l'ordre de"}</label>
+            <select
+              className="form-control"
+              value={nature.aLaCompagnie ? 'COMPAGNIE' : (valeurs.ordre || 'CABINET')}
+              onChange={saisie('ordre')}
+              disabled={nature.aLaCompagnie}
+            >
+              <option value="CABINET">{nomCabinet()} (reversé par le cabinet)</option>
+              <option value="COMPAGNIE">La compagnie (transmis tel quel)</option>
+            </select>
+          </div>
+          {nature.cheque && (
+            <div className="form-group">
+              <label className="form-label">Date du chèque</label>
+              <input type="date" className="form-control" value={valeurs.dateCheque || ''} onChange={saisie('dateCheque')} />
             </div>
           )}
         </div>

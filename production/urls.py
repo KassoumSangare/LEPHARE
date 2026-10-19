@@ -23,7 +23,7 @@ from .views_devis_voyage import (
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
 )
-from . import views_finance
+from . import views_bordereaux, views_finance
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
 from .views_transport_guce import (
@@ -288,6 +288,16 @@ urlpatterns = [
     path("finance/reversements/", views_finance.reversements, name="finance_reversements"),
     path("finance/reversements/<int:id_reversement>/", views_finance.reversement, name="finance_reversement"),
     path("finance/reversements/<int:id_reversement>/valider/", views_finance.valider_reversement, name="finance_valider_reversement"),
+    # Bordereaux et courriers au modèle d'OREOLE, tableau de reversement (views_bordereaux)
+    path("finance/bordereaux/a-transmettre/", views_bordereaux.a_transmettre, name="finance_a_transmettre"),
+    path("finance/bordereaux/", views_bordereaux.bordereaux, name="finance_bordereaux"),
+    path("finance/bordereaux/<int:id_reversement>/", views_bordereaux.bordereau, name="finance_bordereau"),
+    path("finance/bordereaux/<int:id_reversement>/decharge/", views_bordereaux.decharge, name="finance_bordereau_decharge"),
+    path("finance/bordereaux/<int:id_reversement>/annuler/", views_bordereaux.annuler_bordereau, name="finance_bordereau_annuler"),
+    path("finance/encaissements/<int:id_encaissement>/ordre/", views_bordereaux.ordre_encaissement, name="finance_ordre_encaissement"),
+    path("finance/contrats/<int:id_contrat>/police-compagnie/", views_bordereaux.police_compagnie, name="finance_police_compagnie"),
+    path("finance/tableau-reversement/", views_bordereaux.tableau, name="finance_tableau_reversement"),
+    path("finance/tableau-reversement/excel/", views_bordereaux.tableau_excel, name="finance_tableau_reversement_excel"),
     path("finance/commissions/", views_finance.etat_commissions, name="finance_commissions"),
     path("finance/commissions/reclamations/", views_finance.reclamations, name="finance_reclamations"),
     path("finance/commissions/reclamations/<int:id_reclamation>/", views_finance.reclamation, name="finance_reclamation"),

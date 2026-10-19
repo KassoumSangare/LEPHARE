@@ -18,6 +18,18 @@ export const bornesMois = (iso = aujourdhui()) => {
   return [`${a}-${pad(m)}-01`, `${a}-${pad(m)}-${pad(dernier)}`];
 };
 
+// Recherche libre des écrans financiers : chaque mot saisi doit se retrouver dans la ligne (client, quittance, police,
+// chèque, date jj/mm/aaaa, montant avec ou sans espaces…), sans tenir compte des accents ni des majuscules
+export const normaliserTexte = (texte) => String(texte ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+export const correspondRecherche = (recherche, champs) => {
+  const termes = normaliserTexte(recherche).split(/\s+/).filter(Boolean);
+  if (!termes.length) return true;
+  const texte = normaliserTexte(champs.flatMap((c) => (typeof c === 'number' ? [c, fcfa(c)] : [c])).join(' | '));
+  return termes.every((t) => texte.includes(t));
+};
+// Tri du plus récent au plus ancien (dates AAAA-MM-JJ, puis identifiant)
+export const recentsDabord = (date, id) => (a, b) => String(date(b) || '').localeCompare(String(date(a) || '')) || (id(b) || 0) - (id(a) || 0);
+
 export const messageErreurApi = (err) => {
   const data = err?.response?.data;
   if (!data) return err?.message || 'serveur injoignable';

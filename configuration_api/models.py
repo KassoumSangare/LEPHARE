@@ -3990,6 +3990,9 @@ class CompagnieDocument(models.Model):
     # Attestation d'assurance voyage : {Actif, Convention, PaysResidence, Signataire,
     # Garanties: [...], Telephone, Email, Whatsapp, Exemplaires: [...]}
     AttestationVoyage = models.JSONField(default=dict, blank=True, db_column="attestationvoyage")
+    # Reversements et courriers : {PartAccessoiresCourtier (%, vide : barème des accessoires du cabinet),
+    # NomBordereau (« NSIA CI »), Destinataire, Service, Ville, AttentionDe, Appellation (« Monsieur »)}
+    Reversement = models.JSONField(default=dict, blank=True, db_column="reversement")
     DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
 
     class Meta:
