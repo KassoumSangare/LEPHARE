@@ -6701,6 +6701,7 @@ from openpyxl.styles import (
     Font, Alignment, PatternFill, Border, Side, numbers
 )
 from openpyxl.utils import get_column_letter
+from core.exports import texte_excel
 from django.http import HttpResponse
 
 
@@ -6710,7 +6711,7 @@ def _thin_border():
 
 
 def _apply_header_cell(ws, row, col, value, size=14):
-    cell = ws.cell(row=row, column=col, value=value)
+    cell = texte_excel(ws.cell(row=row, column=col, value=value))
     cell.font = Font(bold=True, size=size)
     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     cell.border = _thin_border()
@@ -6718,7 +6719,8 @@ def _apply_header_cell(ws, row, col, value, size=14):
 
 
 def _apply_data_cell(ws, row, col, value, bold=False, size=14, number_format=None):
-    cell = ws.cell(row=row, column=col, value=value)
+    # Valeurs issues de la base (clients, polices) : jamais enregistrées comme formules (core/exports.py)
+    cell = texte_excel(ws.cell(row=row, column=col, value=value))
     cell.font = Font(bold=bold, size=size)
     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     cell.border = _thin_border()
@@ -6950,6 +6952,7 @@ class ExportBordereauReversementView(APIView):
         ws.merge_cells("F5:I5")
         c = ws["F5"]
         c.value = compagnie_name
+        texte_excel(c)
         c.font = Font(bold=True, size=FONT_SIZE + 2)
         c.alignment = Alignment(horizontal="center", vertical="center")
 

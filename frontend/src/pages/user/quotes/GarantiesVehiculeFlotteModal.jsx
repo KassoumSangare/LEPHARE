@@ -191,9 +191,11 @@ export const GarantiesVehiculeFlotteModal = ({
   const modifierLigne = (idx, changements) => {
     // Prime saisie à la main : les règles ne la modifient plus
     const prime = 'primeNette' in changements || 'primeAnnuelle' in changements;
+    // Garantie cochée ou décochée : les garanties vendues avec elle suivent (règles des garanties)
+    const basculee = 'acquise' in changements ? lignes[idx]?.id_garantie : null;
     setLignes((prec) => appliquerRegles(prec.map((g, i) => (
       i === idx ? { ...g, ...changements, ...(prime ? { primeSaisie: true, primeAvantRegle: undefined } : {}) } : g
-    ))));
+    )), { basculee }));
     setModifie(true);
   };
 
@@ -257,7 +259,7 @@ export const GarantiesVehiculeFlotteModal = ({
       primeNetteRef: 0,
       taxe: 0,
       is_new_garantie: true,
-    }]));
+    }], { basculee: id }));
     setModifie(true);
     setAjout(FORMULAIRE_AJOUT_VIDE);
     setCalculAjout(null);

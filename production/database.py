@@ -52,6 +52,24 @@ DEVIS_INEXISTANT = 2
 # (liste de configuration_api.TermeViewSet)
 TERMES_CONTRAT = (1, 2, 3)
 
+# Durées standard (stddevis.idduree) : 1 mois, 3 mois, 6 mois, 1 an ; 5 = durée libre (terme « Autre »)
+DUREES_STANDARD = (1, 2, 3, 4)
+
+
+def id_duree_pour_procedure(id_duree):
+    """
+    Durée à passer à sp_creation_devis (auto) et sp_creation_devis_ia. Avec la durée libre,
+    ces procédures refusent des dates qui font pile 1, 3, 6 ou 12 mois (« Incohérence entre
+    période de couverture et durée du contrat ! ») : à 0, elles déduisent la durée des dates
+    (fn_calcul_id_duree_contrat), standard si elles tombent juste, libre sinon, sans toucher
+    à la date d'expiration saisie.
+    """
+    try:
+        id_duree = int(id_duree or 0)
+    except (TypeError, ValueError):
+        return 0
+    return id_duree if id_duree in DUREES_STANDARD else 0
+
 
 def enregistrer_terme_devis(id_devis, id_terme):
     """
@@ -1152,7 +1170,7 @@ def save_quotation(input_data):
     IdDuree = 1
     if "IdDuree" in input_data:
         if input_data["IdDuree"]:
-            IdDuree = int(input_data["IdDuree"])
+            IdDuree = id_duree_pour_procedure(input_data["IdDuree"])
 
     IdTerme = 1
     if "IdTerme" in input_data:

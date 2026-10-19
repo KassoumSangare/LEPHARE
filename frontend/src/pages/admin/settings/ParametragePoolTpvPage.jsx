@@ -1,14 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bus, Save, Loader2, Plus, Trash2, SlidersHorizontal, Wallet, Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bus, Save, Loader2, Plus, Trash2, SlidersHorizontal, Wallet, Search, Link2 } from 'lucide-react';
 import { EnTeteParametrage, SectionParametrage } from '../../../components/admin/EnTeteParametrage';
 import { LigneParametre } from '../../../components/admin/LigneParametre';
 import { parametrageApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { chargerParametrage } from '../../../utils/parametrage';
 import { useToast } from '../../../context/ToastContext';
+import { decrireRegle } from './ParametrageReglesGarantiesPage';
 
 // Tarif du POOL TPV (catégorie 204 « Transport public de voyageurs ») et primes dues au Pool.
 // configuration_api/parametrage_auto.py ; calcul par la base (fn_pool_tpv) pour l'offre « POOL TPV (CAT 204) ».
+// Règles des garanties de la catégorie 204 (tarif annoté NSIA, feuille « cat 4 ») rappelées ici, réglées dans
+// Administration > Réglages Automobile > Règles des garanties.
+const CATEGORIE_TPV = '204';
+const concerneTpv = (r) => r.Actif !== false
+  && (!r.Categories || String(r.Categories).split(',').map((c) => c.trim()).includes(CATEGORIE_TPV));
 
 const MOIS = Array.from({ length: 12 }, (_, i) => i + 1);
 const montant = (v) => `${Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ')} F`;
@@ -23,12 +30,18 @@ export const ParametragePoolTpvPage = () => {
   const [tranches, setTranches] = useState([]);
   const [envoi, setEnvoi] = useState(false);
   const [periode, setPeriode] = useState({ du: '', au: '' });
+  const [regles, setRegles] = useState(null);
 
   const charger = (filtre = periode) => parametrageApi.getPoolTpv(filtre)
     .then((d) => { setDonnees(d); setTranches(d.Tranches); })
     .catch((err) => toastError(`Pool TPV non chargé : ${messageErreurApi(err)}`));
 
-  useEffect(() => { charger(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    charger();
+    parametrageApi.getReglesInteractions()
+      .then((d) => setRegles({ ...d, Regles: (d.Regles || []).filter(concerneTpv) }))
+      .catch(() => setRegles({ Regles: [], Compagnies: [] }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const modifiees = donnees && JSON.stringify(tranches) !== JSON.stringify(donnees.Tranches);
   const changer = (i, champ_, valeur) => setTranches((l) => l.map((t, k) => (k === i ? { ...t, [champ_]: valeur } : t)));
@@ -109,12 +122,34 @@ export const ParametragePoolTpvPage = () => {
             </div>
           </SectionParametrage>
 
-          <SectionParametrage icone={SlidersHorizontal} titre="Règles de calcul" description="Recours, fractions de la prime annuelle selon la durée, décompte des places.">
+          <SectionParametrage icone={SlidersHorizontal} titre="Règles de calcul" description="Recours, fractions de la prime annuelle selon la durée, décompte des places. Aucune réduction (flotte ou commerciale) sur la prime du Pool : le tarif annoté NSIA (catégorie 4) l'exclut.">
             {parametres.map((p) => (
               <LigneParametre key={p.Cle} parametre={p}
                 modifier={parametrageApi.modifierParametrePoolTpv} retablir={parametrageApi.retablirParametrePoolTpv}
                 onEnregistre={(n) => { setDonnees((d) => ({ ...d, Parametres: d.Parametres.map((x) => (x.Cle === n.Cle ? n : x)) })); chargerParametrage(true); }} />
             ))}
+          </SectionParametrage>
+
+          <SectionParametrage icone={Link2} titre="Règles des garanties en catégorie 204"
+            description="Tarif annoté NSIA, feuille « cat 4 » : RC et Recours relèvent du Pool ci-dessus (Recours à 5 % de la RC d'après le document du Pool ; hors Pool, NSIA le fixe à 10 % de la RC). Les autres garanties d'un véhicule TPV suivent ces règles, appliquées à l'écran de devis."
+            actions={<Link to="/admin/settings/regles-garanties" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><Link2 size={14} /> Modifier les règles</Link>}>
+            {!regles && <div style={{ color: 'var(--text-muted)' }}><Loader2 size={15} className="spin" /> Chargement…</div>}
+            {regles && regles.Regles.length === 0 && <div style={{ color: 'var(--text-muted)', fontSize: '0.86rem' }}>Aucune règle ne vise la catégorie 204.</div>}
+            {regles && regles.Regles.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.86rem', lineHeight: 1.75 }}>
+                {regles.Regles.map((r) => {
+                  const { titre, phrase: generale } = decrireRegle(r);
+                  const phrase = r.Type === 'NON_PROPOSEE' ? `non commercialisée en catégorie ${CATEGORIE_TPV}` : generale;
+                  const compagnie = (regles.Compagnies || []).find((c) => Number(c.Id) === Number(r.IdCompagnie))?.Nom;
+                  return (
+                    <li key={r.Id}>
+                      <strong>{r.Libelle}</strong> : {phrase}
+                      <span style={{ color: 'var(--text-muted)' }}> — {titre.toLowerCase()}{compagnie ? `, ${compagnie}` : ''}{r.Categories ? '' : ', toutes catégories'}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </SectionParametrage>
 
           <SectionParametrage icone={Wallet} titre="Primes dues au Pool"

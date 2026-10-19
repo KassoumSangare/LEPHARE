@@ -1,7 +1,10 @@
 import datetime
+from decimal import Decimal, InvalidOperation
+from django.db import transaction
 from django.db.models import Sum, Count, Q
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from core.views import ResultsOnlyPagination
@@ -24,7 +27,12 @@ from .serializers import (
     DocumentGEDSerializer,
     AuditLogCimaSerializer,
     QuittanceCimaSerializer,
-    BordereauReversementSerializer
+    BordereauReversementSerializer,
+    STATUT_REGLE,
+    STATUTS_SANS_REGLEMENT,
+    indemnite_reglee,
+    plafond_delegation,
+    sinistre_regle,
 )
 from autorisations.journal import completer_audit
 
@@ -42,293 +50,8 @@ except Exception:
     Encaissement = None
 
 
-# Seed initial demonstration data if tables are empty
-def check_and_seed_data():
-    try:
-        # Les prospects CRM ne sont plus créés d'office : supprimer ses prospects les faisait
-        # réapparaître au premier appel de n'importe quelle vue (table vide = démonstration).
-
-        if ConventionAssureur.objects.count() == 0:
-            ConventionAssureur.objects.bulk_create([
-                ConventionAssureur(
-                    code_convention="CNV-2026-001",
-                    compagnie="NSIA Assurances Côte d'Ivoire",
-                    code_partenaire="NSIA-CRT-048",
-                    delai_reversement_jours=30,
-                    plafond_delegation_sinistre=5000000,
-                    encaissement_delegue=True,
-                    statut="Actif",
-                    date_effet=datetime.date(2026, 1, 1),
-                    date_renouvellement=datetime.date(2026, 12, 31),
-                    commissions_branches={"automobile": 12.5, "mrh": 15.0, "sante": 10.0, "rc": 14.0},
-                    participation_beneficiaire={"active": True, "taux": "15%", "seuil_sp": "60%"}
-                ),
-                ConventionAssureur(
-                    code_convention="CNV-2026-002",
-                    compagnie="SUNU Assurances CI",
-                    code_partenaire="SUNU-PART-112",
-                    delai_reversement_jours=30,
-                    plafond_delegation_sinistre=3500000,
-                    encaissement_delegue=True,
-                    statut="Actif",
-                    date_effet=datetime.date(2026, 1, 1),
-                    date_renouvellement=datetime.date(2026, 12, 31),
-                    commissions_branches={"automobile": 11.0, "mrh": 14.0, "sante": 12.0, "rc": 12.5},
-                    participation_beneficiaire={"active": True, "taux": "12%", "seuil_sp": "65%"}
-                ),
-                ConventionAssureur(
-                    code_convention="CNV-2026-003",
-                    compagnie="SANLAM Assurance",
-                    code_partenaire="SANLAM-AGY-009",
-                    delai_reversement_jours=30,
-                    plafond_delegation_sinistre=7000000,
-                    encaissement_delegue=True,
-                    statut="Actif",
-                    date_effet=datetime.date(2026, 1, 1),
-                    date_renouvellement=datetime.date(2026, 12, 31),
-                    commissions_branches={"automobile": 13.0, "mrh": 16.0, "sante": 11.5, "rc": 15.0},
-                    participation_beneficiaire={"active": True, "taux": "18%", "seuil_sp": "55%"}
-                ),
-                ConventionAssureur(
-                    code_convention="CNV-2026-004",
-                    compagnie="ALLIANZ Côte d'Ivoire",
-                    code_partenaire="ALLIANZ-LEPHARE-01",
-                    delai_reversement_jours=30,
-                    plafond_delegation_sinistre=5000000,
-                    encaissement_delegue=True,
-                    statut="Actif",
-                    date_effet=datetime.date(2026, 1, 1),
-                    date_renouvellement=datetime.date(2026, 12, 31),
-                    commissions_branches={"automobile": 12.0, "mrh": 15.0, "sante": 10.0, "rc": 13.5},
-                    participation_beneficiaire={"active": False, "taux": "0%", "seuil_sp": "70%"}
-                )
-            ])
-
-        if SinistreDelegue.objects.count() == 0:
-            SinistreDelegue.objects.bulk_create([
-                SinistreDelegue(
-                    numero_sinistre="SIN-2026-00125",
-                    police_num="POL-2026-001",
-                    assure_nom="KOUAME Jean-Baptiste",
-                    compagnie="NSIA Assurances Côte d'Ivoire",
-                    nature="Accident de la circulation - Choc arrière",
-                    date_survenance=datetime.date(2026, 8, 28),
-                    date_declaration=datetime.date(2026, 8, 30),
-                    lieu="Abidjan Boulevard VGE",
-                    montant_reclame=1850000,
-                    montant_indemnise=1650000,
-                    statut="Réglé",
-                    delegation_respectee=True,
-                    expert_assigne="Cabinet d'Expertise Automobile CI",
-                    pieces_justificatives=[
-                        {"nom": "Déclaration signée", "recu": True},
-                        {"nom": "Constat amiable", "recu": True},
-                        {"nom": "Permis de conduire", "recu": True},
-                        {"nom": "Devis de réparation", "recu": True},
-                        {"nom": "Rapport expertise", "recu": True},
-                        {"nom": "Quittance d'indemnité", "recu": True}
-                    ],
-                    recours_info={"compagnie_adverse": "SUNU Assurances CI", "montant_recours": 1650000, "statut": "Recours encaissé"},
-                    historique_evenements=[
-                        {"date": "2026-08-30", "action": "Déclaration enregistrée"},
-                        {"date": "2026-09-02", "action": "Rapport expertise chiffré à 1 650 000 FCFA"},
-                        {"date": "2026-09-04", "action": "Règlement sous mandat de délégation approuvé et viré"}
-                    ]
-                ),
-                SinistreDelegue(
-                    numero_sinistre="SIN-2026-00126",
-                    police_num="POL-2026-002",
-                    assure_nom="SOCIETE IVOIRIENNE DE DISTRIBUTION",
-                    compagnie="SANLAM Assurance",
-                    nature="Incendie local technique et entrepôt",
-                    date_survenance=datetime.date(2026, 9, 1),
-                    date_declaration=datetime.date(2026, 9, 2),
-                    lieu="Zone Industrielle de Yopougon",
-                    montant_reclame=8500000,
-                    montant_indemnise=0,
-                    statut="En attente validation",
-                    delegation_respectee=False,
-                    expert_assigne="Bureau Veritas Sinistres CI",
-                    pieces_justificatives=[
-                        {"nom": "Déclaration signée", "recu": True},
-                        {"nom": "Rapport sapeurs-pompiers", "recu": True},
-                        {"nom": "Factures matériels endommagés", "recu": True},
-                        {"nom": "Rapport contradictoire", "recu": False},
-                        {"nom": "Mandat compagnie requis (> 7M)", "recu": False}
-                    ],
-                    recours_info={"statut": "Sans tiers identifié"},
-                    historique_evenements=[
-                        {"date": "2026-09-02", "action": "Déclaration reçue"},
-                        {"date": "2026-09-03", "action": "Montant supérieur au plafond de délégation (7 000 000 FCFA) : saisine de SANLAM pour mandat spécial"}
-                    ]
-                ),
-                SinistreDelegue(
-                    numero_sinistre="SIN-2026-00127",
-                    police_num="POL-2026-003",
-                    assure_nom="BAMBA Mariam",
-                    compagnie="SUNU Assurances CI",
-                    nature="Dégât des eaux appartement Cocody",
-                    date_survenance=datetime.date(2026, 9, 3),
-                    date_declaration=datetime.date(2026, 9, 4),
-                    lieu="Cocody Riviera Golf",
-                    montant_reclame=850000,
-                    montant_indemnise=0,
-                    statut="Expertise en cours",
-                    delegation_respectee=True,
-                    expert_assigne="Cabinet CIMA Expertises",
-                    pieces_justificatives=[
-                        {"nom": "Déclaration signée", "recu": True},
-                        {"nom": "Photos des dommages", "recu": True},
-                        {"nom": "Devis plomberie", "recu": True},
-                        {"nom": "Rapport expertise", "recu": False}
-                    ],
-                    recours_info={"compagnie_adverse": "NSIA Assurances CI", "montant_recours": 850000, "statut": "En attente rapport"},
-                    historique_evenements=[
-                        {"date": "2026-09-04", "action": "Dossier ouvert et expert mandaté sous 24h"}
-                    ]
-                )
-            ])
-
-        if DocumentGED.objects.count() == 0:
-            DocumentGED.objects.bulk_create([
-                DocumentGED(
-                    reference="DOC-2026-001",
-                    titre="Police Signée - Flotte Automobile SIFCA",
-                    categorie="Contrat",
-                    type_mime="application/pdf",
-                    taille="2.4 MB",
-                    entite_type="contrat",
-                    entite_id="POL-2026-001",
-                    statut_validation="Validé",
-                    auteur="Direction Technique LE PHARE"
-                ),
-                DocumentGED(
-                    reference="DOC-2026-002",
-                    titre="Convention Cadre Gestion Déléguée NSIA 2026",
-                    categorie="Convention",
-                    type_mime="application/pdf",
-                    taille="4.1 MB",
-                    entite_type="convention",
-                    entite_id="CNV-2026-001",
-                    statut_validation="Validé",
-                    auteur="Direction Générale LE PHARE"
-                ),
-                DocumentGED(
-                    reference="DOC-2026-003",
-                    titre="Rapport d'expertise contradictoire SIN-00125",
-                    categorie="Sinistre",
-                    type_mime="application/pdf",
-                    taille="1.8 MB",
-                    entite_type="sinistre",
-                    entite_id="SIN-2026-00125",
-                    statut_validation="Validé",
-                    auteur="Cabinet d'Expertise Automobile CI"
-                ),
-                DocumentGED(
-                    reference="DOC-2026-004",
-                    titre="Attestation Caution Financière 50M FCFA SGCI",
-                    categorie="KYC",
-                    type_mime="application/pdf",
-                    taille="1.1 MB",
-                    entite_type="audit",
-                    entite_id="CAUTION-SGCI-2026",
-                    statut_validation="Validé",
-                    auteur="SGCI Direction Grandes Entreprises"
-                )
-            ])
-
-        if AuditLogCima.objects.count() == 0:
-            AuditLogCima.objects.bulk_create([
-                AuditLogCima(
-                    type_operation="ENCAISSEMENT",
-                    description="Encaissement prime annuelle 450 000 FCFA chèque certifié ECOBANK (Reçu N° REC-2026-001)",
-                    auteur="Koffi Serge",
-                    statut_conformite="CONFORME",
-                    reference_reglementaire="CIMA Art. 13 - Paiement préalable à la délivrance de l'attestation",
-                    details_json={"police": "POL-2026-001", "montant": 450000}
-                ),
-                AuditLogCima(
-                    type_operation="REVERSEMENT",
-                    description="Ordre de reversement net de commissions vers NSIA sous délai de 22 jours (conforme max 30 jours)",
-                    auteur="Direction Financière LE PHARE",
-                    statut_conformite="CONFORME",
-                    reference_reglementaire="Convention Assureur Art. 7 & CIMA",
-                    details_json={"compagnie": "NSIA Assurances", "montant": 12850000}
-                ),
-                AuditLogCima(
-                    type_operation="SINISTRE_REGLEMENT",
-                    description="Ordonnancement règlement sinistre SIN-00125 (1 650 000 FCFA) conforme au plafond de délégation (5 000 000 FCFA)",
-                    auteur="Amina Diallo",
-                    statut_conformite="CONFORME",
-                    reference_reglementaire="Mandat de Gestion Déléguée Sinistres",
-                    details_json={"sinistre": "SIN-2026-00125", "indemnite": 1650000}
-                )
-            ])
-
-        if QuittanceCima.objects.count() == 0:
-            QuittanceCima.objects.bulk_create([
-                QuittanceCima(
-                    numero_quittance="QUIT-CIMA-2026-001",
-                    police_num="POL-2026-001",
-                    souscripteur="KOUAME Jean-Baptiste",
-                    compagnie="NSIA Assurances",
-                    branche="Automobile",
-                    montant_encaisse=450000,
-                    mode_paiement="CHEQUE",
-                    reference_paiement="CHQ-ECOBANK-998812",
-                    emetteur="Caisse Principale LE PHARE"
-                ),
-                QuittanceCima(
-                    numero_quittance="QUIT-CIMA-2026-002",
-                    police_num="POL-2026-002",
-                    souscripteur="SOCIETE IVOIRIENNE DE DISTRIBUTION",
-                    compagnie="SANLAM Assurance",
-                    branche="IARD",
-                    montant_encaisse=1250000,
-                    mode_paiement="VIREMENT",
-                    reference_paiement="VIR-SGCI-20260901",
-                    emetteur="Caisse Principale LE PHARE"
-                )
-            ])
-
-        if BordereauReversement.objects.count() == 0:
-            BordereauReversement.objects.bulk_create([
-                BordereauReversement(
-                    reference="REV-NSIA-2026-09",
-                    compagnie="NSIA Assurances",
-                    nombre_polices=38,
-                    montant_primes=14500000,
-                    commissions_deduites=1740000,
-                    net_a_reverser=12760000,
-                    date_echeance_30j=datetime.date.today() + datetime.timedelta(days=12),
-                    statut="Validé",
-                    ordre_virement_ref="OV-SGCI-2026-0012"
-                ),
-                BordereauReversement(
-                    reference="REV-SUNU-2026-09",
-                    compagnie="SUNU Assurances",
-                    nombre_polices=24,
-                    montant_primes=9800000,
-                    commissions_deduites=1176000,
-                    net_a_reverser=8624000,
-                    date_echeance_30j=datetime.date.today() + datetime.timedelta(days=4),
-                    statut="En attente validation",
-                    ordre_virement_ref=""
-                ),
-                BordereauReversement(
-                    reference="REV-SANLAM-2026-09",
-                    compagnie="SANLAM Assurances",
-                    nombre_polices=15,
-                    montant_primes=4200000,
-                    commissions_deduites=504000,
-                    net_a_reverser=3696000,
-                    date_echeance_30j=datetime.date.today() + datetime.timedelta(days=18),
-                    statut="En attente validation",
-                    ordre_virement_ref=""
-                )
-            ])
-    except Exception as e:
-        print(f"[Seed Data Error] {e}")
+# Les données de démonstration ne sont plus insérées par les consultations : voir institutionnel/demo.py
+# (commande semer_demo_institutionnel).
 
 
 # =========================================================================
@@ -413,7 +136,6 @@ class Customer360View(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, client_id=None):
-        check_and_seed_data()
         client_data = {
             "id": client_id or 1,
             "codeclient": f"CLI-2024-{str(client_id or 1).zfill(3)}",
@@ -516,66 +238,141 @@ class Customer360View(APIView):
 # =========================================================================
 # 3. SINISTRES DÉLÉGUÉS CIMA
 # =========================================================================
+class Conflit(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "conflit"
+
+
+def _erreur(message, code=status.HTTP_400_BAD_REQUEST):
+    return Response({"error": message}, status=code)
+
+
+def _evenement(sinistre, action):
+    """Ajoute une ligne datée au journal chronologique du dossier (sans l'enregistrer)."""
+    if not isinstance(sinistre.historique_evenements, list):
+        sinistre.historique_evenements = []
+    sinistre.historique_evenements.append({"date": datetime.date.today().isoformat(), "action": action})
+
+
+def _etat_reglement(sinistre):
+    return {
+        "numero_sinistre": sinistre.numero_sinistre, "statut": sinistre.statut,
+        "montant_indemnise": float(sinistre.montant_indemnise or 0),
+        "quittance_subrogative_emise": sinistre.quittance_subrogative_emise,
+    }
+
+
 class SinistreDelegueViewSet(viewsets.ModelViewSet):
+    """Sinistres délégués. Le montant indemnisé, le statut « Réglé », la quittance subrogative, l'accord préalable
+    et le respect du plafond ne sont posés que par le serveur : actions règlement (droit « Régler un sinistre »,
+    plafond de la convention), demande d'accord et quittance subrogative ; une modification générique ne peut
+    ni les écrire (SinistreDelegueSerializer) ni rouvrir un dossier réglé."""
+
     queryset = SinistreDelegue.objects.all().order_by("-date_declaration")
     serializer_class = SinistreDelegueSerializer
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.AllowAny]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
+    def _verrouiller(self):
+        """Verrou de la ligne jusqu'à la fin de la transaction : un règlement enregistré entre-temps n'est ni
+        réécrit ni contourné par l'opération en cours (l'objet est relu après le verrou)."""
+        list(SinistreDelegue.objects.select_for_update().filter(pk=self.get_object().pk).values_list("pk", flat=True))
+
+    def perform_create(self, serializer):
+        donnees = serializer.validated_data
+        serializer.save(
+            delegation_respectee=Decimal(donnees.get("montant_reclame") or 0) <= plafond_delegation(donnees.get("compagnie")),
+            historique_evenements=[{"date": datetime.date.today().isoformat(), "action": "Déclaration enregistrée dans le système"}],
+        )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        self._verrouiller()
+        return super().update(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        sinistre, donnees = serializer.instance, serializer.validated_data
+        champs = {}
+        if not sinistre_regle(sinistre) and {"montant_reclame", "compagnie"} & set(donnees):
+            montant = donnees.get("montant_reclame", sinistre.montant_reclame)
+            champs["delegation_respectee"] = Decimal(montant or 0) <= plafond_delegation(donnees.get("compagnie", sinistre.compagnie))
+        nouveau = donnees.get("statut")
+        if nouveau and nouveau != sinistre.statut:
+            _evenement(sinistre, f"Statut modifié : « {sinistre.statut} » → « {nouveau} » "
+                                 f"({getattr(self.request.user, 'email', '') or 'utilisateur'})")
+            champs["historique_evenements"] = sinistre.historique_evenements
+        serializer.save(**champs)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        self._verrouiller()
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        if sinistre_regle(instance):
+            raise Conflit({"error": f"Le sinistre {instance.numero_sinistre} est réglé : il ne peut pas être supprimé."})
+        instance.delete()
 
     @action(detail=True, methods=["post"])
     def reglement(self, request, pk=None):
-        """Exécution du règlement d'un sinistre sous mandat de gestion déléguée"""
-        sinistre = self.get_object()
-        montant = request.data.get("montant_indemnise") or sinistre.montant_reclame
-        montant = float(montant)
+        """Règlement d'un sinistre sous mandat de gestion déléguée : indemnité positive, au plus égale au montant
+        réclamé et au plafond de délégation de la convention ; un seul règlement par dossier (ligne verrouillée).
+        La quittance subrogative est émise avec le règlement."""
+        with transaction.atomic():
+            self._verrouiller()
+            sinistre = self.get_object()
+            if sinistre.statut in STATUTS_SANS_REGLEMENT or sinistre_regle(sinistre):
+                return _erreur(f"Le sinistre {sinistre.numero_sinistre} est déjà au statut « {sinistre.statut} » : "
+                               "nouveau règlement refusé.", status.HTTP_409_CONFLICT)
+            brut = request.data.get("montant_indemnise")
+            try:
+                montant = (Decimal(str(brut).replace(" ", "").replace(",", ".")) if brut not in (None, "")
+                           else Decimal(sinistre.montant_reclame or 0))
+            except (InvalidOperation, ValueError):
+                return _erreur("Montant de l'indemnité invalide.")
+            if not montant.is_finite() or montant <= 0:
+                return _erreur("Le montant de l'indemnité doit être supérieur à zéro.")
+            montant = montant.quantize(Decimal("0.01"))
+            if sinistre.montant_reclame and montant > sinistre.montant_reclame:
+                return _erreur(f"L'indemnité ({montant:,.0f} FCFA) dépasse le montant réclamé "
+                               f"({sinistre.montant_reclame:,.0f} FCFA).")
+            plafond = plafond_delegation(sinistre.compagnie)
+            if montant > plafond:
+                return _erreur(f"Le montant ({montant:,.0f} FCFA) dépasse le plafond de délégation conventionnelle "
+                               f"({plafond:,.0f} FCFA). Un mandat exprès de la compagnie est requis.")
 
-        # Vérification du plafond de délégation de la convention
-        convention = ConventionAssureur.objects.filter(compagnie__icontains=sinistre.compagnie[:6]).first()
-        plafond = float(convention.plafond_delegation_sinistre) if convention else 5000000.0
+            avant = _etat_reglement(sinistre)
+            sinistre.montant_indemnise = montant
+            sinistre.statut = STATUT_REGLE
+            sinistre.delegation_respectee = True
+            sinistre.quittance_subrogative_emise = True
+            _evenement(sinistre, f"Règlement ordonnancé pour un montant de {montant:,.0f} FCFA sous mandat de délégation approuvé.")
+            _evenement(sinistre, f"Quittance d'indemnité subrogative QT-SUB-{sinistre.numero_sinistre} émise (Art. 54 CIMA).")
+            sinistre.save()
 
-        if montant > plafond:
-            return Response({
-                "error": f"Le montant ({montant:,.0f} FCFA) dépasse le plafond de délégation conventionnelle ({plafond:,.0f} FCFA). Un mandat exprès de la compagnie est requis."
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        sinistre.montant_indemnise = montant
-        sinistre.statut = "Réglé"
-        if not isinstance(sinistre.historique_evenements, list):
-            sinistre.historique_evenements = []
-        
-        sinistre.historique_evenements.append({
-            "date": datetime.date.today().isoformat(),
-            "action": f"Règlement ordonnancé pour un montant de {montant:,.0f} FCFA sous mandat de délégation approuvé."
-        })
-        sinistre.save()
-
-        # Enregistrement dans le journal d'audit CIMA
         completer_audit(
             request,
-            description=f"Règlement ordonnancé sur le sinistre {sinistre.numero_sinistre} pour {montant:,.0f} FCFA (Assuré : {sinistre.assure_nom})",
-            apres={"numero_sinistre": sinistre.numero_sinistre, "montant": montant, "compagnie": sinistre.compagnie},
+            description=f"Règlement ordonnancé sur le sinistre {sinistre.numero_sinistre} pour {montant:,.0f} FCFA "
+                        f"(Assuré : {sinistre.assure_nom}) et émission de la quittance subrogative",
+            objet_type="sinistre", objet_id=sinistre.pk, avant=avant,
+            apres={**_etat_reglement(sinistre), "compagnie": sinistre.compagnie, "plafond": float(plafond)},
         )
-
         return Response(SinistreDelegueSerializer(sinistre).data)
 
     @action(detail=True, methods=["post"])
     def demande_accord(self, request, pk=None):
         """Transmission du dossier pour accord préalable / mandat spécial compagnie (hors plafond)"""
-        sinistre = self.get_object()
-        motif = request.data.get("motif") or "Montant réclamé supérieur au plafond de délégation conventionnelle."
-        sinistre.accord_prealable_requis = True
-        sinistre.statut = "En attente accord compagnie"
-        if not isinstance(sinistre.historique_evenements, list):
-            sinistre.historique_evenements = []
-        sinistre.historique_evenements.append({
-            "date": datetime.date.today().isoformat(),
-            "action": f"Dossier transmis au siège de {sinistre.compagnie} pour accord préalable / dérogation CIMA : {motif}"
-        })
-        sinistre.save()
+        with transaction.atomic():
+            self._verrouiller()
+            sinistre = self.get_object()
+            if sinistre.statut in STATUTS_SANS_REGLEMENT or sinistre_regle(sinistre):
+                return _erreur(f"Le sinistre {sinistre.numero_sinistre} est au statut « {sinistre.statut} » : "
+                               "demande d'accord sans objet.", status.HTTP_409_CONFLICT)
+            motif = request.data.get("motif") or "Montant réclamé supérieur au plafond de délégation conventionnelle."
+            sinistre.accord_prealable_requis = True
+            sinistre.statut = "En attente accord compagnie"
+            _evenement(sinistre, f"Dossier transmis au siège de {sinistre.compagnie} pour accord préalable / dérogation CIMA : {motif}")
+            sinistre.save()
         completer_audit(
             request,
             description=f"Transmission pour accord préalable compagnie sur {sinistre.numero_sinistre} ({sinistre.montant_reclame:,.0f} FCFA vs plafond)",
@@ -585,11 +382,29 @@ class SinistreDelegueViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get", "post"])
     def quittance_subrogative(self, request, pk=None):
-        """Génération de la quittance d'indemnité subrogative conforme à l'Art. 54 du Code CIMA"""
+        """Quittance d'indemnité subrogative (Art. 54 du Code CIMA) d'un sinistre réglé.
+
+        GET : consultation seule, aucune écriture. POST (droit « Régler un sinistre », garde centrale) : marque
+        la quittance émise pour un sinistre réglé avant que le règlement ne l'émette lui-même ; sans effet si
+        elle l'est déjà. Un sinistre non réglé n'a pas de quittance (409)."""
         sinistre = self.get_object()
+        if not indemnite_reglee(sinistre):
+            return _erreur(f"Le sinistre {sinistre.numero_sinistre} n'est pas réglé : aucune quittance subrogative "
+                           "ne peut être établie.", status.HTTP_409_CONFLICT)
+        if request.method == "POST" and not sinistre.quittance_subrogative_emise:
+            with transaction.atomic():
+                self._verrouiller()
+                sinistre = self.get_object()
+                avant = _etat_reglement(sinistre)
+                if not sinistre.quittance_subrogative_emise:
+                    sinistre.quittance_subrogative_emise = True
+                    _evenement(sinistre, f"Quittance d'indemnité subrogative QT-SUB-{sinistre.numero_sinistre} émise (Art. 54 CIMA).")
+                    sinistre.save(update_fields=["quittance_subrogative_emise", "historique_evenements", "date_maj"])
+            completer_audit(
+                request, description=f"Émission de la quittance subrogative QT-SUB-{sinistre.numero_sinistre}",
+                objet_type="sinistre", objet_id=sinistre.pk, avant=avant, apres=_etat_reglement(sinistre),
+            )
         montant = sinistre.montant_indemnise or sinistre.montant_reclame
-        sinistre.quittance_subrogative_emise = True
-        sinistre.save()
         data = {
             "numero_quittance": f"QT-SUB-{sinistre.numero_sinistre}",
             "numero_sinistre": sinistre.numero_sinistre,
@@ -605,16 +420,21 @@ class SinistreDelegueViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def maj_pieces(self, request, pk=None):
+        """Liste de contrôle des pièces : [{ nom, recu }] (au plus 50 pièces)."""
         sinistre = self.get_object()
         pieces = request.data.get("pieces_justificatives")
         if pieces is not None:
-            sinistre.pieces_justificatives = pieces
-            sinistre.save()
+            if (not isinstance(pieces, list) or len(pieces) > 50
+                    or not all(isinstance(p, dict) and str(p.get("nom") or "").strip() for p in pieces)):
+                return _erreur("Pièces justificatives : liste de pièces { nom, recu } attendue (50 au plus).")
+            sinistre.pieces_justificatives = [
+                {"nom": str(p["nom"]).strip()[:150], "recu": bool(p.get("recu"))} for p in pieces
+            ]
+            sinistre.save(update_fields=["pieces_justificatives", "date_maj"])
         return Response(SinistreDelegueSerializer(sinistre).data)
 
     @action(detail=False, methods=["get"])
     def stats(self, request):
-        check_and_seed_data()
         total = SinistreDelegue.objects.count()
         total_reclame = SinistreDelegue.objects.aggregate(total=Sum("montant_reclame"))["total"] or 0
         total_indemnise = SinistreDelegue.objects.aggregate(total=Sum("montant_indemnise"))["total"] or 0
@@ -641,9 +461,6 @@ class ConventionAssureurViewSet(viewsets.ModelViewSet):
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.AllowAny]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
 
 
 # =========================================================================
@@ -655,9 +472,6 @@ class DocumentGEDViewSet(viewsets.ModelViewSet):
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.AllowAny]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
 
 
 # =========================================================================
@@ -671,13 +485,9 @@ class AuditLogCimaViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.IsAuthenticated]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
 
     @action(detail=False, methods=["get"])
     def kpis(self, request):
-        check_and_seed_data()
         return Response({
             "agrement_courtier": "N° 021/MEF/DGTCP/DA - République de Côte d'Ivoire",
             "caution_financiere_montant": 50000000,
@@ -693,7 +503,6 @@ class AuditLogCimaViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["get"])
     def etats_cima(self, request):
         """Production des états statistiques normalisés C1, C2, C3 pour l'autorité de contrôle CIMA"""
-        check_and_seed_data()
         return Response({
             "etat_c1": {
                 "titre": "État C1 - Bordereau Annuel des Émissions et Recouvrements de Primes (Art. 13 CIMA)",
@@ -739,9 +548,6 @@ class QuittanceCimaViewSet(viewsets.ModelViewSet):
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.AllowAny]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         count = QuittanceCima.objects.count() + 1
@@ -770,9 +576,6 @@ class BordereauReversementViewSet(viewsets.ModelViewSet):
     pagination_class = ResultsOnlyPagination
     permission_classes = [permissions.AllowAny]
 
-    def list(self, request, *args, **kwargs):
-        check_and_seed_data()
-        return super().list(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"])
     def valider(self, request, pk=None):

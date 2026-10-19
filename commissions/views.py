@@ -3,6 +3,7 @@ Vues Django REST Framework pour l'API de gestion des commissions
 """
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
+from rest_framework.exceptions import MethodNotAllowed, ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
@@ -81,20 +82,45 @@ class PaiementCommissionViewSet(viewsets.ModelViewSet):
         return queryset
     
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
-    
+        # Un paiement créé ici est toujours « en attente » : sa validation passe par l'action valider
+        serializer.save(created_by=self.request.user, statut='EN_ATTENTE')
+
+    def perform_update(self, serializer):
+        # Montant, statut, compagnie et référence sont en lecture seule (PaiementCommissionSerializer) ; un paiement
+        # validé ou rattaché à un bordereau de réclamation ne se modifie plus
+        paiement = serializer.instance
+        if paiement.statut == 'VALIDE' or paiement.reclamation_id:
+            raise ValidationError({'error': 'Paiement validé ou rattaché à un bordereau de réclamation : modification refusée.'})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Suppression réservée à un paiement vide en attente : sinon les lignes payées disparaîtraient (et
+        # redeviendraient payables) hors du circuit d'annulation, qui garde le motif et l'auteur
+        if instance.statut != 'EN_ATTENTE' or instance.reclamation_id or instance.details.exists():
+            raise ValidationError({'error': "Seul un paiement en attente sans ligne peut être supprimé ; "
+                                            "les lignes payées s'annulent par le circuit d'annulation."})
+        instance.delete()
+
     @action(detail=True, methods=['post'])
     def valider(self, request, pk=None):
-        """Valider un paiement de commission"""
-        paiement = self.get_object()
-        
-        if paiement.statut == 'VALIDE':
-            return Response({
-                'erreur': 'Ce paiement est déjà validé'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        paiement.statut = 'VALIDE'
-        paiement.save()
+        """Valider un paiement de commission : une seule fois (ligne verrouillée), avec au moins une ligne non
+        annulée et des lignes qui n'imputent pas plus que le montant reçu."""
+        with transaction.atomic():
+            paiement = PaiementCommission.objects.select_for_update().get(pk=self.get_object().pk)
+
+            if paiement.statut == 'VALIDE':
+                return Response({
+                    'erreur': 'Ce paiement est déjà validé'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            total_lignes = paiement.montant_total_details()
+            if not paiement.details.filter(est_annule=False).exists() or total_lignes > paiement.montant_total:
+                return Response({
+                    'erreur': f'Validation refusée : le paiement doit avoir au moins une ligne non annulée et ses lignes '
+                              f'({total_lignes}) ne peuvent pas dépasser le montant reçu ({paiement.montant_total}).'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            paiement.statut = 'VALIDE'
+            paiement.save(update_fields=['statut', 'updated_at'])
         
         # Invalider le cache des dashboards
         CommissionCacheService.invalider_cache()
@@ -175,12 +201,21 @@ class PaiementCommissionBatchViewSet(viewsets.ViewSet):
     ViewSet pour l'enregistrement de paiements par lot
     """
     permission_classes = [IsAuthenticated]
-    
+
     @transaction.atomic
     def create(self, request):
         """
         Enregistrer un paiement de commissions par lot
         """
+        # Lignes de reversement verrouillées avant le contrôle du reste à payer : deux lots enregistrés en même
+        # temps ne peuvent pas payer deux fois la même commission (le second voit les lignes du premier)
+        from production.models import DetailReversement
+
+        affaires = request.data.get('affaires') if hasattr(request.data, 'get') else None
+        ids = [a.get('detail_reversement_id') for a in (affaires if isinstance(affaires, list) else []) if isinstance(a, dict)]
+        ids = [int(i) for i in ids if str(i).isdigit()]
+        if ids:
+            list(DetailReversement.objects.select_for_update().filter(pk__in=ids).values_list('pk', flat=True))
         serializer = PaiementCommissionBatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -205,12 +240,55 @@ class PaiementCommissionBatchViewSet(viewsets.ViewSet):
 # ViewSets pour Détails de Paiement
 # =====================================================
 
+@transaction.atomic
+def _annuler_lignes(data, user):
+    """Annulation de lignes de paiement (seul circuit d'annulation) : lignes verrouillées puis contrôlées (non
+    annulées, paiement non validé), motif et auteur enregistrés."""
+    details = DetailPaiementCommission.objects.select_for_update(of=('self',)).filter(
+        id__in=data['details_paiement_ids']
+    ).select_related('paiement')
+
+    errors = []
+    for detail in details:
+        if detail.est_annule:
+            errors.append(f"Ligne {detail.id}: déjà annulée")
+        if detail.paiement.statut == 'VALIDE':
+            errors.append(f"Ligne {detail.id}: paiement validé, annulation impossible")
+
+    if errors:
+        return Response(
+            {'errors': errors},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Créer l'annulation via le service
+    annulation = PaiementCommissionService.annuler_paiements(data, user)
+
+    # Invalider le cache
+    CommissionCacheService.invalider_cache()
+
+    # Retourner l'annulation créée
+    output_serializer = AnnulationPaiementCommissionSerializer(annulation)
+    return Response(
+        output_serializer.data,
+        status=status.HTTP_201_CREATED
+    )
+
+
 class DetailPaiementCommissionViewSet(viewsets.ModelViewSet):
     """
-    ViewSet pour gérer les détails de paiement individuels
+    ViewSet pour gérer les détails de paiement individuels.
+
+    Lecture et actions métier seulement : une ligne de paiement n'est ni créée, ni modifiée, ni supprimée
+    directement (montants dus / payés, imputation) ; elle naît d'un paiement par lot ou d'un règlement de
+    bordereau et ne disparaît que par le circuit d'annulation (annuler, annuler_selection).
     """
     serializer_class = DetailPaiementCommissionEnrichedSerializer
     permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
         'quittance__numeroquittance',
@@ -329,39 +407,9 @@ class DetailPaiementCommissionViewSet(viewsets.ModelViewSet):
             request.user
         )
     
-    @transaction.atomic
     def _process_annulation(self, data, user):
         """Traite l'annulation des paiements"""
-        # Vérifier que tous les détails peuvent être annulés
-        details = DetailPaiementCommission.objects.filter(
-            id__in=data['details_paiement_ids']
-        ).select_related('paiement')
-        
-        errors = []
-        for detail in details:
-            if detail.est_annule:
-                errors.append(f"Ligne {detail.id}: déjà annulée")
-            if detail.paiement.statut == 'VALIDE':
-                errors.append(f"Ligne {detail.id}: paiement validé, annulation impossible")
-        
-        if errors:
-            return Response(
-                {'errors': errors},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Créer l'annulation via le service
-        annulation = PaiementCommissionService.annuler_paiements(data, user)
-        
-        # Invalider le cache
-        CommissionCacheService.invalider_cache()
-        
-        # Retourner l'annulation créée
-        output_serializer = AnnulationPaiementCommissionSerializer(annulation)
-        return Response(
-            output_serializer.data,
-            status=status.HTTP_201_CREATED
-        )
+        return _annuler_lignes(data, user)
     
     @action(detail=False, methods=['post'])
     def verifier_selection(self, request):
@@ -424,7 +472,10 @@ class DetailPaiementCommissionViewSet(viewsets.ModelViewSet):
 
 class AnnulationPaiementCommissionViewSet(viewsets.ModelViewSet):
     """
-    ViewSet pour gérer les annulations de paiements de commission
+    ViewSet pour gérer les annulations de paiements de commission.
+
+    Une annulation est une trace : elle se crée par le circuit d'annulation (POST, mêmes contrôles que
+    details-paiement-commission/annuler_selection/) et ne se modifie ni ne se supprime.
     """
     queryset = AnnulationPaiementCommission.objects.prefetch_related(
         'details_annules__quittance__contrat'
@@ -434,7 +485,14 @@ class AnnulationPaiementCommissionViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['reference', 'motif']
     ordering = ['-date_annulation']
-    
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def create(self, request, *args, **kwargs):
+        """{ reference?, motif (10 caractères au moins), details_paiement_ids: [id], commentaires? }"""
+        serializer = AnnulerSelectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return _annuler_lignes(serializer.validated_data, request.user)
+
     @action(detail=True, methods=['get'])
     def details(self, request, pk=None):
         """Récupérer les détails d'une annulation"""

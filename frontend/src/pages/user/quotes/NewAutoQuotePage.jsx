@@ -335,6 +335,9 @@ export const NewAutoQuotePage = () => {
   const isNsiaCompany = useMemo(() => {
     return Number(compagnieId) === 1 || (compagnie && compagnie.toUpperCase().includes('NSIA'));
   }, [compagnieId, compagnie]);
+  // Tarif annoté NSIA (catégories 2, 3 et 8) : surprime remorque « sauf tracteur routier » ; la remorque attelée d'un
+  // tracteur routier n'est donc ni tarifée ni enregistrée
+  const tracteurSansSurprimeRemorque = (genre) => Boolean(isNsiaCompany) && /tracteur\s*routier/i.test(String(genre || ''));
 
   // Détection dynamique OREOLE selon la Catégorie / Tarif CIMA
   const transportCompteAssure = useMemo(() => {
@@ -670,7 +673,7 @@ export const NewAutoQuotePage = () => {
     idGenreVehicule: Number(genreId) || 0,
     genreVehicule,
     typeCommercial,
-    remorqueAttelee: Boolean(remorqueAttelee),
+    remorqueAttelee: Boolean(remorqueAttelee) && !tracteurSansSurprimeRemorque(genreVehicule),
     modeleVehicule,
     puissanceFiscale: Number(puissanceFiscale) || 0,
     chargeUtile: Number(chargeUtile) || 0,
@@ -712,7 +715,7 @@ export const NewAutoQuotePage = () => {
       DateExpiration: toDmy(effectiveDateExpiration),
       DateMec: toDmy(v.dateMec),
       Bns: Number(bonusMalus || 0),
-      RemorqueAttelee: Boolean(v.remorqueAttelee),
+      RemorqueAttelee: Boolean(v.remorqueAttelee) && !tracteurSansSurprimeRemorque(v.genreVehicule),
       CodeFormuleSecuriteRoutiere: v.codeFormuleSecuriteRoutiere || '',
       NombrePlace: Number(v.nombrePlace || 5),
       CodeUsage: Number(v.codeUsage || 1),
@@ -727,8 +730,8 @@ export const NewAutoQuotePage = () => {
   const calculPayload = useMemo(() => payloadMoteur(instantaneVehicule()), [
     energieId, systemeSecuriteId, offreId, idTarifCalcul, nsiaAutoPlus, compagnieId, valeurNeuf,
     valeurVenale, valeurAccessoire, puissanceFiscale, chargeUtile, reductionCommerciale, dateEffet,
-    effectiveDateExpiration, dateMec, bonusMalus, remorqueAttelee, formuleSecuriteCode, nombrePlace,
-    usageId, carburantAutreMatiere, transportEleves, transportEmployes, transportPassagerSupplementaire,
+    effectiveDateExpiration, dateMec, bonusMalus, remorqueAttelee, genreVehicule, isNsiaCompany, formuleSecuriteCode,
+    nombrePlace, usageId, carburantAutreMatiere, transportEleves, transportEmployes, transportPassagerSupplementaire,
     formuleAssistanceId,
   ]);
 
@@ -963,8 +966,9 @@ export const NewAutoQuotePage = () => {
   // Règles entre garanties de la compagnie pour la catégorie du véhicule (Administration > Réglages Automobile >
   // Règles des garanties) : obligatoires, offertes, exigées, exclues, non commercialisées…
   const reglesGarantiesPour = (v) => reglesInteractionsAuto(compagnieId, contexteAge(v).codeCategorie);
-  const avecReglesGaranties = (liste, v, initial = false) => appliquerReglesGaranties(
-    liste, reglesGarantiesPour(v), { codeCategorie: contexteAge(v).codeCategorie, initial },
+  // basculee : garantie que l'utilisateur vient de cocher, décocher ou ajouter (garanties vendues ensemble)
+  const avecReglesGaranties = (liste, v, initial = false, basculee = null) => appliquerReglesGaranties(
+    liste, reglesGarantiesPour(v), { codeCategorie: contexteAge(v).codeCategorie, initial, basculee },
   );
   const reglesGarantiesEcran = reglesGarantiesPour({ idTarif: idTarifCalcul });
   // Garanties proposées à l'ajout : sans celles que la compagnie ne commercialise pas dans la catégorie
@@ -2106,7 +2110,7 @@ export const NewAutoQuotePage = () => {
       else garantiesAccordeesRef.current.add(Number(target.id_garantie));
     }
     setGaranties((prev) => avecReglesGaranties(
-      prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g)), instantaneVehicule(),
+      prev.map((g, i) => (i === idx ? { ...g, acquise: !g.acquise } : g)), instantaneVehicule(), false, target.id_garantie,
     ));
     libererTotauxDependants();
   };
@@ -2193,9 +2197,9 @@ export const NewAutoQuotePage = () => {
       is_new_garantie: true,
     };
 
-    const avecAjout = avecReglesGaranties([...garanties, newG], instantaneVehicule());
+    const avecAjout = avecReglesGaranties([...garanties, newG], instantaneVehicule(), false, newG.id_garantie);
     setGaranties(avecAjout);
-    // Garantie ajoutée mais refusée par une règle (non commercialisée, exige le vol…) : on le dit
+    // Garantie ajoutée mais refusée par une règle (non commercialisée, exige le vol, se vend avec l'incendie…) : on le dit
     const ajoutee = avecAjout.find((g) => String(g.id_garantie) === String(selectedSousGarantieId));
     if (newG.acquise && ajoutee && !ajoutee.acquise && ajoutee.motifRegle) info(`« ${libelle} » ajoutée mais non cochée : ${ajoutee.motifRegle}.`);
     libererTotauxDependants();
@@ -2506,7 +2510,7 @@ export const NewAutoQuotePage = () => {
         idGenreVehicule: Number(genreId),
         genreVehicule,
         typeCommercial,
-        remorqueAttelee,
+        remorqueAttelee: Boolean(remorqueAttelee) && !tracteurSansSurprimeRemorque(genreVehicule),
         modeleVehicule,
         puissanceFiscale,
         chargeUtile,
@@ -3377,23 +3381,25 @@ export const NewAutoQuotePage = () => {
               </select>
             </div>
 
-            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingTop: '1.2rem' }}>
-              <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '26px' }}>
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', paddingTop: '1.2rem' }}
+              title={tracteurSansSurprimeRemorque(genreVehicule) ? 'Tracteur routier : pas de surprime remorque (tarif NSIA, catégories 2 et 3)' : undefined}>
+              <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '26px', opacity: tracteurSansSurprimeRemorque(genreVehicule) ? 0.5 : 1 }}>
                 <input
                   type="checkbox"
-                  checked={remorqueAttelee}
+                  checked={remorqueAttelee && !tracteurSansSurprimeRemorque(genreVehicule)}
+                  disabled={tracteurSansSurprimeRemorque(genreVehicule)}
                   onChange={(e) => setRemorqueAttelee(e.target.checked)}
                   style={{ opacity: 0, width: 0, height: 0 }}
                 />
                 <span
                   style={{
                     position: 'absolute',
-                    cursor: 'pointer',
+                    cursor: tracteurSansSurprimeRemorque(genreVehicule) ? 'not-allowed' : 'pointer',
                     top: 0,
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: remorqueAttelee ? '#2563eb' : '#475569',
+                    backgroundColor: remorqueAttelee && !tracteurSansSurprimeRemorque(genreVehicule) ? '#2563eb' : '#475569',
                     borderRadius: '34px',
                     transition: '0.3s',
                   }}
@@ -3403,7 +3409,7 @@ export const NewAutoQuotePage = () => {
                       position: 'absolute',
                       height: '20px',
                       width: '20px',
-                      left: remorqueAttelee ? '24px' : '3px',
+                      left: remorqueAttelee && !tracteurSansSurprimeRemorque(genreVehicule) ? '24px' : '3px',
                       bottom: '3px',
                       backgroundColor: 'white',
                       borderRadius: '50%',
@@ -3412,7 +3418,12 @@ export const NewAutoQuotePage = () => {
                   />
                 </span>
               </label>
-              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>Remorque Attelée</span>
+              <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff' }}>
+                Remorque Attelée
+                {tracteurSansSurprimeRemorque(genreVehicule) && (
+                  <span style={{ display: 'block', fontWeight: 500, fontSize: '0.74rem', color: 'var(--text-muted)' }}>Tracteur routier : sans surprime</span>
+                )}
+              </span>
             </div>
           </div>
 
@@ -4819,7 +4830,7 @@ export const NewAutoQuotePage = () => {
             )))}
             tauxTaxes={tauxTaxesAuto}
             nonAdmise={nonAdmisePour(v)}
-            appliquerRegles={(liste) => avecReglesGaranties(liste, v)}
+            appliquerRegles={(liste, { basculee } = {}) => avecReglesGaranties(liste, v, false, basculee)}
             calculerGarantie={(idSousGarantie) => quoteApi.calculerPrimeGarantieAuto(payloadMoteur(v), idSousGarantie)}
             onAppliquer={(resultat) => appliquerGarantiesVehicule(garantiesOuvertes.cle, resultat)}
           />

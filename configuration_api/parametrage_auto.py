@@ -242,7 +242,9 @@ def regles_garanties(request):
 
 
 # ------------------------------------------------------------------ règles entre garanties
-TYPES_AVEC_LIEES = ("REQUIERT", "EXCLUE_SI", "OFFERTE_SI", "PRIME_SI")
+TYPES_AVEC_LIEES = ("REQUIERT", "EXCLUE_SI", "OFFERTE_SI", "PRIME_SI", "COUPLEE")
+# Règles qui portent une prime annuelle (forfait si une garantie liée est souscrite, minimum de la garantie)
+TYPES_AVEC_PRIME = ("PRIME_SI", "PRIME_MINIMUM")
 
 
 def _libelles_sous_garanties():
@@ -250,8 +252,9 @@ def _libelles_sous_garanties():
         "SELECT idsousgarantie AS id, libellesousgarantie AS libelle FROM stdsousgarantie")}
 
 
-# Règles que le barème peut appliquer lui-même (fn_lephare_regle_auto) aux offres qui contiennent une garantie liée
-TYPES_BAREME = ("OFFERTE_SI", "PRIME_SI")
+# Règles que le barème peut appliquer lui-même (fn_lephare_regle_auto) aux offres qui contiennent une garantie liée ;
+# la prime minimum n'est appliquée que par lui
+TYPES_BAREME = ("OFFERTE_SI", "PRIME_SI", "PRIME_MINIMUM")
 
 
 def interactions_garanties_json(libelles=None):
@@ -267,7 +270,7 @@ def interactions_garanties_json(libelles=None):
         "Liees": r.Liees or "", "LibellesLiees": [libelles.get(int(x), f"Garantie {x}") for x in _codes(r.Liees) if x.isdigit()],
         "Categories": r.Categories or "", "PrimeAnnuelle": None if r.PrimeAnnuelle is None else float(r.PrimeAnnuelle),
         "Commentaire": r.Commentaire or "", "Actif": r.Actif, "Ordre": r.Ordre,
-        "AppliqueeBareme": bool(r.AppliqueeBareme and r.Type in TYPES_BAREME),
+        "AppliqueeBareme": r.Type == "PRIME_MINIMUM" or bool(r.AppliqueeBareme and r.Type in TYPES_BAREME),
     } for r in regles]
 
 
@@ -320,12 +323,14 @@ def regles_interactions(request):
             prime = _nombre(r.get("PrimeAnnuelle")) if r.get("PrimeAnnuelle") not in (None, "") else None
             if type_ == "PRIME_SI" and (prime is None or prime < 0):
                 raise ErreurParametrage(f"{nom} : prime annuelle forfaitaire attendue.")
+            if type_ == "PRIME_MINIMUM" and (prime is None or prime <= 0):
+                raise ErreurParametrage(f"{nom} : prime annuelle minimum attendue.")
             nouvelles.append(AutoRegleInteraction(
                 IdCompagnie=compagnie, IdSousGarantie=garantie, Type=type_,
                 Liees=",".join(liees) if type_ in TYPES_AVEC_LIEES else "", Categories=categories,
-                PrimeAnnuelle=prime if type_ == "PRIME_SI" else None,
+                PrimeAnnuelle=prime if type_ in TYPES_AVEC_PRIME else None,
                 Commentaire=_chaine(r.get("Commentaire"), 300), Actif=bool(r.get("Actif", True)), Ordre=i,
-                AppliqueeBareme=bool(r.get("AppliqueeBareme")) and type_ in TYPES_BAREME,
+                AppliqueeBareme=type_ == "PRIME_MINIMUM" or (bool(r.get("AppliqueeBareme")) and type_ in TYPES_BAREME),
                 ModifiePar=_auteur(request),
             ))
     except ErreurParametrage as erreur:

@@ -40,18 +40,55 @@ User = UranusUser
 utc = pytz.UTC
 
 
-def set_user_new_password(user, new_password):
+def valider_mot_de_passe(user, new_password):
+    """Mêmes règles que l'administration des comptes (autorisations/views_securite) : validateurs Django
+    (AUTH_PASSWORD_VALIDATORS) et 8 caractères au moins. Lève serializers.ValidationError."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError as ErreurDjango
+    from rest_framework import serializers as drf_serializers
+
+    try:
+        validate_password(new_password or "", user)
+    except ErreurDjango as erreur:
+        raise drf_serializers.ValidationError({"new_password": list(erreur.messages)})
+    if len(new_password or "") < 8:
+        raise drf_serializers.ValidationError({"new_password": ["Le mot de passe doit contenir au moins 8 caractères."]})
+
+
+def set_user_new_password(user, new_password, jeton_conserve=None, provisoire=False):
+    """Nouveau mot de passe : codes temporaires supprimés (usage unique), sessions fermées (jetons knox, sauf
+    celui de la requête en cours pour un changement par l'utilisateur lui-même), changement exigé à la prochaine
+    connexion si le mot de passe est provisoire (réinitialisation par un administrateur)."""
+    from django.utils import timezone
+
+    from autorisations.models import SecuriteUtilisateur
+
     user.set_password(new_password)
     user.save()
     PasswordChangeCode.objects.filter(user=user).delete()
+    AuthToken.objects.filter(user=user).exclude(pk=getattr(jeton_conserve, "pk", None)).delete()
+    securite, _ = SecuriteUtilisateur.objects.get_or_create(utilisateur=user)
+    securite.doit_changer_mot_de_passe = provisoire
+    if provisoire:
+        securite.echecs_connexion = 0
+        securite.verrouille_jusqua = None
+    else:
+        securite.date_changement_mot_de_passe = timezone.now()
+    securite.save()
 
 
 def reset_user_password(user_email, new_password):
+    """Réinitialisation par un administrateur : mot de passe provisoire, à changer à la prochaine connexion.
+    Le courriel prévient l'utilisateur sans jamais contenir le mot de passe (communiqué par l'administrateur)."""
     users = UranusUser.objects.filter(email=user_email)
     if len(users) == 1:
         user = users[0]
-        set_user_new_password(user, new_password)
-        send_email_password_reset.delay(user_email, new_password)
+        valider_mot_de_passe(user, new_password)
+        set_user_new_password(user, new_password, provisoire=True)
+        try:
+            send_email_password_reset.delay(user_email)
+        except Exception as erreur:  # courriel d'information : son échec n'annule pas la réinitialisation
+            print(erreur)
         return True
     return False
 
@@ -65,14 +102,15 @@ class SignUpAPI(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         msg = "Email envoyé. Consulter votre boîte électronique"
-        send_email_to_user.delay(request.data["email"], request.data["password"])
-        token = AuthToken.objects.create(user)
+        # Le courriel annonce le compte sans le mot de passe (communiqué par l'administrateur) ; aucun jeton de
+        # session du nouvel utilisateur n'est remis à l'administrateur qui le crée (clé « token » conservée, vide)
+        send_email_to_user.delay(request.data["email"])
         return Response(
             {
                 "users": UserSerializer(
                     user, context=self.get_serializer_context()
                 ).data,
-                "token": token[1],
+                "token": None,
                 "message": msg,
             }
         )
@@ -147,8 +185,10 @@ class ChangePasswordView(generics.GenericAPIView):
         if check_temporary_code(
             request.user, serializer.validated_data["temporary_code"]
         ):
+            valider_mot_de_passe(request.user, serializer.validated_data["new_password"])
             set_user_new_password(
-                request.user, serializer.validated_data["new_password"]
+                request.user, serializer.validated_data["new_password"],
+                jeton_conserve=getattr(request, "auth", None),
             )
             return Response(
                 {"Statut": "Succès", "Message": "Mot de passe changé avec succès."}

@@ -25,6 +25,7 @@ from configuration_api.models import (
     TypeVehicule,
     UsageHabitation,
 )
+from core.fichiers import valider_fichier
 from core.serializers import (
     DynamicFieldsSerializer,
     EnregistrementDevisBaseSerializer,
@@ -507,6 +508,10 @@ class PieceJointeSerializer(serializers.ModelSerializer):
         if obj.fichier and request:
             return request.build_absolute_uri(obj.fichier.url)
         return None
+
+    def validate_fichier(self, value):
+        # PDF ou image dont le contenu correspond à l'extension, 20 Mo au plus (core/fichiers.py)
+        return valider_fichier(value, ("pdf", "jpg", "jpeg", "png"))
 
     def create(self, validated_data):
         """Créer une pièce jointe avec métadonnées extraites du fichier"""
@@ -5256,6 +5261,10 @@ class PieceJointeSerializer(serializers.ModelSerializer):
         if obj.fichier and request:
             return request.build_absolute_uri(obj.fichier.url)
         return None
+
+    def validate_fichier(self, value):
+        # PDF ou image dont le contenu correspond à l'extension, 20 Mo au plus (core/fichiers.py)
+        return valider_fichier(value, ("pdf", "jpg", "jpeg", "png"))
 
     def create(self, validated_data):
         """Créer une pièce jointe avec métadonnées extraites du fichier"""

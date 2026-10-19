@@ -23,6 +23,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { nomCabinet } from '../../../utils/parametrage';
+import { messageErreurApi } from '../../../utils/financeUtils';
 
 export const ClaimDetailPage = () => {
   const navigate = useNavigate();
@@ -87,6 +88,8 @@ export const ClaimDetailPage = () => {
   const isWithinDelegation = (claim.montant_reclame || 0) <= plafondDelegation;
   const isAccordObtenu = claim.accord_prealable_obtenu || claim.statut === 'Accord Compagnie Obtenu';
   const canDirectSettle = isWithinDelegation || isAccordObtenu;
+  // Dossier réglé : statut du serveur (« Réglé », « Clôturé ») ou de l'écran (« Règlement validé »), ou quittance émise
+  const estRegle = ['Règlement validé', 'Réglé', 'Clôturé'].includes(claim.statut) || Boolean(claim.quittance_subrogative_emise);
 
   const togglePiece = async (index) => {
     const updated = [...pieces];
@@ -102,12 +105,16 @@ export const ClaimDetailPage = () => {
 
   const handleRequestPriorApproval = async (e) => {
     e.preventDefault();
+    // Seul l'état enregistré par le serveur est affiché : un refus n'est plus présenté comme une transmission
+    let dossier;
     try {
-      await claimsApi.requestPriorApproval(claim.id || claim.numero_sinistre, { motif: accordMotif });
+      const res = await claimsApi.requestPriorApproval(claim.id || claim.numero_sinistre, { motif: accordMotif });
+      dossier = res?.data;
     } catch (err) {
-      console.warn('Prior approval fallback');
+      error(`Demande d'accord refusée : ${messageErreurApi(err)}`);
+      return;
     }
-    setClaim({
+    setClaim(dossier && dossier.numero_sinistre ? dossier : {
       ...claim,
       statut: 'En attente accord compagnie',
       accord_prealable_requis: true,
@@ -128,15 +135,20 @@ export const ClaimDetailPage = () => {
       return;
     }
     const amount = Number(indemniteInput);
+    // Le règlement (plafond, montant réclamé, dossier déjà réglé) est contrôlé par le serveur : en cas de refus,
+    // rien n'est affiché comme réglé ni aucune quittance ouverte
+    let dossier;
     try {
-      await claimsApi.settleClaim(claim.id || claim.numero_sinistre, amount);
+      const res = await claimsApi.settleClaim(claim.id || claim.numero_sinistre, amount);
+      dossier = res?.data;
     } catch (err) {
-      console.warn('API settle error, local fallback');
+      error(`Règlement refusé : ${messageErreurApi(err)}`);
+      return;
     }
 
-    const updatedClaim = {
+    const updatedClaim = dossier && dossier.numero_sinistre ? dossier : {
       ...claim,
-      statut: 'Règlement validé',
+      statut: 'Réglé',
       montant_indemnise: amount,
       quittance_subrogative_emise: true,
     };
@@ -156,10 +168,15 @@ export const ClaimDetailPage = () => {
         return;
       }
     } catch (err) {
+      // Refus du serveur (sinistre non réglé, droit insuffisant) : pas de quittance établie par l'écran
+      if (err?.response) {
+        error(`Quittance indisponible : ${messageErreurApi(err)}`);
+        return;
+      }
       console.warn('Fallback subrogation view');
     }
 
-    // Fallback data
+    // Serveur injoignable : aperçu reconstitué à partir du dossier affiché
     setQuittanceData({
       numero_quittance: `QT-SUB-${currentClaim.numero_sinistre}`,
       numero_sinistre: currentClaim.numero_sinistre,
@@ -190,7 +207,7 @@ export const ClaimDetailPage = () => {
         </button>
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          {(claim.statut === 'Règlement validé' || claim.quittance_subrogative_emise) && (
+          {estRegle && (
             <button
               className="btn btn-primary"
               onClick={() => handleOpenQuittance()}
@@ -254,7 +271,7 @@ export const ClaimDetailPage = () => {
             <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
               Dossier Sinistre {claim.numero_sinistre}
             </span>
-            <span className={`badge ${claim.statut === 'Règlement validé' ? 'badge-success' : (claim.statut === 'En attente accord compagnie' ? 'badge-danger' : 'badge-warning')}`}>
+            <span className={`badge ${estRegle ? 'badge-success' : (claim.statut === 'En attente accord compagnie' ? 'badge-danger' : 'badge-warning')}`}>
               {claim.statut}
             </span>
           </div>
@@ -380,11 +397,11 @@ export const ClaimDetailPage = () => {
                 className="form-control"
                 value={indemniteInput}
                 onChange={(e) => setIndemniteInput(e.target.value)}
-                disabled={claim.statut === 'Règlement validé'}
+                disabled={estRegle}
               />
             </div>
 
-            {claim.statut !== 'Règlement validé' ? (
+            {!estRegle ? (
               canDirectSettle ? (
                 <button
                   className="btn btn-primary"

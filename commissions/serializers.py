@@ -168,7 +168,8 @@ class PaiementCommissionSerializer(serializers.ModelSerializer):
     """
     Serializer principal pour les paiements de commission
     """
-    details = DetailPaiementCommissionSerializer(many=True, required=False)
+    # Lignes en lecture seule : elles naissent d'un paiement par lot ou d'un règlement de bordereau
+    details = DetailPaiementCommissionSerializer(many=True, read_only=True)
     montant_total_calcule = serializers.SerializerMethodField()
     nombre_affaires = serializers.SerializerMethodField()
     created_by_username = serializers.CharField(
@@ -188,8 +189,17 @@ class PaiementCommissionSerializer(serializers.ModelSerializer):
             'fichier_detail', 'notes', 'details', 'nombre_affaires',
             'created_at', 'updated_at', 'created_by', 'created_by_username'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'created_by']
-    
+        # Statut : action valider seulement (PaiementCommissionViewSet)
+        read_only_fields = ['created_at', 'updated_at', 'created_by', 'statut']
+
+    def get_fields(self):
+        champs = super().get_fields()
+        if self.instance is not None:
+            # Paiement enregistré : montant reçu, compagnie et référence ne changent plus
+            for nom in ('montant_total', 'compagnie', 'reference'):
+                champs[nom].read_only = True
+        return champs
+
     def get_montant_total_calcule(self, obj):
         """Calcule le total des commissions détaillées"""
         return str(obj.montant_total_details())

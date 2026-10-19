@@ -22,28 +22,40 @@ export const downloadBlob = (blob, filename) => {
   }, 300);
 };
 
+// Cellule CSV : un texte qui commence (espaces ignor\u00E9s) par =, +, -, @, une tabulation ou un retour \u00E0 la ligne
+// serait \u00E9valu\u00E9 comme formule par le tableur (injection de formules) : il est pr\u00E9fix\u00E9 d'une apostrophe et
+// s'affiche comme du texte. Les nombres (-1500, -1 250 000) restent tels quels. M\u00EAme r\u00E8gle que core/exports.py.
+const DEBUTS_FORMULE = ['=', '+', '-', '@', '\t', '\r', '\n', '\uFF1D', '\uFF0B', '\uFF0D', '\uFF20'];
+const NOMBRE_TEXTE = /^[+-]?\d[\d \u00A0\u202F]*([.,]\d+)?$/;
+export const celluleCsv = (valeur) => {
+  const texte = String(valeur ?? '');
+  const debut = texte.replace(/^ +/, '');
+  const neutralise = DEBUTS_FORMULE.includes(debut.charAt(0)) && !NOMBRE_TEXTE.test(debut.trim()) ? `'${texte}` : texte;
+  return `"${neutralise.replace(/"/g, '""')}"`;
+};
+
 /**
  * Export CSV standard avec BOM UTF-8 pour ouverture parfaite dans Microsoft Excel
  */
 export const exportToCsv = ({ filename, title, metadata = {}, headers, rows, totals }) => {
   let csv = '\uFEFF'; // BOM UTF-8
   if (title) {
-    csv += `"${title.replace(/"/g, '""')}"\n`;
+    csv += `${celluleCsv(title)}\n`;
   }
   Object.entries(metadata).forEach(([k, v]) => {
-    csv += `"${k}";"${String(v).replace(/"/g, '""')}"\n`;
+    csv += `${celluleCsv(k)};${celluleCsv(v)}\n`;
   });
   csv += '\n';
 
-  csv += headers.map((h) => `"${String(h).replace(/"/g, '""')}"`).join(';') + '\n';
+  csv += headers.map(celluleCsv).join(';') + '\n';
 
   rows.forEach((row) => {
-    csv += row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';') + '\n';
+    csv += row.map(celluleCsv).join(';') + '\n';
   });
 
   if (totals && totals.length > 0) {
     csv += '\n';
-    csv += totals.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';') + '\n';
+    csv += totals.map(celluleCsv).join(';') + '\n';
   }
 
   const cleanName = filename.endsWith('.csv') ? filename : `${filename}.csv`;
@@ -70,7 +82,10 @@ export const exportToExcel = ({ filename, title, subtitle, metadata = {}, header
         .map((cell, colIdx) => {
           const isNum = typeof cell === 'number' || (typeof cell === 'string' && /^[0-9\s]+(\s*F(CFA)?)?$/.test(cell.trim()));
           const align = colIdx > 0 && isNum ? 'right' : 'left';
-          return `<td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:${align};">${cell ?? ''}</td>`;
+          // Texte qui ressemble à une formule : cellule au format texte (Excel ne l'évalue pas)
+          const debut = typeof cell === 'string' ? cell.replace(/^ +/, '') : '';
+          const formule = DEBUTS_FORMULE.includes(debut.charAt(0)) && !NOMBRE_TEXTE.test(debut.trim());
+          return `<td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:${align};${formule ? "mso-number-format:'\\@';" : ''}">${cell ?? ''}</td>`;
         })
         .join('');
       return `<tr style="background:${bg};">${cells}</tr>`;

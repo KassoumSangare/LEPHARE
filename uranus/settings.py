@@ -288,6 +288,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# Fichiers envoyés : adresses signées, servies par core.fichiers.servir_media (jamais en accès libre ; un serveur
+# web placé devant Django ne doit pas publier MEDIA_ROOT directement)
+STORAGES = {
+    "default": {"BACKEND": "core.fichiers.StockageSigne"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+MEDIA_SIGNATURE_DUREE = int(uranus_backend_config.get("MEDIA_SIGNATURE_DUREE", 2 * 3600))  # secondes
 
 # # Celery settings
 # CELERY_BROKER_URL = uranus_backend_config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")

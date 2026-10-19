@@ -4237,7 +4237,9 @@ class AutoRegleInteraction(models.Model):
     OBLIGATOIRE : ne peut être ni décochée ni retirée. REQUIERT : ne peut être cochée sans une des garanties liées.
     EXCLUE_SI : décochée tant qu'une des garanties liées est souscrite. OFFERTE_SI : prime nulle quand une des garanties
     liées est souscrite. PRIME_SI : prime annuelle forfaitaire quand une des garanties liées est souscrite.
-    NON_PROPOSEE : non commercialisée dans les catégories indiquées. NON_COCHEE : proposée sans être cochée d'office."""
+    NON_PROPOSEE : non commercialisée dans les catégories indiquées. NON_COCHEE : proposée sans être cochée d'office.
+    COUPLEE : vendue avec une des garanties liées (cochée, elle les coche ; sans aucune d'elles, elle est décochée).
+    PRIME_MINIMUM : prime annuelle minimale de la garantie, appliquée par le barème."""
 
     TYPES = [
         ("OBLIGATOIRE", "Obligatoire"),
@@ -4245,6 +4247,8 @@ class AutoRegleInteraction(models.Model):
         ("EXCLUE_SI", "Exclue si une des garanties liées est souscrite"),
         ("OFFERTE_SI", "Offerte si une des garanties liées est souscrite"),
         ("PRIME_SI", "Prime forfaitaire si une des garanties liées est souscrite"),
+        ("COUPLEE", "Vendue avec une des garanties liées"),
+        ("PRIME_MINIMUM", "Prime minimum"),
         ("NON_PROPOSEE", "Non commercialisée"),
         ("NON_COCHEE", "Proposée sans être cochée d'office"),
     ]
@@ -4252,7 +4256,7 @@ class AutoRegleInteraction(models.Model):
     IdCompagnie = models.IntegerField(db_column="idcompagnie")
     IdSousGarantie = models.IntegerField(db_column="idsousgarantie")
     Type = models.CharField(max_length=20, choices=TYPES, db_column="type")
-    # Sous-garanties liées, séparées par des virgules (REQUIERT, EXCLUE_SI, OFFERTE_SI, PRIME_SI)
+    # Sous-garanties liées, séparées par des virgules (REQUIERT, EXCLUE_SI, OFFERTE_SI, PRIME_SI, COUPLEE)
     Liees = models.CharField(max_length=100, blank=True, default="", db_column="liees")
     # Codes de catégorie concernés, séparés par des virgules (vide : toutes)
     Categories = models.CharField(max_length=100, blank=True, default="", db_column="categories")
@@ -4260,7 +4264,8 @@ class AutoRegleInteraction(models.Model):
     Commentaire = models.CharField(max_length=300, blank=True, default="", db_column="commentaire")
     Actif = models.BooleanField(default=True, db_column="actif")
     # OFFERTE_SI / PRIME_SI appliquées aussi par le barème (fn_lephare_regle_auto) aux offres qui contiennent une des
-    # garanties liées ; sinon à l'écran seulement, quand l'utilisateur ajoute la garantie liée
+    # garanties liées ; sinon à l'écran seulement, quand l'utilisateur ajoute la garantie liée. PRIME_MINIMUM : toujours
+    # par le barème.
     AppliqueeBareme = models.BooleanField(default=False, db_column="appliqueebareme")
     Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
     DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")

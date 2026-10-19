@@ -31,7 +31,7 @@ from rest_framework.response import Response
 
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
-from .database import enregistrer_terme_devis
+from .database import enregistrer_terme_devis, id_duree_pour_procedure
 from .import_assures import insert_new_assure
 from .models import Devis, DevisDetail, DevisDetGarantie
 
@@ -211,7 +211,7 @@ def _enregistrer(data):
     id_compagnie = int(data["IdCompagnie"])
     id_offre = int(data["IdOffre"])
     id_tarif = int(data["IdTarif"])
-    id_duree = int(data.get("IdDuree") or 0)
+    id_duree = id_duree_pour_procedure(data.get("IdDuree"))
     date_effet = _date(data.get("DateEffet"), "Date d'effet")
     date_expiration = _date(data.get("DateExpiration"), "Date d'expiration")
     date_emission = _date(data.get("DateEmission"), "Date d'émission")

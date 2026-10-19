@@ -24,6 +24,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from account.models import UranusUser
+from core.exports import ligne_csv
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from institutionnel.models import AuditLogCima
 
@@ -606,11 +607,12 @@ def export_journal(request):
     nombre = 0
     for e in liste:
         nombre += 1
-        ecrivain.writerow([
+        # Description, motif, auteur… peuvent contenir une saisie : formules neutralisées (core/exports.py)
+        ecrivain.writerow(ligne_csv([
             timezone.localtime(e.date_creation).strftime("%d/%m/%Y %H:%M:%S"), e.auteur, e.module or e.type_operation,
             e.action, e.description, e.objet_type, e.objet_id, e.resultat or e.statut_conformite, e.adresse_ip or "",
             e.motif,
-        ])
+        ]))
     journaliser(request=request, module="audit", action="audit.export",
                 description=f"Export du journal d'audit ({nombre} ligne(s))",
                 details={"filtres": dict(request.query_params)})

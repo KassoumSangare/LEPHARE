@@ -19,8 +19,16 @@ RESULTAT_SUCCES = "SUCCES"
 RESULTAT_ECHEC = "ECHEC"
 RESULTAT_REFUS = "REFUS"
 
-# Champs jamais recopiés dans le journal
-CLES_SECRETES = re.compile(r"pass|mot_?de_?passe|token|secret|jeton_code|code_acces", re.I)
+# Champs jamais recopiés dans le journal : mots de passe, jetons, secrets, codes d'accès ASACI, codes temporaires
+# (changement de mot de passe, codes de vérification ou à usage unique), clés d'API, en-têtes d'authentification
+CLES_SECRETES = re.compile(
+    r"pass|mot_?de_?passe|token|secret|jeton_code|code_acces|temporary_code|code_?temp|code_?verif|code_?confirm"
+    r"|(^|_)otp($|_)|api_?key|cle_?api|authori[sz]ation",
+    re.I,
+)
+# Routes de mot de passe : toute la saisie est masquée (ancien / nouveau mot de passe, code temporaire), sauf
+# l'adresse du compte concerné, utile à la traçabilité
+ROUTES_SECRETES = re.compile(r"mot-de-passe|password", re.I)
 TAILLE_MAX = 30000
 
 
@@ -64,6 +72,15 @@ def nettoyer(valeur, profondeur=0):
         return f"fichier : {getattr(valeur, 'name', '')}"
     texte = str(valeur)
     return texte if len(texte) <= 2000 else texte[:2000] + "…"
+
+
+def saisie_journalisable(donnees, chemin=""):
+    """Saisie d'une requête telle que recopiée dans le journal : sans secret, et entièrement masquée (sauf
+    l'adresse électronique) sur les routes de mot de passe."""
+    propre = nettoyer(donnees)
+    if ROUTES_SECRETES.search(chemin or "") and isinstance(propre, dict):
+        return {cle: (valeur if "email" in cle.lower() else "***") for cle, valeur in propre.items()}
+    return propre
 
 
 def _borner(valeur):

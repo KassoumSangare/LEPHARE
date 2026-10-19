@@ -25,7 +25,10 @@ def unpack_ia_quotation_post_data(post_data):
     TauxReduction = Decimal(post_data["TauxReduction"])
     CodeActivite = str(post_data["CodeActivite"])
     DateNaissance = convert_to_date(post_data["DateNaissance"])
-    IdDuree = int(post_data["IdDuree"])
+    # Import local : database importe ce module
+    from .database import id_duree_pour_procedure
+
+    IdDuree = id_duree_pour_procedure(post_data["IdDuree"])
     IdDevis = 0
     IdDevisDetail = 0
     if "IdDevis" in post_data and post_data["IdDevis"]:

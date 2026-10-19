@@ -8,44 +8,63 @@ from .models import Derogation
 User = UranusUser
 
 
+class ProfilResumeSerializer(serializers.ModelSerializer):
+    """Profil joint à l'utilisateur (connexion, utilisateur courant) : jamais le code d'accès ASACI."""
+
+    code_acces_configure = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Profile
+        fields = ("id", "code_demandeur", "code_acces_configure")
+
+    def get_code_acces_configure(self, obj):
+        return bool(obj.code_acces)
+
+
 class UserSerializer(serializers.ModelSerializer):
+    # Auparavant depth = 1 : le profil imbriqué renvoyait le code d'accès ASACI en clair à la connexion
+    profile = ProfilResumeSerializer(read_only=True)
+
     class Meta:
         model = UranusUser
-        depth = 1
         fields = ("id", "email", "is_admin", "name", "profile")
 
 
 class ProfileSerializer(serializers.ModelSerializer):
-    
+    """Profils ASACI des utilisateurs. Le code d'accès est en écriture seule : les réponses indiquent seulement
+    s'il est renseigné (code_acces_configure). L'identité et le statut administrateur se gèrent dans
+    Administration > Utilisateurs (securite/utilisateurs/), pas ici."""
+
     utilisateur = serializers.ReadOnlyField(source="utilisateur.id")
     id = serializers.IntegerField(source="pk", read_only=True)
-    email = serializers.CharField(source="utilisateur.email")
-    is_admin = serializers.BooleanField(source="utilisateur.is_admin")
-    nom = serializers.CharField(source="utilisateur.name")
+    email = serializers.CharField(source="utilisateur.email", read_only=True)
+    is_admin = serializers.BooleanField(source="utilisateur.is_admin", read_only=True)
+    nom = serializers.CharField(source="utilisateur.name", read_only=True)
+    code_acces = serializers.CharField(write_only=True, required=False, allow_null=True, allow_blank=True,
+                                       max_length=100, style={"input_type": "password"})
+    code_acces_configure = serializers.SerializerMethodField()
 
     class Meta:
         model = Profile
-        depth = 1
         fields = (
             "id",
             "email",
             "utilisateur",
             "code_demandeur",
             "code_acces",
+            "code_acces_configure",
             "is_admin",
             "nom",
         )
 
-    def update(self, instance, validated_data):
-        # retrieve the User
-        user_data = validated_data.pop("utilisateur", None)
-        for attr, value in user_data.items():
-            setattr(instance.user, attr, value)
+    def get_code_acces_configure(self, obj):
+        return bool(obj.code_acces)
 
-        # retrieve Profile
+    def update(self, instance, validated_data):
+        # Seules les données ASACI du profil se modifient ici (l'ancienne version, qui écrivait aussi
+        # l'utilisateur, échouait sur instance.user)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
-        instance.user.save()
         instance.save()
         return instance
 

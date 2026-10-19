@@ -723,7 +723,10 @@ export const formatAutoQuoteForApi = (raw) => {
     IdGenreVehicule: Number(details.idGenreVehicule || 1),
     NumCarteBrunePhysique: premier(details.numeroCarteBrune, details.numCarteBrunePhysique) || '',
     ModeleVehicule: premier(details.modeleVehicule, details.modele) || '',
-    RemorqueAttelee: Boolean(details.remorqueAttelee),
+    // Tarif annoté NSIA : surprime remorque « sauf tracteur routier » (véhicule repris d'un ancien devis compris)
+    RemorqueAttelee: Boolean(details.remorqueAttelee)
+      && !(Number(premier(details.idCompagnie, raw.IdCompagnie, raw.compagnie_id) || 1) === 1
+        && /tracteur\s*routier/i.test(String(details.genreVehicule || ''))),
     CodeFormuleSecuriteRoutiere: details.codeFormuleSecuriteRoutiere || details.securiteRoutiere || '',
     IdOptionAssistance: Number(details.idOptionAssistance || details.assistanceAuto || 0),
     CarburantAutreMatiere: Boolean(details.carburantAutreMatiere ?? details.CarburantAutreMatiere),

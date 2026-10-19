@@ -28,7 +28,7 @@ from django.db import connection
 from django.utils import timezone
 from rest_framework import exceptions, status
 
-from .journal import RESULTAT_ECHEC, RESULTAT_REFUS, RESULTAT_SUCCES, adresse_ip, journaliser, nettoyer
+from .journal import RESULTAT_ECHEC, RESULTAT_REFUS, RESULTAT_SUCCES, adresse_ip, journaliser, saisie_journalisable
 from .rbac import a_le_droit, compte_expire
 
 LECTURES = {"GET", "HEAD", "OPTIONS"}
@@ -268,13 +268,18 @@ REGLES = [
     R("POST", r"(finance/commissions/reclamations/(?P<id_reclamation>\d+)/annuler/|commissions/details-paiement-commission/"
               r"(\d+/annuler|annuler_selection)|commissions/annulations-commission/)", "commissions.cancel",
       objet="commission", cles=("id_reclamation",)),
-    R("POST", r"(finance/commissions/reclamations/(?P<id_reclamation>\d+)/paiements/|commissions/paiements-commission/\d+/valider/)",
+    # Enregistrer un paiement de commission reçu (lot, en-tête) = encaisser une commission, comme le règlement d'un
+    # bordereau
+    R("POST", r"(finance/commissions/reclamations/(?P<id_reclamation>\d+)/paiements/|commissions/paiements-commission/\d+/valider/|"
+              r"commissions/(paiements-batch|paiements-commission)/$)",
       "commissions.validate", objet="commission", cles=("id_reclamation",)),
     R("POST", r"(finance/commissions/reclamations/$|commissions/)", "commissions.create", objet="commission"),
     R("PUT,PATCH,DELETE", r"commissions/", "commissions.validate", objet="commission", cles=("pk",)),
     R("GET", r"(commissions/|finance/commissions)", "commissions.view"),
     # ---- sinistres
-    R("POST", r"sinistres/(?P<pk>\d+)/reglement/", "sinistres.settle", objet="sinistre", cles=("pk",)),
+    # Règlement et émission de la quittance subrogative ; la consultation de la quittance (GET) est une lecture
+    R("POST", r"sinistres/(?P<pk>\d+)/(reglement|quittance_subrogative)/", "sinistres.settle", objet="sinistre",
+      cles=("pk",)),
     R("POST", r"sinistres/$", "sinistres.create", objet="sinistre"),
     R("POST,PUT,PATCH,DELETE", r"sinistres/", "sinistres.update", objet="sinistre", cles=("pk",)),
     R("GET", r"sinistres", "sinistres.view"),
@@ -462,7 +467,7 @@ def _refuser(request, code, message, *, regle=None, objet_id=None, journal=True)
         journaliser(
             request=request, module=(code or "securite").split(".")[0], action=code or "",
             description=message, objet_type=(regle.objet if regle else ""), objet_id=objet_id or "",
-            resultat=RESULTAT_REFUS, statut_http=403, details={"saisie": nettoyer(_donnees(request))},
+            resultat=RESULTAT_REFUS, statut_http=403, details={"saisie": saisie_journalisable(_donnees(request), _chemin(request))},
             motif=_motif(request),
         )
     raise exceptions.PermissionDenied(message)
@@ -674,7 +679,7 @@ def apres_reponse(view, request, reponse):
         objet_id=complements.get("objet_id") or objet_id or "", resultat=RESULTAT_SUCCES if reussie else RESULTAT_ECHEC,
         avant=complements.get("avant", contexte["avant"]),
         apres=complements.get("apres", apres) if reussie else None, motif=contexte["motif"],
-        statut_http=reponse.status_code, details={"saisie": nettoyer(_donnees(request))},
+        statut_http=reponse.status_code, details={"saisie": saisie_journalisable(_donnees(request), _chemin(request))},
     )
 
 

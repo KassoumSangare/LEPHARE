@@ -730,17 +730,22 @@ def reclamations(request):
         ids = sorted({_entier(i, "Ligne de reversement") for i in (donnees.get("DetailsReversement") or [])})
         if not ids:
             raise ErreurFinance("Cochez au moins une quittance reversée.")
-        lignes = _commissions(ids=ids)
-        if len(lignes) != len(ids):
-            raise ErreurFinance("Certaines quittances ne sont pas dans un reversement payé à la compagnie.")
-        for l in lignes:
-            if l["IdCompagnie"] != id_compagnie:
-                raise ErreurFinance(f"La quittance {l['NumeroQuittance']} a été reversée à une autre compagnie.")
-            if l["IdReclamation"]:
-                raise ErreurFinance(f"La quittance {l['NumeroQuittance']} est déjà réclamée ({l['Reclamation']}).")
-            if l["CommissionDue"] <= 0:
-                raise ErreurFinance(f"La quittance {l['NumeroQuittance']} n'a pas de commission.")
         with transaction.atomic():
+            # Lignes de reversement verrouillées avant les contrôles : deux bordereaux émis en même temps ne
+            # peuvent pas réclamer la même quittance (le second voit la réclamation du premier)
+            from production.models import DetailReversement
+
+            list(DetailReversement.objects.select_for_update().filter(pk__in=ids).values_list("pk", flat=True))
+            lignes = _commissions(ids=ids)
+            if len(lignes) != len(ids):
+                raise ErreurFinance("Certaines quittances ne sont pas dans un reversement payé à la compagnie.")
+            for l in lignes:
+                if l["IdCompagnie"] != id_compagnie:
+                    raise ErreurFinance(f"La quittance {l['NumeroQuittance']} a été reversée à une autre compagnie.")
+                if l["IdReclamation"]:
+                    raise ErreurFinance(f"La quittance {l['NumeroQuittance']} est déjà réclamée ({l['Reclamation']}).")
+                if l["CommissionDue"] <= 0:
+                    raise ErreurFinance(f"La quittance {l['NumeroQuittance']} n'a pas de commission.")
             reclamation = ReclamationCommission.objects.create(
                 reference=_prochaine_reference("RC", ReclamationCommission),
                 compagnie=compagnie, periode_debut=debut, periode_fin=fin,
@@ -780,14 +785,18 @@ def annuler_reclamation(request, id_reclamation):
     """POST /api/finance/commissions/reclamations/<id>/annuler/ : bordereau émis par erreur, sans règlement."""
     from commissions.models import ReclamationCommission
 
-    objet = ReclamationCommission.objects.filter(pk=id_reclamation).first()
-    if not objet:
-        return Response({"error": "Bordereau de réclamation introuvable."}, status=status.HTTP_404_NOT_FOUND)
-    if objet.paiements.exists():
-        return _erreur("Ce bordereau a déjà reçu un règlement de commission : il ne peut plus être annulé.")
-    objet.statut = "ANNULEE"
-    objet.notes = (objet.notes + "\n" if objet.notes else "") + f"Annulé le {date.today():%d/%m/%Y} : {str(request.data.get('Motif') or '').strip()}"
-    objet.save(update_fields=["statut", "notes"])
+    with transaction.atomic():
+        # Bordereau verrouillé : un règlement enregistré en même temps ne peut pas se retrouver sur un bordereau annulé
+        objet = ReclamationCommission.objects.select_for_update().filter(pk=id_reclamation).first()
+        if not objet:
+            return Response({"error": "Bordereau de réclamation introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        if objet.statut == "ANNULEE":
+            return _erreur("Ce bordereau est déjà annulé.")
+        if objet.paiements.exists():
+            return _erreur("Ce bordereau a déjà reçu un règlement de commission : il ne peut plus être annulé.")
+        objet.statut = "ANNULEE"
+        objet.notes = (objet.notes + "\n" if objet.notes else "") + f"Annulé le {date.today():%d/%m/%Y} : {str(request.data.get('Motif') or '').strip()}"
+        objet.save(update_fields=["statut", "notes"])
     return Response(_reclamation_json(objet))
 
 
@@ -803,11 +812,6 @@ def encaisser_commission(request, id_reclamation):
     from production.models import DetailReversement, Quittance
 
     try:
-        objet = ReclamationCommission.objects.select_related("compagnie").filter(pk=id_reclamation).first()
-        if not objet:
-            raise ErreurFinance("Bordereau de réclamation introuvable.")
-        if objet.statut == "ANNULEE":
-            raise ErreurFinance("Ce bordereau est annulé.")
         donnees = request.data
         mode = str(donnees.get("Mode") or "").upper()
         if mode not in ("CHQ", "VIR"):
@@ -819,13 +823,24 @@ def encaisser_commission(request, id_reclamation):
         banque = Banque.objects.filter(pk=id_banque).first() if id_banque else None
         montant = _montant(donnees.get("Montant"), "Montant du règlement")
         date_paiement = _date(donnees.get("DatePaiement") or date.today(), "Date du règlement")
-        lignes = [l for l in _commissions(id_reclamation=objet.id) if l["Reste"] > 0]
-        reste_total = sum(Decimal(str(l["Reste"])) for l in lignes)
-        if montant > reste_total:
-            raise ErreurFinance(
-                f"Le règlement ({montant:,.0f} F) dépasse la commission restant due sur ce bordereau ({reste_total:,.0f} F).".replace(",", " ")
-            )
         with transaction.atomic():
+            # Bordereau verrouillé jusqu'à la fin de l'imputation : deux règlements simultanés (double clic, deux
+            # postes) sont traités l'un après l'autre et le second voit le reste dû après le premier
+            objet = ReclamationCommission.objects.select_for_update().select_related("compagnie").filter(pk=id_reclamation).first()
+            if not objet:
+                raise ErreurFinance("Bordereau de réclamation introuvable.")
+            if objet.statut == "ANNULEE":
+                raise ErreurFinance("Ce bordereau est annulé.")
+            # Même règlement saisi deux fois (référence de chèque ou de virement déjà imputée sur ce bordereau)
+            if PaiementCommission.objects.filter(reclamation=objet, mode_paiement=mode,
+                                                 reference_paiement__iexact=reference_paiement).exists():
+                raise ErreurFinance(f"Le règlement {reference_paiement} est déjà enregistré sur ce bordereau.")
+            lignes = [l for l in _commissions(id_reclamation=objet.id) if l["Reste"] > 0]
+            reste_total = sum(Decimal(str(l["Reste"])) for l in lignes)
+            if montant > reste_total:
+                raise ErreurFinance(
+                    f"Le règlement ({montant:,.0f} F) dépasse la commission restant due sur ce bordereau ({reste_total:,.0f} F).".replace(",", " ")
+                )
             paiement = PaiementCommission.objects.create(
                 reference=_prochaine_reference("PC", PaiementCommission),
                 compagnie=objet.compagnie, date_paiement=date_paiement, montant_total=montant,

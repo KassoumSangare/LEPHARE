@@ -43,15 +43,20 @@ export const sansGarantiesNonAdmises = (garanties, motif) => (garanties || []).m
 //   NON_COCHEE   : proposée sans être cochée d'office (premier calcul seulement) ;
 //   REQUIERT     : décochée et bloquée tant qu'aucune des garanties liées n'est cochée ;
 //   EXCLUE_SI    : décochée et bloquée tant qu'une des garanties liées est cochée ;
+//   COUPLEE      : vendue avec une des garanties liées (NSIA catégories 3, 4, 7 : vol et incendie) : cochée par
+//                  l'utilisateur (basculee), elle coche ses garanties liées ; sans aucune d'elles cochée, elle est
+//                  décochée (sans être bloquée) ;
 //   OFFERTE_SI   : prime nette nulle quand une des garanties liées est ajoutée et cochée ;
 //   PRIME_SI     : prime annuelle forfaitaire quand une des garanties liées est ajoutée et cochée, au prorata de la
 //                  prime de la ligne (durée, BNS).
 // Les deux dernières ne jouent que pour une garantie ajoutée à l'écran (is_new_garantie) : le barème les applique déjà
-// quand l'offre contient la garantie liée (NSIA : dommages ou collision dans l'offre → défense-recours 4 200 F, bris de
-// glace et recours anticipé sans prime), et les rejouer sur ses lignes en changerait les primes.
+// quand l'offre contient la garantie liée (NSIA : dommages ou collision dans l'offre → défense-recours 4 200 F, recours
+// anticipé sans prime ; dommages → bris de glace sans prime), et les rejouer sur ses lignes en changerait les primes.
+// PRIME_MINIMUM n'est appliquée que par le barème (prime-garantie compris).
 // La prime du barème est gardée (primeAvantRegle) et rendue quand la condition disparaît ; une prime saisie à la main
 // (primeSaisie) n'est plus modifiée. Champs ajoutés : obligatoire, bloquee, offerte, motifRegle.
-export const appliquerReglesGaranties = (garanties, regles, { codeCategorie = '', initial = false } = {}) => {
+// basculee : id de la garantie que l'utilisateur vient de cocher, décocher ou ajouter.
+export const appliquerReglesGaranties = (garanties, regles, { codeCategorie = '', initial = false, basculee = null } = {}) => {
   if (!regles?.length || !garanties?.length) return garanties;
   const id = (g) => Number(g.id_garantie);
   const liees = (r) => String(r.Liees || '').split(',').map(Number).filter(Boolean);
@@ -76,7 +81,16 @@ export const appliquerReglesGaranties = (garanties, regles, { codeCategorie = ''
     return g;
   });
 
-  // Exige / exclue si : jusqu'à stabilité (décocher le vol décoche le vol des accessoires, etc.)
+  // Vendues ensemble : la garantie que l'utilisateur coche entraîne ses garanties liées présentes au devis
+  const cocheeParUtilisateur = basculee !== null && basculee !== undefined
+    && liste.find((g) => id(g) === Number(basculee) && g.acquise && !g.bloquee);
+  if (cocheeParUtilisateur) {
+    const entrainees = new Set(reglesDe(cocheeParUtilisateur, 'COUPLEE').flatMap(liees));
+    liste = liste.map((g) => (entrainees.has(id(g)) && !g.acquise && !g.bloquee ? { ...g, acquise: true } : g));
+  }
+
+  // Exige / exclue si / vendue avec : jusqu'à stabilité (décocher le vol décoche le vol des accessoires, décocher
+  // l'incendie décoche le vol qui se vend avec lui, etc.)
   for (let passe = 0; passe < 4; passe += 1) {
     const cochees = new Set(liste.filter((g) => g.acquise).map(id));
     let change = false;
@@ -91,6 +105,12 @@ export const appliquerReglesGaranties = (garanties, regles, { codeCategorie = ''
       if (exclue) {
         if (g.acquise) change = true;
         return { ...g, acquise: false, bloquee: true, motifRegle: `Exclue avec ${nomsLiees(exclue, (x) => cochees.has(x))}` };
+      }
+      const couplee = reglesDe(g, 'COUPLEE')[0];
+      if (couplee) {
+        const seule = !liees(couplee).some((x) => cochees.has(x));
+        if (seule && g.acquise) change = true;
+        return { ...g, acquise: seule ? false : g.acquise, motifRegle: `Se vend avec ${nomsLiees(couplee)}` };
       }
       return g;
     });

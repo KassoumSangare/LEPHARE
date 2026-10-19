@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Link2, Loader2, Pencil, Save, X, Plus, Trash2, ShieldCheck, Gift, Coins, ArrowRightLeft, Ban, EyeOff, CircleSlash, Info,
+  Layers, ArrowUpToLine,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { EnTeteParametrage, SectionParametrage } from '../../../components/admin/EnTeteParametrage';
@@ -13,27 +14,39 @@ import { useToast } from '../../../context/ToastContext';
 // Règles de gestion Automobile entre garanties, par compagnie (tarif annoté NSIA, « interaction avec les autres
 // garanties ») : appliquées par l'écran de devis à chaque garantie cochée, décochée, ajoutée ou retirée
 // (utils/tarificationAuto.js, appliquerReglesGaranties) ; « offerte » et « prime forfaitaire » marquées « barème »
-// sont aussi appliquées par le calcul de la base aux offres qui contiennent la garantie liée (fn_lephare_regle_auto).
-// configuration_api/parametrage_auto.py (regles_interactions).
+// sont aussi appliquées par le calcul de la base aux offres qui contiennent la garantie liée, la « prime minimum » par
+// lui seul (fn_lephare_regle_auto). configuration_api/parametrage_auto.py (regles_interactions).
 
+const montant = (v) => Number(v || 0).toLocaleString('fr-FR');
 const TYPES = {
   OBLIGATOIRE: { titre: 'Obligatoires', icone: ShieldCheck, couleur: 'var(--accent-indigo)', phrase: () => 'toujours cochée : ne peut être ni décochée ni retirée' },
   OFFERTE_SI: { titre: 'Offertes', icone: Gift, couleur: 'var(--accent-emerald)', phrase: (r) => `offerte (prime nulle) avec ${r.noms}` },
-  PRIME_SI: { titre: 'Prime forfaitaire', icone: Coins, couleur: 'var(--accent-cyan)', phrase: (r) => `${Number(r.PrimeAnnuelle || 0).toLocaleString('fr-FR')} F par an avec ${r.noms}, au prorata de la durée` },
+  PRIME_SI: { titre: 'Prime forfaitaire', icone: Coins, couleur: 'var(--accent-cyan)', phrase: (r) => `${montant(r.PrimeAnnuelle)} F par an avec ${r.noms}, au prorata de la durée` },
+  PRIME_MINIMUM: { titre: 'Primes minimums', icone: ArrowUpToLine, couleur: 'var(--accent-cyan)', phrase: (r) => `prime annuelle d'au moins ${montant(r.PrimeAnnuelle)} F quand le tarif en donne une plus faible` },
   REQUIERT: { titre: 'Exigent une autre garantie', icone: ArrowRightLeft, couleur: 'var(--accent-amber)', phrase: (r) => `ne peut être cochée sans ${r.noms}` },
+  COUPLEE: { titre: 'Vendues ensemble', icone: Layers, couleur: 'var(--accent-amber)', phrase: (r) => `se vend avec ${r.noms} : la cocher les coche, elle est décochée sans elles` },
   EXCLUE_SI: { titre: 'Exclues', icone: Ban, couleur: 'var(--accent-rose)', phrase: (r) => `retirée si ${r.noms} est souscrite` },
   NON_PROPOSEE: { titre: 'Non commercialisées', icone: CircleSlash, couleur: 'var(--text-muted)', phrase: () => 'non proposée dans les catégories indiquées' },
   NON_COCHEE: { titre: 'Non cochées d\'office', icone: EyeOff, couleur: 'var(--accent-purple)', phrase: () => 'proposée sans être cochée d\'office : l\'utilisateur peut la cocher' },
 };
-const AVEC_LIEES = ['REQUIERT', 'EXCLUE_SI', 'OFFERTE_SI', 'PRIME_SI'];
-// Règles que le calcul de la base peut appliquer lui-même aux offres qui contiennent la garantie liée
+const AVEC_LIEES = ['REQUIERT', 'EXCLUE_SI', 'OFFERTE_SI', 'PRIME_SI', 'COUPLEE'];
+const AVEC_PRIME = ['PRIME_SI', 'PRIME_MINIMUM'];
+// Règles que le calcul de la base peut appliquer lui-même aux offres qui contiennent la garantie liée (case « Barème »)
 const TYPES_BAREME = ['OFFERTE_SI', 'PRIME_SI'];
-const ouEllesSappliquent = (r) => (TYPES_BAREME.includes(r.Type)
-  ? (r.AppliqueeBareme
+const ouEllesSappliquent = (r) => {
+  if (r.Type === 'PRIME_MINIMUM') return 'Au calcul de la base : la prime annuelle de la garantie est relevée à ce minimum, avant réductions et prorata';
+  if (!TYPES_BAREME.includes(r.Type)) return "À l'écran de devis";
+  return r.AppliqueeBareme
     ? "Au calcul de la base (offres qui comprennent la garantie liée) et à l'écran (garantie liée ajoutée au devis)"
-    : "À l'écran seulement : quand l'utilisateur ajoute la garantie liée au devis")
-  : "À l'écran de devis");
+    : "À l'écran seulement : quand l'utilisateur ajoute la garantie liée au devis";
+};
 const codes = (texte) => String(texte || '').split(/[,;\s]+/).map((c) => c.trim()).filter(Boolean);
+
+/** Règle en une phrase (« se vend avec Incendie… ») et son titre de type, pour la page Pool TPV aussi. */
+export const decrireRegle = (r) => ({
+  titre: TYPES[r.Type]?.titre || r.Type,
+  phrase: TYPES[r.Type]?.phrase({ ...r, noms: (r.LibellesLiees?.length ? r.LibellesLiees : codes(r.Liees)).join(' ou ') }) || r.Type,
+});
 
 const Pastille = ({ children, title }) => (
   <span title={title} style={{ display: 'inline-flex', alignItems: 'center', padding: '0.12rem 0.55rem', borderRadius: 999, fontSize: '0.74rem', fontWeight: 600, background: 'var(--bg-surface-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }}>
@@ -114,7 +127,7 @@ export const ParametrageReglesGarantiesPage = () => {
         icone={Link2}
         titre="Règles des garanties"
         description="Liens entre les garanties d'une compagnie (tarif annoté NSIA) : selon les garanties souscrites et la catégorie du véhicule, une garantie est obligatoire, offerte, à prime forfaitaire, exige ou exclut une autre garantie, ou n'est pas commercialisée."
-        usage="Devis Auto et flotte : appliquées au calcul de l'offre puis à chaque garantie cochée, décochée, ajoutée ou retirée. Le motif s'affiche sous la garantie ; une prime saisie à la main n'est plus modifiée. Une règle « offerte » ou « prime forfaitaire » marquée Barème est aussi appliquée par le calcul de la base aux offres qui comprennent la garantie liée (NSIA : défense-recours 4 200 F, bris de glace et recours anticipé offerts avec les dommages ou la collision) : la modifier ici change les primes calculées, sans intervention technique."
+        usage="Devis Auto et flotte : appliquées au calcul de l'offre puis à chaque garantie cochée, décochée, ajoutée ou retirée. Le motif s'affiche sous la garantie ; une prime saisie à la main n'est plus modifiée. Une règle « offerte » ou « prime forfaitaire » marquée Barème est aussi appliquée par le calcul de la base aux offres qui comprennent la garantie liée (NSIA : défense-recours 4 200 F et recours anticipé offert avec les dommages ou la collision, bris de glace offert avec les dommages), une « prime minimum » par lui seul : les modifier ici change les primes calculées, sans intervention technique."
         actions={donnees && (
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select className="form-control" style={{ width: 'auto' }} value={filtre} onChange={(e) => setFiltre(e.target.value)} title="Compagnie">
@@ -157,6 +170,7 @@ export const ParametrageReglesGarantiesPage = () => {
                         {TYPES_BAREME.includes(r.Type) && (
                           <Pastille title={ouEllesSappliquent(r)}>{r.AppliqueeBareme ? 'Barème + écran' : 'Écran seulement'}</Pastille>
                         )}
+                        {r.Type === 'PRIME_MINIMUM' && <Pastille title={ouEllesSappliquent(r)}>Barème</Pastille>}
                         {r.Actif === false && <Pastille>désactivée</Pastille>}
                       </div>
                       {r.Commentaire && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{r.Commentaire}</div>}
@@ -171,7 +185,8 @@ export const ParametrageReglesGarantiesPage = () => {
             <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.86rem', lineHeight: 1.8 }}>
               <li>Garanties admises selon l'âge du véhicule (NSIA : tous risques de 0 à 5 ans, NSIA Auto + de 5 à 10 ans) : <Link to="/admin/settings/depreciation">Dépréciation et âge des véhicules</Link>.</li>
               <li>Garanties comprises dans chaque offre, avec leurs franchises (NSIA Auto + : 10 %) : <Link to="/admin/settings/offres">Offres</Link>.</li>
-              <li>Réduction du vol avec un système satellitaire (50 %), surprimes remorque et matières inflammables : appliquées par le barème de la compagnie.</li>
+              <li>Réduction du vol avec un système satellitaire (50 %), surprimes remorque (sauf tracteur routier : la remorque attelée n'est pas tarifée), transport d'hydrocarbures (RC + 10 %, incendie + 100 %), transport d'élèves, d'employés et passagers supplémentaires : appliquées par le barème de la compagnie.</li>
+              <li>Pool TPV de la catégorie 204 (RC et Recours dus au Pool, sans réduction) : <Link to="/admin/settings/pool-tpv">Pool TPV</Link>.</li>
               <li>Primes toutes faites des tiers simples NSIA : <Link to="/admin/settings/tarifs-directs">Tarifs à lecture directe</Link>.</li>
             </ul>
           </SectionParametrage>
@@ -213,15 +228,15 @@ export const ParametrageReglesGarantiesPage = () => {
                     </td>
                     <td style={td}><input className="form-control" style={{ padding: '0.25rem', fontSize: '0.8rem', width: 150 }} placeholder={r.Type === 'NON_PROPOSEE' ? 'obligatoire' : 'toutes'} value={r.Categories || ''} onChange={(e) => changer(i, 'Categories', e.target.value)} /></td>
                     <td style={td}>
-                      {r.Type === 'PRIME_SI'
+                      {AVEC_PRIME.includes(r.Type)
                         ? <input type="number" min={0} className="form-control" style={{ padding: '0.25rem', fontSize: '0.8rem', width: 100, textAlign: 'right' }} value={r.PrimeAnnuelle ?? ''} onChange={(e) => changer(i, 'PrimeAnnuelle', e.target.value === '' ? null : Number(e.target.value))} />
                         : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
                     </td>
                     <td style={td}><input className="form-control" style={{ padding: '0.25rem', fontSize: '0.8rem', minWidth: 240 }} value={r.Commentaire || ''} onChange={(e) => changer(i, 'Commentaire', e.target.value)} /></td>
                     <td style={{ ...td, textAlign: 'center' }}>
-                      {TYPES_BAREME.includes(r.Type)
-                        ? <input type="checkbox" checked={Boolean(r.AppliqueeBareme)} onChange={(e) => changer(i, 'AppliqueeBareme', e.target.checked)} title={ouEllesSappliquent({ ...r, AppliqueeBareme: !r.AppliqueeBareme })} />
-                        : <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
+                      {TYPES_BAREME.includes(r.Type) && <input type="checkbox" checked={Boolean(r.AppliqueeBareme)} onChange={(e) => changer(i, 'AppliqueeBareme', e.target.checked)} title={ouEllesSappliquent({ ...r, AppliqueeBareme: !r.AppliqueeBareme })} />}
+                      {r.Type === 'PRIME_MINIMUM' && <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }} title={ouEllesSappliquent(r)}>toujours</span>}
+                      {!TYPES_BAREME.includes(r.Type) && r.Type !== 'PRIME_MINIMUM' && <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>}
                     </td>
                     <td style={{ ...td, textAlign: 'center' }}><input type="checkbox" checked={r.Actif !== false} onChange={(e) => changer(i, 'Actif', e.target.checked)} /></td>
                     <td style={td}><button type="button" className="btn btn-secondary" style={{ padding: '0.3rem 0.45rem' }} title="Supprimer la règle" onClick={() => setBrouillon((l) => l.filter((_, k) => k !== i))}><Trash2 size={13} /></button></td>

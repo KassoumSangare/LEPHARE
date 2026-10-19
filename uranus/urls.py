@@ -2,10 +2,11 @@
 Configuration des URLs principales du projet
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
 
+from core.fichiers import servir_media
 from core.views import etat_serveur
 
 
@@ -27,10 +28,12 @@ urlpatterns = [
     path('api/commissions/', include('commissions.urls')),
     # 🏛️ API Institutionnel V2 LE PHARE (CRM, Sinistres, Conventions, GED, Audit CIMA)
     path('api/', include('institutionnel.urls')),
+    # Fichiers envoyés (GED, pièces jointes, pièces Santé) : lien signé obligatoire (core/fichiers.py), en DEBUG
+    # comme en production ; ils ne sont plus servis en accès libre
+    re_path(r"^media/(?P<chemin>.+)$", servir_media, name="media_signe"),
 ]
 
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
 # Personnalisation de l'admin

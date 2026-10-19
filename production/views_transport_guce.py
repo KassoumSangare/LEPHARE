@@ -54,6 +54,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from account.models import UranusUser
+from core.exports import texte_excel
 from core.utils import convert_to_date
 from customer.models import Client
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
@@ -994,7 +995,8 @@ def exporter_bordereau(request, id_importation):
                 valeur = float(valeur)
             elif isinstance(valeur, date):
                 valeur = valeur.strftime("%d/%m/%Y")
-            feuille.cell(row=n, column=i, value=valeur)
+            # Saisies du GUCE (souscripteurs, marchandises) : jamais enregistrées comme formules
+            texte_excel(feuille.cell(row=n, column=i, value=valeur))
     total = ligne_entete + len(certificats) + 1
     feuille.cell(row=total, column=1, value="TOTAL").font = Font(bold=True)
     colonnes_montants = {excel_column_mapping[l]: i for i, l in enumerate(excel_expected_columns, start=1)}

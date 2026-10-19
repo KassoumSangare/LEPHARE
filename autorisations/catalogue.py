@@ -68,8 +68,9 @@ DROITS = [
 
     ("sinistres.view", "Consulter les sinistres", "", False, False, False),
     ("sinistres.create", "Déclarer un sinistre", "", False, False, False),
-    ("sinistres.update", "Instruire un sinistre", "Pièces, demande d'accord, quittance subrogative.", False, False, False),
-    ("sinistres.settle", "Régler un sinistre", "", True, False, False),
+    ("sinistres.update", "Instruire un sinistre", "Pièces, demande d'accord, suivi du dossier.", False, False, False),
+    ("sinistres.settle", "Régler un sinistre", "Règlement sous plafond de délégation et émission de la quittance subrogative.",
+     True, False, False),
 
     ("approbations.view", "Consulter les demandes d'autorisation", "", False, False, False),
     ("approbations.decider", "Approuver ou rejeter une demande", "Décisions sur les demandes et dérogations accordées.", True, False, True),

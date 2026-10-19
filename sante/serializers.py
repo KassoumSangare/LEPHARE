@@ -2,6 +2,10 @@ from rest_framework import serializers
 from .models import *
 from core.serializers import EnregistrementDevisBaseSerializer
 from core.validators import ErrorMessage
+from core.fichiers import valider_fichier
+
+# Pièces d'identité des adhérents et affiliés
+EXTENSIONS_PIECE = ("pdf", "jpg", "jpeg", "png", "webp", "gif")
 
 
 class FilialeSanteSerializer(serializers.ModelSerializer):
@@ -181,8 +185,10 @@ class AdherentSaisieSerializer(serializers.ModelSerializer):
     cni = serializers.CharField(
         source="numerocni", required=False, default="", allow_null=True
     )
+    # Pièce d'identité : PDF ou image au contenu conforme, 20 Mo au plus (core/fichiers.py)
     fichierpiece = serializers.FileField(
-        source="fichier_piece", required=False, allow_null=True
+        source="fichier_piece", required=False, allow_null=True,
+        validators=[lambda f: valider_fichier(f, EXTENSIONS_PIECE)],
     )
     adresse = serializers.CharField(
         source="adresseadherent", required=False, default="", allow_null=True
@@ -394,8 +400,10 @@ class AffilieSaisieSerializer(serializers.ModelSerializer):
     cni = serializers.CharField(
         source="numerocni", required=False, default="", allow_null=True
     )
+    # Pièce d'identité : PDF ou image au contenu conforme, 20 Mo au plus (core/fichiers.py)
     fichierpiece = serializers.FileField(
-        source="fichier_piece", required=False, allow_null=True
+        source="fichier_piece", required=False, allow_null=True,
+        validators=[lambda f: valider_fichier(f, EXTENSIONS_PIECE)],
     )
     groupesanguin = serializers.CharField(
         source="groupesanguinaffilie", required=False, default="", allow_null=True
