@@ -1082,6 +1082,10 @@ export const santeApi = {
   // POST /api/devissante/importation/ (multipart : devis, filiale, date_effet, fichier_excel) : adhérents et affiliés d'un fichier
   // Excel dans une couverture ; compte rendu par ligne (importé, dérogation à la limite d'âge, refusé, ignoré)
   importerAffilies: async (formData) => (await apiClient.post('/devissante/importation/', formData, multipart)).data,
+  // Même import, personnes lues dans les bulletins d'adhésion reçus (questionnaires prospects) et vérifiées à l'écran
+  importerPersonnes: async ({ devis, filiale, dateEffet, personnes }) => (await apiClient.post('/devissante/importation/', {
+    devis, filiale, date_effet: dateEffet, personnes,
+  })).data,
   // POST /api/devissante/enregistrement/ : « Enregistrer le devis » (sp_creation_devis_sante)
   enregistrerDevis: async (payload) => (await apiClient.post('/devissante/enregistrement/', payload)).data,
   // GET /api/devissante/:iddevis/ : tout ce qui a été saisi sur le devis
@@ -1681,6 +1685,31 @@ export const financeApi = {
   validerReversement: async (id, payload) => (await apiClient.post(`/finance/reversements/${id}/valider/`, payload)).data,
   // GET /api/finance/commissions/?compagnie&du&au&statut (A_RECLAMER, RECLAMEE, PARTIELLE, PAYEE, PAYEES, NON_PAYEES)
   commissions: async (params) => (await apiClient.get('/finance/commissions/', { params })).data,
+  // Bordereau récapitulatif des encaissements d'une période, en Excel (?du&au&compagnie&mode&statut)
+  telechargerRecapitulatifEncaissements: async (params, nomFichier) => {
+    const res = await apiClient.get('/finance/encaissements/recapitulatif/excel/', { params, responseType: 'blob', timeout: 120000 });
+    const url = URL.createObjectURL(res.data);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nomFichier || 'Bordereau recapitulatif des encaissements.xlsx';
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
+  // État récapitulatif des commissions payées et en attente de paiement (?compagnie&du&au : primes reversées sur la période)
+  recapitulatifCommissions: async (params) => (await apiClient.get('/finance/commissions/recapitulatif/', { params })).data,
+  telechargerRecapitulatifCommissions: async (params, nomFichier) => {
+    const res = await apiClient.get('/finance/commissions/recapitulatif/excel/', { params, responseType: 'blob', timeout: 120000 });
+    const url = URL.createObjectURL(res.data);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nomFichier || 'Etat recapitulatif des commissions.xlsx';
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
   reclamations: async (params) => (await apiClient.get('/finance/commissions/reclamations/', { params })).data,
   reclamation: async (id) => (await apiClient.get(`/finance/commissions/reclamations/${id}/`)).data,
   // POST { IdCompagnie, PeriodeDebut, PeriodeFin, DetailsReversement: [id], Notes }
@@ -1699,10 +1728,18 @@ export const financeApi = {
   emettreBordereaux: async (payload) => (await apiClient.post('/finance/bordereaux/', payload)).data,
   dechargeBordereau: async (idReversement, dateDecharge) => (await apiClient.post(`/finance/bordereaux/${idReversement}/decharge/`, { DateDecharge: dateDecharge })).data,
   annulerBordereau: async (idReversement, motif) => (await apiClient.post(`/finance/bordereaux/${idReversement}/annuler/`, { Motif: motif })).data,
-  // POST { Ordre: CABINET | COMPAGNIE } : à l'ordre de qui était le chèque (saisi sans son ordre)
-  ordreEncaissement: async (idEncaissement, ordre) => (await apiClient.post(`/finance/encaissements/${idEncaissement}/ordre/`, { Ordre: ordre })).data,
-  // PATCH { NumeroPoliceCompagnie, NumeroAvenantCompagnie } : colonnes « N°Police » et « Avt » des bordereaux
-  policeCompagnie: async (idContrat, payload) => (await apiClient.patch(`/finance/contrats/${idContrat}/police-compagnie/`, payload)).data,
+  // Bordereau récapitulatif de reversement — réclamation de commissions, en Excel (présentation COMMI-MOIS)
+  telechargerReclamationExcel: async (idReclamation, nomFichier) => {
+    const res = await apiClient.get(`/finance/commissions/reclamations/${idReclamation}/excel/`, { responseType: 'blob', timeout: 120000 });
+    const url = URL.createObjectURL(res.data);
+    const lien = document.createElement('a');
+    lien.href = url;
+    lien.download = nomFichier || `Bordereau recapitulatif ${idReclamation}.xlsx`;
+    document.body.appendChild(lien);
+    lien.click();
+    lien.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
   // GET /api/finance/tableau-reversement/?compagnie&du&au&feuille
   tableauReversement: async (params) => (await apiClient.get('/finance/tableau-reversement/', { params })).data,
   // Classeur COMMI-MOIS : une feuille par état (tableau, primes soldées / non soldées, commissions perçues / non perçues)
@@ -1966,6 +2003,80 @@ export const crmApi = {
     const res = await apiClient.get(`/crm/interactions/${clientId ? `?client_id=${clientId}` : ''}`);
     return extractData(res);
   },
+};
+
+// Fichier reçu de l'API enregistré sous `nomFichier` (titre du questionnaire)
+const enregistrerFichier = (blob, nomFichier) => {
+  const url = URL.createObjectURL(blob);
+  const lien = document.createElement('a');
+  lien.href = url;
+  lien.download = nomFichier;
+  document.body.appendChild(lien);
+  lien.click();
+  lien.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+
+// Questionnaires prospects : modèles à télécharger, questionnaires remplis déposés (institutionnel/views_questionnaires.py)
+export const questionnaireApi = {
+  // GET : { modeles, statuts, extensions, taille_max }
+  modeles: async () => (await apiClient.get('/crm/questionnaires/modeles/')).data,
+  // Questionnaire vierge, enregistré sous son titre (« Questionnaire Assurance Transport.docx »)
+  telechargerModele: async (modele) => {
+    const res = await apiClient.get(`/crm/questionnaires/modeles/${modele.code}/fichier/`, { responseType: 'blob', timeout: 120000 });
+    enregistrerFichier(res.data, modele.nom_fichier);
+  },
+  // GET ?lead=&statut=&modele=
+  recus: async (params) => extractData(await apiClient.get('/crm/questionnaires/recus/', { params })),
+  // POST multipart : fichier, modele, lead | prospect_nom (+ contact, telephone, email), note, qualifier
+  deposer: async (donnees, surProgression) => {
+    const formulaire = new FormData();
+    Object.entries(donnees).forEach(([cle, valeur]) => {
+      if (valeur !== undefined && valeur !== null && valeur !== '') formulaire.append(cle, valeur);
+    });
+    return (await apiClient.post('/crm/questionnaires/recus/', formulaire, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+      onUploadProgress: (e) => surProgression?.(e.total ? Math.round((e.loaded / e.total) * 100) : null),
+    })).data;
+  },
+  // POST multipart (fichier, modele facultatif) : rien n'est enregistré ; questionnaire reconnu d'après son contenu et
+  // ce que la lecture en tire (souscripteur, résumé, avertissements), affiché avant le dépôt
+  analyser: async (fichier, modele) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier', fichier);
+    if (modele) formulaire.append('modele', modele);
+    return (await apiClient.post('/crm/questionnaires/analyse/', formulaire, {
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000,
+    })).data;
+  },
+  // PATCH { statut, note, modele (reclassement) }
+  modifier: async (id, donnees) => (await apiClient.patch(`/crm/questionnaires/recus/${id}/`, donnees)).data,
+  // Le client renvoie le questionnaire complété : version suivante, étape « Reçu »
+  nouvelleVersion: async (id, fichier, surProgression) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier', fichier);
+    return (await apiClient.post(`/crm/questionnaires/recus/${id}/version/`, formulaire, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+      onUploadProgress: (e) => surProgression?.(e.total ? Math.round((e.loaded / e.total) * 100) : null),
+    })).data;
+  },
+  // GET <id>/ : un questionnaire déposé
+  recu: async (id) => (await apiClient.get(`/crm/questionnaires/recus/${id}/`)).data,
+  // GET <id>/lecture/ : contenu lu (souscripteur, réponses par rubrique, tableaux, données du devis de la branche)
+  lecture: async (id) => (await apiClient.get(`/crm/questionnaires/recus/${id}/lecture/`, { timeout: 120000 })).data,
+  // Le fichier reçu, comme un fichier choisi sur le poste (pour les imports des écrans de devis)
+  fichierRecu: async (questionnaire) => {
+    const res = await apiClient.get(`/crm/questionnaires/recus/${questionnaire.id}/fichier/`, { responseType: 'blob', timeout: 120000 });
+    return new File([res.data], questionnaire.nom_original || questionnaire.nom_telechargement, { type: res.data.type });
+  },
+  // Questionnaire reçu, enregistré sous « <titre> - <prospect>.<ext> »
+  telechargerRecu: async (questionnaire) => {
+    const res = await apiClient.get(`/crm/questionnaires/recus/${questionnaire.id}/fichier/`, { responseType: 'blob', timeout: 120000 });
+    enregistrerFichier(res.data, questionnaire.nom_telechargement);
+  },
+  supprimer: async (id) => apiClient.delete(`/crm/questionnaires/recus/${id}/`),
 };
 
 /* =========================================================================

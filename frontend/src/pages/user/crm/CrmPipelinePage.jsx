@@ -23,6 +23,7 @@ import {
   Trash2,
   XCircle,
   RotateCcw,
+  ClipboardList,
 } from 'lucide-react';
 import { EditLeadModal } from './EditLeadModal';
 import { canUser, getCurrentUser, validateBusinessRule } from '../../../utils/rbac';
@@ -43,6 +44,8 @@ const aujourdhui = () => new Date().toISOString().slice(0, 10);
 
 // Devis à ouvrir pour un prospect : le formulaire Automobile pour l'auto et la flotte
 const routeDevis = (branche) => (/auto|flotte/i.test(branche || '') ? '/user/quotes/auto' : '/user/quotes');
+// Questionnaires du prospect : à lui envoyer, ou reçus de lui
+const routeQuestionnaires = (lead) => `/user/crm/questionnaires?prospect=${lead.id}`;
 
 // Relance en toutes lettres (« 18 sept. 2026 ») et son échéance (« en retard de 10 jours »),
 // la date complète au survol
@@ -230,6 +233,16 @@ export const CrmPipelinePage = () => {
         </div>
 
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/user/crm/questionnaires')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            title="Questionnaires à faire remplir par les prospects, et questionnaires reçus"
+          >
+            <ClipboardList size={16} />
+            <span>Questionnaires</span>
+          </button>
           <button
             type="button"
             className="btn btn-secondary"
@@ -473,6 +486,16 @@ export const CrmPipelinePage = () => {
                           )}
                           <button
                             type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.25rem 0.45rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                            title="Questionnaires à faire remplir par ce prospect, ou déjà reçus"
+                            aria-label={`Questionnaires de ${lead.nom_prospect}`}
+                            onClick={() => navigate(routeQuestionnaires(lead))}
+                          >
+                            <ClipboardList size={12} />
+                          </button>
+                          <button
+                            type="button"
                             className="btn btn-primary"
                             style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
                             title="Créer un devis pour ce prospect"
@@ -535,6 +558,16 @@ export const CrmPipelinePage = () => {
                     <td style={{ fontSize: '0.8rem' }}><Relance prospect={lead} /></td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.45rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
+                          title="Questionnaires à faire remplir par ce prospect, ou déjà reçus"
+                          aria-label={`Questionnaires de ${lead.nom_prospect}`}
+                          onClick={() => navigate(routeQuestionnaires(lead))}
+                        >
+                          <ClipboardList size={13} />
+                        </button>
                         <button
                           type="button"
                           className="btn btn-primary"

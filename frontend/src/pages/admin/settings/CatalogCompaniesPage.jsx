@@ -335,7 +335,7 @@ export const CatalogCompaniesPage = () => {
                   {champTexte('Destinataire', 'Destinataire du courrier', { valeur: s.Documents.Reversement.Destinataire, onChange: (v) => changerReversement('Destinataire', v), placeholder: 'ex. NSIA-CI' })}
                   {champTexte('Service', 'Service', { valeur: s.Documents.Reversement.Service, onChange: (v) => changerReversement('Service', v), placeholder: 'ex. DIRECTION COURTAGE' })}
                   {champTexte('Ville', 'Ville', { valeur: s.Documents.Reversement.Ville, onChange: (v) => changerReversement('Ville', v), placeholder: 'ABIDJAN' })}
-                  {champTexte('AttentionDe', "À l'attention de", { valeur: s.Documents.Reversement.AttentionDe, onChange: (v) => changerReversement('AttentionDe', v), placeholder: 'ex. Monsieur TANO FULGENCE' })}
+                  {champTexte('AttentionDe', "À l'attention", { valeur: s.Documents.Reversement.AttentionDe, onChange: (v) => changerReversement('AttentionDe', v), placeholder: 'ex. du Directeur du Courtage', aide: "« du Directeur du Courtage » → « À l'attention du Directeur du Courtage » ; « Monsieur X » → « À l'attention de Monsieur X »." })}
                   {champTexte('Appellation', "Formule d'appel", { valeur: s.Documents.Reversement.Appellation, onChange: (v) => changerReversement('Appellation', v), placeholder: 'Monsieur', aide: '« Monsieur, » en tête du courrier et dans la formule de politesse.' })}
                 </div>
               </div>

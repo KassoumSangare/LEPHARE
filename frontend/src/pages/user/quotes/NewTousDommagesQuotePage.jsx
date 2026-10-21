@@ -5,6 +5,7 @@ import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { DUREES_CONTRAT, ID_DUREE_LIBRE, ID_TERME_AUTRE, ID_TERME_PAR_DEFAUT, termeEtDureeEnregistres, idTermeValide } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
@@ -43,7 +44,7 @@ const LIBELLES_CAPITAL = {
 const GARANTIES_PRINCIPALES = [101, 243];
 const ANTECEDENTS = { 1: 'Affaire nouvelle', 2: 'Renouvellement' };
 
-const DUREES = [...DUREES_CONTRAT, { id: ID_DUREE_LIBRE, mois: null, libelle: 'Autre (date libre)' }];
+const DUREES = [...DUREES_CONTRAT, { id: ID_DUREE_LIBRE, mois: null, libelle: 'Autre' }];
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const aujourdhui = () => new Date().toISOString().split('T')[0];
@@ -189,6 +190,24 @@ export const NewTousDommagesQuotePage = () => {
     return trierParLibelle(liste, (c) => c.nom);
   }, [catalogue]);
   const nomCompagnie = compagnies.find((c) => c.id === Number(compagnie))?.nom || '';
+
+  // Questionnaire prospect (?questionnaire=) : formulaire Tous risques chantier, capital = coût total de l'opération
+  const qd = useQuestionnaireDevis();
+  const categorieQuestionnaire = qd.devis?.code_categorie
+    ? categories.find((c) => String(c.CodeCategorie) === String(qd.devis.code_categorie)) : null;
+  const reprendreQuestionnaire = () => {
+    if (!categorieQuestionnaire) {
+      toastError(`Catégorie ${qd.devis.code_categorie} absente du catalogue de cette compagnie.`);
+      return;
+    }
+    const garantie = categorieQuestionnaire.Garanties?.[0];
+    if (garantie && qd.devis.capital) setCapitaux((c) => ({ ...c, [garantie.IdSousGarantie]: Math.round(Number(qd.devis.capital)) }));
+    setIdTarif(Number(categorieQuestionnaire.IdTarif));
+    success(`${categorieQuestionnaire.Libelle}${qd.devis.capital ? ` : capital ${Math.round(qd.devis.capital).toLocaleString('fr-FR')} F (${qd.devis.base_capital})` : ''}.`);
+  };
+  useEffect(() => {
+    if (devisEnregistre && qd.actif) qd.devisEtabli(devisEnregistre.numerodevis || '');
+  }, [devisEnregistre]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Garanties de l'offre (catégorie x compagnie) : capitaux du devis rouvert, ou ceux déjà saisis
   useEffect(() => {
@@ -544,6 +563,27 @@ export const NewTousDommagesQuotePage = () => {
         </div>
       )}
 
+      <BandeauQuestionnaire
+        qd={qd}
+        onCreerClient={() => setNouveauClientPour('souscripteur')}
+        actions={qd.devis?.genre === 'trc' ? [{
+          libelle: qd.devis.capital ? `Tous risques chantiers, capital ${Math.round(qd.devis.capital).toLocaleString('fr-FR')} F` : 'Catégorie Tous risques chantiers',
+          icone: HardHat,
+          principal: true,
+          disabled: !catalogueAJour || !categorieQuestionnaire,
+          titre: qd.devis.capital ? `Capital lu : ${qd.devis.base_capital}` : 'Le questionnaire ne donne pas le coût de l\'opération',
+          onClick: reprendreQuestionnaire,
+        }] : []}
+      >
+        {qd.devis?.genre === 'trc' && (qd.devis.operation || qd.devis.situation) && (
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            {qd.devis.operation && <>Opération : <strong>{qd.devis.operation}</strong></>}
+            {qd.devis.operation && qd.devis.situation && ' · '}
+            {qd.devis.situation && <>Situation : <strong>{qd.devis.situation}</strong></>}
+          </div>
+        )}
+      </BandeauQuestionnaire>
+
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
           {/* ASSURANCE DEMANDÉE */}
@@ -699,6 +739,7 @@ export const NewTousDommagesQuotePage = () => {
       <QuickAddClientModal
         isOpen={Boolean(nouveauClientPour)}
         onClose={() => setNouveauClientPour(null)}
+        valeursInitiales={nouveauClientPour === 'souscripteur' ? qd.client : null}
         onClientCreated={(client) => {
           const personne = personneDepuisClient(client);
           if (personne?.IdClient) {

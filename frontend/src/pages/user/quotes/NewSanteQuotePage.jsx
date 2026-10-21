@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { AmountInput } from '../../../components/common/AmountInput';
@@ -247,6 +248,19 @@ export const NewSanteQuotePage = () => {
   const tauxMax = Number(typeContrat) === TYPE_CONTRAT_SOCIETE ? 35 : 100;
   const primesSaisies = [primeFamille, primeAffilie, primeGlobale].filter((p) => Number(p) > 0).length;
   const desactive = Boolean(lectureSeule) || occupe;
+
+  // Questionnaire prospect (?questionnaire=) : cotation (étendue territoriale) ou bulletin d'adhésion (personnes
+  // vérifiées ici, sexe compris, puis importées dans la couverture choisie)
+  const qd = useQuestionnaireDevis();
+  const [personnesBulletin, setPersonnesBulletin] = useState([]);
+  const [filialeBulletin, setFilialeBulletin] = useState(0);
+  useEffect(() => {
+    setPersonnesBulletin(qd.devis?.genre === 'sante_bulletin' ? qd.devis.personnes.map((p, i) => ({ ...p, cle: i })) : []);
+  }, [qd.devis]);
+  useEffect(() => {
+    if (createdQuote && qd.actif) qd.devisEtabli(createdQuote.numerodevis || '');
+  }, [createdQuote]); // eslint-disable-line react-hooks/exhaustive-deps
+  const zoneMonde = zones.find((z) => /monde/i.test(z.libellezone || ''));
 
   // ------------------------------------------------------------------
   // RÉFÉRENTIELS
@@ -564,6 +578,41 @@ export const NewSanteQuotePage = () => {
     }
   }, 'Import refusé');
 
+  // Personnes du bulletin d'adhésion reçu : même import que le fichier Excel, ligne par ligne
+  const importerBulletin = () => executer(async () => {
+    if (!idDevis || !filiales.length) {
+      toastError("Enregistrez d'abord le devis et sa couverture (étape 2), puis importez les personnes du bulletin.");
+      setStep(2);
+      return;
+    }
+    const nomDe = (p) => `${p.nom} ${p.prenoms}`.trim();
+    const sansSexe = personnesBulletin.filter((p) => !p.sexe);
+    if (sansSexe.length) {
+      toastError(`Précisez le sexe de : ${sansSexe.map(nomDe).join(', ')}.`);
+      return;
+    }
+    const sansDate = personnesBulletin.filter((p) => !p.date_naissance);
+    if (sansDate.length) {
+      toastError(`Date de naissance illisible pour : ${sansDate.map(nomDe).join(', ')} (ajoutez la personne à la main).`);
+      return;
+    }
+    const r = await santeApi.importerPersonnes({
+      devis: idDevis,
+      filiale: filialeBulletin || Number(filiales[0]?.idfiliale),
+      dateEffet,
+      personnes: personnesBulletin.map((p) => ({
+        lien: p.lien, nom: p.nom, prenoms: p.prenoms, date_naissance: p.date_naissance, sexe: p.sexe,
+        adresse: p.adresse, date_entree: p.date_entree,
+      })),
+    });
+    await recharger();
+    const lignes = r?.Lignes || [];
+    const detail = (statut) => lignes.filter((l) => l.Statut === statut).map((l) => `${l.Nom} : ${l.Message}`).join(' ; ');
+    if (r?.Importes) success(`${r.Importes} personne${r.Importes > 1 ? 's' : ''} du bulletin importée${r.Importes > 1 ? 's' : ''}.`);
+    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge — ${detail('dérogation')}`);
+    if (r?.Refuses || r?.Ignores) toastError(`Non importé(s) — ${[detail('refusé'), detail('ignoré')].filter(Boolean).join(' ; ')}`);
+  }, 'Import du bulletin refusé');
+
   const enregistrerDevis = () => executer(async () => {
     if (!clientId) { toastError('Choisissez le client.'); return; }
     if (client && rechercheClient.trim() !== (client.nomcomplet || '').trim()) {
@@ -713,6 +762,70 @@ export const NewSanteQuotePage = () => {
           <span>{lectureSeule}</span>
         </div>
       )}
+
+      <BandeauQuestionnaire
+        qd={qd}
+        onChercherClient={(nom) => { setRechercheClient(nom); setListeClientsOuverte(true); setStep(3); }}
+        onCreerClient={() => setIsQuickAddClientOpen(true)}
+        actions={qd.devis?.genre === 'sante_cotation' && qd.devis.monde_entier && zoneMonde && !zoneImposee ? [{
+          libelle: `Zone : ${zoneMonde.libellezone}`,
+          icone: Check,
+          disabled: desactive || Number(idZone) === Number(zoneMonde.idzone),
+          titre: 'Étendue territoriale demandée par le client',
+          onClick: () => { setIdZone(Number(zoneMonde.idzone)); success(`Zone de couverture : ${zoneMonde.libellezone}.`); },
+        }] : []}
+      >
+        {personnesBulletin.length > 0 && (
+          <div className="qd-personnes">
+            <div className="qp-detail-titre">Personnes du bulletin à importer dans la couverture du devis</div>
+            <div className="table-wrapper">
+              <table className="data-table qd-tableau">
+                <thead><tr><th>Lien</th><th>Nom</th><th>Prénoms</th><th>Date de naissance</th><th>Sexe</th></tr></thead>
+                <tbody>
+                  {personnesBulletin.map((p) => (
+                    <tr key={p.cle}>
+                      <td>{{ A: 'Adhérent', C: 'Conjoint', E: 'Enfant' }[p.lien] || p.lien}</td>
+                      <td>{p.nom}</td>
+                      <td>{p.prenoms}</td>
+                      <td>
+                        {p.date_naissance
+                          ? new Date(`${p.date_naissance}T00:00:00`).toLocaleDateString('fr-FR')
+                          : <span style={{ color: 'var(--accent-amber)' }}>{p.naissance_lue || 'illisible'}</span>}
+                      </td>
+                      <td>
+                        <select className="form-control" value={p.sexe} aria-label={`Sexe de ${p.nom} ${p.prenoms}`}
+                          onChange={(e) => setPersonnesBulletin((l) => l.map((x) => (x.cle === p.cle ? { ...x, sexe: e.target.value } : x)))}>
+                          <option value="">—</option>
+                          <option value="M">M</option>
+                          <option value="F">F</option>
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+              {filiales.length > 1 && (
+                <select className="form-control" style={{ width: 'auto' }} value={filialeBulletin || filiales[0]?.idfiliale}
+                  onChange={(e) => setFilialeBulletin(Number(e.target.value))} aria-label="Couverture des personnes importées">
+                  {filiales.map((x) => <option key={x.idfiliale} value={x.idfiliale}>{x.nom_filiale}</option>)}
+                </select>
+              )}
+              <button type="button" className="btn btn-primary" onClick={importerBulletin} disabled={desactive}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}
+                title={idDevis && filiales.length ? 'Importer ces personnes dans le devis' : "Enregistrez d'abord le devis et sa couverture (étape 2)"}>
+                <Upload size={14} /> Importer {personnesBulletin.length} personne{personnesBulletin.length > 1 ? 's' : ''}
+              </button>
+              {!(idDevis && filiales.length) && (
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Le devis et sa couverture (étape 2) doivent d'abord être enregistrés.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </BandeauQuestionnaire>
 
       {/* 1. CONTRAT */}
       {step === 1 && (
@@ -1235,6 +1348,7 @@ export const NewSanteQuotePage = () => {
       <QuickAddClientModal
         isOpen={isQuickAddClientOpen}
         onClose={() => setIsQuickAddClientOpen(false)}
+        valeursInitiales={qd.client}
         onClientCreated={(nouveau) => {
           setClients((prev) => [nouveau, ...prev]);
           setClientId(Number(nouveau.id || nouveau.IdClient));

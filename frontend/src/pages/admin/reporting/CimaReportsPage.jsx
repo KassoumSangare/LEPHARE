@@ -368,9 +368,9 @@ export const CimaReportsPage = () => {
               value={exportConfig.format}
               onChange={(e) => setExportConfig({ ...exportConfig, format: e.target.value })}
             >
-              <option value="XML">Format d'Échange Automatisé CRCA (XML)</option>
+              <option value="XML">Format d'Échange Automatisé CRCA</option>
               <option value="PDF">Liasse PDF Officielle Numérotée et Paraphée</option>
-              <option value="XLSX">Matrice Excel Normée CIMA (.xlsx)</option>
+              <option value="XLSX">Matrice Excel Normée CIMA</option>
             </select>
           </div>
 

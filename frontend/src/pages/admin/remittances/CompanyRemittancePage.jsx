@@ -17,20 +17,22 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 
 // Reversements aux compagnies au modèle d'OREOLE (production/views_bordereaux.py) :
 // - les primes encaissées sont transmises par bordereau numéroté dans la suite d'OREOLE ; le titre dépend de
-//   l'ordre du règlement : à l'ordre de la compagnie, chèque du client transmis tel quel (BORDEREAU DE RECLAMATION
-//   DE COMMISSION, « Direct ») ; encaissé par le cabinet, reversé par son chèque (BORDEREAU DE REVERSEMENT DE
-//   PRIME, prime entière, Code CIMA) ; un bordereau porte un ou plusieurs clients ;
+//   l'ordre du règlement : à l'ordre de la compagnie, chèque du client transmis tel quel, et espèces (directement,
+//   sans reversement : demande du 2026-10-20) (BORDEREAU DE RECLAMATION DE COMMISSION, « Direct ») ; encaissé par le
+//   cabinet, reversé par son chèque (BORDEREAU DE REVERSEMENT DE PRIME, prime entière, Code CIMA) ; un bordereau
+//   porte un ou plusieurs clients ;
 // - chaque bordereau a son courrier de règlement de prime ; la date de décharge (cachet de la compagnie) se saisit
 //   au retour ;
 // - tableau de reversement (COMMI-MOIS) par compagnie : à l'écran et en Excel, une feuille par état.
 const ID_NSIA = 1;
-const MODES_PAIEMENT_CABINET = ['CHQ', 'VIR', 'TRT', 'ESP'];
+// Paiement d'un bordereau de reversement par le cabinet : chèque ou virement seulement (demande du 2026-10-21)
+const MODES_PAIEMENT_CABINET = ['CHQ', 'VIR'];
 const NATURES = {
   RECLAMATION: { libelle: 'Réclamation de commission', court: 'Direct', couleur: 'purple' },
   REVERSEMENT: { libelle: 'Reversement de prime', court: 'Reversement', couleur: 'blue' },
 };
 const FEUILLES = [
-  ['TOUT', 'Tableau complet'], ['SOLDEES', 'Primes soldées'], ['NON_SOLDEES', 'Primes non soldées (arriérés)'],
+  ['TOUT', 'Tableau complet'], ['SOLDEES', 'Primes soldées'], ['NON_SOLDEES', 'Primes non soldées'],
   ['COMMISSIONS_PERCUES', 'Commissions perçues'], ['COMMISSIONS_NON_PERCUES', 'Commissions non perçues'],
 ];
 const moisFr = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -44,60 +46,41 @@ const Onglet = ({ actif, onClick, icone: Icone, children }) => (
 
 const BadgeNature = ({ nature }) => <StatusBadge label={NATURES[nature]?.libelle || nature} color={NATURES[nature]?.couleur} />;
 
-// Numéros de la compagnie (colonnes « N°Police » et « Avt » du bordereau), complétés ici s'ils manquent au contrat
-const PoliceCompagnie = ({ ligne, onEnregistre }) => {
-  const { error: toastError } = useToast();
-  const [edition, setEdition] = useState(false);
-  const [police, setPolice] = useState(ligne.PoliceCompagnie);
-  const [avenant, setAvenant] = useState(ligne.AvenantCompagnie);
-  const [envoi, setEnvoi] = useState(false);
-  if (!ligne.IdContrat) return <span>{ligne.NumeroPolice}</span>;
-  if (!edition) {
-    return (
-      <button type="button" className="btn-lien" onClick={() => setEdition(true)} title="Police et avenant de la compagnie"
-        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: ligne.PoliceCompagnie ? 'inherit' : 'var(--accent-amber, #d97706)', textAlign: 'left', font: 'inherit' }}>
-        {ligne.PoliceCompagnie ? `${ligne.PoliceCompagnie}${ligne.AvenantCompagnie ? ` / avt ${ligne.AvenantCompagnie}` : ''}` : 'Police compagnie à saisir'}
-        <Pencil size={11} style={{ marginLeft: 4, verticalAlign: 'middle', opacity: 0.6 }} />
-      </button>
-    );
-  }
-  const enregistrer = async () => {
-    setEnvoi(true);
-    try {
-      const r = await financeApi.policeCompagnie(ligne.IdContrat, { NumeroPoliceCompagnie: police, NumeroAvenantCompagnie: avenant });
-      onEnregistre(ligne.IdContrat, r.PoliceCompagnie, r.AvenantCompagnie);
-      setEdition(false);
-    } catch (err) {
-      toastError(`Police non enregistrée : ${messageErreurApi(err)}`);
-    } finally {
-      setEnvoi(false);
-    }
-  };
-  return (
-    <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-      <input className="form-control" style={{ padding: '0.2rem 0.35rem', width: 120 }} placeholder="N° police" value={police} maxLength={60} onChange={(e) => setPolice(e.target.value)} />
-      <input className="form-control" style={{ padding: '0.2rem 0.35rem', width: 52 }} placeholder="Avt" value={avenant} maxLength={20} onChange={(e) => setAvenant(e.target.value)} />
-      <button type="button" className="btn btn-primary" style={{ padding: '0.2rem 0.45rem' }} disabled={envoi} onClick={enregistrer} aria-label="Enregistrer la police">
-        {envoi ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
-      </button>
-    </span>
-  );
+// Police et avenant imprimés au bordereau : ceux de la compagnie s'ils ont été saisis au devis, sinon ceux du système
+const PoliceDeduite = ({ ligne }) => (
+  <span title={ligne.PoliceCompagnie ? 'N° de police de la compagnie (saisi au devis)' : 'N° de police du système (aucun n° de la compagnie saisi au devis)'}>
+    {ligne.PoliceCompagnie || ligne.NumeroPolice}
+    {ligne.AvenantCompagnie && <span style={{ color: 'var(--text-muted)' }}> / avt {ligne.AvenantCompagnie}</span>}
+  </span>
+);
+
+const abregeMode = (modes, idMode) => String(modes.find((m) => String(m.idmodeencaissement) === String(idMode))?.abregereglement || '').trim().toUpperCase();
+// Paiement complet : chèque ou virement, banque du cabinet, et n° pour un chèque (le serveur fait le même contrôle)
+const paiementComplet = (modes, p) => {
+  const abrege = abregeMode(modes, p.IdMode);
+  return ['CHQ', 'VIR'].includes(abrege) && Boolean(p.IdBanque) && (abrege !== 'CHQ' || Boolean(String(p.NumeroCheque || '').trim()));
 };
 
 const PaiementCabinet = ({ modes, banques, valeur, onChange }) => {
   const mode = modes.find((m) => String(m.idmodeencaissement) === String(valeur.IdMode));
   const abrege = String(mode?.abregereglement || '').trim().toUpperCase();
   const champ = (cle) => (e) => onChange({ ...valeur, [cle]: e.target.value });
+  // Chèque proposé d'office : les deux seules options sont le chèque et le virement
+  useEffect(() => {
+    if (!valeur.IdMode && modes.length) {
+      const cheque = modes.find((m) => String(m.abregereglement || '').trim().toUpperCase() === 'CHQ') || modes[0];
+      onChange({ ...valeur, IdMode: String(cheque.idmodeencaissement) });
+    }
+  }, [modes, valeur.IdMode]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.7rem' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 250px))', gap: '0.7rem' }}>
       <div className="form-group" style={{ margin: 0 }}>
-        <label className="form-label" htmlFor="pc-mode">Paiement du cabinet</label>
-        <select id="pc-mode" className="form-control" value={valeur.IdMode} onChange={champ('IdMode')}>
-          <option value="">Plus tard</option>
+        <label className="form-label" htmlFor="pc-mode">Paiement</label>
+        <select id="pc-mode" className="form-control" required value={valeur.IdMode} onChange={champ('IdMode')}>
           {modes.map((m) => <option key={m.idmodeencaissement} value={m.idmodeencaissement}>{m.libellemodepaiement}</option>)}
         </select>
       </div>
-      {mode?.banque && (
+      {mode && (
         <>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label" htmlFor="pc-banque">Banque du cabinet</label>
@@ -214,7 +197,7 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
       </div>
       {b.Lignes.some((l) => !l.PoliceCompagnie) && (
         <p style={{ fontSize: '0.8rem', color: 'var(--accent-amber, #d97706)', margin: '0.5rem 0 0' }}>
-          Police de la compagnie manquante : le numéro LE PHARE est imprimé à la place (complétez-la dans « Primes à transmettre » avant l'émission).
+          N° de police de la compagnie non saisi au devis : le n° de police du système est imprimé à la place.
         </p>
       )}
 
@@ -222,8 +205,8 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
         <div className="glass-panel" style={{ padding: '0.8rem 1rem', marginTop: '1rem' }}>
           <PaiementCabinet modes={modes} banques={banques} valeur={paiement} onChange={setPaiement} />
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.6rem' }}>
-            <button type="button" className="btn btn-primary" disabled={envoi || !paiement.IdMode} onClick={payer} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Wallet size={15} /> Enregistrer le paiement du cabinet
+            <button type="button" className="btn btn-primary" disabled={envoi || !paiementComplet(modes, paiement)} onClick={payer} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Wallet size={15} /> Enregistrer le paiement
             </button>
           </div>
         </div>
@@ -237,7 +220,7 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
               <input id="bd-decharge" type="date" className="form-control" value={decharge || ''} onChange={(e) => setDecharge(e.target.value)} />
             </div>
             <button type="button" className="btn btn-secondary" disabled={envoi || (decharge || '') === (b.DateDecharge || '')} onClick={enregistrerDecharge} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <CalendarCheck size={15} /> Enregistrer
+              <CalendarCheck size={15} /> Enregistrer la décharge
             </button>
           </>
         )}
@@ -246,10 +229,10 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
           <XCircle size={15} /> Annuler le bordereau
         </button>
         <button type="button" className="btn btn-secondary" onClick={courrier} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <Mail size={15} /> Courrier
+          <Mail size={15} /> Imprimer le courrier
         </button>
         <button type="button" className="btn btn-primary" onClick={() => imprimerBordereau(b)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <FileText size={15} /> Bordereau
+          <FileText size={15} /> Imprimer le bordereau
         </button>
       </div>
     </Modal>
@@ -313,22 +296,22 @@ const TableauReversement = ({ compagnie, nomCompagnie, recherche }) => {
     <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
       <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.9rem' }}>
         <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label" htmlFor="tr-du">Du</label>
+          <label className="form-label" htmlFor="tr-du">Primes encaissées du</label>
           <input id="tr-du" type="date" className="form-control" value={du} onChange={(e) => setDu(e.target.value)} />
         </div>
         <div className="form-group" style={{ margin: 0 }}>
-          <label className="form-label" htmlFor="tr-au">Au</label>
+          <label className="form-label" htmlFor="tr-au">au</label>
           <input id="tr-au" type="date" className="form-control" value={au} onChange={(e) => setAu(e.target.value)} />
         </div>
         <div className="form-group" style={{ margin: 0, minWidth: 230 }}>
-          <label className="form-label" htmlFor="tr-feuille">État</label>
+          <label className="form-label" htmlFor="tr-feuille">État à afficher</label>
           <select id="tr-feuille" className="form-control" value={feuille} onChange={(e) => setFeuille(e.target.value)}>
             {FEUILLES.map(([code, libelle]) => <option key={code} value={code}>{libelle}</option>)}
           </select>
         </div>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn btn-primary" onClick={telecharger} disabled={export_ || !compagnie} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          {export_ ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />} Excel (une feuille par état)
+          {export_ ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />} Télécharger en Excel (une feuille par état)
         </button>
       </div>
       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 0.7rem' }}>
@@ -433,10 +416,8 @@ export const CompanyRemittancePage = () => {
   const [banques, setBanques] = useState([]);
   const [compagnie, setCompagnie] = useState(String(ID_NSIA));
   const [lignes, setLignes] = useState([]);
-  const [prochainNumero, setProchainNumero] = useState('');
   const [selection, setSelection] = useState(new Set());
   const [dateBordereau, setDateBordereau] = useState(aujourdhui());
-  const [numero, setNumero] = useState('');
   const [paiement, setPaiement] = useState(paiementVide());
   const [chargement, setChargement] = useState(false);
   const [envoi, setEnvoi] = useState(false);
@@ -461,10 +442,8 @@ export const CompanyRemittancePage = () => {
       .then((r) => {
         setLignes(r.Lignes || []);
         setSelection(new Set());
-        setProchainNumero(r.ProchainNumero);
-        setNumero(String(r.ProchainNumero || ''));
       })
-      .catch((err) => toastError(`Primes à transmettre indisponibles : ${messageErreurApi(err)}`))
+      .catch((err) => toastError(`Quittances à reverser indisponibles : ${messageErreurApi(err)}`))
       .finally(() => setChargement(false));
   };
   const chargerBordereaux = () => {
@@ -488,7 +467,7 @@ export const CompanyRemittancePage = () => {
       b.Numero, b.NumeroReversement, b.Clients, NATURES[b.Nature]?.libelle, b.LibelleStatut, b.Paiement, dateFr(b.DateBordereau),
       dateFr(b.DateDecharge), b.MontantAReverser, b.MontantReverse,
     ]))
-    .sort(recentsDabord((b) => b.DateBordereau, (b) => (b.Numero || 0) * 100000 + b.IdReversement)), [bordereaux, recherche, natureFiltre]);
+    .sort(recentsDabord((b) => b.DateBordereau, (b) => b.IdReversement)), [bordereaux, recherche, natureFiltre]);
   const filtre = Boolean(recherche.trim() || natureFiltre);
   const cochees = lignes.filter((l) => selection.has(l.IdDetailEncaissement));
   const masquees = cochees.filter((l) => !lignesVisibles.includes(l)).length;
@@ -496,6 +475,15 @@ export const CompanyRemittancePage = () => {
   const aReverser = parNature('REVERSEMENT');
   const directes = parNature('RECLAMATION');
   const somme = (ls, cle) => ls.reduce((t, l) => t + (Number(l[cle]) || 0), 0);
+  // Début du n° attribué à la génération (fn_lephare_numero_bordereau) : code courtier de la première prime cochée
+  // (la plus ancienne encaissée), mois et exercice du bordereau ; le n° du mois vient du serveur
+  const apercuNumero = () => {
+    const [annee, mois] = String(dateBordereau || '').split('-');
+    const premiere = [...(aReverser.length ? aReverser : directes)]
+      .sort((a, b) => String(a.DateEncaissement).localeCompare(String(b.DateEncaissement)) || a.IdDetailEncaissement - b.IdDetailEncaissement)[0];
+    const police = premiere?.NumeroPolice || '';
+    return premiere && annee ? `${police.slice(0, 4)} ${mois}${annee.slice(2)} B ····` : 'courtier · MMAA · B · n°';
+  };
   // « Tout cocher » porte sur les lignes affichées (résultat de la recherche)
   const toutCoche = lignesVisibles.length > 0 && lignesVisibles.every((l) => selection.has(l.IdDetailEncaissement));
   const basculer = (id) => setSelection((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -505,40 +493,19 @@ export const CompanyRemittancePage = () => {
     return n;
   });
 
-  const majPolice = (idContrat, police, avenant) => setLignes((ls) => ls.map((l) => (l.IdContrat === idContrat ? { ...l, PoliceCompagnie: police, AvenantCompagnie: avenant } : l)));
-  const changerOrdre = async (l, ordre) => {
-    try {
-      await financeApi.ordreEncaissement(l.IdEncaissement, ordre);
-      const nature = ordre === 'COMPAGNIE' ? 'RECLAMATION' : 'REVERSEMENT';
-      setLignes((ls) => ls.map((x) => (x.IdEncaissement === l.IdEncaissement ? { ...x, Ordre: ordre, Nature: nature } : x)));
-    } catch (err) {
-      toastError(`Ordre non modifié : ${messageErreurApi(err)}`);
-    }
-  };
-
-  // Numéros attribués à l'émission : bordereau de reversement d'abord, puis de réclamation
-  const numerosPrevus = () => {
-    const depart = Number(numero) || Number(prochainNumero) || 0;
-    const prevus = {};
-    let n = depart;
-    if (aReverser.length) { prevus.REVERSEMENT = n; n += 1; }
-    if (directes.length) prevus.RECLAMATION = n;
-    return prevus;
-  };
-
   const emettre = async () => {
-    const prevus = numerosPrevus();
     const sansPolice = cochees.filter((l) => !l.PoliceCompagnie).length;
     const details = [
-      aReverser.length ? `N° ${prevus.REVERSEMENT} — BORDEREAU DE REVERSEMENT DE PRIME : ${aReverser.length} prime(s), ${fcfa(somme(aReverser, 'ResteAReverser'))} F à reverser par le cabinet` : '',
-      directes.length ? `N° ${prevus.RECLAMATION} — BORDEREAU DE RECLAMATION DE COMMISSION : ${directes.length} prime(s) réglée(s) à l'ordre de la compagnie (Direct)` : '',
-      sansPolice ? `${sansPolice} quittance(s) sans police de la compagnie : le numéro LE PHARE sera imprimé.` : '',
+      aReverser.length ? `BORDEREAU DE REVERSEMENT DE PRIME : ${aReverser.length} prime(s), ${fcfa(somme(aReverser, 'ResteAReverser'))} F à reverser par le cabinet` : '',
+      directes.length ? `BORDEREAU DE RECLAMATION DE COMMISSION : ${directes.length} prime(s) réglée(s) directement à la compagnie, chèque à son ordre ou espèces (Direct)` : '',
+      'N° attribué à la génération : code courtier + mois + exercice + B + n° du mois.',
+      sansPolice ? `${sansPolice} quittance(s) sans n° de police de la compagnie au devis : le n° de police du système sera imprimé.` : '',
     ].filter(Boolean);
     const ok = await confirmer({
-      titre: aReverser.length && directes.length ? 'Émettre deux bordereaux' : 'Émettre le bordereau',
+      titre: aReverser.length && directes.length ? 'Générer deux bordereaux et leurs courriers' : 'Générer le bordereau et son courrier',
       message: `${nomCompagnie} — bordereau(x) du ${dateFr(dateBordereau)}`,
       consequences: details.join('\n'),
-      confirmer: 'Émettre',
+      confirmer: 'Générer',
       ton: sansPolice ? 'attention' : 'info',
     });
     if (!ok) return;
@@ -547,19 +514,18 @@ export const CompanyRemittancePage = () => {
       const resultat = await financeApi.emettreBordereaux({
         IdCompagnie: Number(compagnie),
         DateBordereau: dateBordereau,
-        Numero: Number(numero) || null,
         Lignes: cochees.map((l) => l.IdDetailEncaissement),
         Paiement: aReverser.length && paiement.IdMode ? paiement : null,
       });
       const emis = resultat.Bordereaux || [];
-      success(`${emis.length > 1 ? 'Bordereaux' : 'Bordereau'} ${emis.map((b) => `N° ${b.Numero}`).join(' et ')} émis pour ${nomCompagnie}.`);
+      success(`${emis.length > 1 ? 'Bordereaux' : 'Bordereau'} ${emis.map((b) => `N° ${b.Numero}`).join(' et ')} généré${emis.length > 1 ? 's' : ''} pour ${nomCompagnie}.`);
       if (emis.some((b) => !b.Direct && !b.Valide)) warning('Bordereau de reversement : saisissez le paiement du cabinet avant d\'imprimer le courrier.');
       setPaiement(paiementVide());
       setOuvert(emis[0] || null);
       chargerLignes();
       chargerBordereaux();
     } catch (err) {
-      toastError(`Bordereau non émis : ${messageErreurApi(err)}`);
+      toastError(`Bordereau non généré : ${messageErreurApi(err)}`);
     } finally {
       setEnvoi(false);
     }
@@ -574,8 +540,8 @@ export const CompanyRemittancePage = () => {
           <Building2 size={26} style={{ color: 'var(--primary-500)' }} /> Reversements aux compagnies
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0', maxWidth: 980 }}>
-          Chèque du client à l'ordre de la compagnie : transmis tel quel avec un bordereau de réclamation de commission (« Direct »).
-          Prime encaissée par {nomCabinet()} : reversée entière par son chèque avec un bordereau de reversement de prime (Code CIMA : la commission n'est jamais déduite).
+          Chèque du client à l'ordre de la compagnie, ou prime payée en espèces : directement au bordereau de réclamation de commission (« Direct »), sans reversement par le cabinet.
+          Autre prime encaissée par {nomCabinet()} (chèque à son ordre, virement, paiement mobile) : reversée entière par son chèque avec un bordereau de reversement de prime (Code CIMA : la commission n'est jamais déduite).
         </p>
       </div>
 
@@ -590,14 +556,14 @@ export const CompanyRemittancePage = () => {
         </div>
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
           <Onglet actif={onglet === 'a_transmettre'} onClick={() => setOnglet('a_transmettre')} icone={Send}>
-            Primes à transmettre ({filtre ? `${lignesVisibles.length}/${lignes.length}` : lignes.length})
+            Quittances à reverser ({filtre ? `${lignesVisibles.length}/${lignes.length}` : lignes.length})
           </Onglet>
           <Onglet actif={onglet === 'bordereaux'} onClick={() => setOnglet('bordereaux')} icone={ShieldCheck}>
-            Bordereaux émis ({filtre ? `${bordereauxVisibles.length}/${bordereaux.length}` : bordereaux.length})
+            Quittances encaissées ({filtre ? `${bordereauxVisibles.length}/${bordereaux.length}` : bordereaux.length})
           </Onglet>
-          <Onglet actif={onglet === 'tableau'} onClick={() => setOnglet('tableau')} icone={Table2}>Tableau de reversement</Onglet>
+          <Onglet actif={onglet === 'tableau'} onClick={() => setOnglet('tableau')} icone={Table2}>Suivi des primes et commissions</Onglet>
         </div>
-        <button type="button" className="btn btn-secondary" onClick={() => { chargerLignes(); chargerBordereaux(); }} style={{ marginLeft: 'auto' }} title="Actualiser" aria-label="Actualiser">
+        <button type="button" className="btn btn-secondary" onClick={() => { chargerLignes(); chargerBordereaux(); }} style={{ marginLeft: 'auto' }} title="Actualiser les listes" aria-label="Actualiser les listes">
           {chargement ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
         </button>
         <div style={{ flexBasis: '100%', display: 'flex', gap: '0.8rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -614,10 +580,10 @@ export const CompanyRemittancePage = () => {
             )}
           </div>
           {onglet !== 'tableau' && (
-            <select className="form-control" style={{ width: 'auto', minWidth: 230 }} value={natureFiltre} onChange={(e) => setNatureFiltre(e.target.value)} aria-label="Nature du bordereau">
-              <option value="">Toutes les natures</option>
+            <select className="form-control" style={{ width: 'auto', minWidth: 230 }} value={natureFiltre} onChange={(e) => setNatureFiltre(e.target.value)} aria-label="Type de bordereau">
+              <option value="">Reversement et Commission</option>
               <option value="REVERSEMENT">Reversement de prime</option>
-              <option value="RECLAMATION">Réclamation de commission (direct)</option>
+              <option value="RECLAMATION">Réclamation de commission</option>
             </select>
           )}
           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Du plus récent au plus ancien</span>
@@ -626,14 +592,82 @@ export const CompanyRemittancePage = () => {
 
       {onglet === 'a_transmettre' && (
         <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
-          <div className="table-wrapper" style={{ maxHeight: '55vh', overflow: 'auto' }}>
+          {/* Barre d'émission en tête de liste : toujours visible, elle s'éclaire dès qu'une prime est cochée */}
+          <div style={{
+            position: 'sticky', top: 0, zIndex: 3, marginBottom: '0.9rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-lg, 10px)',
+            border: `1px solid ${cochees.length ? 'var(--primary-500, #3b82f6)' : 'var(--border-subtle)'}`,
+            background: cochees.length ? 'color-mix(in srgb, var(--primary-500, #3b82f6) 10%, var(--bg-surface, #111827))' : 'var(--bg-surface-elevated, #1e293b)',
+            boxShadow: cochees.length ? '0 10px 24px -14px var(--primary-500, #3b82f6)' : 'none',
+            transition: 'background 200ms ease, border-color 200ms ease, box-shadow 200ms ease',
+          }}>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ flex: 1, minWidth: 280, alignSelf: 'center' }} aria-live="polite">
+                {cochees.length ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '0.98rem' }}>{cochees.length} prime{cochees.length > 1 ? 's' : ''} cochée{cochees.length > 1 ? 's' : ''}</strong>
+                      <button type="button" onClick={() => setSelection(new Set())}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--primary-400, #60a5fa)', fontSize: '0.8rem', textDecoration: 'underline' }}>
+                        Tout décocher
+                      </button>
+                      {masquees > 0 && <span style={{ fontSize: '0.78rem', color: 'var(--accent-amber, #d97706)' }}>dont {masquees} masquée{masquees > 1 ? 's' : ''} par la recherche</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', fontSize: '0.82rem', marginTop: '0.35rem', alignItems: 'center' }}>
+                      {aReverser.length > 0 && (
+                        <span><BadgeNature nature="REVERSEMENT" /> {aReverser.length} prime{aReverser.length > 1 ? 's' : ''}, <strong>{fcfa(somme(aReverser, 'ResteAReverser'))} F</strong> à reverser</span>
+                      )}
+                      {directes.length > 0 && (
+                        <span><BadgeNature nature="RECLAMATION" /> {directes.length} prime{directes.length > 1 ? 's' : ''} directe{directes.length > 1 ? 's' : ''} (chèque à la compagnie ou espèces), {fcfa(somme(directes, 'ResteAReverser'))} F</span>
+                      )}
+                      <span style={{ color: 'var(--text-muted)' }}>Commission à réclamer : {fcfa(somme(cochees, 'Commission') + somme(cochees, 'AccCourtier'))} F</span>
+                    </div>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
+                    Cochez les primes à reverser à la compagnie : le bordereau et son courrier se préparent ici, le numéro est attribué à la génération.
+                  </span>
+                )}
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" htmlFor="rv-date">Date du bordereau</label>
+                <input id="rv-date" type="date" className="form-control" value={dateBordereau} onChange={(e) => setDateBordereau(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ margin: 0, maxWidth: 230 }}>
+                <span className="form-label">N° du bordereau</span>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.35 }}
+                  title="Code courtier + mois + exercice + B + n° du mois">
+                  Attribué automatiquement<br /><span style={{ fontFamily: 'var(--font-mono)' }}>{apercuNumero()}</span>
+                </div>
+              </div>
+              <button type="button" className="btn btn-primary" disabled={!cochees.length || envoi || (aReverser.length > 0 && !paiementComplet(modes, paiement))} onClick={emettre}
+                title={aReverser.length > 0 && !paiementComplet(modes, paiement) ? 'Saisissez le paiement : banque du cabinet, et n° pour un chèque' : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', height: 42, padding: '0 1.1rem', fontWeight: 700 }}>
+                {envoi ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+                {aReverser.length && directes.length ? 'Générer les 2 bordereaux et courriers' : 'Générer le bordereau et le courrier'}
+              </button>
+            </div>
+            {aReverser.length > 0 && (
+              <div style={{ marginTop: '0.8rem', paddingTop: '0.8rem', borderTop: '1px dashed var(--border-subtle)' }}>
+                <PaiementCabinet modes={modes} banques={banques} valeur={paiement} onChange={setPaiement} />
+                {!paiementComplet(modes, paiement) && (
+                  <div style={{ fontSize: '0.78rem', color: 'var(--accent-amber, #d97706)', marginTop: '0.45rem' }}>
+                    Pour générer le bordereau de reversement, saisissez le paiement : banque du cabinet
+                    {abregeMode(modes, paiement.IdMode) === 'CHQ' ? ' et n° du chèque' : ''}.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="table-wrapper" style={{ maxHeight: '62vh', overflow: 'auto' }}>
             <table className="data-table" style={{ fontSize: '0.82rem' }}>
               <thead>
                 <tr>
                   <th><input type="checkbox" checked={toutCoche} onChange={toutBasculer} aria-label="Tout cocher" /></th>
-                  <th>Encaissé le</th><th>Client</th><th>Assurance</th><th>Police compagnie / avt</th><th>Règlement</th><th>À l'ordre de</th>
-                  <th>Paiement du client</th><th style={{ textAlign: 'right' }}>Prime TTC</th><th style={{ textAlign: 'right' }}>À transmettre</th>
-                  <th style={{ textAlign: 'right' }}>Commission + acc.</th>
+                  <th>Date d'encaissement</th><th>Client / n° de quittance</th><th>Branche</th><th>N° de police / avenant</th>
+                  <th>Moyen de paiement du client</th><th>Règlement à l'ordre de</th><th>Statut du paiement</th>
+                  <th style={{ textAlign: 'right' }}>Prime TTC</th><th style={{ textAlign: 'right' }}>Montant à reverser</th>
+                  <th style={{ textAlign: 'right' }}>Commission due au cabinet</th>
                 </tr>
               </thead>
               <tbody>
@@ -641,18 +675,14 @@ export const CompanyRemittancePage = () => {
                   const coche = selection.has(l.IdDetailEncaissement);
                   return (
                     <tr key={l.IdDetailEncaissement} style={coche ? { background: 'var(--primary-glow)' } : undefined}>
-                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l.IdDetailEncaissement)} aria-label={`Transmettre ${l.NumeroQuittance}`} /></td>
+                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l.IdDetailEncaissement)} aria-label={`Reverser la quittance ${l.NumeroQuittance}`} /></td>
                       <td>{dateFr(l.DateEncaissement)}</td>
                       <td>{l.Client}<div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{l.NumeroQuittance}</div></td>
                       <td>{l.Branche}</td>
-                      <td><PoliceCompagnie ligne={l} onEnregistre={majPolice} /></td>
+                      <td><PoliceDeduite ligne={l} /></td>
                       <td style={{ minWidth: 190 }}>{l.Reglement || [l.Mode, l.Reference].filter(Boolean).join(' — ')}</td>
-                      <td>
-                        <select className="form-control" style={{ padding: '0.2rem 0.35rem', minWidth: 170 }} value={l.Ordre}
-                          disabled={!l.OrdreModifiable} onChange={(e) => changerOrdre(l, e.target.value)} aria-label="À l'ordre de">
-                          <option value="CABINET">{nomCabinet()}</option>
-                          <option value="COMPAGNIE">La compagnie</option>
-                        </select>
+                      <td title={/esp[eè]ce/i.test(l.Mode || '') ? 'Espèces : directement à la compagnie, sans reversement par le cabinet' : "Ordre du règlement enregistré à l'encaissement"}>
+                        <div style={{ fontWeight: 600 }}>{l.Ordre !== 'COMPAGNIE' ? nomCabinet() : /esp[eè]ce/i.test(l.Mode || '') ? 'La compagnie (espèces)' : 'La compagnie'}</div>
                         <div style={{ marginTop: 3 }}><BadgeNature nature={l.Nature} /></div>
                       </td>
                       <td>
@@ -667,37 +697,11 @@ export const CompanyRemittancePage = () => {
                 })}
                 {!lignesVisibles.length && (
                   <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
-                    {chargement ? 'Chargement…' : (lignes.length ? 'Aucune prime ne correspond à la recherche.' : `Aucune prime encaissée à transmettre à ${nomCompagnie || 'cette compagnie'}.`)}
+                    {chargement ? 'Chargement…' : (lignes.length ? 'Aucune prime ne correspond à la recherche.' : `Aucune prime encaissée à reverser à ${nomCompagnie || 'cette compagnie'}.`)}
                   </td></tr>
                 )}
               </tbody>
             </table>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', marginTop: '1rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.9rem' }}>
-            <div style={{ display: 'flex', gap: '1.2rem', flexWrap: 'wrap', fontSize: '0.88rem' }}>
-              <span><strong>{cochees.length}</strong> prime(s) cochée(s){masquees > 0 && <span style={{ color: 'var(--accent-amber, #d97706)' }}> dont {masquees} masquée(s) par la recherche</span>}</span>
-              {aReverser.length > 0 && <span><BadgeNature nature="REVERSEMENT" /> {aReverser.length} — à reverser par le cabinet : <strong>{fcfa(somme(aReverser, 'ResteAReverser'))} F</strong></span>}
-              {directes.length > 0 && <span><BadgeNature nature="RECLAMATION" /> {directes.length} — chèques transmis : {fcfa(somme(directes, 'ResteAReverser'))} F</span>}
-              {cochees.length > 0 && <span style={{ color: 'var(--text-muted)' }}>Commission à réclamer : {fcfa(somme(cochees, 'Commission') + somme(cochees, 'AccCourtier'))} F</span>}
-            </div>
-            {aReverser.length > 0 && <PaiementCabinet modes={modes} banques={banques} valeur={paiement} onChange={setPaiement} />}
-            <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" htmlFor="rv-date">Date du bordereau et du courrier</label>
-                <input id="rv-date" type="date" className="form-control" value={dateBordereau} onChange={(e) => setDateBordereau(e.target.value)} />
-              </div>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label" htmlFor="rv-num">N° du bordereau</label>
-                <input id="rv-num" type="number" min={1} className="form-control" style={{ width: 130 }} value={numero} onChange={(e) => setNumero(e.target.value)} />
-              </div>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', maxWidth: 360 }}>
-                Suite de la numérotation d'OREOLE (proposé : {prochainNumero}). Deux natures cochées : deux bordereaux, numéros consécutifs.
-              </span>
-              <button type="button" className="btn btn-primary" disabled={!cochees.length || envoi} onClick={emettre} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: 'auto' }}>
-                {envoi ? <Loader2 size={15} className="spin" /> : <Send size={15} />} Émettre {aReverser.length && directes.length ? 'les bordereaux' : 'le bordereau'}
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -708,8 +712,8 @@ export const CompanyRemittancePage = () => {
             <table className="data-table" style={{ fontSize: '0.84rem' }}>
               <thead>
                 <tr>
-                  <th>N°</th><th>Date</th><th>Nature</th><th>Client(s)</th><th style={{ textAlign: 'right' }}>Quittances</th>
-                  <th style={{ textAlign: 'right' }}>Montant à reverser</th><th>Décharge</th><th>Statut</th><th aria-label="Actions" />
+                  <th>N° du bordereau</th><th>Date d'émission</th><th>Type de bordereau</th><th>Client(s)</th><th style={{ textAlign: 'right' }}>Nb de quittances</th>
+                  <th style={{ textAlign: 'right' }}>Montant à reverser</th><th>Reçu par la compagnie le</th><th>Paiement du cabinet</th><th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -721,10 +725,10 @@ export const CompanyRemittancePage = () => {
                     <td style={{ maxWidth: 260 }}>{b.NombreQuittances > 1 && b.Clients.includes(',') ? 'Assurés divers' : b.Clients}</td>
                     <td style={{ textAlign: 'right' }}>{b.NombreQuittances}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700 }}>{b.Direct ? 'Direct' : fcfa(b.MontantAReverser)}</td>
-                    <td>{b.DateDecharge ? dateFr(b.DateDecharge) : <span style={{ color: 'var(--text-muted)' }}>À recevoir</span>}</td>
+                    <td>{b.DateDecharge ? dateFr(b.DateDecharge) : <span style={{ color: 'var(--text-muted)' }}>Décharge à recevoir</span>}</td>
                     <td><StatusBadge label={b.LibelleStatut} color={b.Statut === 'A_PAYER' ? 'amber' : 'emerald'} /></td>
                     <td style={{ textAlign: 'right' }}>
-                      <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.55rem' }} onClick={() => ouvrir(b.IdReversement)}>Ouvrir</button>
+                      <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.55rem' }} onClick={() => ouvrir(b.IdReversement)}>Voir et imprimer</button>
                     </td>
                   </tr>
                 ))}

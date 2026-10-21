@@ -119,36 +119,6 @@ export const exporterBordereauReversement = (reversement, format = 'pdf') => {
   else exportBordereauPdf(charge);
 };
 
-// Bordereau récapitulatif de reversement : réclamation des commissions à la compagnie
-export const exporterReclamation = (rc, format = 'pdf') => {
-  const lignes = rc.Lignes || [];
-  const charge = {
-    filename: `Reclamation_Commissions_${rc.Reference}`,
-    title: `BORDEREAU RÉCAPITULATIF DE REVERSEMENT — RÉCLAMATION DE COMMISSIONS N° ${rc.Reference}`,
-    subtitle: `${rc.Compagnie} — période du ${dateFr(rc.PeriodeDebut)} au ${dateFr(rc.PeriodeFin)}`,
-    metadata: {
-      'Compagnie': rc.Compagnie,
-      'Référence': rc.Reference,
-      'Émis le': dateFr(rc.DateEmission),
-      'Quittances': String(lignes.length),
-      'Primes reversées': `${fcfa(rc.MontantPrimes)} F`,
-      'Commissions réclamées': `${fcfa(rc.MontantCommissions)} F`,
-      'Déjà réglé': `${fcfa(rc.MontantPaye)} F`,
-      'Reste dû': `${fcfa(rc.Reste)} F`,
-    },
-    headers: ['N° Police', 'N° Quittance', 'Client', 'Branche', 'Reversement', 'Date', 'Prime reversée', 'Commission due', 'Réglée', 'Reste'],
-    rows: lignes.map((l) => [
-      l.NumeroPolice, l.NumeroQuittance, l.Client, l.Branche, l.NumeroReversement, dateFr(l.DateReversement),
-      fcfa(l.MontantReverse), fcfa(l.CommissionDue), fcfa(l.CommissionPayee), fcfa(l.Reste),
-    ]),
-    totals: ['TOTAL', '', '', '', '', '',
-      fcfa(lignes.reduce((s, l) => s + l.MontantReverse, 0)), fcfa(lignes.reduce((s, l) => s + l.CommissionDue, 0)),
-      fcfa(lignes.reduce((s, l) => s + l.CommissionPayee, 0)), fcfa(lignes.reduce((s, l) => s + l.Reste, 0))],
-  };
-  if (format === 'excel') exportToExcel(charge);
-  else exportToPdf(charge);
-};
-
 // État récapitulatif des encaissements (montant, mode, référence, statut)
 export const exporterEtatEncaissements = (etat, filtres, format = 'pdf') => {
   const lignes = etat.Lignes || [];

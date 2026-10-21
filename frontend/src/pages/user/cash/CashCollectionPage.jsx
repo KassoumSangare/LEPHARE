@@ -78,7 +78,6 @@ export const CashCollectionPage = () => {
 
   // Payment Form State
   const [montantEncaisse, setMontantEncaisse] = useState(0);
-  const [dateEncaissement, setDateEncaissement] = useState(aujourdhui());
   const [reglement, setReglement] = useState(reglementVide());
   const [enregistrement, setEnregistrement] = useState(false);
   const changerReglement = (champ, valeur) => setReglement((prev) => ({ ...prev, [champ]: valeur }));
@@ -94,7 +93,6 @@ export const CashCollectionPage = () => {
       ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
       idMode: String((especes || modes[0])?.idmodeencaissement || ''),
     });
-    setDateEncaissement(aujourdhui());
     setIsModalOpen(true);
   };
 
@@ -123,7 +121,8 @@ export const CashCollectionPage = () => {
     const fenetre = ouvrirFenetreRecu("Enregistrement de l'encaissement…");
     setEnregistrement(true);
     try {
-      const [annee, mois, jour] = dateEncaissement.split('-');
+      // Date de saisie : toujours la date du jour (non modifiable, imposée aussi par le serveur)
+      const [annee, mois, jour] = aujourdhui().split('-');
       const mode = modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode));
       const res = await cashApi.collectPremium({
         ...champsReglementApi(reglement, mode),
@@ -299,16 +298,6 @@ export const CashCollectionPage = () => {
                   min="1"
                   value={montantEncaisse}
                   onChange={(e) => setMontantEncaisse(parseInt(e.target.value) || 0)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Date de paiement</label>
-                <input
-                  type="date"
-                  className="form-control"
-                  required
-                  value={dateEncaissement}
-                  onChange={(e) => setDateEncaissement(e.target.value)}
                 />
               </div>
             </div>

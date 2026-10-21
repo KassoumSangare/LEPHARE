@@ -604,7 +604,7 @@ export const AsaciPage = () => {
                 const sold = Number(c.montant_encaisse || 0) >= Number(c.prime_totale || c.primettc || 0);
                 return (
                   <option key={id} value={id}>
-                    {c.numeropolice || `POL-${id}`} - {c.client_nom || c.souscripteur || 'Client'} ({c.compagnie || 'NSIA'}) — {sold ? '✓ Soldé' : '⚠️ Non soldé'}
+                    {c.numeropolice || `POL-${id}`} - {c.client_nom || c.souscripteur || 'Client'} — {c.compagnie || 'NSIA'} —{sold ? '✓ Soldé' : '⚠️ Non soldé'}
                   </option>
                 );
               })}

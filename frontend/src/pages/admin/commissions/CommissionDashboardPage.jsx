@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { saisirTexte } from '../../../utils/dialogue';
-import { Ban, CheckCircle2, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Mail, Plus, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
+import { Ban, CheckCircle2, ClipboardList, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Mail, Plus, Printer, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
 import { apporteurApi, financeApi, settingsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
 import { exportToExcel, exportToPdf } from '../../../utils/exportUtils';
-import { aujourdhui, bornesMois, dateFr, exporterReclamation, fcfa, messageErreurApi } from '../../../utils/financeUtils';
-import { imprimerCourrierReclamation, imprimerRecapitulatifReclamation } from '../../../utils/impressionsFinance';
+import { aujourdhui, bornesMois, dateFr, fcfa, messageErreurApi } from '../../../utils/financeUtils';
+import { imprimerCourrierReclamation, imprimerEtatRecapitulatifCommissions, imprimerRecapitulatifReclamation } from '../../../utils/impressionsFinance';
 import { documentsCompagnie } from '../../../utils/parametrage';
 import { trierParLibelle } from '../../../utils/sortUtils';
 
@@ -15,10 +15,11 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 // prime entière à la compagnie, les quittances reversées sont cochées dans un bordereau
 // récapitulatif (en général mensuel) qui réclame la commission ; l'assureur la règle par chèque
 // ou virement (encaissement imputé sur les lignes du bordereau). États des commissions payées et
-// non payées ; référentiel des apporteurs auxquels le cabinet peut verser des commissions.
+// non payées, état récapitulatif (payées / en attente de paiement, par compagnie et par mois, imprimable
+// et en Excel) ; référentiel des apporteurs auxquels le cabinet peut verser des commissions.
 const COULEURS = { A_RECLAMER: 'blue', RECLAMEE: 'amber', PARTIELLE: 'amber', PAYEE: 'emerald', EMISE: 'amber', ANNULEE: 'rose' };
 const FILTRES_STATUT = [
-  ['A_RECLAMER', 'À réclamer'], ['NON_PAYEES', 'Non payées (reste dû)'], ['PAYEES', 'Payées (encaissées)'], ['', 'Toutes les quittances reversées'],
+  ['A_RECLAMER', 'À réclamer'], ['NON_PAYEES', 'Non payées'], ['PAYEES', 'Payées'], ['', 'Toutes les quittances reversées'],
 ];
 
 const Onglet = ({ actif, onClick, icone: Icone, children }) => (
@@ -35,6 +36,140 @@ const Carte = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => 
     {detail && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{detail}</div>}
   </div>
 );
+
+// ------------------------------------------------------------------ état récapitulatif
+const DROITE = { textAlign: 'right' };
+const libelleMois = (cle) => (cle ? new Date(`${cle}-01T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—');
+const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`;
+// Ancienneté d'une commission en attente : au-delà de 30 jours à relancer, au-delà de 60 jours en retard
+const Anciennete = ({ jours }) => (jours === null || jours === undefined ? null
+  : <StatusBadge label={`${jours} j`} color={jours > 60 ? 'rose' : jours > 30 ? 'amber' : 'blue'} />);
+
+const SyntheseCommissions = ({ libelle, groupes, total }) => (
+  <div className="table-wrapper">
+    <table className="data-table">
+      <thead>
+        <tr>
+          <th>{libelle}</th><th style={DROITE}>Quittances</th><th style={DROITE}>Primes reversées</th><th style={DROITE}>Commissions dues</th>
+          <th style={DROITE}>Payées</th><th style={DROITE}>En attente : réclamées</th><th style={DROITE}>En attente : non réclamées</th>
+          <th style={DROITE}>Total en attente</th><th style={DROITE}>Recouvré</th>
+        </tr>
+      </thead>
+      <tbody>
+        {[...groupes, ['total', 'TOTAL', total]].map(([cle, etiquette, g]) => (
+          <tr key={cle} style={cle === 'total' ? { fontWeight: 800, background: 'var(--bg-subtle, transparent)' } : undefined}>
+            <td style={{ fontWeight: 700, textTransform: 'capitalize' }}>{etiquette}</td><td style={DROITE}>{g.Nombre}</td>
+            <td style={DROITE}>{fcfa(g.PrimesReversees)}</td><td style={{ ...DROITE, fontWeight: 700 }}>{fcfa(g.CommissionDue)}</td>
+            <td style={{ ...DROITE, color: 'var(--accent-emerald)', fontWeight: 700 }}>{fcfa(g.CommissionPayee)}</td>
+            <td style={DROITE}>{fcfa(g.EnAttenteReclamee)}</td><td style={DROITE}>{fcfa(g.EnAttenteAReclamer)}</td>
+            <td style={{ ...DROITE, color: 'var(--accent-amber)', fontWeight: 700 }}>{fcfa(g.EnAttente)}</td><td style={DROITE}>{pourcent(g.TauxRecouvrement)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+const Section = ({ titre, detail, children }) => (
+  <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+    <div style={{ fontWeight: 800, marginBottom: detail ? '0.15rem' : '0.5rem' }}>{titre}</div>
+    {detail && <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.6rem' }}>{detail}</div>}
+    {children}
+  </div>
+);
+
+const Vide = ({ children }) => <div style={{ color: 'var(--text-muted)', fontSize: '0.88rem', padding: '0.4rem 0' }}>{children}</div>;
+
+const EtatRecapitulatif = ({ recap }) => {
+  const t = recap.Total;
+  const reglements = recap.Reglements || [];
+  const reclamations = recap.Reclamations || [];
+  const nonReclamees = recap.NonReclamees || [];
+  const somme = (liste, cle) => liste.reduce((s, x) => s + (Number(x[cle]) || 0), 0);
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' }}>
+        <Carte libelle="Commissions dues" valeur={`${fcfa(t.CommissionDue)} F`} detail={`${t.Nombre} quittance(s) — ${fcfa(t.PrimesReversees)} F de primes reversées`} />
+        <Carte libelle="Commissions payées" valeur={`${fcfa(t.CommissionPayee)} F`} couleur="var(--accent-emerald)" detail={`Recouvré : ${pourcent(t.TauxRecouvrement)}`} />
+        <Carte libelle="En attente : réclamées" valeur={`${fcfa(t.EnAttenteReclamee)} F`} couleur="var(--accent-amber)" detail={`${reclamations.length} bordereau(x) en attente du règlement de l'assureur`} />
+        <Carte libelle="En attente : non réclamées" valeur={`${fcfa(t.EnAttenteAReclamer)} F`} couleur="var(--accent-amber)" detail="Bordereau récapitulatif à émettre" />
+      </div>
+
+      {recap.ParCompagnie.length > 1 && (
+        <Section titre="Par compagnie">
+          <SyntheseCommissions libelle="Compagnie" total={t} groupes={recap.ParCompagnie.map((g) => [g.IdCompagnie ?? g.Compagnie, g.Compagnie, g])} />
+        </Section>
+      )}
+      {recap.ParMois.length > 0 && (
+        <Section titre="Par mois de reversement">
+          <SyntheseCommissions libelle="Mois" total={t} groupes={recap.ParMois.map((g) => [g.Mois, libelleMois(g.Mois), g])} />
+        </Section>
+      )}
+
+      <Section titre="Commissions payées — règlements reçus des assureurs"
+        detail="Montant de chaque règlement et part imputée sur les quittances de la période (leur total est celui des commissions payées).">
+        {reglements.length ? (
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead><tr><th>Date</th><th>Compagnie</th><th>N° du règlement</th><th>Bordereau réclamé</th><th>Mode</th><th>N° chèque / virement</th><th>Banque</th><th style={DROITE}>Quittances</th><th style={DROITE}>Montant du règlement</th><th style={DROITE}>Commissions réglées</th></tr></thead>
+              <tbody>
+                {reglements.map((p) => (
+                  <tr key={p.IdPaiement}>
+                    <td>{dateFr(p.DatePaiement)}</td><td>{p.Compagnie}</td><td style={{ fontFamily: 'var(--font-mono)' }}>{p.Reference}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{p.Reclamation}</td><td>{p.Mode}</td><td>{p.ReferencePaiement}</td><td>{p.Banque}</td>
+                    <td style={DROITE}>{p.Nombre}</td><td style={DROITE}>{fcfa(p.MontantReglement)}</td><td style={{ ...DROITE, fontWeight: 700 }}>{fcfa(p.Montant)}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 800 }}><td colSpan={7}>TOTAL</td><td style={DROITE}>{somme(reglements, 'Nombre')}</td><td style={DROITE}>{fcfa(somme(reglements, 'MontantReglement'))}</td><td style={DROITE}>{fcfa(somme(reglements, 'Montant'))}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        ) : <Vide>Aucun règlement de commission reçu pour ces quittances.</Vide>}
+      </Section>
+
+      <Section titre="En attente de paiement — commissions réclamées à l'assureur"
+        detail="Bordereaux récapitulatifs émis dont le règlement n'est pas reçu en totalité ; ancienneté depuis leur émission.">
+        {reclamations.length ? (
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead><tr><th>N° du bordereau</th><th>Compagnie</th><th>Émis le</th><th>Ancienneté</th><th style={DROITE}>Quittances</th><th style={DROITE}>Commissions réclamées</th><th style={DROITE}>Déjà réglé</th><th style={DROITE}>Reste dû</th></tr></thead>
+              <tbody>
+                {reclamations.map((rc) => (
+                  <tr key={rc.IdReclamation}>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{rc.Reference}</td><td>{rc.Compagnie}</td><td>{dateFr(rc.DateEmission)}</td>
+                    <td><Anciennete jours={rc.Anciennete} /></td><td style={DROITE}>{rc.Nombre}</td><td style={DROITE}>{fcfa(rc.CommissionReclamee)}</td>
+                    <td style={DROITE}>{fcfa(rc.CommissionPayee)}</td><td style={{ ...DROITE, fontWeight: 700, color: 'var(--accent-amber)' }}>{fcfa(rc.Reste)}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 800 }}><td colSpan={4}>TOTAL</td><td style={DROITE}>{somme(reclamations, 'Nombre')}</td><td style={DROITE}>{fcfa(somme(reclamations, 'CommissionReclamee'))}</td><td style={DROITE}>{fcfa(somme(reclamations, 'CommissionPayee'))}</td><td style={DROITE}>{fcfa(somme(reclamations, 'Reste'))}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        ) : <Vide>Aucun bordereau de réclamation en attente de règlement.</Vide>}
+      </Section>
+
+      <Section titre="En attente de paiement — commissions non encore réclamées"
+        detail="Primes reversées dont la commission n'est sur aucun bordereau récapitulatif : à réclamer depuis l'onglet « État des commissions ».">
+        {nonReclamees.length ? (
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead><tr><th>Compagnie</th><th>Plus ancien reversement</th><th>Ancienneté</th><th style={DROITE}>Quittances</th><th style={DROITE}>Montant à réclamer</th></tr></thead>
+              <tbody>
+                {nonReclamees.map((n) => (
+                  <tr key={n.IdCompagnie ?? n.Compagnie}>
+                    <td>{n.Compagnie}</td><td>{dateFr(n.PlusAncien)}</td><td><Anciennete jours={n.Anciennete} /></td>
+                    <td style={DROITE}>{n.Nombre}</td><td style={{ ...DROITE, fontWeight: 700, color: 'var(--accent-amber)' }}>{fcfa(n.Montant)}</td>
+                  </tr>
+                ))}
+                <tr style={{ fontWeight: 800 }}><td colSpan={3}>TOTAL</td><td style={DROITE}>{somme(nonReclamees, 'Nombre')}</td><td style={DROITE}>{fcfa(somme(nonReclamees, 'Montant'))}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        ) : <Vide>Toutes les commissions dues ont été réclamées.</Vide>}
+      </Section>
+    </>
+  );
+};
 
 // ------------------------------------------------------------------ règlement de l'assureur
 const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
@@ -77,9 +212,10 @@ const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
             <input id="rg-date" type="date" className="form-control" required value={saisie.DatePaiement || ''} onChange={champ('DatePaiement')} />
           </div>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" htmlFor="rg-banque">Banque</label>
-            <select id="rg-banque" className="form-control" value={saisie.IdBanque || ''} onChange={champ('IdBanque')}>
-              <option value="">— Facultatif —</option>
+            <label className="form-label" htmlFor="rg-banque">Banque{saisie.Mode === 'CHQ' ? ' du chèque' : ''}</label>
+            {/* Tout chèque porte sa banque (demande du 2026-10-21) */}
+            <select id="rg-banque" className="form-control" required={saisie.Mode === 'CHQ'} value={saisie.IdBanque || ''} onChange={champ('IdBanque')}>
+              <option value="">{saisie.Mode === 'CHQ' ? '— Choisir —' : '— Facultatif —'}</option>
               {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
             </select>
           </div>
@@ -161,8 +297,9 @@ const ReclamationModal = ({ reclamation, onClose, onRegler, onAnnuler }) => (
           {reclamation.Statut === 'EMISE' && !reclamation.Paiements?.length && (
             <button type="button" className="btn btn-secondary" style={{ color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => onAnnuler(reclamation)}><Ban size={15} /> Annuler le bordereau</button>
           )}
-          <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'excel')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileSpreadsheet size={15} /> Excel</button>
-          <button type="button" className="btn btn-secondary" onClick={() => exporterReclamation(reclamation, 'pdf')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={15} /> Imprimer / PDF</button>
+          <button type="button" className="btn btn-secondary"
+            onClick={() => financeApi.telechargerReclamationExcel(reclamation.IdReclamation, `BORDEREAU RECAPITULATIF ${reclamation.Reference} ${reclamation.Compagnie}.xlsx`)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileSpreadsheet size={15} /> Excel</button>
           {/* Courrier de réclamation de commission et son bordereau récapitulatif, au modèle des courriers d'OREOLE */}
           <button type="button" className="btn btn-secondary" onClick={() => imprimerRecapitulatifReclamation(reclamation, documentsCompagnie(reclamation.IdCompagnie)?.Reversement || {})} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><FileText size={15} /> Bordereau récapitulatif</button>
           <button type="button" className="btn btn-secondary" onClick={() => imprimerCourrierReclamation(reclamation, documentsCompagnie(reclamation.IdCompagnie)?.Reversement || {})} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Mail size={15} /> Courrier de réclamation</button>
@@ -294,6 +431,9 @@ export const CommissionDashboardPage = () => {
   const [aRegler, setARegler] = useState(null);
   const [chargement, setChargement] = useState(false);
   const [envoi, setEnvoi] = useState(false);
+  const [recap, setRecap] = useState(null);
+  const [chargementRecap, setChargementRecap] = useState(false);
+  const [telechargement, setTelechargement] = useState(false);
 
   useEffect(() => {
     settingsApi.getCompanies().then((l) => setCompagnies(Array.isArray(l) ? l : [])).catch(() => {});
@@ -307,6 +447,27 @@ export const CommissionDashboardPage = () => {
       .then((r) => { setEtat(r); setSelection(new Set()); })
       .catch((err) => toastError(`État des commissions indisponible : ${messageErreurApi(err)}`))
       .finally(() => setChargement(false));
+  };
+  // État récapitulatif : compagnie et période de reversement des filtres (le statut ne s'y applique pas)
+  const paramsRecap = () => Object.fromEntries(['compagnie', 'du', 'au'].filter((c) => filtres[c] !== '').map((c) => [c, filtres[c]]));
+  const chargerRecap = () => {
+    setChargementRecap(true);
+    financeApi.recapitulatifCommissions(paramsRecap())
+      .then(setRecap)
+      .catch((err) => toastError(`État récapitulatif indisponible : ${messageErreurApi(err)}`))
+      .finally(() => setChargementRecap(false));
+  };
+  const telechargerRecap = async () => {
+    setTelechargement(true);
+    try {
+      const periode = [filtres.du && `du ${dateFr(filtres.du)}`, filtres.au && `au ${dateFr(filtres.au)}`].filter(Boolean).join(' ') || 'toutes périodes';
+      await financeApi.telechargerRecapitulatifCommissions(paramsRecap(),
+        `Etat recapitulatif des commissions ${recap?.Compagnie || 'toutes compagnies'} ${periode}.xlsx`.replace(/\//g, '-'));
+    } catch (err) {
+      toastError(`Excel non téléchargé : ${messageErreurApi(err)}`);
+    } finally {
+      setTelechargement(false);
+    }
   };
   const chargerReclamations = () => financeApi.reclamations(filtres.compagnie ? { compagnie: filtres.compagnie } : {})
     .then((r) => setReclamations(r.Reclamations || []))
@@ -405,6 +566,7 @@ export const CommissionDashboardPage = () => {
 
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
         <Onglet actif={onglet === 'etat'} onClick={() => setOnglet('etat')} icone={Coins}>État des commissions</Onglet>
+        <Onglet actif={onglet === 'recapitulatif'} onClick={() => { setOnglet('recapitulatif'); chargerRecap(); }} icone={ClipboardList}>État récapitulatif (payées / en attente)</Onglet>
         <Onglet actif={onglet === 'bordereaux'} onClick={() => setOnglet('bordereaux')} icone={FileText}>Bordereaux de réclamation ({reclamations.length})</Onglet>
         <Onglet actif={onglet === 'apporteurs'} onClick={() => setOnglet('apporteurs')} icone={Users}>Apporteurs</Onglet>
       </div>
@@ -519,6 +681,45 @@ export const CommissionDashboardPage = () => {
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {onglet === 'recapitulatif' && (
+        <>
+          <div className="glass-panel" style={{ padding: '1rem 1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="rcm-cie">Compagnie</label>
+              <select id="rcm-cie" className="form-control" value={filtres.compagnie} onChange={champ('compagnie')}>
+                <option value="">Toutes les compagnies</option>
+                {trierParLibelle(compagnies, (c) => c.RaisonSociale).map((c) => <option key={c.IdCompagnie ?? c.id} value={c.IdCompagnie ?? c.id}>{c.RaisonSociale}</option>)}
+              </select>
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="rcm-du">Primes reversées du</label>
+              <input id="rcm-du" type="date" className="form-control" value={filtres.du} onChange={champ('du')} />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="rcm-au">au</label>
+              <input id="rcm-au" type="date" className="form-control" value={filtres.au} onChange={champ('au')} />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-primary" onClick={chargerRecap} disabled={chargementRecap} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {chargementRecap ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />} Afficher
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => imprimerEtatRecapitulatifCommissions(recap)} disabled={!recap || chargementRecap} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Printer size={15} /> Imprimer
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={telechargerRecap} disabled={!recap || telechargement} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {telechargement ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />} Excel
+              </button>
+            </div>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            Commissions des primes reversées sur la période, situation au {dateFr(recap?.Situation || aujourdhui())} :
+            commissions dues = payées + en attente de paiement (réclamées à l'assureur ou pas encore réclamées).
+          </p>
+          {recap && <EtatRecapitulatif recap={recap} />}
+          {!recap && chargementRecap && <Vide>Chargement…</Vide>}
         </>
       )}
 

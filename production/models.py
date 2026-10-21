@@ -1903,7 +1903,10 @@ class Encaissement(models.Model):
     ordre_reglement = models.CharField(
         max_length=10, choices=ORDRES_REGLEMENT, default=ORDRE_CABINET, db_column="ordrereglement"
     )
+    # Chèque : date d'émission (inscrite sur le chèque) et date de réception à OREOLE ; la date de saisie est
+    # dateencaissement, toujours la date du jour (demande du 2026-10-20)
     date_cheque = models.DateField(blank=True, null=True, db_column="datecheque")
+    date_reception_cheque = models.DateField(blank=True, null=True, db_column="datereceptioncheque")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -2211,7 +2214,9 @@ class BordereauReversement(models.Model):
     ]
 
     id_reversement = models.IntegerField(unique=True, db_column="idreversement")
-    numero = models.PositiveIntegerField(db_column="numero")
+    # Code courtier + mois + exercice + « B » + n° du mois (fn_lephare_numero_bordereau ; catégorie retirée en 0171,
+    # les numéros attribués avant gardent la leur)
+    numero = models.CharField(max_length=20, db_column="numero")
     nature = models.CharField(max_length=12, choices=NATURES, db_column="nature")
     date_bordereau = models.DateField(db_column="datebordereau")
     date_decharge = models.DateField(null=True, blank=True, db_column="datedecharge")

@@ -1,4 +1,5 @@
 import { ouvrirApercuImpression } from './apercuImpression';
+import { numberToFrenchWords } from './exportUtils';
 import { logoCabinetEntete, logoCabinetPied, nomCabinet, parametre } from './parametrage';
 
 /* =========================================================================
@@ -8,7 +9,8 @@ import { logoCabinetEntete, logoCabinetPied, nomCabinet, parametre } from './par
      en arriéré en deux blocs, avec le reste dû.
    - Courrier de règlement de prime : modèle Word du courrier KOUMOUE et courriers JCW (texte composé par le serveur,
      production/views_bordereaux.py).
-   - Courrier de réclamation de commission et son bordereau récapitulatif (réclamation RC-…).
+   - Courrier de réclamation de commission et son bordereau récapitulatif (réclamation de l'écran Commissions).
+   - État récapitulatif des commissions payées et en attente de paiement (écran Commissions, 2026-10-20).
    ========================================================================= */
 
 const e = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,6 +22,18 @@ const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 
 const dateLettres = (iso) => {
   const [a, m, j] = String(iso || '').slice(0, 10).split('-').map(Number);
   return a ? `${String(j).padStart(2, '0')} ${MOIS[m - 1]} ${a}` : '';
+};
+
+// Ligne « À l'attention … » des courriers, d'après le réglage de la compagnie (personne ou fonction, article au
+// besoin) : « du Directeur de Courtage » / « le Directeur de Courtage » → « À l'attention du Directeur de Courtage » ;
+// « Monsieur TANO » → « À l'attention de Monsieur TANO » (même règle : ligne_attention, views_bordereaux.py)
+export const ligneAttention = (destinataire) => {
+  const texte = String(destinataire || '').replace(/’/g, "'").replace(/\s+/g, ' ').trim();
+  const bas = texte.toLowerCase();
+  if (!texte || bas.startsWith("à l'attention") || bas.startsWith("a l'attention")) return texte;
+  if (['du ', 'des ', "d'"].some((a) => bas.startsWith(a)) || texte.startsWith('de ')) return `À l'attention ${texte}`;
+  const contraction = [['le ', 'du '], ['les ', 'des '], ['la ', 'de la '], ["l'", "de l'"]].find(([a]) => bas.startsWith(a));
+  return contraction ? `À l'attention ${contraction[1]}${texte.slice(contraction[0].length)}` : `À l'attention de ${texte}`;
 };
 
 const ecrire = (titre, styles, corps, paysage = false) => {
@@ -70,8 +84,10 @@ const COLONNES_BORDEREAU = [
 
 const celluleReverse = (b, montant) => (b.Direct ? 'Direct' : f(montant));
 
+// Bordereau de réclamation de commission : le reste dû n'est pas répété sous le nom du client, il figure déjà dans
+// le titre du bloc « Primes en arriéré » (demande du 2026-10-21)
 const ligneBordereau = (b, l) => `<tr>
-    <td class="client">${e(l.Client)}${l.Soldee ? '' : `<span class="petit">Reste dû : ${f(l.ResteDu)}</span>`}</td>
+    <td class="client">${e(l.Client)}${l.Soldee || b.Direct ? '' : `<span class="petit">Reste dû : ${f(l.ResteDu)}</span>`}</td>
     <td>${e(l.Assurance)}</td><td>${e(l.PoliceCompagnie || l.NumeroPolice)}</td><td>${e(l.Avenant)}</td>
     <td>${jma(l.DateEffet)}</td><td>${jma(l.DateExpiration)}</td>
     <td>${f(l.PrimeHT)}</td><td>${f(l.PrimeTtc)}</td><td>${f(l.Encaissement)}</td><td>${f(l.AccCourtier)}</td>
@@ -100,7 +116,8 @@ export const construireBordereau = (b) => {
         ${bloc.Lignes.map((l) => ligneBordereau(b, l)).join('')}
         ${blocs.length > 1 ? ligneTotal(b, `Sous-total ${bloc.Soldees ? 'primes soldées' : 'primes en arriéré'}`, bloc.Totaux, 'sous-total') : ''}`).join('')
     : (b.Lignes || []).map((l) => ligneBordereau(b, l)).join('');
-  const cheques = (b.Cheques || []).map((c) => `<div>CHÈQUE N° <b>${e(c.Numero)}</b>${c.Banque ? ` &nbsp; ${e(c.Banque)}` : ''}${c.Date ? ` du ${jma(c.Date)}` : ''} de FCFA ${f(c.Montant)}</div>`).join('');
+  // Règlements transmis : « CHÈQUE N° … », « VIREMENT N° … », « ESPÈCES du … » (libellé donné par le serveur)
+  const cheques = (b.Cheques || []).map((c) => `<div>${e(c.Libelle || 'CHÈQUE')}${c.Numero ? ` N° <b>${e(c.Numero)}</b>` : ''}${c.Banque ? ` &nbsp; ${e(c.Banque)}` : ''}${c.Date ? ` du ${jma(c.Date)}` : ''} de FCFA ${f(c.Montant)}</div>`).join('');
   return `<div class="brd">
     <div class="brd-haut">
       <img class="brd-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
@@ -108,7 +125,7 @@ export const construireBordereau = (b) => {
     </div>
     <div class="brd-cie">${e(b.NomBordereau || b.Compagnie)}</div>
     <div class="brd-infos">
-      <span>Bordereau N°</span><b>${b.Numero ? f(b.Numero) : e(b.NumeroReversement)}</b><span></span>
+      <span>Bordereau N°</span><b>${e(b.Numero || b.NumeroReversement)}</b><span></span>
       <span>Montant à reverser</span><b>${f(b.MontantAReverser)}</b><span class="brd-du">du &nbsp;${jma(b.DateBordereau)}</span>
     </div>
     <table class="brd-table">
@@ -212,7 +229,7 @@ export const imprimerCourrier = (b) => ecrire(
 
 /* ------------------------------------------------------------------ réclamation de commission */
 /**
- * Courrier de réclamation de commission (bordereau récapitulatif RC-… de l'écran Commissions) : même en-tête et
+ * Courrier de réclamation de commission (bordereau récapitulatif de l'écran Commissions) : même en-tête et
  * même signature que les courriers de règlement ; reglages = réglages « Reversements » de la compagnie.
  */
 export const imprimerCourrierReclamation = (rc, reglages = {}) => {
@@ -225,7 +242,7 @@ export const imprimerCourrierReclamation = (rc, reglages = {}) => {
     Destinataire: reglages.Destinataire || rc.Compagnie,
     Service: reglages.Service || '',
     Ville: reglages.Ville || 'ABIDJAN',
-    AttentionDe: reglages.AttentionDe ? `A l'attention de ${reglages.AttentionDe}` : '',
+    AttentionDe: ligneAttention(reglages.AttentionDe),
     Objet: 'RECLAMATION DE COMMISSIONS',
     Branche: `Bordereau récapitulatif N° ${rc.Reference}`,
     Periode: `Période du ${jma(rc.PeriodeDebut)} au ${jma(rc.PeriodeFin)}`,
@@ -234,53 +251,280 @@ export const imprimerCourrierReclamation = (rc, reglages = {}) => {
     Paragraphes: [
       `Nous vous prions de bien vouloir trouver ci-joint le bordereau récapitulatif des primes reversées sur la période du ${jma(rc.PeriodeDebut)} au ${jma(rc.PeriodeFin)}, `
       + `soit ${lignes.length} quittance${lignes.length > 1 ? 's' : ''} pour un montant de FCFA ${f(rc.MontantPrimes)}.`,
-      `Au titre de ces affaires, nos commissions s'élèvent à FCFA ${f(rc.MontantCommissions)}${rc.MontantPaye ? `, dont FCFA ${f(rc.MontantPaye)} déjà réglés, soit un reste dû de FCFA ${f(rc.Reste)}` : ''}. `
-      + 'Nous vous saurions gré de bien vouloir procéder à leur règlement par chèque ou par virement.',
+      // Selon l'état de la réclamation : rien de réglé, réglée en partie (reste dû), réglée en totalité
+      !Number(rc.MontantPaye)
+        ? `Au titre de ces affaires, nos commissions s'élèvent à FCFA ${f(rc.MontantCommissions)}. Nous vous saurions gré de bien vouloir procéder à leur règlement par chèque ou par virement.`
+        : Number(rc.Reste) > 0
+          ? `Au titre de ces affaires, nos commissions s'élèvent à FCFA ${f(rc.MontantCommissions)}, dont FCFA ${f(rc.MontantPaye)} déjà réglés, soit un reste dû de FCFA ${f(rc.Reste)}. Nous vous saurions gré de bien vouloir procéder à son règlement par chèque ou par virement.`
+          : `Au titre de ces affaires, nos commissions s'élèvent à FCFA ${f(rc.MontantCommissions)}, réglées en totalité.`,
     ],
     PiecesJointes: ['le bordereau récapitulatif de réclamation de commission.'],
     Salutation: `Veuillez agréer, ${appellation}, nos distinguées salutations.`,
     Signataire: String(parametre('finance.courrier_signataire', 'Yvette DA') || ''),
     Fonction: String(parametre('finance.courrier_fonction', 'LE DIRECTEUR GENERAL') || ''),
   };
-  ecrire(`Reclamation commissions ${rc.Reference}`, STYLES_COURRIER, construireCourrier(c, [`FCFA ${f(rc.Reste || rc.MontantCommissions)}`]));
+  // Montant demandé souligné (reste dû si la réclamation est réglée en partie), comme le chèque des courriers de règlement
+  const montantSouligne = `FCFA ${f(Number(rc.MontantPaye) && Number(rc.Reste) > 0 ? rc.Reste : rc.MontantCommissions)}`;
+  ecrire(`Reclamation commissions ${rc.Reference}`, STYLES_COURRIER, construireCourrier(c, [montantSouligne]));
 };
 
 const STYLES_RECAP = `${STYLES_BORDEREAU}
+  .brd-sous-titre { text-align: center; font-weight: 700; font-size: 8.6pt; letter-spacing: 0.04em; margin: -0.5mm 0 3mm; }
+  .brd-infos.recap { grid-template-columns: 40mm 42mm 1fr; }
   .brd-table td.g { text-align: left; padding-left: 1.5mm; }
+  .brd-table th { font-size: 7.4pt; }
+  .brd-table td { padding: 2.2mm 0.6mm; font-size: 7.9pt; }
+  .brd-table tr.mois td { font-weight: 700; text-align: left; padding: 1.6mm 2mm; background: #f1f1f1; text-transform: capitalize; }
+  .brd-arrete { margin: 5mm 0 0 2mm; font-size: 8.8pt; }
+  .brd-arrete b { text-transform: uppercase; }
 `;
 
-/** Bordereau récapitulatif joint au courrier de réclamation : une ligne par quittance réclamée. */
+// Colonnes : celles du bordereau d'OREOLE (client, assurance, police, effet, expiration, primes, taux, commission, acc.
+// courtier) et du tableau de reversement COMMI-MOIS (n° et date du bordereau, montant reversé, commission à percevoir,
+// commission perçue, solde)
+const COLONNES_RECAP = [
+  ['N° bord.', 4.6], ['Date', 5.6], ['Nom du client', 10.4], ['Assurance', 7.4], ['N°Police', 8.2], ['Effet', 5.6], ['Expiration', 5.8],
+  ['Prime HT', 6.2], ['Prime TTC', 6.2], ['Montant reversé', 6.4], ['Taux com.(%)', 4.4], ['Commission', 6.1], ['Acc. Courtier', 5.2],
+  ['Commission à percevoir', 6.6], ['Déjà perçue', 5.4], ['Reste dû', 6],
+];
+
+const assuranceRecap = (l) => l.Assurance || String(l.Branche || '').toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+
+const ligneRecap = (l) => `<tr>
+    <td>${e(l.NumeroBordereau || l.NumeroReversement)}</td><td>${jma(l.DateBordereau || l.DateReversement)}</td>
+    <td class="g">${e(l.Client)}</td><td>${e(assuranceRecap(l))}</td><td>${e(l.PoliceCompagnie || l.NumeroPolice)}</td>
+    <td>${jma(l.DateEffet)}</td><td>${jma(l.DateExpiration)}</td>
+    <td>${f(l.PrimeHT)}</td><td>${f(l.PrimeTtc)}</td><td>${f(l.MontantReverse)}</td><td>${taux(l.Taux)}</td>
+    <td>${f(l.CommissionHT)}</td><td>${f(l.AccCourtier)}</td><td>${f(l.CommissionDue)}</td><td>${f(l.CommissionPayee)}</td><td><b>${f(l.Reste)}</b></td>
+  </tr>`;
+
+const totalRecap = (libelle, ls, classe = 'total') => {
+  const s = (cle) => ls.reduce((t, l) => t + (Number(l[cle]) || 0), 0);
+  const debut = classe === 'total'
+    ? `<td class="vide"></td><td class="vide"></td><td class="vide"></td><td class="vide"></td><td class="vide"></td><td colspan="2">${e(libelle)}</td>`
+    : `<td colspan="7" style="text-align:left;padding-left:2mm">${e(libelle)}</td>`;
+  return `<tr class="${classe}">${debut}
+    <td>${f(s('PrimeHT'))}</td><td>${f(s('PrimeTtc'))}</td><td>${f(s('MontantReverse'))}</td><td></td>
+    <td>${f(s('CommissionHT'))}</td><td>${f(s('AccCourtier'))}</td><td>${f(s('CommissionDue'))}</td><td>${f(s('CommissionPayee'))}</td><td>${f(s('Reste'))}</td>
+  </tr>`;
+};
+
+/**
+ * Bordereau récapitulatif de reversement — réclamation de commissions (réclamation de l'écran Commissions).
+ * Aucun modèle d'OREOLE n'a été fourni pour ce document : il reprend la présentation des bordereaux 1175 / 2088 / 2117
+ * et les colonnes du tableau de reversement, une ligne par quittance réclamée, par mois de bordereau s'il y en a
+ * plusieurs, et la somme réclamée arrêtée en lettres.
+ */
 export const imprimerRecapitulatifReclamation = (rc, reglages = {}) => {
-  const lignes = rc.Lignes || [];
-  const somme = (cle) => lignes.reduce((t, l) => t + (Number(l[cle]) || 0), 0);
-  const colonnes = [['Nom du client', 11], ['Assurance', 8], ['N°Police', 9], ['Bordereau', 5.5], ['Date', 6], ['Prime HT', 7],
-    ['Prime TTC', 7], ['Montant reversé', 7], ['Acc. Courtier', 6], ['Taux com.(%)', 5], ['Commission', 7], ['À percevoir', 7.2],
-    ['Déjà réglé', 6.6], ['Reste dû', 7]];
+  const lignes = [...(rc.Lignes || [])].sort((a, b) => String(a.DateBordereau || a.DateReversement || '').localeCompare(String(b.DateBordereau || b.DateReversement || ''))
+    || String(a.NumeroBordereau || '').localeCompare(String(b.NumeroBordereau || '')));
+  const mois = new Map();
+  lignes.forEach((l) => {
+    const cle = String(l.DateBordereau || l.DateReversement || '').slice(0, 7);
+    if (!mois.has(cle)) mois.set(cle, []);
+    mois.get(cle).push(l);
+  });
+  const libelleMois = (cle) => (cle ? `${MOIS[Number(cle.slice(5, 7)) - 1]} ${cle.slice(0, 4)}` : '');
+  const corpsTable = mois.size > 1
+    ? [...mois.entries()].map(([cle, ls]) => `<tr class="mois"><td colspan="16">${e(libelleMois(cle))}</td></tr>
+        ${ls.map(ligneRecap).join('')}${totalRecap(`Sous-total ${libelleMois(cle)}`, ls, 'sous-total')}`).join('')
+    : lignes.map(ligneRecap).join('');
+  // Somme réclamée : les commissions du bordereau ; règlements déjà reçus et reste dû précisés à la suite
+  const reclame = Number(rc.MontantCommissions) || 0;
+  const paye = Number(rc.MontantPaye) || 0;
+  const lettres = numberToFrenchWords(Math.round(reclame));
   const nom = reglages.NomBordereau || rc.Compagnie;
   const corps = `<div class="brd">
     <div class="brd-haut">
       <img class="brd-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
-      <div class="brd-titre">BORDEREAU RECAPITULATIF DE RECLAMATION DE COMMISSION</div><div></div>
+      <div class="brd-titre">BORDEREAU RECAPITULATIF DE REVERSEMENT</div><div></div>
     </div>
     <div class="brd-cie">${e(nom)}</div>
-    <div class="brd-infos">
+    <div class="brd-sous-titre">RECLAMATION DE COMMISSIONS</div>
+    <div class="brd-infos recap">
       <span>Bordereau N°</span><b>${e(rc.Reference)}</b><span class="brd-du">du &nbsp;${jma(rc.DateEmission)}</span>
-      <span>Commission réclamée</span><b>${f(rc.Reste || rc.MontantCommissions)}</b><span class="brd-du">période du ${jma(rc.PeriodeDebut)} au ${jma(rc.PeriodeFin)}</span>
+      <span>Commission réclamée</span><b>${f(reclame)}</b><span class="brd-du">Période du ${jma(rc.PeriodeDebut)} au ${jma(rc.PeriodeFin)}</span>
     </div>
     <table class="brd-table">
-      <colgroup>${colonnes.map(([, l]) => `<col style="width:${l}%" />`).join('')}</colgroup>
-      <tr>${colonnes.map(([t]) => `<th>${e(t)}</th>`).join('')}</tr>
-      ${lignes.map((l) => `<tr>
-        <td class="g">${e(l.Client)}</td><td>${e(l.Branche)}</td><td>${e(l.PoliceCompagnie || l.NumeroPolice)}</td>
-        <td>${e(l.NumeroBordereau || l.NumeroReversement)}</td><td>${jma(l.DateBordereau || l.DateReversement)}</td>
-        <td>${f(l.PrimeHT)}</td><td>${f(l.PrimeTtc)}</td><td>${f(l.MontantReverse)}</td><td>${f(l.AccCourtier)}</td><td>${taux(l.Taux)}</td>
-        <td>${f(l.CommissionHT)}</td><td>${f(l.CommissionDue)}</td><td>${f(l.CommissionPayee)}</td><td><b>${f(l.Reste)}</b></td>
-      </tr>`).join('')}
-      <tr class="total"><td class="vide"></td><td class="vide"></td><td class="vide"></td><td colspan="2">TOTAL</td>
-        <td>${f(somme('PrimeHT'))}</td><td>${f(somme('PrimeTtc'))}</td><td>${f(somme('MontantReverse'))}</td><td>${f(somme('AccCourtier'))}</td><td></td>
-        <td>${f(somme('CommissionHT'))}</td><td>${f(somme('CommissionDue'))}</td><td>${f(somme('CommissionPayee'))}</td><td>${f(somme('Reste'))}</td></tr>
+      <colgroup>${COLONNES_RECAP.map(([, l]) => `<col style="width:${l}%" />`).join('')}</colgroup>
+      <tr>${COLONNES_RECAP.map(([t]) => `<th>${e(t)}</th>`).join('')}</tr>
+      ${corpsTable}
+      ${totalRecap('TOTAL', lignes)}
     </table>
+    <div class="brd-arrete">Arrêté le présent bordereau à la somme de <b>${e(lettres)} francs CFA</b> (${f(reclame)} FCFA), montant des commissions réclamées${!paye ? '' : Number(rc.Reste) > 0 ? ` ; déjà réglé : ${f(paye)} FCFA, reste dû : ${f(rc.Reste)} FCFA` : ', réglé en totalité'}.</div>
     <div class="brd-signatures"><span>POUR ${e(nomCabinet().toUpperCase())}</span><span>POUR ${e(nom)}</span></div>
   </div>`;
-  ecrire(`Recapitulatif ${rc.Reference}`, STYLES_RECAP, corps, true);
+  ecrire(`Bordereau recapitulatif ${rc.Reference}`, STYLES_RECAP, corps, true);
+};
+
+/* ------------------------------------------------------------------ état récapitulatif des commissions */
+const STYLES_ETAT_COMMISSIONS = `${STYLES_BORDEREAU}
+  .brd { min-height: 0; }
+  .rcm-infos { text-align: center; font-size: 9pt; margin: 0 0 4mm; }
+  .rcm-cartes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin: 0 0 5mm; }
+  .rcm-carte { border: 0.9pt solid #111; padding: 2.2mm 3mm; }
+  .rcm-carte span { display: block; font-size: 7.4pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+  .rcm-carte b { display: block; font-size: 12pt; margin-top: 1mm; }
+  .rcm-carte small { display: block; font-size: 7.2pt; margin-top: 0.6mm; }
+  .rcm-section { break-inside: avoid; margin: 0 0 5mm; }
+  .rcm-section h2 { font-size: 9pt; margin: 0 0 1.6mm; padding: 1.4mm 2mm; background: #f1f1f1; border: 0.9pt solid #111; letter-spacing: 0.03em; }
+  .rcm-section .brd-table th, .rcm-section .brd-table td { padding: 1.7mm 0.8mm; font-size: 7.9pt; }
+  .rcm-section .brd-table tr.total td { padding: 2.2mm 0.8mm; }
+  .rcm-section .brd-table td.g { text-align: left; padding-left: 1.5mm; }
+  .rcm-vide { font-size: 8pt; font-style: italic; margin: 1mm 0 0 2mm; }
+  .rcm-pied { display: flex; justify-content: space-between; margin-top: 3mm; font-size: 7.6pt; }
+`;
+
+const periodeEtat = (du, au) => {
+  if (du && au) return `Primes reversées du ${jma(du)} au ${jma(au)}`;
+  if (du) return `Primes reversées depuis le ${jma(du)}`;
+  if (au) return `Primes reversées jusqu'au ${jma(au)}`;
+  return 'Toutes les primes reversées';
+};
+const moisEtat = (cle) => (cle ? `${MOIS[Number(cle.slice(5, 7)) - 1]} ${cle.slice(0, 4)}` : '');
+const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`;
+const jours = (n) => (n === null || n === undefined ? '' : `${n} j`);
+
+// Tableau d'un état : colonnes [titre, largeur %], lignes déjà composées, ligne TOTAL facultative
+const tableEtat = (colonnes, lignes, total = '') => `<table class="brd-table">
+    <colgroup>${colonnes.map(([, l]) => `<col style="width:${l}%" />`).join('')}</colgroup>
+    <tr>${colonnes.map(([t]) => `<th>${e(t)}</th>`).join('')}</tr>
+    ${lignes.join('')}${total}
+  </table>`;
+
+const syntheseEtat = (libelle, groupes, total) => {
+  const ligne = (etiquette, g, classe = '') => `<tr class="${classe}"><td class="g">${e(etiquette)}</td><td>${g.Nombre}</td>
+    <td>${f(g.PrimesReversees)}</td><td><b>${f(g.CommissionDue)}</b></td><td><b>${f(g.CommissionPayee)}</b></td>
+    <td>${f(g.EnAttenteReclamee)}</td><td>${f(g.EnAttenteAReclamer)}</td><td><b>${f(g.EnAttente)}</b></td><td>${pourcent(g.TauxRecouvrement)}</td></tr>`;
+  return tableEtat(
+    [[libelle, 20], ['Quittances', 7], ['Primes reversées', 11], ['Commissions dues', 11], ['Commissions payées', 11],
+      ['En attente : réclamées à l\'assureur', 11.5], ['En attente : non encore réclamées', 11.5], ['Total en attente', 10], ['Recouvré', 7]],
+    groupes.map(([etiquette, g]) => ligne(etiquette, g)),
+    ligne('TOTAL', total, 'total'),
+  );
+};
+
+/**
+ * État récapitulatif des commissions payées et en attente de paiement (écran Commissions) : commissions des primes
+ * reversées sur la période, situation au jour de l'édition. Dues = payées + en attente (réclamées à l'assureur ou pas
+ * encore réclamées) ; règlements reçus, bordereaux réclamés en attente (ancienneté), commissions à réclamer.
+ */
+export const imprimerEtatRecapitulatifCommissions = (r) => {
+  const t = r.Total || {};
+  const somme = (liste, cle) => liste.reduce((s, x) => s + (Number(x[cle]) || 0), 0);
+  const reglements = r.Reglements || [];
+  const reclamations = r.Reclamations || [];
+  const nonReclamees = r.NonReclamees || [];
+  const parCompagnie = (r.ParCompagnie || []).length > 1
+    ? `<div class="rcm-section"><h2>PAR COMPAGNIE</h2>${syntheseEtat('Compagnie', r.ParCompagnie.map((g) => [g.Compagnie, g]), t)}</div>`
+    : '';
+  const parMois = (r.ParMois || []).length
+    ? `<div class="rcm-section"><h2>PAR MOIS DE REVERSEMENT</h2>${syntheseEtat('Mois', r.ParMois.map((g) => [moisEtat(g.Mois), g]), t)}</div>`
+    : '';
+  const payees = `<div class="rcm-section"><h2>COMMISSIONS PAYÉES — RÈGLEMENTS REÇUS DES ASSUREURS</h2>${reglements.length
+    ? tableEtat(
+      [['Date', 7.5], ['Compagnie', 15], ['N° du règlement', 12], ['Bordereau réclamé', 12], ['Mode', 7], ['N° chèque / virement', 12],
+        ['Banque', 11], ['Quittances', 6.5], ['Montant du règlement', 8.5], ['Commissions réglées', 8.5]],
+      reglements.map((p) => `<tr><td>${jma(p.DatePaiement)}</td><td class="g">${e(p.Compagnie)}</td><td>${e(p.Reference)}</td>
+        <td>${e(p.Reclamation)}</td><td>${e(p.Mode)}</td><td>${e(p.ReferencePaiement)}</td><td>${e(p.Banque)}</td><td>${p.Nombre}</td>
+        <td>${f(p.MontantReglement)}</td><td><b>${f(p.Montant)}</b></td></tr>`),
+      `<tr class="total"><td colspan="7">TOTAL</td><td>${somme(reglements, 'Nombre')}</td><td>${f(somme(reglements, 'MontantReglement'))}</td><td>${f(somme(reglements, 'Montant'))}</td></tr>`,
+    )
+    : '<div class="rcm-vide">Aucun règlement de commission reçu pour ces quittances.</div>'}</div>`;
+  const reclamees = `<div class="rcm-section"><h2>EN ATTENTE DE PAIEMENT — COMMISSIONS RÉCLAMÉES À L'ASSUREUR</h2>${reclamations.length
+    ? tableEtat(
+      [['N° du bordereau', 14], ['Compagnie', 20], ['Émis le', 9], ['Ancienneté', 8], ['Quittances', 8], ['Commissions réclamées', 14],
+        ['Déjà réglé', 13], ['Reste dû', 14]],
+      reclamations.map((rc) => `<tr><td>${e(rc.Reference)}</td><td class="g">${e(rc.Compagnie)}</td><td>${jma(rc.DateEmission)}</td>
+        <td>${jours(rc.Anciennete)}</td><td>${rc.Nombre}</td><td>${f(rc.CommissionReclamee)}</td><td>${f(rc.CommissionPayee)}</td><td><b>${f(rc.Reste)}</b></td></tr>`),
+      `<tr class="total"><td colspan="4">TOTAL</td><td>${somme(reclamations, 'Nombre')}</td><td>${f(somme(reclamations, 'CommissionReclamee'))}</td>
+        <td>${f(somme(reclamations, 'CommissionPayee'))}</td><td>${f(somme(reclamations, 'Reste'))}</td></tr>`,
+    )
+    : '<div class="rcm-vide">Aucun bordereau de réclamation en attente de règlement.</div>'}</div>`;
+  const aReclamer = `<div class="rcm-section"><h2>EN ATTENTE DE PAIEMENT — COMMISSIONS NON ENCORE RÉCLAMÉES</h2>${nonReclamees.length
+    ? tableEtat(
+      [['Compagnie', 34], ['Plus ancien reversement', 16], ['Ancienneté', 14], ['Quittances', 14], ['Montant à réclamer', 22]],
+      nonReclamees.map((n) => `<tr><td class="g">${e(n.Compagnie)}</td><td>${jma(n.PlusAncien)}</td><td>${jours(n.Anciennete)}</td>
+        <td>${n.Nombre}</td><td><b>${f(n.Montant)}</b></td></tr>`),
+      `<tr class="total"><td colspan="3">TOTAL</td><td>${somme(nonReclamees, 'Nombre')}</td><td>${f(somme(nonReclamees, 'Montant'))}</td></tr>`,
+    )
+    : '<div class="rcm-vide">Toutes les commissions dues ont été réclamées.</div>'}</div>`;
+  const corps = `<div class="brd">
+    <div class="brd-haut">
+      <img class="brd-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+      <div class="brd-titre">ETAT RECAPITULATIF DES COMMISSIONS</div><div></div>
+    </div>
+    <div class="brd-cie">${e(r.Compagnie || 'TOUTES LES COMPAGNIES')}</div>
+    <div class="rcm-infos">Commissions payées et en attente de paiement — ${e(periodeEtat(r.Du, r.Au))} — situation au <b>${jma(r.Situation)}</b></div>
+    <div class="rcm-cartes">
+      <div class="rcm-carte"><span>Commissions dues</span><b>${f(t.CommissionDue)} F</b><small>${t.Nombre || 0} quittance(s) — ${f(t.PrimesReversees)} F reversés</small></div>
+      <div class="rcm-carte"><span>Commissions payées</span><b>${f(t.CommissionPayee)} F</b><small>Recouvré : ${pourcent(t.TauxRecouvrement)}</small></div>
+      <div class="rcm-carte"><span>En attente : réclamées</span><b>${f(t.EnAttenteReclamee)} F</b><small>${reclamations.length} bordereau(x) en attente de règlement</small></div>
+      <div class="rcm-carte"><span>En attente : non réclamées</span><b>${f(t.EnAttenteAReclamer)} F</b><small>Bordereau récapitulatif à émettre</small></div>
+    </div>
+    ${parCompagnie}${parMois}${payees}${reclamees}${aReclamer}
+    <div class="rcm-pied"><span>Total en attente de paiement : <b>${f(t.EnAttente)} F</b></span><span>${e(nomCabinet())} — édité le ${jma(r.Situation)}</span></div>
+  </div>`;
+  ecrire('Etat recapitulatif des commissions', STYLES_ETAT_COMMISSIONS, corps, true);
+};
+
+/* ------------------------------------------------------------------ bordereau récapitulatif des encaissements */
+const STYLES_RECAP_ENCAISSEMENTS = `${STYLES_ETAT_COMMISSIONS}
+  .brd-arrete { margin: 4mm 0 0 2mm; font-size: 8.8pt; }
+  .brd-arrete b { text-transform: uppercase; }
+  .rcm-section .brd-table td.hors { color: #8a3b12; text-decoration: line-through; }
+  .rcm-recaps { display: grid; grid-template-columns: repeat(auto-fit, minmax(80mm, 1fr)); gap: 5mm; }
+`;
+const STATUTS_HORS_TOTAL = ['ANNULE', 'IMPAYE'];
+
+/**
+ * Bordereau récapitulatif des encaissements d'une période (écran État des encaissements, demande du 2026-10-21) :
+ * une ligne par quittance encaissée (n° du bordereau d'encaissement, date de saisie, client, quittance, mode,
+ * référence, montant, statut), total sans les encaissements annulés ni les chèques impayés (barrés), récapitulatifs
+ * par mode de paiement et par compagnie, somme arrêtée en lettres. Mêmes lignes que l'écran (recherche comprise).
+ */
+export const imprimerRecapitulatifEncaissements = (etat, { compagnie = '', filtres = '' } = {}) => {
+  const lignes = [...(etat.Lignes || [])].sort((a, b) => String(a.DateEncaissement || '').localeCompare(String(b.DateEncaissement || ''))
+    || String(a.NumeroPiece || '').localeCompare(String(b.NumeroPiece || '')) || (a.IdDetailEncaissement || 0) - (b.IdDetailEncaissement || 0));
+  const valides = lignes.filter((l) => !STATUTS_HORS_TOTAL.includes(l.Statut));
+  const total = valides.reduce((s, l) => s + (Number(l.Montant) || 0), 0);
+  const grouper = (cle) => Object.values(valides.reduce((acc, l) => {
+    const libelle = l[cle] || '—';
+    const g = acc[libelle] || { Libelle: libelle, Nombre: 0, Montant: 0 };
+    g.Nombre += 1;
+    g.Montant += Number(l.Montant) || 0;
+    return { ...acc, [libelle]: g };
+  }, {})).sort((a, b) => b.Montant - a.Montant);
+  const parMode = grouper('Mode');
+  const parCompagnie = grouper('Compagnie');
+  const avecCompagnie = !compagnie && new Set(lignes.map((l) => l.Compagnie)).size > 1;
+  const colonnes = [['N° du bordereau', 11], ['Date de saisie', 7], ['Nom du client', avecCompagnie ? 15 : 19], ...(avecCompagnie ? [['Compagnie', 10]] : []),
+    ['N° quittance', 10], ['N° police', 10], ['Mode', 7.5], ['Référence / banque', avecCompagnie ? 12 : 14.5], ['Montant', 8.5], ['Statut', 9]];
+  const recap = (titre, groupes) => `<div class="rcm-section"><h2>${e(titre)}</h2>${tableEtat(
+    [['Libellé', 55], ['Nombre', 15], ['Montant', 30]],
+    groupes.map((g) => `<tr><td class="g">${e(g.Libelle)}</td><td>${g.Nombre}</td><td><b>${f(g.Montant)}</b></td></tr>`),
+    `<tr class="total"><td>TOTAL</td><td>${groupes.reduce((s, g) => s + g.Nombre, 0)}</td><td>${f(groupes.reduce((s, g) => s + g.Montant, 0))}</td></tr>`,
+  )}</div>`;
+  const corps = `<div class="brd">
+    <div class="brd-haut">
+      <img class="brd-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+      <div class="brd-titre">BORDEREAU RECAPITULATIF DES ENCAISSEMENTS</div><div></div>
+    </div>
+    <div class="brd-cie">${e(compagnie || 'TOUTES LES COMPAGNIES')}</div>
+    <div class="rcm-infos">Encaissements du <b>${jma(etat.Du)}</b> au <b>${jma(etat.Au)}</b>${filtres ? ` — ${e(filtres)}` : ''} — ${valides.length} encaissement(s) retenu(s)</div>
+    <div class="rcm-section">${tableEtat(
+    colonnes,
+    lignes.map((l) => {
+      const hors = STATUTS_HORS_TOTAL.includes(l.Statut) ? ' class="hors"' : '';
+      return `<tr><td>${e(l.NumeroPiece)}</td><td>${jma(l.DateEncaissement)}</td><td class="g">${e(l.Client)}</td>
+        ${avecCompagnie ? `<td>${e(l.Compagnie)}</td>` : ''}<td>${e(l.NumeroQuittance)}</td><td>${e(l.NumeroPolice)}</td><td>${e(l.Mode)}</td>
+        <td>${e([l.Reference, l.Banque].filter(Boolean).join(' — '))}</td><td${hors}><b>${f(l.Montant)}</b></td><td>${e(l.LibelleStatut)}</td></tr>`;
+    }),
+    `<tr class="total"><td colspan="${colonnes.length - 2}">TOTAL (hors encaissements annulés et chèques impayés)</td><td>${f(total)}</td><td></td></tr>`,
+  )}</div>
+    <div class="rcm-recaps">${recap('PAR MODE DE PAIEMENT', parMode)}${parCompagnie.length > 1 ? recap('PAR COMPAGNIE', parCompagnie) : ''}</div>
+    <div class="brd-arrete">Arrêté le présent bordereau à la somme de <b>${e(numberToFrenchWords(Math.round(total)))} francs CFA</b> (${f(total)} FCFA).</div>
+    <div class="brd-signatures"><span>LE CAISSIER</span><span>VISA DE LA DIRECTION</span></div>
+  </div>`;
+  ecrire('Bordereau recapitulatif des encaissements', STYLES_RECAP_ENCAISSEMENTS, corps, true);
 };

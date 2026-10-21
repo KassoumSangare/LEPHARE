@@ -4,10 +4,11 @@ Bordereaux et courriers d'OREOLE aux compagnies, tableau de reversement : modèl
 « primes non soldées »), demande du 2026-10-19.
 
 Le titre du bordereau dépend de l'ordre des règlements transmis :
-- chèques (ou versements) du client à l'ordre de la compagnie : OREOLE les transmet tels quels, BORDEREAU DE
-  RECLAMATION DE COMMISSION, « Montant à reverser » 0 et « Montant reversé » Direct ; le reversement est payé dès
-  l'émission (mode « A la compagnie ») ;
-- primes encaissées par OREOLE (espèces, chèques à son ordre, paiement mobile, virements) : OREOLE les reverse par son
+- chèques (ou virements) du client à l'ordre de la compagnie, et toute prime payée en espèces (demande du 2026-10-20 :
+  pas de reversement par le cabinet ni de versement au compte de la compagnie) : BORDEREAU DE RECLAMATION DE
+  COMMISSION, « Montant à reverser » 0 et « Montant reversé » Direct ; le reversement est payé dès l'émission (mode
+  « A la compagnie », ou « Espèces ») ;
+- primes encaissées par OREOLE (chèques à son ordre, paiement mobile, virements) : OREOLE les reverse par son
   propre chèque, BORDEREAU DE REVERSEMENT DE PRIME, « Montant à reverser » = prime reversée entière (Code CIMA).
 Un bordereau porte un ou plusieurs clients ; une sélection qui mêle les deux ordres donne deux bordereaux.
 
@@ -39,7 +40,7 @@ from rest_framework.response import Response
 
 from configuration_api.parametrage import valeur_parametre
 
-from .models import BordereauReversement, Encaissement
+from .models import BordereauReversement
 from .views_finance import (
     AUTHENTIFICATION,
     ZERO,
@@ -54,6 +55,7 @@ from .views_finance import (
     _lignes,
     _nombre,
     _restes_nets,
+    controle_paiement_cabinet,
     debut_reversements,
 )
 
@@ -120,11 +122,28 @@ def reglages_compagnie(id_compagnie, raison_sociale=""):
     }
 
 
-def prochain_numero():
-    """Suite de la numérotation d'OREOLE : le plus grand du réglage et du dernier bordereau émis + 1."""
-    dernier = BordereauReversement.objects.filter(annule=False).order_by("-numero").values_list("numero", flat=True).first()
-    depart = int(valeur_parametre("finance.premier_numero_bordereau", 1) or 1)
-    return max(depart, (dernier or 0) + 1)
+def ligne_attention(destinataire):
+    """Ligne « À l'attention … » d'un courrier. Le réglage de la compagnie donne la personne ou la fonction, avec son
+    article au besoin : « du Directeur de Courtage » ou « le Directeur de Courtage » → « À l'attention du Directeur de
+    Courtage » ; « Monsieur TANO » → « À l'attention de Monsieur TANO ». (Même règle : impressionsFinance.js.)"""
+    texte = " ".join(str(destinataire or "").replace("’", "'").split())
+    bas = texte.lower()
+    if not texte or bas.startswith(("à l'attention", "a l'attention")):
+        return texte
+    if bas.startswith(("du ", "des ", "d'")) or texte.startswith("de "):
+        return f"À l'attention {texte}"
+    for article, contraction in (("le ", "du "), ("les ", "des "), ("la ", "de la "), ("l'", "de l'")):
+        if bas.startswith(article):
+            return f"À l'attention {contraction}{texte[len(article):]}"
+    return f"À l'attention de {texte}"
+
+
+def numero_bordereau(numero_quittance, jour):
+    """Numéro d'un bordereau : code courtier (contrat de la première prime) + mois + exercice + « B » + n° du mois
+    (fn_lephare_numero_bordereau, suite commune à toutes les pièces du mois ; sans la catégorie depuis 2026-10-21)."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.fn_lephare_numero_bordereau(%s, %s)", [numero_quittance, jour])
+        return cursor.fetchone()[0]
 
 
 # ------------------------------------------------------------------ quittances, paiements, règlements
@@ -156,6 +175,14 @@ def _quittances(numeros):
     return {q["numeroquittance"]: q for q in _lignes(SQL_QUITTANCES, [list(numeros)])}
 
 
+def _avenant(q):
+    """Avenant imprimé : celui de la compagnie s'il est connu, sinon le n° d'avenant du contrat (0000001 → 1)."""
+    if q["avenantcompagnie"]:
+        return q["avenantcompagnie"]
+    avenant = (q["avenant"] or "").strip()
+    return str(int(avenant)) if avenant.isdigit() else avenant
+
+
 def _infos_quittance(q):
     branche = _branche(q["idproduit"], q["libelleproduit"])
     return {
@@ -167,7 +194,8 @@ def _infos_quittance(q):
         "Assurance": f"Assurance {branche}",
         "NumeroPolice": q["numeropolice"] or "",
         "PoliceCompagnie": q["policecompagnie"] or "",
-        "AvenantCompagnie": q["avenantcompagnie"] or "",
+        # Police et avenant déduits du contrat : n° de la compagnie s'il a été saisi au devis, sinon ceux du système
+        "AvenantCompagnie": _avenant(q),
         "DateEffet": _iso(q["dateeffet"]),
         "DateExpiration": _iso(q["dateexpiration"]),
         "PrimeHT": _nombre(round(q["primeht"] or 0)),
@@ -214,10 +242,10 @@ def _paiements(numeros):
 
 
 def _libelle_paiement(code, rang):
-    if code == "COMPTANT":
-        return "Comptant"
-    if code == "SOLDE":
-        return "Solde"
+    # Prime payée en totalité, en un seul règlement ou au dernier acompte : « Soldé » (demande du 2026-10-21, au lieu
+    # de « Comptant » et « Solde »)
+    if code in ("COMPTANT", "SOLDE"):
+        return "Soldé"
     return "1er acompte" if rang == 1 else f"{rang}e acompte"
 
 
@@ -228,7 +256,10 @@ def _paiement_de(paiements, numero, id_detail):
 SQL_REGLEMENTS = """
     SELECT e.idencaissement, e.idmodepaiement, UPPER(TRIM(COALESCE(m.abregereglement, ''))) AS abrege,
            m.libellemodepaiement AS mode, e.dateencaissement::date AS dateencaissement, e.datecheque,
-           CASE WHEN e.idmodepaiement = %s OR e.ordrereglement = 'COMPAGNIE' THEN 'COMPAGNIE' ELSE 'CABINET' END AS ordre,
+           -- Espèces : transmises directement à la compagnie (réclamation de commission), sans reversement par le
+           -- cabinet (demande du 2026-10-20), quel que soit l'ordre saisi auparavant
+           CASE WHEN e.idmodepaiement = %s OR e.ordrereglement = 'COMPAGNIE'
+                     OR UPPER(TRIM(COALESCE(m.abregereglement, ''))) = 'ESP' THEN 'COMPAGNIE' ELSE 'CABINET' END AS ordre,
            NULLIF(TRIM(e.numerocheque), '') AS numerocheque, NULLIF(TRIM(e.numerobordereau), '') AS numerobordereau,
            NULLIF(TRIM(e.numerorecuoperateur), '') AS recu, NULLIF(TRIM(e.compte_compensation), '') AS compensation,
            e.idbanque, CASE WHEN UPPER(TRIM(COALESCE(b.libelle, ''))) IN ('', 'NEANT', 'AUCUNE', 'AUCUN') THEN NULL
@@ -268,12 +299,20 @@ def _instrument(r, pour_courrier=False):
     if r["abrege"] == "TRT":
         return f"{'la traite' if pour_courrier else 'TRAITE'} {banque}N°{r['numerocheque'] or ''} du {jour} de FCFA {montant}"
     if r["abrege"] == "ESP":
+        # Espèces transmises directement à la compagnie : pas de bordereau de versement (demande du 2026-10-20)
         numero = f" N°{r['numerobordereau']}" if r["numerobordereau"] else ""
-        return f"{'le' if pour_courrier else 'Le'} bordereau de versement d'espèce{numero} du {jour} de FCFA {montant}"
+        return f"{'le règlement en espèces' if pour_courrier else 'Espèces'}{numero} du {jour} de FCFA {montant}"
     if r["abrege"] == "PYM":
         return f"{'le paiement' if pour_courrier else 'Paiement'} mobile N°{r['recu'] or ''} du {jour} de FCFA {montant}"
     reference = r["numerocheque"] or r["compensation"] or ""
     return f"{r['mode'] or 'Règlement'} {reference} du {jour} de FCFA {montant}".replace("  ", " ")
+
+
+def _libelle_instrument(abrege, id_mode, mode):
+    """Libellé d'un règlement au pied du bordereau : « CHÈQUE N° … », « ESPÈCES du … »…"""
+    if abrege in ("CHQ",) or id_mode == MODE_A_LA_COMPAGNIE:
+        return "CHÈQUE"
+    return {"VIR": "VIREMENT", "TRT": "TRAITE", "ESP": "ESPÈCES", "PYM": "PAIEMENT MOBILE"}.get(abrege) or (mode or "RÈGLEMENT").upper()
 
 
 def _paiement_cabinet(entete, pour_courrier=False):
@@ -346,73 +385,8 @@ def a_transmettre(request):
             "Arriere": _nombre(max((q["primettc"] or ZERO) - cumul_total, ZERO)),
             "StatutPaiement": p["Code"] if p else "",
             "LibelleStatutPaiement": _libelle_paiement(p["Code"], p["Rang"]) if p else "",
-            "OrdreModifiable": l["montantreverse"] == 0,
         })
-    return Response({"Lignes": resultat, "ProchainNumero": prochain_numero(), "DebutReversements": debut_reversements().isoformat()})
-
-
-@api_view(["POST"])
-@authentication_classes(AUTHENTIFICATION)
-@permission_classes([permissions.IsAuthenticated, EcrituresAdministrateur])
-def ordre_encaissement(request, id_encaissement):
-    """POST /api/finance/encaissements/<id>/ordre/ {Ordre: CABINET|COMPAGNIE} : à l'ordre de qui était le règlement
-    (chèque saisi sans son ordre). Refusé une fois la prime transmise à la compagnie."""
-    ordre = str(request.data.get("Ordre") or "").upper()
-    if ordre not in (Encaissement.ORDRE_CABINET, Encaissement.ORDRE_COMPAGNIE):
-        return _erreur("Ordre : CABINET ou COMPAGNIE.")
-    with transaction.atomic():
-        encaissement = Encaissement.objects.select_for_update().filter(idencaissement=id_encaissement).first()
-        if not encaissement:
-            return Response({"error": "Encaissement introuvable."}, status=status.HTTP_404_NOT_FOUND)
-        if encaissement.modepaiement_id == MODE_A_LA_COMPAGNIE and ordre == Encaissement.ORDRE_CABINET:
-            return _erreur("Encaissement saisi en mode « A la compagnie » : il est à l'ordre de la compagnie.")
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT COUNT(*) FROM stddetailencaissement WHERE idencaissement = %s AND COALESCE(montantreglement, 0) > 0",
-                [id_encaissement],
-            )
-            if cursor.fetchone()[0]:
-                return _erreur("Cette prime est déjà transmise à la compagnie : annulez d'abord son bordereau.")
-            if ordre == Encaissement.ORDRE_COMPAGNIE:
-                # Un règlement à l'ordre d'une compagnie ne règle que des primes de cette compagnie
-                cursor.execute(
-                    """
-                    SELECT COUNT(DISTINCT COALESCE(ct.idcompagnie, q.idaperiteur))
-                    FROM stddetailencaissement de JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
-                    LEFT JOIN LATERAL (SELECT c.idcompagnie FROM stdcontrat c WHERE c.idquittance = q.idquittance
-                                       ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
-                    WHERE de.idencaissement = %s
-                    """,
-                    [id_encaissement],
-                )
-                if cursor.fetchone()[0] > 1:
-                    return _erreur("Ce règlement couvre des primes de plusieurs compagnies : il ne peut pas être à l'ordre de l'une d'elles.")
-        encaissement.ordre_reglement = ordre
-        encaissement.save(update_fields=["ordre_reglement", "updated_at"])
-    return Response({"IdEncaissement": id_encaissement, "Ordre": ordre})
-
-
-@api_view(["PATCH"])
-@authentication_classes(AUTHENTIFICATION)
-@permission_classes([permissions.IsAuthenticated, EcrituresAdministrateur])
-def police_compagnie(request, id_contrat):
-    """PATCH /api/finance/contrats/<id>/police-compagnie/ {NumeroPoliceCompagnie, NumeroAvenantCompagnie} : numéros
-    de la compagnie imprimés sur les bordereaux (colonnes « N°Police » et « Avt »)."""
-    champs, valeurs = [], []
-    for cle, colonne, longueur in (("NumeroPoliceCompagnie", "numeropolicecompagnie", 60),
-                                   ("NumeroAvenantCompagnie", "numeroavenantcompagnie", 20)):
-        if cle in request.data:
-            champs.append(f"{colonne} = %s")
-            valeurs.append(_texte(request.data.get(cle), longueur) or None)
-    if not champs:
-        return _erreur("Rien à modifier.")
-    with connection.cursor() as cursor:
-        cursor.execute(f"UPDATE stdcontrat SET {', '.join(champs)} WHERE idcontrat = %s", [*valeurs, id_contrat])
-        if not cursor.rowcount:
-            return Response({"error": "Contrat introuvable."}, status=status.HTTP_404_NOT_FOUND)
-        cursor.execute("SELECT numeropolicecompagnie, numeroavenantcompagnie FROM stdcontrat WHERE idcontrat = %s", [id_contrat])
-        police, avenant = cursor.fetchone()
-    return Response({"IdContrat": id_contrat, "PoliceCompagnie": police or "", "AvenantCompagnie": avenant or ""})
+    return Response({"Lignes": resultat, "DebutReversements": debut_reversements().isoformat()})
 
 
 # ------------------------------------------------------------------ bordereaux
@@ -526,7 +500,7 @@ def lire_bordereau(id_reversement):
         reste = max(ttc - p["Cumul"], ZERO)
         lignes.append({
             **_infos_quittance(q),
-            "Avenant": q["avenantcompagnie"] or "",
+            "Avenant": _avenant(q),
             "Encaissement": _nombre(p["Cumul"]),
             "FraisGestion": 0.0, "ComDeduite": 0.0, "AccDeduits": 0.0,
             "MontantReverse": _nombre(sum((d["montantreverse"] for d in siens), ZERO)),
@@ -556,11 +530,13 @@ def lire_bordereau(id_reversement):
                 cle = (r["abrege"], r["banque"], r["numerocheque"]) if r["numerocheque"] else ("ENC", d["idencaissement"])
                 vus.setdefault(cle, r)
         cheques = [{"Texte": _instrument(r), "TexteCourrier": _instrument(r, pour_courrier=True),
-                    "Banque": r["banque"] or "", "Numero": r["numerocheque"] or r["numerobordereau"] or "",
+                    "Libelle": _libelle_instrument(r["abrege"], r["idmodepaiement"], r["mode"]), "Especes": r["abrege"] == "ESP",
+                    "Banque": "" if r["abrege"] == "ESP" else r["banque"] or "", "Numero": r["numerocheque"] or r["numerobordereau"] or "",
                     "Date": _iso(r["datecheque"] or r["dateencaissement"]), "Montant": _nombre(_montant_instrument(r))}
                    for r in vus.values()]
     else:
         cheques = ([{"Texte": _paiement_cabinet(e), "TexteCourrier": _paiement_cabinet(e, pour_courrier=True),
+                     "Libelle": _libelle_instrument(e["abrege"], e["idmodereversement"], e["mode"]), "Especes": False,
                      "Banque": e["banque"] or "", "Numero": e["numerocheque"] or "", "Date": _iso(e["datereversement"]),
                      "Montant": _nombre(e["montantreversement"])}] if e["valide"] else [])
 
@@ -603,13 +579,44 @@ def _courrier(entete, lignes, cheques, reglages, precedents, paiements, date_bor
         instrument = f"notre règlement de FCFA {_f(entete['MontantReverse'])}"
     elif len(textes) == 1:
         instrument = textes[0]
-    else:
+    elif all(t.startswith("le chèque ") for t in textes):
         instrument = "les chèques " + ", ".join(t.replace("le chèque ", "") for t in textes[:-1]) + " et " + textes[-1].replace("le chèque ", "")
+    else:
+        instrument = ", ".join(textes[:-1]) + " et " + textes[-1]
     branche_texte = branches[0] if len(branches) == 1 else ""
+    # Primes réglées en espèces : rien à transmettre en annexe, le courrier en informe la compagnie
+    especes = bool(cheques) and all(c.get("Especes") for c in cheques)
+    details_especes = " et ".join(f"le {_jma(datetime.fromisoformat(c['Date']))} pour FCFA {_f(c['Montant'])}" if c["Date"]
+                                  else f"pour FCFA {_f(c['Montant'])}" for c in cheques)
 
     precedent = precedents.get(l.get("NumeroQuittance")) if une_quittance else None
     paragraphes = []
-    if precedent:
+    if especes:
+        if precedent:
+            p_avant = _paiement_de(paiements, l["NumeroQuittance"], precedent["dernierdetail"])
+            transmis = "le premier acompte" if not p_avant or p_avant["Rang"] <= 1 else f"le {_ordinal(p_avant['Rang'])} acompte"
+            paragraphes.append(
+                f"Nous faisons suite à notre courrier du {_jma(precedent['datebordereau'])} par lequel nous vous avions transmis "
+                f"{transmis} de notre relation commune. Il a porté sur le règlement de la prime d'assurance {branche_texte.lower()}."
+            )
+            objet_paiement = "le solde du client" if l["StatutPaiement"] in ("SOLDE", "COMPTANT") else f"le {_ordinal(l['RangPaiement'])} acompte"
+            paragraphes.append(f"Par la présente, nous vous informons que {objet_paiement} a été réglé en espèces {details_especes}.")
+        elif une_quittance and l["StatutPaiement"] == "ACOMPTE":
+            paragraphes.append(
+                f"Nous vous informons que le {_ordinal(l['RangPaiement'])} acompte de la prime d'assurance {branche_texte} de notre "
+                f"relation commune en objet a été réglé en espèces {details_especes}.".replace("  ", " ")
+            )
+        elif len(clients) == 1:
+            sujet = "la prime" if une_quittance else "les primes"
+            verbe = "a été réglée" if une_quittance else "ont été réglées"
+            assurance = f"d'assurance {branche_texte} " if branche_texte else "d'assurance "
+            paragraphes.append(f"Nous vous informons que {sujet} {assurance}de notre relation commune en objet {verbe} en espèces {details_especes}.")
+        else:
+            paragraphes.append(
+                f"Nous vous informons que les primes d'assurance de nos relations communes figurant sur le bordereau joint ont été "
+                f"réglées en espèces {details_especes}."
+            )
+    elif precedent:
         p_avant = _paiement_de(paiements, l["NumeroQuittance"], precedent["dernierdetail"])
         transmis = "le premier acompte" if not p_avant or p_avant["Rang"] <= 1 else f"le {_ordinal(p_avant['Rang'])} acompte"
         paragraphes.append(
@@ -650,7 +657,7 @@ def _courrier(entete, lignes, cheques, reglages, precedents, paiements, date_bor
         "Destinataire": reglages["Destinataire"],
         "Service": reglages["Service"],
         "Ville": reglages["Ville"],
-        "AttentionDe": f"A l'attention de {reglages['AttentionDe']}" if reglages["AttentionDe"] else "",
+        "AttentionDe": ligne_attention(reglages["AttentionDe"]),
         "Objet": objet,
         "Branche": branche_objet,
         "Periode": periode,
@@ -690,7 +697,7 @@ def bordereaux(request):
             return _erreur(erreur)
         sql = SQL_ENTETES + "".join(f" AND {c}" for c in conditions) + \
             " ORDER BY COALESCE(b.datebordereau, r.datereversement) DESC, b.numero DESC NULLS LAST, r.idreversement DESC"
-        return Response({"Bordereaux": [_entete_json(e) for e in _lignes(sql, params)], "ProchainNumero": prochain_numero()})
+        return Response({"Bordereaux": [_entete_json(e) for e in _lignes(sql, params)]})
 
     try:
         donnees = request.data
@@ -701,7 +708,6 @@ def bordereaux(request):
             raise ErreurFinance("Cochez au moins une prime encaissée à transmettre.")
         if len(set(ids)) != len(ids):
             raise ErreurFinance("Une même prime est cochée deux fois.")
-        numero_demande = _entier(donnees.get("Numero"), "Numéro du bordereau", obligatoire=False)
         paiement = donnees.get("Paiement") or {}
         resultats = []
         with transaction.atomic():
@@ -729,12 +735,17 @@ def bordereaux(request):
                 r = reglements.get(ligne["idencaissement"])
                 nature = RECLAMATION if r and r["ordre"] == "COMPAGNIE" else REVERSEMENT
                 groupes[nature].append((ligne, reste))
-            numero = numero_demande or prochain_numero()
+            # Bordereau de reversement : le paiement du cabinet (chèque ou virement) est saisi à la génération
+            if groupes[REVERSEMENT]:
+                if not paiement.get("IdMode"):
+                    raise ErreurFinance("Bordereau de reversement de prime : saisissez le paiement (chèque ou virement) pour le générer.")
+                controle_paiement_cabinet(paiement)
             for nature, lignes in groupes.items():
                 if not lignes:
                     continue
-                if BordereauReversement.objects.filter(numero=numero, annule=False).exists():
-                    raise ErreurFinance(f"Le bordereau N° {numero} existe déjà : choisissez un autre numéro.")
+                # Code courtier de la première prime (la plus ancienne encaissée), mois et exercice du bordereau
+                premiere = min((l for l, _ in lignes), key=lambda l: (l["dateencaissement"], l["iddetailencaissement"]))
+                numero = numero_bordereau(premiere["numeroquittance"], date_bordereau)
                 montants = [reste for _, reste in lignes]
                 total = sum(montants, ZERO)
                 with connection.cursor() as cursor:
@@ -770,7 +781,6 @@ def bordereaux(request):
                     cree_par=request.user,
                 )
                 resultats.append(id_reversement)
-                numero += 1
     except ErreurFinance as erreur:
         return _erreur(erreur)
     except Exception as erreur:  # message de la procédure (RAISE EXCEPTION)
@@ -972,7 +982,7 @@ def tableau_reversement(id_compagnie, du, au):
             "ResteAEncaisser": _nombre(reste),
             "Reversements": sous_lignes,
         })
-    lignes.sort(key=lambda l: (l["Mois"], l["Reversements"][0]["DateCourrier"] or "", l["Reversements"][0]["Numero"] or 0))
+    lignes.sort(key=lambda l: (l["Mois"], l["Reversements"][0]["DateCourrier"] or "", l["Reversements"][0]["Numero"] or ""))
     return lignes
 
 
@@ -1029,6 +1039,18 @@ def tableau(request):
     })
 
 
+def _format_taux(taux):
+    """Format Excel du taux de commission : 20 % ; 22,5 % avec ses décimales (le format « 0% » l'arrondissait)."""
+    return "0%" if float(taux or 0).is_integer() else "0.0#%"
+
+
+def _nom_cabinet():
+    from configuration_api.models import ParametreSite
+
+    site = ParametreSite.objects.order_by("id_parametre_site").first()
+    return (getattr(site, "raison_sociale", "") or "OREOLE ASSURANCES").strip()
+
+
 def _classeur_tableau(lignes, nom, du, au):
     """Classeur au modèle COMMI-MOIS d'OREOLE : Arial Narrow 14, bordures moyennes, un bloc par mois (formules
     Q = J*P+O, S = Q-R, L = somme des M, TOTAL), état récapitulatif ; une feuille par état."""
@@ -1044,12 +1066,12 @@ def _classeur_tableau(lignes, nom, du, au):
     centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
     largeurs = [35.6, 33.0, 18.7, 19.7, 18.4, 23.3, 25.6, 18.4, 19.6, 18.4, 18.0, 20.1, 21.3, 31.1, 15.1, 17.1, 19.4,
                 21.1, 20.1, 31.6, 23.4]
-    entetes = ["NOM DU CLIENT", "STRUCTURE / SOUSCRIPTEUR", "DATE DU COURRIER ", "DATE DE DECHARGE DE LA CIE",
+    entetes = ["NOM DU CLIENT", "STRUCTURE / SOUSCRIPTEUR", "DATE DU COURRIER", "DATE DE DECHARGE DE LA CIE",
                "N° DU BORDEREAU", "ASSURANCE", "N° POLICE", "EFFET", "EXPIRATION", "PRIME HT", "PRIME TTC",
                "ENCAISSEMENT", "MONTANT REVERSE", "NATURE DU REVERSEMENT", "ACC. COURTIER", "TAUX COM %",
                "COMMISSION A PERCEVOIR", "COMMISSION PERCUE", "SOLDE", "CHEQUE DE COMMISSION",
                "OBSERVATION (Emissions - Encaissements)"]
-    MONTANT, POURCENT, JOUR = "#,##0", "0%", "dd/mm/yyyy"
+    MONTANT, JOUR = "#,##0", "dd/mm/yyyy"
 
     def cellule(ws, ligne, colonne, valeur, gras=False, format_=None, taille=14, fond=None, formule=False):
         # formule=True seulement pour les formules construites ici (SUM, ROUND…) ; toute autre chaîne (client,
@@ -1121,7 +1143,7 @@ def _classeur_tableau(lignes, nom, du, au):
                     18: l["CommissionPercue"], 19: f"=+Q{premiere}-R{premiere}", 20: l["ChequesCommission"],
                     21: l["Observation"],
                 }
-                formats = {8: JOUR, 9: JOUR, 10: MONTANT, 11: MONTANT, 12: MONTANT, 15: MONTANT, 16: POURCENT,
+                formats = {8: JOUR, 9: JOUR, 10: MONTANT, 11: MONTANT, 12: MONTANT, 15: MONTANT, 16: _format_taux(l["Taux"]),
                            17: MONTANT, 18: MONTANT, 19: MONTANT}
                 gras = {10, 11, 12, 15, 17, 18, 19}
                 for colonne, valeur in valeurs.items():
@@ -1200,4 +1222,550 @@ def tableau_excel(request):
     reponse = HttpResponse(contenu, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     fichier = f"TABLEAU DE REVERSEMENT {nom} {du:%d-%m-%Y} au {au:%d-%m-%Y}.xlsx".replace("/", "-")
     reponse["Content-Disposition"] = f'attachment; filename="{fichier}"'
+    return reponse
+
+
+# ------------------------------------------------------------------ bordereau récapitulatif de réclamation (Excel)
+def _classeur_reclamation(rc, nom_compagnie):
+    """Bordereau récapitulatif de reversement — réclamation de commissions, à la présentation du tableau COMMI-MOIS
+    (Arial Narrow, bordures moyennes, titre grisé) : une ligne par quittance réclamée ; commission à percevoir =
+    commission + accessoires du cabinet, reste dû = à percevoir - déjà perçue, totaux en formules."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    from core.exports import texte_excel
+
+    bord = Side(style="medium")
+    cadre = Border(left=bord, right=bord, top=bord, bottom=bord)
+    gris = PatternFill("solid", fgColor="E7E6E6")
+    centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    a_gauche = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    MONTANT, JOUR = "#,##0", "dd/mm/yyyy"
+    entetes = [
+        ("N° DU BORDEREAU", 14), ("DATE DU COURRIER", 16), ("NOM DU CLIENT", 34), ("ASSURANCE", 22), ("N° POLICE", 22),
+        ("EFFET", 14), ("EXPIRATION", 14), ("PRIME HT", 16), ("PRIME TTC", 16), ("MONTANT REVERSE", 17), ("TAUX COM %", 11),
+        ("COMMISSION", 15), ("ACC. COURTIER", 14), ("COMMISSION A PERCEVOIR", 18), ("COMMISSION PERCUE", 17), ("RESTE DU", 16),
+    ]
+
+    def cellule(ws, ligne, colonne, valeur, gras=False, format_=None, taille=14, fond=None, formule=False, gauche=False):
+        # formule=True seulement pour les formules construites ici ; toute autre chaîne reste du texte
+        c = ws.cell(row=ligne, column=colonne, value=valeur)
+        if isinstance(valeur, str) and not formule:
+            texte_excel(c)
+        c.font = Font(name="Arial Narrow", size=taille, bold=gras)
+        c.alignment = a_gauche if gauche else centre
+        c.border = cadre
+        if format_:
+            c.number_format = format_
+        if fond:
+            c.fill = fond
+        return c
+
+    def jour(iso):
+        return datetime.fromisoformat(iso) if iso else None
+
+    classeur = Workbook()
+    ws = classeur.active
+    ws.title = "RECLAMATION"
+    ws.sheet_view.zoomScale = 70
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A3
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    for i, (_, largeur) in enumerate(entetes, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = largeur
+
+    ws.merge_cells("C2:N2")
+    cellule(ws, 2, 3, f"BORDEREAU RECAPITULATIF DE REVERSEMENT — RECLAMATION DE COMMISSIONS {nom_compagnie}",
+            gras=True, taille=16, fond=gris)
+    for colonne in range(4, 15):
+        ws.cell(row=2, column=colonne).border = cadre
+    ws.row_dimensions[2].height = 40
+    infos = (
+        ("Bordereau N°", rc["Reference"]),
+        ("Émis le", jour(rc["DateEmission"])),
+        ("Période", f"du {_jma(jour(rc['PeriodeDebut']))} au {_jma(jour(rc['PeriodeFin']))}"),
+        ("Compagnie", nom_compagnie),
+    )
+    for i, (libelle, valeur) in enumerate(infos, start=4):
+        cellule(ws, i, 1, libelle, gras=True, gauche=True)
+        ws.merge_cells(start_row=i, start_column=2, end_row=i, end_column=3)
+        cellule(ws, i, 2, valeur, format_=JOUR if isinstance(valeur, datetime) else None, gauche=True)
+        ws.cell(row=i, column=3).border = cadre
+
+    rangee = 9
+    for i, (entete, _) in enumerate(entetes, start=1):
+        cellule(ws, rangee, i, entete, gras=True)
+    ws.row_dimensions[rangee].height = 55
+    lignes = sorted(rc.get("Lignes") or [], key=lambda l: (l.get("DateBordereau") or l.get("DateReversement") or "",
+                                                          str(l.get("NumeroBordereau") or "")))
+    debut = rangee + 1
+    for l in lignes:
+        rangee += 1
+        valeurs = [
+            (l.get("NumeroBordereau") or l.get("NumeroReversement"), None),
+            (jour(l.get("DateBordereau") or l.get("DateReversement")), JOUR),
+            (l.get("Client"), None), (l.get("Assurance") or l.get("Branche"), None),
+            (l.get("PoliceCompagnie") or l.get("NumeroPolice"), None),
+            (jour(l.get("DateEffet")), JOUR), (jour(l.get("DateExpiration")), JOUR),
+            (l.get("PrimeHT"), MONTANT), (l.get("PrimeTtc"), MONTANT), (l.get("MontantReverse"), MONTANT),
+            ((l.get("Taux") or 0) / 100, _format_taux(l.get("Taux"))), (l.get("CommissionHT"), MONTANT), (l.get("AccCourtier"), MONTANT),
+            (f"=L{rangee}+M{rangee}", MONTANT), (l.get("CommissionPayee"), MONTANT), (f"=N{rangee}-O{rangee}", MONTANT),
+        ]
+        for colonne, (valeur, format_) in enumerate(valeurs, start=1):
+            cellule(ws, rangee, colonne, valeur, gras=colonne in (12, 13, 14, 16), format_=format_,
+                    formule=colonne in (14, 16), gauche=colonne == 3)
+        ws.row_dimensions[rangee].height = 40
+    fin = rangee
+    rangee += 1
+    ws.merge_cells(start_row=rangee, start_column=1, end_row=rangee, end_column=7)
+    cellule(ws, rangee, 1, "TOTAL", gras=True)
+    for colonne in range(2, 8):
+        ws.cell(row=rangee, column=colonne).border = cadre
+    for colonne in range(8, 17):
+        if colonne == 11:
+            cellule(ws, rangee, colonne, "")
+            continue
+        lettre = get_column_letter(colonne)
+        cellule(ws, rangee, colonne, f"=SUM({lettre}{debut}:{lettre}{fin})" if lignes else 0, gras=True,
+                format_=MONTANT, formule=bool(lignes))
+    ws.row_dimensions[rangee].height = 40
+
+    rangee += 2
+    # Somme réclamée : les commissions du bordereau ; règlements déjà reçus et reste dû précisés à la suite
+    reclame, paye = rc.get("MontantCommissions") or 0, rc.get("MontantPaye") or 0
+    if not paye:
+        suite = ""
+    elif rc.get("Reste"):
+        suite = f" (déjà réglé : {_f(paye)} FCFA ; reste dû : {_f(rc['Reste'])} FCFA)"
+    else:
+        suite = ", réglé en totalité"
+    ws.merge_cells(start_row=rangee, start_column=1, end_row=rangee, end_column=12)
+    arrete = ws.cell(row=rangee, column=1,
+                     value=f"Arrêté le présent bordereau à la somme de {_f(reclame)} FCFA, montant des commissions réclamées{suite}.")
+    texte_excel(arrete)
+    arrete.font = Font(name="Arial Narrow", size=14, bold=True)
+    rangee += 3
+    for colonne, texte in ((1, f"POUR {_nom_cabinet().upper()}"), (13, f"POUR {nom_compagnie}")):
+        signature = ws.cell(row=rangee, column=colonne, value=texte)
+        texte_excel(signature)
+        signature.font = Font(name="Arial Narrow", size=14, bold=True, underline="single")
+    tampon = io.BytesIO()
+    classeur.save(tampon)
+    return tampon.getvalue()
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def reclamation_excel(request, id_reclamation):
+    """GET /api/finance/commissions/reclamations/<id>/excel/ : bordereau récapitulatif de réclamation en Excel."""
+    from commissions.models import ReclamationCommission
+
+    from .views_finance import _reclamation_json
+
+    objet = ReclamationCommission.objects.select_related("compagnie").filter(pk=id_reclamation).first()
+    if not objet:
+        return Response({"error": "Bordereau de réclamation introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    rc = _reclamation_json(objet, avec_lignes=True)
+    nom = reglages_compagnie(objet.compagnie_id, objet.compagnie.RaisonSociale)["NomBordereau"]
+    reponse = HttpResponse(_classeur_reclamation(rc, nom),
+                           content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    reponse["Content-Disposition"] = f'attachment; filename="BORDEREAU RECAPITULATIF {rc["Reference"]} {nom}.xlsx"'
+    return reponse
+
+
+# ------------------------------------------------------------------ état récapitulatif des commissions (Excel)
+def _periode_texte(du, au):
+    if du and au:
+        return f"DU {_jma(date.fromisoformat(du))} AU {_jma(date.fromisoformat(au))}"
+    if du:
+        return f"DEPUIS LE {_jma(date.fromisoformat(du))}"
+    if au:
+        return f"JUSQU'AU {_jma(date.fromisoformat(au))}"
+    return "TOUTES PERIODES"
+
+
+def _libelle_mois(cle):
+    return f"{MOIS[int(cle[5:7]) - 1].capitalize()} {cle[:4]}" if cle else ""
+
+
+def _situation_commission(l):
+    if l["Statut"] == "PAYEE":
+        return f"Payée ({l['Reclamation']})" if l["Reclamation"] else "Payée"
+    reference = f"{l['Reclamation']} du {_jma(date.fromisoformat(l['DateReclamation']))}" if l["DateReclamation"] else l["Reclamation"]
+    if l["Statut"] == "PARTIELLE":
+        return f"Payée en partie — {reference}"
+    if l["Statut"] == "RECLAMEE":
+        return f"Réclamée — {reference}"
+    return "À réclamer"
+
+
+def _classeur_recapitulatif_commissions(r, nom):
+    """État récapitulatif des commissions payées et en attente de paiement, à la présentation des classeurs d'OREOLE
+    (Arial Narrow, bordures moyennes, titres grisés) : synthèse par compagnie et par mois (total en attente = réclamées
+    + non encore réclamées, taux de recouvrement = payées / dues), règlements reçus, bordereaux réclamés en attente,
+    commissions non encore réclamées, détail des quittances ; totaux et contrôles en formules."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    from core.exports import texte_excel
+
+    bord = Side(style="medium")
+    cadre = Border(left=bord, right=bord, top=bord, bottom=bord)
+    gris = PatternFill("solid", fgColor="E7E6E6")
+    centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    a_gauche = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    MONTANT, JOUR, POURCENT = "#,##0", "dd/mm/yyyy", "0.0%"
+    titre_cie = nom or "TOUTES LES COMPAGNIES"
+    periode = _periode_texte(r["Du"], r["Au"])
+    situation = _jma(date.fromisoformat(r["Situation"]))
+
+    def cellule(ws, ligne, colonne, valeur, gras=False, format_=None, taille=12, fond=None, formule=False, gauche=False):
+        # formule=True seulement pour les formules construites ici ; toute autre chaîne reste du texte
+        c = ws.cell(row=ligne, column=colonne, value=valeur)
+        if isinstance(valeur, str) and not formule:
+            texte_excel(c)
+        c.font = Font(name="Arial Narrow", size=taille, bold=gras)
+        c.alignment = a_gauche if gauche else centre
+        c.border = cadre
+        if format_:
+            c.number_format = format_
+        if fond:
+            c.fill = fond
+        return c
+
+    def fusion(ws, ligne, premiere, derniere, valeur, **options):
+        ws.merge_cells(start_row=ligne, start_column=premiere, end_row=ligne, end_column=derniere)
+        for colonne in range(premiere + 1, derniere + 1):
+            ws.cell(row=ligne, column=colonne).border = cadre
+        return cellule(ws, ligne, premiere, valeur, **options)
+
+    def feuille(titre_feuille, largeurs, titre):
+        ws = classeur.create_sheet(titre_feuille)
+        ws.sheet_view.zoomScale = 80
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        for i, largeur in enumerate(largeurs, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = largeur
+        n = len(largeurs)
+        fusion(ws, 2, 1, n, titre, gras=True, taille=15, fond=gris)
+        ws.row_dimensions[2].height = 34
+        fusion(ws, 3, 1, n, f"{titre_cie} — PRIMES REVERSEES {periode}", gras=True)
+        fusion(ws, 4, 1, n, f"Situation au {situation}", gauche=False)
+        return ws
+
+    def entetes(ws, ligne, libelles, premiere=1):
+        for i, libelle in enumerate(libelles, start=premiere):
+            cellule(ws, ligne, i, libelle, gras=True, fond=gris)
+        ws.row_dimensions[ligne].height = 48
+
+    def total(ws, ligne, debut, fin, colonnes, libelle_jusqua):
+        fusion(ws, ligne, 1, libelle_jusqua, "TOTAL", gras=True)
+        for colonne in colonnes:
+            lettre = get_column_letter(colonne)
+            cellule(ws, ligne, colonne, f"=SUM({lettre}{debut}:{lettre}{fin})" if fin >= debut else 0, gras=True,
+                    format_=MONTANT, formule=fin >= debut)
+
+    classeur = Workbook()
+    classeur.remove(classeur.active)
+
+    # ---- 1. synthèse par compagnie et par mois de reversement
+    ws = feuille("RECAPITULATIF", [36, 12, 18, 18, 18, 20, 20, 20, 15],
+                 "ETAT RECAPITULATIF DES COMMISSIONS PAYEES ET EN ATTENTE DE PAIEMENT")
+    colonnes_synthese = ["QUITTANCES", "PRIMES REVERSEES", "COMMISSIONS DUES", "COMMISSIONS PAYEES",
+                         "EN ATTENTE : RECLAMEES A L'ASSUREUR", "EN ATTENTE : NON ENCORE RECLAMEES",
+                         "TOTAL EN ATTENTE DE PAIEMENT", "TAUX DE RECOUVREMENT"]
+    rangee = 6
+    lignes_total = []
+    for titre_bloc, libelle, groupes in (
+        ("PAR COMPAGNIE", "COMPAGNIE", [(g["Compagnie"], g) for g in r["ParCompagnie"]]),
+        ("PAR MOIS DE REVERSEMENT", "MOIS", [(_libelle_mois(g["Mois"]), g) for g in r["ParMois"]]),
+    ):
+        fusion(ws, rangee, 1, 9, titre_bloc, gras=True, fond=gris)
+        rangee += 1
+        entetes(ws, rangee, [libelle] + colonnes_synthese)
+        debut = rangee + 1
+        for etiquette, g in groupes:
+            rangee += 1
+            cellule(ws, rangee, 1, etiquette, gras=True, gauche=True)
+            for colonne, cle in ((2, "Nombre"), (3, "PrimesReversees"), (4, "CommissionDue"), (5, "CommissionPayee"),
+                                 (6, "EnAttenteReclamee"), (7, "EnAttenteAReclamer")):
+                cellule(ws, rangee, colonne, g[cle], format_="0" if colonne == 2 else MONTANT, gras=colonne in (4, 5))
+            cellule(ws, rangee, 8, f"=F{rangee}+G{rangee}", gras=True, format_=MONTANT, formule=True)
+            cellule(ws, rangee, 9, f"=IF(D{rangee}=0,0,E{rangee}/D{rangee})", format_=POURCENT, formule=True)
+        fin = rangee
+        rangee += 1
+        total(ws, rangee, debut, fin, range(2, 9), 1)
+        ws.cell(row=rangee, column=2).number_format = "0"
+        cellule(ws, rangee, 9, f"=IF(D{rangee}=0,0,E{rangee}/D{rangee})", gras=True, format_=POURCENT, formule=True)
+        lignes_total.append(rangee)
+        rangee += 3
+    if not r["ParCompagnie"]:
+        fusion(ws, rangee, 1, 9, "Aucune commission pour ces critères.")
+        rangee += 2
+    # Contrôles : dues = payées + en attente, et les deux synthèses (compagnies, mois) donnent les mêmes totaux
+    t1, t2 = lignes_total
+    for libelle, formule in (
+        ("Contrôle : commissions dues - payées - total en attente (doit être 0)", f"=D{t1}-E{t1}-H{t1}"),
+        ("Contrôle : total par compagnie - total par mois (doit être 0)", f"=D{t1}-D{t2}"),
+    ):
+        fusion(ws, rangee, 1, 4, libelle, gauche=True)
+        cellule(ws, rangee, 5, formule, gras=True, format_=MONTANT, formule=True)
+        rangee += 1
+
+    # ---- 2. commissions payées : règlements reçus des assureurs
+    ws = feuille("COMMISSIONS PAYEES", [15, 30, 21, 21, 12, 22, 22, 12, 18, 20],
+                 "ETAT DES COMMISSIONS PAYEES — REGLEMENTS RECUS DES ASSUREURS")
+    entetes(ws, 6, ["DATE DU REGLEMENT", "COMPAGNIE", "N° DU REGLEMENT", "BORDEREAU DE RECLAMATION", "MODE",
+                    "N° DU CHEQUE / DU VIREMENT", "BANQUE", "QUITTANCES", "MONTANT DU REGLEMENT",
+                    "COMMISSIONS REGLEES (PERIODE)"])
+    rangee = 6
+    for p in r["Reglements"]:
+        rangee += 1
+        valeurs = [(datetime.fromisoformat(p["DatePaiement"]) if p["DatePaiement"] else None, JOUR), (p["Compagnie"], None),
+                   (p["Reference"], None), (p["Reclamation"], None), (p["Mode"], None), (p["ReferencePaiement"], None),
+                   (p["Banque"], None), (p["Nombre"], "0"), (p["MontantReglement"], MONTANT), (p["Montant"], MONTANT)]
+        for colonne, (valeur, format_) in enumerate(valeurs, start=1):
+            cellule(ws, rangee, colonne, valeur, format_=format_, gras=colonne == 10, gauche=colonne == 2)
+    total(ws, rangee + 1, 7, rangee, (8, 9, 10), 7)
+    ws.cell(row=rangee + 1, column=8).number_format = "0"
+    if not r["Reglements"]:
+        fusion(ws, rangee + 3, 1, 10, "Aucun règlement de commission reçu pour ces quittances.")
+
+    # ---- 3. commissions en attente de paiement
+    ws = feuille("EN ATTENTE DE PAIEMENT", [22, 30, 16, 16, 13, 20, 18, 18],
+                 "ETAT DES COMMISSIONS EN ATTENTE DE PAIEMENT")
+    fusion(ws, 6, 1, 8, "COMMISSIONS RECLAMEES, EN ATTENTE DU REGLEMENT DE L'ASSUREUR", gras=True, fond=gris)
+    entetes(ws, 7, ["N° DU BORDEREAU", "COMPAGNIE", "EMIS LE", "ANCIENNETE (JOURS)", "QUITTANCES",
+                    "COMMISSIONS RECLAMEES", "DEJA REGLE", "RESTE DU"])
+    rangee = 7
+    for rc in r["Reclamations"]:
+        rangee += 1
+        valeurs = [(rc["Reference"], None), (rc["Compagnie"], None),
+                   (datetime.fromisoformat(rc["DateEmission"]) if rc["DateEmission"] else None, JOUR),
+                   (rc["Anciennete"], "0"), (rc["Nombre"], "0"), (rc["CommissionReclamee"], MONTANT),
+                   (rc["CommissionPayee"], MONTANT)]
+        for colonne, (valeur, format_) in enumerate(valeurs, start=1):
+            cellule(ws, rangee, colonne, valeur, format_=format_, gauche=colonne == 2)
+        cellule(ws, rangee, 8, f"=F{rangee}-G{rangee}", gras=True, format_=MONTANT, formule=True)
+    total(ws, rangee + 1, 8, rangee, (5, 6, 7, 8), 4)
+    ws.cell(row=rangee + 1, column=5).number_format = "0"
+    rangee += 4
+    fusion(ws, rangee, 1, 8, "COMMISSIONS NON ENCORE RECLAMEES (BORDEREAU RECAPITULATIF A EMETTRE)", gras=True, fond=gris)
+    rangee += 1
+    fusion(ws, rangee, 1, 2, "COMPAGNIE", gras=True, fond=gris)
+    entetes(ws, rangee, ["PLUS ANCIEN REVERSEMENT", "ANCIENNETE (JOURS)", "QUITTANCES", "MONTANT A RECLAMER"], premiere=3)
+    debut = rangee + 1
+    for n in r["NonReclamees"]:
+        rangee += 1
+        fusion(ws, rangee, 1, 2, n["Compagnie"], gauche=True)
+        cellule(ws, rangee, 3, datetime.fromisoformat(n["PlusAncien"]) if n["PlusAncien"] else None, format_=JOUR)
+        cellule(ws, rangee, 4, n["Anciennete"], format_="0")
+        cellule(ws, rangee, 5, n["Nombre"], format_="0")
+        cellule(ws, rangee, 6, n["Montant"], gras=True, format_=MONTANT)
+    total(ws, rangee + 1, debut, rangee, (5, 6), 4)
+    ws.cell(row=rangee + 1, column=5).number_format = "0"
+
+    # ---- 4. détail des quittances (état des commissions payées et non payées)
+    ws = feuille("DETAIL DES QUITTANCES", [26, 32, 20, 19, 24, 20, 14, 16, 16, 16, 36],
+                 "DETAIL DES COMMISSIONS PAR QUITTANCE")
+    entetes(ws, 6, ["COMPAGNIE", "NOM DU CLIENT", "N° POLICE", "N° QUITTANCE", "ASSURANCE", "N° DU BORDEREAU DE REVERSEMENT",
+                    "DATE DU REVERSEMENT", "COMMISSION DUE", "COMMISSION PAYEE", "RESTE DU", "SITUATION"])
+    rangee = 6
+    for l in sorted(r["Lignes"], key=lambda l: (l["Compagnie"], l["DateReversement"] or "", l["IdDetailReversement"])):
+        rangee += 1
+        valeurs = [(l["Compagnie"], None), (l["Client"], None), (l["PoliceCompagnie"] or l["NumeroPolice"], None),
+                   (l["NumeroQuittance"], None), (l["Assurance"], None), (l["NumeroBordereau"] or l["NumeroReversement"], None),
+                   (datetime.fromisoformat(l["DateReversement"]) if l["DateReversement"] else None, JOUR),
+                   (l["CommissionDue"], MONTANT), (l["CommissionPayee"], MONTANT)]
+        for colonne, (valeur, format_) in enumerate(valeurs, start=1):
+            cellule(ws, rangee, colonne, valeur, format_=format_, gauche=colonne in (1, 2))
+        cellule(ws, rangee, 10, f"=H{rangee}-I{rangee}", gras=True, format_=MONTANT, formule=True)
+        cellule(ws, rangee, 11, _situation_commission(l), gauche=True)
+    total(ws, rangee + 1, 7, rangee, (8, 9, 10), 7)
+    cellule(ws, rangee + 1, 11, "")
+
+    tampon = io.BytesIO()
+    classeur.save(tampon)
+    return tampon.getvalue()
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def recapitulatif_commissions_excel(request):
+    """GET /api/finance/commissions/recapitulatif/excel/?compagnie=&du=&au= : état récapitulatif des commissions
+    payées et en attente de paiement (4 feuilles)."""
+    from .views_finance import _filtres_recapitulatif, recapitulatif_commissions
+
+    try:
+        id_compagnie, du, au = _filtres_recapitulatif(request)
+    except ErreurFinance as erreur:
+        return _erreur(erreur)
+    r = recapitulatif_commissions(id_compagnie, du, au)
+    reponse = HttpResponse(_classeur_recapitulatif_commissions(r, r["Compagnie"]),
+                           content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    periode = _periode_texte(r["Du"], r["Au"]).replace("/", "-")
+    fichier = f"ETAT RECAPITULATIF DES COMMISSIONS {r['Compagnie'] or 'TOUTES COMPAGNIES'} {periode}.xlsx"
+    reponse["Content-Disposition"] = f'attachment; filename="{fichier.replace(chr(39), " ")}"'
+    return reponse
+
+
+# ------------------------------------------------------------------ bordereau récapitulatif des encaissements (Excel)
+STATUTS_HORS_TOTAL = ("ANNULE", "IMPAYE")
+
+
+def _classeur_recapitulatif_encaissements(etat, nom, filtres_texte):
+    """Bordereau récapitulatif des encaissements du … au … (demande du 2026-10-21), à la présentation des classeurs
+    d'OREOLE : une ligne par quittance encaissée (n° du bordereau d'encaissement, date de saisie, client, compagnie,
+    quittance, mode, référence, montant, statut) ; total sans les encaissements annulés ni les chèques impayés
+    (SOMME.SI.ENS), récapitulatifs par mode de paiement et par compagnie, contrôle = 0."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    from core.exports import texte_excel
+
+    from .views_finance import LIBELLES_STATUT
+
+    bord = Side(style="medium")
+    cadre = Border(left=bord, right=bord, top=bord, bottom=bord)
+    gris = PatternFill("solid", fgColor="E7E6E6")
+    centre = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    a_gauche = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    MONTANT, JOUR = "#,##0", "dd/mm/yyyy"
+
+    def cellule(ws, ligne, colonne, valeur, gras=False, format_=None, taille=12, fond=None, formule=False, gauche=False):
+        c = ws.cell(row=ligne, column=colonne, value=valeur)
+        if isinstance(valeur, str) and not formule:
+            texte_excel(c)
+        c.font = Font(name="Arial Narrow", size=taille, bold=gras)
+        c.alignment = a_gauche if gauche else centre
+        c.border = cadre
+        if format_:
+            c.number_format = format_
+        if fond:
+            c.fill = fond
+        return c
+
+    def fusion(ws, ligne, premiere, derniere, valeur, **options):
+        ws.merge_cells(start_row=ligne, start_column=premiere, end_row=ligne, end_column=derniere)
+        for colonne in range(premiere + 1, derniere + 1):
+            ws.cell(row=ligne, column=colonne).border = cadre
+        return cellule(ws, ligne, premiere, valeur, **options)
+
+    classeur = Workbook()
+    ws = classeur.active
+    ws.title = "ENCAISSEMENTS"
+    ws.sheet_view.zoomScale = 80
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    largeurs = [19, 13, 32, 24, 22, 20, 18, 15, 30, 16, 22]
+    for i, largeur in enumerate(largeurs, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = largeur
+    fusion(ws, 2, 1, 11, "BORDEREAU RECAPITULATIF DES ENCAISSEMENTS", gras=True, taille=15, fond=gris)
+    ws.row_dimensions[2].height = 32
+    fusion(ws, 3, 1, 11, f"{nom or 'TOUTES LES COMPAGNIES'} — ENCAISSEMENTS {_periode_texte(etat['Du'], etat['Au'])}", gras=True)
+    fusion(ws, 4, 1, 11, filtres_texte or "Tous les modes et tous les statuts")
+
+    entetes = ["N° DU BORDEREAU D'ENCAISSEMENT", "DATE DE SAISIE", "NOM DU CLIENT", "COMPAGNIE", "ASSURANCE", "N° POLICE",
+               "N° QUITTANCE", "MODE", "REFERENCE / BANQUE", "MONTANT", "STATUT"]
+    for i, entete in enumerate(entetes, start=1):
+        cellule(ws, 6, i, entete, gras=True, fond=gris)
+    ws.row_dimensions[6].height = 42
+    rangee = 6
+    for l in etat["Lignes"]:
+        rangee += 1
+        reference = " — ".join(x for x in (l["Reference"], l["Banque"]) if x)
+        valeurs = [(l["NumeroPiece"], None), (datetime.fromisoformat(l["DateEncaissement"]) if l["DateEncaissement"] else None, JOUR),
+                   (l["Client"], None), (l["Compagnie"], None), (_branche(None, l["Branche"]), None), (l["NumeroPolice"], None),
+                   (l["NumeroQuittance"], None), (l["Mode"], None), (reference, None), (l["Montant"], MONTANT),
+                   (l["LibelleStatut"], None)]
+        for colonne, (valeur, format_) in enumerate(valeurs, start=1):
+            cellule(ws, rangee, colonne, valeur, format_=format_, gras=colonne == 10, gauche=colonne in (3, 9))
+    debut, fin = 7, rangee
+    exclus = [LIBELLES_STATUT[s] for s in STATUTS_HORS_TOTAL]
+    rangee += 1
+    fusion(ws, rangee, 1, 9, "TOTAL (hors encaissements annulés et chèques impayés)", gras=True)
+    formule_total = (f'=SUMIFS(J{debut}:J{fin},K{debut}:K{fin},"<>{exclus[0]}",K{debut}:K{fin},"<>{exclus[1]}")'
+                     if fin >= debut else 0)
+    cellule(ws, rangee, 10, formule_total, gras=True, format_=MONTANT, formule=fin >= debut)
+    cellule(ws, rangee, 11, "")
+    ligne_total = rangee
+
+    # Récapitulatifs par mode de paiement et par compagnie (encaissements retenus au total)
+    lignes_recap = []
+    for titre, groupes in (("PAR MODE DE PAIEMENT", etat["ParMode"]), ("PAR COMPAGNIE", etat["ParCompagnie"])):
+        if titre == "PAR COMPAGNIE" and len(groupes) < 2:
+            continue
+        rangee += 2
+        fusion(ws, rangee, 8, 10, titre, gras=True, fond=gris)
+        rangee += 1
+        for colonne, entete in ((8, "LIBELLE"), (9, "NOMBRE"), (10, "MONTANT")):
+            cellule(ws, rangee, colonne, entete, gras=True, fond=gris)
+        premiere = rangee + 1
+        for g in groupes:
+            rangee += 1
+            cellule(ws, rangee, 8, g["Libelle"], gauche=True)
+            cellule(ws, rangee, 9, g["Nombre"], format_="0")
+            cellule(ws, rangee, 10, g["Montant"], format_=MONTANT)
+        rangee += 1
+        cellule(ws, rangee, 8, "TOTAL", gras=True)
+        cellule(ws, rangee, 9, f"=SUM(I{premiere}:I{rangee - 1})" if groupes else 0, gras=True, format_="0", formule=bool(groupes))
+        cellule(ws, rangee, 10, f"=SUM(J{premiere}:J{rangee - 1})" if groupes else 0, gras=True, format_=MONTANT, formule=bool(groupes))
+        lignes_recap.append(rangee)
+    rangee += 2
+    fusion(ws, rangee, 6, 9, "Contrôle : total - total par mode (doit être 0)", gauche=True)
+    cellule(ws, rangee, 10, f"=J{ligne_total}-J{lignes_recap[0]}" if lignes_recap else 0, gras=True, format_=MONTANT,
+            formule=bool(lignes_recap))
+    rangee += 2
+    ws.merge_cells(start_row=rangee, start_column=1, end_row=rangee, end_column=9)
+    arrete = ws.cell(row=rangee, column=1,
+                     value=f"Arrêté le présent bordereau à la somme de {_f(etat['Total']['Montant'])} FCFA "
+                           f"({etat['Total']['Nombre']} encaissement(s) retenu(s)).")
+    texte_excel(arrete)
+    arrete.font = Font(name="Arial Narrow", size=13, bold=True)
+    rangee += 3
+    for colonne, texte in ((1, "LE CAISSIER"), (9, "VISA DE LA DIRECTION")):
+        signature = ws.cell(row=rangee, column=colonne, value=texte)
+        texte_excel(signature)
+        signature.font = Font(name="Arial Narrow", size=13, bold=True, underline="single")
+    tampon = io.BytesIO()
+    classeur.save(tampon)
+    return tampon.getvalue()
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def recapitulatif_encaissements_excel(request):
+    """GET /api/finance/encaissements/recapitulatif/excel/?du=&au=&compagnie=&mode=&statut= : bordereau récapitulatif
+    des encaissements de la période (mêmes lignes et totaux que l'état des encaissements)."""
+    from .views_finance import LIBELLES_STATUT, donnees_etat_encaissements
+
+    try:
+        etat = donnees_etat_encaissements(request.query_params)
+    except ErreurFinance as erreur:
+        return _erreur(erreur)
+    id_compagnie = request.query_params.get("compagnie")
+    nom = reglages_compagnie(int(id_compagnie), _nom_compagnie(int(id_compagnie)))["NomBordereau"] if id_compagnie else ""
+    filtres = []
+    if request.query_params.get("mode"):
+        filtres.append(f"Mode : {etat['Lignes'][0]['Mode']}" if etat["Lignes"] else "Mode choisi")
+    if request.query_params.get("statut") in LIBELLES_STATUT:
+        filtres.append(f"Statut : {LIBELLES_STATUT[request.query_params['statut']]}")
+    reponse = HttpResponse(_classeur_recapitulatif_encaissements(etat, nom, " — ".join(filtres)),
+                           content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fichier = f"BORDEREAU RECAPITULATIF DES ENCAISSEMENTS {nom or 'TOUTES COMPAGNIES'} {_periode_texte(etat['Du'], etat['Au'])}"
+    reponse["Content-Disposition"] = f'attachment; filename="{fichier.replace("/", "-").replace(chr(39), " ")}.xlsx"'
     return reponse

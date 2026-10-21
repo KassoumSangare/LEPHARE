@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileSpreadsheet, FileText, ListChecks, Loader2, RefreshCw, Search, X } from 'lucide-react';
+import { FileSpreadsheet, FileText, ListChecks, Loader2, Printer, RefreshCw, Search, X } from 'lucide-react';
 import { financeApi, settingsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
 import {
   aujourdhui, correspondRecherche, dateFr, exporterEtatEncaissements, fcfa, messageErreurApi, recentsDabord,
 } from '../../../utils/financeUtils';
+import { imprimerRecapitulatifEncaissements } from '../../../utils/impressionsFinance';
 import { trierParLibelle } from '../../../utils/sortUtils';
 
 // État récapitulatif des encaissements : montant, mode, référence et statut de chaque quittance
@@ -15,7 +16,7 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', ANNULE: 'rose', IMPAYE: 'rose', DECAISSEMENT: 'rose', DEDUIT: 'slate', REPRIS: 'slate' };
 const STATUTS = [
   ['', 'Tous les statuts'], ['A_REVERSER', 'À reverser'], ['PARTIEL', 'Partiellement reversé'], ['REVERSE', 'Reversé à la compagnie'],
-  ['DECAISSEMENT', 'Décaissement (déduit)'], ['DEDUIT', 'Couvert par un décaissement'],
+  ['DECAISSEMENT', 'Décaissement'], ['DEDUIT', 'Couvert par un décaissement'],
   ['ANNULE', 'Annulé'], ['IMPAYE', 'Chèque impayé'], ['REPRIS', "Repris d'URANUS"],
 ];
 
@@ -80,6 +81,28 @@ export const EtatEncaissementsPage = () => {
   } : (etat && { ...etat, Lignes: lignesVisibles });
   const exporter = (format) => etatAffiche && exporterEtatEncaissements(etatAffiche, { libelleCompagnie }, format);
 
+  // Bordereau récapitulatif des encaissements de la période : imprimé (lignes affichées, recherche comprise) ou en
+  // Excel (filtres de période, compagnie, mode et statut, totaux en formules)
+  const [telechargement, setTelechargement] = useState(false);
+  const libelleFiltres = () => [
+    filtres.mode && `Mode : ${modes.find((m) => String(m.idmodeencaissement) === String(filtres.mode))?.libellemodepaiement || ''}`,
+    filtres.statut && `Statut : ${STATUTS.find(([v]) => v === filtres.statut)?.[1] || ''}`,
+    filtre && `Recherche : « ${recherche.trim()} »`,
+  ].filter(Boolean).join(' — ');
+  const imprimerRecapitulatif = () => etatAffiche && imprimerRecapitulatifEncaissements(etatAffiche, { compagnie: libelleCompagnie, filtres: libelleFiltres() });
+  const telechargerRecapitulatif = async () => {
+    setTelechargement(true);
+    try {
+      const params = Object.fromEntries(Object.entries(filtres).filter(([, v]) => v !== ''));
+      await financeApi.telechargerRecapitulatifEncaissements(params,
+        `Bordereau recapitulatif des encaissements ${libelleCompagnie || 'toutes compagnies'} du ${dateFr(filtres.du)} au ${dateFr(filtres.au)}.xlsx`.replace(/\//g, '-'));
+    } catch (err) {
+      toastError(`Excel non téléchargé : ${messageErreurApi(err)}`);
+    } finally {
+      setTelechargement(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
       <div>
@@ -128,6 +151,20 @@ export const EtatEncaissementsPage = () => {
           </button>
           <button type="button" className="btn btn-secondary" onClick={() => exporter('excel')} disabled={!etat} title="Exporter en Excel (lignes affichées)"><FileSpreadsheet size={15} /></button>
           <button type="button" className="btn btn-secondary" onClick={() => exporter('pdf')} disabled={!etat} title="Imprimer / PDF"><FileText size={15} /></button>
+        </div>
+        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginRight: 'auto' }}>
+            Bordereau récapitulatif des encaissements du {dateFr(filtres.du)} au {dateFr(filtres.au)}{libelleCompagnie ? ` — ${libelleCompagnie}` : ''}
+          </span>
+          <button type="button" className="btn btn-primary" onClick={imprimerRecapitulatif} disabled={!etat || chargement}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Printer size={15} /> Bordereau récapitulatif
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={telechargerRecapitulatif} disabled={!etat || telechargement || filtre}
+            title={filtre ? 'Retirez la recherche : l\'Excel reprend les filtres de période, compagnie, mode et statut' : 'Bordereau récapitulatif en Excel (totaux en formules)'}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            {telechargement ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />} En Excel
+          </button>
         </div>
       </div>
 
@@ -183,7 +220,7 @@ export const EtatEncaissementsPage = () => {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Date</th><th>N° pièce</th><th>Compagnie</th><th>Client</th><th>Branche</th><th>Quittance</th>
+                    <th>Date de saisie</th><th>N° pièce</th><th>Compagnie</th><th>Client</th><th>Branche</th><th>Quittance</th>
                     <th>Mode</th><th>Référence</th><th style={{ textAlign: 'right' }}>Montant</th><th>Statut</th>
                   </tr>
                 </thead>
@@ -197,7 +234,14 @@ export const EtatEncaissementsPage = () => {
                       <td>{l.Branche}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{l.NumeroQuittance}</td>
                       <td>{l.Mode}</td>
-                      <td>{[l.Reference, l.Banque].filter(Boolean).join(' — ') || '—'}</td>
+                      <td>
+                        {[l.Reference, l.Banque].filter(Boolean).join(' — ') || '—'}
+                        {(l.DateCheque || l.DateReceptionCheque) && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {[l.DateCheque && `émis le ${dateFr(l.DateCheque)}`, l.DateReceptionCheque && `reçu le ${dateFr(l.DateReceptionCheque)}`].filter(Boolean).join(' — ')}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: l.Montant < 0 ? 'var(--accent-rose)' : undefined }}>{fcfa(l.Montant)}</td>
                       <td title={l.MotifAnnulation || undefined} style={{ whiteSpace: 'nowrap' }}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
                     </tr>

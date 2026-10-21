@@ -33,6 +33,7 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { GarantiesVehiculeFlotteModal } from './GarantiesVehiculeFlotteModal';
 import { ImportFlotteModal } from './ImportFlotteModal';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { aLeDroit } from '../../../utils/droits';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
@@ -1119,6 +1120,29 @@ export const NewAutoQuotePage = () => {
   // main (mêmes champs, enregistrés avec le devis). Les garanties de l'offre marquées « Non » dans le
   // fichier sont retirées du véhicule, comme avec « Garanties de l'offre » (barème moins ces garanties).
   const [importFlotteOuvert, setImportFlotteOuvert] = useState(false);
+  // Questionnaire prospect (?questionnaire=) : fiche de tarification du client, reprise par l'import des véhicules
+  const qd = useQuestionnaireDevis();
+  const [fichierQuestionnaire, setFichierQuestionnaire] = useState(null);
+  const [repriseQuestionnaire, setRepriseQuestionnaire] = useState(false);
+  const reprendreVehiculesQuestionnaire = async () => {
+    if (!compagnieId) {
+      toastError("Choisissez d'abord la compagnie et la catégorie (écran Contrat), puis reprenez les véhicules.");
+      setStep(1);
+      return;
+    }
+    setRepriseQuestionnaire(true);
+    try {
+      setFichierQuestionnaire(await qd.fichier());
+      setImportFlotteOuvert(true);
+    } catch {
+      toastError('Fichier du questionnaire non téléchargé.');
+    } finally {
+      setRepriseQuestionnaire(false);
+    }
+  };
+  useEffect(() => {
+    if (createdQuote && qd.actif) qd.devisEtabli(createdQuote.numerodevis || createdQuote.numero_devis || '');
+  }, [createdQuote]); // eslint-disable-line react-hooks/exhaustive-deps
   // Champs du véhicule que les fichiers ne donnent pas
   const defautsImport = () => ({
     codeAlarme: Number(systemeSecuriteId) || 0,
@@ -2748,6 +2772,21 @@ export const NewAutoQuotePage = () => {
         </div>
       </div>
 
+      <BandeauQuestionnaire
+        qd={qd}
+        onChercherClient={(nom) => { setSearchSouscripteur(nom); setStep(4); }}
+        onCreerClient={() => setIsQuickAddClientOpen(true)}
+        actions={qd.devis?.genre === 'auto' && qd.devis.vehicules ? [{
+          libelle: `Reprendre ${qd.devis.vehicules > 1 ? `les ${qd.devis.vehicules} véhicules` : 'le véhicule'}`,
+          icone: FileSpreadsheet,
+          principal: true,
+          occupe: repriseQuestionnaire,
+          disabled: repriseQuestionnaire,
+          titre: compagnieId ? 'Véhicules de la fiche de tarification du client (un véhicule : devis mono, plusieurs : flotte)' : "Choisissez d'abord la compagnie et la catégorie",
+          onClick: reprendreVehiculesQuestionnaire,
+        }] : []}
+      />
+
       {/* =========================================================================
           ÉCRAN 1 : CONTRAT
           ========================================================================= */}
@@ -2768,7 +2807,7 @@ export const NewAutoQuotePage = () => {
               onChange={(e) => setTypeContrat(e.target.value)}
               style={{ fontWeight: 700, borderColor: '#3b82f6', background: 'rgba(59, 130, 246, 0.08)' }}
             >
-              <option value="FLOTTE">FLOTTE (MULTI-VÉHICULES)</option>
+              <option value="FLOTTE">FLOTTE</option>
               <option value="MONO">MONO-VÉHICULE</option>
             </select>
             {aLeDroit('imports.excel') && (
@@ -2847,7 +2886,7 @@ export const NewAutoQuotePage = () => {
                         ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
                         : categorieCimaChoisie)}
                     >
-                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune (tarif de la catégorie)' : 'Aucune formule NSIA pour cette catégorie'}</option>
+                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune' : 'Aucune formule NSIA pour cette catégorie'}</option>
                       {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.libelle}
@@ -3128,7 +3167,7 @@ export const NewAutoQuotePage = () => {
                         ? tarifsSpecifiques.find((t) => Number(t.id) === Number(e.target.value))
                         : categorieCimaChoisie)}
                     >
-                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune (tarif de la catégorie)' : 'Aucune formule NSIA pour cette catégorie'}</option>
+                      <option value="">{tarifsSpecifiques.length > 0 ? 'Aucune' : 'Aucune formule NSIA pour cette catégorie'}</option>
                       {trierParLibelle(tarifsSpecifiques, (t) => t.libelle).map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.libelle}
@@ -4438,7 +4477,7 @@ export const NewAutoQuotePage = () => {
                 >
                   {clientsProposes.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.nomcomplet} ({c.codeclient})
+                      {c.nomcomplet} — {c.codeclient}
                     </option>
                   ))}
                 </select>
@@ -4840,7 +4879,8 @@ export const NewAutoQuotePage = () => {
       {/* Import Excel des véhicules d'une flotte */}
       <ImportFlotteModal
         isOpen={importFlotteOuvert}
-        onClose={() => setImportFlotteOuvert(false)}
+        onClose={() => { setImportFlotteOuvert(false); setFichierQuestionnaire(null); }}
+        fichierInitial={fichierQuestionnaire}
         idCompagnie={compagnieId}
         nomCompagnie={compagnie}
         idTarif={categorieId}
@@ -4868,6 +4908,7 @@ export const NewAutoQuotePage = () => {
       <QuickAddClientModal
         isOpen={isQuickAddClientOpen}
         onClose={() => setIsQuickAddClientOpen(false)}
+        valeursInitiales={qd.client}
         onClientCreated={(newClient) => {
           setClients((prev) => [newClient, ...prev]);
           setSouscripteurId(newClient.id || newClient.IdClient);

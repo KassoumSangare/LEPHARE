@@ -110,7 +110,7 @@ export const ContractActionModal = ({
                 onChange={(e) => setMotifResiliation(e.target.value)}
               >
                 <option value="Défaut de paiement de la prime (Article 13 CIMA)">
-                  Défaut de paiement de la prime (Article 13 CIMA - « Pas de prime, pas d'assurance »)
+                  Défaut de paiement de la prime
                 </option>
                 <option value="Changement de profession ou aggravation de risque">
                   Modification substantielle de l'usage ou du risque
@@ -122,7 +122,7 @@ export const ContractActionModal = ({
                   Résiliation amiable contradictoire
                 </option>
                 <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
-                  Vente ou cession du véhicule assuré (Art. 25 CIMA)
+                  Vente ou cession du véhicule assuré
                 </option>
               </select>
             </div>

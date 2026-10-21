@@ -2685,6 +2685,9 @@ def save_premium_collection(user, input_data):
         banque = int(input_data["banque"])
 
     montant_total = Decimal(input_data["montant_total"])
+    # Tout chèque porte sa banque (demande du 2026-10-21) ; 1 = « NEANT »
+    if abrege == "CHQ" and banque <= 1:
+        raise ValidationError("La banque du chèque est à renseigner.")
     # Numéro du chèque, du virement ou de la traite selon le mode
     numero_cheque = texte("numero_cheque")
     # Seuls les chèques passent par le portefeuille (stdcheque) : un virement ou une traite
@@ -2706,16 +2709,32 @@ def save_premium_collection(user, input_data):
     reference_reencaissement = texte("reference_reencaissement")
     id_cheque_impaye = input_data.get("id_cheque_impaye")
     # Ordre du règlement (titre du bordereau remis à la compagnie, production/views_bordereaux.py) : un chèque ou un
-    # versement à l'ordre de la compagnie lui est transmis tel quel ; mode URANUS « A la compagnie » : toujours
+    # virement à l'ordre de la compagnie lui est transmis tel quel ; mode URANUS « A la compagnie » : toujours ;
+    # espèces : toujours, directement au bordereau de réclamation de commission (demande du 2026-10-20)
     ordre_reglement = Encaissement.ORDRE_COMPAGNIE if (
-        texte("ordre_reglement").upper() == Encaissement.ORDRE_COMPAGNIE or (mode and mode.libellemodepaiement or "").strip().lower() == "a la compagnie"
+        texte("ordre_reglement").upper() == Encaissement.ORDRE_COMPAGNIE or abrege == "ESP"
+        or (mode and mode.libellemodepaiement or "").strip().lower() == "a la compagnie"
     ) else Encaissement.ORDRE_CABINET
+    # Date de saisie : toujours la date du jour, non modifiable (demande du 2026-10-20) ; la date envoyée par l'écran
+    # est ignorée. Chèque : date d'émission (facultative) puis date de réception à OREOLE (obligatoire, au plus tard
+    # le jour de la saisie)
+    date_encaissement = date_emission_du_jour()
     date_cheque = None
     if texte("date_cheque"):
         try:
             date_cheque = datetime.strptime(texte("date_cheque")[:10], "%Y-%m-%d").date()
         except ValueError:
-            raise ValidationError("Date du chèque invalide.")
+            raise ValidationError("Date d'émission du chèque invalide.")
+    date_reception_cheque = None
+    if abrege == "CHQ":
+        if not texte("date_reception_cheque"):
+            raise ValidationError("La date de réception du chèque à OREOLE est à renseigner.")
+        try:
+            date_reception_cheque = datetime.strptime(texte("date_reception_cheque")[:10], "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Date de réception du chèque invalide.")
+        if date_reception_cheque > date_encaissement:
+            raise ValidationError("La date de réception du chèque ne peut pas dépasser la date de saisie (aujourd'hui).")
 
     if compensation and not motif_compensation:
         raise ValidationError("Le motif de la compensation doit être précisé.")
@@ -2727,12 +2746,11 @@ def save_premium_collection(user, input_data):
         )
 
     nom_emetteur = str(input_data["nom_emetteur"])
-    date_encaissement = datetime.strptime(
-        input_data["date_encaissement"], "%d-%m-%Y"
-    ).date()
     liste_quittance = list(input_data["liste_quittance"])
     liste_q = ";".join([d["numero_quittance"] for d in liste_quittance])
-    if ordre_reglement == Encaissement.ORDRE_COMPAGNIE:
+    # Un chèque ou un virement à l'ordre d'une compagnie ne règle que ses primes ; des espèces peuvent régler les primes
+    # de plusieurs compagnies (chacune les reçoit sur son bordereau de réclamation)
+    if ordre_reglement == Encaissement.ORDRE_COMPAGNIE and abrege != "ESP":
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -2849,6 +2867,7 @@ def save_premium_collection(user, input_data):
             cheque_impaye=cheque_impaye,
             ordre_reglement=ordre_reglement,
             date_cheque=date_cheque,
+            date_reception_cheque=date_reception_cheque,
         )
 
         # 4. Mise à jour du chèque et enregistrement de l'opération

@@ -620,7 +620,7 @@ export const DecisionalStatesPage = () => {
                   value={contenuTypeEtat}
                   onChange={(e) => setContenuTypeEtat(Number(e.target.value))}
                 >
-                  <option value={1}>Bordereau (Détail)</option>
+                  <option value={1}>Bordereau</option>
                   <option value={2}>Récapitulatif</option>
                 </select>
               </div>
@@ -855,8 +855,8 @@ export const DecisionalStatesPage = () => {
                 value={contenuFormat}
                 onChange={(e) => setContenuFormat(e.target.value)}
               >
-                <option value="XLSX">Classeur Excel (.xlsx)</option>
-                <option value="PDF">Document PDF (.pdf)</option>
+                <option value="XLSX">Classeur Excel</option>
+                <option value="PDF">Document PDF</option>
               </select>
               <button className="btn btn-secondary" onClick={handleExportContenu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
                 {contenuFormat === 'XLSX' ? <FileSpreadsheet size={15} color="#34d399" /> : <FileText size={15} color="#f87171" />}
@@ -888,7 +888,7 @@ export const DecisionalStatesPage = () => {
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value)}
             >
-              <option value="XLSX">Classeur Microsoft Excel (.xlsx)</option>
+              <option value="XLSX">Classeur Microsoft Excel</option>
               <option value="PDF">Document PDF</option>
             </select>
           </div>
@@ -902,9 +902,9 @@ export const DecisionalStatesPage = () => {
               value={exportScope}
               onChange={(e) => setExportScope(e.target.value)}
             >
-              <option value="ALL">Tous les états ({etats.length})</option>
-              <option value="ACTIFS">États actifs uniquement ({actifsCount})</option>
-              <option value="INACTIFS">États inactifs uniquement ({inactifsCount})</option>
+              <option value="ALL">Tous les états</option>
+              <option value="ACTIFS">États actifs uniquement</option>
+              <option value="INACTIFS">États inactifs uniquement</option>
             </select>
           </div>
 

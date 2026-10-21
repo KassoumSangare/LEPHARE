@@ -85,3 +85,4 @@ def etat_serveur(request):
             {"serveur": True, "base": False, "message": str(erreur).strip().splitlines()[0][:300]},
             status=503,
         )
+    

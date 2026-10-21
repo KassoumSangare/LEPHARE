@@ -262,10 +262,6 @@ REGLES = [
     R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/decharge/", "reversements.create", objet="reversement",
       cles=("id_reversement",)),
     R("POST", r"finance/bordereaux/$", "reversements.create", objet="reversement"),
-    R("POST", r"finance/encaissements/(?P<id_encaissement>\d+)/ordre/", "reversements.create", objet="encaissement",
-      cles=("id_encaissement",)),
-    R("PATCH", r"finance/contrats/(?P<id_contrat>\d+)/police-compagnie/", "reversements.create", objet="contrat",
-      cles=("id_contrat",)),
     R("GET", r"finance/(bordereaux|tableau-reversement)", "reversements.view"),
     R("POST", r"(validationreversement|finance/reversements/(?P<id_reversement>\d+)/valider/|reversements-cima/(?P<pk>\d+)/valider/)",
       "reversements.validate", objet="reversement", cles=("id_reversement", "pk", "IdReversement", "idreversement")),
@@ -307,6 +303,8 @@ REGLES = [
     R("GET", r"autorisations/", "approbations.view"),
     # ---- suivi commercial, documents, ASACI, états
     R("GET", r"crm/", "crm.view"),
+    # Lecture d'un questionnaire rempli avant son dépôt (rien n'est enregistré) : réservée à qui peut le déposer
+    R("POST", r"crm/questionnaires/analyse/$", "crm.update", lecture=True),
     R("POST,PUT,PATCH,DELETE", r"crm/", "crm.update", objet="crm", cles=("pk",)),
     R("GET", r"(ged/|pieces-jointes)", "documents.view"),
     R("POST,PUT,PATCH,DELETE", r"(ged/|pieces-jointes)", "documents.update", objet="document", cles=("pk",)),

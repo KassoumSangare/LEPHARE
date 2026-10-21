@@ -161,7 +161,7 @@ export const MyDerogationsPage = () => {
               <option value="ANNUL_ENC">Annulation d'un encaissement validé</option>
               <option value="AVENANT_RETROACTIF">Avenant avec date d'effet rétroactive</option>
               <option value="DEROG_TARIF">Dérogation tarifaire hors barème CIMA</option>
-              <option value="REMISE_FLOTTE">Remise commerciale &gt; 10% (Flotte / Particulier)</option>
+              <option value="REMISE_FLOTTE">Remise commerciale &gt; 10%</option>
             </select>
           </div>
 

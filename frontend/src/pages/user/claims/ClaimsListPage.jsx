@@ -284,7 +284,7 @@ export const ClaimsListPage = () => {
               onChange={(e) => setSelectedCompany(e.target.value)}
               style={{ minWidth: '180px', fontSize: '0.875rem' }}
             >
-              <option value="ALL">Toutes compagnies ({allCompanies.length > 0 ? allCompanies.length : 33})</option>
+              <option value="ALL">Toutes compagnies</option>
               {trierParLibelle(allCompanies.length > 0 ? allCompanies : [...new Set(claims.map((c) => c.compagnie).filter(Boolean))], (cie) => cie).map((cie) => (
                 <option key={cie} value={cie}>{cie}</option>
               ))}
@@ -418,7 +418,7 @@ export const ClaimsListPage = () => {
             >
               {sortUniqueBy(contracts, (c) => c.client_nom || c.numeropolice).map((c) => (
                 <option key={c.id} value={c.numeropolice}>
-                  {c.numeropolice} – {c.client_nom} ({c.compagnie})
+                  {c.numeropolice} – {c.client_nom} – {c.compagnie}
                 </option>
               ))}
             </select>

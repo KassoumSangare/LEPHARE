@@ -4,6 +4,7 @@ import { transportApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { Modal } from '../../../components/common/Modal';
 import { printBordereauTransport } from '../../../utils/exportUtils';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import {
   Ship, UploadCloud, FileSpreadsheet, CheckCircle2, AlertTriangle, XCircle, Loader2, ChevronLeft,
   RefreshCw, Printer, Download, Eye, CalendarRange, Users, FileCheck, Info,
@@ -31,7 +32,7 @@ const messageErreurApi = (err) => {
 const QUINZAINES = [
   { id: '1', libelle: 'Du 1er au 15' },
   { id: '2', libelle: 'Du 16 au dernier jour du mois' },
-  { id: 'M', libelle: 'Mois complet (du 1er au dernier jour)' },
+  { id: 'M', libelle: 'Mois complet' },
 ];
 const bornesPeriode = (mois, quinzaine) => {
   if (!mois) return [null, null];
@@ -199,6 +200,9 @@ export const CertificatsTransportModal = ({ filtres, titre, onClose, idImportati
 export const NewTransportQuotePage = () => {
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
+  // Questionnaire Transport du prospect (?questionnaire=) : réponses du client à transmettre pour la cotation de la
+  // police d'abonnement ; les bordereaux GUCE suivent une fois la police souscrite
+  const qd = useQuestionnaireDevis();
   const champFichier = useRef(null);
 
   const [step, setStep] = useState(1);
@@ -326,6 +330,13 @@ export const NewTransportQuotePage = () => {
           un contrat à l'abonnement avec ses certificats et sa quittance.
         </p>
       </div>
+
+      <BandeauQuestionnaire qd={qd}>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          La cotation de la police d'abonnement se fait avec la compagnie à partir de ces réponses ; les bordereaux GUCE
+          s'importent ici une fois la police souscrite.
+        </div>
+      </BandeauQuestionnaire>
 
       {/* ÉTAPES */}
       <nav aria-label="Étapes de l'import" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '0.5rem' }}>
@@ -457,8 +468,8 @@ export const NewTransportQuotePage = () => {
                       <option value="">— Choisir le client —</option>
                       {options.map((c) => (
                         <option key={c.IdClient} value={c.IdClient}>
-                          {c.Nom} (n° {c.IdClient}){precedent.has(c.IdClient) ? ' — retenu lors des imports précédents' : ''}
-                          {titulaire.has(c.IdClient) ? ` — titulaire de la police GUCE ${titulaire.get(c.IdClient).NumeroPoliceGuce}${titulaire.get(c.IdClient).NumeroPolice ? ` (police ${titulaire.get(c.IdClient).NumeroPolice})` : ''}` : ''}
+                          {c.Nom} — n° {c.IdClient}{precedent.has(c.IdClient) ? ' — retenu lors des imports précédents' : ''}
+                          {titulaire.has(c.IdClient) ? ` — titulaire de la police GUCE ${titulaire.get(c.IdClient).NumeroPoliceGuce}${titulaire.get(c.IdClient).NumeroPolice ? `, police ${titulaire.get(c.IdClient).NumeroPolice}` : ''}` : ''}
                           {c.Score ? ` — ressemblance ${c.Score} %` : ''}
                         </option>
                       ))}

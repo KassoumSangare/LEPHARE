@@ -167,8 +167,8 @@ export const ApprovalCenterPage = () => {
               <label className="form-label">Durée de validité du jeton (Heures)</label>
               <select className="form-control" value={validiteHeures} onChange={(e) => setValiditeHeures(parseInt(e.target.value))}>
                 <option value={12}>12 Heures</option>
-                <option value={24}>24 Heures (1 jour)</option>
-                <option value={48}>48 Heures (2 jours)</option>
+                <option value={24}>24 Heures</option>
+                <option value={48}>48 Heures</option>
                 <option value={72}>72 Heures</option>
               </select>
             </div>

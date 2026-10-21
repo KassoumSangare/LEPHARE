@@ -14,6 +14,7 @@ La base rattache toute la saisie à l'opérateur qui l'a initialisée : un devis
 par un autre opérateur ne peut être modifié que par lui (message de la procédure).
 """
 
+import json
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -282,13 +283,51 @@ def enregistrer_affilie(request):
     return _reponse_procedure(err, (lignes or [None])[0], "idaffilie")
 
 
+def _lignes_personnes(personnes):
+    """Lignes d'import (colonnes du fichier Excel d'URANUS) depuis la liste JSON des personnes d'un bulletin
+    d'adhésion : [{lien A|C|E, nom, prenoms, date_naissance AAAA-MM-JJ, sexe M|F, adresse, telephone, email,
+    date_entree, matricule}]. Chaque adhérent (A) précède sa famille."""
+    try:
+        liste = json.loads(personnes) if isinstance(personnes, str) else personnes
+    except ValueError:
+        raise ValueError("Liste des personnes illisible.")
+    if not isinstance(liste, list) or not liste:
+        raise ValueError("Aucune personne à importer.")
+    if len(liste) > 500:
+        raise ValueError("500 personnes au plus par import.")
+    lignes = []
+    for rang, p in enumerate(liste, start=1):
+        if not isinstance(p, dict):
+            raise ValueError(f"Personne n° {rang} illisible.")
+        lien = _texte(p.get("lien")).upper()
+        if lien not in ("A", "C", "E"):
+            raise ValueError(f"Personne n° {rang} : lien « {lien} » inconnu (A, C ou E).")
+        if rang == 1 and lien != "A":
+            raise ValueError("La première personne doit être l'adhérent (lien A).")
+        sexe = _texte(p.get("sexe")).upper()[:1]
+        if sexe not in ("M", "F"):
+            raise ValueError(f"{_texte(p.get('nom'))} {_texte(p.get('prenoms'))} : précisez le sexe (M ou F).")
+        if not _texte(p.get("nom")) or not _texte(p.get("date_naissance")):
+            raise ValueError(f"Personne n° {rang} : nom et date de naissance obligatoires.")
+        valeur = lambda cle: _texte(p.get(cle)) or "NA"  # noqa: E731
+        lignes.append({
+            "nom": _texte(p.get("nom")), "prenoms": valeur("prenoms"), "numerocni": "NA",
+            "datenaissance": _texte(p.get("date_naissance")), "numerocmu": "NA", "sexe": sexe,
+            "numerotelephone": valeur("telephone"), "lienparente": lien, "dateeffet": "NA", "dateentree": valeur("date_entree"),
+            "adresseadherent": valeur("adresse"), "emailadherent": valeur("email"), "nombreaffection": "0",
+            "matricule": valeur("matricule"), "groupesanguin": "", "_ligne": rang,
+        })
+    return lignes
+
+
 @api_view(["POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
-@parser_classes([MultiPartParser, FormParser])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def importer_affilies(request):
     """
-    POST /api/devissante/importation/  (multipart : devis, filiale, date_effet, fichier_excel)
+    POST /api/devissante/importation/  (multipart : devis, filiale, date_effet, fichier_excel ; ou personnes : liste
+    JSON des personnes lues dans les bulletins d'adhésion reçus, vérifiées à l'écran)
 
     Adhérents et affiliés d'un fichier Excel (modèle d'URANUS), ligne par ligne, par les procédures de saisie. Les
     âges s'apprécient à la date d'effet du devis saisie à l'écran (date_effet). Un assuré au-delà des limites d'âge des conditions est admis par dérogation si l'utilisateur est habilité
@@ -299,16 +338,24 @@ def importer_affilies(request):
     devis = _entier(request.data.get("devis"))
     filiale = _entier(request.data.get("filiale"))
     fichier = request.FILES.get("fichier_excel")
+    personnes = request.data.get("personnes")
     if not (devis and filiale):
         return Response({"error": "Choisissez la couverture (filiale) des personnes importées."}, status=status.HTTP_400_BAD_REQUEST)
-    if not fichier:
+    if personnes:
+        # Personnes lues dans les bulletins d'adhésion reçus (questionnaires prospects), vérifiées à l'écran
+        try:
+            lignes = _lignes_personnes(personnes)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    elif not fichier:
         return Response({"error": "Choisissez le fichier Excel."}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        lignes = load_people_data_from_excel(fichier, index=0)
-    except KeyError as manque:
-        return Response({"error": f"Colonne {manque} absente de la 1re ligne du fichier."}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as exc:  # fichier illisible
-        return Response({"error": f"Fichier Excel illisible : {str(exc).splitlines()[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        try:
+            lignes = load_people_data_from_excel(fichier, index=0)
+        except KeyError as manque:
+            return Response({"error": f"Colonne {manque} absente de la 1re ligne du fichier."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:  # fichier illisible
+            return Response({"error": f"Fichier Excel illisible : {str(exc).splitlines()[0]}"}, status=status.HTTP_400_BAD_REQUEST)
     if not lignes:
         return Response({"error": "Le fichier ne contient aucune personne (lignes 2 et suivantes)."}, status=status.HTTP_400_BAD_REQUEST)
     manquantes = [c for c in COLONNES_IMPORT if c not in lignes[0]]

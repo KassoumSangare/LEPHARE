@@ -22,7 +22,8 @@ import {
 import { trierParLibelle } from '../../../utils/sortUtils';
 import { qualitesSelonPersonne } from '../../../utils/clientUtils';
 
-export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
+// valeursInitiales : fiche pré-remplie (souscripteur lu dans un questionnaire prospect : type, nom, téléphone…)
+export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated, valeursInitiales = null }) => {
   const { success, error: toastError } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -41,6 +42,14 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
   useEffect(() => {
     if (isOpen) {
       setStep(1);
+      if (valeursInitiales) {
+        const remplies = Object.fromEntries(Object.entries(valeursInitiales).filter(([, v]) => v));
+        setFormData((f) => ({
+          ...f,
+          ...remplies,
+          ...(remplies.typeclient === 'Entreprise' ? { Particulier: 'F', IdQualite: 4, prenom: '', idtypeclient: 2, idtypeassure: 2 } : {}),
+        }));
+      }
       Promise.all([
         configRefApi.getQualites().catch(() => []),
         configRefApi.getStatutsJuridiques().catch(() => []),
@@ -592,7 +601,7 @@ export const QuickAddClientModal = ({ isOpen, onClose, onClientCreated }) => {
                   <option value="">-- Sélectionner une profession --</option>
                   {trierParLibelle(refData.professions, (p) => `${p.Libelle} ${p.CodeProfession ? `(${p.CodeProfession})` : ''}`).map((p) => (
                     <option key={p.IdProfession} value={p.IdProfession}>
-                      {p.Libelle} {p.CodeProfession ? `(${p.CodeProfession})` : ''}
+                      {p.Libelle}{p.CodeProfession ? ` — ${p.CodeProfession}` : ''}
                     </option>
                   ))}
                 </select>

@@ -68,13 +68,9 @@ class CrmLeadViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Référence PROSP-<année>-<n° à 3 chiffres> suivant la plus haute de l'année (jamais
         # calculée par l'écran, qui la dupliquait après une suppression)
-        prefixe = f"PROSP-{datetime.date.today().year}-"
-        numeros = [
-            int(ref[len(prefixe):])
-            for ref in CrmLead.objects.filter(id_lead__startswith=prefixe).values_list("id_lead", flat=True)
-            if ref[len(prefixe):].isdigit()
-        ]
-        serializer.save(id_lead=f"{prefixe}{(max(numeros) if numeros else 0) + 1:03d}")
+        from .views_questionnaires import reference_prospect
+
+        serializer.save(id_lead=reference_prospect())
 
     @action(detail=True, methods=["post", "patch"])
     def changer_statut(self, request, pk=None):

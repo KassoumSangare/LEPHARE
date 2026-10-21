@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cashApi } from '../../api/endpoints';
+import { aujourdhui, dateFr } from '../../utils/financeUtils';
 import { nomCabinet } from '../../utils/parametrage';
 
 // Champs du mode de règlement d'un encaissement, communs à l'encaissement des primes et au
@@ -7,8 +8,12 @@ import { nomCabinet } from '../../utils/parametrage';
 //   Espèces : n° de bordereau ; Chèque / Virement / Traite : banque et numéro (le montant
 //   initial seulement pour un chèque, qui entre au portefeuille) ; Paiement mobile : n° du
 //   reçu de l'opérateur ; Compensation : référence et motif.
-// Chèque, virement, traite ou versement d'espèces : à l'ordre du cabinet (reversé ensuite par son chèque : bordereau
-// de reversement de prime) ou de la compagnie (transmis tel quel : bordereau de réclamation de commission).
+// Dates : chèque = date d'émission puis date de réception au cabinet (obligatoire, au plus tard
+// aujourd'hui) ; tous les modes = date de saisie, toujours la date du jour, non modifiable.
+// Chèque, virement ou traite : à l'ordre du cabinet (reversé ensuite par son chèque : bordereau de reversement de
+// prime) ou de la compagnie (transmis tel quel : bordereau de réclamation de commission). Espèces : toujours
+// directement au bordereau de réclamation de commission, sans reversement ni versement au compte de la compagnie
+// (demande du 2026-10-20) ; le serveur applique la même règle.
 
 // « Report d'encaissement » n'est pas un mode de paiement proposé à la caisse
 export const modesProposes = (listeModes) => {
@@ -69,6 +74,7 @@ export const reglementVide = (nomEmetteur = '') => ({
   motifCompensation: '',
   ordre: 'CABINET',
   dateCheque: '',
+  dateReceptionCheque: aujourdhui(),
   nomEmetteur,
 });
 
@@ -87,8 +93,9 @@ export const champsReglementApi = (valeurs, mode) => {
     numero_recu_operateur: nature.mobile ? valeurs.numeroRecuOperateur.trim() : '',
     reference_compensation: nature.compensation ? valeurs.referenceCompensation.trim() : '',
     motif_compensation: nature.compensation ? valeurs.motifCompensation.trim() : '',
-    ordre_reglement: nature.aLaCompagnie ? 'COMPAGNIE' : ((nature.bancaire || nature.especes) && valeurs.ordre === 'COMPAGNIE' ? 'COMPAGNIE' : 'CABINET'),
+    ordre_reglement: nature.aLaCompagnie || nature.especes ? 'COMPAGNIE' : (nature.bancaire && valeurs.ordre === 'COMPAGNIE' ? 'COMPAGNIE' : 'CABINET'),
     date_cheque: nature.cheque && valeurs.dateCheque ? valeurs.dateCheque : '',
+    date_reception_cheque: nature.cheque && valeurs.dateReceptionCheque ? valeurs.dateReceptionCheque : '',
     nom_emetteur: valeurs.nomEmetteur.trim(),
   };
 };
@@ -195,28 +202,52 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
         </div>
       )}
 
-      {(nature.bancaire || nature.especes) && (
+      {nature.especes && (
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '-0.2rem 0 0.6rem' }}>
+          Espèces : la prime part directement au bordereau de réclamation de commission de la compagnie, sans bordereau de
+          reversement ni versement au compte de la compagnie.
+        </div>
+      )}
+
+      {nature.bancaire && !nature.especes && (
         <div className="responsive-form-row">
           <div className="form-group">
-            <label className="form-label">{nature.especes ? 'Versé au compte de' : "À l'ordre de"}</label>
+            <label className="form-label">À l'ordre de</label>
             <select
               className="form-control"
               value={nature.aLaCompagnie ? 'COMPAGNIE' : (valeurs.ordre || 'CABINET')}
               onChange={saisie('ordre')}
               disabled={nature.aLaCompagnie}
             >
-              <option value="CABINET">{nomCabinet()} (reversé par le cabinet)</option>
-              <option value="COMPAGNIE">La compagnie (transmis tel quel)</option>
+              <option value="CABINET">{nomCabinet()}</option>
+              <option value="COMPAGNIE">La compagnie</option>
             </select>
           </div>
-          {nature.cheque && (
-            <div className="form-group">
-              <label className="form-label">Date du chèque</label>
-              <input type="date" className="form-control" value={valeurs.dateCheque || ''} onChange={saisie('dateCheque')} />
-            </div>
-          )}
         </div>
       )}
+
+      {/* Dates : émission du chèque, réception du chèque au cabinet, puis saisie dans le système (toujours la date du
+          jour, non modifiable ; le serveur impose la même règle) */}
+      <div className={nature.cheque ? 'responsive-form-row-3' : 'responsive-form-row'}>
+        {nature.cheque && (
+          <>
+            <div className="form-group">
+              <label className="form-label">Date d'émission du chèque</label>
+              <input type="date" className="form-control" value={valeurs.dateCheque || ''} onChange={saisie('dateCheque')} />
+            </div>
+            <div className="form-group">
+              <label className="form-label" title={`Date à laquelle ${nomCabinet()} a reçu le chèque`}>Date de réception du chèque</label>
+              <input type="date" className="form-control" required max={aujourdhui()} value={valeurs.dateReceptionCheque || ''} onChange={saisie('dateReceptionCheque')} />
+            </div>
+          </>
+        )}
+        <div className="form-group">
+          <label className="form-label">Date de saisie</label>
+          <input type="text" className="form-control" value={dateFr(aujourdhui())} readOnly disabled title="Date du jour : non modifiable"
+            style={{ background: 'rgba(148, 163, 184, 0.14)', color: 'var(--text-secondary)', cursor: 'not-allowed' }} />
+        </div>
+      </div>
+
 
       {nature.cheque && chequeConnu && (
         <div style={{ fontSize: '0.8rem', marginTop: '-0.3rem', color: depassementCheque ? 'var(--accent-rose)' : 'var(--text-secondary)' }}>

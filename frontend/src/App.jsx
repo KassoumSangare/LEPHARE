@@ -75,6 +75,7 @@ import RenouvellementPage from './pages/user/contracts/RenouvellementPage';
 // New Institutional Modules (LE PHARE V2)
 import CrmPipelinePage from './pages/user/crm/CrmPipelinePage';
 import Customer360Page from './pages/user/crm/Customer360Page';
+import QuestionnairesPage from './pages/user/crm/QuestionnairesPage';
 import ClaimsListPage from './pages/user/claims/ClaimsListPage';
 import ClaimDetailPage from './pages/user/claims/ClaimDetailPage';
 import DocumentManagementPage from './pages/user/documents/DocumentManagementPage';
@@ -139,6 +140,7 @@ function App() {
                 {/* ===== MODULE C – CRM & RELATION CLIENT ===== */}
                 <Route path="/user/crm" element={<CrmPipelinePage />} />
                 <Route path="/user/crm/360" element={<Customer360Page />} />
+                <Route path="/user/crm/questionnaires" element={<QuestionnairesPage />} />
 
                 {/* ===== MODULE D – PROSPECTION & DEVIS ===== */}
                 <Route path="/user/clients" element={<ClientListPage />} />

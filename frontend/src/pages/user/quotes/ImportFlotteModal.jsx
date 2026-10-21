@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 import { Modal } from '../../../components/common/Modal';
 import { quoteApi } from '../../../api/endpoints';
@@ -20,6 +20,7 @@ const immat = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
  */
 export const ImportFlotteModal = ({
   isOpen, onClose, idCompagnie, nomCompagnie, idTarif, idOffre, marques, vehiculesFlotte = [], dateEffet, onImporter,
+  fichierInitial = null,
 }) => {
   const [fichier, setFichier] = useState(null);
   const [analyse, setAnalyse] = useState(null);
@@ -46,13 +47,13 @@ export const ImportFlotteModal = ({
     onClose();
   };
 
-  const analyser = async () => {
-    if (!fichier) return;
+  const analyser = async (aLire = fichier) => {
+    if (!aLire) return;
     setEnCours(true);
     setErreur('');
     setAnalyse(null);
     try {
-      const resultat = await quoteApi.analyserImportFlotte(fichier, { idCompagnie, idTarif, idOffre, dateEffet });
+      const resultat = await quoteApi.analyserImportFlotte(aLire, { idCompagnie, idTarif, idOffre, dateEffet });
       setAnalyse(resultat);
       setExclus(new Set());
       setCorrespondances({});
@@ -62,6 +63,13 @@ export const ImportFlotteModal = ({
       setEnCours(false);
     }
   };
+
+  // Fichier du questionnaire prospect (écran ouvert depuis « Établir le devis ») : repris et analysé d'office
+  useEffect(() => {
+    if (!isOpen || !fichierInitial) return;
+    setFichier(fichierInitial);
+    analyser(fichierInitial);
+  }, [isOpen, fichierInitial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const marquesInconnues = useMemo(() => [...new Set((analyse?.Vehicules || [])
     .filter((v) => !v.Vehicule.idMarque && v.Fichier.Marque)
@@ -133,7 +141,7 @@ export const ImportFlotteModal = ({
             <input type="file" accept=".xlsx,.xlsm" style={{ display: 'none' }}
               onChange={(e) => { setFichier(e.target.files?.[0] || null); setAnalyse(null); setErreur(''); e.target.value = ''; }} />
           </label>
-          <button type="button" className="btn btn-primary" disabled={!fichier || enCours} onClick={analyser}
+          <button type="button" className="btn btn-primary" disabled={!fichier || enCours} onClick={() => analyser()}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             {enCours ? <Loader2 size={16} className="spin" /> : <Upload size={16} />} Analyser le fichier
           </button>

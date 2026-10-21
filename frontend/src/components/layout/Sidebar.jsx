@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ADMIN_MENU, estActif } from './adminMenu';
 import {
   LayoutDashboard,
+  ClipboardList,
   Users,
   FileText,
   Shield,
@@ -85,7 +86,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
     setOpenSubmenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
   };
   // Pages du sous-menu « Relations Clients » visibles avec les droits de l'utilisateur
-  const nombreCrm = [peut('crm.view'), peut('clients.view'), peut('clients.view')].filter(Boolean).length;
+  const nombreCrm = [peut('crm.view'), peut('crm.view'), peut('clients.view'), peut('clients.view')].filter(Boolean).length;
 
   const handleLinkClick = () => {
     if (window.innerWidth <= 1024 && onClose) {
@@ -239,6 +240,10 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   {peut('crm.view') && <NavLink to="/user/crm" end className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <TrendingUp size={14} className="nav-icon" />
                     <span>Suivi commercial</span>
+                  </NavLink>}
+                  {peut('crm.view') && <NavLink to="/user/crm/questionnaires" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                    <ClipboardList size={14} className="nav-icon" />
+                    <span>Questionnaires prospects</span>
                   </NavLink>}
                   {peut('clients.view') && <NavLink to="/user/crm/360" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Contact size={14} className="nav-icon" />

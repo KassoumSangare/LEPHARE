@@ -135,7 +135,7 @@ export const JournalAuditPage = () => {
           <option value="">Tous les résultats</option>
           <option value="SUCCES">Succès</option>
           <option value="ECHEC">Échec</option>
-          <option value="REFUS">Refus (droit, verrouillage)</option>
+          <option value="REFUS">Refus</option>
         </select>
         <input type="date" className="form-control" title="Du" value={filtres.du} onChange={(e) => changer('du', e.target.value)} />
         <input type="date" className="form-control" title="Au" value={filtres.au} onChange={(e) => changer('au', e.target.value)} />

@@ -253,7 +253,7 @@ export const TableBareme = ({
       return (
         <select {...commun} className="form-control" value={v ?? ''} onChange={(e) => changer(c.champ, e.target.value === '' ? '' : Number(e.target.value))}>
           <option value="">— Choisir —</option>
-          {options.map((o) => <option key={o.id} value={o.id}>{o.libelle}{o.inactif ? ' (inactif)' : ''}</option>)}
+          {options.map((o) => <option key={o.id} value={o.id}>{o.libelle}{o.inactif ? ' — inactif' : ''}</option>)}
         </select>
       );
     }

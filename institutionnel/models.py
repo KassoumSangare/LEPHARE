@@ -54,6 +54,41 @@ class CrmInteraction(models.Model):
         return f"{self.type_interaction} - {self.client_nom or (self.lead.nom_prospect if self.lead else 'Inconnu')}"
 
 
+class QuestionnaireProspect(models.Model):
+    """Questionnaire rempli par le client et déposé dans le suivi commercial (modèles : institutionnel/questionnaires.py).
+    Le dépôt fait avancer le prospect ; l'étude du questionnaire mène au devis."""
+
+    modele = models.CharField(max_length=60, verbose_name="Modèle de questionnaire")
+    titre = models.CharField(max_length=200, verbose_name="Titre du questionnaire")
+    branche = models.CharField(max_length=60, verbose_name="Branche")
+    # Prospect gardé par son nom si la fiche du suivi commercial est supprimée : le document reste consultable
+    lead = models.ForeignKey(CrmLead, null=True, blank=True, on_delete=models.SET_NULL, related_name="questionnaires",
+                             verbose_name="Prospect")
+    prospect_nom = models.CharField(max_length=150, verbose_name="Prospect ou client")
+    fichier = models.FileField(upload_to="questionnaires/%Y/%m/", verbose_name="Questionnaire rempli")
+    nom_original = models.CharField(max_length=255, verbose_name="Nom du fichier reçu")
+    taille = models.PositiveIntegerField(default=0, verbose_name="Taille (octets)")
+    version = models.PositiveSmallIntegerField(default=1, verbose_name="Version déposée")
+    statut = models.CharField(max_length=20, default="Reçu", verbose_name="Étape (Reçu, En étude, À compléter, Devis établi)")
+    note = models.TextField(blank=True, default="", verbose_name="Note")
+    depose_par = models.ForeignKey("account.UranusUser", null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+", verbose_name="Déposé par")
+    depose_par_nom = models.CharField(max_length=150, blank=True, default="", verbose_name="Déposé par (nom)")
+    historique = models.JSONField(default=list, blank=True, verbose_name="Historique")
+    date_depot = models.DateTimeField(auto_now_add=True, verbose_name="Date de dépôt")
+    date_maj = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "lephare_questionnaire_prospect"
+        verbose_name = "Questionnaire prospect"
+        verbose_name_plural = "Questionnaires prospects"
+        ordering = ["-date_depot"]
+        indexes = [models.Index(fields=["statut", "date_depot"], name="questionnaire_statut_idx")]
+
+    def __str__(self):
+        return f"{self.titre} - {self.prospect_nom} ({self.statut})"
+
+
 class SinistreDelegue(models.Model):
     """Dossier de sinistre géré sous mandat de gestion déléguée CIMA"""
     numero_sinistre = models.CharField(max_length=50, unique=True, verbose_name="N° Dossier Sinistre")

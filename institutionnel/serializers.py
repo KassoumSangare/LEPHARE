@@ -6,6 +6,7 @@ from core.fichiers import valider_fichier
 from .models import (
     CrmLead,
     CrmInteraction,
+    QuestionnaireProspect,
     SinistreDelegue,
     ConventionAssureur,
     DocumentGED,
@@ -13,6 +14,7 @@ from .models import (
     QuittanceCima,
     BordereauReversement
 )
+from .questionnaires import PAR_CODE, STATUTS, extension, nom_fichier_sur
 
 
 class CrmLeadSerializer(serializers.ModelSerializer):
@@ -34,6 +36,41 @@ class CrmInteractionSerializer(serializers.ModelSerializer):
     class Meta:
         model = CrmInteraction
         fields = "__all__"
+
+
+class QuestionnaireProspectSerializer(serializers.ModelSerializer):
+    """Questionnaire déposé : le fichier se télécharge par crm/questionnaires/recus/<id>/fichier/ (sous son titre)."""
+
+    lead_reference = serializers.CharField(source="lead.id_lead", read_only=True, default=None)
+    lead_statut = serializers.CharField(source="lead.statut", read_only=True, default=None)
+    lead_branche = serializers.CharField(source="lead.branche", read_only=True, default=None)
+    extension = serializers.SerializerMethodField()
+    nom_telechargement = serializers.SerializerMethodField()
+    route_devis = serializers.SerializerMethodField()
+    format_modele = serializers.SerializerMethodField()
+
+    class Meta:
+        model = QuestionnaireProspect
+        exclude = ("fichier", "depose_par")
+        read_only_fields = ("modele", "titre", "branche", "lead", "prospect_nom", "nom_original", "taille", "version",
+                            "depose_par_nom", "historique", "date_depot", "date_maj")
+
+    def get_extension(self, objet):
+        return extension(objet.nom_original)
+
+    def get_nom_telechargement(self, objet):
+        return f"{nom_fichier_sur(f'{objet.titre} - {objet.prospect_nom}')}.{extension(objet.fichier.name) or 'pdf'}"
+
+    def get_route_devis(self, objet):
+        return (PAR_CODE.get(objet.modele) or {}).get("route_devis")
+
+    def get_format_modele(self, objet):
+        return (PAR_CODE.get(objet.modele) or {}).get("format")
+
+    def validate_statut(self, valeur):
+        if valeur not in STATUTS:
+            raise serializers.ValidationError(f"Étape inconnue (attendu : {', '.join(STATUTS)}).")
+        return valeur
 
 
 # ---------------------------------------------------------------- règles des sinistres délégués

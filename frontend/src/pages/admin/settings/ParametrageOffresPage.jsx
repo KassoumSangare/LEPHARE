@@ -619,7 +619,7 @@ export const ParametrageOffresPage = () => {
             >
               <option value="">-- Aucun --</option>
               {sortUniqueBy(selectedBranche ? tarifsDuProduit : tarifs, (t) => t.Libelle).map((t) => (
-                <option key={t.IdTarif} value={t.IdTarif}>{t.Libelle} ({t.CodeCategorie})</option>
+                <option key={t.IdTarif} value={t.IdTarif}>{t.Libelle} — {t.CodeCategorie}</option>
               ))}
             </select>
           </div>

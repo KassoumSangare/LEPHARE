@@ -739,6 +739,65 @@ def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
     return assures
 
 
+def lire_formulaire_oreole(filepath: str) -> Optional[pd.DataFrame]:
+    """
+    Formulaire « Assurance Individuelle Accidents » d'OREOLE (questionnaire prospect rempli par le client) : titre
+    puis en-tête sur deux lignes (N°, NOM ET PRENOMS, DATE DE NAISSANCE, PROFESSION, CAPITAUX DECES / IPT), une
+    personne par ligne. Renvoie les colonnes du modèle 3 (Nom et prénoms, Date de naissance, Fonction, Capitaux
+    Décès, Capitaux IPT), ou None si le fichier n'est pas à ce format.
+    """
+    import unicodedata
+    from itertools import zip_longest
+
+    import openpyxl
+
+    def norme(valeur):
+        texte = unicodedata.normalize("NFD", str(valeur or "")).encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"\s+", " ", texte).strip().lower()
+
+    try:
+        classeur = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
+    except Exception:  # noqa: BLE001 - fichier illisible : la lecture pandas donnera le message d'erreur
+        return None
+    try:
+        for feuille in classeur.worksheets:
+            lignes = [list(l) for l in feuille.iter_rows(values_only=True)]
+            for n in range(min(len(lignes) - 1, 30)):
+                haut, bas = [norme(c) for c in lignes[n]], [norme(c) for c in lignes[n + 1]]
+                cumul = [f"{a} {b}".strip() for a, b in zip_longest(haut, bas, fillvalue="")]
+                if n == 0 or not any("naissance" in c for c in cumul) or not any("nom" in c and "pren" in c for c in cumul):
+                    continue
+                index = {}
+                for k, c in enumerate(cumul):
+                    if "nom" in c and "pren" in c:
+                        index.setdefault("nom", k)
+                    elif "naissance" in c:
+                        index.setdefault("naissance", k)
+                    elif "profession" in c or "fonction" in c:
+                        index.setdefault("fonction", k)
+                    elif "deces" in c:
+                        index.setdefault("deces", k)
+                    elif "ipt" in c or "invalidite" in c or "incapacite" in c:
+                        index.setdefault("ipt", k)
+                if "nom" not in index:
+                    continue
+
+                def valeur(ligne, cle):
+                    k = index.get(cle)
+                    return ligne[k] if k is not None and k < len(ligne) else None
+
+                personnes = [
+                    {"Nom et prénoms": str(valeur(l, "nom")).strip(), "Date de naissance": valeur(l, "naissance"),
+                     "Fonction": valeur(l, "fonction") or "", "Capitaux Décès": valeur(l, "deces") or 0,
+                     "Capitaux IPT": valeur(l, "ipt") or 0}
+                    for l in lignes[n + 2:] if str(valeur(l, "nom") or "").strip()
+                ]
+                return pd.DataFrame(personnes, columns=["Nom et prénoms", "Date de naissance", "Fonction", "Capitaux Décès", "Capitaux IPT"])
+        return None
+    finally:
+        classeur.close()
+
+
 def extraire_assures(filepath: str, id_offre: int = 0) -> List[Dict]:
     """
     Lit le fichier Excel, détecte le format, et extrait les assurés.
@@ -757,8 +816,9 @@ def extraire_assures(filepath: str, id_offre: int = 0) -> List[Dict]:
         FileNotFoundError: Si le fichier n'existe pas
     """
     try:
-        # Lecture du fichier Excel
-        df = pd.read_excel(filepath)
+        # Lecture du fichier Excel (formulaire OREOLE du questionnaire prospect : en-tête sous le titre)
+        formulaire = lire_formulaire_oreole(filepath)
+        df = formulaire if formulaire is not None else pd.read_excel(filepath)
 
         # Nettoyage des noms de colonnes
         df.columns = [col.strip() for col in df.columns]
@@ -849,7 +909,9 @@ def extraire_assures(filepath: str, id_offre: int = 0) -> List[Dict]:
                 "Format détecté: Modèle 3 (Matricule / Nom et prénoms / Catégorie)"
             )
             assures = extraire_modele_3(df)
-
+        elif formulaire is not None:
+            logger.info("Format détecté: formulaire Individuelle Accidents d'OREOLE (questionnaire prospect)")
+            assures = extraire_modele_3(df)
         else:
             raise ValidationError(
                 f"Format de fichier non reconnu. Colonnes trouvées: {list(df.columns)}"

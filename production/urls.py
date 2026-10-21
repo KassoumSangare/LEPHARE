@@ -284,6 +284,8 @@ urlpatterns = [
     # Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
     # entière), réclamation et encaissement des commissions
     path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),
+    # Bordereau récapitulatif des encaissements d'une période (Excel ; impression dans l'application)
+    path("finance/encaissements/recapitulatif/excel/", views_bordereaux.recapitulatif_encaissements_excel, name="finance_recapitulatif_encaissements_excel"),
     path("finance/reversements/a-reverser/", views_finance.lignes_a_reverser, name="finance_a_reverser"),
     path("finance/reversements/", views_finance.reversements, name="finance_reversements"),
     path("finance/reversements/<int:id_reversement>/", views_finance.reversement, name="finance_reversement"),
@@ -294,14 +296,16 @@ urlpatterns = [
     path("finance/bordereaux/<int:id_reversement>/", views_bordereaux.bordereau, name="finance_bordereau"),
     path("finance/bordereaux/<int:id_reversement>/decharge/", views_bordereaux.decharge, name="finance_bordereau_decharge"),
     path("finance/bordereaux/<int:id_reversement>/annuler/", views_bordereaux.annuler_bordereau, name="finance_bordereau_annuler"),
-    path("finance/encaissements/<int:id_encaissement>/ordre/", views_bordereaux.ordre_encaissement, name="finance_ordre_encaissement"),
-    path("finance/contrats/<int:id_contrat>/police-compagnie/", views_bordereaux.police_compagnie, name="finance_police_compagnie"),
     path("finance/tableau-reversement/", views_bordereaux.tableau, name="finance_tableau_reversement"),
     path("finance/tableau-reversement/excel/", views_bordereaux.tableau_excel, name="finance_tableau_reversement_excel"),
     path("finance/commissions/", views_finance.etat_commissions, name="finance_commissions"),
+    # État récapitulatif des commissions payées et en attente de paiement (écran, impression, Excel 4 feuilles)
+    path("finance/commissions/recapitulatif/", views_finance.etat_recapitulatif_commissions, name="finance_commissions_recapitulatif"),
+    path("finance/commissions/recapitulatif/excel/", views_bordereaux.recapitulatif_commissions_excel, name="finance_commissions_recapitulatif_excel"),
     path("finance/commissions/reclamations/", views_finance.reclamations, name="finance_reclamations"),
     path("finance/commissions/reclamations/<int:id_reclamation>/", views_finance.reclamation, name="finance_reclamation"),
     path("finance/commissions/reclamations/<int:id_reclamation>/annuler/", views_finance.annuler_reclamation, name="finance_annuler_reclamation"),
+    path("finance/commissions/reclamations/<int:id_reclamation>/excel/", views_bordereaux.reclamation_excel, name="finance_reclamation_excel"),
     path("finance/commissions/reclamations/<int:id_reclamation>/paiements/", views_finance.encaisser_commission, name="finance_encaisser_commission"),
     # Devis Dommages (produit 9, toutes catégories) : catalogue, calcul, création / « Modifier », relecture
     path(r"dommages/catalogue/", catalogue_dommages, name="dommages_catalogue"),

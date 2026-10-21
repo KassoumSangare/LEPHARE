@@ -646,11 +646,6 @@ export const ChequeManagementPage = () => {
                   onChange={(e) => setReencaissement((prev) => ({ ...prev, references: e.target.value.replace(/[^\p{L}\p{N} \-/._:,']/gu, '') }))}
                 />
               </div>
-              <div className="form-group">
-                <label className="form-label">Date du réencaissement</label>
-                <input type="date" className="form-control" required value={reencaissement.date}
-                  onChange={(e) => setReencaissement((prev) => ({ ...prev, date: e.target.value }))} />
-              </div>
             </div>
             <ChampsReglement
               modes={modes}

@@ -20,6 +20,7 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
@@ -230,6 +231,12 @@ export const NewIaQuotePage = () => {
   const [souscripteurId, setSouscripteurId] = useState(0);
   const [rechercheSouscripteur, setRechercheSouscripteur] = useState('');
   const [listeSouscripteurOuverte, setListeSouscripteurOuverte] = useState(false);
+  // Questionnaire prospect (?questionnaire=) : formulaire Individuelle Accidents du client, importé comme une liste
+  const qd = useQuestionnaireDevis();
+  const [repriseQuestionnaire, setRepriseQuestionnaire] = useState(false);
+  useEffect(() => {
+    if (createdQuote && qd.actif) qd.devisEtabli(createdQuote.numerodevis || '');
+  }, [createdQuote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [assures, setAssures] = useState([]);
   const [assureEnCours, setAssureEnCours] = useState(assureVide);
@@ -1078,6 +1085,37 @@ export const NewIaQuotePage = () => {
         </div>
       )}
 
+      <BandeauQuestionnaire
+        qd={qd}
+        onChercherClient={(nom) => { setRechercheSouscripteur(nom); setListeSouscripteurOuverte(true); setStep(2); }}
+        onCreerClient={() => setIsQuickAddClientOpen(true)}
+        actions={qd.devis?.genre === 'ia' && qd.devis.personnes ? [{
+          libelle: `Reprendre les ${qd.devis.personnes} assuré(s)`,
+          icone: Upload,
+          principal: true,
+          occupe: repriseQuestionnaire,
+          disabled: repriseQuestionnaire,
+          titre: "Liste des personnes du formulaire du client, importée dans le devis groupe (bouton « Importer » de l'écran Assurés)",
+          onClick: async () => {
+            setRepriseQuestionnaire(true);
+            try {
+              setFichierImport(await qd.fichier());
+              if (flotte) {
+                setStep(2);
+                info('Formulaire du client prêt à importer : choisissez le souscripteur, puis « Importer » sous la liste des assurés.');
+              } else {
+                setStep(1);
+                info("Choisissez une catégorie groupe : la liste du formulaire s'importe dans un devis groupe (écran Assurés, « Importer »).");
+              }
+            } catch {
+              toastError('Fichier du questionnaire non téléchargé.');
+            } finally {
+              setRepriseQuestionnaire(false);
+            }
+          },
+        }] : []}
+      />
+
       {/* ÉTAPE 1 : CONTRAT */}
       {step === 1 && (
         <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
@@ -1324,7 +1362,7 @@ export const NewIaQuotePage = () => {
                 {/* Liste de la base seule : elle contient déjà « AUTRE » (id 0, classe 01) */}
                 <select className="form-control" value={assureEnCours.IdProfession} onChange={(e) => setAssureEnCours((p) => ({ ...p, IdProfession: Number(e.target.value) }))}>
                   {professionsTriees.map((p) => (
-                    <option key={p.id} value={p.id}>{p.libelle_profession} (classe {p.code_classe_assure})</option>
+                    <option key={p.id} value={p.id}>{p.libelle_profession} — classe {p.code_classe_assure}</option>
                   ))}
                 </select>
               </div>
@@ -1533,6 +1571,11 @@ export const NewIaQuotePage = () => {
                     style={{ maxWidth: '420px' }}
                     onChange={(e) => setFichierImport(e.target.files?.[0] || null)}
                   />
+                  {fichierImport && (
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }} title="Fichier qui sera importé">
+                      Fichier : <strong>{fichierImport.name}</strong>
+                    </span>
+                  )}
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -1730,6 +1773,7 @@ export const NewIaQuotePage = () => {
       <QuickAddClientModal
         isOpen={isQuickAddClientOpen}
         onClose={() => setIsQuickAddClientOpen(false)}
+        valeursInitiales={qd.client}
         onClientCreated={(newClient) => {
           setClients((prev) => [newClient, ...prev]);
           setSouscripteurId(Number(newClient.id || newClient.IdClient));

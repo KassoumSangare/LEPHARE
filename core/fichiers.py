@@ -8,7 +8,8 @@ liens signés et contrôle des envois.
   seulement dans une réponse que la garde centrale a autorisée ; servir_media refuse toute adresse sans
   signature valide. Les écrans continuent d'ouvrir les liens tels quels.
 - valider_fichier : extension autorisée, taille maximale et contenu réel (signature binaire du format), pour
-  qu'un fichier HTML, SVG ou exécutable renommé en .pdf ne soit pas accepté.
+  qu'un fichier HTML, SVG ou exécutable renommé en .pdf ne soit pas accepté (questionnaires prospects : Word et
+  Excel compris).
 """
 
 import mimetypes
@@ -32,6 +33,11 @@ SIGNATURES = {
     "jpeg": (b"\xff\xd8\xff",),
     "gif": (b"GIF87a", b"GIF89a"),
     "webp": (b"RIFF",),
+    # Office : .docx / .xlsx sont des archives ZIP, .doc / .xls des documents composés OLE
+    "docx": (b"PK\x03\x04",),
+    "xlsx": (b"PK\x03\x04",),
+    "doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+    "xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
 }
 
 

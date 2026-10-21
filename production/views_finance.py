@@ -24,6 +24,7 @@ Encaissements repris d'URANUS (saisis en décembre 2025, encaissés jusqu'au 14/
 reversés hors LE PHARE, ils ne sont pas proposés au reversement (DEBUT_REVERSEMENTS).
 """
 
+from collections import OrderedDict
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -139,7 +140,7 @@ SQL_LIGNES_ENCAISSEMENT = """
            COALESCE(ct.accessoireintermediaire, 0) AS acccourtier,
            cie.idcompagnie, cie.raisonsociale AS compagnie, p.libelleproduit AS branche,
            TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client,
-           ch.statut AS statutcheque
+           ch.statut AS statutcheque, e.datecheque, e.datereceptioncheque
     FROM stddetailencaissement de
     JOIN stdencaissement e ON e.idencaissement = de.idencaissement
     JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
@@ -257,6 +258,9 @@ def _ligne_encaissement(ligne, restes=None):
         "IdMode": ligne["idmode"],
         "Reference": ligne["reference"] or "",
         "Banque": ligne["banque"] or "",
+        # Chèque : date d'émission et date de réception au cabinet (DateEncaissement = date de saisie)
+        "DateCheque": _iso(ligne["datecheque"]),
+        "DateReceptionCheque": _iso(ligne["datereceptioncheque"]),
         # Décaissement : compté en négatif (déduit des totaux et du reste à reverser)
         "Montant": _nombre(ligne["montant_encaissement"]) * signe,
         "MontantReverse": _nombre(ligne["montantreverse"]),
@@ -273,23 +277,31 @@ def _ligne_encaissement(ligne, restes=None):
 def etat_encaissements(request):
     """GET /api/finance/encaissements/?du=&au=&compagnie=&mode=&statut= : état récapitulatif."""
     try:
-        du = _date(request.query_params.get("du"), "Du", obligatoire=False) or date(date.today().year, 1, 1)
-        au = _date(request.query_params.get("au"), "Au", obligatoire=False) or date.today()
+        return Response(donnees_etat_encaissements(request.query_params))
     except ErreurFinance as erreur:
         return _erreur(erreur)
+
+
+def donnees_etat_encaissements(parametres):
+    """État des encaissements (écran, bordereau récapitulatif imprimé et Excel) : une ligne par quittance encaissée
+    du … au … (date de saisie), filtres compagnie, mode et statut ; annulés et chèques impayés hors totaux."""
+    du = _date(parametres.get("du"), "Du", obligatoire=False) or date(date.today().year, 1, 1)
+    au = _date(parametres.get("au"), "Au", obligatoire=False) or date.today()
+    if du > au:
+        raise ErreurFinance("Le début de la période dépasse sa fin.")
     # Contre-passations d'une annulation (montants négatifs) écartées : la ligne d'origine porte
     # le statut « Annulé » et son motif
     conditions, params = ["e.dateencaissement::date BETWEEN %s AND %s", "de.montant_encaissement > 0"], [du, au]
-    if request.query_params.get("compagnie"):
+    if parametres.get("compagnie"):
         conditions.append("cie.idcompagnie = %s")
-        params.append(int(request.query_params["compagnie"]))
-    if request.query_params.get("mode"):
+        params.append(_entier(parametres["compagnie"], "Compagnie"))
+    if parametres.get("mode"):
         conditions.append("e.idmodepaiement = %s")
-        params.append(int(request.query_params["mode"]))
+        params.append(_entier(parametres["mode"], "Mode"))
     brutes = _lignes(SQL_LIGNES_ENCAISSEMENT + " WHERE " + " AND ".join(conditions) + " ORDER BY e.dateencaissement, e.idencaissement, de.iddetailencaissement", params)
     restes = _restes_nets({l["numeroquittance"] for l in brutes})
     lignes = [_ligne_encaissement(l, restes) for l in brutes]
-    statut = request.query_params.get("statut")
+    statut = parametres.get("statut")
     if statut:
         lignes = [l for l in lignes if l["Statut"] == statut]
 
@@ -305,7 +317,7 @@ def etat_encaissements(request):
         return sorted(resultat.values(), key=lambda g: -g["Montant"])
 
     valides = [l for l in lignes if l["Statut"] not in ("ANNULE", "IMPAYE")]
-    return Response({
+    return {
         "Du": du.isoformat(), "Au": au.isoformat(),
         "Lignes": lignes,
         "ParMode": totaux("Mode"),
@@ -319,7 +331,7 @@ def etat_encaissements(request):
                   "Reverse": sum(l["MontantReverse"] for l in valides),
                   "ResteAReverser": sum(l["ResteAReverser"] for l in valides)},
         "DebutReversements": debut_reversements().isoformat(),
-    })
+    }
 
 
 # ------------------------------------------------------------------ reversements
@@ -511,6 +523,22 @@ def reversement(request, id_reversement):
     return Response(resultat)
 
 
+def controle_paiement_cabinet(donnees):
+    """Paiement d'un bordereau de reversement par le cabinet (demande du 2026-10-21) : par chèque ou par virement,
+    banque du cabinet obligatoire, numéro obligatoire pour un chèque. Renvoie le mode de paiement."""
+    id_mode = _entier(donnees.get("IdMode"), "Paiement (chèque ou virement)")
+    mode = _lignes(
+        "SELECT UPPER(TRIM(COALESCE(abregereglement, ''))) AS abrege, LOWER(COALESCE(libellemodepaiement, '')) AS libelle "
+        "FROM stdmodeencaissement WHERE idmodeencaissement = %s", [id_mode])
+    if not mode or mode[0]["abrege"] not in ("CHQ", "VIR") or "compagnie" in mode[0]["libelle"]:
+        raise ErreurFinance("Paiement de la compagnie : par chèque ou par virement.")
+    if _entier(donnees.get("IdBanque"), "Banque", obligatoire=False) <= 1:
+        raise ErreurFinance("Banque du cabinet : à renseigner.")
+    if mode[0]["abrege"] == "CHQ" and not str(donnees.get("NumeroCheque") or "").strip():
+        raise ErreurFinance("N° du chèque : à renseigner.")
+    return id_mode
+
+
 @api_view(["POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EcrituresAdministrateur])
@@ -519,7 +547,7 @@ def valider_reversement(request, id_reversement):
     { IdMode, IdBanque, NumeroCheque, NomEmetteur, ReferenceCompensation, DateReversement }"""
     try:
         donnees = request.data
-        id_mode = _entier(donnees.get("IdMode"), "Mode de paiement")
+        id_mode = controle_paiement_cabinet(donnees)
         date_reversement = _date(donnees.get("DateReversement") or date.today(), "Date du paiement")
         with transaction.atomic(), connection.cursor() as cursor:
             cursor.execute(
@@ -554,7 +582,7 @@ SQL_COMMISSIONS = """
            public.fn_lephare_prime_ht(ct.primenette, ct.accessoire, ct.taxe, ct.fga, ct.cedeao, ct.primettc, ct.primeimposee) AS primeht,
            bo.numero AS numerobordereau, COALESCE(bo.datebordereau, r.datereversement) AS datebordereau,
            """ + COMMISSION_DUE.format(d="d", de="de", ct="ct") + """ AS commissiondue,
-           rc.id AS idreclamation, rc.reference AS reclamation,
+           rc.id AS idreclamation, rc.reference AS reclamation, rc.date_emission AS datereclamation,
            COALESCE((SELECT SUM(dp.montant_commission_paye) FROM std_detail_paiement_commission dp
                      WHERE dp.detail_reversement_id = d.iddetailreversement AND NOT dp.est_annule), 0) AS commissionpayee
     FROM stddetailreversement d
@@ -566,7 +594,7 @@ SQL_COMMISSIONS = """
     LEFT JOIN stdcompagnie cie ON cie.idcompagnie = r.idcompagnie
     LEFT JOIN stdproduit p ON p.idproduit = q.idproduit
     LEFT JOIN stdclient cl ON cl.idclient = q.idclient
-    LEFT JOIN LATERAL (SELECT x.id, x.reference FROM std_detail_reclamation_commission dx
+    LEFT JOIN LATERAL (SELECT x.id, x.reference, x.date_emission FROM std_detail_reclamation_commission dx
                        JOIN std_reclamation_commission x ON x.id = dx.reclamation_id
                        WHERE dx.detail_reversement_id = d.iddetailreversement AND x.statut <> 'ANNULEE'
                        ORDER BY x.id DESC LIMIT 1) rc ON TRUE
@@ -579,6 +607,13 @@ LIBELLES_COMMISSION = {
     "PARTIELLE": "Partiellement payée",
     "PAYEE": "Payée",
 }
+
+
+def _branche(id_produit, libelle):
+    """Libellé de la branche des bordereaux d'OREOLE (« Automobile », « Individuelle Accidents »…)."""
+    from .views_bordereaux import _branche as branche_bordereau  # import différé : views_bordereaux importe ce module
+
+    return branche_bordereau(id_produit, libelle)
 
 
 def _ligne_commission(l):
@@ -607,6 +642,7 @@ def _ligne_commission(l):
         "DateEffet": _iso(l["dateeffet"]),
         "DateExpiration": _iso(l["dateexpiration"]),
         "IdProduit": l["idproduit"],
+        "Assurance": _branche(l["idproduit"], l["branche"]),
         "PoliceCompagnie": l["policecompagnie"] or "",
         "NumeroBordereau": l["numerobordereau"],
         "DateBordereau": _iso(l["datebordereau"]),
@@ -622,6 +658,7 @@ def _ligne_commission(l):
         "Reste": _nombre(max(due - payee, ZERO)),
         "IdReclamation": l["idreclamation"],
         "Reclamation": l["reclamation"] or "",
+        "DateReclamation": _iso(l["datereclamation"]),
         "Statut": statut,
         "LibelleStatut": LIBELLES_COMMISSION[statut],
     }
@@ -690,6 +727,142 @@ def etat_commissions(request):
     })
 
 
+# ------------------------------------------------------------------ état récapitulatif des commissions
+def _synthese_commissions(lignes):
+    """Commissions dues = payées + en attente de paiement ; l'attente distingue les commissions réclamées à l'assureur
+    (bordereau récapitulatif émis, règlement attendu) de celles qui ne sont pas encore réclamées."""
+    def somme(valeurs):
+        return round(sum(valeurs), 2)
+
+    due = somme(l["CommissionDue"] for l in lignes)
+    payee = somme(l["CommissionPayee"] for l in lignes)
+    reclamee = somme(l["Reste"] for l in lignes if l["IdReclamation"])
+    a_reclamer = somme(l["Reste"] for l in lignes if not l["IdReclamation"])
+    return {
+        "Nombre": len(lignes),
+        "PrimesReversees": somme(l["MontantReverse"] for l in lignes),
+        "CommissionDue": due,
+        "CommissionPayee": payee,
+        "EnAttenteReclamee": reclamee,
+        "EnAttenteAReclamer": a_reclamer,
+        "EnAttente": round(reclamee + a_reclamer, 2),
+        "TauxRecouvrement": round(payee * 100 / due, 1) if due else 0.0,
+    }
+
+
+def _jours(depuis, jour):
+    return (jour - date.fromisoformat(depuis[:10])).days if depuis else None
+
+
+def recapitulatif_commissions(id_compagnie=None, du=None, au=None, jour=None):
+    """État récapitulatif des commissions des primes reversées du … au … (date du reversement), situation au jour :
+    synthèse par compagnie et par mois, règlements reçus des assureurs, bordereaux réclamés en attente de règlement
+    (ancienneté depuis leur émission) et commissions pas encore réclamées. Les règlements sont comptés pour la part
+    imputée sur ces quittances : leur total est celui des commissions payées."""
+    jour = jour or date.today()
+    lignes = _commissions(id_compagnie, du, au)
+    par_compagnie, par_mois, par_reclamation, a_reclamer = OrderedDict(), OrderedDict(), OrderedDict(), OrderedDict()
+    for l in sorted(lignes, key=lambda l: (l["Compagnie"], l["IdCompagnie"] or 0)):
+        par_compagnie.setdefault((l["IdCompagnie"], l["Compagnie"]), []).append(l)
+    for l in lignes:  # dans l'ordre des reversements
+        par_mois.setdefault((l["DateReversement"] or "")[:7], []).append(l)
+        if l["IdReclamation"]:
+            par_reclamation.setdefault(l["IdReclamation"], []).append(l)
+        elif l["Reste"] > 0:
+            a_reclamer.setdefault((l["IdCompagnie"], l["Compagnie"]), []).append(l)
+
+    reclamations = []
+    for id_reclamation, ls in par_reclamation.items():
+        reste = round(sum(l["Reste"] for l in ls), 2)
+        if reste <= 0:
+            continue
+        reclamations.append({
+            "IdReclamation": id_reclamation, "Reference": ls[0]["Reclamation"], "IdCompagnie": ls[0]["IdCompagnie"],
+            "Compagnie": ls[0]["Compagnie"], "DateEmission": ls[0]["DateReclamation"],
+            "Anciennete": _jours(ls[0]["DateReclamation"], jour), "Nombre": len(ls),
+            "CommissionReclamee": round(sum(l["CommissionDue"] for l in ls), 2),
+            "CommissionPayee": round(sum(l["CommissionPayee"] for l in ls), 2), "Reste": reste,
+        })
+    reclamations.sort(key=lambda r: (r["DateEmission"] or "", r["Reference"]))
+
+    non_reclamees = []
+    for (id_cie, compagnie), ls in sorted(a_reclamer.items(), key=lambda e: e[0][1]):
+        plus_ancien = min(l["DateReversement"] or "" for l in ls) or None
+        non_reclamees.append({
+            "IdCompagnie": id_cie, "Compagnie": compagnie, "Nombre": len(ls),
+            "Montant": round(sum(l["Reste"] for l in ls), 2), "PlusAncien": plus_ancien,
+            "Anciennete": _jours(plus_ancien, jour),
+        })
+
+    reglements = []
+    ids = [l["IdDetailReversement"] for l in lignes if l["CommissionPayee"]]
+    if ids:
+        for p in _lignes(
+            """
+            SELECT pc.id, pc.reference, pc.date_paiement, pc.mode_paiement, pc.reference_paiement, pc.montant_total,
+                   CASE WHEN UPPER(TRIM(COALESCE(bq.libelle, ''))) IN ('', 'NEANT', 'AUCUNE', 'AUCUN') THEN NULL
+                        ELSE TRIM(bq.libelle) END AS banque,
+                   x.reference AS reclamation, cie.raisonsociale AS compagnie,
+                   SUM(dp.montant_commission_paye) AS impute, COUNT(DISTINCT dp.detail_reversement_id) AS nombre
+            FROM std_detail_paiement_commission dp
+            JOIN std_paiement_commission pc ON pc.id = dp.paiement_id
+            LEFT JOIN std_reclamation_commission x ON x.id = pc.reclamation_id
+            LEFT JOIN stdcompagnie cie ON cie.idcompagnie = pc.compagnie_id
+            LEFT JOIN stdbanque bq ON bq.idbanque = pc.idbanque
+            WHERE dp.detail_reversement_id = ANY(%s) AND NOT dp.est_annule
+            GROUP BY pc.id, bq.libelle, x.reference, cie.raisonsociale
+            ORDER BY pc.date_paiement, pc.id
+            """,
+            [ids],
+        ):
+            reglements.append({
+                "IdPaiement": p["id"], "Reference": p["reference"], "DatePaiement": _iso(p["date_paiement"]),
+                "Compagnie": (p["compagnie"] or "").strip(), "Reclamation": p["reclamation"] or "",
+                "Mode": "Chèque" if p["mode_paiement"] == "CHQ" else "Virement",
+                "ReferencePaiement": p["reference_paiement"] or "", "Banque": p["banque"] or "",
+                "Nombre": p["nombre"], "MontantReglement": _nombre(p["montant_total"]), "Montant": _nombre(p["impute"]),
+            })
+
+    nom = ""
+    if id_compagnie:
+        from .views_bordereaux import reglages_compagnie  # import différé : views_bordereaux importe ce module
+
+        raison = next((l["Compagnie"] for l in lignes), "") or (
+            (_lignes("SELECT raisonsociale FROM stdcompagnie WHERE idcompagnie = %s", [id_compagnie]) or [{}])[0]
+            .get("raisonsociale") or "")
+        nom = reglages_compagnie(id_compagnie, raison)["NomBordereau"]
+    return {
+        "IdCompagnie": id_compagnie, "Compagnie": nom, "Du": _iso(du), "Au": _iso(au), "Situation": jour.isoformat(),
+        "Total": _synthese_commissions(lignes),
+        "ParCompagnie": [{"IdCompagnie": i, "Compagnie": c, **_synthese_commissions(ls)} for (i, c), ls in par_compagnie.items()],
+        "ParMois": [{"Mois": m, **_synthese_commissions(ls)} for m, ls in par_mois.items()],
+        "Reglements": reglements,
+        "Reclamations": reclamations,
+        "NonReclamees": non_reclamees,
+        "Lignes": lignes,
+    }
+
+
+def _filtres_recapitulatif(request):
+    du = _date(request.query_params.get("du"), "Du", obligatoire=False)
+    au = _date(request.query_params.get("au"), "Au", obligatoire=False)
+    if du and au and du > au:
+        raise ErreurFinance("Le début de la période dépasse sa fin.")
+    return _entier(request.query_params.get("compagnie"), "Compagnie", obligatoire=False) or None, du, au
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def etat_recapitulatif_commissions(request):
+    """GET /api/finance/commissions/recapitulatif/?compagnie=&du=&au= : commissions payées et en attente de paiement
+    (réclamées ou non) des primes reversées sur la période, par compagnie et par mois."""
+    try:
+        return Response(recapitulatif_commissions(*_filtres_recapitulatif(request)))
+    except ErreurFinance as erreur:
+        return _erreur(erreur)
+
+
 def _reclamation_json(reclamation, avec_lignes=False):
     from commissions.models import PaiementCommission
 
@@ -706,7 +879,8 @@ def _reclamation_json(reclamation, avec_lignes=False):
         "MontantPrimes": _nombre(reclamation.montant_primes),
         "MontantCommissions": _nombre(reclamation.montant_commissions),
         "MontantPaye": _nombre(total_paye),
-        "Reste": _nombre(max(reclamation.montant_commissions - total_paye, ZERO)),
+        # Bordereau annulé (jamais réglé) : plus rien n'est dû à son titre, ses quittances redeviennent à réclamer
+        "Reste": ZERO if reclamation.statut == "ANNULEE" else _nombre(max(reclamation.montant_commissions - total_paye, ZERO)),
         "Statut": reclamation.statut,
         "LibelleStatut": dict(reclamation.STATUTS).get(reclamation.statut, reclamation.statut),
         "NombreQuittances": reclamation.details.count(),
@@ -725,12 +899,13 @@ def _reclamation_json(reclamation, avec_lignes=False):
     return resultat
 
 
-def _prochaine_reference(prefixe, modele, champ="reference"):
-    annee = date.today().year
-    debut = f"{prefixe}-{annee}-"
-    derniere = modele.objects.filter(**{f"{champ}__startswith": debut}).order_by(f"-{champ}").values_list(champ, flat=True).first()
-    rang = int(derniere.rsplit("-", 1)[1]) + 1 if derniere else 1
-    return f"{debut}{rang:04d}"
+def _reference_bordereau(lignes, jour):
+    """Référence d'une réclamation ou d'un paiement de commissions : numérotation des bordereaux (code courtier de la
+    première prime + mois + exercice + « B » + n° du mois)."""
+    from production.views_bordereaux import numero_bordereau
+
+    premiere = min(lignes, key=lambda l: (l.get("DateReversement") or "", l.get("IdDetailReversement") or 0))
+    return numero_bordereau(premiere["NumeroQuittance"], jour)
 
 
 @api_view(["GET", "POST"])
@@ -779,7 +954,7 @@ def reclamations(request):
                 if l["CommissionDue"] <= 0:
                     raise ErreurFinance(f"La quittance {l['NumeroQuittance']} n'a pas de commission.")
             reclamation = ReclamationCommission.objects.create(
-                reference=_prochaine_reference("RC", ReclamationCommission),
+                reference=_reference_bordereau(lignes, date.today()),
                 compagnie=compagnie, periode_debut=debut, periode_fin=fin,
                 montant_primes=sum(Decimal(str(l["MontantReverse"])) for l in lignes),
                 montant_commissions=sum(Decimal(str(l["CommissionDue"])) for l in lignes),
@@ -852,6 +1027,9 @@ def encaisser_commission(request, id_reclamation):
         if not reference_paiement:
             raise ErreurFinance("Référence du règlement (n° de chèque ou de virement) : à renseigner.")
         id_banque = _entier(donnees.get("IdBanque"), "Banque", obligatoire=False)
+        # Tout chèque porte sa banque (demande du 2026-10-21) ; 1 = « NEANT »
+        if mode == "CHQ" and id_banque <= 1:
+            raise ErreurFinance("La banque du chèque est à renseigner.")
         banque = Banque.objects.filter(pk=id_banque).first() if id_banque else None
         montant = _montant(donnees.get("Montant"), "Montant du règlement")
         date_paiement = _date(donnees.get("DatePaiement") or date.today(), "Date du règlement")
@@ -874,7 +1052,7 @@ def encaisser_commission(request, id_reclamation):
                     f"Le règlement ({montant:,.0f} F) dépasse la commission restant due sur ce bordereau ({reste_total:,.0f} F).".replace(",", " ")
                 )
             paiement = PaiementCommission.objects.create(
-                reference=_prochaine_reference("PC", PaiementCommission),
+                reference=_reference_bordereau(lignes or _commissions(id_reclamation=objet.id), date_paiement),
                 compagnie=objet.compagnie, date_paiement=date_paiement, montant_total=montant,
                 statut="VALIDE", notes=str(donnees.get("Notes") or "")[:2000], created_by=request.user,
                 mode_paiement=mode, reference_paiement=reference_paiement, banque=banque, reclamation=objet,

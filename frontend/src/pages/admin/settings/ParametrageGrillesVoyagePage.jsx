@@ -185,8 +185,8 @@ export const ParametrageGrillesVoyagePage = () => {
                 <label className="form-label" htmlFor="gv-filtre">{parOffre ? 'Offre' : 'Zone de destination'}</label>
                 <select id="gv-filtre" className="form-control" value={filtre ?? ''} onChange={(e) => setFiltre(Number(e.target.value))}>
                   {parOffre
-                    ? offres.map((o) => <option key={o.IdOffre} value={o.IdOffre}>{o.Libelle}{o.Actif ? '' : ' (inactive)'}</option>)
-                    : zones.map((z) => <option key={z.IdZone} value={z.IdZone}>{z.Libelle} ({z.Pays} pays)</option>)}
+                    ? offres.map((o) => <option key={o.IdOffre} value={o.IdOffre}>{o.Libelle}{o.Actif ? '' : ' — inactive'}</option>)
+                    : zones.map((z) => <option key={z.IdZone} value={z.IdZone}>{z.Libelle} — {z.Pays} pays</option>)}
                 </select>
               </div>
               <button type="button" className="btn btn-primary" disabled={!filtre} onClick={() => ouvrirSaisie(null)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: 'auto' }}>

@@ -601,7 +601,7 @@ export const PolicyMovementModal = ({
                         >
                           <option value="CHEQUE">Chèque Bancaire</option>
                           <option value="ESPECES">Espèces / Caisse</option>
-                          <option value="MOBILE_MONEY">Mobile Money (Wave / Orange)</option>
+                          <option value="MOBILE_MONEY">Mobile Money</option>
                           <option value="VIREMENT">Virement Bancaire</option>
                         </select>
                       </div>
@@ -820,7 +820,7 @@ export const PolicyMovementModal = ({
                     onChange={(e) => setMotifResiliation(e.target.value)}
                   >
                     <option value="Défaut de paiement de la prime (Article 13 CIMA)">
-                      Défaut de paiement de la prime (Article 13 CIMA)
+                      Défaut de paiement de la prime
                     </option>
                     <option value="Perte totale du véhicule ou sinistre destructeur">
                       Perte totale / Destruction suite à sinistre
@@ -829,7 +829,7 @@ export const PolicyMovementModal = ({
                       Résiliation amiable contradictoire
                     </option>
                     <option value="Vente ou aliénation du véhicule assuré (Art. 25 CIMA)">
-                      Vente ou cession du véhicule assuré (Art. 25 CIMA)
+                      Vente ou cession du véhicule assuré
                     </option>
                   </select>
                 </div>

@@ -238,7 +238,7 @@ export const ParametrageMarquesPage = () => {
               <option value="Deux-Roues">Deux-Roues & Motocyclettes</option>
               <option value="Pick-up / Utilitaire">Pick-up / Véhicules Utilitaires Légers</option>
               <option value="Poids Lourd / Camion">Poids Lourds & Transports de Marchandises</option>
-              <option value="VP">Véhicules Particuliers (VP)</option>
+              <option value="VP">Véhicules Particuliers</option>
               <option value="VP / 4x4">VP / SUV / 4x4</option>
             </select>
           </div>

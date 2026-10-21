@@ -222,8 +222,8 @@ export const SubscriptionIssuanceModal = ({
                 value={conventionVersion}
                 onChange={(e) => setConventionVersion(e.target.value)}
               >
-                <option value="CONV-2025-V1.4 (Standard)">CONV-2025-V1.4 (Standard)</option>
-                <option value="CONV-2026-V2.1 (Avenant CIMA)">CONV-2026-V2.1 (Avenant CIMA)</option>
+                <option value="CONV-2025-V1.4 (Standard)">CONV-2025-V1.4</option>
+                <option value="CONV-2026-V2.1 (Avenant CIMA)">CONV-2026-V2.1</option>
               </select>
             </div>
           </div>
@@ -239,8 +239,8 @@ export const SubscriptionIssuanceModal = ({
                 onChange={(e) => setModeReglement(e.target.value)}
               >
                 <option value="CHEQUE">Chèque bancaire</option>
-                <option value="ESPECES">Espèces (Guichet)</option>
-                <option value="MOBILE_MONEY">Mobile Money (Wave / Orange / MTN)</option>
+                <option value="ESPECES">Espèces</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
                 <option value="VIREMENT">Virement bancaire</option>
               </select>
             </div>

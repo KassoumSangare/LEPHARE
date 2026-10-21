@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Check, Plus, Shield, AlertTriangle } from 'lucid
 import { ViewQuoteModal } from './ViewQuoteModal';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
+import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
@@ -517,6 +518,34 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   };
 
   const majGarantie = (id, champ, valeur) => setGaranties((prev) => prev.map((g) => (g.id === id ? { ...g, [champ]: valeur } : g)));
+
+  // Questionnaire prospect (?questionnaire=) : capitaux déclarés par le client, reportés sur les garanties de l'offre
+  // (Incendie = bâtiments + contenu + stocks, vol, bris de glaces, bris de machine, perte d'exploitation…)
+  const qd = useQuestionnaireDevis();
+  const capitauxQuestionnaire = qd.devis?.genre === 'mrp' ? qd.devis.capitaux || {} : {};
+  const nbCapitaux = Object.keys(capitauxQuestionnaire).length;
+  const [capitauxEnAttente, setCapitauxEnAttente] = useState(false);
+  const appliquerCapitaux = () => {
+    if (!garanties.length) {
+      setCapitauxEnAttente(true);
+      info("Choisissez la catégorie et l'offre : les capitaux du questionnaire seront reportés à l'étape Garanties.");
+      setStep(idOffre ? 2 : 1);
+      return;
+    }
+    const ids = new Set(garanties.map((g) => String(g.id)));
+    const absentes = Object.keys(capitauxQuestionnaire).filter((id) => !ids.has(id));
+    setGaranties((prev) => prev.map((g) => (capitauxQuestionnaire[String(g.id)]
+      ? { ...g, capital: Math.round(Number(capitauxQuestionnaire[String(g.id)])), acquise: true } : g)));
+    setCapitauxEnAttente(false);
+    success(`${nbCapitaux - absentes.length} capital(aux) du questionnaire reporté(s) sur les garanties.`);
+    if (absentes.length) info(`${absentes.length} garantie(s) du questionnaire absente(s) de cette offre.`);
+  };
+  useEffect(() => {
+    if (capitauxEnAttente && garanties.length) appliquerCapitaux();
+  }, [garanties.length, capitauxEnAttente]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (createdQuote && qd.actif) qd.devisEtabli(createdQuote.numerodevis || '');
+  }, [createdQuote]); // eslint-disable-line react-hooks/exhaustive-deps
   const garantiesAcquises = garanties.filter((g) => g.acquise);
 
   // -------------------------------------------------------------
@@ -752,6 +781,28 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           ))}
         </div>
       </div>
+
+      <BandeauQuestionnaire
+        qd={qd}
+        onChercherClient={(nom) => { setRechercheSouscripteur(nom); setListeSouscripteurOuverte(true); setStep(3); }}
+        onCreerClient={() => setIsQuickAddClientOpen(true)}
+        actions={nbCapitaux ? [{
+          libelle: `Reporter ${nbCapitaux} ${nbCapitaux > 1 ? 'capitaux' : 'capital'} sur les garanties`,
+          icone: Shield,
+          principal: true,
+          titre: (qd.devis.detail_capitaux || []).join('\n'),
+          onClick: appliquerCapitaux,
+        }] : []}
+      >
+        {qd.devis?.genre === 'mrp' && (qd.devis.activite || qd.devis.situation) && (
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            {qd.devis.activite && <>Activité : <strong>{qd.devis.activite}</strong></>}
+            {qd.devis.activite && qd.devis.situation && ' · '}
+            {qd.devis.situation && <>Situation du risque : <strong>{qd.devis.situation}</strong></>}
+            {qd.devis.qualite && <> · Proposant : <strong>{qd.devis.qualite}</strong></>}
+          </div>
+        )}
+      </BandeauQuestionnaire>
 
       {/* ÉTAPE 1 : CONTRAT */}
       {step === 1 && (
@@ -1115,6 +1166,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       <QuickAddClientModal
         isOpen={isQuickAddClientOpen}
         onClose={() => setIsQuickAddClientOpen(false)}
+        valeursInitiales={qd.client}
         onClientCreated={(newClient) => {
           setClients((prev) => [newClient, ...prev]);
           setSouscripteurId(Number(newClient.id || newClient.IdClient));
