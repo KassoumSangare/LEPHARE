@@ -2240,6 +2240,93 @@ class BordereauReversement(models.Model):
         ]
 
 
+class AffaireTransport(models.Model):
+    """Devis Transport hors GUCE (production/views_transport_hors_guce.py) : type de police, mode de transport,
+    tout ce qui a été saisi (marchandise, trajet, garanties et taux retenus) et le décompte de la prime. Les montants
+    font foi dans stddevis ; cette fiche permet de rouvrir le devis et d'appliquer les conditions d'une police
+    d'abonnement à chaque voyage déclaré."""
+
+    POLICE_VOYAGE = "VOYAGE"
+    POLICE_ANNUELLE = "ANNUELLE"
+    POLICE_ABONNEMENT = "ABONNEMENT"
+    TYPES_POLICE = [
+        (POLICE_VOYAGE, "Police au voyage"),
+        (POLICE_ANNUELLE, "Police annuelle"),
+        (POLICE_ABONNEMENT, "Police d'abonnement"),
+    ]
+    MODES = [
+        ("MARITIME", "Maritime"),
+        ("AERIEN", "Aérien"),
+        ("TERRESTRE", "Terrestre"),
+        ("FERROVIAIRE", "Ferroviaire"),
+        ("FLUVIAL", "Fluvial"),
+    ]
+
+    id_devis = models.IntegerField(unique=True, db_column="iddevis")
+    type_police = models.CharField(max_length=12, choices=TYPES_POLICE, db_column="typepolice")
+    mode = models.CharField(max_length=12, choices=MODES, db_column="mode")
+    saisie = models.JSONField(default=dict, db_column="saisie")
+    calcul = models.JSONField(default=dict, db_column="calcul")
+    cree_par = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="affaires_transport", db_column="creepar"
+    )
+    cree_le = models.DateTimeField(auto_now_add=True, db_column="creele")
+    modifie_le = models.DateTimeField(auto_now=True, db_column="modifiele")
+
+    def __str__(self):
+        return f"Devis {self.id_devis} : {self.get_type_police_display()} ({self.get_mode_display()})"
+
+    class Meta:
+        db_table = "lephare_transport_affaire"
+        verbose_name = "Affaire Transport hors GUCE"
+        verbose_name_plural = "Affaires Transport hors GUCE"
+
+
+class VoyageTransport(models.Model):
+    """Voyage déclaré sur une police d'abonnement Transport : prime aux conditions de la police. Les voyages d'un même
+    mois sont facturés ensemble par la ressortie mensuelle (devis « Émission de certificat » + contrat sous le numéro
+    de la police + quittance)."""
+
+    id_contrat = models.IntegerField(db_column="idcontrat", db_index=True)  # police d'abonnement (contrat d'origine)
+    numero_police = models.CharField(max_length=50, db_column="numeropolice")
+    numero = models.PositiveIntegerField(db_column="numero")  # n° d'ordre du voyage dans la police
+    date_depart = models.DateField(db_column="datedepart")
+    date_arrivee = models.DateField(null=True, blank=True, db_column="datearrivee")
+    marchandise = models.CharField(max_length=255, db_column="marchandise")
+    emballage = models.CharField(max_length=120, blank=True, default="", db_column="emballage")
+    conditionnement = models.CharField(max_length=120, blank=True, default="", db_column="conditionnement")
+    lieu_depart = models.CharField(max_length=120, db_column="lieudepart")
+    lieu_arrivee = models.CharField(max_length=120, db_column="lieuarrivee")
+    moyen_transport = models.CharField(max_length=120, blank=True, default="", db_column="moyentransport")
+    document_transport = models.CharField(max_length=80, blank=True, default="", db_column="documenttransport")
+    valeur = models.DecimalField(max_digits=18, decimal_places=2, db_column="valeur")
+    taux_total = models.DecimalField(max_digits=9, decimal_places=4, db_column="tauxtotal")
+    prime_nette = models.DecimalField(max_digits=18, decimal_places=2, db_column="primenette")
+    accessoire = models.DecimalField(max_digits=18, decimal_places=2, db_column="accessoire")
+    taxe = models.DecimalField(max_digits=18, decimal_places=2, db_column="taxe")
+    prime_ttc = models.DecimalField(max_digits=18, decimal_places=2, db_column="primettc")
+    garanties = models.JSONField(default=list, db_column="garanties")  # lignes du décompte (garantie, taux, prime, taxe)
+    id_devis_ressortie = models.IntegerField(null=True, blank=True, db_column="iddevisressortie")
+    annule = models.BooleanField(default=False, db_column="annule")
+    motif_annulation = models.CharField(max_length=255, blank=True, default="", db_column="motifannulation")
+    cree_par = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="voyages_transport", db_column="creepar"
+    )
+    cree_le = models.DateTimeField(auto_now_add=True, db_column="creele")
+
+    def __str__(self):
+        return f"Voyage n° {self.numero} de la police {self.numero_police}"
+
+    class Meta:
+        db_table = "lephare_transport_voyage"
+        verbose_name = "Voyage déclaré (Transport)"
+        verbose_name_plural = "Voyages déclarés (Transport)"
+        ordering = ["id_contrat", "numero"]
+        constraints = [
+            UniqueConstraint(fields=["id_contrat", "numero"], name="lephare_transport_voyage_numero"),
+        ]
+
+
 class DetailReversement(models.Model):
     id_detail_reversement = models.AutoField(
         primary_key=True, db_column="iddetailreversement"

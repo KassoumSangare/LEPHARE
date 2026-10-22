@@ -218,6 +218,16 @@ REGLES = [
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
     R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
+    # Transport hors GUCE : décompte sans écriture, devis, voyages déclarés et ressortie d'une police d'abonnement
+    R("POST", r"transport/hors-guce/calcul/$", "devis.view", lecture=True),
+    R("POST", r"transport/hors-guce/devis/$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS,
+      instantane=instantane_devis),
+    R("POST", r"transport/hors-guce/abonnements/(?P<idcontrat>\d+)/(voyages|ressortie)/$", "contrats.avenant",
+      objet="contrat", cles=("idcontrat",)),
+    R("POST", r"transport/hors-guce/voyages/(?P<idvoyage>\d+)/annulation/$", "contrats.avenant", objet="voyage_transport",
+      cles=("idvoyage",)),
+    R("GET", r"transport/hors-guce/(catalogue|devis)/", "devis.view"),
+    R("GET", r"transport/hors-guce/(abonnements|contrat)/", "contrats.view"),
     R("POST", r"transport/guce/analyse/", "imports.guce", lecture=True),
     R("POST", r"(transport/guce/import/|importationfichierguce|certificattransport/)", "imports.guce", objet="import"),
     R("GET", r"(imports-historique|imports-statistiques)", "devis.view"),
@@ -315,7 +325,7 @@ REGLES = [
     R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
     R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
     # ---- tarifs et barèmes
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/auto/|grillesvoyage/)", "tarifs.update", objet="bareme",
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/auto/|parametrage/transport/|parametrage/ia/|parametrage/mrh/|grillesvoyage/)", "tarifs.update", objet="bareme",
       cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition", "code")),
     # Valeur vénale d'après le tableau de dépréciation, primes d'un tarif à lecture directe (calculs sans écriture,
     # écrans de devis)

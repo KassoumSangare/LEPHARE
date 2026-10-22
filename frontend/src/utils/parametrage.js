@@ -6,18 +6,19 @@
  */
 import apiClient from '../api/apiClient';
 
-// Valeurs d'origine (identiques aux valeurs de départ de la migration configuration_api 0073)
+// Valeurs d'origine (identiques aux valeurs de départ des migrations configuration_api 0073 et 0100 : compagnie
+// proposée AMSA pour le Voyage, NSIA ailleurs)
 const PRODUITS_ORIGINE = [
-  { IdProduit: 1, Libelle: 'AUTOMOBILE', Onglet: 'Auto', ModuleSaisie: 'auto', SaisieOuverte: true, Ordre: 1 },
-  { IdProduit: 3, Libelle: 'ASSURANCE VOYAGE', Onglet: 'Voyage', ModuleSaisie: 'voyage', SaisieOuverte: true, Ordre: 2 },
-  { IdProduit: 6, Libelle: 'TRANSPORT', Onglet: 'Transport', ModuleSaisie: 'transport', SaisieOuverte: true, Ordre: 3 },
-  { IdProduit: 4, Libelle: 'MULTIRISQUES HABITATION', Onglet: 'MRH', ModuleSaisie: 'mrh', SaisieOuverte: true, Ordre: 4 },
-  { IdProduit: 7, Libelle: 'MULTIRISQUES PROFESSIONNELLE', Onglet: 'MRH', ModuleSaisie: 'mrp', SaisieOuverte: false, Ordre: 5 },
-  { IdProduit: 9, Libelle: 'TOUS DOMMAGES', Onglet: 'Dommages', ModuleSaisie: 'tous-dommages', SaisieOuverte: true, Ordre: 6 },
-  { IdProduit: 5, Libelle: 'SANTE', Onglet: 'Santé', ModuleSaisie: 'sante', SaisieOuverte: true, Ordre: 7 },
-  { IdProduit: 10, Libelle: 'VIE', Onglet: 'Santé', ModuleSaisie: '', SaisieOuverte: false, Ordre: 8 },
-  { IdProduit: 2, Libelle: 'INDIVIDUELLE ACCIDENTS', Onglet: 'IA', ModuleSaisie: 'ia', SaisieOuverte: true, Ordre: 9 },
-  { IdProduit: 8, Libelle: 'RESPONSABILITE CIVILE', Onglet: 'RC', ModuleSaisie: 'rc', SaisieOuverte: false, Ordre: 10 },
+  { IdProduit: 1, Libelle: 'AUTOMOBILE', Onglet: 'Auto', ModuleSaisie: 'auto', SaisieOuverte: true, Ordre: 1, IdCompagnieDefaut: 1 },
+  { IdProduit: 3, Libelle: 'ASSURANCE VOYAGE', Onglet: 'Voyage', ModuleSaisie: 'voyage', SaisieOuverte: true, Ordre: 2, IdCompagnieDefaut: 21 },
+  { IdProduit: 6, Libelle: 'TRANSPORT', Onglet: 'Transport', ModuleSaisie: 'transport', SaisieOuverte: true, Ordre: 3, IdCompagnieDefaut: 1 },
+  { IdProduit: 4, Libelle: 'MULTIRISQUES HABITATION', Onglet: 'MRH', ModuleSaisie: 'mrh', SaisieOuverte: true, Ordre: 4, IdCompagnieDefaut: 1 },
+  { IdProduit: 7, Libelle: 'MULTIRISQUES PROFESSIONNELLE', Onglet: 'MRH', ModuleSaisie: 'mrp', SaisieOuverte: false, Ordre: 5, IdCompagnieDefaut: 1 },
+  { IdProduit: 9, Libelle: 'TOUS DOMMAGES', Onglet: 'Dommages', ModuleSaisie: 'tous-dommages', SaisieOuverte: true, Ordre: 6, IdCompagnieDefaut: 1 },
+  { IdProduit: 5, Libelle: 'SANTE', Onglet: 'Santé', ModuleSaisie: 'sante', SaisieOuverte: true, Ordre: 7, IdCompagnieDefaut: 1 },
+  { IdProduit: 10, Libelle: 'VIE', Onglet: 'Santé', ModuleSaisie: '', SaisieOuverte: false, Ordre: 8, IdCompagnieDefaut: null },
+  { IdProduit: 2, Libelle: 'INDIVIDUELLE ACCIDENTS', Onglet: 'IA', ModuleSaisie: 'ia', SaisieOuverte: true, Ordre: 9, IdCompagnieDefaut: 1 },
+  { IdProduit: 8, Libelle: 'RESPONSABILITE CIVILE', Onglet: 'RC', ModuleSaisie: 'rc', SaisieOuverte: false, Ordre: 10, IdCompagnieDefaut: 1 },
 ];
 
 // Formules MINENE SANTÉ (identiques aux valeurs de départ de la migration configuration_api 0083) :
@@ -135,6 +136,15 @@ export const ttcRetombe = (ttcEnregistree, somme, { idProduit = null, nsia = fal
   || ttcEnregistree === arrondirMontant(somme, idProduit)
   || (nsia && ttcEnregistree === Math.ceil(somme / 5) * 5)
 );
+/**
+ * Compagnie proposée à l'ouverture d'un nouveau devis du produit (Administration > Produits), sinon `repli` ;
+ * l'écran garde la compagnie d'un devis rouvert et retombe sur la première de sa liste si celle-ci n'y est pas.
+ */
+export const compagnieParDefaut = (idProduit, repli = 1) => {
+  const p = etat.Produits.find((x) => Number(x.IdProduit) === Number(idProduit));
+  return Number(p?.IdCompagnieDefaut) || repli;
+};
+
 // Identité du cabinet (Administration > Le cabinet, table stdparametresite)
 export const identiteCabinet = () => etat.Cabinet || {};
 export const nomCabinet = () => etat.Cabinet?.RaisonSociale || 'OREOLE ASSURANCES';

@@ -759,6 +759,71 @@ def _lire_trc(reponses):
     }
 
 
+def _oui(valeur):
+    return bool(re.match(r"^(oui|yes|x|☒)\b", _norme(valeur)))
+
+
+def _lire_transport(reponses, terrestre=False):
+    """Questionnaires Transport, Facultés et Facultés terrestres : ce que la cotation hors GUCE reprend (mode, type de
+    police, marchandise, trajet, valeur, garanties demandées)."""
+    def montant(*motifs):
+        return _montant(_cherche(reponses, *motifs))
+
+    texte_mode = _norme(_cherche(reponses, r"^mode de transport", r"^modes d.expedition"))
+    mode = next((code for code, motif in (("MARITIME", r"marit"), ("AERIEN", r"aer|avion"), ("FERROVIAIRE", r"ferrov|train|rail"),
+                                          ("FLUVIAL", r"fluvi|lagun"), ("TERRESTRE", r"terrest|camion|route"))
+                 if re.search(motif, texte_mode)), "TERRESTRE" if terrestre else "")
+    texte_police = _norme(_cherche(reponses, r"^type de police"))
+    type_police = next((code for code, motif in (("ABONNEMENT", r"abonnement|aliment"), ("ANNUELLE", r"annuel"),
+                                                 ("VOYAGE", r"voyage")) if re.search(motif, texte_police)), "")
+    # Garanties : une ligne par garantie (OUI en regard) ou une seule réponse qui les cite
+    demandees = " ".join(_norme(r["libelle"]) for r in reponses
+                         if (r["genre"] == "choix" or _oui(r["valeur"])) and not re.search(r"guerre", _norme(r["libelle"])))
+    demandees += " " + _norme(_cherche(reponses, r"^garanties demandees", r"^garantie souhaitee"))
+    base = next((code for code, motif in (("TOUS_RISQUES", r"tous risques"), ("FAP_SAUF", r"fap|accidents majeurs"),
+                                          ("ACCIDENTS_CARACTERISES", r"accidents? caracteris")) if re.search(motif, demandees)), "")
+    extensions = []
+    if any(re.search(r"guerre", _norme(r["libelle"])) and (r["genre"] == "choix" or _oui(r["valeur"])) for r in reponses):
+        extensions.append("GUERRE")
+    if any(re.search(r"greves?", _norme(r["libelle"])) and (r["genre"] == "choix" or _oui(r["valeur"])) for r in reponses):
+        extensions.append("GREVES")
+    if any(re.search(r"chargement et de dechargement", _norme(r["libelle"])) and r["genre"] == "choix" for r in reponses):
+        extensions.append("CHARGEMENT")
+    nombre_voyages = montant(r"^nombre de voyage")
+    valeur_voyage = montant(r"^valeur assuree par voyage", r"^valeur assuree par camion")
+    valeur = montant(r"^plein par expedition", r"^valeur maximum du chargement") or valeur_voyage
+    chiffre = (montant(r"^quantite totale previsionnelle", r"^chiffre d.affaires", r"valeur approximative des importations")
+               or (nombre_voyages * valeur_voyage if nombre_voyages and valeur_voyage else 0))
+    ports = _cherche(reponses, r"^ports ou aerodromes")
+    embarquement = _cherche(reponses, r"^lieu d.embarquement")
+    debarquement = _cherche(reponses, r"^lieu de debarquement")
+    m = re.search(r"(?i)embarquement\s*:?\s*([^,;]+)", ports)
+    embarquement = embarquement or (m.group(1).strip() if m else "")
+    m = re.search(r"(?i)d[ée]barquement\s*:?\s*([^,;]+)", ports)
+    debarquement = debarquement or (m.group(1).strip() if m else "")
+    devis = {
+        "genre": "transport",
+        "mode": mode,
+        "type_police": type_police,
+        "nature": _cherche(reponses, r"^nature exacte des marchandises", r"^nature exacte de la marchandise", r"^nature$"),
+        "emballage": _cherche(reponses, r"^nature et qualite des emballages", r"^emballage"),
+        "conditionnement": _cherche(reponses, r"^mode de conditionnement", r"^pour les envois en conteneurs", r"^conditionnement"),
+        "depart": _cherche(reponses, r"^provenances? des marchandises", r"^origine") or embarquement,
+        "embarquement": embarquement,
+        "debarquement": debarquement,
+        "arrivee": _cherche(reponses, r"^destination finale") or debarquement,
+        "valeur": valeur,
+        "chiffre_affaires": chiffre,
+        "base": base,
+        "extensions": extensions,
+        "franchise": "avec franchise" if any(re.search(r"tous risques.*franchise", _norme(r["libelle"])) and _oui(r["valeur"])
+                                             for r in reponses) else "",
+    }
+    resume = [x for x in (devis["nature"][:40], f"{devis['depart']} → {devis['arrivee']}" if devis["depart"] and devis["arrivee"] else "",
+                          f"{valeur:,} F".replace(",", " ") if valeur else "") if x]
+    return {"devis": devis, "resume": ", ".join(resume)}
+
+
 # ---------------------------------------------------------------- reconnaissance du questionnaire par son contenu
 # Un fichier rempli garde les libellés de son modèle : il est rattaché au modèle vierge (même format) dont il
 # contient la plus grande part du vocabulaire, avec une avance nette sur le suivant (demande du 2026-10-21 : un
@@ -849,6 +914,9 @@ def _lire_contenu(code, contenu, ext):
             "sante_questionnaire_cotation": _lire_cotation_sante,
             "multirisque_professionnelle": _lire_mrp,
             "tous_risques_chantier": _lire_trc,
+            "transport_questionnaire": _lire_transport,
+            "transport_facultes": _lire_transport,
+            "transport_facultes_terrestres": lambda r: _lire_transport(r, terrestre=True),
         }.get(code)
         if specifique:
             propre = specifique(reponses)

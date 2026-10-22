@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { ADMIN_MENU, estActif } from './adminMenu';
+import { ADMIN_MENU, entreeActive } from './adminMenu';
+import { moduleOuvert } from '../../utils/parametrage';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -81,6 +82,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
   // Groupes de l'espace Administration déroulés par l'utilisateur (tous repliés au départ)
   const [groupesAdminOuverts, setGroupesAdminOuverts] = useState({});
+  // Groupe de la page affichée ouvert d'office (écran détaillé d'une branche : groupe de sa branche)
+  useEffect(() => {
+    const groupe = ADMIN_MENU.find((g) => g.items.some((item) => item.menu !== false && entreeActive(location.pathname, item)));
+    if (groupe) setGroupesAdminOuverts((prev) => (prev[groupe.id] ? prev : { ...prev, [groupe.id]: true }));
+  }, [location.pathname]);
 
   const toggleSubmenu = (menu) => {
     setOpenSubmenus((prev) => ({ ...prev, [menu]: !prev[menu] }));
@@ -177,10 +183,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
              (même plan que la page « Guide de l'administration »)
              ========================================================================= */
           <>
-            {ADMIN_MENU.map((groupe) => ({ ...groupe, items: groupe.items.filter((item) => peut(item.droit)) }))
+            {/* Écrans détaillés d'une branche (menu: false) : ouverts depuis sa page ; branche fermée à la saisie : masquée */}
+            {ADMIN_MENU.map((groupe) => ({ ...groupe, items: groupe.items.filter((item) => item.menu !== false && peut(item.droit) && (!item.module || moduleOuvert(item.module))) }))
               .filter((groupe) => groupe.items.length > 0)
               .map((groupe) => {
-              const contientPageActive = groupe.items.some((item) => estActif(location.pathname, item.to));
+              const contientPageActive = groupe.items.some((item) => entreeActive(location.pathname, item));
               const ouvert = !!groupesAdminOuverts[groupe.id];
               return (
                 <div key={groupe.id}>
@@ -199,7 +206,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                         to={item.to}
                         end
                         title={item.description}
-                        className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
+                        className={({ isActive }) => `sidebar-nav-item ${isActive || entreeActive(location.pathname, item) ? 'active' : ''}`}
                       >
                         <Icone size={16} className="nav-icon" />
                         <span>{item.label}</span>

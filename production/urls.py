@@ -24,6 +24,7 @@ from .views_devis_voyage import (
     lire_devis_voyage,
 )
 from . import views_bordereaux, views_finance
+from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
 from .views_transport_guce import (
@@ -281,6 +282,22 @@ urlpatterns = [
         name="transport_guce_bordereau_excel",
     ),
     path(r"transport/certificats/", certificats_transport, name="transport_certificats"),
+    # Transport hors GUCE : cotation (police au voyage, annuelle, d'abonnement), voyages déclarés et ressortie du mois
+    path(r"transport/hors-guce/catalogue/", transport_hors_guce.catalogue_transport, name="transport_hors_guce_catalogue"),
+    path(r"transport/hors-guce/calcul/", transport_hors_guce.calcul_transport, name="transport_hors_guce_calcul"),
+    path(r"transport/hors-guce/devis/", transport_hors_guce.enregistrer_devis_vue, name="transport_hors_guce_devis"),
+    path(r"transport/hors-guce/devis/<int:iddevis>/", transport_hors_guce.lire_devis, name="transport_hors_guce_lire_devis"),
+    path(r"transport/hors-guce/abonnements/", transport_hors_guce.liste_abonnements, name="transport_hors_guce_abonnements"),
+    path(r"transport/hors-guce/abonnements/<int:idcontrat>/", transport_hors_guce.detail_abonnement,
+         name="transport_hors_guce_abonnement"),
+    path(r"transport/hors-guce/abonnements/<int:idcontrat>/voyages/", transport_hors_guce.declarer_voyage_vue,
+         name="transport_hors_guce_voyage"),
+    path(r"transport/hors-guce/voyages/<int:idvoyage>/annulation/", transport_hors_guce.annuler_voyage,
+         name="transport_hors_guce_annulation_voyage"),
+    path(r"transport/hors-guce/abonnements/<int:idcontrat>/ressortie/", transport_hors_guce.emettre_ressortie_vue,
+         name="transport_hors_guce_ressortie"),
+    path(r"transport/hors-guce/contrat/<int:idcontrat>/", transport_hors_guce.contrat_transport,
+         name="transport_hors_guce_contrat"),
     # Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
     # entière), réclamation et encaissement des commissions
     path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),

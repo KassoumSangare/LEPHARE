@@ -13,7 +13,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { arrondirMontant, parametre, reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
@@ -104,7 +104,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [offreDevis, setOffreDevis] = useState(null);
 
   // Étape 1 : contrat
-  const [compagnieId, setCompagnieId] = useState(1);
+  const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(produit));
   const [idTarif, setIdTarif] = useState(0);
   const [idOffre, setIdOffre] = useState(0);
   const [dureeId, setDureeId] = useState(4);

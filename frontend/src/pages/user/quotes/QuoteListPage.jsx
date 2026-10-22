@@ -60,8 +60,9 @@ const isWithinLastThreeYears = (q) => {
 };
 
 // Formulaires qui savent rouvrir un devis enregistré (?edit=<iddevis>) ; le formulaire d'un produit
-// est réglé dans Administration > Produits. Transport (import de bordereaux) n'en fait pas partie.
-const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'rc', 'mrp', 'tous-dommages'];
+// est réglé dans Administration > Produits. Transport : la cotation hors GUCE rouvre ses devis (ceux des
+// bordereaux GUCE sont confirmés dès l'import).
+const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'rc', 'mrp', 'tous-dommages', 'transport'];
 
 // Icône de l'onglet du registre selon son code (onglets réglés dans Administration > Produits)
 const ICONES_ONGLET = {

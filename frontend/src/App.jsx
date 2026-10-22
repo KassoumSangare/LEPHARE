@@ -23,6 +23,9 @@ import NewRisquesDiversQuotePage from './pages/user/quotes/NewRisquesDiversQuote
 import NewTousDommagesQuotePage from './pages/user/quotes/NewTousDommagesQuotePage';
 import NewVoyageQuotePage from './pages/user/quotes/NewVoyageQuotePage';
 import NewTransportQuotePage from './pages/user/quotes/NewTransportQuotePage';
+import TransportAccueilPage from './pages/user/quotes/TransportAccueilPage';
+import NewTransportHorsGucePage from './pages/user/quotes/NewTransportHorsGucePage';
+import TransportAbonnementsPage from './pages/user/quotes/TransportAbonnementsPage';
 import ContractListPage from './pages/user/contracts/ContractListPage';
 import ContractDetailPage from './pages/user/contracts/ContractDetailPage';
 import EndorsementPage from './pages/user/endorsements/EndorsementPage';
@@ -65,6 +68,7 @@ import ParametrageFlottePage from './pages/admin/settings/ParametrageFlottePage'
 import ParametrageSecuritePage from './pages/admin/settings/ParametrageSecuritePage';
 import ParametrageGrillesVoyagePage from './pages/admin/settings/ParametrageGrillesVoyagePage';
 import ParametrageDommagesPage from './pages/admin/settings/ParametrageDommagesPage';
+import { ReglagesBranchePage, ReglagesBranchesPage } from './pages/admin/settings/ReglagesBranchePage';
 import ParametrageSantePage from './pages/admin/settings/ParametrageSantePage';
 import ParametrageDepreciationPage from './pages/admin/settings/ParametrageDepreciationPage';
 import ParametragePoolTpvPage from './pages/admin/settings/ParametragePoolTpvPage';
@@ -154,7 +158,10 @@ function App() {
                 <Route path="/user/quotes/mrp" element={<NewRisquesDiversQuotePage key="mrp" produit={7} />} />
                 <Route path="/user/quotes/tous-dommages" element={<NewTousDommagesQuotePage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
-                <Route path="/user/quotes/transport" element={<NewTransportQuotePage />} />
+                <Route path="/user/quotes/transport" element={<TransportAccueilPage />} />
+                <Route path="/user/quotes/transport/hors-guce" element={<NewTransportHorsGucePage />} />
+                <Route path="/user/quotes/transport/abonnements" element={<TransportAbonnementsPage />} />
+                <Route path="/user/quotes/transport/guce" element={<NewTransportQuotePage />} />
 
                 {/* ===== MODULE E – PORTEFEUILLE CONTRATS ===== */}
                 <Route path="/user/contracts" element={<ContractListPage />} />
@@ -214,6 +221,8 @@ function App() {
                 <Route path="/admin/settings/flotte" element={<AdminRoute><ParametrageFlottePage /></AdminRoute>} />
                 <Route path="/admin/settings/securite-routiere" element={<AdminRoute><ParametrageSecuritePage /></AdminRoute>} />
                 <Route path="/admin/settings/grilles-voyage" element={<AdminRoute><ParametrageGrillesVoyagePage /></AdminRoute>} />
+                <Route path="/admin/settings/branches" element={<AdminRoute><ReglagesBranchesPage /></AdminRoute>} />
+                <Route path="/admin/settings/branches/:module" element={<AdminRoute><ReglagesBranchePage /></AdminRoute>} />
                 <Route path="/admin/settings/dommages" element={<AdminRoute><ParametrageDommagesPage /></AdminRoute>} />
                 <Route path="/admin/settings/sante" element={<AdminRoute><ParametrageSantePage /></AdminRoute>} />
                 <Route path="/admin/settings/depreciation" element={<AdminRoute><ParametrageDepreciationPage /></AdminRoute>} />

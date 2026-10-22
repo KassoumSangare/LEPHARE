@@ -23,7 +23,7 @@ export const AdminGuidePage = () => {
       .map((groupe) => ({
         ...groupe,
         items: groupe.items.filter((item) => {
-          const texte = normaliser(`${groupe.titre} ${item.label} ${item.description}`);
+          const texte = normaliser(`${groupe.titre} ${item.branche || ''} ${item.label} ${item.description}`);
           return termes.every((t) => texte.includes(t));
         }),
       }))
@@ -81,6 +81,7 @@ export const AdminGuidePage = () => {
                 >
                   <Icone size={20} color="#a78bfa" style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
+                    {item.branche && <div style={{ fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>{item.branche}</div>}
                     <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>{item.label}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem', lineHeight: 1.4 }}>{item.description}</div>
                   </div>

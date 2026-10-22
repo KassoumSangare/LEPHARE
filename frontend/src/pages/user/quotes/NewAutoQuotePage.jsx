@@ -49,7 +49,7 @@ import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 import {
-  ageAdmisGarantie, ageRestreintGaranties, ageVehiculeAns, arrondirMontant, garantieNonAdmise, parametre, reglesInteractionsAuto,
+  ageAdmisGarantie, ageRestreintGaranties, ageVehiculeAns, arrondirMontant, garantieNonAdmise, parametre, reglesInteractionsAuto, compagnieParDefaut,
 } from '../../../utils/parametrage';
 import {
   appliquerReglesGaranties,
@@ -317,7 +317,7 @@ export const NewAutoQuotePage = () => {
   // ----------------------------------------------------
   const [typeContrat, setTypeContrat] = useState('MONO'); // 'MONO' | 'FLOTTE'
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
-  const [compagnieId, setCompagnieId] = useState(1);
+  const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(1));
   const [compagnie, setCompagnie] = useState(() => companies[0]?.nom || 'AXA ASSURANCES');
   const [categorieId, setCategorieId] = useState(1);
   const [categorieContrat, setCategorieContrat] = useState('PROMENADE ET AFFAIRES');

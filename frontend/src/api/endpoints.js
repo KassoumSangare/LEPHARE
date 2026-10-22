@@ -1144,6 +1144,9 @@ export const risquesDiversApi = {
   },
   // POST /api/domaineactiviterc/ : nouveau domaine d'activité RC (« + » du formulaire, comme URANUS)
   creerDomaine: async (libelle) => (await apiClient.post('/domaineactiviterc/', { libelle })).data,
+  // Réglages par branche > Responsabilité civile : libellé modifié, domaine retiré
+  modifierDomaine: async (id, libelle) => (await apiClient.patch(`/domaineactiviterc/${id}/`, { libelle })).data,
+  supprimerDomaine: async (id) => (await apiClient.delete(`/domaineactiviterc/${id}/`)).data,
   // POST /api/devis/:id/attacher_piece_jointe/ : fichier joint au devis (étape « Imposition » d'URANUS)
   attacherPieceJointe: async (idDevis, fichier) => {
     const formulaire = new FormData();
@@ -1324,6 +1327,19 @@ export const parametrageApi = {
   modifierParametreSante: async (cle, valeur) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Valeur: valeur })).data,
   retablirParametreSante: async (cle) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Retablir: true })).data,
   modifierRepartitionSante: async (id, donnees) => (await apiClient.patch(`/parametrage/sante/repartitions/${id}/`, donnees)).data,
+  // Réglages par branche : Transport hors GUCE (garanties et taux par mode, modes de transport), Individuelle
+  // Accidents (tarif NSIA par classe, accessoires), Multirisque Habitation (usages, garanties, options, forfaits)
+  getTransport: async () => (await apiClient.get('/parametrage/transport/')).data,
+  modifierGarantiesTransport: async (garanties) => (await apiClient.put('/parametrage/transport/garanties/', { Garanties: garanties })).data,
+  modifierModeTransport: async (code, donnees) => (await apiClient.patch(`/parametrage/transport/modes/${code}/`, donnees)).data,
+  getIa: async () => (await apiClient.get('/parametrage/ia/')).data,
+  modifierClasseIa: async (classe, donnees) => (await apiClient.patch(`/parametrage/ia/classes/${classe}/`, donnees)).data,
+  modifierTranchesIa: async (tranches) => (await apiClient.put('/parametrage/ia/tranches/', { Tranches: tranches })).data,
+  modifierOffresIa: async (offres) => (await apiClient.put('/parametrage/ia/offres/', { Offres: offres })).data,
+  getMrh: async () => (await apiClient.get('/parametrage/mrh/')).data,
+  modifierUsageMrh: async (code, donnees) => (await apiClient.patch(`/parametrage/mrh/usages/${code}/`, donnees)).data,
+  modifierOptionMrh: async (code, donnees) => (await apiClient.patch(`/parametrage/mrh/options/${code}/`, donnees)).data,
+  modifierForfaitMrh: async (code, donnees) => (await apiClient.patch(`/parametrage/mrh/forfaits/${code}/`, donnees)).data,
   // Réglages Automobile : dépréciation des véhicules (configuration_api/parametrage_auto.py)
   getDepreciation: async () => (await apiClient.get('/parametrage/auto/depreciation/')).data,
   modifierClasseDepreciation: async (code, donnees) => (await apiClient.patch(`/parametrage/auto/depreciation/classes/${code}/`, donnees)).data,
@@ -1420,6 +1436,25 @@ export const transportApi = {
     lien.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   },
+};
+
+// Transport hors GUCE (production/views_transport_hors_guce.py) : cotation, polices d'abonnement, voyages, ressorties
+export const transportHorsGuceApi = {
+  // GET : modes, types de police, garanties et taux proposés, listes, réglages
+  getCatalogue: async () => (await apiClient.get('/transport/hors-guce/catalogue/')).data,
+  // POST : décompte de la prime sans écriture
+  calculer: async (donnees) => (await apiClient.post('/transport/hors-guce/calcul/', donnees)).data,
+  // POST : création (IdDevis 0) ou modification du devis
+  enregistrer: async (donnees) => (await apiClient.post('/transport/hors-guce/devis/', donnees)).data,
+  lireDevis: async (idDevis) => (await apiClient.get(`/transport/hors-guce/devis/${idDevis}/`)).data,
+  // Polices d'abonnement : liste, détail (voyages et ressorties), déclaration, annulation, ressortie du mois
+  getAbonnements: async () => (await apiClient.get('/transport/hors-guce/abonnements/')).data,
+  getAbonnement: async (idContrat) => (await apiClient.get(`/transport/hors-guce/abonnements/${idContrat}/`)).data,
+  declarerVoyage: async (idContrat, donnees) => (await apiClient.post(`/transport/hors-guce/abonnements/${idContrat}/voyages/`, donnees)).data,
+  annulerVoyage: async (idVoyage, motif) => (await apiClient.post(`/transport/hors-guce/voyages/${idVoyage}/annulation/`, { Motif: motif })).data,
+  emettreRessortie: async (idContrat, mois) => (await apiClient.post(`/transport/hors-guce/abonnements/${idContrat}/ressortie/`, { Mois: mois })).data,
+  // GET : la fiche contrat d'une affaire hors GUCE (police ou ressortie)
+  getContrat: async (idContrat) => (await apiClient.get(`/transport/hors-guce/contrat/${idContrat}/`)).data,
 };
 
 /* =========================================================================

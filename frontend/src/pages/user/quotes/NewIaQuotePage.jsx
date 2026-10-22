@@ -26,7 +26,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { arrondirMontant, parametre, reglagesMinene } from '../../../utils/parametrage';
+import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 
 // Catégorie IA MINENE (comme URANUS) : NSIA, offre 66, capitaux fixes, durée annuelle ou au
 // 31/12 ; le devis est créé depuis le contrat Santé connexe (souscripteur, assurés = adhérents,
@@ -179,7 +179,7 @@ export const NewIaQuotePage = () => {
   // -------------------------------------------------------------
   // ÉTAPE 1 : CONTRAT
   // -------------------------------------------------------------
-  const [compagnieId, setCompagnieId] = useState(1);
+  const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(2));
   const [idTarif, setIdTarif] = useState(77);
   const [idOffre, setIdOffre] = useState(0);
   const [flotte, setFlotte] = useState(false);

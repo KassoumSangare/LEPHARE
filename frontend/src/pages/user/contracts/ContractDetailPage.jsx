@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { contractApi, asaciApi, transportApi, dommagesApi } from '../../../api/endpoints';
+import { contractApi, asaciApi, transportApi, transportHorsGuceApi, dommagesApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
@@ -110,13 +110,23 @@ export const ContractDetailPage = () => {
   }, [location.state, contract.idcontrat]);
   const [bordereauTransport, setBordereauTransport] = useState(null);
   const [certificatsOuverts, setCertificatsOuverts] = useState(false);
+  // Transport : affaire hors GUCE (police au voyage, annuelle, d'abonnement ou ressortie), sinon certificats GUCE
+  const [horsGuce, setHorsGuce] = useState(null);
   useEffect(() => {
     let actif = true;
     setBordereauTransport(null);
+    setHorsGuce(null);
     if (id && contratTransport) {
-      transportApi.getCertificats({ idcontrat: id })
-        .then((d) => { if (actif) setBordereauTransport(d); })
-        .catch(() => { if (actif) setBordereauTransport({ erreur: true }); });
+      transportHorsGuceApi.getContrat(id)
+        .then((h) => {
+          if (!actif) return;
+          if (h?.HorsGuce) { setHorsGuce(h); return; }
+          setHorsGuce({ HorsGuce: false });
+          transportApi.getCertificats({ idcontrat: id })
+            .then((d) => { if (actif) setBordereauTransport(d); })
+            .catch(() => { if (actif) setBordereauTransport({ erreur: true }); });
+        })
+        .catch(() => { if (actif) setHorsGuce({ HorsGuce: false }); });
     }
     return () => { actif = false; };
   }, [id, contratTransport]);
@@ -453,8 +463,38 @@ export const ContractDetailPage = () => {
         </div>
       </div>
 
+      {/* Transport hors GUCE : police ou ressortie mensuelle d'une police d'abonnement */}
+      {contratTransport && horsGuce?.HorsGuce && (
+        <div className="glass-panel" style={{ padding: '1.5rem' }}>
+          <h3 className="title-md" style={{ color: 'var(--text-primary)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Ship size={18} color="#38bdf8" />
+            {horsGuce.Nature === 'RESSORTIE' ? `Ressortie mensuelle de la police d'abonnement ${horsGuce.NumeroPolice}` : `Transport hors GUCE : ${horsGuce.LibelleTypePolice.toLowerCase()}`}
+          </h3>
+          {horsGuce.Nature === 'POLICE' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', fontSize: '0.85rem' }}>
+              <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Marchandise</div><strong>{horsGuce.Marchandise}</strong><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{horsGuce.Conditionnement}</div></div>
+              <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Trajet, {horsGuce.LibelleMode.toLowerCase()}</div><strong>{horsGuce.Depart} → {horsGuce.Arrivee}</strong><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{horsGuce.Chargement}</div></div>
+              <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{horsGuce.TypePolice === 'ABONNEMENT' ? 'Plein par expédition' : 'Valeur assurée'}</div><strong>{Math.round(horsGuce.Valeur).toLocaleString('fr-FR')} FCFA</strong></div>
+              <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Garanties</div><strong>{horsGuce.Garanties.map((g) => `${g.Libelle} ${String(g.Taux).replace('.', ',')} %`).join(' + ')}</strong>{horsGuce.Franchise && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Franchise : {horsGuce.Franchise}</div>}</div>
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              {horsGuce.Voyages.length} voyage(s) déclaré(s) en {new Date(`${horsGuce.Mois}-01T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })} :
+              {' '}{horsGuce.Voyages.map((v) => `n° ${v.Numero} (${v.LieuDepart} → ${v.LieuArrivee})`).join(', ')}.
+            </div>
+          )}
+          {horsGuce.IdContratPolice && (
+            <div style={{ marginTop: '1rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/quotes/transport/abonnements?police=${horsGuce.IdContratPolice}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Eye size={15} /> Voyages et ressorties de la police
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Transport : bordereau GUCE d'origine */}
-      {contratTransport && (
+      {contratTransport && horsGuce && !horsGuce.HorsGuce && (
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <h3 className="title-md" style={{ color: 'var(--text-primary)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Ship size={18} color="#38bdf8" />

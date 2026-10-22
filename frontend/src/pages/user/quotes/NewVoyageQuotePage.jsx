@@ -12,14 +12,15 @@ import {
   Plane, Globe, Users, ShieldCheck, FileCheck, CheckCircle2, ChevronLeft, ChevronRight,
   AlertTriangle, Loader2, CalendarDays, MapPin,
 } from 'lucide-react';
-import { arrondirMontant, parametre } from '../../../utils/parametrage';
+import { arrondirMontant, compagnieParDefaut, parametre } from '../../../utils/parametrage';
 
 // Parcours de production Voyage d'URANUS (Contrat, Offre, Souscripteur/Assuré), réorganisé en étapes.
 // Listes, offres, garanties et primes viennent de la base : tarifvoyage, payszone, offrevoyage,
 // offregarantievoyage (grille zone x durée x âge) ; enregistrement par sp_creation_devis_voyage
 // (POST /api/devisvoyage/enregistrement/). Un devis Voyage couvre un seul voyageur.
 const ID_PRODUIT_VOYAGE = 3;
-const ID_COMPAGNIE_PAR_DEFAUT = 21; // AMSA ASSURANCES, compagnie proposée par URANUS
+// Compagnie proposée : Administration > Produits (AMSA ASSURANCES à l'origine, comme URANUS)
+const idCompagnieParDefaut = () => compagnieParDefaut(ID_PRODUIT_VOYAGE, 21);
 // Réduction maximale : Administration > Le cabinet & règles de gestion (voyage.taux_reduction_max, contrôlée aussi
 // par le serveur ; 35 % à l'origine)
 const reductionMax = () => parametre('voyage.taux_reduction_max', 35);
@@ -112,7 +113,7 @@ export const NewVoyageQuotePage = () => {
   const assure = assureDifferent ? assureChoisi : souscripteur;
 
   // Contrat & voyage (noms des champs URANUS)
-  const [compagnie, setCompagnie] = useState(ID_COMPAGNIE_PAR_DEFAUT);
+  const [compagnie, setCompagnie] = useState(idCompagnieParDefaut);
   const [categorie, setCategorie] = useState(0); // formule = IdTarif
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [nationalite, setNationalite] = useState(0);
@@ -321,7 +322,7 @@ export const NewVoyageQuotePage = () => {
         setIdDevisEdite(Number(d.IdDevis));
         setNumeroDevisEdite(d.NumeroDevis || '');
         setIdAvenant(Number(d.IdAvenant) || 1);
-        setCompagnie(Number(d.IdCompagnie) || ID_COMPAGNIE_PAR_DEFAUT);
+        setCompagnie(Number(d.IdCompagnie) || idCompagnieParDefaut());
         setCategorie(Number(d.Detail.IdTarif) || 0);
         setOffre(Number(d.Detail.IdOffre) || 0);
         setReduction(Number(d.Detail.TauxReduction) || 0);

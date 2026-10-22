@@ -31,6 +31,11 @@ const DROITS_ECRANS_PRODUCTION = [
   ['/user/crm', 'crm.view'],
   ['/user/quotes', 'devis.view'],
   ['/user/quotes/', ['devis.create', 'devis.update']],
+  // Transport : accueil des trois parcours, cotation hors GUCE, polices d'abonnement, import GUCE
+  ['/user/quotes/transport', ['devis.create', 'devis.update', 'contrats.view', 'imports.guce']],
+  ['/user/quotes/transport/hors-guce', ['devis.create', 'devis.update']],
+  ['/user/quotes/transport/abonnements', 'contrats.view'],
+  ['/user/quotes/transport/guce', ['imports.guce', 'devis.create', 'devis.update']],
   ['/user/contracts', 'contrats.view'],
   ['/user/endorsements', 'contrats.view'],
   ['/user/asaci', 'contrats.view'],

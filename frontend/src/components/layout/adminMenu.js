@@ -43,7 +43,9 @@ import {
   Users,
   Table2,
   Link2,
+  LayoutGrid,
 } from 'lucide-react';
+import { BRANCHES, adresseBranche } from '../../utils/branchesProduction';
 
 export const ADMIN_MENU = [
   {
@@ -63,7 +65,7 @@ export const ADMIN_MENU = [
     titre: 'Le cabinet',
     description: "Identité du cabinet, ce que reprennent les documents imprimés et les règles de gestion.",
     items: [
-      { to: '/admin/settings/cabinet', droit: 'parametrage.update', label: 'Le cabinet & règles de gestion', icon: Landmark, description: "Coordonnées, logos et mentions des documents ; règles de gestion de toutes les branches : réductions commerciales maximales (Auto, IA, RC, Voyage), clauses IA NSIA, gestionnaire Santé, part AFS-CI du Transport, registre des devis, reversements, arrondi des primes ; délais d'avis d'échéance." },
+      { to: '/admin/settings/cabinet', droit: 'parametrage.update', label: 'Le cabinet & règles de gestion', icon: Landmark, description: "Coordonnées, logos et mentions des documents ; règles de gestion communes à toutes les branches : registre des devis, reversements, arrondi des primes ; délais d'avis d'échéance. Les règles propres à une branche sont dans « Réglages par branche »." },
     ],
   },
   {
@@ -87,25 +89,32 @@ export const ADMIN_MENU = [
       { to: '/admin/settings/offres', droit: 'tarifs.view', label: 'Offres', icon: Boxes, description: 'Les formules proposées par compagnie et par catégorie, avec les garanties comprises et leurs franchises.' },
       { to: '/admin/settings/garanties-oreole', droit: 'tarifs.view', label: 'Garanties & sous-garanties', icon: Shield, description: "La liste de toutes les garanties utilisables dans les offres ; pour en rattacher une à une offre, voir « Offres »." },
       { to: '/admin/settings/tarifs', droit: 'tarifs.view', label: 'Accessoires', icon: Receipt, description: 'Frais de dossier par tranche de prime nette : ceux de chaque compagnie (par produit) et la part du cabinet.' },
-      { to: '/admin/settings/grilles-voyage', droit: 'tarifs.view', label: 'Grilles Voyage', icon: Plane, description: 'Primes, accessoires et taxes Voyage par compagnie, offres proposées par zone et zone de chaque pays de destination.' },
-      { to: '/admin/settings/dommages', droit: 'tarifs.view', label: 'Réglages Dommages', icon: Layers, description: 'Caution, Tous Risques Informatiques, Chantiers, Bris de Machines… : catégories proposées, description du risque demandée, garanties par compagnie avec taux proposé, franchise et taxe.' },
-      { to: '/admin/settings/sante', droit: 'tarifs.view', label: 'Réglages Santé MINENE', icon: HeartPulse, description: "MINENE SANTÉ (Santé, IA et RC chef de famille) : prime et barème de soins de chaque formule, surprimes et âges, capitaux IA et RC, délais de carence, clause d'ajustement et répartition de la prime." },
       { to: '/admin/settings/taxes', droit: 'tarifs.view', label: 'Taxes', icon: Percent, description: "Taux de taxe sur les contrats d'assurance, par produit et par garantie, avec leur période de validité." },
       { to: '/admin/settings/commissions-baremes', droit: 'tarifs.view', label: 'Taux de commission', icon: Coins, description: 'Commission du cabinet par compagnie et par produit, avec sa période de validité.' },
     ],
   },
   {
-    id: 'auto',
-    titre: 'Réglages Automobile',
-    description: 'Les paramètres propres aux devis Automobile.',
+    id: 'branches',
+    titre: 'Réglages par branche',
+    description: "Tout ce qui se règle pour une branche de production, au même endroit : compagnie proposée, saisie ouverte, règles, tarif et listes propres, tables communes filtrées sur la branche.",
     items: [
-      { to: '/admin/settings/marques', droit: 'parametrage.update', label: 'Marques de véhicules', icon: Tag, description: 'Liste des marques proposées lors de la saisie du véhicule.' },
-      { to: '/admin/settings/flotte', droit: 'tarifs.view', label: 'Réductions flotte', icon: Truck, description: "Remise accordée automatiquement selon le nombre de véhicules d'un devis flotte, par compagnie." },
-      { to: '/admin/settings/securite-routiere', droit: 'tarifs.view', label: 'Sécurité routière', icon: TrafficCone, description: 'Formules de la garantie des personnes transportées, par compagnie : capitaux et prime nette.' },
-      { to: '/admin/settings/regles-garanties', droit: 'tarifs.view', label: 'Règles des garanties', icon: Link2, description: "Liens entre garanties par compagnie : obligatoires, offertes ou à prime forfaitaire selon celles souscrites, exigées, exclues, non commercialisées dans une catégorie (tarif annoté NSIA). Les règles marquées « Barème » sont aussi appliquées par le calcul des primes (NSIA : défense-recours 4 200 F, bris de glace et recours anticipé offerts avec les dommages ou la collision)." },
-      { to: '/admin/settings/tarifs-directs', droit: 'tarifs.view', label: 'Tarifs à lecture directe', icon: Table2, description: "Primes toutes faites de chaque compagnie (NSIA : VP essence, VP diesel, TPC, TPM) par tranche et par durée, appliquées d'office aux offres cochées ; coefficients des contrats de moins d'un an." },
-      { to: '/admin/settings/pool-tpv', droit: 'tarifs.view', label: 'Pool TPV (catégorie 204)', icon: Bus, description: "Tarif du Pool des transports publics de voyageurs (RC selon les places, Recours, fractions selon la durée, accessoires) et primes RC + Recours dues au Pool." },
-      { to: '/admin/settings/depreciation', droit: 'tarifs.view', label: 'Dépréciation et âge des véhicules', icon: TrendingDown, description: "Tableau de la CIEAMI (valeur vénale proposée à la saisie, à l'import et au renouvellement) et garanties admises selon l'âge du véhicule (NSIA : tous risques de 0 à 5 ans, Auto Plus de 5 à 10 ans : cochée d'office à l'écran, âge minimum suivi par le calcul des primes)." },
+      // Une entrée par branche (masquée tant que la saisie de la branche est fermée, Administration > Produits)
+      ...BRANCHES.map((b) => ({
+        to: adresseBranche(b.module), droit: 'tarifs.view', label: b.libelle, icon: b.icone, description: b.description,
+        module: b.module, inclut: b.pages || [],
+      })),
+      // Écrans détaillés, ouverts depuis la page de leur branche
+      { to: '/admin/settings/branches', droit: 'tarifs.view', label: 'Toutes les branches', icon: LayoutGrid, description: "Les branches de production, leur saisie (ouverte ou fermée) et leur compagnie proposée.", menu: false },
+      { to: '/admin/settings/grilles-voyage', droit: 'tarifs.view', label: 'Grilles Voyage', icon: Plane, description: 'Primes, accessoires et taxes Voyage par compagnie, offres proposées par zone et zone de chaque pays de destination.', menu: false, branche: 'Voyage' },
+      { to: '/admin/settings/dommages', droit: 'tarifs.view', label: 'Réglages Dommages', icon: Layers, description: 'Caution, Tous Risques Informatiques, Chantiers, Bris de Machines… : catégories proposées, description du risque demandée, garanties par compagnie avec taux proposé, franchise et taxe.', menu: false, branche: 'Dommages' },
+      { to: '/admin/settings/sante', droit: 'tarifs.view', label: 'Réglages Santé MINENE', icon: HeartPulse, description: "MINENE SANTÉ (Santé, IA et RC chef de famille) : prime et barème de soins de chaque formule, surprimes et âges, capitaux IA et RC, délais de carence, clause d'ajustement et répartition de la prime.", menu: false, branche: 'Santé' },
+      { to: '/admin/settings/marques', droit: 'parametrage.update', label: 'Marques de véhicules', icon: Tag, description: 'Liste des marques proposées lors de la saisie du véhicule.', menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/flotte', droit: 'tarifs.view', label: 'Réductions flotte', icon: Truck, description: "Remise accordée automatiquement selon le nombre de véhicules d'un devis flotte, par compagnie.", menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/securite-routiere', droit: 'tarifs.view', label: 'Sécurité routière', icon: TrafficCone, description: 'Formules de la garantie des personnes transportées, par compagnie : capitaux et prime nette.', menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/regles-garanties', droit: 'tarifs.view', label: 'Règles des garanties', icon: Link2, description: "Liens entre garanties par compagnie : obligatoires, offertes ou à prime forfaitaire selon celles souscrites, exigées, exclues, non commercialisées dans une catégorie (tarif annoté NSIA). Les règles marquées « Barème » sont aussi appliquées par le calcul des primes (NSIA : défense-recours 4 200 F, bris de glace et recours anticipé offerts avec les dommages ou la collision).", menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/tarifs-directs', droit: 'tarifs.view', label: 'Tarifs à lecture directe', icon: Table2, description: "Primes toutes faites de chaque compagnie (NSIA : VP essence, VP diesel, TPC, TPM) par tranche et par durée, appliquées d'office aux offres cochées ; coefficients des contrats de moins d'un an.", menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/pool-tpv', droit: 'tarifs.view', label: 'Pool TPV (catégorie 204)', icon: Bus, description: "Tarif du Pool des transports publics de voyageurs (RC selon les places, Recours, fractions selon la durée, accessoires) et primes RC + Recours dues au Pool.", menu: false, branche: 'Automobile' },
+      { to: '/admin/settings/depreciation', droit: 'tarifs.view', label: 'Dépréciation et âge des véhicules', icon: TrendingDown, description: "Tableau de la CIEAMI (valeur vénale proposée à la saisie, à l'import et au renouvellement) et garanties admises selon l'âge du véhicule (NSIA : tous risques de 0 à 5 ans, Auto Plus de 5 à 10 ans : cochée d'office à l'écran, âge minimum suivi par le calcul des primes).", menu: false, branche: 'Automobile' },
     ],
   },
   {
@@ -155,3 +164,6 @@ export const premierEcranAdmin = (peut) => {
 
 // Un écran est actif si l'adresse courante est la sienne (ou une de ses sous-pages)
 export const estActif = (pathname, to) => pathname === to || pathname.startsWith(`${to}/`);
+
+/** Entrée du menu active pour l'adresse : la sienne, ou un écran détaillé qu'elle regroupe (`inclut`). */
+export const entreeActive = (pathname, item) => estActif(pathname, item.to) || (item.inclut || []).some((to) => estActif(pathname, to));

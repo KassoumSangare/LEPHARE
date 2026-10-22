@@ -13,7 +13,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
-import { arrondirMontant } from '../../../utils/parametrage';
+import { arrondirMontant, compagnieParDefaut } from '../../../utils/parametrage';
 
 // Production Multirisques Habitation d'URANUS (Contrat, Maisons, Offre/récapitulatif, Souscripteur) :
 // un devis porte une ou plusieurs maisons ; chaque maison a un usage (statut d'occupation) qui fixe
@@ -187,7 +187,7 @@ export const NewMrhQuotePage = () => {
 
   // Étape 1 : contrat
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
-  const [compagnieId, setCompagnieId] = useState(1);
+  const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(ID_PRODUIT_MRH));
   const [categorieId, setCategorieId] = useState(ID_TARIF_MRH);
   const [termeId, setTermeId] = useState(ID_TERME_PAR_DEFAUT);
   const [dureeId, setDureeId] = useState(4); // 4 = Annuelle
@@ -254,8 +254,8 @@ export const NewMrhQuotePage = () => {
       const mapped = (cies || []).map((c) => ({ id: Number(c.IdCompagnie || c.id), nom: c.RaisonSociale || c.nom }));
       setCompanies(mapped);
       if (!editIddevisParam && mapped.length) {
-        // NSIA (1) reste la compagnie proposée à l'ouverture
-        setCompagnieId((mapped.find((c) => c.id === 1) || mapped[0]).id);
+        // Compagnie proposée à l'ouverture : Administration > Produits (NSIA à l'origine)
+        setCompagnieId((mapped.find((c) => c.id === compagnieParDefaut(ID_PRODUIT_MRH)) || mapped[0]).id);
       }
       if (Array.isArray(usgList) && usgList.length) {
         setUsages(usgList);

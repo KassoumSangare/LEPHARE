@@ -207,6 +207,12 @@ def _document_json(d):
     }
 
 
+def compagnie_par_defaut(id_produit, repli=None):
+    """Compagnie proposée à l'ouverture d'un nouveau devis du produit (Administration > Produits), sinon `repli`."""
+    p = ProduitParametre.objects.filter(IdProduit=id_produit).first()
+    return (p.IdCompagnieDefaut if p and p.IdCompagnieDefaut else None) or repli
+
+
 def _produits():
     params = {p.IdProduit: p for p in ProduitParametre.objects.all()}
     lignes = []
@@ -220,6 +226,7 @@ def _produits():
             "ModuleSaisie": p.ModuleSaisie if p else "",
             "SaisieOuverte": bool(p and p.SaisieOuverte),
             "ArrondiTtc": p.ArrondiTtc if p else True,
+            "IdCompagnieDefaut": p.IdCompagnieDefaut if p else None,
             "Ordre": p.Ordre if p else 99,
         })
     return sorted(lignes, key=lambda x: (x["Ordre"], x["IdProduit"]))
@@ -550,7 +557,8 @@ def produits(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EstAdministrateur])
 def produit(request, id_produit):
-    """PATCH /api/parametrage/produits/<id>/ {Libelle, Actif, Onglet, ModuleSaisie, SaisieOuverte, ArrondiTtc, Ordre}."""
+    """PATCH /api/parametrage/produits/<id>/ {Libelle, Actif, Onglet, ModuleSaisie, SaisieOuverte, ArrondiTtc,
+    IdCompagnieDefaut, Ordre}."""
     try:
         ligne = Produit.objects.get(id_produit=id_produit)
     except Produit.DoesNotExist:
@@ -574,6 +582,17 @@ def produit(request, id_produit):
             param.SaisieOuverte = bool(request.data["SaisieOuverte"])
         if "ArrondiTtc" in request.data:
             param.ArrondiTtc = bool(request.data["ArrondiTtc"])
+        if "IdCompagnieDefaut" in request.data:
+            try:
+                id_compagnie = int(request.data["IdCompagnieDefaut"] or 0)
+            except (TypeError, ValueError) as erreur:
+                raise ErreurParametrage("Compagnie proposée : compagnie inconnue.") from erreur
+            if id_compagnie:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1 FROM stdcompagnie WHERE idcompagnie = %s AND idcompagnie <> 0", [id_compagnie])
+                    if not cursor.fetchone():
+                        raise ErreurParametrage("Compagnie proposée : compagnie inconnue.")
+            param.IdCompagnieDefaut = id_compagnie or None
         if "Ordre" in request.data:
             try:
                 param.Ordre = max(0, min(999, int(request.data["Ordre"])))

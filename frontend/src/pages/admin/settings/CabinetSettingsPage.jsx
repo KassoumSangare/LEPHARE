@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Landmark, IdCard, Printer, SlidersHorizontal, BellRing, Save, Loader2, CheckCircle2 } from 'lucide-react';
 import { EnTeteParametrage, SectionParametrage } from '../../../components/admin/EnTeteParametrage';
 import { ChampImage } from '../../../components/admin/ChampImage';
@@ -17,14 +17,11 @@ const ONGLETS = [
   { id: 'echeances', libelle: "Avis d'échéance", icone: BellRing },
 ];
 
-// Groupes de règles de gestion (lephare_parametre.groupe), dans l'ordre d'affichage
+// Groupes de règles de gestion communes à toutes les branches (lephare_parametre.groupe), dans l'ordre d'affichage ;
+// les règles propres à une branche (réductions maximales, clauses IA, gestionnaire Santé, Transport) sont sur sa page
+// (Administration > Réglages par branche)
 const GROUPES_REGLES = [
   { id: 'devis', titre: 'Devis', description: 'Registre des devis et propositions.' },
-  { id: 'reductions', titre: 'Réductions commerciales maximales', description: 'Réduction la plus élevée acceptée à la saisie des devis, par branche.' },
-  { id: 'voyage', titre: 'Voyage', description: 'Contrôles appliqués à l\'enregistrement des devis Voyage.' },
-  { id: 'ia', titre: 'Individuelle Accidents', description: 'Clauses du tarif IA de la compagnie, rappelées à la saisie des assurés.' },
-  { id: 'sante', titre: 'Santé', description: 'Données reprises sur les contrats et les conditions particulières Santé.' },
-  { id: 'transport', titre: 'Transport', description: 'Import des bordereaux GUCE et contrats générés.' },
   { id: 'finance', titre: 'Encaissements et reversements', description: 'Suivi des primes encaissées et reversées aux compagnies.' },
   { id: 'montants', titre: 'Arrondi des montants', description: 'Primes TTC des devis, contrats et quittances arrondies à la pièce (5 F en Côte d\'Ivoire). Un produit peut en être exclu dans « Produits ».' },
 ];
@@ -211,6 +208,12 @@ export const CabinetSettingsPage = () => {
         </>
       )}
 
+      {onglet === 'regles' && (
+        <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0 0 1rem' }}>
+          Règles communes à toutes les branches. Celles d'une branche (réduction maximale, clauses IA, gestionnaire Santé, tarif
+          Transport…) se règlent sur sa page : <Link to="/admin/settings/branches">Réglages par branche</Link>.
+        </p>
+      )}
       {onglet === 'regles' && GROUPES_REGLES.filter((g) => parGroupe[g.id]?.length).map((g) => (
         <SectionParametrage key={g.id} icone={SlidersHorizontal} titre={g.titre} description={g.description}>
           {parGroupe[g.id].map((p) => <LigneParametre key={p.Cle} parametre={p} onEnregistre={remplacer} />)}

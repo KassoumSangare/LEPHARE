@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from . import parametrage, parametrage_auto, parametrage_dommages, parametrage_sante, views_grilles_voyage
+from . import parametrage, parametrage_auto, parametrage_dommages, parametrage_ia, parametrage_mrh, parametrage_sante, parametrage_transport, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -178,6 +178,18 @@ urlpatterns = [
     path("parametrage/produits/", parametrage.produits, name="parametrage-produits"),
     path("parametrage/produits/<int:id_produit>/", parametrage.produit, name="parametrage-produit"),
     # Réglages Automobile (dépréciation des véhicules) et valeur vénale : configuration_api/parametrage_auto.py
+    # Réglages par branche : Transport hors GUCE, Individuelle Accidents (tarif NSIA), Multirisque Habitation
+    path("parametrage/transport/", parametrage_transport.transport, name="parametrage-transport"),
+    path("parametrage/transport/garanties/", parametrage_transport.garanties, name="parametrage-transport-garanties"),
+    path("parametrage/transport/modes/<str:code>/", parametrage_transport.mode, name="parametrage-transport-mode"),
+    path("parametrage/ia/", parametrage_ia.ia, name="parametrage-ia"),
+    path("parametrage/ia/classes/<str:classe>/", parametrage_ia.classe, name="parametrage-ia-classe"),
+    path("parametrage/ia/tranches/", parametrage_ia.tranches, name="parametrage-ia-tranches"),
+    path("parametrage/ia/offres/", parametrage_ia.offres, name="parametrage-ia-offres"),
+    path("parametrage/mrh/", parametrage_mrh.mrh, name="parametrage-mrh"),
+    path("parametrage/mrh/usages/<str:code>/", parametrage_mrh.usage, name="parametrage-mrh-usage"),
+    path("parametrage/mrh/options/<str:code>/", parametrage_mrh.option, name="parametrage-mrh-option"),
+    path("parametrage/mrh/forfaits/<str:code>/", parametrage_mrh.forfait, name="parametrage-mrh-forfait"),
     path("parametrage/auto/depreciation/", parametrage_auto.depreciation, name="parametrage-auto-depreciation"),
     path("parametrage/auto/depreciation/classes/<str:code>/", parametrage_auto.classe, name="parametrage-auto-depreciation-classe"),
     path("parametrage/auto/depreciation/regles/", parametrage_auto.regles, name="parametrage-auto-depreciation-regles"),

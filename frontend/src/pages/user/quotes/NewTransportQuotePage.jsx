@@ -13,7 +13,7 @@ import {
 // Production Transport (facultés) d'URANUS : import des bordereaux GUCE, deux par mois (du 1er au 15
 // et du 16 au dernier jour). Chaque import génère, par client et par police GUCE, un devis confirmé
 // en contrat (police à l'abonnement) avec une ligne par certificat, et la quittance.
-// Le compte rendu OREOLE du 09/09/2026 renvoie les affaires hors GUCE à un développement futur.
+// Les affaires hors GUCE se cotent dans NewTransportHorsGucePage (accueil Transport : TransportAccueilPage).
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
@@ -319,8 +319,8 @@ export const NewTransportQuotePage = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1280px', margin: '0 auto', paddingBottom: '3rem' }}>
       {/* EN-TÊTE */}
       <div>
-        <button type="button" className="btn btn-link" onClick={() => navigate('/user/quotes')} style={{ padding: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-          <ChevronLeft size={16} /> Registre des devis
+        <button type="button" className="btn btn-link" onClick={() => navigate('/user/quotes/transport')} style={{ padding: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+          <ChevronLeft size={16} /> Transport
         </button>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
           <Ship size={26} style={{ color: 'var(--primary-500)' }} /> Production Transport — bordereaux GUCE
@@ -678,7 +678,7 @@ export const NewTransportQuotePage = () => {
           </div>
         )}
         <p style={styles.aide}>
-          Les affaires Transport hors GUCE ne sont pas saisies ici : le compte rendu OREOLE du 09/09/2026 en fait un développement futur, à décider avec la Direction Générale.
+          Marchandises hors guichet unique : <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: 'inherit' }} onClick={() => navigate('/user/quotes/transport/hors-guce')}>cotation Transport hors GUCE</button>.
         </p>
       </div>
 

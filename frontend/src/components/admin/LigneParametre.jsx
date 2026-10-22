@@ -76,7 +76,7 @@ export const LigneParametre = ({
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1.2fr) minmax(200px, 1fr) auto', gap: '0.75rem 1.25rem', alignItems: 'center', padding: '0.85rem 0', borderTop: '1px solid var(--border-subtle)' }}>
+    <div className="ligne-parametre">
       <div>
         <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{parametre.Libelle}</div>
         {parametre.Aide && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: 2 }}>{parametre.Aide}</div>}

@@ -106,10 +106,12 @@ export const AuthProvider = ({ children }) => {
   );
 
   useEffect(() => {
+    // Droits encore en cours de vérification (rechargement de la page) : l'espace choisi est gardé jusqu'à la réponse
+    if (verification) return;
     const espace = accesAdministration ? activeSpace : 'user';
     if (espace !== activeSpace) setActiveSpace(espace);
     localStorage.setItem('uranus_active_space', espace);
-  }, [accesAdministration, activeSpace]);
+  }, [accesAdministration, activeSpace, verification]);
 
   /** Connexion : erreurs du serveur remontées telles quelles (mot de passe, compte verrouillé ou expiré). */
   const login = async (email, password) => {

@@ -6,32 +6,29 @@ import { parametrageApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { chargerParametrage, codeOnglet } from '../../../utils/parametrage';
 import { useToast } from '../../../context/ToastContext';
+import { Interrupteur } from '../../../components/admin/Interrupteur';
 
 // Produits (stdproduit) et leur place dans LE PHARE (lephare_produit_parametre) : onglet du
 // registre des devis, formulaire de saisie, saisie ouverte. configuration_api/parametrage.py
 
-const CHAMPS = ['Libelle', 'Actif', 'Onglet', 'ModuleSaisie', 'SaisieOuverte', 'ArrondiTtc', 'Ordre'];
+const CHAMPS = ['Libelle', 'Actif', 'Onglet', 'ModuleSaisie', 'SaisieOuverte', 'ArrondiTtc', 'IdCompagnieDefaut', 'Ordre'];
 const identique = (a, b) => CHAMPS.every((c) => String(a[c] ?? '') === String(b[c] ?? ''));
-
-const Interrupteur = ({ actif, onChange, desactive, titre }) => (
-  <button type="button" role="switch" aria-checked={actif} title={titre} disabled={desactive} onClick={() => onChange(!actif)}
-    style={{ width: 40, height: 22, borderRadius: 999, border: 'none', cursor: desactive ? 'not-allowed' : 'pointer', position: 'relative', background: actif ? 'var(--accent-emerald)' : 'var(--border-medium)', opacity: desactive ? 0.45 : 1, transition: 'background 0.15s' }}>
-    <span style={{ position: 'absolute', top: 3, left: actif ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.15s' }} />
-  </button>
-);
 
 export const CatalogProductsPage = () => {
   const { success, error: toastError } = useToast();
   const [origine, setOrigine] = useState([]);
   const [saisie, setSaisie] = useState({});
   const [modules, setModules] = useState([]);
+  const [compagnies, setCompagnies] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [envoi, setEnvoi] = useState(null);
 
   const charger = async () => {
     setChargement(true);
     try {
-      const d = await parametrageApi.getProduits();
+      const [d, cies] = await Promise.all([parametrageApi.getProduits(), parametrageApi.getCompagnies().catch(() => [])]);
+      setCompagnies((cies || []).filter((c) => c.Active).map((c) => ({ id: Number(c.IdCompagnie), nom: c.RaisonSociale }))
+        .sort((a, b) => a.nom.localeCompare(b.nom, 'fr')));
       setOrigine(d.Produits);
       setSaisie(Object.fromEntries(d.Produits.map((p) => [p.IdProduit, { ...p }])));
       setModules(d.Modules);
@@ -85,7 +82,7 @@ export const CatalogProductsPage = () => {
         icone={Package}
         titre="Produits"
         description="Les produits d'assurance de la base (Automobile, Santé, IA…) et leur place dans LE PHARE : onglet du registre des devis, formulaire de saisie, saisie ouverte ou non."
-        usage="« Saisie ouverte » active les boutons de création et le bouton « Modifier » du registre pour ce formulaire. Les produits d'un même onglet sont regroupés dans le Registre des devis."
+        usage="« Saisie ouverte » active les boutons de création et le bouton « Modifier » du registre pour ce formulaire. « Compagnie proposée » : compagnie sélectionnée à l'ouverture d'un nouveau devis. Les produits d'un même onglet sont regroupés dans le Registre des devis."
         actions={(
           <>
             <Link to="/admin/settings/garanties-oreole" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Shield size={15} /> Garanties</Link>
@@ -103,7 +100,7 @@ export const CatalogProductsPage = () => {
 
       <div className="glass-panel" style={{ padding: '0.5rem 1.25rem 1rem', overflowX: 'auto' }}>
         {chargement ? <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}><Loader2 className="spin" /> Chargement…</div> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1160 }}>
             <thead>
               <tr style={{ textAlign: 'left', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>
                 <th style={{ padding: '0.75rem 0.4rem', width: 60 }}>Ordre</th>
@@ -113,6 +110,7 @@ export const CatalogProductsPage = () => {
                 <th style={{ padding: '0.75rem 0.4rem', width: 210 }}>Formulaire de saisie</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 100 }}>Saisie ouverte</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 100 }} title="Prime TTC arrondie à la pièce (Paramètres du cabinet > Règles de gestion > Arrondi des montants)">Arrondi TTC</th>
+                <th style={{ padding: '0.75rem 0.4rem', width: 200 }} title="Compagnie sélectionnée à l'ouverture d'un nouveau devis du produit">Compagnie proposée</th>
                 <th style={{ padding: '0.75rem 0.4rem', width: 190 }} />
               </tr>
             </thead>
@@ -146,6 +144,15 @@ export const CatalogProductsPage = () => {
                     <td style={{ padding: '0.55rem 0.4rem' }}>
                       <Interrupteur actif={l.ArrondiTtc !== false} onChange={(v) => changer(p.IdProduit, 'ArrondiTtc', v)}
                         titre={l.ArrondiTtc !== false ? 'Prime TTC arrondie à la pièce : cliquer pour garder la TTC calculée (ex. grilles Voyage des compagnies)' : 'TTC calculée gardée telle quelle : cliquer pour l\'arrondir à la pièce'} />
+                    </td>
+                    <td style={{ padding: '0.55rem 0.4rem' }}>
+                      <select className="form-control" value={l.IdCompagnieDefaut || ''} disabled={!l.ModuleSaisie}
+                        onChange={(e) => changer(p.IdProduit, 'IdCompagnieDefaut', e.target.value ? Number(e.target.value) : null)}
+                        title={l.ModuleSaisie ? "Compagnie sélectionnée à l'ouverture d'un nouveau devis" : "Choisissez d'abord un formulaire"}>
+                        <option value="">Première de la liste</option>
+                        {l.IdCompagnieDefaut && !compagnies.some((c) => c.id === Number(l.IdCompagnieDefaut)) && <option value={l.IdCompagnieDefaut}>Compagnie n° {l.IdCompagnieDefaut}</option>}
+                        {compagnies.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                      </select>
                     </td>
                     <td style={{ padding: '0.55rem 0.4rem' }}>
                       {modifie && (

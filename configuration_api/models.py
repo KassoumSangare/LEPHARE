@@ -4011,7 +4011,7 @@ class ProduitParametre(models.Model):
         ("voyage", "Voyage"),
         ("mrh", "Multirisque Habitation"),
         ("sante", "Santé"),
-        ("transport", "Transport (bordereaux GUCE)"),
+        ("transport", "Transport"),
         ("rc", "Responsabilité Civile"),
         ("mrp", "Multirisque Professionnelle"),
         ("tous-dommages", "Tous Dommages"),
@@ -4026,6 +4026,8 @@ class ProduitParametre(models.Model):
     # Prime TTC arrondie à la pièce (fn_lephare_arrondi_montant, réglages « montants.arrondi_* ») ; non : TTC des
     # grilles de la compagnie gardée telle quelle
     ArrondiTtc = models.BooleanField(default=True, db_column="arrondittc")
+    # Compagnie proposée à l'ouverture d'un nouveau devis du produit (vide : la première de la liste)
+    IdCompagnieDefaut = models.IntegerField(null=True, blank=True, db_column="idcompagniedefaut")
     DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
 
     class Meta:
@@ -4358,3 +4360,111 @@ class TarifAutoGrilleLigne(models.Model):
         verbose_name = "Tranche d'un tarif à lecture directe"
         verbose_name_plural = "Tranches des tarifs à lecture directe"
         ordering = ["Grille", "-DureeMois", "Ordre", "id"]
+
+
+class TransportMode(models.Model):
+    """Mode de transport des affaires Transport hors GUCE (Réglages Transport) : libellés repris à la cotation,
+    document et moyen de transport demandés, modes de chargement proposés. La catégorie (stdtarif 6xx) est fixe."""
+
+    Code = models.CharField(max_length=12, primary_key=True, db_column="code")
+    Libelle = models.CharField(max_length=60, db_column="libelle")
+    CodeCategorie = models.CharField(max_length=3, db_column="codecategorie")
+    Document = models.CharField(max_length=80, blank=True, default="", db_column="document")
+    Moyen = models.CharField(max_length=80, blank=True, default="", db_column="moyen")
+    Chargements = models.JSONField(default=list, db_column="chargements")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    Actif = models.BooleanField(default=True, db_column="actif")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_transport_mode"
+        verbose_name = "Mode de transport"
+        verbose_name_plural = "Modes de transport"
+        ordering = ["Ordre", "Code"]
+
+
+class TransportGarantie(models.Model):
+    """Garantie proposée à la cotation Transport hors GUCE : garantie de base (une seule) ou extension cumulable,
+    rattachée à une sous-garantie du référentiel (stdsousgarantie). Taux proposé par mode de transport
+    ({code du mode: taux en %}, vide : saisi à la cotation) ; TauxMinimum : le taux proposé est un plancher
+    (FAP Sauf, taux minimum réglementaire)."""
+
+    GROUPES = [("BASE", "Garantie de base"), ("EXTENSION", "Extension ou surprime")]
+
+    Code = models.CharField(max_length=30, primary_key=True, db_column="code")
+    Groupe = models.CharField(max_length=10, choices=GROUPES, db_column="groupe")
+    Libelle = models.CharField(max_length=80, db_column="libelle")
+    Description = models.TextField(blank=True, default="", db_column="description")
+    CodeSousGarantie = models.CharField(max_length=10, db_column="codesousgarantie")
+    Taux = models.JSONField(default=dict, db_column="taux")
+    TauxMinimum = models.BooleanField(default=False, db_column="tauxminimum")
+    Ordre = models.PositiveSmallIntegerField(default=0, db_column="ordre")
+    Active = models.BooleanField(default=True, db_column="active")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_transport_garantie"
+        verbose_name = "Garantie Transport"
+        verbose_name_plural = "Garanties Transport"
+        ordering = ["Groupe", "Ordre", "Code"]
+
+
+class IaTauxClasse(models.Model):
+    """Tarif Individuelle Accidents d'une compagnie par classe d'activité (code_classe_assure de la profession) :
+    taux décès et invalidité permanente en ‰ du capital, frais médicaux en % du capital. Lu par
+    fn_calcul_prime_ia_nsia (NSIA ASSURANCES)."""
+
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    Classe = models.CharField(max_length=2, db_column="classe")
+    Libelle = models.CharField(max_length=120, blank=True, default="", db_column="libelle")
+    TauxDeces = models.DecimalField(max_digits=8, decimal_places=4, db_column="tauxdeces")
+    TauxInvalidite = models.DecimalField(max_digits=8, decimal_places=4, db_column="tauxinvalidite")
+    TauxFraisMedicaux = models.DecimalField(max_digits=8, decimal_places=4, db_column="tauxfraismedicaux")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_ia_taux_classe"
+        verbose_name = "Taux IA par classe d'activité"
+        verbose_name_plural = "Taux IA par classe d'activité"
+        ordering = ["IdCompagnie", "Classe"]
+        constraints = [models.UniqueConstraint(fields=["IdCompagnie", "Classe"], name="lephare_ia_taux_classe_unique")]
+
+
+class IaAccessoireTranche(models.Model):
+    """Accessoires Individuelle Accidents d'une compagnie selon la prime nette : montant de la première tranche
+    dont le plafond n'est pas dépassé ; ligne sans plafond = au-delà (pourcentage de la prime nette + montant).
+    Lu par fn_get_accessoire_ia_nsia (NSIA ASSURANCES), montant total réparti compagnie / cabinet."""
+
+    IdCompagnie = models.IntegerField(db_column="idcompagnie")
+    PrimeMax = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, db_column="primemax")
+    Montant = models.DecimalField(max_digits=15, decimal_places=2, db_column="montant")
+    TauxAuDela = models.DecimalField(max_digits=8, decimal_places=4, null=True, blank=True, db_column="tauxaudela")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_ia_accessoire_tranche"
+        verbose_name = "Tranche d'accessoires IA"
+        verbose_name_plural = "Tranches d'accessoires IA"
+        ordering = ["IdCompagnie", "PrimeMax"]
+
+
+class IaAccessoireOffre(models.Model):
+    """Accessoire forfaitaire d'une offre Individuelle Accidents (offres CGA, CI-ÉNERGIES…) : montant total partagé entre
+    la compagnie et le cabinet selon la part du cabinet réglée sur la fiche de la compagnie. Lu par fn_get_accessoire
+    (v4) à la place du barème."""
+
+    IdOffre = models.IntegerField(unique=True, db_column="idoffre")
+    Montant = models.DecimalField(max_digits=15, decimal_places=2, db_column="montant")
+    Actif = models.BooleanField(default=True, db_column="actif")
+    DateModification = models.DateTimeField(auto_now=True, db_column="datemodification")
+    ModifiePar = models.CharField(max_length=150, blank=True, default="", db_column="modifiepar")
+
+    class Meta:
+        db_table = "lephare_ia_accessoire_offre"
+        verbose_name = "Accessoire forfaitaire d'une offre IA"
+        verbose_name_plural = "Accessoires forfaitaires des offres IA"
+        ordering = ["IdOffre"]

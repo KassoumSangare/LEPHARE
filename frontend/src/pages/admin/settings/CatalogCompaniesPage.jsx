@@ -326,8 +326,9 @@ export const CatalogCompaniesPage = () => {
                   <input type="number" min={0} max={100} step="0.01" className="form-control" style={{ maxWidth: 160 }} value={s.Documents.Reversement.PartAccessoiresCourtier}
                     onChange={(e) => changerReversement('PartAccessoiresCourtier', e.target.value)} placeholder="Barème" />
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Colonne « Acc. Courtier » du bordereau, appliquée à chaque contrat enregistré (NSIA et SUNU : 50, partage 50/50 des accessoires).
-                    Vide : barème « Accessoires du cabinet » par tranche de prime.
+                    Le barème des accessoires de la compagnie est partagé selon cette part : devis (toutes branches), contrats enregistrés
+                    et colonne « Acc. Courtier » des bordereaux (NSIA, SUNU et AMSA : 50, partage 50/50).
+                    Vide : la compagnie garde son barème et le cabinet a le sien (« Accessoires du cabinet »).
                   </span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', columnGap: '1rem' }}>

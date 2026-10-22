@@ -27,6 +27,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.response import Response
 
 from configuration_api.models import DommageCategorie, DommageGarantie
+from configuration_api.parametrage import compagnie_par_defaut
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
@@ -239,7 +240,9 @@ def catalogue_dommages(request):
     with connection.cursor() as cursor:
         compagnies = _compagnies_dommages(cursor)
         if not id_compagnie and compagnies:
-            id_compagnie = next((c["IdCompagnie"] for c in compagnies if c["IdCompagnie"] == 1), compagnies[0]["IdCompagnie"])
+            # Compagnie proposée pour le produit (Administration > Produits), si elle a des garanties Dommages
+            proposee = compagnie_par_defaut(ID_PRODUIT_DOMMAGES, 1)
+            id_compagnie = next((c["IdCompagnie"] for c in compagnies if c["IdCompagnie"] == proposee), compagnies[0]["IdCompagnie"])
         categories = _categories(cursor)
         for categorie in categories:
             categorie["Garanties"] = (

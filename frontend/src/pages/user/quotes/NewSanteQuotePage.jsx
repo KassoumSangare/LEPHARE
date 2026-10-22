@@ -25,7 +25,7 @@ import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevi
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { AmountInput } from '../../../components/common/AmountInput';
-import { formulesSante, parametre, reglagesMinene } from '../../../utils/parametrage';
+import { formulesSante, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 import {
   ID_TERME_PAR_DEFAUT,
   dureeSelonTerme,
@@ -195,7 +195,7 @@ export const NewSanteQuotePage = () => {
   // 1. CONTRAT
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [typeContrat, setTypeContrat] = useState(1);
-  const [compagnieId, setCompagnieId] = useState(1);
+  const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(5));
   const [idTarif, setIdTarif] = useState(0);
   const [ajustement, setAjustement] = useState('reduction');
   const [taux, setTaux] = useState(0);

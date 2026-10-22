@@ -132,7 +132,7 @@ MODELES = [
         "rubriques": ["Proposant et activité", "Nature des marchandises, emballages, conditionnement",
                       "Quantité prévisionnelle et plein par expédition", "Mode de transport, embarquement, destination",
                       "Type de police et garanties souhaitées (OUI)"],
-        "route_devis": "/user/quotes/transport",
+        "route_devis": "/user/quotes/transport/hors-guce",
     },
     {
         "code": "transport_facultes",
@@ -147,7 +147,7 @@ MODELES = [
         "rubriques": ["Proposant et genre de commerce", "Marchandises et emballages", "Modes d'expédition et provenances",
                       "Conteneurs, ports et aérodromes", "Valeur maximale par navire, camion, avion",
                       "Garanties demandées et chiffre d'affaires"],
-        "route_devis": "/user/quotes/transport",
+        "route_devis": "/user/quotes/transport/hors-guce",
     },
     {
         "code": "transport_facultes_terrestres",
@@ -160,7 +160,7 @@ MODELES = [
         "description": "Affaire nouvelle facultés terrestres : marchandises transportées par camion.",
         "rubriques": ["Assuré, profession et adresse", "Marchandise, risques spéciaux et emballage",
                       "Véhicules et transport", "Type de police", "Garanties souhaitées"],
-        "route_devis": "/user/quotes/transport",
+        "route_devis": "/user/quotes/transport/hors-guce",
     },
 ]
 PAR_CODE = {m["code"]: m for m in MODELES}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
@@ -76,8 +77,10 @@ export const ParametrageOffresPage = () => {
   const [branches, setBranches] = useState([]);
   const [categoriesParBranche, setCategoriesParBranche] = useState([]);
 
-  // Filtre Produit (branche CIMA) appliqué aux deux onglets — '' = tous les produits
-  const [selectedBranche, setSelectedBranche] = useState('');
+  // Filtre Produit (branche CIMA) appliqué aux deux onglets — '' = tous les produits ; ?branche=600 : ouvert depuis les
+  // Réglages par branche
+  const [parametresUrl] = useSearchParams();
+  const [selectedBranche, setSelectedBranche] = useState(() => parametresUrl.get('branche') || '');
   // Filtre Compagnie — '' = toutes compagnies. Une offre n'a pas de compagnie unique
   // (le lien se fait via stdoffregarantie), donc ce filtre ne garde que les offres
   // ayant au moins une garantie liée à la compagnie choisie.
