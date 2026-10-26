@@ -52,6 +52,9 @@ DROITS = [
     ("contrats.update", "Modifier un contrat", "Garanties du contrat, pièces jointes.", True, False, False),
     ("contrats.avenant", "Établir un avenant", "Renouvellement, incorporation, retrait, changement d'immatriculation, prise d'effet.", True, False, False),
     ("contrats.cancel", "Annuler un contrat", "Avenant d'annulation ou de résiliation.", True, True, False),
+    ("contrats.reprise", "Saisir les affaires antérieures",
+     "Reprise des contrats et quittances des années passées absents de LE PHARE : saisie, import Excel, suppression d'une "
+     "reprise erronée par son auteur.", False, False, False),
 
     ("encaissements.view", "Consulter la caisse", "Contrats à encaisser, encaissements, reçus, chèques.", False, False, False),
     ("encaissements.create", "Encaisser une prime", "Encaissement, échéancier de chèques, paiement mobile, demande d'annulation.", False, False, False),

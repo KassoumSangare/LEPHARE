@@ -1088,6 +1088,9 @@ export const santeApi = {
   })).data,
   // POST /api/devissante/enregistrement/ : « Enregistrer le devis » (sp_creation_devis_sante)
   enregistrerDevis: async (payload) => (await apiClient.post('/devissante/enregistrement/', payload)).data,
+  // POST /api/devissante/apercu/ : mêmes données ; primes calculées par la base sans rien enregistrer (totaux,
+  // garanties, détail par famille MINENE : formule, prime de base, surprimes d'âge et d'affection, accessoire)
+  apercu: async (payload) => (await apiClient.post('/devissante/apercu/', payload)).data,
   // GET /api/devissante/:iddevis/ : tout ce qui a été saisi sur le devis
   lireDevis: async (idDevis) => (await apiClient.get(`/devissante/${idDevis}/`)).data,
 };
@@ -1527,6 +1530,31 @@ export const normalizeContrat = (bc) => {
     details: bc.details || {},
     raw: bc,
   };
+};
+
+// Cockpit opérationnel (production/views_cockpit.py) : chiffres réels du tableau de bord, chaque bloc selon les droits
+export const cockpitApi = {
+  lire: async () => (await apiClient.get('/cockpit/')).data,
+};
+
+// Reprise des affaires antérieures (production/views_reprise.py) : contrats et quittances des années passées
+export const repriseApi = {
+  lister: async (filtres = {}) => (await apiClient.get('/reprise/', { params: filtres })).data,
+  referentiels: async () => (await apiClient.get('/reprise/referentiels/')).data,
+  creer: async (donnees) => (await apiClient.post('/reprise/', donnees)).data,
+  supprimer: async (id) => (await apiClient.delete(`/reprise/${id}/`)).data,
+  commission: async (id, percue) => (await apiClient.patch(`/reprise/${id}/commission/`, { Percue: percue })).data,
+  modele: async () => (await apiClient.get('/reprise/modele/', { responseType: 'blob' })).data,
+  analyser: async (fichier) => {
+    const fd = new FormData();
+    fd.append('fichier', fichier);
+    return (await apiClient.post('/reprise/import/analyse/', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data;
+  },
+  importer: async (fichier) => {
+    const fd = new FormData();
+    fd.append('fichier', fichier);
+    return (await apiClient.post('/reprise/import/', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data;
+  },
 };
 
 export const contractApi = {

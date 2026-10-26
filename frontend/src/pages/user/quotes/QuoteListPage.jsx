@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { confirmer } from '../../../utils/dialogue';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
-import { isRegistryQuote } from '../../../utils/quoteRegistry';
+import { isExpiredQuote, isUnconfirmedQuote, MODULES_EDITION_COMPLETE } from '../../../utils/quoteRegistry';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { moduleDuProduit, moduleOuvert, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
@@ -39,6 +39,7 @@ import {
   RefreshCw,
   Shield,
   Building2,
+  CalendarX,
 } from 'lucide-react';
 
 const formatDateTime = (value) => {
@@ -59,10 +60,14 @@ const isWithinLastThreeYears = (q) => {
   return d >= limit;
 };
 
-// Formulaires qui savent rouvrir un devis enregistré (?edit=<iddevis>) ; le formulaire d'un produit
-// est réglé dans Administration > Produits. Transport : la cotation hors GUCE rouvre ses devis (ceux des
-// bordereaux GUCE sont confirmés dès l'import).
-const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'rc', 'mrp', 'tous-dommages', 'transport'];
+// Devis expirés : affichés s'ils ont été émis depuis le 1er janvier de l'année N - k (Administration > Le cabinet,
+// règle « Devis expirés affichés au registre », k = 1 : année en cours et année précédente)
+const isExpiredShown = (q) => {
+  const d = new Date(q.date_emission || q.dateemission);
+  if (isNaN(d.getTime())) return true;
+  return d >= new Date(new Date().getFullYear() - parametre('devis.registre_expires_annees', 1), 0, 1);
+};
+
 
 // Icône de l'onglet du registre selon son code (onglets réglés dans Administration > Produits)
 const ICONES_ONGLET = {
@@ -81,7 +86,8 @@ export const QuoteListPage = () => {
   const { user } = useAuth();
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedBranchFilter, setSelectedBranchFilter] = useState('ALL');
+  // Onglet demandé dans l'adresse (?onglet=EXPIRED depuis le Cockpit opérationnel)
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState(() => new URLSearchParams(window.location.search).get('onglet') || 'ALL');
   // Décompte du registre par branche, calculé sur les devis à confirmer réellement chargés
   const [stats, setStats] = useState({ ALL: 0, CONSOLIDATED: 0 });
   // Onglets du registre : un par « Onglet du registre » des produits, « Autres » pour un produit non réglé
@@ -186,7 +192,8 @@ export const QuoteListPage = () => {
     setLoading(true);
     try {
       const all = await quoteApi.getAllQuotes({ archive: 'false', confirme: 'false' });
-      setRegistry(sortRecent(all.filter(isRegistryQuote).filter(isWithinLastThreeYears)));
+      setRegistry(sortRecent(all.filter(isUnconfirmedQuote)
+        .filter((q) => (isExpiredQuote(q) ? isExpiredShown(q) : isWithinLastThreeYears(q)))));
     } catch (err) {
       console.error('Erreur chargement devis Django:', err);
       setRegistry([]);
@@ -205,16 +212,18 @@ export const QuoteListPage = () => {
   // Liste affichée + compteurs, tous dérivés du même registre
   useEffect(() => {
     if (!registry) return;
-    const counts = { ALL: registry.length, CONSOLIDATED: 0 };
+    const counts = { ALL: registry.length, CONSOLIDATED: 0, EXPIRED: 0 };
     registry.forEach((q) => {
       const onglet = getBranchOf(q);
       counts[onglet] = (counts[onglet] || 0) + 1;
       if (q.devis_consolide) counts.CONSOLIDATED += 1;
+      if (isExpiredQuote(q)) counts.EXPIRED += 1;
     });
     setStats(counts);
     setQuotes(
       selectedBranchFilter === 'ALL' ? registry
         : selectedBranchFilter === 'CONSOLIDATED' ? registry.filter((q) => q.devis_consolide)
+        : selectedBranchFilter === 'EXPIRED' ? registry.filter(isExpiredQuote)
         : registry.filter((q) => getBranchOf(q) === selectedBranchFilter)
     );
   }, [registry, selectedBranchFilter]);
@@ -248,6 +257,7 @@ export const QuoteListPage = () => {
 
   const getTabLabel = (filter) => {
     if (filter === 'CONSOLIDATED') return 'Consolidés';
+    if (filter === 'EXPIRED') return 'Expirés';
     if (filter === 'ARCHIVED') return 'Archivés';
     if (filter === 'AUTRES') return 'Autres';
     return onglets.find((o) => o.id === filter)?.label || 'Tous';
@@ -299,7 +309,7 @@ export const QuoteListPage = () => {
         formatDateTime(q.date_expiration),
         primeNette,
         prime,
-        q.statut || 'En cours',
+        isExpiredQuote(q) ? 'Expiré' : (q.statut || 'En cours'),
       ];
     });
 
@@ -487,8 +497,8 @@ export const QuoteListPage = () => {
         if (row.archive) color = 'slate';
         else if (s.includes('confirm') || s.includes('contrat') || row.confirme) color = 'emerald';
         else if (s.includes('consolid')) color = 'blue';
-        else if (s.includes('expir')) color = 'red';
-        const label = color === 'emerald' ? 'Confirmé' : (color === 'blue' ? (row.statut || 'Consolidé') : (color === 'red' ? (row.statut || 'Expiré') : 'Attente'));
+        else if (s.includes('expir') || isExpiredQuote(row)) color = 'red';
+        const label = color === 'emerald' ? 'Confirmé' : (color === 'blue' ? (row.statut || 'Consolidé') : (color === 'red' ? 'Expiré' : 'Attente'));
         return <StatusBadge label={label} color={color} />;
       },
     },
@@ -614,7 +624,10 @@ export const QuoteListPage = () => {
           </div>
           <div>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Total Devis Actifs</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>{countByBranch.ALL.toLocaleString('fr-FR')}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>{(countByBranch.ALL - (countByBranch.EXPIRED || 0)).toLocaleString('fr-FR')}</div>
+            {countByBranch.EXPIRED > 0 && (
+              <div style={{ fontSize: '0.72rem', color: '#f87171' }}>+ {countByBranch.EXPIRED.toLocaleString('fr-FR')} expirés</div>
+            )}
           </div>
         </div>
 
@@ -669,6 +682,7 @@ export const QuoteListPage = () => {
           { id: 'ALL', label: 'Tous', count: countByBranch.ALL, icon: null },
           ...onglets.map((o) => ({ id: o.id, label: o.label, count: countByBranch[o.id] || 0, icon: ICONES_ONGLET[o.id] || <FileText size={13} /> })),
           ...(countByBranch.AUTRES ? [{ id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: <FileText size={13} /> }] : []),
+          { id: 'EXPIRED', label: 'Expirés', count: countByBranch.EXPIRED || 0, icon: <CalendarX size={13} color="#f87171" /> },
         ].map((tab) => {
           const isActive = selectedBranchFilter === tab.id;
           return (
@@ -797,8 +811,13 @@ export const QuoteListPage = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             {quotes.length === 0
-              ? 'Aucun devis en attente de confirmation'
-              : <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis en attente de confirmation{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}</>}
+              ? (selectedBranchFilter === 'EXPIRED' ? 'Aucun devis expiré' : 'Aucun devis en attente de confirmation')
+              : selectedBranchFilter === 'EXPIRED'
+                ? <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis expirés depuis le 1er janvier {new Date().getFullYear() - parametre('devis.registre_expires_annees', 1)} : modifiez les dates d'un devis pour le confirmer</>
+                : <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis non confirmés{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}{(() => {
+                  const expires = quotes.filter(isExpiredQuote).length;
+                  return expires ? `, dont ${expires.toLocaleString('fr-FR')} expirés` : '';
+                })()}</>}
           </div>
           <button
             type="button"

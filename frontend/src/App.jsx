@@ -29,6 +29,7 @@ import TransportAbonnementsPage from './pages/user/quotes/TransportAbonnementsPa
 import ContractListPage from './pages/user/contracts/ContractListPage';
 import ContractDetailPage from './pages/user/contracts/ContractDetailPage';
 import EndorsementPage from './pages/user/endorsements/EndorsementPage';
+import RepriseAffairesPage from './pages/user/reprises/RepriseAffairesPage';
 import CashCollectionPage from './pages/user/cash/CashCollectionPage';
 import ChequeManagementPage from './pages/user/cash/ChequeManagementPage';
 import EtatEncaissementsPage from './pages/user/cash/EtatEncaissementsPage';
@@ -169,6 +170,7 @@ function App() {
                 <Route path="/user/contracts/:id" element={<ContractDetailPage />} />
                 <Route path="/user/contracts/:id/renouvellement" element={<RenouvellementPage />} />
                 <Route path="/user/endorsements" element={<EndorsementPage />} />
+                <Route path="/user/reprises" element={<RepriseAffairesPage />} />
                 <Route path="/user/asaci" element={<AsaciPage />} />
 
                 {/* ===== MODULE F – ENCAISSEMENT & TRÉSORERIE ===== */}

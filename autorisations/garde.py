@@ -146,6 +146,8 @@ R = Regle
 REGLES = [
     # ---- sécurité : utilisateurs, rôles, journal (autorisations/views_securite.py)
     R("GET", r"securite/moi/", CONNECTE),
+    # Cockpit opérationnel : chaque bloc n'est calculé qu'avec le droit de lecture de son module (views_cockpit.py)
+    R("GET", r"cockpit/?$", CONNECTE),
     R("POST", r"securite/moi/mot-de-passe/", CONNECTE, objet="utilisateur", action="securite.mot_de_passe"),
     R("GET", r"securite/utilisateurs/", "users.view"),
     R("POST", r"securite/utilisateurs/$", "users.create", objet="utilisateur"),
@@ -204,8 +206,15 @@ REGLES = [
               r"enregistrementassureia|saisieayantdroitia|saisie(adherent|affilie|filiale)sante|"
               r"annulationsaisie(vehicule|adherent|affilie|filiale))/?$",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    # Reprise des affaires antérieures (production/views_reprise.py) : tout utilisateur qui a le droit saisit, sans
+    # validation ; l'analyse d'un fichier n'écrit rien
+    R("GET", r"reprise/", "contrats.view"),
+    R("POST", r"reprise/import/analyse/?$", "contrats.reprise", lecture=True),
+    R("POST,PATCH,DELETE", r"reprise/", "contrats.reprise", objet="contrat", cles=("pk",)),
     # Import des adhérents et affiliés Santé (avant la règle générale de devissante/)
     R("POST", r"devissante/importation/", "imports.excel", objet="import"),
+    # Aperçu des primes Santé : calcul sans écriture (point de sauvegarde annulé)
+    R("POST", r"devissante/apercu/?$", "devis.view", lecture=True),
     R("POST", r"(devisia/enregistrement/|devisvoyage/enregistrement/|dommages/devis/$|devissante/|garantiesvehiculeflotte/|"
               r"creer-devis-ia-minene/|transformer-sante-en-ia/|consolidationdevis/)",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),

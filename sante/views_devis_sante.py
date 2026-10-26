@@ -33,6 +33,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from autorisations.rbac import a_le_droit
+from configuration_api.models import SanteFormuleMinene
 from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
@@ -45,7 +46,9 @@ from .utils import (
     enregistrer_adherent_sante,
     enregistrer_affilie_sante,
     enregistrer_filiale_sante,
+    apercu_devis_sante,
     assures_hors_limites_age,
+    OFFRES_MINENE,
     get_quotation_id,
     import_insured,
     load_people_data_from_excel,
@@ -332,8 +335,10 @@ def importer_affilies(request):
     Adhérents et affiliés d'un fichier Excel (modèle d'URANUS), ligne par ligne, par les procédures de saisie. Les
     âges s'apprécient à la date d'effet du devis saisie à l'écran (date_effet). Un assuré au-delà des limites d'âge des conditions est admis par dérogation si l'utilisateur est habilité
     (droit devis.derogation_age), refusé sinon. Les lignes acceptées restent enregistrées même si d'autres sont
-    refusées. Réponse : {Importes, Derogations, Refuses, Ignores, Derogation, Lignes: [{Ligne, Nom, Lien, Statut,
-    Message}]}.
+    refusées. MINENE (classer, par défaut) : chaque famille du fichier va dans la formule de sa taille (Réglages Santé
+    MINENE : SOLO 1 personne, FAMILLE 2 à 3, FAMILLE PLUS 4 à 6) de la même offre commerciale, couverture créée au
+    besoin avec le collège et la zone de celle choisie. Réponse : {Importes, Derogations, Refuses, Ignores, Derogation,
+    Classement: [{Formule, Familles}], Lignes: [{Ligne, Nom, Lien, Statut, Message}]}.
     """
     devis = _entier(request.data.get("devis"))
     filiale = _entier(request.data.get("filiale"))
@@ -366,10 +371,19 @@ def importer_affilies(request):
         )
     derogation = a_le_droit(request.user, DROIT_DEROGATION_AGE)
     details = []
-    erreurs, messages = import_insured(
-        None, request.user.id, devis, request.data.get("date_effet"), filiale,
-        derogation_age=derogation, details=details, lignes=lignes,
-    )
+    classer = _texte(request.data.get("classer")).lower() not in ("0", "false", "non")
+    try:
+        groupes, classement = _familles_par_formule(request.user.id, devis, filiale, lignes) if classer else ([(filiale, lignes)], [])
+    except ValueError as exc:
+        return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    erreurs, messages = 0, []
+    for filiale_famille, lignes_famille in groupes:
+        e, m = import_insured(
+            None, request.user.id, devis, request.data.get("date_effet"), filiale_famille,
+            derogation_age=derogation, details=details, lignes=lignes_famille,
+        )
+        erreurs += e
+        messages += m
     if erreurs and not details:
         texte = next((m.get("message") for m in messages if isinstance(m, dict) and m.get("message")), "")
         return Response({"error": f"Import interrompu : {texte or 'erreur inattendue'}."}, status=status.HTTP_400_BAD_REQUEST)
@@ -380,8 +394,56 @@ def importer_affilies(request):
         "Refuses": compte("refusé"),
         "Ignores": compte("ignoré"),
         "Derogation": derogation,
+        "Classement": classement,
         "Lignes": details,
     })
+
+
+def _familles_par_formule(user_id, devis, filiale, lignes):
+    """MINENE : familles du fichier (un adhérent « A » et les lignes qui le suivent) rangées dans la formule de leur
+    taille, de la même offre commerciale que la couverture choisie ; couverture créée avec le collège, la zone et les
+    dates de celle-ci quand le devis n'en a pas pour cette formule. Hors MINENE : tout dans la couverture choisie.
+    Renvoie ([(filiale, lignes)], [{Formule, Familles}])."""
+    choisie = FilialeSante.objects.filter(pk=filiale, devis=devis).first()
+    if not choisie or choisie.offresante_id not in OFFRES_MINENE:
+        return [(filiale, lignes)], []
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT o.idoffre, o.libelleoffre FROM stdoffre o
+               WHERE o.actif AND o.idtarif = (SELECT idtarif FROM stdoffre WHERE idoffre = %s) AND o.idoffre = ANY(%s)""",
+            [choisie.offresante_id, list(OFFRES_MINENE)],
+        )
+        libelles = dict(cursor.fetchall())
+    formules = [(f.IdOffre, f.PersonnesMin, f.PersonnesMax) for f in SanteFormuleMinene.objects.filter(IdOffre__in=list(libelles))]
+    familles = []
+    for ligne in lignes:
+        if str(ligne.get("lienparente", "")).strip().upper() == "A" or not familles:
+            familles.append([])
+        familles[-1].append(ligne)
+    couvertures = {choisie.offresante_id: filiale}
+    groupes, compte = [], {}
+    for famille in familles:
+        taille = len(famille)
+        offre = next((o for o, mini, maxi in sorted(formules, key=lambda f: f[1]) if mini <= taille <= maxi), choisie.offresante_id)
+        if offre not in couvertures:
+            existante = FilialeSante.objects.filter(devis=devis, offresante_id=offre, college_id=choisie.college_id,
+                                                    zonecouverture_id=choisie.zonecouverture_id).first()
+            if existante:
+                couvertures[offre] = existante.idfiliale
+            else:
+                err, resultat = enregistrer_filiale_sante(user_id, {
+                    "idfiliale": 0, "devis": devis, "college": choisie.college_id, "offresante": offre,
+                    "zonecouverture": choisie.zonecouverture_id, "date_effet": choisie.dateeffet.strftime("%d-%m-%Y"),
+                    "date_expiration": choisie.dateexpiration.strftime("%d-%m-%Y"), "source": "S",
+                })
+                ligne_resultat = (resultat or [None])[0]
+                if err or not ligne_resultat or not ligne_resultat.idfiliale:
+                    raise ValueError(f"Couverture « {libelles.get(offre, offre)} » non créée : "
+                                     f"{getattr(ligne_resultat, 'outputmessage', '') or 'refus de la base'}.")
+                couvertures[offre] = ligne_resultat.idfiliale
+        groupes.append((couvertures[offre], famille))
+        compte[offre] = compte.get(offre, 0) + 1
+    return groupes, [{"Formule": libelles.get(o, str(o)), "Familles": n} for o, n in compte.items()]
 
 
 @api_view(["POST"])
@@ -448,43 +510,9 @@ def enregistrer_devis_sante(request):
     devis et écrit le complément Santé. TauxReduction est signé (positif = réduction,
     négatif = majoration). La date d'émission est celle du jour.
     """
-    data = dict(request.data)
-    # Devis d'avenant (renouvellement…) : il garde son avenant, sinon sa confirmation ouvrirait une nouvelle police.
-    # Un devis initialisé par sp_initialisation_devis_sante porte l'affaire nouvelle.
-    avenant_devis = Devis.objects.filter(pk=_entier(data.get("IdDevis"))).values_list("avenant_id", flat=True).first() or 0
-    data.update(
-        {
-            "IdIntermediaire": ID_INTERMEDIAIRE,
-            "IdProduit": ID_PRODUIT_SANTE,
-            "IdAvenant": avenant_devis if avenant_devis > ID_AVENANT_AFFAIRE_NOUVELLE
-            else (_entier(data.get("IdAvenant")) or ID_AVENANT_AFFAIRE_NOUVELLE),
-            "IdAssure": _entier(data.get("IdAssure")) or _entier(data.get("IdClient")),
-            "Flotte": False,
-            "Coassurance": False,
-            "DateEmission": date_emission_du_jour().strftime("%d-%m-%Y"),
-            "DateEffet": _date_jj_mm_aaaa(data.get("DateEffet")),
-            "DateExpiration": _date_jj_mm_aaaa(data.get("DateExpiration")),
-            "GestionnaireSante": _texte(data.get("GestionnaireSante")) or valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE),
-        }
-    )
-    if not _entier(data.get("IdDevis")):
-        return Response({"error": "Aucune saisie en cours : enregistrez d'abord une couverture."}, status=status.HTTP_400_BAD_REQUEST)
-    # Formule du devis = celle d'une de ses couvertures : l'écran envoie la formule restée choisie dans
-    # la liste, qui peut ne pas avoir été enregistrée (devis 25011 : famille FAMILLE enregistrée en SOLO).
-    # La base tarife chaque famille MINENE selon la formule de sa propre couverture.
-    formules = sorted(
-        {f for f in FilialeSante.objects.filter(devis=_entier(data["IdDevis"])).values_list("offresante_id", flat=True) if f}
-    )
-    if formules and _entier(data.get("IdOffre")) not in formules:
-        data["IdOffre"] = formules[0]
-    if not _entier(data.get("IdClient")):
-        return Response({"error": "Choisissez le client."}, status=status.HTTP_400_BAD_REQUEST)
-    if "NA" in (data["DateEffet"], data["DateExpiration"]):
-        return Response({"error": "Dates d'effet et d'expiration obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
-
-    serializer = EnregistrementDevisSanteSerializer(data=data)
-    if not serializer.is_valid():
-        return Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    data, erreur = _donnees_devis(request)
+    if erreur:
+        return erreur
     # Limites d'âge des conditions vérifiées à la date d'effet définitive (elle a pu changer depuis la saisie des
     # assurés) : au-delà, seul un utilisateur habilité enregistre le devis
     try:
@@ -524,6 +552,76 @@ def enregistrer_devis_sante(request):
         },
         status=status.HTTP_201_CREATED,
     )
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def apercu_devis_sante_vue(request):
+    """
+    POST /api/devissante/apercu/ (mêmes données que l'enregistrement)
+
+    Primes du devis en saisie calculées par la base sans rien enregistrer : totaux, garanties et, en MINENE, détail
+    par famille (formule, prime de base du barème, surprimes d'âge et d'affection, accessoire). L'écran l'appelle
+    dès que la saisie change (import d'un fichier, adhérent ajouté, dates, primes…).
+    """
+    data, erreur = _donnees_devis(request, client_obligatoire=False)
+    if erreur:
+        return erreur
+    # Seul l'opérateur qui a ouvert la saisie du devis en voit le calcul (la base ne tarife que ses assurés)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM stdnumerosaisiesante WHERE iddevis = %s AND idoperateur = %s", [_entier(data["IdDevis"]), request.user.id])
+        if not cursor.fetchone():
+            return Response({"error": "Saisie ouverte par un autre opérateur : calcul indisponible."}, status=status.HTTP_403_FORBIDDEN)
+    message, apercu = apercu_devis_sante(request.user.id, data)
+    if apercu is None:
+        return Response({"error": message or "Calcul impossible."}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(apercu)
+
+
+def _donnees_devis(request, client_obligatoire=True):
+    """Données de sp_creation_devis_sante depuis celles de l'écran : (données, None) ou (None, réponse d'erreur)."""
+    data = dict(request.data)
+    # Devis d'avenant (renouvellement…) : il garde son avenant, sinon sa confirmation ouvrirait une nouvelle police.
+    # Un devis initialisé par sp_initialisation_devis_sante porte l'affaire nouvelle.
+    avenant_devis = Devis.objects.filter(pk=_entier(data.get("IdDevis"))).values_list("avenant_id", flat=True).first() or 0
+    data.update(
+        {
+            "IdIntermediaire": ID_INTERMEDIAIRE,
+            "IdProduit": ID_PRODUIT_SANTE,
+            "IdAvenant": avenant_devis if avenant_devis > ID_AVENANT_AFFAIRE_NOUVELLE
+            else (_entier(data.get("IdAvenant")) or ID_AVENANT_AFFAIRE_NOUVELLE),
+            "IdAssure": _entier(data.get("IdAssure")) or _entier(data.get("IdClient")),
+            "Flotte": False,
+            "Coassurance": False,
+            "DateEmission": date_emission_du_jour().strftime("%d-%m-%Y"),
+            "DateEffet": _date_jj_mm_aaaa(data.get("DateEffet")),
+            "DateExpiration": _date_jj_mm_aaaa(data.get("DateExpiration")),
+            "GestionnaireSante": _texte(data.get("GestionnaireSante")) or valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE),
+        }
+    )
+    if not _entier(data.get("IdDevis")):
+        return None, Response({"error": "Aucune saisie en cours : enregistrez d'abord une couverture."}, status=status.HTTP_400_BAD_REQUEST)
+    # Formule du devis = celle d'une de ses couvertures : l'écran envoie la formule restée choisie dans
+    # la liste, qui peut ne pas avoir été enregistrée (devis 25011 : famille FAMILLE enregistrée en SOLO).
+    # La base tarife chaque famille MINENE selon la formule de sa propre couverture.
+    formules = sorted(
+        {f for f in FilialeSante.objects.filter(devis=_entier(data["IdDevis"])).values_list("offresante_id", flat=True) if f}
+    )
+    if formules and _entier(data.get("IdOffre")) not in formules:
+        data["IdOffre"] = formules[0]
+    if not _entier(data.get("IdClient")):
+        if client_obligatoire:
+            return None, Response({"error": "Choisissez le client."}, status=status.HTTP_400_BAD_REQUEST)
+        # Aperçu avant le choix du client : la base calcule sans lui (rien n'est enregistré)
+        data["IdClient"] = data["IdAssure"] = 0
+    if "NA" in (data["DateEffet"], data["DateExpiration"]):
+        return None, Response({"error": "Dates d'effet et d'expiration obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = EnregistrementDevisSanteSerializer(data=data)
+    if not serializer.is_valid():
+        return None, Response({"error": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    return data, None
 
 
 def _lignes(cursor, sql, params):

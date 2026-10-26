@@ -23,7 +23,7 @@ from .views_devis_voyage import (
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
 )
-from . import views_bordereaux, views_finance
+from . import views_bordereaux, views_cockpit, views_finance, views_reprise
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
@@ -300,6 +300,16 @@ urlpatterns = [
          name="transport_hors_guce_contrat"),
     # Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
     # entière), réclamation et encaissement des commissions
+    # Cockpit opérationnel : chiffres du tableau de bord, chaque bloc selon les droits (production/views_cockpit.py)
+    path("cockpit/", views_cockpit.cockpit, name="cockpit"),
+    # Reprise des affaires antérieures (production/views_reprise.py)
+    path("reprise/", views_reprise.reprises, name="reprise_liste"),
+    path("reprise/referentiels/", views_reprise.referentiels, name="reprise_referentiels"),
+    path("reprise/modele/", views_reprise.modele, name="reprise_modele"),
+    path("reprise/import/analyse/", views_reprise.import_analyse, name="reprise_import_analyse"),
+    path("reprise/import/", views_reprise.import_fichier, name="reprise_import"),
+    path("reprise/<int:pk>/", views_reprise.reprise, name="reprise_suppression"),
+    path("reprise/<int:pk>/commission/", views_reprise.commission, name="reprise_commission"),
     path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),
     # Bordereau récapitulatif des encaissements d'une période (Excel ; impression dans l'application)
     path("finance/encaissements/recapitulatif/excel/", views_bordereaux.recapitulatif_encaissements_excel, name="finance_recapitulatif_encaissements_excel"),

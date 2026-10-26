@@ -5,7 +5,7 @@ from decimal import Decimal
 from itertools import chain
 
 from django.conf import settings
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from openpyxl import load_workbook
 
 from core.date_parser import date_emission_du_jour
@@ -253,6 +253,61 @@ def import_insured(filename, user_id, id_devis, date_effet, id_filiale, derogati
 def save_quotation_sante(user_id, input_data):
     sql_output = None
     error_occurred = False
+    parametres = parametres_creation_devis_sante(user_id, input_data)
+    IdDevis = parametres[24]
+    TauxReductionCommerciale = parametres[18]
+
+    OutputMessage = ""
+    data_insertion_result_list = []
+    queryset_vide = DataInsertionResult.objects.none()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(SQL_CREATION_DEVIS_SANTE, parametres)
+            connection.commit()
+            row = cursor.fetchone()
+            sql_output = DataInsertionResult(
+                ObjectId=row[0], OutputMessage=row[1]
+            )
+            data_insertion_result_list.append(sql_output)
+    except Exception as error:
+        error_occurred = True
+        print(error)
+        msg = message_erreur_base(error)
+        sql_output = DataInsertionResult(ObjectId=IdDevis, OutputMessage=msg)
+        data_insertion_result_list.append(sql_output)
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()
+
+    # Patch ORM : force la mise à jour de taux_reduction_commerciale après fermeture du curseur raw.
+    # Le SP peut ignorer ce champ lorsque le complément existe déjà (ex. renouvellement),
+    # donc on s'assure que la valeur envoyée est bien persistée.
+    if not error_occurred and sql_output and sql_output.ObjectId and TauxReductionCommerciale != Decimal("0"):
+        try:
+            det_ids = list(
+                DevisDetail.objects.filter(iddevis=sql_output.ObjectId).values_list(
+                    "iddevisdetail", flat=True
+                )
+            )
+            if det_ids:
+                ComplementDevisDetailSante.objects.filter(
+                    devis_detail__in=det_ids
+                ).update(taux_reduction_commerciale=TauxReductionCommerciale)
+        except Exception as patch_error:
+            print(f"ORM patch taux_reduction_commerciale: {patch_error}")
+
+    return (
+        error_occurred,
+        list(chain(queryset_vide, data_insertion_result_list)),
+    )
+
+
+SQL_CREATION_DEVIS_SANTE = "CALL sp_creation_devis_sante(" + ", ".join(["%s"] * 26) + ");"
+
+
+def parametres_creation_devis_sante(user_id, input_data):
+    """Paramètres de sp_creation_devis_sante (ordre de la procédure) depuis les données de l'écran."""
     IdIntermediaire = int(input_data["IdIntermediaire"])
     IdCompagnie = int(input_data["IdCompagnie"])
     IdProduit = int(input_data["IdProduit"])
@@ -338,84 +393,139 @@ def save_quotation_sante(user_id, input_data):
             else ""
         )
 
-    OutputMessage = ""
-    data_insertion_result_list = []
-    queryset_vide = DataInsertionResult.objects.none()
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "CALL sp_creation_devis_sante(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
-                (
-                    IdIntermediaire,
-                    IdCompagnie,
-                    IdProduit,
-                    IdOffre,
-                    IdAvenant,
-                    IdClient,
-                    IdAssure,
-                    Flotte,
-                    Coassurance,
-                    DateEffet,
-                    DateExpiration,
-                    DateEmission,
-                    IdTarif,
-                    PrimeFamille,
-                    PrimeAffilie,
-                    PrimeGlobale,
-                    MontantSurprime,
-                    MontantAccessoireManuel,
-                    TauxReductionCommerciale,
-                    TypeContrat,
-                    GestionnaireSante,
-                    IdDuree,
-                    NumeroPoliceCompagnie,
-                    user_id,
-                    IdDevis,
-                    OutputMessage,
-                ),
-            )
-            connection.commit()
-            row = cursor.fetchone()
-            sql_output = DataInsertionResult(
-                ObjectId=row[0], OutputMessage=row[1]
-            )
-            data_insertion_result_list.append(sql_output)
-    except Exception as error:
-        error_occurred = True
-        print(error)
-        msg = message_erreur_base(error)
-        sql_output = DataInsertionResult(ObjectId=IdDevis, OutputMessage=msg)
-        data_insertion_result_list.append(sql_output)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
-
-    # Patch ORM : force la mise à jour de taux_reduction_commerciale après fermeture du curseur raw.
-    # Le SP peut ignorer ce champ lorsque le complément existe déjà (ex. renouvellement),
-    # donc on s'assure que la valeur envoyée est bien persistée.
-    if not error_occurred and sql_output and sql_output.ObjectId and TauxReductionCommerciale != Decimal("0"):
-        try:
-            det_ids = list(
-                DevisDetail.objects.filter(iddevis=sql_output.ObjectId).values_list(
-                    "iddevisdetail", flat=True
-                )
-            )
-            if det_ids:
-                ComplementDevisDetailSante.objects.filter(
-                    devis_detail__in=det_ids
-                ).update(taux_reduction_commerciale=TauxReductionCommerciale)
-        except Exception as patch_error:
-            print(f"ORM patch taux_reduction_commerciale: {patch_error}")
-
     return (
-        error_occurred,
-        list(chain(queryset_vide, data_insertion_result_list)),
+        IdIntermediaire, IdCompagnie, IdProduit, IdOffre, IdAvenant, IdClient, IdAssure, Flotte, Coassurance,
+        DateEffet, DateExpiration, DateEmission, IdTarif, PrimeFamille, PrimeAffilie, PrimeGlobale, MontantSurprime,
+        MontantAccessoireManuel, TauxReductionCommerciale, TypeContrat, GestionnaireSante, IdDuree,
+        NumeroPoliceCompagnie, user_id, IdDevis, "",
     )
 
 
 # Formules MINENE (limite d'âge des adultes : sp_saisie_adherent_sante, sp_saisie_affilie_sante)
 OFFRES_MINENE = (17, 18, 19, 20, 21, 22, 175, 176, 181)
+
+
+def _decimal(valeur):
+    return Decimal(str(valeur or 0))
+
+
+def _familles_minene(cursor, parametres):
+    """Détail par famille d'un devis MINENE, avec les fonctions de la base et les règles de sp_creation_devis_sante (v8) :
+    formule de la couverture de la famille, prime de base du barème (ou prime saisie), surprime d'âge (adhérent et
+    conjoint, âge à la date d'effet), surprime d'affection (ou surprime saisie, répartie entre les familles), taux
+    d'ajustement de l'an dernier (renouvellement) puis de l'année, accessoire du barème de la famille."""
+    (_, _, _, id_offre, id_avenant, _, _, _, _, date_effet, _, _, _, prime_famille, prime_affilie, prime_globale,
+     montant_surprime, accessoire_manuel, taux, _, _, _, _, user_id, id_devis, _) = parametres
+    prime_famille, prime_affilie, prime_globale = _decimal(prime_famille), _decimal(prime_affilie), _decimal(prime_globale)
+    montant_surprime, taux = _decimal(montant_surprime), _decimal(taux)
+    cursor.execute(
+        """
+        SELECT AD.idadherent, TRIM(COALESCE(AD.nom, '') || ' ' || COALESCE(AD.prenom, '')) AS adherent,
+               CASE WHEN F.idoffresante = ANY(%(minene)s) THEN F.idoffresante ELSE %(offre)s END AS idoffre,
+               AF.idaffilie, AF.lien, TRIM(COALESCE(AF.nom, '') || ' ' || COALESCE(AF.prenom, '')) AS personne,
+               EXTRACT(YEAR FROM AGE(%(effet)s, AF.datenaissance))::int AS age, COALESCE(AF.nombrepathologie, 0) AS pathologies
+        FROM stdadherent AS AD
+        JOIN stdaffilie AS AF ON AF.idadherent = AD.idadherent AND AF.iddevis = AD.iddevis
+        LEFT JOIN stdfiliale AS F ON F.idfiliale = AD.idfiliale
+        WHERE AD.iddevis = %(devis)s AND AD.idoperateur = %(user)s
+        ORDER BY AD.idadherent, CASE AF.lien WHEN 'A' THEN 0 WHEN 'C' THEN 1 ELSE 2 END, AF.idaffilie
+        """,
+        {"minene": list(OFFRES_MINENE), "offre": id_offre, "effet": date_effet, "devis": id_devis, "user": user_id},
+    )
+    lignes = cursor.fetchall()
+    if not lignes:
+        return []
+    cursor.execute("SELECT codeavenant FROM stdavenant WHERE idavenant = %s", [id_avenant])
+    code_avenant = (cursor.fetchone() or [""])[0]
+    prev = Decimal(0)
+    if code_avenant == "REN":
+        cursor.execute(
+            """SELECT COALESCE(C.tauxreductioncommerciale, 0) FROM stddevis SD
+               JOIN stddevisdetail DD ON DD.iddevis = SD.idoldhist
+               JOIN stdcomplementdevisdetailsante C ON C.iddevisdetail = DD.iddevisdetail
+               WHERE SD.iddevis = %s LIMIT 1""", [id_devis])
+        prev = _decimal((cursor.fetchone() or [0])[0])
+    familles = {}
+    for idadherent, adherent, idoffre, idaffilie, lien, personne, age, pathologies in lignes:
+        f = familles.setdefault(idadherent, {"IdAdherent": idadherent, "Adherent": adherent, "IdOffre": idoffre, "Personnes": []})
+        f["Personnes"].append({"IdAffilie": idaffilie, "Lien": lien, "Nom": personne, "Age": age, "Pathologies": pathologies})
+    nombre = len(familles)
+    sans_prime = prime_famille == 0 and prime_affilie == 0 and prime_globale == 0
+    facteur_prev = (1 - prev / 100) if code_avenant == "REN" else Decimal(1)
+    facteur = 1 - taux / 100
+    resultat = []
+    for f in familles.values():
+        cursor.execute("SELECT o.libelleoffre, fn_get_prime_base_minene_sante(o.idoffre) FROM stdoffre o WHERE o.idoffre = %s", [f["IdOffre"]])
+        libelle, base_bareme = cursor.fetchone() or ("", 0)
+        if prime_globale > 0:
+            base = prime_globale * facteur / nombre
+        else:
+            base = (_decimal(base_bareme) * facteur_prev if sans_prime else (prime_famille if prime_famille > 0 else prime_affilie)) * facteur
+        age_total = affection_total = Decimal(0)
+        for p in f["Personnes"]:
+            s_age = s_affection = Decimal(0)
+            if prime_globale == 0:
+                cursor.execute(
+                    "SELECT CASE WHEN %s IN ('A', 'C') THEN fn_get_surprime_age_minene_sante(%s, %s) ELSE 0 END, "
+                    "CASE WHEN %s > 0 THEN 0 ELSE fn_get_surprime_affection_minene_sante(%s, %s) END",
+                    [p["Lien"], f["IdOffre"], p["Age"], montant_surprime, f["IdOffre"], p["Pathologies"]],
+                )
+                brut_age, brut_affection = cursor.fetchone()
+                s_age = _decimal(brut_age) * facteur_prev * facteur
+                s_affection = _decimal(brut_affection) * facteur_prev * facteur
+            p.update({"SurprimeAge": round(float(s_age)), "SurprimeAffection": round(float(s_affection))})
+            age_total += s_age
+            affection_total += s_affection
+        part_saisie = montant_surprime * facteur / nombre
+        prime_sante = base + age_total + affection_total + part_saisie
+        cursor.execute("SELECT accessoire_compagnie, taxe_sur_accessoire FROM fn_get_accessoire_sante_minene(%s, %s, %s, 1)",
+                       [f["IdOffre"], round(prime_sante), accessoire_manuel])
+        accessoire, taxe_accessoire = cursor.fetchone() or (0, 0)
+        resultat.append({
+            "IdAdherent": f["IdAdherent"], "Adherent": f["Adherent"], "IdOffre": f["IdOffre"], "Formule": libelle,
+            "NombrePersonnes": len(f["Personnes"]), "PrimeBase": round(float(base)), "SurprimeAge": round(float(age_total)),
+            "SurprimeAffection": round(float(affection_total)), "SurprimeSaisie": round(float(part_saisie)),
+            "PrimeSante": round(float(prime_sante)), "Accessoire": float(accessoire or 0), "TaxeAccessoire": float(taxe_accessoire or 0),
+            "Personnes": f["Personnes"],
+        })
+    return resultat
+
+
+def apercu_devis_sante(user_id, input_data):
+    """Primes du devis en saisie calculées par sp_creation_devis_sante sans rien enregistrer (point de sauvegarde
+    annulé : ni numéro de devis ni montant écrit), avec le détail par famille des devis MINENE. Renvoie
+    (message d'erreur de la base, données)."""
+    parametres = parametres_creation_devis_sante(user_id, input_data)
+    id_devis = parametres[24]
+    with transaction.atomic():
+        point = transaction.savepoint()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(SQL_CREATION_DEVIS_SANTE, parametres)
+                cursor.execute(
+                    """SELECT primenette, accessoire, taxe, primettc, COALESCE(accessoiregestionnaire, 0),
+                              commissionintermediaire, COALESCE(primeimposee, false)
+                       FROM stddevis WHERE iddevis = %s""", [id_devis])
+                pn, acc, taxe, ttc, frais, commission, imposee = cursor.fetchone()
+                cursor.execute(
+                    """SELECT g.idgarantie, s.libellesousgarantie, g.primenette, g.taxe
+                       FROM stddevisdetgarantie g JOIN stddevisdetail d ON d.iddevisdetail = g.iddevisdet
+                       LEFT JOIN stdsousgarantie s ON s.idsousgarantie = g.idgarantie
+                       WHERE d.iddevis = %s AND g.primenette <> 0 ORDER BY g.idgarantie""", [id_devis])
+                garanties = [{"IdGarantie": g, "Libelle": lib, "PrimeNette": float(n or 0), "Taxe": float(t or 0)}
+                             for g, lib, n, t in cursor.fetchall()]
+                familles = _familles_minene(cursor, parametres) if int(parametres[3]) in OFFRES_MINENE else []
+        except DatabaseError as error:
+            transaction.savepoint_rollback(point)
+            return message_erreur_base(error), None
+        transaction.savepoint_rollback(point)
+    return "", {
+        "Totaux": {"PrimeNette": float(pn or 0), "Accessoire": float(acc or 0), "Taxe": float(taxe or 0),
+                   "FraisGestion": float(frais or 0), "PrimeTtc": float(ttc or 0), "Commission": float(commission or 0),
+                   "PrimeImposee": bool(imposee)},
+        "Garanties": garanties,
+        "Familles": familles,
+    }
 
 
 def _date_iso(valeur):

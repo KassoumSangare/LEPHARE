@@ -11,6 +11,7 @@ import {
   Shield,
   ShieldCheck,
   RefreshCw,
+  History,
   CreditCard,
   Car,
   KeyRound,
@@ -278,6 +279,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
             {peut('contrats.view') && <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <RefreshCw size={16} className="nav-icon" />
               <span>Avenants</span>
+            </NavLink>}
+
+            {peut('contrats.view') && <NavLink to="/user/reprises" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <History size={16} className="nav-icon" />
+              <span>Affaires antérieures</span>
             </NavLink>}
 
             {/* Grisé en attendant l'ouverture des e-attestations */}

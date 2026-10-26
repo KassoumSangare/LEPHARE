@@ -4373,3 +4373,28 @@ class ImportsHistorique(models.Model):
             Taux de réussite: {self.taux_reussite:.1f}%
             Durée: {self.duree_secondes}s
         """
+
+
+class RepriseAffaire(models.Model):
+    """Affaire antérieure reprise dans LE PHARE (production/reprise.py) : contrat, devis et quittance créés, données
+    saisies ou importées, commission perçue ou non."""
+
+    MODES = [("saisie", "Saisie"), ("import", "Import Excel")]
+
+    idcontrat = models.IntegerField(unique=True, db_column="idcontrat")
+    iddevis = models.IntegerField(db_column="iddevis")
+    idquittance = models.IntegerField(db_column="idquittance")
+    mode = models.CharField(max_length=10, choices=MODES, default="saisie", db_column="mode")
+    lot = models.CharField(max_length=40, null=True, blank=True, db_column="lot")
+    donnees = models.JSONField(default=dict, db_column="donnees")
+    commission_percue = models.BooleanField(default=False, db_column="commission_percue")
+    date_commission_percue = models.DateField(null=True, blank=True, db_column="date_commission_percue")
+    creepar = models.CharField(max_length=150, blank=True, default="", db_column="creepar")
+    idutilisateur = models.IntegerField(null=True, db_column="idutilisateur")
+    datecreation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+
+    class Meta:
+        db_table = "lephare_reprise"
+        verbose_name = "Affaire antérieure reprise"
+        verbose_name_plural = "Affaires antérieures reprises"
+        ordering = ["-id"]
