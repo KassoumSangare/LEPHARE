@@ -1336,6 +1336,9 @@ export const parametrageApi = {
   modifierClasseIa: async (classe, donnees) => (await apiClient.patch(`/parametrage/ia/classes/${classe}/`, donnees)).data,
   modifierTranchesIa: async (tranches) => (await apiClient.put('/parametrage/ia/tranches/', { Tranches: tranches })).data,
   modifierOffresIa: async (offres) => (await apiClient.put('/parametrage/ia/offres/', { Offres: offres })).data,
+  // PATCH /api/parametrage/ia/reglages/:cle/ : offres forfaitaires (ia.forfait.*) et barème des autres compagnies (ia.autres.*)
+  modifierReglageIa: async (cle, valeur) => (await apiClient.patch(`/parametrage/ia/reglages/${cle}/`, { Valeur: valeur })).data,
+  retablirReglageIa: async (cle) => (await apiClient.patch(`/parametrage/ia/reglages/${cle}/`, { Retablir: true })).data,
   getMrh: async () => (await apiClient.get('/parametrage/mrh/')).data,
   modifierUsageMrh: async (code, donnees) => (await apiClient.patch(`/parametrage/mrh/usages/${code}/`, donnees)).data,
   modifierOptionMrh: async (code, donnees) => (await apiClient.patch(`/parametrage/mrh/options/${code}/`, donnees)).data,
@@ -1357,6 +1360,10 @@ export const parametrageApi = {
   supprimerTarifDirect: async (id) => apiClient.delete(`/parametrage/auto/tarifs-directs/grilles/${id}/`),
   modifierParametreTarifsDirects: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/tarifs-directs/parametres/${cle}/`, { Valeur: valeur })).data,
   retablirParametreTarifsDirects: async (cle) => (await apiClient.patch(`/parametrage/auto/tarifs-directs/parametres/${cle}/`, { Retablir: true })).data,
+  // GET /api/parametrage/auto/moteur/ : montants et taux du moteur Auto (auto.moteur.<compagnie>.<groupe>.<code>)
+  getMoteurAuto: async () => (await apiClient.get('/parametrage/auto/moteur/')).data,
+  modifierMoteurAuto: async (cle, valeur) => (await apiClient.patch(`/parametrage/auto/moteur/${cle}/`, { Valeur: valeur })).data,
+  retablirMoteurAuto: async (cle) => (await apiClient.patch(`/parametrage/auto/moteur/${cle}/`, { Retablir: true })).data,
   // Pool TPV (catégorie 204) : tarif, paramètres, primes dues au Pool
   getPoolTpv: async ({ du, au } = {}) => (await apiClient.get('/parametrage/auto/pool-tpv/', { params: { du: du || undefined, au: au || undefined } })).data,
   modifierTranchesPoolTpv: async (tranches) => (await apiClient.put('/parametrage/auto/pool-tpv/tranches/', { Tranches: tranches })).data,

@@ -403,11 +403,11 @@ export const ContractDetailPage = () => {
               </button>
             </div>
 
-            {/* Santé MINENE (gabarits URANUS) : barème, liste des assurés, ayants droit de l'IA MINENE de la police */}
+            {/* Santé (gabarits URANUS) : liste des assurés ; MINENE : barème et ayants droit de l'IA MINENE de la police */}
             {contratSante && [
-              ['bareme', 'Barème MINENE'],
+              ...(mineneConnexes?.Minene ? [['bareme', 'Barème MINENE']] : []),
               ['affilies', 'Liste des assurés'],
-              ['ayants', 'Liste des ayants droit (IA MINENE)'],
+              ...(mineneConnexes?.Minene ? [['ayants', 'Liste des ayants droit (IA MINENE)']] : []),
             ].map(([type, libelle]) => (
               <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
@@ -425,8 +425,9 @@ export const ContractDetailPage = () => {
               </div>
             ))}
 
-            {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » */}
-            {!contratVoyage && !contratRc && !contratDommages && (
+            {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » ;
+                Santé : ni attestation automobile ni carte brune */}
+            {!contratVoyage && !contratRc && !contratDommages && !contratSante && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />
@@ -443,7 +444,7 @@ export const ContractDetailPage = () => {
               </div>
             )}
 
-            {!contratVoyage && !contratRc && !contratDommages && (
+            {!contratVoyage && !contratRc && !contratDommages && !contratSante && (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                   <Paperclip size={16} color="#94a3b8" />

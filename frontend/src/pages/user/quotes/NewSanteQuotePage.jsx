@@ -78,10 +78,11 @@ const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const dateFr = (v) => (v ? jour(v).split('-').reverse().join('/') : '');
-const age = (naissance) => {
+// Âge révolu au jour donné (aujourd'hui à défaut) ; la base mesure les surprimes et limites MINENE à la date d'effet
+const age = (naissance, auJour) => {
   if (!naissance) return null;
   const n = new Date(naissance);
-  const t = new Date();
+  const t = auJour ? new Date(auJour) : new Date();
   let a = t.getFullYear() - n.getFullYear();
   if (t.getMonth() < n.getMonth() || (t.getMonth() === n.getMonth() && t.getDate() < n.getDate())) a -= 1;
   return a;
@@ -247,6 +248,12 @@ export const NewSanteQuotePage = () => {
   const client = clients.find((c) => String(c.id) === String(clientId));
   const tauxMax = Number(typeContrat) === TYPE_CONTRAT_SOCIETE ? 35 : 100;
   const primesSaisies = [primeFamille, primeAffilie, primeGlobale].filter((p) => Number(p) > 0).length;
+  // MINENE : adhérents et conjoints soumis à la surprime d'âge à la date d'effet (même règle que sp_creation_devis_sante)
+  const surprimesAge = estMinene ? affilies
+    .filter((f) => ['A', 'C'].includes(f.lien))
+    .map((f) => ({ f, ans: age(f.datenaissance, dateEffet) }))
+    .filter(({ ans }) => ans !== null && ans >= minene.surprimes.age1Debut)
+    .map((x) => ({ ...x, taux: x.ans >= minene.surprimes.age2Debut ? minene.surprimes.age2Taux : minene.surprimes.age1Taux })) : [];
   const desactive = Boolean(lectureSeule) || occupe;
 
   // Questionnaire prospect (?questionnaire=) : cotation (étendue territoriale) ou bulletin d'adhésion (personnes
@@ -1239,15 +1246,36 @@ export const NewSanteQuotePage = () => {
               {champ('Prime par famille', <AmountInput value={primeFamille} onChange={setPrimeFamille} disabled={desactive || (primesSaisies > 0 && !(Number(primeFamille) > 0))} />)}
               {champ('Prime par Affilié', <AmountInput value={primeAffilie} onChange={setPrimeAffilie} disabled={desactive || (primesSaisies > 0 && !(Number(primeAffilie) > 0))} />)}
               {champ('Prime globale', <AmountInput value={primeGlobale} onChange={setPrimeGlobale} disabled={desactive || (primesSaisies > 0 && !(Number(primeGlobale) > 0))} />)}
-              {champ('Surprime affection', <AmountInput value={montantSurprime} onChange={setMontantSurprime} disabled={desactive} />)}
+              {champ('Surprime affection', <AmountInput value={montantSurprime} onChange={setMontantSurprime} disabled={desactive} />,
+                estMinene ? 'Remplace la surprime calculée pour les affections chroniques ; la surprime d\'âge s\'ajoute toujours.' : undefined)}
               {champ('Accessoire Manuel', <AmountInput value={accessoireManuel} onChange={setAccessoireManuel} disabled={desactive} />,
-                'À 0 : accessoire du barème de la compagnie.')}
+                estMinene
+                  ? 'À 0 : accessoire du barème, par famille ; sinon ce montant par famille.'
+                  : 'À 0 : barèmes de la compagnie et du cabinet ; sinon accessoire du devis, partagé selon la fiche de la compagnie.')}
             </div>
             <p style={{ margin: '0.85rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {estMinene
                 ? `MINENE : laissez les primes à 0 pour tarifer chaque famille selon la formule de sa couverture (${tailleFormules()}), avec les surprimes d'âge à la date d'effet (${minene.surprimes.age1Debut}–${minene.surprimes.age2Debut - 1} ans : ${minene.surprimes.age1Taux} %, ${minene.surprimes.age2Debut}–${minene.surprimes.ageMaxAdulte} ans : ${minene.surprimes.age2Taux} %, adhérent et conjoint de ${minene.surprimes.ageMaxAdulte} ans au plus) et d'affection chronique (${minene.surprimes.affection} % par affection, ${affectionsMax} au maximum), et l'accessoire du barème par famille.`
-                : 'Une seule prime : par famille (× adhérents), par affilié (× affiliés) ou globale.'}
+                : `Une seule prime : par famille (× adhérents), par affilié (× affiliés) ou globale. Au-delà de ${parametre('sante.groupe_adherents', 5)} adhérents ou de ${parametre('sante.groupe_affilies', 25)} personnes assurées, le devis est un contrat groupe (taxe des contrats groupe).`}
             </p>
+
+            {/* MINENE : surprimes d'âge que la base ajoutera à l'enregistrement (âge à la date d'effet) */}
+            {estMinene && surprimesAge.length > 0 && (
+              <div style={{ ...encadre, marginTop: '1rem', fontSize: '0.82rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.4rem' }}>
+                  Surprimes d'âge au {dateFr(dateEffet)}
+                </div>
+                {Number(primeGlobale) > 0 ? (
+                  <div style={{ color: 'var(--accent-amber)' }}>Prime globale saisie : elle comprend tout, aucune surprime n'y est ajoutée.</div>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: '1.1rem', color: 'var(--text-secondary)' }}>
+                    {surprimesAge.map(({ f, ans, taux: t }) => (
+                      <li key={f.idaffilie}>{`${f.nom || ''} ${f.prenom || ''}`.trim()} ({libelleLien(f.lien)}, {ans} ans) : {t} % de la prime de base de sa formule</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {estMinene && (
               <div style={{ ...encadre, marginTop: '1.25rem' }}>

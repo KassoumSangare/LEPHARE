@@ -438,7 +438,9 @@ class QualiteSouscripteurMrhViewSet(viewsets.ModelViewSet):
     ]
 
 
-class TarifDetailViewSet(viewsets.ModelViewSet):
+class TarifDetailViewSet(JournalModificationsMixin, viewsets.ModelViewSet):
+    # Barème automobile (Administration > Réglages par branche > Automobile > Barème automobile)
+    libelle_journal = "Barème automobile"
     queryset = TarifDetail.objects.all()
     serializer_class = TarifDetailSerializer
     filterset_fields = ["IdTarif", "IdGarantie"]

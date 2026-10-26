@@ -12,9 +12,9 @@ import { Car, Plane, Ship, Home, Building2, Layers, HeartPulse, UserPlus, Shield
 export const BRANCHES = [
   {
     module: 'auto', idProduit: 1, libelle: 'Automobile', icone: Car, brancheCima: '200',
-    description: "Tarifs à lecture directe, règles entre garanties, dépréciation et âge des véhicules, Pool TPV, réductions flotte, sécurité routière, marques et listes véhicules.",
+    description: "Barème et montants du moteur de chaque compagnie, tarifs à lecture directe, règles entre garanties, dépréciation et âge des véhicules, Pool TPV, réductions flotte, sécurité routière, marques et listes véhicules.",
     parametres: ['devis.reduction_max_auto'],
-    pages: ['/admin/settings/tarifs-directs', '/admin/settings/regles-garanties', '/admin/settings/depreciation', '/admin/settings/pool-tpv',
+    pages: ['/admin/settings/bareme-auto', '/admin/settings/tarifs-directs', '/admin/settings/regles-garanties', '/admin/settings/depreciation', '/admin/settings/pool-tpv',
       '/admin/settings/flotte', '/admin/settings/securite-routiere', '/admin/settings/marques', '/admin/settings/vehicle-geo'],
   },
   {
@@ -45,13 +45,13 @@ export const BRANCHES = [
   },
   {
     module: 'sante', idProduit: 5, libelle: 'Santé', icone: HeartPulse, brancheCima: '120',
-    description: 'Gestionnaire des contrats Santé ; MINENE SANTÉ : formules, barème de soins, surprimes, IA et RC chef de famille, répartition de la prime.',
-    parametres: ['sante.gestionnaire'],
+    description: 'Gestionnaire des contrats Santé, seuils du contrat groupe (Santé classique et micro) ; MINENE SANTÉ : formules, barème de soins, surprimes, IA et RC chef de famille, répartition de la prime.',
+    parametres: ['sante.gestionnaire', 'sante.groupe_adherents', 'sante.groupe_affilies'],
     pages: ['/admin/settings/sante'],
   },
   {
     module: 'ia', idProduit: 2, libelle: 'Individuelle Accidents', icone: UserPlus, brancheCima: '100',
-    description: "Tarif NSIA par classe d'activité, accessoires selon la prime nette, clauses d'âge et d'indemnité, réduction maximale.",
+    description: "Tarif NSIA par classe d'activité, accessoires selon la prime nette, primes et capitaux des offres forfaitaires (CGA, CI-ÉNERGIES), barème des autres compagnies, clauses d'âge et d'indemnité, réduction maximale.",
     parametres: ['devis.reduction_max_ia', 'ia.nsia_age_max', 'ia.nsia_indemnite_max'],
     section: 'ia',
   },

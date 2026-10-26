@@ -7,6 +7,7 @@ import { parametrageApi } from '../../../../api/endpoints';
 import { useToast } from '../../../../context/ToastContext';
 import { messageErreurApi } from '../../../../utils/financeUtils';
 import { Interrupteur } from '../../../../components/admin/Interrupteur';
+import { ReglagesIaForfaitsAutres } from './ReglagesIaForfaitsAutres';
 
 // Réglages Individuelle Accidents (configuration_api/parametrage_ia.py) : tarif NSIA par classe d'activité et
 // accessoires selon la prime nette, lus par fn_calcul_prime_ia_nsia et fn_get_accessoire_ia_nsia.
@@ -202,6 +203,8 @@ export const SectionIa = () => {
           <button type="button" className="btn btn-primary" onClick={enregistrerOffres} disabled={!offresModifiees || envoi} aria-busy={envoi}><Save size={14} /> Enregistrer les offres</button>
         </div>
       </SectionParametrage>
+
+      <ReglagesIaForfaitsAutres reglages={donnees.Reglages} />
     </>
   );
 };

@@ -73,6 +73,7 @@ import ParametrageSantePage from './pages/admin/settings/ParametrageSantePage';
 import ParametrageDepreciationPage from './pages/admin/settings/ParametrageDepreciationPage';
 import ParametragePoolTpvPage from './pages/admin/settings/ParametragePoolTpvPage';
 import ParametrageTarifsDirectsPage from './pages/admin/settings/ParametrageTarifsDirectsPage';
+import ParametrageBaremeAutoPage from './pages/admin/settings/ParametrageBaremeAutoPage';
 import ParametrageReglesGarantiesPage from './pages/admin/settings/ParametrageReglesGarantiesPage';
 import RenouvellementPage from './pages/user/contracts/RenouvellementPage';
 
@@ -228,6 +229,7 @@ function App() {
                 <Route path="/admin/settings/depreciation" element={<AdminRoute><ParametrageDepreciationPage /></AdminRoute>} />
                 <Route path="/admin/settings/pool-tpv" element={<AdminRoute><ParametragePoolTpvPage /></AdminRoute>} />
                 <Route path="/admin/settings/tarifs-directs" element={<AdminRoute><ParametrageTarifsDirectsPage /></AdminRoute>} />
+                <Route path="/admin/settings/bareme-auto" element={<AdminRoute><ParametrageBaremeAutoPage /></AdminRoute>} />
                 <Route path="/admin/settings/regles-garanties" element={<AdminRoute><ParametrageReglesGarantiesPage /></AdminRoute>} />
 
                 {/* Alias direct pour compatibilité stricte OREOLE */}

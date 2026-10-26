@@ -1672,9 +1672,8 @@ export const NewAutoQuotePage = () => {
               idDevisDetail: l.iddevisdetail,
               enregistre: true,
               // Garanties du véhicule en base, montrées par « Garanties de l'offre » tant qu'il est
-              // inchangé ; dans l'ordre des garanties (RC en tête) comme le barème
-              garantiesEnregistrees: garantiesDepuisDevis(l.garanties_enregistrees, Number(l.nombreplace) || 5)
-                .sort((a, b) => Number(a.id_garantie) - Number(b.id_garantie)),
+              // inchangé ; dans l'ordre du barème (RC en tête), rendu par le serveur
+              garantiesEnregistrees: garantiesDepuisDevis(l.garanties_enregistrees, Number(l.nombreplace) || 5),
               primesEnregistrees: {
                 pa: Number(l.primeannuelle) || 0,
                 pn: (Number(l.primenette) || 0) - cedeao,

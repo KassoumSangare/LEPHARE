@@ -265,8 +265,10 @@ class DevisDetailSerializer(serializers.ModelSerializer):
         # Détail des garanties réellement enregistrées pour ce devis (stddevisdetgarantie) :
         # sans ça, rouvrir un devis en édition n'a aucun moyen de retrouver les garanties/primes
         # telles qu'elles ont été acquises/imposées à l'origine, et ne peut que recalculer à neuf.
+        # Dans l'ordre du calcul (fn_garantie_offre : garantie puis sous-garantie, RC en tête) : sans tri, la base
+        # rendait les lignes dans leur ordre de stockage, inversé après une correction des primes.
         representation["garanties_enregistrees"] = DevisDetailGarantieSerializer(
-            instance.garanties.all(), many=True
+            instance.garanties.order_by("IdGarantie__IdGarantie", "IdGarantie"), many=True
         ).data
         devis = instance.iddevis
         if devis:
