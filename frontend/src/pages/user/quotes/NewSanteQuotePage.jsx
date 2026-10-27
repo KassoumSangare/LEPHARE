@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { confirmer } from '../../../utils/dialogue';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useNavigate } from '../../../utils/navigationDevis';
 import { quoteApi, customerApi, settingsApi, contractApi, santeApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
@@ -18,6 +19,9 @@ import {
   ChevronRight,
   Check,
   X,
+  Download,
+  Search,
+  Users,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
@@ -34,6 +38,7 @@ import {
   termeEtDureeEnregistres,
 } from '../../../utils/termesContrat';
 import { sortUniqueBy } from '../../../utils/sortUtils';
+import { downloadBlob } from '../../../utils/exportUtils';
 
 // Production Santé fidèle à URANUS (SanteForm) : 1. Contrat, 2. Couvertures souscrites (filiales :
 // collège × formule × zone), 3. Affiliation (adhérents, affiliés) et primes. La saisie est portée
@@ -73,6 +78,11 @@ const SEXES = [['F', 'Féminin'], ['M', 'Masculin']];
 // Colonnes du fichier d'import d'URANUS (sante/utils.py, ligne d'en-tête, casse indifférente)
 const COLONNES_IMPORT = 'Nom, Prenoms, NumeroCNI, DateNaissance, NumeroCMU, Sexe, NumeroTelephone, LienParente (A, C ou E), '
   + 'DateEffet, DateEntree, AdresseAdherent, EmailAdherent, NombreAffection, Matricule, GroupeSanguin';
+// Offre commerciale SANTE CLASSIQUE : import au modèle d'OREOLE (sante/import_classique.py), couvertures, familles,
+// date d'effet et primes déduites du fichier
+const ID_TARIF_SANTE_CLASSIQUE = 85;
+const COLONNES_IMPORT_CLASSIQUE = "NUMERO D'ORDRE, NUMERO DE CARTE, COLLEGE, NOM, PRENOM, DATE DE NAISSANCE, SEXE, NUMERO CMU, "
+  + "FILIATION (A, C ou E), DATE D'ENTREE, AVENANT, PRIME NETTE ANNUELLE, PRIME NETTE PERIODIQUE, SURPRIME, PRIME NETTE TOTALE";
 
 const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
@@ -176,6 +186,8 @@ export const NewSanteQuotePage = () => {
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
   // Devis de renouvellement : taux d'ajustement de l'an dernier (déjà compris dans la prime de base MINENE)
   const [tauxPrecedent, setTauxPrecedent] = useState(null);
+  // Devis d'avenant de modification d'un contrat en cours (changement de formule, incorporation) : police, période, prorata
+  const [avenantModification, setAvenantModification] = useState(null);
   const [garanties, setGaranties] = useState([]);
 
   const [step, setStep] = useState(1);
@@ -206,7 +218,9 @@ export const NewSanteQuotePage = () => {
   const dateEmission = aujourdhui();
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationLibre, setExpirationLibre] = useState('');
-  const dateExpiration = estDureeLibre(dureeId) ? expirationLibre : expirationAnnuelle(dateEffet);
+  // Avenant de modification : il prend fin à l'échéance du contrat (sp_creation_devis_sante v9)
+  const dateExpiration = avenantModification?.DateExpirationContrat
+    || (estDureeLibre(dureeId) ? expirationLibre : expirationAnnuelle(dateEffet));
 
   // 2. COUVERTURES SOUSCRITES
   const [idOffre, setIdOffre] = useState(0);
@@ -233,6 +247,11 @@ export const NewSanteQuotePage = () => {
   const [apercuChargement, setApercuChargement] = useState(false);
   const [fichierImport, setFichierImport] = useState(null);
   const [filialeImport, setFilialeImport] = useState(0);
+  // Santé classique : collège des couvertures dont le fichier ne cite pas le collège, compte rendu de l'analyse
+  // ou de l'import, primes de l'écran reprises du fichier (jusqu'à une saisie)
+  const [collegeImport, setCollegeImport] = useState(0);
+  const [resultatClassique, setResultatClassique] = useState(null);
+  const [primesDuFichier, setPrimesDuFichier] = useState(false);
   const [primeFamille, setPrimeFamille] = useState(0);
   const [primeAffilie, setPrimeAffilie] = useState(0);
   const [primeGlobale, setPrimeGlobale] = useState(0);
@@ -245,6 +264,7 @@ export const NewSanteQuotePage = () => {
 
   const tarifChoisi = tarifs.find((t) => Number(t.IdTarif) === Number(idTarif));
   const estMinene = String(tarifChoisi?.CodeCategorie || '') === CODE_CATEGORIE_MINENE;
+  const estClassique = !estMinene && (Number(idTarif) === ID_TARIF_SANTE_CLASSIQUE || /classique/i.test(tarifChoisi?.LibelleTarif || ''));
   const minene = reglagesMinene();
   const affectionsMax = Math.max(0, Number(minene.surprimes.affectionsMax) || 0);
   const ajustementsMinene = Object.fromEntries(Object.entries(minene.ajustements).map(([sens, liste]) => [sens, liste.map(([t, sp]) => [t, `S/P ${sp}`])]));
@@ -397,6 +417,7 @@ export const NewSanteQuotePage = () => {
           primeNette: devis.primenette, taxe: devis.taxe, accessoire: devis.accessoire, primeTtc: devis.primettc,
         });
         setTauxPrecedent(devis.code_avenant === 'REN' && devis.taux_reduction_precedent !== null ? Number(devis.taux_reduction_precedent) : null);
+        setAvenantModification(donnees.avenant || null);
         if (detail) {
           setIdTarif(Number(detail.idtarif) || 0);
           setIdOffre(Number(detail.idoffre) || 0);
@@ -430,13 +451,17 @@ export const NewSanteQuotePage = () => {
   }, [editParam]);
 
   // Répartition MINENE : prime HT connue (enregistrée, ou saisie) ; sinon calculée à l'enregistrement
-  const nombreAffilies = affilies.length;
+  // Base héritée d'URANUS : chaque adhérent est aussi un affilié de lien A. Personnes assurées = tous les affiliés ;
+  // affiliés affichés = conjoints et enfants, sans les adhérents. La prime par affilié porte sur chaque personne assurée
+  // (sp_creation_devis_sante : prime × affiliés, adhérents compris)
+  const nombrePersonnes = affilies.length;
+  const nombreAffilies = affilies.filter((f) => String(f.lien || '').trim().toUpperCase() !== 'A').length;
   const primeHtConnue = useMemo(() => {
     if (Number(primeGlobale) > 0) return Number(primeGlobale);
     if (Number(primeFamille) > 0) return Number(primeFamille) * adherents.length;
-    if (Number(primeAffilie) > 0) return Number(primeAffilie) * nombreAffilies;
+    if (Number(primeAffilie) > 0) return Number(primeAffilie) * nombrePersonnes;
     return Number(totauxEnregistres?.primeNette) || 0;
-  }, [primeGlobale, primeFamille, primeAffilie, adherents.length, nombreAffilies, totauxEnregistres]);
+  }, [primeGlobale, primeFamille, primeAffilie, adherents.length, nombrePersonnes, totauxEnregistres]);
 
   useEffect(() => {
     let actif = true;
@@ -594,6 +619,50 @@ export const NewSanteQuotePage = () => {
     }
   }, 'Import refusé');
 
+  // Santé classique : fichier d'OREOLE analysé (rien n'est écrit) ou importé ; l'import crée les couvertures du
+  // fichier et reporte à l'écran la date d'effet, la prime globale, la surprime et le type de contrat
+  const importerClassique = (analyser) => executer(async () => {
+    if (!fichierImport) { toastError('Choisissez le fichier Excel.'); return; }
+    const fd = new FormData();
+    fd.append('fichier_excel', fichierImport);
+    fd.append('college', collegeImport || idCollege || '');
+    fd.append('date_effet', dateEffet);
+    fd.append('date_expiration', dateExpiration);
+    if (analyser) {
+      fd.append('analyser', '1');
+      setResultatClassique({ ...(await santeApi.importerClassique(fd)), analyse: true });
+      return;
+    }
+    const id = await assurerSaisie();
+    fd.append('devis', id);
+    const r = await santeApi.importerClassique(fd);
+    setResultatClassique({ ...r, analyse: false });
+    await recharger(id);
+    if (r.DateEffet) {
+      setDateEffet(r.DateEffet);
+      if (estDureeLibre(dureeId)) setExpirationLibre(r.DateExpiration || '');
+    }
+    if (r.TypeContrat) setTypeContrat(Number(r.TypeContrat));
+    setPrimeFamille(0);
+    setPrimeAffilie(0);
+    setPrimeGlobale(Math.round(Number(r.PrimeGlobale) || 0));
+    setMontantSurprime(Math.round(Number(r.MontantSurprime) || 0));
+    setAjustement('aucun');
+    setTaux(0);
+    setPrimesDuFichier(true);
+    setFichierImport(null);
+    success(`${r.Importes} personne${r.Importes > 1 ? 's' : ''} importée${r.Importes > 1 ? 's' : ''} dans ${r.Couvertures.length} couverture`
+      + `${r.Couvertures.length > 1 ? 's' : ''} ; date d'effet, prime globale (${fcfa(r.PrimeGlobale)} F) et surprime (${fcfa(r.MontantSurprime)} F) reprises du fichier.`);
+    if (r.Derogations) warning(`${r.Derogations} assuré${r.Derogations > 1 ? 's' : ''} admis par dérogation à la limite d'âge.`);
+    if (r.Refuses || r.Ignores || r.Erreurs?.length) {
+      toastError(`${r.Refuses + r.Ignores + (r.Erreurs?.length || 0)} ligne${r.Refuses + r.Ignores + (r.Erreurs?.length || 0) > 1 ? 's' : ''} non importée${r.Refuses + r.Ignores + (r.Erreurs?.length || 0) > 1 ? 's' : ''} : voir le compte rendu.`);
+    }
+  }, analyser ? 'Analyse impossible' : 'Import refusé');
+
+  const telechargerModeleClassique = () => executer(async () => {
+    downloadBlob(await santeApi.modeleImportClassique(), 'FICHIER IMPORT SANTE CLASSIQUE.xlsx');
+  }, 'Modèle non téléchargé');
+
   // Personnes du bulletin d'adhésion reçu : même import que le fichier Excel, ligne par ligne
   const importerBulletin = () => executer(async () => {
     if (!idDevis || !filiales.length) {
@@ -668,8 +737,9 @@ export const NewSanteQuotePage = () => {
     }, 500);
     return () => { actif = false; clearTimeout(minuterie); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  // estMinene : la liste des offres peut arriver après le devis rouvert (sinon « Saisissez une prime » resterait affiché)
   }, [idDevis, adherents, affilies, filiales, dateEffet, dateExpiration, idTarif, idOffre, compagnieId, typeContrat, ajustement, taux,
-    primeFamille, primeAffilie, primeGlobale, montantSurprime, accessoireManuel, lectureSeule]);
+    primeFamille, primeAffilie, primeGlobale, montantSurprime, accessoireManuel, lectureSeule, estMinene]);
 
   const enregistrerDevis = () => executer(async () => {
     if (!clientId) { toastError('Choisissez le client.'); return; }
@@ -681,7 +751,7 @@ export const NewSanteQuotePage = () => {
     if (!adherents.length) { toastError('Saisissez au moins un adhérent.'); return; }
     if (!dateExpiration) { toastError('Saisissez la date d\'expiration.'); setStep(1); return; }
     if (primesSaisies > 1) { toastError('Renseignez une seule prime : par famille, par affilié ou globale.'); return; }
-    if (!estMinene && primesSaisies === 0) { toastError('Renseignez la prime par famille, par affilié ou la prime globale.'); return; }
+    if (!estMinene && primesSaisies === 0) { toastError('Renseignez la prime assuré principal, par affilié ou la prime globale.'); return; }
     const res = await santeApi.enregistrerDevis(donneesDevis());
     setNumeroDevis(res.numero_devis || '');
     setTotauxEnregistres({
@@ -797,6 +867,21 @@ export const NewSanteQuotePage = () => {
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--accent-amber)', fontSize: '0.85rem' }}>
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>{lectureSeule}</span>
+        </div>
+      )}
+
+      {/* Avenant de modification d'un contrat en cours : même police, prime = écart annuel au prorata (sante/avenant.py) */}
+      {avenantModification && (
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(236, 72, 153, 0.45)', background: 'rgba(236, 72, 153, 0.07)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          <Users size={18} color="#db2777" style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            <strong style={{ color: 'var(--text-primary)' }}>Avenant de modification de la police {avenantModification.NumeroPolice}</strong>
+            {' '}— effet du {dateFr(dateEffet)} à l'échéance du {dateFr(avenantModification.DateExpirationContrat)}
+            {avenantModification.JoursPeriode > 0 && `, prorata ${avenantModification.Jours} jours sur ${avenantModification.JoursPeriode}`}.
+            {' '}Changez la couverture de la famille (Modifier l'adhérent, champ Filiale ; couverture de la nouvelle formule à l'étape 2),
+            ajoutez le nouveau membre, puis enregistrez : la prime de l'avenant est l'écart de prime annuelle avec la composition
+            d'avant la modification, au prorata, sans ristourne.
+          </span>
         </div>
       )}
 
@@ -933,7 +1018,9 @@ export const NewSanteQuotePage = () => {
             {champ('Date d\'effet (* requis)',
               <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} disabled={desactive} />)}
             {champ('Date d\'expiration (* requis)',
-              estDureeLibre(dureeId)
+              avenantModification
+                ? <input type="date" className="form-control" value={dateExpiration} readOnly disabled title="Avenant : échéance du contrat" />
+                : estDureeLibre(dureeId)
                 ? <input type="date" className="form-control" value={expirationLibre} onChange={(e) => setExpirationLibre(e.target.value)} disabled={desactive} />
                 : <input type="date" className="form-control" value={dateExpiration} readOnly style={{ color: '#db2777', fontWeight: 700 }} />)}
           </div>
@@ -1064,12 +1151,23 @@ export const NewSanteQuotePage = () => {
           {/* ADHÉRENTS ET AFFILIÉS */}
           <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <h3 style={{ ...titreSection, margin: 0 }}>Adhérents ({adherents.length}) et affiliés ({affilies.length})</h3>
+              <h3 style={{ ...titreSection, margin: 0 }}>
+                Adhérents ({adherents.length}) et affiliés ({nombreAffilies})
+                <span style={{ fontWeight: 500, fontSize: '0.8em', color: 'var(--text-muted)', textTransform: 'none' }}>
+                  {' '}— {nombrePersonnes} personne{nombrePersonnes > 1 ? 's' : ''} assurée{nombrePersonnes > 1 ? 's' : ''}
+                </span>
+              </h3>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-secondary" disabled={desactive || !filiales.length}
-                  onClick={() => { setImportOuvert((v) => !v); setFilialeImport(Number(filiales[0]?.idfiliale) || 0); }}
+                <button type="button" className="btn btn-secondary" disabled={desactive || (!filiales.length && !estClassique)}
+                  onClick={() => {
+                    setImportOuvert((v) => !v);
+                    setFilialeImport(Number(filiales[0]?.idfiliale) || 0);
+                    setCollegeImport((c) => c || idCollege);
+                    setResultatClassique(null);
+                  }}
+                  title={estClassique ? 'Fichier d\'import Santé classique d\'OREOLE : couvertures, familles, date d\'effet et primes repris du fichier' : undefined}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
-                  <Upload size={14} /> Importer (Excel)
+                  <Upload size={14} /> {estClassique ? 'Importer le fichier Santé classique' : estMinene ? 'Importer (Excel) MINENE' : 'Importer (Excel)'}
                 </button>
                 <button type="button" className="btn btn-primary" onClick={ouvrirNouvelAdherent} disabled={desactive}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', background: '#10b981' }}>
@@ -1078,9 +1176,90 @@ export const NewSanteQuotePage = () => {
               </div>
             </div>
 
-            {importOuvert && (
+            {importOuvert && estClassique && (
               <div style={{ ...encadre, marginBottom: '1.25rem' }}>
-                <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>Importation des adhérents et affiliés</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>Import Santé classique</h4>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.76rem', color: 'var(--text-muted)', maxWidth: 760 }}>
+                      Le fichier renseigne les couvertures (COLLEGE : taux et zone, ex. 100% CI, et le collège s'il le cite), les familles,
+                      la date d'effet (plus ancienne DATE D'ENTREE), la prime globale (primes nettes hors surprime, majoration comprise),
+                      la surprime et le type de contrat.
+                    </p>
+                  </div>
+                  <button type="button" className="btn btn-secondary" onClick={telechargerModeleClassique} disabled={desactive}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem' }}>
+                    <Download size={14} /> Modèle Excel
+                  </button>
+                </div>
+                <div style={grille}>
+                  {champ('Fichier Excel',
+                    <input type="file" accept=".xlsx,.xlsm" className="form-control"
+                      onChange={(e) => { setFichierImport(e.target.files?.[0] || null); setResultatClassique(null); }} />)}
+                  {champ('Collège par défaut',
+                    <select className="form-control" value={collegeImport || idCollege} onChange={(e) => setCollegeImport(Number(e.target.value))}>
+                      {colleges.map((c) => <option key={c.idcollege} value={c.idcollege}>{c.libellecollege}</option>)}
+                    </select>, 'Pour les couvertures dont la colonne COLLEGE ne cite pas de collège.')}
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem' }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => importerClassique(true)} disabled={desactive || !fichierImport}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Search size={14} /> Analyser
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={() => importerClassique(false)} disabled={desactive || !fichierImport}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <Upload size={14} /> Importer
+                    </button>
+                  </div>
+                </div>
+                {resultatClassique && (
+                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                    <div style={{ fontSize: '0.84rem' }}>
+                      <strong>{resultatClassique.analyse ? 'Analyse — rien n\'est encore enregistré' : 'Import terminé'}</strong> :
+                      {' '}{resultatClassique.Familles} famille{resultatClassique.Familles > 1 ? 's' : ''}, {resultatClassique.Personnes} personne{resultatClassique.Personnes > 1 ? 's' : ''}
+                      {!resultatClassique.analyse && `, ${resultatClassique.Importes} importée${resultatClassique.Importes > 1 ? 's' : ''}`}
+                      {resultatClassique.DateEffet && ` ; effet le ${resultatClassique.DateEffet.split('-').reverse().join('/')}`}
+                      {` ; prime globale ${fcfa(resultatClassique.PrimeGlobale)} F, surprime ${fcfa(resultatClassique.MontantSurprime)} F`}
+                      {resultatClassique.Majoration > 0 && `, dont majoration ${fcfa(resultatClassique.Majoration)} F (${String(resultatClassique.TauxMajoration).replace('.', ',')} %)`}
+                      {` ; ${resultatClassique.Groupe ? 'contrat société (au-delà des seuils du contrat groupe)' : 'contrat particulier'}.`}
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead><tr style={{ borderBottom: '1px solid var(--border-medium)', textAlign: 'left' }}>
+                          <th style={{ padding: '0.35rem' }}>Couverture</th><th style={{ padding: '0.35rem' }}>Collège</th>
+                          <th style={{ padding: '0.35rem' }}>Familles</th><th style={{ padding: '0.35rem' }}>Personnes</th>
+                          <th style={{ padding: '0.35rem', textAlign: 'right' }}>Prime nette</th><th style={{ padding: '0.35rem', textAlign: 'right' }}>Surprime</th>
+                        </tr></thead>
+                        <tbody>
+                          {resultatClassique.Couvertures.map((cv) => (
+                            <tr key={`${cv.IdOffre}-${cv.IdCollege}-${cv.IdZone}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td style={{ padding: '0.35rem' }}>{cv.Formule}</td><td style={{ padding: '0.35rem' }}>{cv.College}</td>
+                              <td style={{ padding: '0.35rem' }}>{cv.Familles}</td><td style={{ padding: '0.35rem' }}>{cv.Personnes}</td>
+                              <td style={{ padding: '0.35rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(cv.PrimeNette)} F</td>
+                              <td style={{ padding: '0.35rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(cv.Surprime)} F</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {[...(resultatClassique.Erreurs || []).map((e) => ({ ...e, Statut: 'non lue' })),
+                      ...(resultatClassique.Lignes || []).filter((l) => l.Statut !== 'importé'),
+                      ...(resultatClassique.Avertissements || []).map((e) => ({ ...e, Statut: 'à vérifier' }))].map((l) => (
+                      <div key={`${l.Ligne}-${l.Statut}`} style={{ fontSize: '0.78rem', color: l.Statut === 'à vérifier' || l.Statut === 'dérogation' ? 'var(--accent-amber)' : 'var(--accent-rose)' }}>
+                        Ligne {l.Ligne} {l.Nom} — {l.Statut} : {l.Message}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Colonnes du modèle (1re ligne) : {COLONNES_IMPORT_CLASSIQUE}. Chaque assuré principal (A) précède son conjoint (C) et ses enfants (E) ;
+                  {' '}FILIATION vide : la personne forme sa propre famille. AVENANT : date ou référence de la compagnie. Les lignes TOTAL sont ignorées.
+                </p>
+              </div>
+            )}
+
+            {importOuvert && !estClassique && (
+              <div style={{ ...encadre, marginBottom: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>{estMinene ? 'Import MINENE' : 'Importation des adhérents et affiliés'}</h4>
                 <div style={grille}>
                   {champ('Filiale *',
                     <select className="form-control" value={filialeImport} onChange={(e) => setFilialeImport(Number(e.target.value))}>
@@ -1182,7 +1361,9 @@ export const NewSanteQuotePage = () => {
                           <td style={{ ...cellule, fontWeight: 600 }}>{a.nom} {a.prenom}</td>
                           <td style={cellule}>{dateFr(a.datenaissance)}</td>
                           <td style={cellule}>{libelleFiliale(a.idfiliale)}</td>
-                          <td style={{ ...cellule, textAlign: 'center' }}>{membres.length}</td>
+                          <td style={{ ...cellule, textAlign: 'center' }} title={`${membres.length} personne${membres.length > 1 ? 's' : ''} avec l'adhérent`}>
+                            {membres.filter((f) => String(f.lien || '').trim().toUpperCase() !== 'A').length}
+                          </td>
                           <td style={{ ...cellule, textAlign: 'center' }}>{a.nombrepathologie || 0}</td>
                           <td style={{ ...cellule, textAlign: 'right', whiteSpace: 'nowrap' }}>
                             <button type="button" className="btn btn-secondary" title="Nouvel affilié" disabled={desactive} style={{ padding: '0.3rem 0.5rem', marginRight: 4 }} onClick={() => ouvrirNouvelAffilie(a.idadherent)}><Plus size={14} /></button>
@@ -1288,11 +1469,13 @@ export const NewSanteQuotePage = () => {
           <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
             <h3 style={titreSection}>Primes</h3>
             <div style={grille}>
-              {champ('Prime par famille', <AmountInput value={primeFamille} onChange={setPrimeFamille} disabled={desactive || (primesSaisies > 0 && !(Number(primeFamille) > 0))} />)}
+              {champ('Prime assuré principal', <AmountInput value={primeFamille} onChange={setPrimeFamille} disabled={desactive || (primesSaisies > 0 && !(Number(primeFamille) > 0))} />)}
               {champ('Prime par Affilié', <AmountInput value={primeAffilie} onChange={setPrimeAffilie} disabled={desactive || (primesSaisies > 0 && !(Number(primeAffilie) > 0))} />)}
-              {champ('Prime globale', <AmountInput value={primeGlobale} onChange={setPrimeGlobale} disabled={desactive || (primesSaisies > 0 && !(Number(primeGlobale) > 0))} />)}
-              {champ('Surprime affection', <AmountInput value={montantSurprime} onChange={setMontantSurprime} disabled={desactive} />,
-                estMinene ? 'Remplace la surprime calculée pour les affections chroniques ; la surprime d\'âge s\'ajoute toujours.' : undefined)}
+              {champ('Prime globale', <AmountInput value={primeGlobale} onChange={(v) => { setPrimeGlobale(v); setPrimesDuFichier(false); }} disabled={desactive || (primesSaisies > 0 && !(Number(primeGlobale) > 0))} />,
+                primesDuFichier ? 'Reprise du fichier importé : primes nettes des assurés hors surprime, majoration comprise.' : undefined)}
+              {champ(estClassique ? 'Surprime' : 'Surprime affection', <AmountInput value={montantSurprime} onChange={(v) => { setMontantSurprime(v); setPrimesDuFichier(false); }} disabled={desactive} />,
+                estMinene ? 'Remplace la surprime calculée pour les affections chroniques ; la surprime d\'âge s\'ajoute toujours.'
+                  : (primesDuFichier ? 'Reprise du fichier importé : somme de la colonne SURPRIME.' : undefined))}
               {champ('Accessoire Manuel', <AmountInput value={accessoireManuel} onChange={setAccessoireManuel} disabled={desactive} />,
                 estMinene
                   ? 'À 0 : accessoire du barème, par famille ; sinon ce montant par famille.'
@@ -1301,7 +1484,7 @@ export const NewSanteQuotePage = () => {
             <p style={{ margin: '0.85rem 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               {estMinene
                 ? `MINENE : laissez les primes à 0 pour tarifer chaque famille selon la formule de sa couverture (${tailleFormules()}), avec les surprimes d'âge à la date d'effet (${minene.surprimes.age1Debut}–${minene.surprimes.age2Debut - 1} ans : ${minene.surprimes.age1Taux} %, ${minene.surprimes.age2Debut}–${minene.surprimes.ageMaxAdulte} ans : ${minene.surprimes.age2Taux} %, adhérent et conjoint de ${minene.surprimes.ageMaxAdulte} ans au plus) et d'affection chronique (${minene.surprimes.affection} % par affection, ${affectionsMax} au maximum), et l'accessoire du barème par famille.`
-                : `Une seule prime : par famille (× adhérents), par affilié (× affiliés) ou globale. Au-delà de ${parametre('sante.groupe_adherents', 5)} adhérents ou de ${parametre('sante.groupe_affilies', 25)} personnes assurées, le devis est un contrat groupe (taxe des contrats groupe).`}
+                : `Une seule prime : par famille (× adhérents), par affilié (× personnes assurées, adhérents compris) ou globale. Au-delà de ${parametre('sante.groupe_adherents', 5)} adhérents ou de ${parametre('sante.groupe_affilies', 25)} personnes assurées, le devis est un contrat groupe (taxe des contrats groupe).`}
             </p>
 
             {/* Primes calculées par la base sans rien enregistrer : barème de la formule de chaque famille, surprimes,
@@ -1311,13 +1494,34 @@ export const NewSanteQuotePage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
                   <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                     {estMinene ? 'Primes calculées par le barème MINENE' : 'Primes calculées'}
-                    {dateEffet && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}> — âges au {dateFr(dateEffet)}</span>}
+                    {/* Avenant : âges à la date d'effet du contrat de la période (sp_creation_devis_sante v9) */}
+                    {dateEffet && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}> — âges au {dateFr(avenantModification?.DateEffetContrat || dateEffet)}</span>}
                   </div>
                   {apercuChargement && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Calcul…</span>}
                 </div>
                 {apercuErreur && !apercu ? (
                   <div style={{ fontSize: '0.8rem', color: 'var(--accent-amber)' }}>{apercuErreur}</div>
-                ) : apercu && (
+                ) : apercu && (() => {
+                  // Réduction (montant négatif) ou majoration (positif) de l'année : les colonnes montrent les primes avant
+                  // l'ajustement, puis l'ajustement de chaque famille et sa prime Santé ajustée
+                  const ajustement = Number(apercu.Totaux.Ajustement) || 0;
+                  const tauxAjustement = Number(apercu.Totaux.TauxAjustement) || 0;
+                  const libelleAjustement = tauxAjustement < 0 || ajustement < 0
+                    ? `Réduction ${Math.abs(tauxAjustement).toLocaleString('fr-FR')} %` : `Majoration ${Math.abs(tauxAjustement).toLocaleString('fr-FR')} %`;
+                  const signe = (x) => (Number(x) < 0 ? `− ${fcfa(Math.abs(x))}` : Number(x) > 0 ? `+ ${fcfa(x)}` : fcfa(0));
+                  const avant = (f, cle) => (ajustement ? f[`${cle}Avant`] : f[cle]);
+                  // Avenant de modification : primes annuelles d'avant et d'après la modification, puis montants de l'avenant
+                  const av = apercu.Avenant;
+                  const tuiles = av ? [
+                    ['Prime annuelle avant modification', av.PrimeAnnuellePrecedente], ['Nouvelle prime annuelle', av.PrimeAnnuelle],
+                    [`Prime nette de l'avenant — ${av.Jours} j sur ${av.JoursPeriode}`, apercu.Totaux.PrimeNette],
+                    ['Accessoires', apercu.Totaux.Accessoire], ['Taxes', apercu.Totaux.Taxe], ['Prime TTC', apercu.Totaux.PrimeTtc],
+                  ] : [
+                    ...(ajustement ? [['Prime nette avant ajustement', apercu.Totaux.PrimeNetteAvantAjustement], [libelleAjustement, ajustement]] : []),
+                    ['Prime nette', apercu.Totaux.PrimeNette], ['Accessoires', apercu.Totaux.Accessoire], ['Taxes', apercu.Totaux.Taxe],
+                    ...(apercu.Totaux.FraisGestion ? [['Frais de gestion', apercu.Totaux.FraisGestion]] : []), ['Prime TTC', apercu.Totaux.PrimeTtc],
+                  ];
+                  return (
                   <>
                     {apercu.Familles?.length > 0 && (
                       <div className="table-wrapper" style={{ overflowX: 'auto' }}>
@@ -1329,13 +1533,14 @@ export const NewSanteQuotePage = () => {
                               <th style={{ ...cellule, textAlign: 'right' }}>PRIME DE BASE</th>
                               <th style={{ ...cellule, textAlign: 'right' }}>SURPRIME D'ÂGE</th>
                               <th style={{ ...cellule, textAlign: 'right' }}>SURPRIME AFFECTION</th>
+                              {ajustement !== 0 && <th style={{ ...cellule, textAlign: 'right' }}>{libelleAjustement.toUpperCase()}</th>}
                               <th style={{ ...cellule, textAlign: 'right' }}>PRIME SANTÉ</th>
                               <th style={{ ...cellule, textAlign: 'right' }}>ACCESSOIRE</th>
                             </tr>
                           </thead>
                           <tbody>
                             {apercu.Familles.map((f) => {
-                              const surprimes = f.Personnes.filter((p) => p.SurprimeAge || p.SurprimeAffection);
+                              const surprimes = f.Personnes.filter((p) => avant(p, 'SurprimeAge') || avant(p, 'SurprimeAffection'));
                               return (
                                 <tr key={f.IdAdherent}>
                                   <td style={cellule}>
@@ -1344,14 +1549,17 @@ export const NewSanteQuotePage = () => {
                                     {surprimes.map((p) => (
                                       <div key={p.IdAffilie} style={{ fontSize: '0.72rem', color: 'var(--accent-amber)' }}>
                                         {p.Nom} ({libelleLien(p.Lien)}, {p.Age} ans{p.Pathologies ? `, ${p.Pathologies} affection${p.Pathologies > 1 ? 's' : ''}` : ''}) :
-                                        {p.SurprimeAge ? ` âge ${fcfa(p.SurprimeAge)} F` : ''}{p.SurprimeAffection ? ` affection ${fcfa(p.SurprimeAffection)} F` : ''}
+                                        {avant(p, 'SurprimeAge') ? ` âge ${fcfa(avant(p, 'SurprimeAge'))} F` : ''}{avant(p, 'SurprimeAffection') ? ` affection ${fcfa(avant(p, 'SurprimeAffection'))} F` : ''}
                                       </div>
                                     ))}
                                   </td>
                                   <td style={cellule}>{f.Formule}</td>
-                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(f.PrimeBase)}</td>
-                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)', color: f.SurprimeAge ? 'var(--accent-amber)' : undefined }}>{fcfa(f.SurprimeAge)}</td>
-                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(f.SurprimeAffection + f.SurprimeSaisie)}</td>
+                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(avant(f, 'PrimeBase'))}</td>
+                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)', color: avant(f, 'SurprimeAge') ? 'var(--accent-amber)' : undefined }}>{fcfa(avant(f, 'SurprimeAge'))}</td>
+                                  <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(avant(f, 'SurprimeAffection') + avant(f, 'SurprimeSaisie'))}</td>
+                                  {ajustement !== 0 && (
+                                    <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)', color: f.Ajustement < 0 ? 'var(--accent-emerald, #10b981)' : f.Ajustement > 0 ? 'var(--accent-amber)' : undefined }}>{signe(f.Ajustement)}</td>
+                                  )}
                                   <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{fcfa(f.PrimeSante)}</td>
                                   <td style={{ ...cellule, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(f.Accessoire)}</td>
                                 </tr>
@@ -1362,11 +1570,12 @@ export const NewSanteQuotePage = () => {
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.6rem', marginTop: '0.75rem' }}>
-                      {[['Prime nette', apercu.Totaux.PrimeNette], ['Accessoires', apercu.Totaux.Accessoire], ['Taxes', apercu.Totaux.Taxe],
-                        ...(apercu.Totaux.FraisGestion ? [['Frais de gestion', apercu.Totaux.FraisGestion]] : []), ['Prime TTC', apercu.Totaux.PrimeTtc]].map(([libelle, valeur]) => (
+                      {tuiles.map(([libelle, valeur]) => (
                         <div key={libelle} style={{ padding: '0.6rem 0.75rem', borderRadius: '8px', border: libelle === 'Prime TTC' ? '2px solid #ec4899' : '1px solid var(--border-subtle)' }}>
                           <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{libelle}</div>
-                          <div style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{fcfa(valeur)} FCFA</div>
+                          <div style={{ fontSize: '1rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                            {libelle === libelleAjustement ? signe(valeur) : fcfa(valeur)} FCFA
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1379,7 +1588,8 @@ export const NewSanteQuotePage = () => {
                         : 'Reste à faire : choisissez le client ci-dessus, puis enregistrez le devis.'}
                     </div>
                   </>
-                )}
+                  );
+                })()}
               </div>
             )}
 

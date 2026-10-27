@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { confirmer } from '../../../utils/dialogue';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
+import { BoutonsNouveauDevis, OngletsBranches, iconeOnglet } from '../../../components/common/BranchesDevis';
 import { isExpiredQuote, isUnconfirmedQuote, MODULES_EDITION_COMPLETE } from '../../../utils/quoteRegistry';
-import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
+import { TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { moduleDuProduit, moduleOuvert, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { RowActions } from '../../../components/common/RowActions';
@@ -23,22 +24,14 @@ import {
   FileText,
   Plus,
   CheckCircle,
-  Car,
-  Home,
-  HeartPulse,
   Edit2,
   Trash2,
   Archive,
-  Plane,
-  Ship,
-  UserPlus,
   Eye,
   TrendingUp,
   Layers,
   Printer,
   RefreshCw,
-  Shield,
-  Building2,
   CalendarX,
 } from 'lucide-react';
 
@@ -69,18 +62,6 @@ const isExpiredShown = (q) => {
 };
 
 
-// Icône de l'onglet du registre selon son code (onglets réglés dans Administration > Produits)
-const ICONES_ONGLET = {
-  AUTO: <Car size={13} />,
-  VOYAGE: <Plane size={13} color="#60a5fa" />,
-  TRANSPORT: <Ship size={13} color="#38bdf8" />,
-  MRH: <Home size={13} />,
-  SANTE: <HeartPulse size={13} />,
-  IA: <UserPlus size={13} />,
-  RC: <Shield size={13} />,
-  MRP: <Building2 size={13} />,
-  DOMMAGES: <Layers size={13} />,
-};
 
 export const QuoteListPage = () => {
   const { user } = useAuth();
@@ -590,29 +571,7 @@ export const QuoteListPage = () => {
             <Printer size={16} />
             <span>Imprimer la Liste</span>
           </button>
-          {[
-            ['auto', Car, 'Devis Auto'],
-            ['voyage', Plane, 'Devis Voyage'],
-            ['transport', Ship, 'Devis Transport'],
-            ['mrh', Home, 'Devis MRH'],
-            ['sante', HeartPulse, 'Devis Santé'],
-            ['ia', UserPlus, 'Devis IA'],
-            ['rc', Shield, 'Devis RC'],
-            ['mrp', Building2, 'Devis MRP'],
-            ['tous-dommages', Layers, 'Devis Dommages'],
-          ].map(([module, Icone, libelle]) => (
-            <button
-              key={module}
-              type="button"
-              className={`btn btn-secondary${moduleActif(module) ? '' : ' module-ferme'}`}
-              onClick={() => navigate(`/user/quotes/${module}`)}
-              disabled={!moduleActif(module)}
-              title={moduleActif(module) ? undefined : TITRE_MODULE_INACTIF}
-            >
-              <Icone size={16} />
-              <span>{libelle}</span>
-            </button>
-          ))}
+          <BoutonsNouveauDevis />
         </div>
       </div>
 
@@ -676,87 +635,19 @@ export const QuoteListPage = () => {
         </div>
       )}
 
-      {/* Branch Filter Tabs with Direct Print Button on Each Tab */}
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        {[
+      {/* Onglets de branches (composant commun avec les Affaires antérieures), impression directe de chaque liste */}
+      <OngletsBranches
+        onglets={[
           { id: 'ALL', label: 'Tous', count: countByBranch.ALL, icon: null },
-          ...onglets.map((o) => ({ id: o.id, label: o.label, count: countByBranch[o.id] || 0, icon: ICONES_ONGLET[o.id] || <FileText size={13} /> })),
-          ...(countByBranch.AUTRES ? [{ id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: <FileText size={13} /> }] : []),
+          ...onglets.map((o) => ({ id: o.id, label: o.label, count: countByBranch[o.id] || 0, icon: iconeOnglet(o.id) })),
+          ...(countByBranch.AUTRES ? [{ id: 'AUTRES', label: 'Autres', count: countByBranch.AUTRES, icon: iconeOnglet('AUTRES') }] : []),
           { id: 'EXPIRED', label: 'Expirés', count: countByBranch.EXPIRED || 0, icon: <CalendarX size={13} color="#f87171" /> },
-        ].map((tab) => {
-          const isActive = selectedBranchFilter === tab.id;
-          return (
-            <div
-              key={tab.id}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                borderRadius: 'var(--radius-md)',
-                overflow: 'hidden',
-                border: isActive ? '1px solid #3b82f6' : '1px solid var(--border-subtle)',
-                background: isActive ? 'var(--primary)' : 'var(--surface-sunken)',
-                boxShadow: isActive ? '0 0 12px rgba(59, 130, 246, 0.3)' : 'none',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setSelectedBranchFilter(tab.id)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  padding: '0.4rem 0.65rem',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  border: 'none',
-                  background: 'transparent',
-                  color: isActive ? '#fff' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-                title={`Afficher les devis : ${tab.label}`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    padding: '0.1rem 0.35rem',
-                    borderRadius: '999px',
-                    background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-                    color: isActive ? '#fff' : 'var(--text-muted)',
-                    marginLeft: '0.2rem',
-                  }}
-                >
-                  {Number(tab.count || 0).toLocaleString('fr-FR')}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePrintQuotes(tab.id);
-                }}
-                title={`Imprimer directement la liste : ${tab.label}`}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.4rem 0.45rem',
-                  border: 'none',
-                  borderLeft: isActive ? '1px solid rgba(255,255,255,0.2)' : '1px solid var(--border-subtle)',
-                  background: 'transparent',
-                  color: isActive ? '#fff' : 'var(--text-muted)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Printer size={12} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
+        ]}
+        actif={selectedBranchFilter}
+        onChoisir={setSelectedBranchFilter}
+        onImprimer={handlePrintQuotes}
+        libelle={(tab) => `Afficher les devis : ${tab.label}`}
+      />
 
       {/* Consolidation Action Bar (si des devis sont sélectionnés) */}
       {selectedForConsolidation.length > 0 && (

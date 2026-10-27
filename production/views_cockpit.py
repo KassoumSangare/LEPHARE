@@ -27,8 +27,9 @@ SINISTRES_CLOS = ("Réglé", "Clôturé", "Rejeté")
 QUESTIONNAIRE_TRAITE = "Devis établi"
 
 CONTRAT_VALIDE = "COALESCE(c.idcontratannulation, 0) = 0"
-# Devis du registre (vue Production) : ni archivé ni confirmé
+# Devis du registre (vue Production) : ni archivé ni confirmé, hors devis d'affaires antérieures à finaliser
 DEVIS_NON_CONFIRME = """COALESCE(d.archive, FALSE) = FALSE AND COALESCE(d.confirme, FALSE) = FALSE
+    AND d.iddevis NOT IN (SELECT iddevis FROM lephare_reprise_devis)
     AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%confirm%%' AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%contrat%%'"""
 
 
@@ -290,4 +291,51 @@ def cockpit(request):
         resultat["Reversements"] = _reversements()
     if a_le_droit(utilisateur, "commissions.view"):
         resultat["Commissions"] = _commissions(jour)
+    return Response(resultat)
+
+
+# Cloche de la barre du haut : alertes à suivre, et non plus le journal des messages affichés (consigne du 2026-10-26 :
+# « pas besoin d'incrémenter la cloche quand on enregistre un devis, un contrat… : affiche juste le message »)
+ALERTE_ECHEANCE_JOURS = 30
+ALERTES_MAX = 50
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def alertes(request):
+    """
+    GET /api/alertes/ : alertes de la cloche, selon les droits.
+
+    Devis (devis.view) : devis non confirmés dont l'échéance (date d'expiration) tombe dans les N prochains jours, ou
+    échus depuis N jours au plus (la confirmation d'un devis expiré est bloquée : il faut relancer le client avant).
+    N = « devis.alerte_echeance_jours » (Administration > Le cabinet, 30 par défaut). Les saisies jamais enregistrées
+    (sans numéro) et les devis à prime nulle sont écartés. Les chèques à déposer restent lus par /api/chequesalertes/.
+    """
+    jour = timezone.localdate()
+    resultat = {"Jour": jour.isoformat()}
+    if a_le_droit(request.user, "devis.view"):
+        jours = int(valeur_parametre("devis.alerte_echeance_jours", ALERTE_ECHEANCE_JOURS))
+        with connection.cursor() as cursor:
+            lignes = _lignes(cursor, f"""
+                SELECT d.iddevis, d.numerodevis, d.idproduit, d.dateexpiration::date AS dateexpiration, d.primettc,
+                       TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit
+                FROM stddevis d
+                LEFT JOIN stdclient cl ON cl.idclient = d.idclient
+                LEFT JOIN stdproduit p ON p.idproduit = d.idproduit
+                WHERE {DEVIS_NON_CONFIRME} AND COALESCE(TRIM(d.numerodevis), '') <> '' AND COALESCE(d.primettc, 0) > 0
+                  AND d.dateexpiration::date BETWEEN %s AND %s
+                ORDER BY d.dateexpiration, d.iddevis
+                LIMIT %s
+            """, [jour - timedelta(days=jours), jour + timedelta(days=jours), ALERTES_MAX])
+        devis = [{
+            "IdDevis": d["iddevis"], "NumeroDevis": d["numerodevis"], "IdProduit": d["idproduit"], "Produit": d["produit"],
+            "Client": d["client"], "DateExpiration": _iso(d["dateexpiration"]), "Jours": (d["dateexpiration"] - jour).days,
+            "PrimeTtc": _franc(d["primettc"]),
+        } for d in lignes]
+        resultat["Devis"] = {
+            "Jours": jours,
+            "AEcheance": [d for d in devis if d["Jours"] >= 0],
+            "Echus": sorted((d for d in devis if d["Jours"] < 0), key=lambda d: d["Jours"], reverse=True),
+        }
     return Response(resultat)

@@ -4379,7 +4379,7 @@ class RepriseAffaire(models.Model):
     """Affaire antérieure reprise dans LE PHARE (production/reprise.py) : contrat, devis et quittance créés, données
     saisies ou importées, commission perçue ou non."""
 
-    MODES = [("saisie", "Saisie"), ("import", "Import Excel")]
+    MODES = [("saisie", "Saisie"), ("import", "Import Excel"), ("devis", "Écrans de devis")]
 
     idcontrat = models.IntegerField(unique=True, db_column="idcontrat")
     iddevis = models.IntegerField(db_column="iddevis")
@@ -4398,3 +4398,36 @@ class RepriseAffaire(models.Model):
         verbose_name = "Affaire antérieure reprise"
         verbose_name_plural = "Affaires antérieures reprises"
         ordering = ["-id"]
+
+
+class RepriseDevis(models.Model):
+    """Devis saisi dans un écran de devis de la vue Production depuis Affaires antérieures (/user/reprises/saisie/…), en attente de
+    finalisation (production/reprise.py, reprendre_devis) : les écrans de devis ne datent pas leur création."""
+
+    iddevis = models.IntegerField(unique=True, db_column="iddevis")
+    creepar = models.CharField(max_length=150, blank=True, default="", db_column="creepar")
+    idutilisateur = models.IntegerField(null=True, db_column="idutilisateur")
+    datecreation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+
+    class Meta:
+        db_table = "lephare_reprise_devis"
+        verbose_name = "Devis d'affaire antérieure à finaliser"
+        verbose_name_plural = "Devis d'affaires antérieures à finaliser"
+
+
+class AvenantSanteReference(models.Model):
+    """Avenant Santé de modification (changement de formule, incorporation : sante/avenant.py) : composition d'avant la
+    modification tarifée à la création de l'avenant par sp_creation_devis_sante, prime annuelle par garantie (idgarantie 0 :
+    accessoire). sp_creation_devis_sante v9 en déduit l'écart de l'avenant, qui ne porte ainsi que sur la modification
+    même pour un contrat émis avec d'anciennes règles de calcul."""
+
+    iddevis = models.IntegerField(db_column="iddevis")
+    idgarantie = models.IntegerField(db_column="idgarantie")
+    montant = models.DecimalField(max_digits=18, decimal_places=4, default=0, db_column="montant")
+    datecreation = models.DateTimeField(auto_now_add=True, db_column="datecreation")
+
+    class Meta:
+        db_table = "lephare_avenant_sante_reference"
+        unique_together = (("iddevis", "idgarantie"),)
+        verbose_name = "Référence d'avenant Santé"
+        verbose_name_plural = "Références d'avenants Santé"

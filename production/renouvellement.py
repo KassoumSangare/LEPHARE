@@ -113,6 +113,21 @@ def _periode(cursor, base, date_effet=None, date_expiration=None):
     return base["dateexpiration"] + timedelta(days=1), base["dateexpiration"] + (base["dateexpiration"] - base["dateeffet"]) + timedelta(days=1)
 
 
+def _devis_familles(cursor, base):
+    """Devis dont les familles sont reconduites (sp_avenant_creation_devis_initial v6) : dernier contrat de la période qui
+    en porte (affaire nouvelle ou renouvellement, puis avenants de modification : changement de formule, incorporation)."""
+    cursor.execute(
+        """SELECT c.iddevis FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
+           WHERE c.numeropolice = %s AND a.codeavenant IN ('AFN', 'REN', 'RPP', 'TRP', 'MOD')
+             AND COALESCE(c.idcontratannulation, 0) = 0 AND c.dateeffet >= %s
+             AND EXISTS (SELECT 1 FROM stdadherent ad WHERE ad.iddevis = c.iddevis)
+           ORDER BY c.dateeffet DESC, c.idcontrat DESC LIMIT 1""",
+        [base["numeropolice"], base["dateeffet"]],
+    )
+    ligne = cursor.fetchone()
+    return ligne[0] if ligne else base["iddevis"]
+
+
 def _familles_sante(cursor, iddevis, date_effet):
     """Familles Santé d'un devis reconduites au renouvellement (même filtre que sp_avenant_creation_devis_initial v5 :
     adhérents actifs, non sortis avant la nouvelle date d'effet), dans l'ordre de leur recopie."""
@@ -131,7 +146,7 @@ def _familles_sante(cursor, iddevis, date_effet):
 def _objets(cursor, base, date_effet):
     """Objets assurés de la période (véhicules, assurés) avec, en Automobile, la valeur vénale du tableau."""
     if base["idproduit"] == ID_PRODUIT_SANTE:
-        familles = _familles_sante(cursor, base["iddevis"], date_effet)
+        familles = _familles_sante(cursor, _devis_familles(cursor, base), date_effet)
         if familles:
             return [{
                 "Matricule": f"{PREFIXE_FAMILLE}{f['idadherent']}", "Famille": True, "NumeroAdherent": f["matricule"],
@@ -258,7 +273,7 @@ def renouvellement(request, pk):
             # Santé : familles décochées retirées (adhérent et affiliés) ; les familles sont recopiées dans l'ordre
             familles_exclues = {m for m in exclure if m.startswith(PREFIXE_FAMILLE)}
             if base["idproduit"] == ID_PRODUIT_SANTE and familles_exclues:
-                anciennes = [f["idadherent"] for f in _familles_sante(cursor, base["iddevis"], effet)]
+                anciennes = [f["idadherent"] for f in _familles_sante(cursor, _devis_familles(cursor, base), effet)]
                 cursor.execute("SELECT idadherent FROM stdadherent WHERE iddevis = %s ORDER BY idadherent", [id_devis])
                 nouvelles = [l[0] for l in cursor.fetchall()]
                 if len(anciennes) != len(nouvelles):

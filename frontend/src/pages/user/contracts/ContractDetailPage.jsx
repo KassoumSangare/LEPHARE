@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { contractApi, asaciApi, transportApi, transportHorsGuceApi, dommagesApi } from '../../../api/endpoints';
+import { contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { PolicyMovementModal } from './PolicyMovementModal';
-import { ContractDocumentsModal } from './ContractDocumentsModal';
+import { ListeDocumentsContrat, useDocumentsContrat } from './documentsContrat';
 import {
   ArrowLeft,
   Shield,
@@ -18,31 +18,25 @@ import {
   Download,
   Layers,
   Calendar,
-  Paperclip,
   MapPin,
   User,
   Building2,
   Banknote,
   Ship,
   Eye,
+  Users,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
-import { printContratFacture, printContratConditionsParticulieres, printBordereauTransport, estDevisTransport, estDevisVoyage, estDevisDommages, printCotationDommagesContrat, printPieceDommages } from '../../../utils/exportUtils';
-import { estDevisSante, imprimerDocumentSante } from '../../../utils/impressionsSante';
-import { ReleveCompteModal } from './ReleveCompteModal';
+import { printBordereauTransport, estDevisTransport } from '../../../utils/exportUtils';
+import { estDevisSante } from '../../../utils/impressionsSante';
+import { AvenantSanteModal } from './AvenantSanteModal';
+import { aLeDroit } from '../../../utils/droits';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 
 export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  // MINENE SANTÉ : IA et RC rattachées à la police Santé de ce contrat
-  const [mineneConnexes, setMineneConnexes] = useState(null);
-  useEffect(() => {
-    let actif = true;
-    contractApi.getMineneConnexes(id).then((d) => { if (actif) setMineneConnexes(d); }).catch(() => {});
-    return () => { actif = false; };
-  }, [id]);
   const location = useLocation();
   const { success, error: toastError } = useToast();
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -50,11 +44,17 @@ export const ContractDetailPage = () => {
   const [movementTab, setMovementTab] = useState('renouvellement');
   const [initialOp, setInitialOp] = useState(null);
 
-  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
-  const [activeDoc, setActiveDoc] = useState('facture');
-
   const [currentContract, setCurrentContract] = useState(null);
   const [attestationsList, setAttestationsList] = useState([]);
+  // Affaire antérieure reprise (Production > Affaires antérieures) : risque et paiement tels que saisis à la reprise
+  const [reprise, setReprise] = useState(null);
+  const estReprise = String(currentContract?.raw?.observation || '').startsWith('Reprise affaire antérieure');
+  useEffect(() => {
+    let actif = true;
+    setReprise(null);
+    if (estReprise) repriseApi.duContrat(id).then((r) => { if (actif) setReprise(r); }).catch(() => {});
+    return () => { actif = false; };
+  }, [id, estReprise]);
 
   useEffect(() => {
     let isMounted = true;
@@ -75,36 +75,41 @@ export const ContractDetailPage = () => {
 
   const contract = currentContract || {};
 
+  // Documents imprimables selon la branche (partagés avec les Affaires antérieures) ; MINENE SANTÉ : IA et RC
+  // rattachées à la police Santé de ce contrat
+  const { documents, fenetres: fenetresDocuments, mineneConnexes, ouvrirReleve } = useDocumentsContrat(currentContract, id, {
+    onSaveContract: (updated) => {
+      setCurrentContract(updated);
+      dataStore.saveContract(updated);
+    },
+  });
   // Contrat Transport : certificats GUCE du bordereau dont il est issu (une ligne de contrat par certificat)
   const contratTransport = estDevisTransport(contract);
-  // Contrat Voyage : attestation d'assurance et d'assistance voyage (demande de visa) au lieu de l'attestation auto
-  const contratVoyage = estDevisVoyage(contract);
-  // Contrat Dommages : relevé de compte (quittance du modèle OREOLE) et cotation de son devis
-  const contratDommages = estDevisDommages(contract);
-  // Contrat Santé : barème MINENE, liste des assurés et ayants droit de l'IA MINENE (comme URANUS)
+  // Contrat Santé : avenant de changement de formule, réduction ou majoration MINENE
   const contratSante = estDevisSante(contract);
-  // Contrat RC (produit 8) : ni attestation automobile ni carte brune
-  const idProduitContrat = Number(contract.raw?.idproduit?.id_produit ?? contract.raw?.idproduit?.IdProduit ?? contract.raw?.idproduit) || 0;
-  const contratRc = idProduitContrat === 8 || /responsabilit/i.test(String(contract.produit || ''));
-  const [releveOuvert, setReleveOuvert] = useState(false);
-  // Contrat Dommages : documents de production de la catégorie (ex. « Garantie de soumission » d'une caution de
-  // soumission, Réglages Dommages), proposés d'après le risque saisi
-  const [documentsDommages, setDocumentsDommages] = useState([]);
+  // Santé MINENE : réduction ou majoration de l'année (clause d'ajustement S/P), recalculée famille par famille comme
+  // sur le bordereau des primes ; rien si le contrat a été émis avec un autre calcul (écart)
+  const idDevisContrat = Number(contract.raw?.iddevis?.iddevis ?? contract.raw?.iddevis) || 0;
+  const [avenantSanteOuvert, setAvenantSanteOuvert] = useState(false);
+  const [ajustementSante, setAjustementSante] = useState(null);
   useEffect(() => {
     let actif = true;
-    setDocumentsDommages([]);
-    const idContrat = contract.idcontrat || id;
-    if (idContrat && contratDommages) {
-      dommagesApi.documentsContrat(idContrat)
-        .then((d) => { if (actif) setDocumentsDommages(d.Documents || []); })
+    setAjustementSante(null);
+    if (contratSante && idDevisContrat) {
+      impressionSanteApi.bordereau(idDevisContrat)
+        .then((b) => {
+          if (actif && b?.Minene && Number(b.Recap?.Ajustement) && !Number(b.Recap?.Ecart)) {
+            setAjustementSante({ taux: Number(b.TauxAjustement) || 0, montant: Number(b.Recap.Ajustement), avant: Number(b.Recap.PrimeNetteAvantAjustement) });
+          }
+        })
         .catch(() => {});
     }
     return () => { actif = false; };
-  }, [id, contract.idcontrat, contratDommages]);
+  }, [contratSante, idDevisContrat]);
   // Arrivée depuis la confirmation d'un devis Dommages : le relevé est proposé aussitôt
   useEffect(() => {
     if (location.state?.releve && contract.idcontrat) {
-      setReleveOuvert(true);
+      ouvrirReleve();
       navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.state, contract.idcontrat]);
@@ -147,7 +152,8 @@ export const ContractDetailPage = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button className="btn btn-secondary" onClick={() => navigate('/user/contracts')} style={{ padding: '0.4rem 0.8rem' }}>
+          {/* Fiche ouverte depuis les Affaires antérieures : retour à cette liste */}
+          <button className="btn btn-secondary" onClick={() => navigate(location.state?.retour || '/user/contracts')} style={{ padding: '0.4rem 0.8rem' }}>
             <ArrowLeft size={16} /> Retour
           </button>
           <div>
@@ -182,6 +188,15 @@ export const ContractDetailPage = () => {
           {/* Avenant et transformation retirés le 2026-10-14 : ils n'enregistraient rien en base
               (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
               d'avenant de modification n'existent pas encore (sp_avenant_modification) */}
+          {/* Santé : avenant de modification réel (changement de formule, incorporation), sante/avenant.py */}
+          {contratSante && aLeDroit('contrats.avenant') && (
+            <button className="btn btn-secondary" onClick={() => setAvenantSanteOuvert(true)}
+              title="Changer la formule d'une famille (FAMILLE → FAMILLE PLUS) ou incorporer un membre en cours de contrat : avenant sous la même police, prime au prorata"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Users size={16} />
+              <span>Changer de formule</span>
+            </button>
+          )}
 
           {/* Action Imprimer Quittance */}
           <button className="btn btn-secondary" onClick={() => setIsReceiptModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -190,6 +205,32 @@ export const ContractDetailPage = () => {
           </button>
         </div>
       </div>
+
+      {reprise && (
+        <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', borderLeft: '4px solid var(--accent-amber)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'baseline' }}>
+            <h3 className="title-md" style={{ margin: 0 }}>Affaire antérieure reprise : {reprise.Etape.toLowerCase()}</h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {({ import: 'Import Excel', devis: 'Écrans de devis' })[reprise.Mode] || "Saisie à l'écran"} du {formatDate(reprise.DateCreation)} par {reprise.CreePar}, quittance {reprise.NumeroQuittance}{reprise.NumeroPoliceCompagnie ? `, police compagnie ${reprise.NumeroPoliceCompagnie}` : ''}
+            </span>
+          </div>
+          {reprise.Champs.length || reprise.Precisions ? (
+            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.5rem 1.25rem', margin: '0.8rem 0 0' }}>
+              {reprise.Champs.map((c) => (
+                <div key={c.Libelle}><dt style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{c.Libelle}</dt><dd style={{ margin: 0, fontSize: '0.88rem' }}>{c.Valeur}</dd></div>
+              ))}
+              {reprise.Precisions && (
+                <div style={{ gridColumn: '1 / -1' }}><dt style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Précisions</dt><dd style={{ margin: 0, fontSize: '0.88rem' }}>{reprise.Precisions}</dd></div>
+              )}
+            </dl>
+          ) : <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: '0.6rem 0 0' }}>Risque non décrit à la reprise.</p>}
+          {/* Affaire antérieure soldée (consigne du 2026-10-27) */}
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.7rem 0 0' }}>
+            Quittance encaissée. Commission {Math.round(reprise.Commission).toLocaleString('fr-FR')} F, perçue.
+            {reprise.Observation ? ` Observation : ${reprise.Observation}` : ''}
+          </p>
+        </div>
+      )}
 
       {/* SECTION 1 : Informations Générales & Caractéristiques du Risque */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
@@ -241,7 +282,7 @@ export const ContractDetailPage = () => {
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <h3 className="title-md" style={{ color: '#fff', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Shield size={18} color="#3b82f6" />
-            Caractéristiques & Risque Assuré
+            Caractéristiques
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', fontSize: '0.875rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -289,6 +330,9 @@ export const ContractDetailPage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
             {/* Montants enregistrés du contrat (prime nette + accessoire + taxe + FGA + frais de gestion = prime TTC) */}
             {[
+              ['Prime nette avant ajustement', ajustementSante?.avant, Boolean(ajustementSante)],
+              [`${ajustementSante?.montant < 0 ? 'Réduction' : 'Majoration'} ${Math.abs(ajustementSante?.taux || 0).toLocaleString('fr-FR')} %`,
+                ajustementSante?.montant, Boolean(ajustementSante)],
               ['Prime nette', contract.prime_nette - contract.fga, true],
               ['Accessoire', contract.accessoire, true],
               ['Taxe', contract.taxe, true],
@@ -318,149 +362,9 @@ export const ContractDetailPage = () => {
             <FileText size={18} color="#c084fc" />
             Documents
           </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.9rem' }}>
-            {contratDommages && (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                    <Paperclip size={16} color="#94a3b8" />
-                    <span style={{ color: '#fff' }}>Quittance — relevé de compte</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-link"
-                    style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                    onClick={() => setReleveOuvert(true)}
-                  >
-                    Imprimer
-                  </button>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                    <Paperclip size={16} color="#94a3b8" />
-                    <span style={{ color: '#fff' }}>Cotation d’assurance</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-link"
-                    style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                    onClick={() => printCotationDommagesContrat(contract)}
-                  >
-                    Imprimer
-                  </button>
-                </div>
-                {/* Pièces de production (compte rendu du 12-10-2026) : facture de prime au modèle OREOLE et
-                    documents de la catégorie, ex. « Garantie de soumission » */}
-                {[['facture', 'Facture de prime'], ...documentsDommages.map((d) => [d.Id, d.Titre.charAt(0) + d.Titre.slice(1).toLowerCase()])].map(([piece, libelle]) => (
-                  <div key={piece} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                      <Paperclip size={16} color="#94a3b8" />
-                      <span style={{ color: '#fff' }}>{libelle}</span>
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-link"
-                      style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                      onClick={() => printPieceDommages(contract.idcontrat || id, piece)}
-                    >
-                      Imprimer
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
-            {/* Voyage : l'attestation d'assurance et d'assistance voyage est le seul document imprimé ;
-                Dommages : la facture de prime est celle du modèle OREOLE ci-dessus */}
-            {!contratVoyage && !contratDommages && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                  <Paperclip size={16} color="#94a3b8" />
-                  <span style={{ color: '#fff' }}>Facture</span>
-                </span>
-                <button
-                  type="button"
-                  className="btn-link"
-                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                  onClick={() => printContratFacture(contract)}
-                >
-                  Imprimer
-                </button>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: contratVoyage ? 'none' : '1px solid var(--border-subtle)' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                <Paperclip size={16} color="#94a3b8" />
-                <span style={{ color: '#fff' }}>{contratVoyage ? 'Attestation d’assurance et d’assistance voyage' : 'Conditions particulières'}</span>
-              </span>
-              <button
-                type="button"
-                className="btn-link"
-                style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                onClick={() => printContratConditionsParticulieres(contract)}
-              >
-                Imprimer
-              </button>
-            </div>
-
-            {/* Santé (gabarits URANUS) : liste des assurés ; MINENE : barème et ayants droit de l'IA MINENE de la police */}
-            {contratSante && [
-              ...(mineneConnexes?.Minene ? [['bareme', 'Barème MINENE']] : []),
-              ['affilies', 'Liste des assurés'],
-              ...(mineneConnexes?.Minene ? [['ayants', 'Liste des ayants droit (IA MINENE)']] : []),
-            ].map(([type, libelle]) => (
-              <div key={type} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                  <Paperclip size={16} color="#94a3b8" />
-                  <span style={{ color: '#fff' }}>{libelle}</span>
-                </span>
-                <button
-                  type="button"
-                  className="btn-link"
-                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                  onClick={() => imprimerDocumentSante(type, { idcontrat: contract.raw?.idcontrat || id })}
-                >
-                  Imprimer
-                </button>
-              </div>
-            ))}
-
-            {/* Voyage : l'attestation d'assurance et d'assistance voyage est imprimée par « Conditions particulières » ;
-                Santé : ni attestation automobile ni carte brune */}
-            {!contratVoyage && !contratRc && !contratDommages && !contratSante && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                  <Paperclip size={16} color="#94a3b8" />
-                  <span style={{ color: '#fff' }}>Editions Attestation</span>
-                </span>
-                <button
-                  type="button"
-                  className="btn-link"
-                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                  onClick={() => { setActiveDoc('attestation'); setIsDocModalOpen(true); }}
-                >
-                  Editer
-                </button>
-              </div>
-            )}
-
-            {!contratVoyage && !contratRc && !contratDommages && !contratSante && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                  <Paperclip size={16} color="#94a3b8" />
-                  <span style={{ color: '#fff' }}>Carte Brune</span>
-                </span>
-                <button
-                  type="button"
-                  className="btn-link"
-                  style={{ color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-                  onClick={() => { setActiveDoc('carte_brune'); setIsDocModalOpen(true); }}
-                >
-                  Imprimer
-                </button>
-              </div>
-            )}
-          </div>
+          {/* Selon la branche : Dommages (relevé de compte, cotation, pièces), Voyage (attestation seule), Santé (listes
+              et barème), Automobile (attestation, carte brune) ; documentsContrat.jsx */}
+          <ListeDocumentsContrat documents={documents} />
         </div>
       </div>
 
@@ -533,7 +437,7 @@ export const ContractDetailPage = () => {
       <div className="glass-panel" style={{ padding: '1.5rem' }}>
         <h3 className="title-md" style={{ color: '#fff', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <CreditCard size={18} color="#10b981" />
-          Situation d'Encaissement & Quittance
+          Situation d'Encaissement
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', fontSize: '0.875rem' }}>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px' }}>
@@ -628,7 +532,7 @@ export const ContractDetailPage = () => {
           <div>
             <h3 className="title-md" style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <FileText size={18} color="#10b981" />
-              Historique des Avenants & Renouvellements de la Police ({endorsements.length})
+              Historique des Avenants ({endorsements.length})
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
               Actes modificatifs, prorogations de durée, attestations et certificats officiels CIMA.
@@ -839,20 +743,9 @@ export const ContractDetailPage = () => {
         </div>
       </Modal>
 
-      {/* Modal Documents Contractuels (Facture, Conditions Particulières, Attestation, Carte Brune) */}
-      <ContractDocumentsModal
-        isOpen={isDocModalOpen}
-        onClose={() => setIsDocModalOpen(false)}
-        docType={activeDoc}
-        contract={contract}
-        onSaveContract={(updated) => {
-          setCurrentContract(updated);
-          dataStore.saveContract(updated);
-        }}
-      />
-
-      {/* Relevé de compte (quittance remise au client, modèle OREOLE) */}
-      <ReleveCompteModal isOpen={releveOuvert} onClose={() => setReleveOuvert(false)} idContrat={contract.idcontrat || id} />
+      {/* Attestation, carte brune et relevé de compte (rubrique Documents) */}
+      {fenetresDocuments}
+      <AvenantSanteModal isOpen={avenantSanteOuvert} onClose={() => setAvenantSanteOuvert(false)} idContrat={contract.idcontrat || id} />
     </div>
   );
 };

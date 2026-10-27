@@ -39,6 +39,8 @@ const DROITS_ECRANS_PRODUCTION = [
   ['/user/contracts', 'contrats.view'],
   ['/user/endorsements', 'contrats.view'],
   ['/user/reprises', 'contrats.view'],
+  // Affaire antérieure saisie dans les écrans de devis (enregistrer un devis demande aussi de pouvoir créer un devis)
+  ['/user/reprises/saisie/', 'contrats.reprise'],
   ['/user/asaci', 'contrats.view'],
   ['/user/cash', 'encaissements.view'],
   ['/user/cheques', 'encaissements.view'],

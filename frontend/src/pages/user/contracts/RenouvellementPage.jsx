@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, Loader2, CalendarRange, ListChecks, AlertTriangle, ExternalLink, Info } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { AmountInput } from '../../../components/common/AmountInput';
@@ -20,6 +20,8 @@ const entete = { padding: '0.55rem 0.6rem', fontSize: '0.7rem', textTransform: '
 export const RenouvellementPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  // Ouvert depuis les Affaires antérieures : Retour ramène à cette liste
+  const retour = useLocation().state?.retour;
   const { success, error: toastError } = useToast();
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState('');
@@ -82,8 +84,8 @@ export const RenouvellementPage = () => {
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: 1400, margin: '0 auto' }}>
-      <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1rem' }}>
-        <ArrowLeft size={15} /> Retour au contrat
+      <button type="button" className="btn btn-secondary" onClick={() => navigate(retour || `/user/contracts/${id}`)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1rem' }}>
+        <ArrowLeft size={15} /> {retour ? 'Retour aux affaires antérieures' : 'Retour au contrat'}
       </button>
       <h1 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 0.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <RefreshCw size={20} /> Renouvellement {contrat ? `de la police ${contrat.NumeroPolice}` : ''}

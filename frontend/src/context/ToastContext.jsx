@@ -11,8 +11,9 @@ import { useAuth } from './AuthContext';
    - 4 notifications au plus, les plus anciennes se retirent ;
    - un message technique (code HTTP, trace, erreur JavaScript) n'est jamais montré tel quel : il est
      remplacé par une phrase claire et gardé dans la console pour le diagnostic.
-   - chaque message est aussi consigné dans le journal de la cloche (useJournalMessages) : le badge
-     compte les messages non lus de la session, un message répété augmente le compte de son entrée.
+   - la cloche est réservée aux alertes à suivre (devis à échéance, chèques à déposer : ClocheNotifications) :
+     un message n'y est consigné que sur demande, option { cloche: true } (consigne du 2026-10-26 : enregistrer
+     un devis, un contrat… affiche seulement le message, sans incrémenter la cloche).
    Apparence et animations : section « MOTION DESIGN » de index.css.
    ========================================================================= */
 
@@ -56,10 +57,11 @@ const dureeDeLecture = (type, message) => {
 const ToastContext = createContext(null);
 let compteurId = 0;
 
-// Journal de la cloche : messages de la session de l'utilisateur connecté (onglet en cours)
+// Journal de la cloche : messages consignés sur demande ({ cloche: true }) de la session de l'utilisateur connecté.
+// Nouvelle clé : les journaux de l'ancienne règle (tous les messages consignés) sont ignorés
 const JOURNAL_MAX = 50;
 const JournalContext = createContext({ messages: [], nonLus: 0, marquerLus: () => {}, effacer: () => {} });
-const cleJournal = (idUtilisateur) => `lephare_messages_${idUtilisateur}`;
+const cleJournal = (idUtilisateur) => `lephare_cloche_${idUtilisateur}`;
 const lireJournal = (idUtilisateur) => {
   if (!idUtilisateur) return [];
   try {
@@ -74,8 +76,12 @@ export const ToastProvider = ({ children }) => {
   const { user } = useAuth();
   const idUtilisateur = user?.id || null;
   const [journal, setJournal] = useState(() => lireJournal(idUtilisateur));
-  // Autre utilisateur ou déconnexion : journal de cet utilisateur (vide sans session)
-  useEffect(() => { setJournal(lireJournal(idUtilisateur)); }, [idUtilisateur]);
+  // Autre utilisateur ou déconnexion : journal de cet utilisateur (vide sans session) ; l'ancien journal de tous les
+  // messages (clé lephare_messages_<id>) est retiré
+  useEffect(() => {
+    setJournal(lireJournal(idUtilisateur));
+    if (idUtilisateur) { try { sessionStorage.removeItem(`lephare_messages_${idUtilisateur}`); } catch { /* stockage indisponible */ } }
+  }, [idUtilisateur]);
   useEffect(() => {
     if (!idUtilisateur) return;
     try { sessionStorage.setItem(cleJournal(idUtilisateur), JSON.stringify(journal)); } catch { /* stockage indisponible */ }
@@ -158,7 +164,7 @@ export const ToastProvider = ({ children }) => {
     if (texte === '' || texte === null) return null;
     const duree = opts.duree !== undefined ? opts.duree : dureeDeLecture(genre, texte);
     const titre = opts.titre || TYPES[genre].titre;
-    consigner(genre, titre, texte);
+    if (opts.cloche) consigner(genre, titre, texte);
 
     // Même message déjà à l'écran : rappel plutôt qu'une seconde notification
     const existant = typeof texte === 'string'

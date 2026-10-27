@@ -506,6 +506,8 @@ export const impressionSanteApi = {
     ]);
     return { quittance, saisie: s.data || {}, affilies: donneesListe(a), ayantsDroit: ad.data?.ayantdroits || [] };
   },
+  // GET /api/devissante/:iddevis/bordereau/ : primes par assuré (prime de base, surprimes, réduction ou majoration)
+  bordereau: async (idDevis) => (await apiClient.get(`/devissante/${idDevis}/bordereau/`)).data,
 };
 
 // Proposition MRH (gabarit URANUS) : quittance de la proposition et garanties de chaque maison
@@ -1057,6 +1059,12 @@ export const iaApi = {
 const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export const santeApi = {
+  // Avenant de modification d'un contrat en cours (changement de formule, incorporation) : préparation, puis devis d'avenant
+  // { DateEffet, IdAdherent, IdOffre } ouvert dans l'écran Santé (sante/avenant.py)
+  preparerAvenant: async (idContrat, dateEffet) => (await apiClient.get(`/devissante/avenant/${idContrat}/`, {
+    params: dateEffet ? { date_effet: dateEffet } : {},
+  })).data,
+  creerAvenant: async (idContrat, donnees) => (await apiClient.post(`/devissante/avenant/${idContrat}/`, donnees)).data,
   // GET /api/tarifparproduit/5 : « Offre commerciale » d'URANUS (catégories Santé)
   getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/5')),
   // GET /api/typecontratsante/ : CONTRAT PARTICULIER, CONTRAT SOCIETE
@@ -1082,6 +1090,10 @@ export const santeApi = {
   // POST /api/devissante/importation/ (multipart : devis, filiale, date_effet, fichier_excel) : adhérents et affiliés d'un fichier
   // Excel dans une couverture ; compte rendu par ligne (importé, dérogation à la limite d'âge, refusé, ignoré)
   importerAffilies: async (formData) => (await apiClient.post('/devissante/importation/', formData, multipart)).data,
+  // Import Santé classique (modèle d'OREOLE) : couvertures, familles, dates et primes déduites du fichier ;
+  // analyser=1 : contrôle sans écriture (sante/import_classique.py)
+  importerClassique: async (formData) => (await apiClient.post('/devissante/importation/classique/', formData, multipart)).data,
+  modeleImportClassique: async () => (await apiClient.get('/devissante/importation/classique/modele/', { responseType: 'blob' })).data,
   // Même import, personnes lues dans les bulletins d'adhésion reçus (questionnaires prospects) et vérifiées à l'écran
   importerPersonnes: async ({ devis, filiale, dateEffet, personnes }) => (await apiClient.post('/devissante/importation/', {
     devis, filiale, date_effet: dateEffet, personnes,
@@ -1535,6 +1547,8 @@ export const normalizeContrat = (bc) => {
 // Cockpit opérationnel (production/views_cockpit.py) : chiffres réels du tableau de bord, chaque bloc selon les droits
 export const cockpitApi = {
   lire: async () => (await apiClient.get('/cockpit/')).data,
+  // Cloche : devis arrivant à échéance ou échus récemment, selon les droits (production/views_cockpit.alertes)
+  alertes: async () => (await apiClient.get('/alertes/')).data,
 };
 
 // Reprise des affaires antérieures (production/views_reprise.py) : contrats et quittances des années passées
@@ -1542,8 +1556,14 @@ export const repriseApi = {
   lister: async (filtres = {}) => (await apiClient.get('/reprise/', { params: filtres })).data,
   referentiels: async () => (await apiClient.get('/reprise/referentiels/')).data,
   creer: async (donnees) => (await apiClient.post('/reprise/', donnees)).data,
+  // Devis saisis dans les écrans de devis depuis Affaires antérieures : en attente, lecture, finalisation, marquage
+  devisEnAttente: async () => (await apiClient.get('/reprise/devis/')).data,
+  lireDevis: async (idDevis) => (await apiClient.get(`/reprise/devis/${idDevis}/`)).data,
+  finaliserDevis: async (idDevis, donnees) => (await apiClient.post(`/reprise/devis/${idDevis}/`, donnees)).data,
+  marquerDevis: async (idDevis) => (await apiClient.post(`/reprise/devis/${idDevis}/attente/`)).data,
+  // Fiche contrat : reprise du contrat (404 si le contrat n'est pas une affaire antérieure reprise)
+  duContrat: async (idContrat) => (await apiClient.get(`/reprise/contrat/${idContrat}/`)).data,
   supprimer: async (id) => (await apiClient.delete(`/reprise/${id}/`)).data,
-  commission: async (id, percue) => (await apiClient.patch(`/reprise/${id}/commission/`, { Percue: percue })).data,
   modele: async () => (await apiClient.get('/reprise/modele/', { responseType: 'blob' })).data,
   analyser: async (fichier) => {
     const fd = new FormData();

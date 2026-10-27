@@ -148,6 +148,8 @@ REGLES = [
     R("GET", r"securite/moi/", CONNECTE),
     # Cockpit opérationnel : chaque bloc n'est calculé qu'avec le droit de lecture de son module (views_cockpit.py)
     R("GET", r"cockpit/?$", CONNECTE),
+    # Alertes de la cloche : chaque bloc selon le droit de lecture de son module (views_cockpit.alertes)
+    R("GET", r"alertes/?$", CONNECTE),
     R("POST", r"securite/moi/mot-de-passe/", CONNECTE, objet="utilisateur", action="securite.mot_de_passe"),
     R("GET", r"securite/utilisateurs/", "users.view"),
     R("POST", r"securite/utilisateurs/$", "users.create", objet="utilisateur"),
@@ -207,10 +209,20 @@ REGLES = [
               r"annulationsaisie(vehicule|adherent|affilie|filiale))/?$",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     # Reprise des affaires antérieures (production/views_reprise.py) : tout utilisateur qui a le droit saisit, sans
-    # validation ; l'analyse d'un fichier n'écrit rien
+    # validation ; l'analyse d'un fichier n'écrit rien. Devis à finaliser : lecture d'un devis, droit du registre des devis
+    R("GET", r"reprise/devis/", "devis.view"),
     R("GET", r"reprise/", "contrats.view"),
     R("POST", r"reprise/import/analyse/?$", "contrats.reprise", lecture=True),
+    # Devis des écrans de la vue Production confirmé en affaire antérieure (contrat et quittance « R »)
+    R("POST", r"reprise/devis/(?P<id_devis>\d+)/?$", "contrats.reprise", objet="devis", cles=("id_devis",)),
+    # Devis enregistré en mode reprise noté en attente de finalisation (marque technique, sans effet sur le devis)
+    R("POST", r"reprise/devis/(?P<id_devis>\d+)/attente/?$", "contrats.reprise", lecture=True),
     R("POST,PATCH,DELETE", r"reprise/", "contrats.reprise", objet="contrat", cles=("pk",)),
+    # Avenant Santé d'un contrat en cours (changement de formule, incorporation) : préparation et devis d'avenant
+    # (avant les règles générales de devissante/)
+    R("GET", r"devissante/avenant/\d+/?$", "contrats.view"),
+    R("POST", r"devissante/avenant/(?P<idcontrat>\d+)/?$", "contrats.avenant", objet="contrat", cles=("idcontrat",),
+      instantane=instantane_contrat),
     # Import des adhérents et affiliés Santé (avant la règle générale de devissante/)
     R("POST", r"devissante/importation/", "imports.excel", objet="import"),
     # Aperçu des primes Santé : calcul sans écriture (point de sauvegarde annulé)

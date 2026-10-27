@@ -654,6 +654,9 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         if self.action == "list":
             three_years_ago = timezone.now() - timedelta(days=365 * 3)
             queryset = queryset.filter(dateemission__gte=three_years_ago)
+            # Devis saisis pour une affaire antérieure : suivis dans Affaires antérieures, pas dans le registre
+            from .models import RepriseDevis
+            queryset = queryset.exclude(iddevis__in=RepriseDevis.objects.values("iddevis"))
 
         # Filtre par produit
         idproduit = self.request.query_params.get("idproduit")
@@ -1104,11 +1107,32 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset = queryset.filter(idproduit_id=int(idproduit))
         return queryset
 
+    def _renouvellement_posterieur(self):
+        """Renouvellement (avenant REN) non annulé, plus récent, sur la police du contrat (sous-requête)."""
+        from django.db.models import OuterRef
+
+        return Contrat.objects.filter(
+            numeropolice=OuterRef("numeropolice"),
+            idcontratannulation=0,
+            idavenant__CodeAvenant="REN",
+            dateeffet__gt=OuterRef("dateeffet"),
+        )
+
     def _filtres_portefeuille(self, queryset):
         """Recherche et périodes du portefeuille (paramètres communs à la liste et à synthese/)."""
         from datetime import date, timedelta
 
+        from django.db.models import Exists, OuterRef
+
+        from .models import RepriseAffaire
+
         params = self.request.query_params
+        # Affaire antérieure pas encore renouvelée : suivie dans Affaires antérieures ; une fois son renouvellement
+        # confirmé en contrat, elle rejoint le portefeuille (demande du 2026-10-27 : « après renouvellement ils doivent
+        # être migrés dans le module contrat »)
+        queryset = queryset.exclude(
+            Exists(RepriseAffaire.objects.filter(idcontrat=OuterRef("pk"))) & ~Exists(self._renouvellement_posterieur())
+        )
         recherche = (params.get("recherche") or "").strip()
         if recherche:
             # Chaque mot se retrouve dans le n° de police, le client, le produit ou la compagnie.
@@ -1142,15 +1166,10 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     def _statut_portefeuille(self, queryset):
         from datetime import timedelta
 
-        from django.db.models import Case, CharField, Exists, OuterRef, Value, When
+        from django.db.models import Case, CharField, Exists, Value, When
 
         aujourdhui = timezone.localdate()
-        renouvellement_posterieur = Contrat.objects.filter(
-            numeropolice=OuterRef("numeropolice"),
-            idcontratannulation=0,
-            idavenant__CodeAvenant="REN",
-            dateeffet__gt=OuterRef("dateeffet"),
-        )
+        renouvellement_posterieur = self._renouvellement_posterieur()
         return queryset.annotate(
             statut_portefeuille=Case(
                 When(~Q(idcontratannulation=0), then=Value("annule")),

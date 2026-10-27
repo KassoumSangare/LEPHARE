@@ -160,9 +160,10 @@ export const exportToExcel = ({ filename, title, subtitle, metadata = {}, header
 
 /**
  * Export PDF Officiel Certifié CIMA avec déclenchement direct d'impression PDF et téléchargement.
- * enTete : bloc République / société / titre / sous-titre ; piedDePage : attestation et signatures.
+ * enTete : bloc République / société / titre / sous-titre ; piedDePage : attestation et signatures ; paysage : A4 en
+ * largeur (tableaux de nombreuses colonnes).
  */
-export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers, rows, totals, enTete = true, piedDePage = true }) => {
+export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers, rows, totals, enTete = true, piedDePage = true, paysage = false }) => {
   const metaHtml = Object.entries(metadata)
     .map(([k, v]) => `<div><span style="color:#64748b;font-weight:600;">${k} :</span> <strong>${v}</strong></div>`)
     .join('');
@@ -200,7 +201,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
   <title>${title || 'Export Officiel CIMA'}</title>
   <style>
     @page {
-      size: A4 portrait;
+      size: A4 ${paysage ? 'landscape' : 'portrait'};
       margin: 12mm 15mm;
     }
     body {

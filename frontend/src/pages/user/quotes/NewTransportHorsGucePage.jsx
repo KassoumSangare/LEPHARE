@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate } from '../../../utils/navigationDevis';
 import {
   Ship, Plane, Truck, TrainFront, Sailboat, Route, CalendarRange, Repeat, FileSignature, Package, ShieldCheck,
   ClipboardCheck, ChevronLeft, ChevronRight, CheckCircle2, Loader2, Info, AlertTriangle, UserPlus, Plus, Trash2,

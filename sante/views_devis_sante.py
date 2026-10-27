@@ -40,6 +40,8 @@ from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from production.database import enregistrer_terme_devis
 from production.models import Devis
 
+from . import import_classique
+from .avenant import detail_avenant_modification
 from .models import Adherent, Affilie, FilialeSante
 from .serializers import EnregistrementDevisSanteSerializer
 from .utils import (
@@ -47,6 +49,7 @@ from .utils import (
     enregistrer_affilie_sante,
     enregistrer_filiale_sante,
     apercu_devis_sante,
+    bordereau_primes_sante,
     assures_hors_limites_age,
     OFFRES_MINENE,
     get_quotation_id,
@@ -397,6 +400,119 @@ def importer_affilies(request):
         "Classement": classement,
         "Lignes": details,
     })
+
+
+def _jj_mm_aaaa(iso):
+    return datetime.strptime(iso, "%Y-%m-%d").strftime("%d-%m-%Y")
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def importer_classique(request):
+    """
+    POST /api/devissante/importation/classique/  (multipart : devis, fichier_excel, date_effet, date_expiration,
+    college : collège des couvertures dont le fichier ne cite pas le collège, analyser=1 : contrôle sans écriture)
+
+    Import Santé classique au modèle d'OREOLE (sante/import_classique.py) : couvertures déduites de la colonne COLLEGE
+    (formule de l'offre, collège), créées au besoin ; familles importées par les procédures de saisie ; réponse avec
+    les valeurs à reporter à l'écran : DateEffet, DateExpiration, PrimeGlobale, MontantSurprime, TypeContrat.
+    L'import MINENE (modèle d'URANUS, barème) reste importer_affilies.
+    """
+    fichier = request.FILES.get("fichier_excel")
+    if not fichier:
+        return Response({"error": "Choisissez le fichier Excel."}, status=status.HTTP_400_BAD_REQUEST)
+    college_defaut = _entier(request.data.get("college")) or import_classique.ID_COLLEGE_PAR_DEFAUT
+    try:
+        with connection.cursor() as cursor:
+            analyse = import_classique.analyser(cursor, fichier, college_defaut)
+    except import_classique.ErreurImport as erreur:
+        return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:  # fichier illisible
+        return Response({"error": f"Fichier Excel illisible : {str(exc).splitlines()[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+    familles = analyse.pop("_familles")
+    reponse = {**analyse, "Importes": 0, "Derogations": 0, "Refuses": 0, "Ignores": 0, "Lignes": []}
+    if _texte(request.data.get("analyser")).lower() in ("1", "true", "oui"):
+        return Response(reponse)
+
+    devis = _entier(request.data.get("devis"))
+    if not devis:
+        return Response({"error": "Devis Santé non initialisé."}, status=status.HTTP_400_BAD_REQUEST)
+    if not familles:
+        return Response({**reponse, "error": "Aucune famille importable : corrigez les lignes signalées."}, status=status.HTTP_400_BAD_REQUEST)
+    effet = analyse["DateEffet"] or _texte(request.data.get("date_effet"))[:10]
+    expiration = analyse["DateExpiration"] or _texte(request.data.get("date_expiration"))[:10]
+    if not effet or not expiration:
+        return Response({"error": "Date d'effet introuvable : renseignez DATE D'ENTREE ou la date d'effet du devis."},
+                        status=status.HTTP_400_BAD_REQUEST)
+    # Couvertures du fichier : celle du devis de même formule, collège et zone, sinon créée aux dates du fichier
+    couvertures = {}
+    for famille in familles:
+        id_offre, libelle, id_zone, id_college = famille["couverture"]
+        cle = (id_offre, id_zone, id_college)
+        if cle in couvertures:
+            continue
+        existante = FilialeSante.objects.filter(devis=devis, offresante_id=id_offre, college_id=id_college,
+                                                zonecouverture_id=id_zone).first()
+        if existante:
+            couvertures[cle] = existante.idfiliale
+            continue
+        err, resultat = enregistrer_filiale_sante(request.user.id, {
+            "idfiliale": 0, "devis": devis, "college": id_college, "offresante": id_offre, "zonecouverture": id_zone,
+            "date_effet": _jj_mm_aaaa(effet), "date_expiration": _jj_mm_aaaa(expiration), "source": "S",
+        })
+        ligne_resultat = (resultat or [None])[0]
+        if err or not ligne_resultat or not ligne_resultat.idfiliale:
+            return Response({"error": f"Couverture « {libelle} » non créée : "
+                                      f"{getattr(ligne_resultat, 'outputmessage', '') or 'refus de la base'}."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        couvertures[cle] = ligne_resultat.idfiliale
+    derogation = a_le_droit(request.user, DROIT_DEROGATION_AGE)
+    details, erreurs, messages = [], 0, []
+    for famille in familles:
+        id_offre, _, id_zone, id_college = famille["couverture"]
+        e, m = import_insured(None, request.user.id, devis, effet, couvertures[(id_offre, id_zone, id_college)],
+                              derogation_age=derogation, details=details, lignes=famille["lignes"])
+        erreurs += e
+        messages += m
+    if erreurs and not details:
+        texte = next((m.get("message") for m in messages if isinstance(m, dict) and m.get("message")), "")
+        return Response({"error": f"Import interrompu : {texte or 'erreur inattendue'}."}, status=status.HTTP_400_BAD_REQUEST)
+    compte = lambda statut: sum(1 for d in details if d["Statut"] == statut)  # noqa: E731
+    return Response({
+        **reponse, "DateEffet": effet, "DateExpiration": expiration, "Derogation": derogation,
+        "Importes": compte("importé") + compte("dérogation"), "Derogations": compte("dérogation"),
+        "Refuses": compte("refusé"), "Ignores": compte("ignoré"), "Lignes": details,
+    })
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def modele_import_classique(request):
+    """GET /api/devissante/importation/classique/modele/ : modèle d'OREOLE du fichier d'import Santé classique."""
+    import io
+
+    from django.http import HttpResponse
+
+    tampon = io.BytesIO()
+    import_classique.modele().save(tampon)
+    reponse = HttpResponse(tampon.getvalue(),
+                           content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    reponse["Content-Disposition"] = 'attachment; filename="FICHIER IMPORT SANTE CLASSIQUE.xlsx"'
+    return reponse
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def bordereau_primes(request, iddevis):
+    """GET /api/devissante/<iddevis>/bordereau/ : bordereau récapitulatif des primes par assuré (sante.utils)."""
+    donnees = bordereau_primes_sante(iddevis)
+    if donnees is None:
+        return Response({"error": "Devis Santé introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    return Response(donnees)
 
 
 def _familles_par_formule(user_id, devis, filiale, lignes):
@@ -750,6 +866,8 @@ def lire_devis_sante(request, iddevis):
             """,
             [iddevis],
         )
+        # Avenant de modification (changement de formule, incorporation) : police, période, jours restants
+        avenant = detail_avenant_modification(cursor, iddevis)
     for personne in adherents + affilies:
         personne["fichierpiece"] = _url_fichier(personne.get("fichierpiece"))
     for cle in ("primenette", "taxe", "accessoire", "primettc"):
@@ -764,5 +882,6 @@ def lire_devis_sante(request, iddevis):
             "adherents": adherents,
             "affilies": affilies,
             "garanties": garanties,
+            "avenant": avenant,
         }
     )

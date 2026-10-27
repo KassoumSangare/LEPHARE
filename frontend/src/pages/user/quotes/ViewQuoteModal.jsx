@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from '../../../utils/navigationDevis';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import {
@@ -19,7 +20,9 @@ import { formatDate } from '../../../utils/dateUtils';
 import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
-import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi } from '../../../api/endpoints';
+import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
+import { messageErreurApi } from '../../../utils/financeUtils';
+import { useModeReprise } from '../reprises/modeReprise';
 import {
   FileText,
   Printer,
@@ -71,6 +74,21 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
   const [detailBranche, setDetailBranche] = useState(null);
   const idDevisBase = Number(quoteInitial?.iddevis || quoteInitial?.raw?.iddevis) || 0;
   const brancheDevis = quoteInitial?.branche;
+
+  // Affaire antérieure (écran de devis ouvert depuis Production > Affaires antérieures) : le devis enregistré est
+  // contrôlé (date d'effet avant le 1er janvier, client) et noté en attente ; il se finalise au lieu d'être confirmé
+  const navigate = useNavigate();
+  const modeReprise = useModeReprise();
+  const [controleReprise, setControleReprise] = useState(null);
+  useEffect(() => {
+    setControleReprise(null);
+    if (!isOpen || !modeReprise || !idDevisBase) return undefined;
+    let actif = true;
+    repriseApi.marquerDevis(idDevisBase)
+      .then(() => { if (actif) setControleReprise({ ok: true }); })
+      .catch((err) => { if (actif) setControleReprise({ ok: false, message: messageErreurApi(err) }); });
+    return () => { actif = false; };
+  }, [isOpen, modeReprise, idDevisBase, quoteAJour]);
   useEffect(() => {
     let actif = true;
     setDetailBranche(null);
@@ -104,6 +122,23 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
       .catch(() => { if (actif) setDocumentsDommages([]); });
     return () => { actif = false; };
   }, [isOpen, idDevisBase, brancheDevis]);
+
+  // Devis Santé MINENE : réduction ou majoration de l'année (clause d'ajustement S/P), recalculée famille par famille
+  // comme sur le bordereau des primes ; rien si le devis a été enregistré avec un autre calcul (écart)
+  const [ajustementSante, setAjustementSante] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    setAjustementSante(null);
+    if (!isOpen || !idDevisBase || brancheDevis !== 'Santé') return undefined;
+    impressionSanteApi.bordereau(idDevisBase)
+      .then((b) => {
+        if (actif && b?.Minene && Number(b.Recap?.Ajustement) && !Number(b.Recap?.Ecart)) {
+          setAjustementSante({ taux: Number(b.TauxAjustement) || 0, montant: Number(b.Recap.Ajustement), avant: Number(b.Recap.PrimeNetteAvantAjustement) });
+        }
+      })
+      .catch(() => {});
+    return () => { actif = false; };
+  }, [isOpen, idDevisBase, brancheDevis, quoteAJour]);
 
   const quote = quoteAJour || quoteInitial;
   if (!isOpen || !quote) return null;
@@ -321,7 +356,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              Décompte Actuariel CIMA & Quittance
+              Décompte de prime
               {quote.raw?.prime_imposee && <StatusBadge label="Primes imposées" color="amber" />}
             </div>
             {imposable && (
@@ -339,6 +374,17 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </div>
 
           <div className="fiche-devis-grille">
+            {ajustementSante && (
+              <>
+                <Champ libelle="Prime nette avant ajustement">{fcfa(ajustementSante.avant)}</Champ>
+                <Champ
+                  libelle={`${ajustementSante.montant < 0 ? 'Réduction' : 'Majoration'} ${Math.abs(ajustementSante.taux).toLocaleString('fr-FR')} %`}
+                  couleur={ajustementSante.montant < 0 ? '#34d399' : '#f59e0b'}
+                >
+                  {ajustementSante.montant < 0 ? '− ' : '+ '}{fcfa(Math.abs(ajustementSante.montant))}
+                </Champ>
+              </>
+            )}
             <Champ libelle="Prime Nette" couleur="#60a5fa">{fcfa(primeNetteAffichee)}</Champ>
             <Champ libelle="Accessoire">{fcfa(quote.accessoires)}</Champ>
             <Champ libelle="Taxes">{fcfa(quote.taxes)}</Champ>
@@ -445,7 +491,12 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                     <div><strong>Formule de couverture :</strong> {detailBranche.detail?.libelle_offre || '—'}</div>
                     <div><strong>Type de contrat :</strong> {detailBranche.detail?.libelle_type_contrat || '—'}</div>
                     <div><strong>Gestionnaire :</strong> {detailBranche.detail?.gestionnairesante || '—'}</div>
-                    <div><strong>Adhérents :</strong> {detailBranche.adherents?.length || 0} • <strong>Affiliés :</strong> {detailBranche.affilies?.length || 0}</div>
+                    {/* Chaque adhérent est aussi un affilié de lien A : affiliés = conjoints et enfants */}
+                    <div>
+                      <strong>Adhérents :</strong> {detailBranche.adherents?.length || 0} • <strong>Affiliés :</strong>{' '}
+                      {(detailBranche.affilies || []).filter((f) => String(f.lien || '').trim().toUpperCase() !== 'A').length}
+                      {' '}• <strong>Personnes assurées :</strong> {detailBranche.affilies?.length || 0}
+                    </div>
                   </div>
                   {(detailBranche.filiales || []).map((f) => (
                     <div key={f.idfiliale} style={{ padding: '0.5rem 0.6rem', borderRadius: '6px', background: 'var(--bg-surface-elevated)' }}>
@@ -728,6 +779,12 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </div>
         </div>
 
+        {modeReprise && controleReprise && !controleReprise.ok && (
+          <div className="no-print" role="alert" style={{ padding: '0.65rem 0.85rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--text-primary)', fontSize: '0.84rem', marginBottom: '0.75rem' }}>
+            Affaire antérieure : {controleReprise.message}
+          </div>
+        )}
+
         {/* Modal Actions */}
         <div
           className="no-print"
@@ -826,6 +883,16 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                   <Users size={15} />
                   <span>Imprimer Liste des assurés</span>
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => imprimerDocumentSante('bordereau', { iddevis: idDevisBase })}
+                  title="Bordereau récapitulatif des primes par assuré : prime de base, surprimes, réduction ou majoration — enregistrable en PDF"
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <FileText size={15} />
+                  <span>Imprimer Bordereau des primes</span>
+                </button>
               </>
             )}
 
@@ -842,7 +909,21 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               </button>
             )}
 
-            {!isConsolidated && onConvertToContract && aLeDroit('devis.validate') && (
+            {modeReprise && aLeDroit('contrats.reprise') && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!controleReprise?.ok}
+                onClick={() => { onClose(); navigate(`/user/reprises?finaliser=${idDevisBase}`); }}
+                title="Police compagnie, date d'émission d'origine et paiement de la quittance, puis enregistrement du contrat"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <CheckCircle size={15} />
+                <span>Finaliser l'affaire antérieure</span>
+              </button>
+            )}
+
+            {!modeReprise && !isConsolidated && onConvertToContract && aLeDroit('devis.validate') && (
               (() => {
                 const todayStr = new Date().toISOString().split('T')[0];
                 const isExpired = quote.date_expiration ? new Date(quote.date_expiration) < new Date(todayStr) : false;

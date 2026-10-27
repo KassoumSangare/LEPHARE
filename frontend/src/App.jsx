@@ -171,6 +171,16 @@ function App() {
                 <Route path="/user/contracts/:id/renouvellement" element={<RenouvellementPage />} />
                 <Route path="/user/endorsements" element={<EndorsementPage />} />
                 <Route path="/user/reprises" element={<RepriseAffairesPage />} />
+                {/* Affaires antérieures : écrans de devis de la Production, sans quitter la vue (utils/navigationDevis.js) */}
+                <Route path="/user/reprises/saisie/auto" element={<NewAutoQuotePage />} />
+                <Route path="/user/reprises/saisie/mrh" element={<NewMrhQuotePage />} />
+                <Route path="/user/reprises/saisie/sante" element={<NewSanteQuotePage />} />
+                <Route path="/user/reprises/saisie/ia" element={<NewIaQuotePage />} />
+                <Route path="/user/reprises/saisie/rc" element={<NewRisquesDiversQuotePage key="rc-reprise" produit={8} />} />
+                <Route path="/user/reprises/saisie/mrp" element={<NewRisquesDiversQuotePage key="mrp-reprise" produit={7} />} />
+                <Route path="/user/reprises/saisie/tous-dommages" element={<NewTousDommagesQuotePage />} />
+                <Route path="/user/reprises/saisie/voyage" element={<NewVoyageQuotePage />} />
+                <Route path="/user/reprises/saisie/transport" element={<NewTransportHorsGucePage />} />
                 <Route path="/user/asaci" element={<AsaciPage />} />
 
                 {/* ===== MODULE F – ENCAISSEMENT & TRÉSORERIE ===== */}

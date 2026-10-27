@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate } from '../../../utils/navigationDevis';
 import { AlertTriangle, ChevronDown, ClipboardList, Download, FileCheck2, Search, UserPlus, X } from 'lucide-react';
 import { questionnaireApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';

@@ -302,14 +302,20 @@ urlpatterns = [
     # entière), réclamation et encaissement des commissions
     # Cockpit opérationnel : chiffres du tableau de bord, chaque bloc selon les droits (production/views_cockpit.py)
     path("cockpit/", views_cockpit.cockpit, name="cockpit"),
+    # Cloche de la barre du haut : devis arrivant à échéance ou échus récemment, selon les droits
+    path("alertes/", views_cockpit.alertes, name="alertes-cloche"),
     # Reprise des affaires antérieures (production/views_reprise.py)
     path("reprise/", views_reprise.reprises, name="reprise_liste"),
     path("reprise/referentiels/", views_reprise.referentiels, name="reprise_referentiels"),
     path("reprise/modele/", views_reprise.modele, name="reprise_modele"),
     path("reprise/import/analyse/", views_reprise.import_analyse, name="reprise_import_analyse"),
     path("reprise/import/", views_reprise.import_fichier, name="reprise_import"),
-    path("reprise/<int:pk>/", views_reprise.reprise, name="reprise_suppression"),
-    path("reprise/<int:pk>/commission/", views_reprise.commission, name="reprise_commission"),
+    # Affaire saisie dans les écrans de devis, ouverts depuis Affaires antérieures, puis finalisée en affaire antérieure
+    path("reprise/devis/", views_reprise.devis_en_attente, name="reprise_devis_en_attente"),
+    path("reprise/devis/<int:id_devis>/", views_reprise.devis, name="reprise_devis"),
+    path("reprise/devis/<int:id_devis>/attente/", views_reprise.devis_attente, name="reprise_devis_attente"),
+    path("reprise/contrat/<int:id_contrat>/", views_reprise.reprise_du_contrat, name="reprise_contrat"),
+    path("reprise/<int:pk>/", views_reprise.reprise, name="reprise_detail"),
     path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),
     # Bordereau récapitulatif des encaissements d'une période (Excel ; impression dans l'application)
     path("finance/encaissements/recapitulatif/excel/", views_bordereaux.recapitulatif_encaissements_excel, name="finance_recapitulatif_encaissements_excel"),

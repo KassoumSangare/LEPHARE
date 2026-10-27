@@ -4,7 +4,6 @@ Reprise des affaires antérieures : routes de l'écran Production > Affaires ant
 GET    /api/reprise/                      liste des reprises (filtres, totaux, pages de 50)
 GET    /api/reprise/referentiels/         compagnies, branches et leurs catégories, énergies, marques
 POST   /api/reprise/                      une affaire saisie à l'écran
-PATCH  /api/reprise/<id>/commission/      commission perçue ou non
 DELETE /api/reprise/<id>/                 reprise erronée retirée (rien n'a été fait dessus)
 GET    /api/reprise/modele/               modèle Excel de l'import
 POST   /api/reprise/import/analyse/       fichier contrôlé ligne par ligne, rien n'est enregistré
@@ -30,10 +29,13 @@ from autorisations.rbac import a_le_droit
 from customer.models import Client
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
-from .reprise import PAIEMENTS, ErreurReprise, controler, enregistrer, normaliser, reprendre, supprimer
+from .reprise import (PAIEMENTS, ErreurReprise, controler, description_devis, devis_a_finaliser, devis_reprise, enregistrer,
+                      marquer_devis, normaliser, reprendre, reprendre_devis, risque_branche, supprimer)
+from .views import ContratViewSet
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 PAGE = 50
+TAILLE_MAX = 2000
 LIGNES_MAX = 2000
 
 # Colonnes du modèle Excel : (titre, clé de l'API ou de la résolution, aide)
@@ -56,10 +58,8 @@ COLONNES = [
     ("FGA", "Fga", "Automobile, facultatif (compris dans la prime nette)."),
     ("CEDEAO", "Cedeao", "Automobile, facultatif (comprise dans la prime nette)."),
     ("Prime TTC", "PrimeTtc", "Prime nette + accessoires + taxes ; calculée si vide."),
-    ("Taux de commission (%)", "TauxCommission", "Facultatif : taux de la compagnie et de la branche à défaut."),
-    ("Commission perçue", "CommissionPercue", "Oui ou Non (par défaut)."),
-    ("Paiement", "StatutPaiement", "Payée (par défaut), Partiellement payée ou Impayée."),
-    ("Montant encaissé", "MontantEncaisse", "Paiement partiel seulement."),
+    ("Taux de commission (%)", "TauxCommission", "Facultatif : taux de la compagnie et de la branche à défaut. "
+                                                    "La quittance est reprise encaissée et la commission perçue."),
     ("Immatriculation", "Immatriculation", "Automobile : obligatoire."),
     ("Marque", "Marque", "Automobile."),
     ("Modèle", "Modele", "Automobile."),
@@ -94,12 +94,21 @@ def _erreur(message, code=status.HTTP_400_BAD_REQUEST):
     return Response({"error": message}, status=code)
 
 
+# Affaire renouvelée : renouvellement (avenant REN) confirmé en contrat, non annulé, sur la même police. Elle est alors
+# migrée dans le module Contrats et quitte la liste des affaires antérieures (demande du 2026-10-27 : « après
+# renouvellement ils doivent être migrés dans le module contrat ») ; ContratViewSet._filtres_portefeuille fait l'inverse.
+SQL_RENOUVELEE = """EXISTS (SELECT 1 FROM stdcontrat x JOIN stdavenant xa ON xa.idavenant = x.idavenant
+                            WHERE x.numeropolice = c.numeropolice AND xa.codeavenant = 'REN'
+                              AND COALESCE(x.idcontratannulation, 0) = 0 AND x.dateeffet > c.dateeffet)"""
+
+
 # ------------------------------------------------------------------ liste
 @api_view(["GET", "POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def reprises(request):
-    """GET : liste filtrée (annee, compagnie, produit, paiement, commission=A_PERCEVOIR, q, page) ; POST : une affaire."""
+    """GET : liste filtrée (annee, compagnie, produit, q, page) des affaires pas encore renouvelées, nombre d'affaires
+    renouvelées (migrées dans le module Contrats) ; POST : une affaire."""
     if request.method == "POST":
         try:
             resultat = reprendre(request.data, request.user)
@@ -115,50 +124,71 @@ def reprises(request):
     if p.get("compagnie"):
         conditions.append("c.idcompagnie = %s")
         params.append(int(p["compagnie"]))
-    if p.get("produit"):
-        conditions.append("c.idproduit = %s")
-        params.append(int(p["produit"]))
-    paiement = p.get("paiement")
-    if paiement == "PAYEE":
-        conditions.append("q.primettc - COALESCE(q.mt_encaisse, 0) <= 0")
-    elif paiement == "PARTIELLE":
-        conditions.append("COALESCE(q.mt_encaisse, 0) > 0 AND q.primettc - COALESCE(q.mt_encaisse, 0) > 0")
-    elif paiement == "IMPAYEE":
-        conditions.append("COALESCE(q.mt_encaisse, 0) = 0")
-    if p.get("commission") == "A_PERCEVOIR":
-        conditions.append("NOT r.commission_percue AND COALESCE(c.commissionintermediaire, 0) > 0")
     if p.get("q"):
         conditions.append("(UPPER(c.numeropolice) LIKE %s OR UPPER(COALESCE(c.numeropolicecompagnie, '')) LIKE %s "
                           "OR UPPER(TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, ''))) LIKE %s OR UPPER(q.numeroquittance) LIKE %s)")
         terme = f"%{str(p['q']).strip().upper()}%"
         params += [terme] * 4
-    where = " AND ".join(conditions)
-    base = f"""FROM lephare_reprise r
-               JOIN stdcontrat c ON c.idcontrat = r.idcontrat
-               JOIN stdquittance q ON q.idquittance = r.idquittance
-               LEFT JOIN stdclient cl ON cl.idclient = c.idclient
-               LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
-               LEFT JOIN stdproduit pr ON pr.idproduit = c.idproduit
-               WHERE {where}"""
+    # Branche : un produit, ou plusieurs séparés par des virgules (onglet du registre regroupant des produits)
+    produits = [int(x) for x in str(p.get("produit") or "").split(",") if x.strip().isdigit()]
+    # Affaires renouvelées, migrées dans le module Contrats : comptées à part, hors de la liste
+    conditions_migrees = conditions + [SQL_RENOUVELEE] + (["c.idproduit = ANY(%s)"] if produits else [])
+    params_migrees = params + ([produits] if produits else [])
+    conditions.append(f"NOT {SQL_RENOUVELEE}")
+    # Compteurs par branche (onglets) : mêmes filtres, branche exceptée
+    conditions_branches, params_branches = list(conditions), list(params)
+    if produits:
+        conditions.append("c.idproduit = ANY(%s)")
+        params.append(produits)
+
+    def base(where):
+        return f"""FROM lephare_reprise r
+                   JOIN stdcontrat c ON c.idcontrat = r.idcontrat
+                   JOIN stdquittance q ON q.idquittance = r.idquittance
+                   LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+                   LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
+                   LEFT JOIN stdproduit pr ON pr.idproduit = c.idproduit
+                   WHERE {' AND '.join(where)}"""
     page = max(1, int(p.get("page") or 1))
+    # Taille de page : 50 par défaut ; la vue (tableau paginé côté écran, comme la Gestion des devis) en demande 2 000
+    taille = min(max(int(p.get("taille") or PAGE), 1), TAILLE_MAX)
     with connection.cursor() as cursor:
+        # Affaires antérieures soldées (consigne du 2026-10-27) : primes encaissées, commissions perçues
         totaux = _lignes_sql(cursor, f"""SELECT COUNT(*) AS nombre, COALESCE(SUM(q.primettc), 0) AS ttc,
+                                               COALESCE(SUM(c.primenette), 0) AS primenette,
                                                COALESCE(SUM(q.mt_encaisse), 0) AS encaisse,
-                                               COALESCE(SUM(q.primettc - COALESCE(q.mt_encaisse, 0)), 0) AS reste,
-                                               COALESCE(SUM(c.commissionintermediaire), 0) AS commission,
-                                               COALESCE(SUM(c.commissionintermediaire) FILTER (WHERE NOT r.commission_percue), 0) AS commission_a_percevoir
-                                        {base}""", params)[0]
+                                               COALESCE(SUM(c.commissionintermediaire), 0) AS commission
+                                        {base(conditions)}""", params)[0]
+        migrees = _lignes_sql_brut(cursor, f"SELECT COUNT(*) {base(conditions_migrees)}", params_migrees)[0][0]
         lignes = _lignes_sql(cursor, f"""SELECT r.id, r.idcontrat, r.mode, r.lot, r.commission_percue, r.creepar, r.idutilisateur,
                                                 r.datecreation, c.numeropolice, c.numeropolicecompagnie, c.dateemission, c.dateeffet,
                                                 c.dateexpiration, c.idcompagnie, co.raisonsociale AS compagnie, c.idproduit,
                                                 pr.libelleproduit AS branche, c.idclient,
                                                 TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client,
                                                 c.commissionintermediaire AS commission, c.taux_commission,
-                                                q.numeroquittance, q.primettc, COALESCE(q.mt_encaisse, 0) AS encaisse
-                                         {base}
-                                         ORDER BY r.id DESC LIMIT {PAGE} OFFSET %s""", params + [(page - 1) * PAGE])
+                                                q.numeroquittance, q.primettc, COALESCE(q.mt_encaisse, 0) AS encaisse,
+                                                r.donnees ->> 'Description' AS description,
+                                                -- Échéance, comme les statuts du portefeuille des contrats
+                                                CASE WHEN COALESCE(c.idcontratannulation, 0) <> 0 THEN 'annule'
+                                                     WHEN c.dateexpiration::date < CURRENT_DATE THEN 'echu'
+                                                     WHEN c.dateexpiration::date <= CURRENT_DATE + %s THEN 'a_renouveler'
+                                                     ELSE 'en_cours' END AS statut,
+                                                -- Devis de renouvellement ouvert, pas encore confirmé (production/renouvellement.py)
+                                                (SELECT d.numerodevis FROM stddevis d JOIN stdavenant da ON da.idavenant = d.idavenant
+                                                 WHERE da.codeavenant = 'REN' AND d.idoldhist = c.iddevis
+                                                   AND NOT COALESCE(d.confirme, false) AND NOT COALESCE(d.archive, false)
+                                                 ORDER BY d.iddevis DESC LIMIT 1) AS devis_renouvellement
+                                         {base(conditions)}
+                                         ORDER BY r.id DESC LIMIT {taille} OFFSET %s""",
+                             [ContratViewSet.DELAI_RENOUVELLEMENT_JOURS] + params + [(page - 1) * taille])
+        par_branche = {str(i): n for i, n in _lignes_sql_brut(cursor, f"""
+            SELECT c.idproduit, COUNT(*) FROM lephare_reprise r
+            JOIN stdcontrat c ON c.idcontrat = r.idcontrat JOIN stdquittance q ON q.idquittance = r.idquittance
+            LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+            WHERE {' AND '.join(conditions_branches)} GROUP BY 1""", params_branches)}
         annees = [a[0] for a in _lignes_sql_brut(cursor, "SELECT DISTINCT EXTRACT(YEAR FROM c.dateeffet)::int FROM lephare_reprise r "
-                                                         "JOIN stdcontrat c ON c.idcontrat = r.idcontrat ORDER BY 1 DESC")]
+                                                         f"JOIN stdcontrat c ON c.idcontrat = r.idcontrat WHERE NOT {SQL_RENOUVELEE} "
+                                                         "ORDER BY 1 DESC")]
     resultat = []
     for l in lignes:
         ttc, encaisse = Decimal(l["primettc"] or 0), Decimal(l["encaisse"] or 0)
@@ -172,12 +202,14 @@ def reprises(request):
             "Commission": float(l["commission"] or 0), "TauxCommission": float(l["taux_commission"] or 0),
             "CommissionPercue": l["commission_percue"], "Mode": l["mode"], "Lot": l["lot"] or "", "CreePar": l["creepar"],
             "Auteur": l["idutilisateur"] == request.user.id, "DateCreation": _iso(l["datecreation"]),
+            "IdProduit": l["idproduit"], "Description": l["description"] or "",
+            "Statut": l["statut"], "DevisRenouvellement": l["devis_renouvellement"] or "",
         })
     return Response({
-        "Lignes": resultat, "Page": page, "Pages": max(1, -(-int(totaux["nombre"]) // PAGE)), "Annees": annees,
-        "Totaux": {"Nombre": int(totaux["nombre"]), "PrimeTtc": float(totaux["ttc"]), "Encaisse": float(totaux["encaisse"]),
-                   "Reste": float(totaux["reste"]), "Commission": float(totaux["commission"]),
-                   "CommissionAPercevoir": float(totaux["commission_a_percevoir"])},
+        "Lignes": resultat, "Page": page, "Pages": max(1, -(-int(totaux["nombre"]) // taille)), "Annees": annees,
+        "ParBranche": par_branche, "Migrees": int(migrees),
+        "Totaux": {"Nombre": int(totaux["nombre"]), "PrimeTtc": float(totaux["ttc"]), "PrimeNette": float(totaux["primenette"]),
+                   "Encaisse": float(totaux["encaisse"]), "Commission": float(totaux["commission"])},
         "PeutToutSupprimer": a_le_droit(request.user, "contrats.cancel"),
     })
 
@@ -187,10 +219,77 @@ def _lignes_sql_brut(cursor, sql, params=None):
     return cursor.fetchall()
 
 
-@api_view(["DELETE"])
+SQL_REPRISE = """
+    SELECT r.id, r.idcontrat, r.mode, r.lot, r.donnees, r.commission_percue, r.date_commission_percue, r.creepar,
+           r.datecreation, c.numeropolice, c.numeropolicecompagnie, c.idproduit, pr.libelleproduit AS branche,
+           co.raisonsociale AS compagnie, TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client, c.idclient,
+           c.dateemission, c.dateeffet, c.dateexpiration, c.primenette, c.accessoire, c.taxe, c.fga, c.cedeao, c.primettc,
+           c.taux_commission, c.commissionintermediaire, q.numeroquittance, COALESCE(q.mt_encaisse, 0) AS encaisse,
+           t.libelle AS categorie
+    FROM lephare_reprise r
+    JOIN stdcontrat c ON c.idcontrat = r.idcontrat
+    JOIN stdquittance q ON q.idquittance = r.idquittance
+    LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+    LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
+    LEFT JOIN stdproduit pr ON pr.idproduit = c.idproduit
+    LEFT JOIN stdcontratdetail cd ON cd.idcontrat = c.idcontrat
+    LEFT JOIN stdtarif t ON t.idtarif = cd.idtarif
+"""
+
+
+def _fiche(ligne):
+    """Reprise lue en base : contrat, primes et risque tels que saisis, libellés des champs de la branche."""
+    donnees = ligne["donnees"] if isinstance(ligne["donnees"], dict) else {}
+    risque = risque_branche(ligne["idproduit"])
+    ttc, encaisse = Decimal(ligne["primettc"] or 0), Decimal(ligne["encaisse"] or 0)
+    statut = "PAYEE" if encaisse >= ttc else "PARTIELLE" if encaisse > 0 else "IMPAYEE"
+    return {
+        "Id": ligne["id"], "IdContrat": ligne["idcontrat"], "NumeroPolice": ligne["numeropolice"],
+        "NumeroPoliceCompagnie": ligne["numeropolicecompagnie"] or "", "NumeroQuittance": ligne["numeroquittance"],
+        "IdProduit": ligne["idproduit"], "Branche": ligne["branche"] or "", "Categorie": (ligne["categorie"] or "").strip(),
+        "Compagnie": ligne["compagnie"] or "", "Client": ligne["client"] or "", "IdClient": ligne["idclient"],
+        "DateEmission": _iso(ligne["dateemission"]), "DateEffet": _iso(ligne["dateeffet"]), "DateExpiration": _iso(ligne["dateexpiration"]),
+        "PrimeNette": float(ligne["primenette"] or 0), "Accessoire": float(ligne["accessoire"] or 0), "Taxe": float(ligne["taxe"] or 0),
+        "Fga": float(ligne["fga"] or 0), "Cedeao": float(ligne["cedeao"] or 0), "PrimeTtc": float(ttc),
+        "TauxCommission": float(ligne["taux_commission"] or 0), "Commission": float(ligne["commissionintermediaire"] or 0),
+        "CommissionPercue": ligne["commission_percue"], "DateCommissionPercue": _iso(ligne["date_commission_percue"]),
+        "Encaisse": float(encaisse), "Reste": float(ttc - encaisse), "Paiement": statut, "PaiementLibelle": PAIEMENTS[statut],
+        "Etape": risque["Etape"], "Description": donnees.get("Description") or "",
+        "Champs": [{"Libelle": l, "Valeur": val} for l, val in donnees.get("Affichage") or []],
+        "Precisions": donnees.get("Risque") or "", "Observation": donnees.get("Observation") or "",
+        "Mode": ligne["mode"], "Lot": ligne["lot"] or "", "CreePar": ligne["creepar"], "DateCreation": _iso(ligne["datecreation"]),
+    }
+
+
+def _lire(condition, valeur):
+    with connection.cursor() as cursor:
+        lignes = _lignes_sql(cursor, SQL_REPRISE + f" WHERE {condition} = %s ORDER BY cd.idcontratdetail LIMIT 1", [valeur])
+    if not lignes:
+        return None
+    ligne = lignes[0]
+    if isinstance(ligne["donnees"], str):
+        import json
+        ligne["donnees"] = json.loads(ligne["donnees"])
+    return _fiche(ligne)
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def reprise_du_contrat(request, id_contrat):
+    """GET : reprise d'un contrat (fiche contrat), 404 si le contrat n'a pas été repris."""
+    fiche = _lire("r.idcontrat", id_contrat)
+    return Response(fiche) if fiche else _erreur("Ce contrat n'est pas une affaire antérieure reprise.", status.HTTP_404_NOT_FOUND)
+
+
+@api_view(["GET", "DELETE"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def reprise(request, pk):
+    """GET : fiche de la reprise ; DELETE : reprise erronée retirée."""
+    if request.method == "GET":
+        fiche = _lire("r.id", pk)
+        return Response(fiche) if fiche else _erreur("Reprise introuvable.", status.HTTP_404_NOT_FOUND)
     try:
         resultat = supprimer(pk, request.user, a_le_droit(request.user, "contrats.cancel"))
     except ErreurReprise as erreur:
@@ -198,37 +297,81 @@ def reprise(request, pk):
     return Response({**resultat, "message": f"Reprise retirée : police {resultat['NumeroPolice']} et quittance {resultat['NumeroQuittance']} supprimées."})
 
 
-@api_view(["PATCH"])
+def _devis_json(cursor, v):
+    """Devis saisi pour une reprise : identité, primes et risque (finalisation, liste des devis à finaliser)."""
+    return {
+        "IdDevis": v["iddevis"], "NumeroDevis": v["numerodevis"], "IdProduit": v["idproduit"], "Branche": v["branche"] or "",
+        "IdCompagnie": v["idcompagnie"], "Compagnie": v["compagnie"] or "", "IdClient": v["idclient"], "Client": v["client"] or "",
+        "DateEmission": _iso(v["dateemission"]), "DateEffet": _iso(v["dateeffet"]), "DateExpiration": _iso(v["dateexpiration"]),
+        "PrimeNette": float(v["primenette"] or 0), "Accessoire": float(v["accessoire"] or 0), "Taxe": float(v["taxe"] or 0),
+        "Fga": float(v["fga"] or 0), "Cedeao": float(v["cedeao"] or 0), "PrimeTtc": float(v["primettc"] or 0),
+        "NumeroPoliceCompagnie": v["numeropolicecompagnie"] or "", "Flotte": v["flotte"], "DateCreation": _iso(v["datecreation"]),
+        "Champs": [{"Libelle": l, "Valeur": val} for l, val in description_devis(cursor, v["iddevis"], v["idproduit"])],
+    }
+
+
+@api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
-def commission(request, pk):
-    """PATCH {Percue: bool} : commission de la reprise perçue (date du jour) ou à percevoir."""
-    percue = str(request.data.get("Percue")).lower() in ("true", "1", "oui")
+def devis_en_attente(request):
+    """GET : devis saisis pour une reprise (effet avant le 1er janvier, enregistrés cette année), pas encore finalisés."""
     with connection.cursor() as cursor:
-        cursor.execute("UPDATE lephare_reprise SET commission_percue = %s, date_commission_percue = %s WHERE id = %s",
-                       [percue, date.today() if percue else None, pk])
-        if not cursor.rowcount:
-            return _erreur("Reprise introuvable.", status.HTTP_404_NOT_FOUND)
-    return Response({"Id": pk, "CommissionPercue": percue})
+        return Response({"Devis": [_devis_json(cursor, v) for v in devis_a_finaliser(cursor)]})
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def devis_attente(request, id_devis):
+    """POST : devis enregistré en mode reprise contrôlé (affaire nouvelle, effet avant le 1er janvier) et noté en attente
+    de finalisation ; 400 avec le motif sinon (fenêtre du devis enregistré)."""
+    try:
+        v = marquer_devis(id_devis, request.user)
+    except ErreurReprise as erreur:
+        return _erreur(str(erreur))
+    return Response({"IdDevis": v["iddevis"], "NumeroDevis": v["numerodevis"]})
+
+
+@api_view(["GET", "POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def devis(request, id_devis):
+    """GET : devis à finaliser ; POST : devis confirmé en affaire antérieure (police compagnie, date d'émission d'origine),
+    quittance encaissée et commission perçue."""
+    if request.method == "GET":
+        try:
+            with connection.cursor() as cursor:
+                return Response(_devis_json(cursor, devis_reprise(cursor, id_devis)))
+        except ErreurReprise as erreur:
+            return _erreur(str(erreur))
+    try:
+        resultat = reprendre_devis(id_devis, request.data, request.user)
+    except ErreurReprise as erreur:
+        return _erreur(str(erreur))
+    return Response({**resultat, "message": f"Affaire antérieure enregistrée : police {resultat['NumeroPolice']}, quittance "
+                                             f"{resultat['NumeroQuittance']}."}, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def referentiels(request):
-    """Listes de l'écran : compagnies actives, branches actives et leurs catégories, énergies, marques."""
+    """Listes de l'écran : compagnies actives, branches actives (catégories, étape du risque et ses champs), énergies,
+    marques et genres de véhicule."""
     with connection.cursor() as cursor:
         compagnies = _lignes_sql(cursor, "SELECT idcompagnie AS id, raisonsociale AS nom FROM stdcompagnie "
                                          "WHERE idcompagnie > 0 AND COALESCE(active, true) ORDER BY raisonsociale")
         produits = _lignes_sql(cursor, "SELECT idproduit AS id, libelleproduit AS libelle FROM stdproduit "
                                        "WHERE active AND idproduit BETWEEN 1 AND 9 ORDER BY idproduit")
         for p in produits:
+            p.update(risque_branche(p["id"]))
             p["categories"] = [{"id": t, "libelle": f"{c} — {l}", "code": c}
                                for t, l, c in _lignes_sql_brut(cursor, "SELECT id_tarif, libelle_tarif, TRIM(code_categorie) "
                                                                        "FROM fn_liste_tarif_produit(%s) ORDER BY 3, 1", [p["id"]])]
         energies = _lignes_sql(cursor, "SELECT idenergie AS id, libelle FROM stdenergie WHERE idenergie > 0 ORDER BY 1")
         marques = _lignes_sql(cursor, "SELECT idmarque AS id, libellemarque AS libelle FROM stdmarque ORDER BY libellemarque")
-    return Response({"Compagnies": compagnies, "Produits": produits, "Energies": energies, "Marques": marques,
+        genres = _lignes_sql(cursor, "SELECT idgenre AS id, libellegenre AS libelle FROM stdgenrevehicule WHERE idgenre > 0 ORDER BY 1")
+    return Response({"Compagnies": compagnies, "Produits": produits, "Energies": energies, "Marques": marques, "Genres": genres,
                      "AnneeLimite": date.today().year})
 
 
@@ -243,7 +386,7 @@ def modele(request):
     ws.title = "Affaires antérieures"
     ws.append([t for t, _, _ in COLONNES])
     ws.append(["", "KOUASSI", "AMANI JEAN", "0700000000", "Particulier", "NSIA ASSURANCES", "Automobile", "201", "PC-2023-001245",
-               "15/03/2023", "15/03/2023", "14/03/2024", 98205, 5000, 14965, "", 1000, 118170, 20, "Non", "Payée", "",
+               "15/03/2023", "15/03/2023", "14/03/2024", 98205, 5000, 14965, "", 1000, 118170, 20,
                "AB 1234 CI", "TOYOTA", "COROLLA", 8, 5, "Essence", 15000000, 9000000, "10/01/2019", "", "Ligne d'exemple : à remplacer"])
     for cellule in ws[1]:
         cellule.font = Font(bold=True, color="FFFFFF")

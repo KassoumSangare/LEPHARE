@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useNavigate } from '../../../utils/navigationDevis';
 import { quoteApi, mrhApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {

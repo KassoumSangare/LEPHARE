@@ -29,14 +29,18 @@ from .views import (
     annuler_saisie_affilie,
     annuler_saisie_filiale,
 )
+from .avenant import avenant_sante
 from .views_devis_sante import (
     apercu_devis_sante_vue,
+    bordereau_primes,
     enregistrer_adherent,
     enregistrer_affilie,
     enregistrer_devis_sante,
     enregistrer_filiale,
     initialiser_devis_sante,
     importer_affilies,
+    importer_classique,
+    modele_import_classique,
     lire_devis_sante,
     supprimer_objet_saisie,
 )
@@ -123,9 +127,15 @@ urlpatterns = [
     path(r"devissante/affilie/", enregistrer_affilie, name="affilie_devis_sante"),
     path(r"devissante/suppression/", supprimer_objet_saisie, name="suppression_saisie_sante"),
     path(r"devissante/importation/", importer_affilies, name="importation_saisie_sante"),
+    # Import Santé classique (modèle d'OREOLE) : couvertures, familles et primes déduites du fichier
+    path(r"devissante/importation/classique/", importer_classique, name="importation_sante_classique"),
+    path(r"devissante/importation/classique/modele/", modele_import_classique, name="modele_import_sante_classique"),
     path(r"devissante/enregistrement/", enregistrer_devis_sante, name="enregistrement_devis_sante_lephare"),
     path(r"devissante/apercu/", apercu_devis_sante_vue, name="apercu_devis_sante"),
     path(r"devissante/<int:iddevis>/", lire_devis_sante, name="lecture_devis_sante"),
+    path(r"devissante/<int:iddevis>/bordereau/", bordereau_primes, name="bordereau_primes_sante"),
+    # Avenant de modification d'un contrat en cours (changement de formule, incorporation) : préparation et devis
+    path(r"devissante/avenant/<int:idcontrat>/", avenant_sante, name="avenant_sante"),
 
 ]
 urlpatterns += router.urls
