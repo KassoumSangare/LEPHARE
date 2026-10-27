@@ -12,8 +12,10 @@ import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
+import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
+import { confirmer } from '../../../utils/dialogue';
 import { arrondirMontant, compagnieParDefaut } from '../../../utils/parametrage';
 
 // Production Multirisques Habitation d'URANUS (Contrat, Maisons, Offre/récapitulatif, Souscripteur) :
@@ -34,7 +36,8 @@ const ETAPES = [
   { num: 5, libelle: 'Récapitulatif', icone: FileCheck },
 ];
 
-const fcfa = (val) => Math.round(Number(String(val ?? 0).replace(/\s/g, '')) || 0).toLocaleString('fr-FR');
+// Espace insécable ordinaire : l'espace fine du français n'est pas dessinée par toutes les polices (montants en gras)
+const fcfa = (val) => Math.round(Number(String(val ?? 0).replace(/\s/g, '')) || 0).toLocaleString('fr-FR').replace(/ /g, ' ');
 const cleanNum = (str) => (typeof str === 'number' ? str : parseFloat(String(str || '0').replace(/\s/g, '')) || 0);
 const chiffres = (v) => String(v || '').replace(/[^0-9]/g, '');
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
@@ -210,6 +213,8 @@ export const NewMrhQuotePage = () => {
   const [maisons, setMaisons] = useState([]);
   const [maisonOuverte, setMaisonOuverte] = useState(null);
   const [editingMaisonId, setEditingMaisonId] = useState(null);
+  // Formulaire d'ajout replié quand le devis a déjà des maisons (ouvert à la demande ou pour modifier une maison)
+  const [formulaireMaison, setFormulaireMaison] = useState(false);
   const [currentUsageCode, setCurrentUsageCode] = useState('');
   const [currentAdresse, setCurrentAdresse] = useState('');
   const [capitaux, setCapitaux] = useState(MAISON_VIDE);
@@ -393,10 +398,12 @@ export const NewMrhQuotePage = () => {
       success('Maison ajoutée au devis.');
     }
     viderFormulaireMaison();
+    setFormulaireMaison(false);
   };
 
   const handleEditMaison = (m) => {
     setEditingMaisonId(m.id);
+    setFormulaireMaison(true);
     setCurrentUsageCode(m.code_usage || currentUsageCode);
     setCurrentAdresse(m.adresse || '');
     setCapitaux(Object.fromEntries(CAPITAUX.map((c) => [c.cle, m[c.cle] ? String(m[c.cle]) : ''])));
@@ -405,8 +412,13 @@ export const NewMrhQuotePage = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleRemoveMaison = (id) => {
-    setMaisons((prev) => prev.filter((m) => m.id !== id));
+  const handleRemoveMaison = async (m, idx) => {
+    if (!(await confirmer({
+      ton: 'danger', titre: `Retirer la maison ${idx + 1} ?`, confirmer: 'Retirer',
+      message: `${m.usage_libelle || 'Maison'}${m.adresse ? `, ${m.adresse}` : ''} : prime nette ${fcfa(primeNetteMaison(m))} F. La maison et ses garanties sont retirées du devis.`,
+    }))) return;
+    const id = m.id;
+    setMaisons((prev) => prev.filter((x) => x.id !== id));
     if (editingMaisonId === id) viderFormulaireMaison();
   };
 
@@ -719,6 +731,16 @@ export const NewMrhQuotePage = () => {
   // ------------------------------------------------------------------ affichage
   const nomCompagnie = companies.find((c) => c.id === Number(compagnieId))?.nom || '';
   const libelleTarif = (tarifs.find((t) => Number(t.IdTarif) === Number(categorieId))?.LibelleTarif) || (Number(categorieId) === ID_TARIF_MRH ? 'MULTIRISQUE HABITATION' : `Tarif n° ${categorieId}`);
+  // Rubrique du récapitulatif, avec retour à l'étape où elle se modifie
+  const titreRecap = (libelle, etape) => (
+    <div style={{ ...styles.sousTitre, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+      <span>{libelle}</span>
+      <button type="button" onClick={() => setStep(etape)}
+        style={{ background: 'transparent', border: 'none', color: 'var(--primary-500)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700, textTransform: 'none', letterSpacing: 0, display: 'inline-flex', alignItems: 'center', gap: '0.2rem', padding: 0 }}>
+        <Edit3 size={12} /> Modifier
+      </button>
+    </div>
+  );
   const ligneRecap = (libelle, valeur, fort) => (
     <div style={styles.ligneRecap}>
       <span style={{ color: 'var(--text-muted)' }}>{libelle}</span>
@@ -755,31 +777,7 @@ export const NewMrhQuotePage = () => {
       </div>
 
       {/* ÉTAPES */}
-      {step <= 5 && (
-        <nav aria-label="Étapes du devis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '0.5rem' }}>
-          {ETAPES.map(({ num, libelle, icone: Icone }) => {
-            const actif = step === num;
-            const fait = step > num;
-            return (
-              <button key={num} type="button" onClick={() => allerA(num)} aria-current={actif ? 'step' : undefined}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.7rem 0.9rem', borderRadius: '12px', cursor: 'pointer', textAlign: 'left',
-                  border: `1px solid ${actif ? 'var(--primary-500)' : 'var(--border-subtle)'}`, background: actif ? 'var(--primary-glow)' : 'var(--bg-surface)',
-                  color: actif ? 'var(--primary-500)' : 'var(--text-secondary)',
-                }}>
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-                  background: fait ? 'var(--accent-emerald)' : actif ? 'var(--primary-500)' : 'var(--bg-surface-elevated)', color: fait || actif ? '#fff' : 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 800,
-                }}>{fait ? <CheckCircle2 size={16} /> : num}</span>
-                <span style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Étape {num}</span>
-                  <span style={{ fontSize: '0.86rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}><Icone size={14} /> {libelle}</span>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-      )}
+      {step <= 5 && <EtapesDevis etapes={ETAPES} etape={step} onAller={allerA} />}
 
       {avertissementReprise && step <= 5 && <Alerte couleur="var(--accent-amber)">{avertissementReprise}</Alerte>}
 
@@ -832,144 +830,161 @@ export const NewMrhQuotePage = () => {
           {/* ---------------------------------------------------------- ÉTAPE 2 : HABITATIONS */}
           {step === 2 && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <h2 style={{ ...styles.titreCarte, margin: 0 }}><Building size={18} style={{ color: 'var(--primary-500)' }} /> {editingMaisonId ? 'Modifier la maison' : 'Ajouter une maison'}</h2>
-                {editingMaisonId && <button type="button" className="btn btn-secondary" onClick={viderFormulaireMaison} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}><X size={14} /> Annuler la modification</button>}
-              </div>
-
-              <div style={{ ...styles.grille, marginTop: '1.1rem' }}>
-                <Champ label="Usage de l'habitation" requis aide={currentUsage?.description}>
-                  <select className="form-control" value={currentUsageCode} onChange={(e) => setCurrentUsageCode(e.target.value)} disabled={!usages.length}>
-                    {!usages.length && <option value="">Chargement…</option>}
-                    {trierParLibelle(usages, (u) => u.libelle).map((u) => <option key={u.code} value={u.code}>{u.libelle}</option>)}
-                  </select>
-                </Champ>
-                <Champ label="Adresse de la maison" aide="Facultative">
-                  <input type="text" className="form-control" value={currentAdresse} onChange={(e) => setCurrentAdresse(e.target.value)} />
-                </Champ>
-              </div>
-
-              <div style={styles.sousTitre}>Valeurs assurées</div>
-              <div style={styles.grille}>
-                {capitauxAffiches.map((c) => (
-                  <Champ key={c.cle} label={c.libelle} requis={Boolean(parametresUsage?.[c.parametre])}>
-                    <ChampMontant valeur={capitaux[c.cle]} onChange={(v) => setCapitaux((prev) => ({ ...prev, [c.cle]: v }))} />
-                  </Champ>
-                ))}
-              </div>
-              {formule && (
-                <div style={{ ...styles.aide, display: 'flex', gap: '0.4rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
-                  <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} /> Formule de l'usage : {formule}
-                </div>
-              )}
-
-              {garantiesUsage.obligatoires.length > 0 && (
+              {/* Maisons déjà ajoutées en premier ; formulaire d'ajout ouvert d'office tant qu'il n'y en a aucune */}
+              {erreurs.maisons && <div style={{ marginBottom: '0.9rem' }}><Alerte couleur="var(--accent-rose)">{erreurs.maisons}</Alerte></div>}
+              {maisons.length > 0 && (
                 <>
-                  <div style={styles.sousTitre}>Garanties incluses ({garantiesUsage.obligatoires.length})</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                    {garantiesUsage.obligatoires.map((g) => (
-                      <span key={g.code} style={{ ...styles.pastille('var(--accent-emerald)'), padding: '0.3rem 0.65rem' }}>
-                        <ShieldCheck size={12} /> {g.libelle}{g.taux_repartition != null ? ` · ${g.taux_repartition} %` : ''}
-                      </span>
-                    ))}
-                  </div>
-                  <p style={styles.aide}>Le pourcentage est la part de la prime de base attribuée à la garantie.</p>
-                </>
-              )}
-
-              {garantiesUsage.optionnelles.length > 0 && (
-                <>
-                  <div style={styles.sousTitre}>Garanties facultatives</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: '0.5rem' }}>
-                    {garantiesUsage.optionnelles.map((g) => {
-                      const code = g.code_sous_garantie || g.code;
-                      const actif = selectedGaranties.includes(code);
-                      return (
-                        <label key={code} style={styles.choix(actif)}>
-                          <input type="checkbox" checked={actif} style={{ marginTop: 2, accentColor: 'var(--primary-500)' }}
-                            onChange={() => setSelectedGaranties((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]))} />
-                          <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)' }}>{g.libelle || code}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {availableOptions.length > 0 && (
-                <>
-                  <div style={styles.sousTitre}>Options</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: '0.5rem' }}>
-                    {availableOptions.map((o) => {
-                      const code = o.code_option || o.code;
-                      const actif = selectedOptions.includes(code);
-                      const effet = o.taux_ajustement != null && o.sous_garantie_cible_libelle
-                        ? `${o.signe_ajustement === '-' ? '−' : '+'}${Number(o.taux_ajustement)} % sur ${o.sous_garantie_cible_libelle}`
-                        : o.montant_forfait != null ? `${o.signe_ajustement === '-' ? '−' : '+'}${fcfa(o.montant_forfait)} F` : '';
-                      return (
-                        <label key={code} style={styles.choix(actif)}>
-                          <input type="checkbox" checked={actif} style={{ marginTop: 2, accentColor: 'var(--primary-500)' }}
-                            onChange={() => setSelectedOptions((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]))} />
-                          <span>
-                            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block' }}>{o.libelle || code}</span>
-                            {effet && <span style={{ fontSize: '0.74rem', color: o.signe_ajustement === '-' ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>{effet}</span>}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
-                <button type="button" className="btn btn-primary" onClick={handleSaveMaison} disabled={calculMaisonEnCours} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                  {calculMaisonEnCours ? <Loader2 size={16} className="spin" /> : editingMaisonId ? <CheckCircle2 size={16} /> : <Plus size={16} />}
-                  {editingMaisonId ? 'Recalculer et enregistrer la maison' : 'Calculer et ajouter la maison'}
-                </button>
-              </div>
-
-              <div style={{ ...styles.sousTitre, marginTop: '1.75rem' }}>Maisons du devis ({maisons.length})</div>
-              {erreurs.maisons && <div style={{ marginBottom: '0.6rem' }}><Alerte couleur="var(--accent-rose)">{erreurs.maisons}</Alerte></div>}
-              {!maisons.length && <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucune maison pour l'instant.</p>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {maisons.map((m, idx) => {
-                  const ouverte = maisonOuverte === m.id;
-                  return (
-                    <div key={m.id} style={{ ...styles.bloc, borderColor: editingMaisonId === m.id ? 'var(--primary-500)' : 'var(--border-subtle)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Maison {idx + 1} — {m.usage_libelle || <span style={{ color: 'var(--accent-amber)' }}>usage à choisir</span>}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            {[m.adresse, ...CAPITAUX.filter((c) => Number(m[c.cle]) > 0).map((c) => `${c.libelle.split(' (')[0]} ${fcfa(m[c.cle])} F`)].filter(Boolean).join(' • ')}
-                          </div>
-                          {(m.sous_garanties_optionnelles?.length > 0 || m.options?.length > 0) && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                              {m.sous_garanties_optionnelles?.length > 0 && `Facultatives : ${m.sous_garanties_optionnelles.length}`}
-                              {m.sous_garanties_optionnelles?.length > 0 && m.options?.length > 0 && ' • '}
-                              {m.options?.length > 0 && `Options : ${m.options.length}`}
+                  <h2 style={styles.titreCarte}><Building size={18} style={{ color: 'var(--primary-500)' }} /> Maisons du devis ({maisons.length})</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {maisons.map((m, idx) => {
+                    const ouverte = maisonOuverte === m.id;
+                    return (
+                      <div key={m.id} style={{ ...styles.bloc, borderColor: editingMaisonId === m.id ? 'var(--primary-500)' : 'var(--border-subtle)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Maison {idx + 1} — {m.usage_libelle || <span style={{ color: 'var(--accent-amber)' }}>usage à choisir</span>}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                              {[m.adresse, ...CAPITAUX.filter((c) => Number(m[c.cle]) > 0).map((c) => `${c.libelle.split(' (')[0]} ${fcfa(m[c.cle])} F`)].filter(Boolean).join(' • ')}
                             </div>
+                            {(m.sous_garanties_optionnelles?.length > 0 || m.options?.length > 0) && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                {m.sous_garanties_optionnelles?.length > 0 && `Facultatives : ${m.sous_garanties_optionnelles.length}`}
+                                {m.sous_garanties_optionnelles?.length > 0 && m.options?.length > 0 && ' • '}
+                                {m.options?.length > 0 && `Options : ${m.options.length}`}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Prime nette</div>
+                            <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fcfa(primeNetteMaison(m))} F</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>TTC hors accessoire {fcfa(primeNetteMaison(m) + taxeMaison(m))} F</div>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                          {m.garanties?.length > 0 && (
+                            <button type="button" className="btn btn-secondary" onClick={() => setMaisonOuverte(ouverte ? null : m.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}>
+                              <ChevronDown size={14} style={{ transform: ouverte ? 'rotate(180deg)' : undefined }} /> Garanties ({m.garanties.length})
+                            </button>
                           )}
+                          <button type="button" className="btn btn-secondary" onClick={() => handleEditMaison(m)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}><Edit3 size={14} /> Modifier</button>
+                          <button type="button" className="btn btn-secondary" onClick={() => handleRemoveMaison(m, idx)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem', color: 'var(--accent-rose)' }}><Trash2 size={14} /> Retirer</button>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Prime nette</div>
-                          <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fcfa(primeNetteMaison(m))} F</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>TTC hors accessoire {fcfa(primeNetteMaison(m) + taxeMaison(m))} F</div>
-                        </div>
+                        {ouverte && m.garanties?.length > 0 && <div style={{ marginTop: '0.75rem' }}><TableauGaranties garanties={m.garanties} /></div>}
                       </div>
-                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-                        {m.garanties?.length > 0 && (
-                          <button type="button" className="btn btn-secondary" onClick={() => setMaisonOuverte(ouverte ? null : m.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}>
-                            <ChevronDown size={14} style={{ transform: ouverte ? 'rotate(180deg)' : undefined }} /> Garanties ({m.garanties.length})
-                          </button>
-                        )}
-                        <button type="button" className="btn btn-secondary" onClick={() => handleEditMaison(m)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}><Edit3 size={14} /> Modifier</button>
-                        <button type="button" className="btn btn-secondary" onClick={() => handleRemoveMaison(m.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem', color: 'var(--accent-rose)' }}><Trash2 size={14} /> Retirer</button>
-                      </div>
-                      {ouverte && m.garanties?.length > 0 && <div style={{ marginTop: '0.75rem' }}><TableauGaranties garanties={m.garanties} /></div>}
+                    );
+                  })}
+                </div>
+                </>
+              )}
+              {!maisons.length || formulaireMaison || editingMaisonId ? (
+                <div style={maisons.length ? { marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-subtle)' } : undefined}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <h2 style={{ ...styles.titreCarte, margin: 0 }}><Building size={18} style={{ color: 'var(--primary-500)' }} /> {editingMaisonId ? `Modifier la maison ${maisons.findIndex((x) => x.id === editingMaisonId) + 1}` : maisons.length ? 'Ajouter une autre maison' : 'Ajouter une maison'}</h2>
+                  {(editingMaisonId || maisons.length > 0) && (
+                    <button type="button" className="btn btn-secondary" onClick={() => { viderFormulaireMaison(); setFormulaireMaison(false); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                      <X size={14} /> {editingMaisonId ? 'Annuler la modification' : 'Fermer'}
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ ...styles.grille, marginTop: '1.1rem' }}>
+                  <Champ label="Usage de l'habitation" requis aide={currentUsage?.description}>
+                    <select className="form-control" value={currentUsageCode} onChange={(e) => setCurrentUsageCode(e.target.value)} disabled={!usages.length}>
+                      {!usages.length && <option value="">Chargement…</option>}
+                      {trierParLibelle(usages, (u) => u.libelle).map((u) => <option key={u.code} value={u.code}>{u.libelle}</option>)}
+                    </select>
+                  </Champ>
+                  <Champ label="Adresse de la maison" aide="Facultative">
+                    <input type="text" className="form-control" value={currentAdresse} onChange={(e) => setCurrentAdresse(e.target.value)} />
+                  </Champ>
+                </div>
+
+                <div style={styles.sousTitre}>Valeurs assurées</div>
+                <div style={styles.grille}>
+                  {capitauxAffiches.map((c) => (
+                    <Champ key={c.cle} label={c.libelle} requis={Boolean(parametresUsage?.[c.parametre])}>
+                      <ChampMontant valeur={capitaux[c.cle]} onChange={(v) => setCapitaux((prev) => ({ ...prev, [c.cle]: v }))} />
+                    </Champ>
+                  ))}
+                </div>
+                {formule && (
+                  <div style={{ ...styles.aide, display: 'flex', gap: '0.4rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
+                    <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} /> Formule de l'usage : {formule}
+                  </div>
+                )}
+
+                {garantiesUsage.obligatoires.length > 0 && (
+                  <>
+                    <div style={styles.sousTitre}>Garanties incluses ({garantiesUsage.obligatoires.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {garantiesUsage.obligatoires.map((g) => (
+                        <span key={g.code} style={{ ...styles.pastille('var(--accent-emerald)'), padding: '0.3rem 0.65rem' }}>
+                          <ShieldCheck size={12} /> {g.libelle}{g.taux_repartition != null ? ` · ${g.taux_repartition} %` : ''}
+                        </span>
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
+                    <p style={styles.aide}>Le pourcentage est la part de la prime de base attribuée à la garantie.</p>
+                  </>
+                )}
+
+                {garantiesUsage.optionnelles.length > 0 && (
+                  <>
+                    <div style={styles.sousTitre}>Garanties facultatives</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: '0.5rem' }}>
+                      {garantiesUsage.optionnelles.map((g) => {
+                        const code = g.code_sous_garantie || g.code;
+                        const actif = selectedGaranties.includes(code);
+                        return (
+                          <label key={code} style={styles.choix(actif)}>
+                            <input type="checkbox" checked={actif} style={{ marginTop: 2, accentColor: 'var(--primary-500)' }}
+                              onChange={() => setSelectedGaranties((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]))} />
+                            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)' }}>{g.libelle || code}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                {availableOptions.length > 0 && (
+                  <>
+                    <div style={styles.sousTitre}>Options</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: '0.5rem' }}>
+                      {availableOptions.map((o) => {
+                        const code = o.code_option || o.code;
+                        const actif = selectedOptions.includes(code);
+                        const effet = o.taux_ajustement != null && o.sous_garantie_cible_libelle
+                          ? `${o.signe_ajustement === '-' ? '−' : '+'}${Number(o.taux_ajustement)} % sur ${o.sous_garantie_cible_libelle}`
+                          : o.montant_forfait != null ? `${o.signe_ajustement === '-' ? '−' : '+'}${fcfa(o.montant_forfait)} F` : '';
+                        return (
+                          <label key={code} style={styles.choix(actif)}>
+                            <input type="checkbox" checked={actif} style={{ marginTop: 2, accentColor: 'var(--primary-500)' }}
+                              onChange={() => setSelectedOptions((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]))} />
+                            <span>
+                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block' }}>{o.libelle || code}</span>
+                              {effet && <span style={{ fontSize: '0.74rem', color: o.signe_ajustement === '-' ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>{effet}</span>}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+                  <button type="button" className="btn btn-primary" onClick={handleSaveMaison} disabled={calculMaisonEnCours} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    {calculMaisonEnCours ? <Loader2 size={16} className="spin" /> : editingMaisonId ? <CheckCircle2 size={16} /> : <Plus size={16} />}
+                    {editingMaisonId ? 'Recalculer et enregistrer la maison' : 'Calculer et ajouter la maison'}
+                  </button>
+                </div>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-secondary" onClick={() => setFormulaireMaison(true)}
+                  style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Plus size={16} /> Ajouter une autre maison
+                </button>
+              )}
             </>
           )}
 
@@ -1090,18 +1105,18 @@ export const NewMrhQuotePage = () => {
               <h2 style={styles.titreCarte}><FileCheck size={18} style={{ color: 'var(--primary-500)' }} /> Récapitulatif avant enregistrement</h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem 2rem' }}>
                 <div>
-                  <div style={styles.sousTitre}>Client</div>
+                  {titreRecap('Client', 4)}
                   {ligneRecap('Souscripteur', souscripteur?.Nom)}
                   {ligneRecap('Assuré', assure?.Nom)}
                   {ligneRecap('Téléphone assuré', telephoneAssure)}
-                  <div style={styles.sousTitre}>Contrat</div>
+                  {titreRecap('Contrat', 1)}
                   {ligneRecap('Compagnie', nomCompagnie)}
                   {ligneRecap('Catégorie', libelleTarif)}
                   {ligneRecap('N° police compagnie', numeroPoliceCompagnie)}
                   {ligneRecap('Période', `du ${dateFr(dateEffet)} au ${dateFr(calculatedDateExpiration)}`)}
                 </div>
                 <div>
-                  <div style={styles.sousTitre}>Prime</div>
+                  {titreRecap('Prime', 3)}
                   {ligneRecap('Maisons', maisons.length)}
                   {ligneRecap('Prime nette', `${fcfa(totalsFinanciers.primeNette)} F`)}
                   {ligneRecap('Taxes', `${fcfa(totalsFinanciers.taxes)} F`)}
@@ -1110,7 +1125,7 @@ export const NewMrhQuotePage = () => {
                   {isImpositionActive && ligneRecap('Imposition', impositionMotif || 'sans motif')}
                 </div>
               </div>
-              <div style={styles.sousTitre}>Habitations</div>
+              {titreRecap('Habitations', 2)}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {maisons.map((m, idx) => (
                   <div key={m.id} style={{ ...styles.bloc, display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.83rem' }}>
@@ -1244,19 +1259,18 @@ export const NewMrhQuotePage = () => {
 
         {/* RÉSUMÉ PERMANENT */}
         {step <= 5 && (
-          <aside className="glass-panel" style={{ ...styles.carte, flex: '1 1 280px', maxWidth: '100%', position: 'sticky', top: '1rem' }}>
-            <h2 style={{ ...styles.titreCarte, marginBottom: '0.75rem', fontSize: '0.9rem' }}><Home size={16} style={{ color: 'var(--primary-500)' }} /> Votre devis</h2>
-            {ligneRecap('Compagnie', nomCompagnie)}
-            {ligneRecap('Période', dateEffet && calculatedDateExpiration ? `${dateFr(dateEffet)} → ${dateFr(calculatedDateExpiration)}` : '')}
-            {ligneRecap('Maisons', maisons.length || '')}
-            {ligneRecap('Souscripteur', souscripteur?.Nom)}
-            {isImpositionActive && ligneRecap('Primes', 'imposées')}
-            <div style={{ marginTop: '1rem', padding: '0.9rem', borderRadius: '12px', background: 'var(--primary-glow)', border: '1px solid var(--primary-500)' }}>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--primary-500)' }}>Prime TTC</div>
-              <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{maisons.length ? `${fcfa(totalsFinanciers.primeTtc)} F` : '—'}</div>
-              {maisons.length > 0 && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>dont prime nette {fcfa(totalsFinanciers.primeNette)} F</div>}
-            </div>
-          </aside>
+          <ResumeDevis
+            icone={Home}
+            lignes={[
+              ['Compagnie', nomCompagnie],
+              ['Période', dateEffet && calculatedDateExpiration ? `${dateFr(dateEffet)} → ${dateFr(calculatedDateExpiration)}` : ''],
+              ['Maisons', maisons.length || ''],
+              ['Souscripteur', souscripteur?.Nom],
+              isImpositionActive && ['Primes', 'imposées'],
+            ]}
+            montant={maisons.length ? `${fcfa(totalsFinanciers.primeTtc)} F` : null}
+            detail={maisons.length > 0 ? `dont prime nette ${fcfa(totalsFinanciers.primeNette)} F` : null}
+          />
         )}
       </div>
 

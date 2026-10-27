@@ -3,7 +3,7 @@ import { Search, Plus, Loader2 } from 'lucide-react';
 import { customerApi } from '../../api/endpoints';
 
 // Champ de formulaire, recherche de client côté serveur (clientrecherche, comme URANUS : sans charger
-// toute la clientèle) et fiche du client choisi. Utilisés par les devis Voyage et MRH.
+// toute la clientèle) et fiche du client choisi. Utilisés par les devis Voyage, MRH, RC, MRP, Dommages et Transport.
 
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
 const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
@@ -44,7 +44,8 @@ export const Champ = ({ label, requis, aide, erreur, children, large }) => (
   </div>
 );
 
-export const RechercheClient = ({ label, personne, onChoisir, onNouveau, erreur }) => {
+// demande : { texte, n } pour lancer une recherche depuis l'écran (bandeau du questionnaire prospect) ; n la relance
+export const RechercheClient = ({ label, personne, onChoisir, onNouveau, erreur, demande }) => {
   const [terme, setTerme] = useState(personne?.Nom || '');
   const [resultats, setResultats] = useState([]);
   const [ouvert, setOuvert] = useState(false);
@@ -52,6 +53,7 @@ export const RechercheClient = ({ label, personne, onChoisir, onNouveau, erreur 
   const zone = useRef(null);
 
   useEffect(() => { setTerme(personne?.Nom || ''); }, [personne?.IdClient, personne?.Nom]);
+  useEffect(() => { if (demande?.texte) setTerme(demande.texte); }, [demande?.n]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const t = terme.trim();

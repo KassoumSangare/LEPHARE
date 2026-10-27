@@ -397,18 +397,15 @@ const pageBordereau = (d) => {
 const ETAT = `
   @page { size: A4 landscape; margin: 8mm 8mm 8mm; }
   body, .pied { max-width: 281mm; }
-  .titre-etat { text-align: center; font-weight: 800; font-size: 13pt; text-decoration: underline; margin: 2px 0 8px; }
-  .titre-etat span { color: #2a9fd6; font-style: italic; }
+  .titre-etat { text-align: center; font-weight: 800; font-size: 13pt; text-decoration: underline; margin: 2px 0 8px; color: #000; }
+  .titre-etat span { color: #000; }
   .reference-etat { font-size: 8pt; margin-bottom: 6px; }
-  .etat th, .etat td { border: 1px solid #555; padding: 2px 3px; font-size: 6.7pt; vertical-align: middle; }
+  /* Grand tableau en noir sur blanc ; Encaissement et Solde sur le bleu des tableaux du récapitulatif (2026-10-27) */
+  .etat th, .etat td { border: 1px solid #555; padding: 2px 3px; font-size: 6.7pt; vertical-align: middle; color: #000; background: #fff; }
   .etat th { font-weight: 700; text-align: center; font-size: 6.1pt; line-height: 1.15; }
-  .etat th.prime { color: #c00; font-style: italic; }
-  .etat th.ttc { background: #bfe3f5; color: #0b4f8a; }
-  .etat th.jaune { background: #fde047; }
-  .etat th.solde { background: #f87171; }
-  .etat th.statut, .etat td.statut { color: #c00; }
+  .etat th.bleu, .etat td.bleu { background: #1e3a5f; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .etat td.m { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .etat td.c, .etat td.statut { text-align: center; }
+  .etat td.c { text-align: center; }
   .etat tr.total td { font-weight: 700; }
   .etat td.nature { font-size: 6.2pt; text-align: center; }
   .notes-etat { font-size: 7.5pt; margin-top: 6px; }
@@ -435,10 +432,10 @@ const pageEtatCotisations = (d) => {
       <td rowspan="${n}" class="m">${montant(f.PrimeTtcRc)}</td><td rowspan="${n}" class="m"><b>${montant(f.PrimeTotaleTtc)}</b></td>`;
     // Encaissement, nature, solde et statut : ceux du contrat, sur toutes les familles
     const situation = i > 0 || j > 0 ? '' : `
-      <td rowspan="${personnes}" class="m"><b>${contrat ? montant(e.Encaissement) : '-'}</b></td>
+      <td rowspan="${personnes}" class="m bleu"><b>${contrat ? montant(e.Encaissement) : '-'}</b></td>
       <td rowspan="${personnes}" class="nature">${texte(e.Nature) || '-'}</td>
-      <td rowspan="${personnes}" class="m"><b>${montant(e.Solde)}</b></td>
-      <td rowspan="${personnes}" class="statut">${texte(e.Statut)}</td>`;
+      <td rowspan="${personnes}" class="m bleu"><b>${montant(e.Solde)}</b></td>
+      <td rowspan="${personnes}" class="c">${texte(e.Statut)}</td>`;
     return `<tr><td class="c">${numero}</td>${j === 0 ? `<td rowspan="${n}">${texte(f.Souscripteur)}</td>` : ''}
       <td>${texte(a.Nom)}</td><td class="c">${date(a.DateNaissance)}</td>${famille}${situation}</tr>`;
   }).join('')).join('');
@@ -446,20 +443,17 @@ const pageEtatCotisations = (d) => {
   // Récapitulatif de la prime : réduction ou majoration seulement si le détail retrouve la prime enregistrée
   const ajustementRecap = Number(r.Ecart) ? 0 : Number(r.Ajustement) || 0;
   const adherents = e.Familles.length;
-  const noteConnexe = (libelle, polices, cle) => (polices.length
-    ? `${libelle} : police${polices.length > 1 ? 's' : ''} ${polices.map(texte).join(', ')}.`
-    : `${libelle} : ${contrat ? 'pas encore émise sur cette police, comptée dans le solde' : 'émise sur la police Santé après la confirmation du devis'} (${montant(e.Familles[0]?.[cle])} F TTC par adhérent).`);
   return page(`
     <div class="titre-etat">ETATS DES COTISATIONS <span>MINENE SANTE</span> ${e.Annee || ''}</div>
     <div class="reference-etat"><b>${contrat ? 'Police' : 'Devis'} N° :</b> ${texte(e.Contrat || q.NumeroDevis || b.NumeroDevis)}
       &nbsp;·&nbsp; <b>Client :</b> ${texte(q.NomClient)} &nbsp;·&nbsp; <b>Compagnie :</b> ${texte(q.RaisonSociale)}</div>
     <table class="etat">
       <tr><th>N°Ordre</th><th>Souscripteur</th><th>Assuré</th><th>Date de naissance</th><th>Option</th><th>Effectif</th><th>Période</th>
-        <th class="prime">Prime de base</th><th class="prime">Surprime pour pathologie</th><th class="prime">Surprime d'âge</th>
-        <th class="prime">Surprime enfants supplémentaires</th><th class="prime">${libelleAjustement(b.TauxAjustement)}</th>
-        <th class="prime">Prime nette totale</th><th class="ttc">Prime TTC Santé</th><th class="ttc">Prime TTC Individuelle Accidents</th>
-        <th class="ttc">Prime TTC RC chef de famille</th><th class="jaune">Prime totale TTC</th><th class="jaune">Encaissement</th>
-        <th>Nature de l'encaissement</th><th class="solde">Solde</th><th class="statut">Statut</th></tr>
+        <th>Prime de base</th><th>Surprime pour pathologie</th><th>Surprime d'âge</th>
+        <th>Surprime enfants supplémentaires</th><th>${libelleAjustement(b.TauxAjustement)}</th>
+        <th>Prime nette totale</th><th>Prime TTC Santé</th><th>Prime TTC Individuelle Accidents</th>
+        <th>Prime TTC RC chef de famille</th><th>Prime totale TTC</th><th class="bleu">Encaissement</th>
+        <th>Nature de l'encaissement</th><th class="bleu">Solde</th><th>Statut</th></tr>
       ${lignes}
       <tr class="total"><td colspan="4" class="c">TOTAL</td><td></td><td class="c">${personnes}</td><td></td>
         <td class="m">${montant(somme('PrimeBase'))}</td><td class="m">${montant(somme('SurprimePathologie'))}</td>
@@ -467,7 +461,7 @@ const pageEtatCotisations = (d) => {
         <td class="m">${signe(somme('Ajustement'))}</td><td class="m">${montant(somme('PrimeNette'))}</td>
         <td class="m">${montant(somme('PrimeTtcSante'))}</td><td class="m">${montant(somme('PrimeTtcIa'))}</td>
         <td class="m">${montant(somme('PrimeTtcRc'))}</td><td class="m">${montant(somme('PrimeTotaleTtc'))}</td>
-        <td class="m">${contrat ? montant(e.Encaissement) : '-'}</td><td></td><td class="m">${montant(e.Solde)}</td><td></td></tr>
+        <td class="m bleu">${contrat ? montant(e.Encaissement) : '-'}</td><td></td><td class="m bleu">${montant(e.Solde)}</td><td></td></tr>
     </table>
     <div class="recap">
       <table class="cadre">
@@ -490,7 +484,6 @@ const pageEtatCotisations = (d) => {
         <tr><td><b>Solde</b></td><td class="m">${montant(e.Solde)}</td></tr>
       </table>
     </div>
-    <div class="notes-etat">${noteConnexe('Individuelle Accidents', e.PolicesIa, 'PrimeTtcIa')} ${noteConnexe('RC chef de famille', e.PolicesRc, 'PrimeTtcRc')}</div>
     ${Number(r.Ecart) ? `<div class="ecart">Écart de ${montant(r.Ecart)} F entre la prime nette enregistrée (${montant(r.PrimeNette)} F) et le détail par famille recalculé avec le barème en vigueur (${montant(r.TotalLignes)} F) : ${contrat ? 'contrat émis avec un calcul antérieur ; la prime TTC Santé facturée est répartie entre les familles' : 'enregistrez de nouveau le devis pour mettre à jour ses primes'}.</div>` : ''}`);
 };
 

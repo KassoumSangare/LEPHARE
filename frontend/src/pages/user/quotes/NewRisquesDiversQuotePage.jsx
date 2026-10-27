@@ -4,7 +4,10 @@ import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
 import { quoteApi, customerApi, settingsApi, contractApi, risquesDiversApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { ArrowLeft, ArrowRight, Check, Plus, Shield, AlertTriangle } from 'lucide-react';
+import {
+  Check, Plus, Shield, AlertTriangle, ChevronLeft, ChevronRight, FileText, ListChecks, Calculator, Users, Loader2,
+  RefreshCw, Lightbulb, X,
+} from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
@@ -15,6 +18,8 @@ import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '.
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
+import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
+import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
@@ -31,7 +36,15 @@ const MINENE = { idCompagnie: 1, dureeId: 4 };
 // Réduction maximale RC : Administration > Le cabinet & règles de gestion (35 % à l'origine)
 const reductionMaxRc = () => parametre('devis.reduction_max_rc', 35);
 
-const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
+// Espace insécable ordinaire : l'espace fine du français n'est pas dessinée par toutes les polices (montants en gras)
+const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/ /g, ' ');
+
+// Étapes du parcours (présentation de l'écran MRH)
+const ETAPES_RISQUES_DIVERS = [
+  { num: 1, libelle: 'Contrat et risque', icone: FileText },
+  { num: 2, libelle: 'Garanties', icone: ListChecks },
+  { num: 3, libelle: 'Prime et souscripteur', icone: Calculator },
+];
 const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
 
@@ -88,11 +101,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
 
   const [step, setStep] = useState(1);
   const [createdQuote, setCreatedQuote] = useState(null);
-  const [isQuickAddClientOpen, setIsQuickAddClientOpen] = useState(false);
+  // Nouveau client créé depuis l'écran : pour le souscripteur ou pour l'assuré
+  const [nouveauClientPour, setNouveauClientPour] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Référentiels
-  const [clients, setClients] = useState([]);
   const [companies, setCompanies] = useState(() => dataStore.getActiveCompanies(infos?.court || 'RC'));
   const [tarifs, setTarifs] = useState([]);
   const [offres, setOffres] = useState([]);
@@ -158,14 +171,25 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const taxeMinimum = tauxTaxe === null ? 0 : Math.round(((Number(primeNette) || 0) * tauxTaxe) / 100);
   // Pièce jointe du devis (envoyée après l'enregistrement)
   const [fichier, setFichier] = useState(null);
-  const [souscripteurId, setSouscripteurId] = useState(0);
-  const [rechercheSouscripteur, setRechercheSouscripteur] = useState('');
-  const [listeSouscripteurOuverte, setListeSouscripteurOuverte] = useState(false);
-  const [assureId, setAssureId] = useState(0);
-  const [rechercheAssure, setRechercheAssure] = useState('');
-  const [listeAssureOuverte, setListeAssureOuverte] = useState(false);
+  // Souscripteur et assuré : recherche des clients sur le serveur (RechercheClient, comme la MRH), sans charger toute
+  // la clientèle à l'ouverture de l'écran
+  const [souscripteur, setSouscripteur] = useState(null);
+  const [assureDifferent, setAssureDifferent] = useState(false);
+  const [assureChoisi, setAssureChoisi] = useState(null);
+  const [demandeRecherche, setDemandeRecherche] = useState(null);
+  const souscripteurId = Number(souscripteur?.IdClient) || 0;
+  const assureId = (assureDifferent ? Number(assureChoisi?.IdClient) : 0) || souscripteurId;
   const [telephoneAssure, setTelephoneAssure] = useState('');
   const [adresseGeo, setAdresseGeo] = useState('');
+  // Le téléphone et l'adresse de l'assuré suivent la personne choisie (souscripteur tant que l'assuré est le même)
+  const choisirSouscripteur = (p) => {
+    setSouscripteur(p);
+    if (p && !assureDifferent) { setTelephoneAssure(p.Telephone || ''); setAdresseGeo(p.AdresseGeographique || ''); }
+  };
+  const choisirAssure = (p) => {
+    setAssureChoisi(p);
+    if (p) { setTelephoneAssure(p.Telephone || ''); setAdresseGeo(p.AdresseGeographique || ''); }
+  };
 
   const offreMinene = Number(idOffre) === ID_OFFRE_MINENE;
   // Devis repris d'URANUS sans ligne de détail en base
@@ -177,16 +201,12 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   useEffect(() => {
     let actif = true;
     (async () => {
-      const [cls, cies, trfs, doms] = await Promise.all([
-        customerApi.getClients().catch(() => []),
+      const [cies, trfs, doms] = await Promise.all([
         settingsApi.getCompanies().catch(() => []),
         risquesDiversApi.getTarifs(idProduit).catch(() => []),
         estRc ? risquesDiversApi.getDomaines().catch(() => []) : Promise.resolve([]),
       ]);
       if (!actif) return;
-      if (cls && cls.length) {
-        setClients((prev) => [...prev.filter((p) => !cls.some((c) => String(c.id) === String(p.id))), ...cls]);
-      }
       if (cies && cies.length) setCompanies(cies.map((c) => ({ id: c.IdCompagnie || c.id, nom: c.RaisonSociale || c.nom })));
       // Une catégorie sans offre ne peut pas être tarifée : elle n'est pas proposée
       const offresParTarif = await Promise.all((trfs || []).map((t) => risquesDiversApi.getOffres(idProduit, t.IdTarif).catch(() => [])));
@@ -230,12 +250,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     setNumeroPoliceConnexe(policeMineneParam);
     const client = Number(searchParams.get('client')) || 0;
     const nom = searchParams.get('nom') || '';
-    if (client) {
-      setSouscripteurId(client);
-      setRechercheSouscripteur(nom);
-      setAssureId(client);
-      setRechercheAssure(nom);
-    }
+    if (client) setSouscripteur({ IdClient: client, Nom: nom || `Client n° ${client}` });
     if (searchParams.get('effet')) setDateEffet(searchParams.get('effet'));
   }, [policeMineneParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -254,10 +269,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     }
     if (p.IdTerme) setTermeId(p.IdTerme);
     if (p.IdClient) {
-      setSouscripteurId(p.IdClient);
-      setRechercheSouscripteur(p.Client || '');
-      setAssureId(p.IdClient);
-      setRechercheAssure(p.Client || '');
+      setSouscripteur({ IdClient: p.IdClient, Nom: p.Client || `Client n° ${p.IdClient}` });
+      setAssureDifferent(false);
+      setAssureChoisi(null);
     }
     info(`Police Santé ${p.NumeroPolice} : client, date d'effet et échéance repris.`);
   };
@@ -451,14 +465,14 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           idAssure ? customerApi.getClientDetail(idAssure).catch(() => null) : null,
         ]);
         if (!actif) return;
-        setClients((prev) => {
-          const ajout = [souscripteur, assure].filter((c, i, t) => c && t.findIndex((x) => x && x.id === c.id) === i && !prev.some((p) => String(p.id) === String(c.id)));
-          return [...ajout, ...prev];
-        });
-        setSouscripteurId(idClient);
-        setRechercheSouscripteur(souscripteur?.nomcomplet || (idClient ? `Client n° ${idClient}` : ''));
-        setAssureId(idAssure);
-        setRechercheAssure(assure?.nomcomplet || (idAssure ? `Client n° ${idAssure}` : ''));
+        const versPersonne = (c, id) => (id ? {
+          ...(c ? personneDepuisClient(c.raw || c) : {}),
+          IdClient: id,
+          Nom: (c?.nomcomplet || personneDepuisClient(c?.raw || c)?.Nom || '').trim() || `Client n° ${id}`,
+        } : null);
+        setSouscripteur(versPersonne(souscripteur, idClient));
+        setAssureDifferent(Boolean(idAssure && idAssure !== idClient));
+        setAssureChoisi(idAssure && idAssure !== idClient ? versPersonne(assure, idAssure) : null);
         setTelephoneAssure(assure?.raw?.Mobile || assure?.raw?.Telephone || '');
         setAdresseGeo(assure?.raw?.Adresse2 || '');
 
@@ -548,6 +562,19 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     if (createdQuote && qd.actif) qd.devisEtabli(createdQuote.numerodevis || '');
   }, [createdQuote]); // eslint-disable-line react-hooks/exhaustive-deps
   const garantiesAcquises = garanties.filter((g) => g.acquise);
+  // Passage à une étape (en-tête d'étapes ou bouton « Suivant ») : les étapes précédentes doivent être complètes
+  // (mêmes messages qu'à l'enregistrement)
+  const allerA = (cible) => {
+    if (cible > step) {
+      if (cible >= 2 && !idOffre) { toastError('Choisissez une offre.'); setStep(1); return; }
+      if (cible >= 2 && !dateExpiration) { toastError("Saisissez la date d'expiration."); setStep(1); return; }
+      if (cible >= 2 && offreMinene && !numeroPoliceConnexe.trim()) { toastError('Offre MINENE : saisissez le n° de police Santé connexe.'); setStep(1); return; }
+      if (cible >= 3 && !offreMinene && !garantiesAcquises.length) { toastError('Cochez au moins une garantie.'); setStep(2); return; }
+    }
+    setStep(cible);
+  };
+  // Propositions de prime nette (la saisie reste libre) : tarif de la base pour ces capitaux, ou assiette x taux de prime
+  const primeAssietteTaux = Math.round(((Number(assiettePrime) || 0) * (Number(tauxPrime) || 0)) / 100 * (1 - (Number(reduction) || 0) / 100));
 
   // -------------------------------------------------------------
   // ENREGISTREMENT (création, ou modification du même devis)
@@ -568,15 +595,8 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       setStep(3);
       return;
     }
-    if (!souscripteurId) { toastError('Choisissez le souscripteur.'); setStep(3); return; }
-    // Nom tapé dans la recherche sans cliquer sur un client de la liste : l'ancien souscripteur
-    // resterait celui du devis
-    const souscripteurChoisi = clients.find((c) => String(c.id) === String(souscripteurId));
-    if (souscripteurChoisi && rechercheSouscripteur.trim() !== (souscripteurChoisi.nomcomplet || '').trim()) {
-      toastError('Le souscripteur n\'a pas été choisi dans la liste : cliquez sur le client voulu sous le champ de recherche.');
-      setStep(3);
-      return;
-    }
+    if (!souscripteurId) { toastError('Choisissez le souscripteur dans la liste des clients.'); setStep(3); return; }
+    if (assureDifferent && !assureChoisi) { toastError("Choisissez l'assuré, ou décochez « L'assuré est une autre personne »."); setStep(3); return; }
 
     const payload = {
       IdIntermediaire: 1,
@@ -660,7 +680,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         id: devisId,
         iddevis: devisId,
         numerodevis: devisEnregistre?.numerodevis,
-        client_nom: rechercheSouscripteur,
+        client_nom: souscripteur?.Nom || '',
         client_id: Number(souscripteurId),
         produit: infos.libelle,
         branche: infos.court,
@@ -699,94 +719,84 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   if (!infos) return <p style={{ padding: '2rem' }}>Produit inconnu.</p>;
 
   // -------------------------------------------------------------
-  // AFFICHAGE
+  // AFFICHAGE : présentation de l'écran MRH (étapes numérotées, cartes, résumé permanent « Votre devis »), dans la
+  // couleur de la branche (demande du 2026-10-27 : amélioration UI/UX des parcours MRH et RC)
   // -------------------------------------------------------------
   const couleur = infos.couleur;
-  const titreSection = { color: couleur, fontWeight: 800, textTransform: 'uppercase', fontSize: '1.05rem', margin: '0 0 1.25rem' };
-  const clientsFiltres = (texte) => {
-    const t = (texte || '').toLowerCase();
-    return clients.filter((c) => (c.nomcomplet || '').toLowerCase().includes(t)).slice(0, 40);
-  };
-  const listeDeroulante = {
-    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#1e293b',
-    border: '1px solid var(--border-subtle)', borderRadius: '6px', maxHeight: '220px', overflowY: 'auto',
-    marginTop: '4px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
-  };
-  const elementListe = { padding: '0.6rem 1rem', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '0.85rem' };
-  const champClient = (libelle, recherche, setRecherche, ouverte, setOuverte, choisir, avecNouveau) => (
-    <div className="form-group" style={{ position: 'relative' }}>
-      <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span>{libelle}</span>
-        {avecNouveau && (
-          <button type="button" onClick={() => setIsQuickAddClientOpen(true)} style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-            <Plus size={14} /> Nouveau client
-          </button>
-        )}
-      </label>
-      <input
-        type="text"
-        className="form-control"
-        placeholder="Rechercher un client..."
-        value={recherche}
-        onChange={(e) => { setRecherche(e.target.value); setOuverte(true); }}
-        onFocus={() => setOuverte(true)}
-      />
-      {ouverte && (
-        <div style={listeDeroulante}>
-          {clientsFiltres(recherche).map((c) => (
-            <div key={c.id} style={elementListe} onClick={() => { choisir(c); setRecherche(c.nomcomplet); setOuverte(false); }}>
-              <div style={{ fontWeight: 700, color: '#fff' }}>{c.nomcomplet}</div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{c.codeclient} • {c.telephone}</div>
-            </div>
-          ))}
-        </div>
-      )}
+  const carte = { padding: '1.5rem', borderRadius: '14px' };
+  const titreCarte = { display: 'flex', alignItems: 'center', gap: '0.55rem', margin: '0 0 1.2rem', fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' };
+  const grille = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 230px), 1fr))', gap: '1rem 1.25rem', alignItems: 'start' };
+  const sousTitre = { fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '1.5rem 0 0.75rem' };
+  const texteAide = { fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.55, margin: '0 0 1rem' };
+  const lienAction = { background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.2rem', padding: 0 };
+  const alerte = (teinte) => ({
+    display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.8rem 1rem', borderRadius: '10px',
+    border: `1px solid ${teinte}`, background: 'var(--bg-surface-elevated)', fontSize: '0.85rem', color: 'var(--text-primary)',
+  });
+  const th = { textAlign: 'left', padding: '0.5rem 0.55rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-medium)', whiteSpace: 'nowrap' };
+  const td = { padding: '0.4rem 0.55rem', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', verticalAlign: 'middle' };
+  const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
+  const nomCompagnie = companies.find((c) => String(c.id) === String(compagnieId))?.nom || '';
+  const libelleOffre = offres.find((o) => Number(o.IdOffre) === Number(idOffre))?.LibelleOffre || '';
+  const totauxMinene = offreMinene ? apercuMinene?.Totaux : null;
+  const tuile = (libelle, valeur, fort) => (
+    <div key={libelle} style={{ padding: '0.85rem 0.95rem', borderRadius: '12px', border: `1px solid ${fort ? couleur : 'var(--border-subtle)'}`, background: fort ? `color-mix(in srgb, ${couleur} 10%, transparent)` : 'var(--bg-surface-elevated)' }}>
+      <div style={{ fontSize: '0.7rem', color: fort ? couleur : 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 800 }}>{libelle}</div>
+      <div style={{ fontSize: fort ? '1.2rem' : '1.02rem', fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', marginTop: '0.2rem' }}>{fcfa(valeur)} F</div>
     </div>
   );
+  const pied = (gauche, droite) => (
+    <div style={{ marginTop: '1.75rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
+      {gauche}{droite}
+    </div>
+  );
+  const boutonSuivant = (cible, libelle) => (
+    <button type="button" className="btn btn-primary" onClick={() => allerA(cible)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: couleur, borderColor: couleur }}>
+      {libelle} <ChevronRight size={16} />
+    </button>
+  );
+  const boutonPrecedent = (cible) => (
+    <button type="button" className="btn btn-secondary" onClick={() => setStep(cible)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+      <ChevronLeft size={16} /> Précédent
+    </button>
+  );
+  const cocherToutes = (acquise) => setGaranties((prev) => prev.map((g) => ({ ...g, acquise })));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1240px', margin: '0 auto', paddingBottom: '3rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <button className="btn btn-secondary" onClick={() => navigate('/user/quotes')} style={{ padding: '0.35rem 0.75rem', marginBottom: '0.5rem' }}>
-            <ArrowLeft size={16} /> Retour aux devis
-          </button>
-          <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <Shield size={26} color={couleur} />
-            {editIddevisParam
-              ? `Modifier le Devis ${infos.libelle}${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
-              : `Nouveau Devis ${infos.libelle} (${infos.court})`}
-          </h1>
-          {isLoadingEdit && <p style={{ color: couleur, fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>}
-          {avertissementReprise && (
-            <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
-              {avertissementReprise}
-            </p>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {[{ n: 1, l: '1. CONTRAT' }, { n: 2, l: '2. GARANTIES' }, { n: 3, l: '3. PRIMES & ASSURÉ' }].map((e) => (
-            <button
-              key={e.n}
-              type="button"
-              onClick={() => setStep(e.n)}
-              style={{
-                padding: '0.5rem 0.95rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-                border: step === e.n ? `2px solid ${couleur}` : '1px solid var(--border-subtle)',
-                background: step === e.n ? 'rgba(255,255,255,0.08)' : 'rgba(255, 255, 255, 0.03)',
-                color: step === e.n ? '#fff' : 'var(--text-muted)',
-              }}
-            >
-              {e.l}
-            </button>
-          ))}
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1280px', margin: '0 auto', paddingBottom: '3rem' }}>
+      {/* EN-TÊTE */}
+      <div>
+        <button type="button" className="btn btn-link" onClick={() => navigate('/user/quotes')} style={{ padding: 0, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+          <ChevronLeft size={16} /> Registre des devis
+        </button>
+        <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
+          <Shield size={26} color={couleur} />
+          {editIddevisParam ? `Modification du devis ${infos.libelle}` : `Nouveau devis ${infos.libelle}`}
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0' }}>
+          {numeroDevisEdite
+            ? <>Devis <strong>N° {numeroDevisEdite}</strong>.</>
+            : estRc
+              ? "Contrat et risque, garanties de l'offre, puis prime et souscripteur. La prime nette est saisie ; l'accessoire et la taxe sont proposés."
+              : "Contrat, garanties de l'offre, puis prime et souscripteur. La prime nette est saisie ; l'accessoire et la taxe sont proposés."}
+          {isLoadingEdit && <span style={{ color: couleur, fontWeight: 600 }}> Chargement du devis à modifier…</span>}
+        </p>
       </div>
+
+      {/* ÉTAPES */}
+      <EtapesDevis etapes={ETAPES_RISQUES_DIVERS} etape={step} onAller={allerA} couleur={couleur} />
+
+      {avertissementReprise && (
+        <div style={alerte('var(--accent-amber)')}>
+          <AlertTriangle size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: 1 }} />
+          <div>{avertissementReprise}</div>
+        </div>
+      )}
 
       <BandeauQuestionnaire
         qd={qd}
-        onChercherClient={(nom) => { setRechercheSouscripteur(nom); setListeSouscripteurOuverte(true); setStep(3); }}
-        onCreerClient={() => setIsQuickAddClientOpen(true)}
+        onChercherClient={(nom) => { setDemandeRecherche({ texte: nom, n: Date.now() }); setStep(3); }}
+        onCreerClient={() => setNouveauClientPour('souscripteur')}
         actions={nbCapitaux ? [{
           libelle: `Reporter ${nbCapitaux} ${nbCapitaux > 1 ? 'capitaux' : 'capital'} sur les garanties`,
           icone: Shield,
@@ -805,352 +815,363 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         )}
       </BandeauQuestionnaire>
 
-      {/* ÉTAPE 1 : CONTRAT */}
-      {step === 1 && (
-        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
-          <h3 style={titreSection}>Informations générales du contrat</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
-            <div className="form-group">
-              <label className="form-label">Compagnie d'assurance (* requis)</label>
-              <select className="form-control" value={compagnieId} onChange={(e) => setCompagnieId(Number(e.target.value))}>
-                {sortUniqueBy(companies, (c) => c.nom).map((c) => (<option key={c.id} value={c.id}>{c.nom}</option>))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Catégorie (* requis)</label>
-              <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))}>
-                {trierParLibelle(tarifs.filter((t) => !tarifsSansOffre.has(Number(t.IdTarif)) || Number(t.IdTarif) === Number(idTarif)), (t) => t.LibelleTarif)
-                  .map((t) => (<option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Offre (* requis)</label>
-              <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))}>
-                {offres.length === 0 && <option value={0}>Aucune offre pour cette catégorie</option>}
-                {trierParLibelle(offres, (o) => o.LibelleOffre).map((o) => (<option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>))}
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Terme du contrat</label>
-              <TermeContratSelect
-                value={termeId}
-                onChange={(id) => {
-                  setTermeId(id);
-                  // « Autre » ouvre la durée libre (date d'expiration saisie)
-                  setDureeId((d) => dureeSelonTerme(id, d));
-                }}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Durée du contrat</label>
-              <DureeContratSelect value={dureeId} onChange={setDureeId} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Date d'émission</label>
-              <input type="date" className="form-control" value={dateEmission} readOnly disabled title="Date du jour, non modifiable" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Date d'effet (* requis)</label>
-              <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Date d'expiration {Number(dureeId) === 5 ? '(* requis)' : '(calculée)'}</label>
-              {Number(dureeId) === 5 ? (
-                <input type="date" className="form-control" value={expirationPersonnalisee} onChange={(e) => setExpirationPersonnalisee(e.target.value)} />
-              ) : (
-                <input type="date" className="form-control" value={dateExpiration} readOnly style={{ background: 'rgba(255,255,255,0.05)', fontWeight: 700 }} />
-              )}
-            </div>
-            <div className="form-group">
-              <label className="form-label">Réduction commerciale (%{estRc ? `, ${reductionMaxRc()} au plus` : ''})</label>
-              <input type="number" min="0" max={estRc ? reductionMaxRc() : 100} className="form-control" value={reduction}
-                onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? reductionMaxRc() : 100, Number(e.target.value) || 0)))} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">N° de police compagnie (optionnel)</label>
-              <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
-            </div>
-            {offreMinene && (
-              <PoliceMineneConnexe
-                value={numeroPoliceConnexe}
-                onChange={setNumeroPoliceConnexe}
-                onPolice={reprendrePoliceMinene}
-                produit="RC"
-              />
-            )}
-          </div>
-
-          {estRc && (
+      <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="glass-panel" style={{ ...carte, flex: '1 1 640px', minWidth: 0 }}>
+          {/* ---------------------------------------------------------- ÉTAPE 1 : CONTRAT ET RISQUE */}
+          {step === 1 && (
             <>
-              <h3 style={{ ...titreSection, marginTop: '2rem' }}>Risque assuré</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Activité</label>
-                  <input type="text" className="form-control" value={activite} onChange={(e) => setActivite(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Domaine d'activité</span>
-                    {nouveauDomaine === null && (
-                      <button type="button" onClick={() => setNouveauDomaine('')} title="Ajouter un domaine d'activité à la liste"
-                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                        <Plus size={14} /> Nouveau domaine
-                      </button>
-                    )}
-                  </label>
-                  {nouveauDomaine === null ? (
-                    <select className="form-control" value={idDomaineActivite} onChange={(e) => setIdDomaineActivite(Number(e.target.value))}>
-                      <option value={0}>— Non précisé —</option>
-                      {trierParLibelle(domaines, (d) => d.libelle).map((d) => (<option key={d.id_domaine_activite} value={d.id_domaine_activite}>{d.libelle}</option>))}
-                    </select>
-                  ) : (
-                    <div style={{ display: 'flex', gap: '0.4rem' }}>
-                      <input type="text" className="form-control" autoFocus placeholder="Ex. : INDUSTRIE ET COMMERCE" value={nouveauDomaine}
-                        onChange={(e) => setNouveauDomaine(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterDomaine(); } if (e.key === 'Escape') setNouveauDomaine(null); }} />
-                      <button type="button" className="btn btn-primary" style={{ background: couleur, padding: '0.4rem 0.7rem' }} onClick={ajouterDomaine}>Ajouter</button>
-                      <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }} onClick={() => setNouveauDomaine(null)}>Annuler</button>
-                    </div>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Localisation</label>
-                  <input type="text" className="form-control" value={localisation} onChange={(e) => setLocalisation(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Date de début (manifestation)</label>
-                  <input type="date" className="form-control" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Nombre de participants</label>
-                  <input type="number" min="0" className="form-control" value={nombreParticipants} onChange={(e) => setNombreParticipants(Math.max(0, Number(e.target.value) || 0))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Assiette de prime</label>
-                  <AmountInput value={assiettePrime} onChange={setAssiettePrime} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Taux de prime (%)</label>
-                  <input type="number" min="0" step="0.01" className="form-control" value={tauxPrime} onChange={(e) => setTauxPrime(Math.max(0, Number(e.target.value) || 0))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Capital dommages corporels{estMinene ? ' (barème MINENE)' : ''}</label>
-                  <AmountInput value={capitalDommageCorporel} onChange={setCapitalDommageCorporel} disabled={estMinene} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Capital intoxication alimentaire{estMinene ? ' (barème MINENE)' : ''}</label>
-                  <AmountInput value={capitalIntoxication} onChange={setCapitalIntoxication} disabled={estMinene} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Capital dommages matériels{estMinene ? ' (barème MINENE)' : ''}</label>
-                  <AmountInput value={capitalDommageMateriel} onChange={setCapitalDommageMateriel} disabled={estMinene} />
-                </div>
+              <h2 style={titreCarte}><FileText size={18} style={{ color: couleur }} /> Contrat</h2>
+              <div style={grille}>
+                <Champ label="Compagnie d'assurance" requis aide={estMinene ? 'MINENE : NSIA ASSURANCES' : undefined}>
+                  <select className="form-control" value={compagnieId} onChange={(e) => setCompagnieId(Number(e.target.value))}>
+                    {sortUniqueBy(companies, (c) => c.nom).map((c) => (<option key={c.id} value={c.id}>{c.nom}</option>))}
+                  </select>
+                </Champ>
+                <Champ label="Catégorie" requis>
+                  <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))}>
+                    {trierParLibelle(tarifs.filter((t) => !tarifsSansOffre.has(Number(t.IdTarif)) || Number(t.IdTarif) === Number(idTarif)), (t) => t.LibelleTarif)
+                      .map((t) => (<option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>))}
+                  </select>
+                </Champ>
+                <Champ label="Offre" requis erreur={!offres.length && idTarif ? 'Aucune offre pour cette catégorie' : undefined}>
+                  <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))}>
+                    {offres.length === 0 && <option value={0}>—</option>}
+                    {trierParLibelle(offres, (o) => o.LibelleOffre).map((o) => (<option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>))}
+                  </select>
+                </Champ>
+                <Champ label="N° de police compagnie" aide="Facultatif">
+                  <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
+                </Champ>
+                <Champ label="Réduction commerciale (%)" aide={estRc ? `${reductionMaxRc()} % au plus` : 'De 0 à 100 %'}>
+                  <input type="number" min="0" max={estRc ? reductionMaxRc() : 100} className="form-control" value={reduction}
+                    onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? reductionMaxRc() : 100, Number(e.target.value) || 0)))} />
+                </Champ>
+                {offreMinene && (
+                  <PoliceMineneConnexe
+                    value={numeroPoliceConnexe}
+                    onChange={setNumeroPoliceConnexe}
+                    onPolice={reprendrePoliceMinene}
+                    produit="RC"
+                  />
+                )}
               </div>
+
+              <div style={sousTitre}>Période</div>
+              <div style={grille}>
+                <Champ label="Terme du contrat">
+                  <TermeContratSelect
+                    value={termeId}
+                    onChange={(id) => {
+                      setTermeId(id);
+                      // « Autre » ouvre la durée libre (date d'expiration saisie)
+                      setDureeId((d) => dureeSelonTerme(id, d));
+                    }}
+                  />
+                </Champ>
+                <Champ label="Durée du contrat">
+                  <DureeContratSelect value={dureeId} onChange={setDureeId} />
+                </Champ>
+                <Champ label="Date d'émission" aide="Date du jour">
+                  <input type="date" className="form-control" value={dateEmission} readOnly disabled />
+                </Champ>
+                <Champ label="Date d'effet" requis>
+                  <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} />
+                </Champ>
+                <Champ label="Date d'expiration" requis={Number(dureeId) === 5} aide={Number(dureeId) === 5 ? 'Durée libre : à saisir' : 'Calculée selon la durée'}>
+                  {Number(dureeId) === 5
+                    ? <input type="date" className="form-control" min={dateEffet} value={expirationPersonnalisee} onChange={(e) => setExpirationPersonnalisee(e.target.value)} />
+                    : <input type="date" className="form-control" value={dateExpiration} readOnly disabled />}
+                </Champ>
+              </div>
+
+              {estRc && (
+                <>
+                  <div style={sousTitre}>Risque assuré</div>
+                  <div style={grille}>
+                    <Champ label="Activité">
+                      <input type="text" className="form-control" value={activite} onChange={(e) => setActivite(e.target.value)} />
+                    </Champ>
+                    <Champ label="Domaine d'activité"
+                      aide={nouveauDomaine === null && (
+                        <button type="button" onClick={() => setNouveauDomaine('')} style={lienAction} title="Ajouter un domaine d'activité à la liste">
+                          <Plus size={13} /> Nouveau domaine
+                        </button>
+                      )}>
+                      {nouveauDomaine === null ? (
+                        <select className="form-control" value={idDomaineActivite} onChange={(e) => setIdDomaineActivite(Number(e.target.value))}>
+                          <option value={0}>— Non précisé —</option>
+                          {trierParLibelle(domaines, (d) => d.libelle).map((d) => (<option key={d.id_domaine_activite} value={d.id_domaine_activite}>{d.libelle}</option>))}
+                        </select>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <input type="text" className="form-control" autoFocus placeholder="Ex. : INDUSTRIE ET COMMERCE" value={nouveauDomaine}
+                            onChange={(e) => setNouveauDomaine(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouterDomaine(); } if (e.key === 'Escape') setNouveauDomaine(null); }} />
+                          <button type="button" className="btn btn-primary" style={{ background: couleur, borderColor: couleur, padding: '0.4rem 0.7rem' }} onClick={ajouterDomaine}>Ajouter</button>
+                          <button type="button" className="btn btn-secondary" style={{ padding: '0.4rem 0.7rem' }} onClick={() => setNouveauDomaine(null)} title="Annuler">
+                            <X size={15} />
+                          </button>
+                        </div>
+                      )}
+                    </Champ>
+                    <Champ label="Localisation">
+                      <input type="text" className="form-control" value={localisation} onChange={(e) => setLocalisation(e.target.value)} />
+                    </Champ>
+                    <Champ label="Date de début" aide="Manifestation : premier jour">
+                      <input type="date" className="form-control" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} />
+                    </Champ>
+                    <Champ label="Nombre de participants">
+                      <input type="number" min="0" className="form-control" value={nombreParticipants} onChange={(e) => setNombreParticipants(Math.max(0, Number(e.target.value) || 0))} />
+                    </Champ>
+                  </div>
+
+                  <div style={sousTitre}>Base de tarification et capitaux</div>
+                  <div style={grille}>
+                    <Champ label="Assiette de prime" aide="Chiffre d'affaires, masse salariale…">
+                      <AmountInput value={assiettePrime} onChange={setAssiettePrime} />
+                    </Champ>
+                    <Champ label="Taux de prime (%)" aide={primeAssietteTaux > 0 ? `Soit ${fcfa(primeAssietteTaux)} F de prime nette` : undefined}>
+                      <input type="number" min="0" step="0.01" className="form-control" value={tauxPrime} onChange={(e) => setTauxPrime(Math.max(0, Number(e.target.value) || 0))} />
+                    </Champ>
+                    <Champ label="Capital dommages corporels" aide={estMinene ? 'Barème MINENE' : undefined}>
+                      <AmountInput value={capitalDommageCorporel} onChange={setCapitalDommageCorporel} disabled={estMinene} />
+                    </Champ>
+                    <Champ label="Capital intoxication alimentaire" aide={estMinene ? 'Barème MINENE' : undefined}>
+                      <AmountInput value={capitalIntoxication} onChange={setCapitalIntoxication} disabled={estMinene} />
+                    </Champ>
+                    <Champ label="Capital dommages matériels" aide={estMinene ? 'Barème MINENE' : undefined}>
+                      <AmountInput value={capitalDommageMateriel} onChange={setCapitalDommageMateriel} disabled={estMinene} />
+                    </Champ>
+                  </div>
+                </>
+              )}
+
+              {pied(
+                <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes')} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <ChevronLeft size={16} /> Annuler
+                </button>,
+                boutonSuivant(2, 'Suivant : garanties'),
+              )}
             </>
           )}
 
-          <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-primary" onClick={() => setStep(2)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: couleur }}>
-              Suivant : Garanties <ArrowRight size={16} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ÉTAPE 2 : GARANTIES */}
-      {step === 2 && (
-        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
-            <h3 style={{ ...titreSection, margin: 0 }}>Garanties de l'offre ({garantiesAcquises.length} cochée{garantiesAcquises.length > 1 ? 's' : ''})</h3>
-            <button type="button" className="btn btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => chargerGaranties({ depuisDevis: idDevisEdite })} disabled={chargementGaranties}>
-              {chargementGaranties ? 'Chargement…' : idDevisEdite ? 'Recharger (valeurs du devis)' : 'Recharger les garanties'}
-            </button>
-          </div>
-          {offreMinene && (
-            <p style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', color: '#fcd34d', fontSize: '0.85rem' }}>
-              <AlertTriangle size={15} /> Offre MINENE : garanties et primes sont fixées par la base à l'enregistrement.
-            </p>
-          )}
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ width: '100%', fontSize: '0.83rem', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ color: '#94a3b8', fontSize: '0.72rem', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <th style={{ padding: '0.5rem', textAlign: 'center' }}>ACQUISE</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'left' }}>GARANTIE</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'right', width: '170px' }}>CAPITAL</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'right', width: '140px' }}>FRANCHISE MIN</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'right', width: '140px' }}>FRANCHISE MAX</th>
-                  <th style={{ padding: '0.5rem', textAlign: 'right', width: '110px' }}>TAUX FRANCH. (%)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {garanties.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</td></tr>
-                )}
-                {garanties.map((g) => (
-                  <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', opacity: g.acquise ? 1 : 0.55 }}>
-                    <td style={{ padding: '0.4rem', textAlign: 'center' }}>
-                      <input type="checkbox" checked={g.acquise} onChange={() => majGarantie(g.id, 'acquise', !g.acquise)} />
-                    </td>
-                    <td style={{ padding: '0.4rem', fontWeight: 600 }}>{g.libelle}</td>
-                    <td style={{ padding: '0.4rem' }}><AmountInput value={g.capital} onChange={(v) => majGarantie(g.id, 'capital', v)} suffix="" /></td>
-                    <td style={{ padding: '0.4rem' }}><AmountInput value={g.franchiseMinimum} onChange={(v) => majGarantie(g.id, 'franchiseMinimum', v)} suffix="" /></td>
-                    <td style={{ padding: '0.4rem' }}><AmountInput value={g.franchiseMaximum} onChange={(v) => majGarantie(g.id, 'franchiseMaximum', v)} suffix="" /></td>
-                    <td style={{ padding: '0.4rem' }}>
-                      <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', Math.max(0, Number(e.target.value) || 0))} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'space-between' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <ArrowLeft size={16} /> Précédent
-            </button>
-            <button type="button" className="btn btn-primary" onClick={() => setStep(3)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: couleur }}>
-              Suivant : Primes & assuré <ArrowRight size={16} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ÉTAPE 3 : PRIMES ET ASSURÉ */}
-      {step === 3 && (
-        <div className="glass-panel" style={{ padding: '2rem', borderRadius: '12px' }}>
-          <h3 style={titreSection}>Primes</h3>
-          {offreMinene ? (
-            <div>
-              {apercuMinene?.Totaux ? (
-                <>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
-                    {[
-                      ['Prime nette', apercuMinene.Totaux.PrimeNette],
-                      ['Accessoires', apercuMinene.Totaux.Accessoire],
-                      ['Frais de gestion', apercuMinene.Totaux.FraisGestion],
-                      ['Taxes', apercuMinene.Totaux.Taxe],
-                      ['Prime TTC', apercuMinene.Totaux.PrimeTtc],
-                    ].map(([libelle, valeur]) => (
-                      <div key={libelle} style={{ background: libelle === 'Prime TTC' ? 'rgba(14, 165, 233, 0.1)' : 'var(--bg-surface-elevated)', padding: '0.9rem', borderRadius: '8px', border: libelle === 'Prime TTC' ? `2px solid ${couleur}` : '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{libelle}</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{fcfa(valeur)} FCFA</div>
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.75rem 0 0' }}>
-                    Par adhérent : prime {fcfa(apercuMinene.Unitaire.PrimeNette)}, accessoire {fcfa(apercuMinene.Unitaire.Accessoire)},
-                    frais de gestion MINENE {fcfa(apercuMinene.Unitaire.FraisGestion)}, taxe {String(apercuMinene.TauxTaxe).replace('.', ',')} % ({fcfa(apercuMinene.Unitaire.Taxe)}),
-                    soit {fcfa(apercuMinene.Unitaire.PrimeTtc)} F TTC × {apercuMinene.Nombre} adhérent{apercuMinene.Nombre > 1 ? 's' : ''} de la police Santé
-                    {' '}{apercuMinene.Police} (Administration &gt; Réglages Santé MINENE). Montants confirmés par la base à l&apos;enregistrement.
-                  </p>
-                </>
+          {/* ---------------------------------------------------------- ÉTAPE 2 : GARANTIES */}
+          {step === 2 && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.9rem' }}>
+                <h2 style={{ ...titreCarte, margin: 0 }}>
+                  <ListChecks size={18} style={{ color: couleur }} /> Garanties de l'offre
+                  {garanties.length > 0 && (
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '999px', border: `1px solid ${couleur}`, color: couleur }}>
+                      {garantiesAcquises.length} / {garanties.length} cochée{garantiesAcquises.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </h2>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {garanties.length > 0 && !offreMinene && (
+                    <>
+                      <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }} onClick={() => cocherToutes(true)}>Tout cocher</button>
+                      <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }} onClick={() => cocherToutes(false)}>Tout décocher</button>
+                    </>
+                  )}
+                  <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                    onClick={() => chargerGaranties({ depuisDevis: idDevisEdite })} disabled={chargementGaranties}>
+                    <RefreshCw size={13} className={chargementGaranties ? 'spin' : undefined} /> {idDevisEdite ? 'Valeurs du devis' : 'Recharger'}
+                  </button>
+                </div>
+              </div>
+              {offreMinene ? (
+                <div style={{ ...alerte('var(--accent-amber)'), marginBottom: '1rem' }}>
+                  <AlertTriangle size={18} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: 1 }} />
+                  <div>Offre MINENE : garanties et primes sont fixées par la base à l'enregistrement.</div>
+                </div>
               ) : (
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                  {apercuMinene?.erreur || "Offre MINENE : les primes sont calculées par la base à l'enregistrement, pour chaque adhérent de la police Santé."}
+                <p style={texteAide}>
+                  Cochez les garanties couvertes : la prime nette saisie à l'étape suivante est répartie sur elles. Capitaux et franchises restent modifiables.
                 </p>
               )}
-            </div>
-          ) : (
-            <>
-              <p style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: 0, lineHeight: 1.5 }}>
-                Saisissez la prime nette : la base la répartit sur les garanties cochées. L'accessoire est celui du barème de la compagnie
-                et la taxe vaut {tauxTaxe !== null ? `${tauxTaxe} %` : 'le taux du produit'} de (prime nette + accessoire), comme le bouton « Calculer » d'URANUS ;
-                les deux restent modifiables.
-                {primeTarif > 0 && ` Prime calculée au tarif pour ces capitaux : ${fcfa(primeTarif)} FCFA.`}
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Prime nette (* requis)</label>
-                  <AmountInput value={primeNette} onChange={(v) => { setPrimeNette(v); setTaxeManuelle(false); }} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
-                    <span>Accessoire</span>
-                    {accessoireManuel && accessoireBareme !== null && Number(accessoire) !== accessoireBareme && (
-                      <button type="button" onClick={() => { setAccessoireManuel(false); setAccessoire(accessoireBareme); setTaxeManuelle(false); }}
-                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.72rem' }}>
-                        ↺ barème {fcfa(accessoireBareme)}
-                      </button>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '0.83rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...th, textAlign: 'center', width: '60px' }}>Acquise</th>
+                      <th style={{ ...th, minWidth: '220px' }}>Garantie</th>
+                      <th style={{ ...th, textAlign: 'right', width: '150px' }}>Capital</th>
+                      <th style={{ ...th, textAlign: 'right', width: '120px' }}>Franchise min.</th>
+                      <th style={{ ...th, textAlign: 'right', width: '120px' }}>Franchise max.</th>
+                      <th style={{ ...th, textAlign: 'right', width: '90px' }}>Taux (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {garanties.length === 0 && (
+                      <tr><td colSpan={6} style={{ ...td, padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)' }}>{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</td></tr>
                     )}
-                  </label>
-                  <AmountInput value={accessoire} onChange={(v) => { setAccessoire(v); setAccessoireManuel(true); setTaxeManuelle(false); }} />
-                  <small style={{ color: '#94a3b8', fontSize: '0.72rem' }}>
-                    {calculEnCours ? 'Calcul…' : accessoireBareme !== null ? `Barème de la compagnie : ${fcfa(accessoireBareme)} FCFA${accessoireManuel ? ' (montant saisi conservé)' : ''}` : 'Calculé dès la saisie de la prime nette'}
-                  </small>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
-                    <span>Taxe</span>
-                    {taxeManuelle && taxeCalculee !== null && Number(taxe) !== taxeCalculee && (
-                      <button type="button" onClick={() => setTaxeManuelle(false)}
-                        style={{ background: 'transparent', border: 'none', color: couleur, cursor: 'pointer', fontSize: '0.72rem' }}>
-                        ↺ recalculer {fcfa(taxeCalculee)}
-                      </button>
-                    )}
-                  </label>
-                  <AmountInput value={taxe} onChange={(v) => { setTaxe(v); setTaxeManuelle(true); }} />
-                  <small style={{ color: tauxTaxe !== null && Number(taxe) < taxeMinimum ? '#f87171' : '#94a3b8', fontSize: '0.72rem' }}>
-                    {tauxTaxe !== null
-                      ? `${tauxTaxe} % × (prime nette + accessoire)${Number(taxe) < taxeMinimum ? ` — minimum légal ${fcfa(taxeMinimum)} FCFA` : ''}`
-                      : 'Calculée dès la saisie de la prime nette'}
-                  </small>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Prime TTC</label>
-                  <input type="text" className="form-control" readOnly value={`${fcfa(primeTtc)} FCFA`} style={{ fontWeight: 800, background: 'rgba(255,255,255,0.05)' }} />
-                </div>
+                    {garanties.map((g) => (
+                      <tr key={g.id} style={{ opacity: g.acquise ? 1 : 0.55 }}>
+                        <td style={{ ...td, textAlign: 'center' }}>
+                          <input type="checkbox" checked={g.acquise} onChange={() => majGarantie(g.id, 'acquise', !g.acquise)} aria-label={`Garantie ${g.libelle}`}
+                            style={{ width: 17, height: 17, accentColor: couleur, cursor: 'pointer' }} />
+                        </td>
+                        <td style={{ ...td, fontWeight: 600, cursor: 'pointer' }} onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>{g.libelle}</td>
+                        <td style={td}><AmountInput value={g.capital} onChange={(v) => majGarantie(g.id, 'capital', v)} suffix="" /></td>
+                        <td style={td}><AmountInput value={g.franchiseMinimum} onChange={(v) => majGarantie(g.id, 'franchiseMinimum', v)} suffix="" /></td>
+                        <td style={td}><AmountInput value={g.franchiseMaximum} onChange={(v) => majGarantie(g.id, 'franchiseMaximum', v)} suffix="" /></td>
+                        <td style={td}>
+                          <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', Math.max(0, Number(e.target.value) || 0))} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+              {pied(boutonPrecedent(1), boutonSuivant(3, 'Suivant : prime et souscripteur'))}
             </>
           )}
 
-          <h3 style={{ ...titreSection, marginTop: '2rem' }}>Souscripteur et assuré</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
-            {champClient('Souscripteur (* requis)', rechercheSouscripteur, setRechercheSouscripteur, listeSouscripteurOuverte, setListeSouscripteurOuverte, (c) => {
-              setSouscripteurId(Number(c.id));
-              if (!assureId) {
-                setAssureId(Number(c.id));
-                setRechercheAssure(c.nomcomplet);
-                setTelephoneAssure(c.raw?.Mobile || c.raw?.Telephone || '');
-                setAdresseGeo(c.raw?.Adresse2 || '');
-              }
-            }, true)}
-            {champClient('Assuré', rechercheAssure, setRechercheAssure, listeAssureOuverte, setListeAssureOuverte, (c) => {
-              setAssureId(Number(c.id));
-              setTelephoneAssure(c.raw?.Mobile || c.raw?.Telephone || '');
-              setAdresseGeo(c.raw?.Adresse2 || '');
-            }, false)}
-            <div className="form-group">
-              <label className="form-label">Téléphone de l'assuré</label>
-              <input type="tel" className="form-control" value={telephoneAssure} onChange={(e) => setTelephoneAssure(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Adresse géographique</label>
-              <input type="text" className="form-control" value={adresseGeo} onChange={(e) => setAdresseGeo(e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Pièce jointe (optionnel)</label>
-              <input type="file" className="form-control" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFichier(e.target.files?.[0] || null)} />
-              {fichier && <small style={{ color: '#94a3b8', fontSize: '0.72rem' }}>Jointe au devis à l'enregistrement : {fichier.name}</small>}
-            </div>
-          </div>
+          {/* ---------------------------------------------------------- ÉTAPE 3 : PRIME ET SOUSCRIPTEUR */}
+          {step === 3 && (
+            <>
+              <h2 style={titreCarte}><Calculator size={18} style={{ color: couleur }} /> Prime</h2>
+              {offreMinene ? (
+                totauxMinene ? (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: '0.6rem' }}>
+                      {tuile('Prime nette', totauxMinene.PrimeNette)}
+                      {tuile('Accessoires', totauxMinene.Accessoire)}
+                      {tuile('Frais de gestion', totauxMinene.FraisGestion)}
+                      {tuile('Taxes', totauxMinene.Taxe)}
+                      {tuile('Prime TTC', totauxMinene.PrimeTtc, true)}
+                    </div>
+                    <p style={{ ...texteAide, margin: '0.75rem 0 0' }}>
+                      Par adhérent : prime {fcfa(apercuMinene.Unitaire.PrimeNette)}, accessoire {fcfa(apercuMinene.Unitaire.Accessoire)},
+                      frais de gestion MINENE {fcfa(apercuMinene.Unitaire.FraisGestion)}, taxe {String(apercuMinene.TauxTaxe).replace('.', ',')} % ({fcfa(apercuMinene.Unitaire.Taxe)}),
+                      soit {fcfa(apercuMinene.Unitaire.PrimeTtc)} F TTC × {apercuMinene.Nombre} adhérent{apercuMinene.Nombre > 1 ? 's' : ''} de la police Santé
+                      {' '}{apercuMinene.Police} (Administration &gt; Réglages Santé MINENE). Montants confirmés par la base à l&apos;enregistrement.
+                    </p>
+                  </>
+                ) : (
+                  <p style={texteAide}>
+                    {apercuMinene?.erreur || "Offre MINENE : les primes sont calculées par la base à l'enregistrement, pour chaque adhérent de la police Santé."}
+                  </p>
+                )
+              ) : (
+                <>
+                  <p style={texteAide}>
+                    La prime nette est répartie par la base sur les garanties cochées. L'accessoire suit le barème de la compagnie et la taxe
+                    {tauxTaxe !== null ? ` vaut ${tauxTaxe} %` : ' suit le taux du produit'} de (prime nette + accessoire) ; les deux restent modifiables.
+                  </p>
+                  {[[primeTarif > 0 ? Math.round(primeTarif) : 0, 'Prime du tarif'], [primeAssietteTaux, 'Assiette × taux']]
+                    .filter(([montant]) => montant > 0 && montant !== Math.round(Number(primeNette) || 0)).length > 0 && (
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Lightbulb size={14} /> Propositions :</span>
+                      {[[primeTarif > 0 ? Math.round(primeTarif) : 0, 'Prime du tarif'], [primeAssietteTaux, 'Assiette × taux']]
+                        .filter(([montant]) => montant > 0 && montant !== Math.round(Number(primeNette) || 0))
+                        .map(([montant, libelle]) => (
+                          <button key={libelle} type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.7rem' }}
+                            onClick={() => { setPrimeNette(montant); setTaxeManuelle(false); }}>
+                            {libelle} : {fcfa(montant)} F
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  <div style={grille}>
+                    <Champ label="Prime nette" requis>
+                      <AmountInput value={primeNette} onChange={(v) => { setPrimeNette(v); setTaxeManuelle(false); }} />
+                    </Champ>
+                    <Champ label="Accessoire"
+                      aide={(
+                        <>
+                          {calculEnCours ? 'Calcul…' : accessoireBareme !== null ? `Barème : ${fcfa(accessoireBareme)} F${accessoireManuel && Number(accessoire) !== accessoireBareme ? ' (montant saisi)' : ''}` : 'Proposé dès la saisie de la prime nette'}
+                          {accessoireManuel && accessoireBareme !== null && Number(accessoire) !== accessoireBareme && (
+                            <> · <button type="button" style={lienAction} onClick={() => { setAccessoireManuel(false); setAccessoire(accessoireBareme); setTaxeManuelle(false); }}>remettre le barème</button></>
+                          )}
+                        </>
+                      )}>
+                      <AmountInput value={accessoire} onChange={(v) => { setAccessoire(v); setAccessoireManuel(true); setTaxeManuelle(false); }} />
+                    </Champ>
+                    <Champ label="Taxe"
+                      erreur={tauxTaxe !== null && Number(taxe) < taxeMinimum ? `Minimum légal : ${fcfa(taxeMinimum)} F (${tauxTaxe} % de la prime nette)` : undefined}
+                      aide={(
+                        <>
+                          {tauxTaxe !== null ? `${tauxTaxe} % × (prime nette + accessoire)` : 'Calculée dès la saisie de la prime nette'}
+                          {taxeManuelle && taxeCalculee !== null && Number(taxe) !== taxeCalculee && (
+                            <> · <button type="button" style={lienAction} onClick={() => setTaxeManuelle(false)}>recalculer ({fcfa(taxeCalculee)} F)</button></>
+                          )}
+                        </>
+                      )}>
+                      <AmountInput value={taxe} onChange={(v) => { setTaxe(v); setTaxeManuelle(true); }} />
+                    </Champ>
+                    {tuile('Prime TTC', primeTtc, true)}
+                  </div>
+                </>
+              )}
 
-          <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setStep(2)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <ArrowLeft size={16} /> Précédent
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleSave}
-              disabled={isSubmitting || isLoadingEdit}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: couleur, padding: '0.75rem 1.5rem', fontWeight: 800 }}
-            >
-              <Check size={18} />
-              {isSubmitting ? 'Enregistrement en cours...' : idDevisEdite ? 'Enregistrer les modifications' : `Enregistrer le Devis ${infos.court}`}
-            </button>
-          </div>
+              <h2 style={{ ...titreCarte, marginTop: '2rem' }}><Users size={18} style={{ color: couleur }} /> Souscripteur et assuré</h2>
+              <div style={grille}>
+                <RechercheClient label="Souscripteur (client)" personne={souscripteur} onChoisir={choisirSouscripteur}
+                  onNouveau={() => setNouveauClientPour('souscripteur')} demande={demandeRecherche} />
+              </div>
+              {souscripteur && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={souscripteur} /></div>}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '1.25rem', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                <input type="checkbox" checked={assureDifferent} style={{ width: 17, height: 17, accentColor: couleur }}
+                  onChange={(e) => {
+                    setAssureDifferent(e.target.checked);
+                    if (!e.target.checked) { setAssureChoisi(null); setTelephoneAssure(souscripteur?.Telephone || ''); setAdresseGeo(souscripteur?.AdresseGeographique || ''); }
+                  }} />
+                L'assuré est une autre personne que le souscripteur
+              </label>
+              {assureDifferent && (
+                <>
+                  <div style={{ ...grille, marginTop: '1rem' }}>
+                    <RechercheClient label="Assuré" personne={assureChoisi} onChoisir={choisirAssure} onNouveau={() => setNouveauClientPour('assure')} />
+                  </div>
+                  {assureChoisi && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={assureChoisi} /></div>}
+                </>
+              )}
+              <div style={{ ...grille, marginTop: '1rem' }}>
+                <Champ label="Téléphone de l'assuré">
+                  <input type="tel" className="form-control" value={telephoneAssure} onChange={(e) => setTelephoneAssure(e.target.value)} />
+                </Champ>
+                <Champ label="Adresse géographique">
+                  <input type="text" className="form-control" value={adresseGeo} onChange={(e) => setAdresseGeo(e.target.value)} />
+                </Champ>
+                <Champ label="Pièce jointe" aide={fichier ? `Jointe à l'enregistrement : ${fichier.name}` : 'Facultatif : PDF ou image'}>
+                  <input type="file" className="form-control" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFichier(e.target.files?.[0] || null)} />
+                </Champ>
+              </div>
+
+              {pied(
+                boutonPrecedent(2),
+                <button type="button" className="btn btn-primary" onClick={handleSave} disabled={isSubmitting || isLoadingEdit} aria-busy={isSubmitting}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: couleur, borderColor: couleur, padding: '0.7rem 1.4rem', fontWeight: 800 }}>
+                  {isSubmitting ? <Loader2 size={18} className="spin" /> : <Check size={18} />}
+                  {isSubmitting ? 'Enregistrement…' : idDevisEdite ? 'Enregistrer les modifications' : `Enregistrer le devis ${infos.court}`}
+                </button>,
+              )}
+            </>
+          )}
         </div>
-      )}
+
+        {/* RÉSUMÉ PERMANENT */}
+        <ResumeDevis
+          icone={Shield}
+          couleur={couleur}
+          lignes={[
+            ['Compagnie', nomCompagnie],
+            ['Offre', libelleOffre],
+            ['Période', dateEffet && dateExpiration ? `${dateFr(dateEffet)} → ${dateFr(dateExpiration)}` : ''],
+            ['Garanties', offreMinene ? 'fixées par la base' : garanties.length ? `${garantiesAcquises.length} / ${garanties.length}` : ''],
+            Number(reduction) > 0 && ['Réduction', `${reduction} %`],
+            ['Souscripteur', souscripteur?.Nom],
+          ]}
+          montant={offreMinene
+            ? (totauxMinene ? `${fcfa(totauxMinene.PrimeTtc)} F` : null)
+            : (Number(primeNette) > 0 ? `${fcfa(primeTtc)} F` : null)}
+          detail={offreMinene
+            ? (totauxMinene ? `${apercuMinene.Nombre} adhérent${apercuMinene.Nombre > 1 ? 's' : ''} de la police Santé` : 'Calculée par la base pour chaque adhérent')
+            : (Number(primeNette) > 0 ? `Prime nette ${fcfa(primeNette)} F · accessoire ${fcfa(accessoire)} F · taxe ${fcfa(taxe)} F` : 'Saisie à l\'étape 3')}
+        />
+      </div>
 
       {createdQuote && (
         <ViewQuoteModal
@@ -1165,13 +1186,15 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       )}
 
       <QuickAddClientModal
-        isOpen={isQuickAddClientOpen}
-        onClose={() => setIsQuickAddClientOpen(false)}
-        valeursInitiales={qd.client}
-        onClientCreated={(newClient) => {
-          setClients((prev) => [newClient, ...prev]);
-          setSouscripteurId(Number(newClient.id || newClient.IdClient));
-          setRechercheSouscripteur(newClient.nomcomplet || newClient.Nom);
+        isOpen={Boolean(nouveauClientPour)}
+        onClose={() => setNouveauClientPour(null)}
+        valeursInitiales={nouveauClientPour === 'souscripteur' ? qd.client : undefined}
+        onClientCreated={(client) => {
+          const personne = personneDepuisClient(client);
+          if (personne?.IdClient) {
+            if (nouveauClientPour === 'assure') choisirAssure(personne); else choisirSouscripteur(personne);
+          }
+          setNouveauClientPour(null);
         }}
       />
     </div>

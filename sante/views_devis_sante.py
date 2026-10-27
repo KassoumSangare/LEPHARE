@@ -68,8 +68,8 @@ COLONNES_IMPORT = (
 )
 ID_INTERMEDIAIRE = 1
 ID_AVENANT_AFFAIRE_NOUVELLE = 1
-# Gestionnaire des contrats Santé (champ non modifiable de l'écran Contrat) : réglage « sante.gestionnaire »
-# (Administration > Le cabinet & règles de gestion), VITALIS SANTE à défaut
+# Gestionnaire des contrats Santé : réglage « sante.gestionnaire » (Administration > Le cabinet & règles de gestion),
+# VITALIS SANTE à défaut ; imposé en MINENE, saisi à l'écran pour les autres offres (demande du 2026-10-27)
 GESTIONNAIRE_SANTE = "VITALIS SANTE"
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
@@ -713,7 +713,7 @@ def _donnees_devis(request, client_obligatoire=True):
             "DateEmission": date_emission_du_jour().strftime("%d-%m-%Y"),
             "DateEffet": _date_jj_mm_aaaa(data.get("DateEffet")),
             "DateExpiration": _date_jj_mm_aaaa(data.get("DateExpiration")),
-            "GestionnaireSante": _texte(data.get("GestionnaireSante")) or valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE),
+            "GestionnaireSante": _texte(data.get("GestionnaireSante"))[:60] or valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE),
         }
     )
     if not _entier(data.get("IdDevis")):
@@ -726,6 +726,9 @@ def _donnees_devis(request, client_obligatoire=True):
     )
     if formules and _entier(data.get("IdOffre")) not in formules:
         data["IdOffre"] = formules[0]
+    # MINENE : gestionnaire du réglage, quoi que l'écran envoie
+    if _entier(data.get("IdOffre")) in OFFRES_MINENE:
+        data["GestionnaireSante"] = valeur_parametre("sante.gestionnaire", GESTIONNAIRE_SANTE)
     if not _entier(data.get("IdClient")):
         if client_obligatoire:
             return None, Response({"error": "Choisissez le client."}, status=status.HTTP_400_BAD_REQUEST)

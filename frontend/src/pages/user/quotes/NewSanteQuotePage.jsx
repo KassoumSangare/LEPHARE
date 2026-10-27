@@ -45,8 +45,8 @@ import { downloadBlob } from '../../../utils/exportUtils';
 // par un devis initialisé au premier enregistrement (numéro de saisie d'URANUS) ; les primes sont
 // calculées par la base (sp_creation_devis_sante). Libellés et valeurs : ceux d'URANUS et de la base.
 
-// Gestionnaire des contrats Santé (champ non modifiable à l'écran, comme dans URANUS) :
-// Administration > Le cabinet & règles de gestion (sante.gestionnaire)
+// Gestionnaire des contrats Santé : Administration > Le cabinet & règles de gestion (sante.gestionnaire). Imposé en
+// MINENE (VITALIS SANTE), proposé par défaut et modifiable pour les autres offres (demande du 2026-10-27)
 const gestionnaireSante = () => parametre('sante.gestionnaire', 'VITALIS SANTE');
 // Catégories MINENE (code catégorie 123 : tarifs 87, 102 et 153) : prime calculée automatiquement,
 // zone CÔTE D'IVOIRE, durée annuelle
@@ -208,6 +208,7 @@ export const NewSanteQuotePage = () => {
   // 1. CONTRAT
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [typeContrat, setTypeContrat] = useState(1);
+  const [gestionnaire, setGestionnaire] = useState(gestionnaireSante);
   const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(5));
   const [idTarif, setIdTarif] = useState(0);
   const [ajustement, setAjustement] = useState('aucun');
@@ -422,6 +423,7 @@ export const NewSanteQuotePage = () => {
           setIdTarif(Number(detail.idtarif) || 0);
           setIdOffre(Number(detail.idoffre) || 0);
           if (detail.idtypecontrat) setTypeContrat(Number(detail.idtypecontrat));
+          if (String(detail.gestionnairesante || '').trim()) setGestionnaire(String(detail.gestionnairesante).trim());
           const t = Number(detail.tauxreductioncommerciale) || 0;
           setAjustement(t < 0 ? 'majoration' : (t > 0 ? 'reduction' : 'aucun'));
           setTaux(Math.abs(t));
@@ -710,7 +712,7 @@ export const NewSanteQuotePage = () => {
     TypeContrat: Number(typeContrat),
     // Convention URANUS : positif = réduction, négatif = majoration ; aucun ajustement = 0
     TauxReduction: ajustement === 'aucun' ? 0 : (ajustement === 'majoration' ? -1 : 1) * (Number(taux) || 0),
-    GestionnaireSante: gestionnaireSante(),
+    GestionnaireSante: estMinene ? gestionnaireSante() : (gestionnaire.trim() || gestionnaireSante()),
     DateEffet: dateEffet,
     DateExpiration: dateExpiration,
     IdDuree: Number(dureeId),
@@ -1006,7 +1008,10 @@ export const NewSanteQuotePage = () => {
                 {(ajustementsMinene[ajustement] || []).map(([t, sp]) => <option key={t} value={t}>{sp}</option>)}
               </datalist>
             )}
-            {champ('Gestionnaire', <input type="text" className="form-control" value={gestionnaireSante()} disabled readOnly />)}
+            {estMinene
+              ? champ('Gestionnaire', <input type="text" className="form-control" value={gestionnaireSante()} disabled readOnly />, 'MINENE SANTÉ : gestionnaire imposé.')
+              : champ('Gestionnaire', <input type="text" className="form-control" value={gestionnaire} maxLength={60} placeholder={gestionnaireSante()}
+                onChange={(e) => setGestionnaire(e.target.value)} disabled={desactive} />)}
             {champ('Terme du contrat',
               <TermeContratSelect
                 value={termeId}
@@ -1318,7 +1323,7 @@ export const NewSanteQuotePage = () => {
                   {champ('Date d\'effet', <input type="date" className="form-control" value={formAdherent.dateeffet} onChange={(e) => setFormAdherent((p) => ({ ...p, dateeffet: e.target.value }))} disabled={desactive} />)}
                   {champ('Date début consommation', <input type="date" className="form-control" value={formAdherent.datedebutconsommation} onChange={(e) => setFormAdherent((p) => ({ ...p, datedebutconsommation: e.target.value }))} disabled={desactive} />)}
                   {interrupteur('Surprime', formAdherent.surprimeappliquee, (v) => setFormAdherent((p) => ({ ...p, surprimeappliquee: v })))}
-                  {formAdherent.surprimeappliquee && champ('Montant Surprime', <AmountInput value={formAdherent.montantsurprime} onChange={(v) => setFormAdherent((p) => ({ ...p, montantsurprime: v }))} disabled={desactive} />)}
+                  {formAdherent.surprimeappliquee && champ('Montant Surprime', <AmountInput value={formAdherent.montantsurprime} onChange={(v) => setFormAdherent((p) => ({ ...p, montantsurprime: v }))} disabled={desactive} />, estMinene ? 'MINENE : ce montant annuel remplace la surprime calculée (âge et affection) de cette personne ; à 0, la surprime reste calculée.' : undefined)}
                 </div>
                 <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                   <button type="button" className="btn btn-secondary" onClick={() => setFormAdherent(null)}><X size={14} /> Annuler</button>
@@ -1448,7 +1453,7 @@ export const NewSanteQuotePage = () => {
                   {interrupteur('Pathologie antérieure', formAffilie.handicape, (v) => setFormAffilie((p) => ({ ...p, handicape: v })))}
                   {interrupteur('Certificat de scolarité / rapport médical', formAffilie.certificat, (v) => setFormAffilie((p) => ({ ...p, certificat: v })))}
                   {interrupteur('Surprime', formAffilie.surprimeappliquee, (v) => setFormAffilie((p) => ({ ...p, surprimeappliquee: v })))}
-                  {formAffilie.surprimeappliquee && champ('Montant Surprime', <AmountInput value={formAffilie.montantsurprime} onChange={(v) => setFormAffilie((p) => ({ ...p, montantsurprime: v }))} disabled={desactive} />)}
+                  {formAffilie.surprimeappliquee && champ('Montant Surprime', <AmountInput value={formAffilie.montantsurprime} onChange={(v) => setFormAffilie((p) => ({ ...p, montantsurprime: v }))} disabled={desactive} />, estMinene ? 'MINENE : ce montant annuel remplace la surprime calculée (âge et affection) de cette personne ; à 0, la surprime reste calculée.' : undefined)}
                 </div>
                 {formAffilie.lien === 'E' && (
                   <p style={{ margin: '0.75rem 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>

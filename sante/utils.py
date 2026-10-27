@@ -521,7 +521,8 @@ def _familles_minene(cursor, parametres, par_operateur=True):
         SELECT AD.idadherent, TRIM(COALESCE(AD.nom, '') || ' ' || COALESCE(AD.prenom, '')) AS adherent,
                CASE WHEN F.idoffresante = ANY(%(minene)s) THEN F.idoffresante ELSE %(offre)s END AS idoffre,
                AF.idaffilie, AF.lien, TRIM(COALESCE(AF.nom, '') || ' ' || COALESCE(AF.prenom, '')) AS personne,
-               EXTRACT(YEAR FROM AGE(%(effet)s, AF.datenaissance))::int AS age, COALESCE(AF.nombrepathologie, 0) AS pathologies
+               EXTRACT(YEAR FROM AGE(%(effet)s, AF.datenaissance))::int AS age, COALESCE(AF.nombrepathologie, 0) AS pathologies,
+               CASE WHEN COALESCE(AF.surprimeappliquee, FALSE) THEN COALESCE(AF.montantsurprime, 0) ELSE 0 END AS imposee
         FROM stdadherent AS AD
         JOIN stdaffilie AS AF ON AF.idadherent = AD.idadherent AND AF.iddevis = AD.iddevis
         LEFT JOIN stdfiliale AS F ON F.idfiliale = AD.idfiliale
@@ -542,9 +543,10 @@ def _familles_minene(cursor, parametres, par_operateur=True):
                WHERE SD.iddevis = %s LIMIT 1""", [devis_taux_precedent])
         prev = _decimal((cursor.fetchone() or [0])[0])
     familles = {}
-    for idadherent, adherent, idoffre, idaffilie, lien, personne, age, pathologies in lignes:
+    for idadherent, adherent, idoffre, idaffilie, lien, personne, age, pathologies, imposee in lignes:
         f = familles.setdefault(idadherent, {"IdAdherent": idadherent, "Adherent": adherent, "IdOffre": idoffre, "Personnes": []})
-        f["Personnes"].append({"IdAffilie": idaffilie, "Lien": lien, "Nom": personne, "Age": age, "Pathologies": pathologies})
+        f["Personnes"].append({"IdAffilie": idaffilie, "Lien": lien, "Nom": personne, "Age": age, "Pathologies": pathologies,
+                               "Imposee": _decimal(imposee)})
     nombre = len(familles)
     sans_prime = prime_famille == 0 and prime_affilie == 0 and prime_globale == 0
     facteur_prev = (1 - prev / 100) if applique_prev else Decimal(1)
@@ -562,7 +564,12 @@ def _familles_minene(cursor, parametres, par_operateur=True):
         age_avant = affection_avant = Decimal(0)
         for p in f["Personnes"]:
             s_age = s_affection = Decimal(0)
-            if prime_globale == 0:
+            # Surprime imposée (case cochée et montant) : remplace la surprime calculée de la personne, sans le taux de l'an dernier
+            if prime_globale == 0 and p["Imposee"] > 0:
+                s_affection_imposee = p["Imposee"]
+            else:
+                s_affection_imposee = Decimal(0)
+            if prime_globale == 0 and not s_affection_imposee:
                 cursor.execute(
                     "SELECT CASE WHEN %s IN ('A', 'C') THEN fn_get_surprime_age_minene_sante(%s, %s) ELSE 0 END, "
                     "CASE WHEN %s > 0 THEN 0 ELSE fn_get_surprime_affection_minene_sante(%s, %s) END",
@@ -571,8 +578,10 @@ def _familles_minene(cursor, parametres, par_operateur=True):
                 brut_age, brut_affection = cursor.fetchone()
                 s_age = _decimal(brut_age) * facteur_prev
                 s_affection = _decimal(brut_affection) * facteur_prev
+            s_affection += s_affection_imposee
             p.update({"SurprimeAge": round(float(s_age * facteur)), "SurprimeAffection": round(float(s_affection * facteur)),
-                      "SurprimeAgeAvant": round(float(s_age)), "SurprimeAffectionAvant": round(float(s_affection))})
+                      "SurprimeAgeAvant": round(float(s_age)), "SurprimeAffectionAvant": round(float(s_affection)),
+                      "SurprimeImposee": bool(s_affection_imposee)})
             age_avant += s_age
             affection_avant += s_affection
         saisie_avant = montant_surprime / nombre
