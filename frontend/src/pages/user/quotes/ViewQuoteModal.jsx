@@ -879,6 +879,18 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                     <span>Imprimer Barème</span>
                   </button>
                 )}
+                {santeMinene && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => imprimerDocumentSante('facture', { iddevis: idDevisBase })}
+                    title="Facture MINENE (proforma) : Santé, Individuelle Accidents et RC chef de famille, à l'en-tête du client - enregistrable en PDF"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    <FileText size={15} />
+                    <span>Imprimer Facture MINENE</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn btn-secondary"

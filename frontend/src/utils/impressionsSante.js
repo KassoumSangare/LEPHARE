@@ -8,8 +8,9 @@
    adhérents, affiliés) et, pour un contrat, ayants droit de l'IA MINENE rattachée à la police.
    ========================================================================= */
 import { impressionSanteApi } from '../api/endpoints';
-import { formuleSante, logoCabinetEntete, logoCabinetPied, parametre, reglagesMinene } from './parametrage';
+import { formuleSante, logoCabinetEntete, logoCabinetPied, nomCabinet, parametre, reglagesMinene, villeSignature } from './parametrage';
 import { ouvrirApercuImpression } from './apercuImpression';
+import { numberToFrenchWords } from './exportUtils';
 
 const TARIFS_MINENE = [87, 102, 153];
 
@@ -487,6 +488,102 @@ const pageEtatCotisations = (d) => {
     ${Number(r.Ecart) ? `<div class="ecart">Écart de ${montant(r.Ecart)} F entre la prime nette enregistrée (${montant(r.PrimeNette)} F) et le détail par famille recalculé avec le barème en vigueur (${montant(r.TotalLignes)} F) : ${contrat ? 'contrat émis avec un calcul antérieur ; la prime TTC Santé facturée est répartie entre les familles' : 'enregistrez de nouveau le devis pour mettre à jour ses primes'}.</div>` : ''}`);
 };
 
+// ------------------------------------------------------------------ Facture MINENE
+// Facture des trois assurances indissociables de l'offre (Santé, Individuelle Accidents, RC chef de famille), au
+// modèle de la facture de prime OREOLE, avec les coordonnées du client et le récapitulatif de l'état des cotisations
+// (demande du 2026-10-28) : mêmes montants que l'état, IA et RC au forfait MINENE par adhérent.
+const FACTURE = `
+  .fm-titre { text-align: center; font-weight: 700; font-size: 13pt; margin: 4mm 0 2mm; }
+  .fm-objet { text-align: center; font-weight: 700; font-size: 10pt; margin: 0 0 5mm; }
+  .fm-proforma { text-align: center; font-size: 8.5pt; margin: -3mm 0 4mm; }
+  .fm-table td, .fm-table th { border: 0.75pt solid #222; padding: 2mm 1.5mm; text-align: center; vertical-align: middle; font-size: 9pt; }
+  .fm-table th { font-weight: 700; background: #f1f5f9; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fm-table td.cie { text-align: left; padding-left: 2mm; }
+  .fm-table td.pers { text-align: left; line-height: 1.45; padding: 3mm; font-size: 9pt; }
+  .fm-table td.pers b { font-size: 9.5pt; }
+  .fm-table td.v { font-weight: 700; }
+  .fm-familles { margin-top: 5mm; }
+  .fm-familles td, .fm-familles th { border: 0.75pt solid #555; padding: 1.5mm; font-size: 8.5pt; }
+  .fm-familles th { background: #f1f5f9; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fm-familles td.m { text-align: right; white-space: nowrap; }
+  .fm-recap { width: 62%; margin: 6mm 0 0 auto; border: 1px solid #555; }
+  .fm-recap td { padding: 1.6mm 3mm; font-size: 10pt; }
+  .fm-recap td.m { text-align: right; font-weight: 700; white-space: nowrap; }
+  .fm-recap tr.titre td { background: #1e3a5f; color: #fff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fm-recap tr.solde td { font-weight: 700; border-top: 1px solid #555; }
+  .fm-texte { margin: 6mm 0 0; line-height: 1.4; font-size: 10pt; }
+  .fm-cima { margin-top: 4mm; font-size: 8.5pt; font-style: italic; }
+  .fm-fait { text-align: right; margin-top: 8mm; font-size: 10pt; }
+  .fm-signe { text-align: right; margin: 5mm 14mm 0 0; font-weight: 700; font-size: 10pt; }
+`;
+// Valeur d'un champ du client : les valeurs de remplissage des fiches (« - », « NA ») ne sont pas imprimées
+const renseigne = (x) => {
+  const v = String(x ?? '').trim();
+  return /^(-+|NA|N\/A|NEANT|NÉANT|\.)$/i.test(v) ? '' : v;
+};
+const pageFactureMinene = (d) => {
+  const q = d.quittance || {};
+  const e = d.bordereau.Etat;
+  const contrat = Boolean(e.Contrat);
+  const somme = (cle) => e.Familles.reduce((s, f) => s + Number(f[cle] || 0), 0);
+  const total = somme('PrimeTotaleTtc');
+  const personnes = e.Familles.reduce((s, f) => s + f.Assures.length, 0);
+  const adherents = e.Familles.length;
+  const coordonnees = (nom, adresse, telephone, email, extra = []) => [
+    nom && `<b>${texte(nom)}</b>`,
+    ...extra,
+    renseigne(adresse) && texte(adresse),
+    renseigne(telephone) && `Tél. : ${texte(telephone)}`,
+    renseigne(email) && texte(email),
+  ].filter(Boolean).join('<br/>');
+  const telephoneClient = [renseigne(q.MobileClient), renseigne(q.TelephoneClient)].filter(Boolean).filter((t, i, l) => l.indexOf(t) === i).join(' / ');
+  const souscripteur = coordonnees(q.NomClient, renseigne(q.AdresseClient) || renseigne(q.AdresseGeographique), telephoneClient, q.EmailClient,
+    [renseigne(q.ProfessionClient) && texte(q.ProfessionClient)]);
+  const memePersonne = !renseigne(q.NomAssure) || String(q.NomAssure).trim() === String(q.NomClient || '').trim();
+  const assure = memePersonne ? souscripteur : coordonnees(q.NomAssure, q.AdresseAssure, '', '');
+  const polices = (liste, prevue) => (liste?.length ? liste.map(texte).join(', ') : prevue);
+  const numero = q.NumeroFacture || q.NumeroPolice || q.NumeroDevis || d.bordereau.NumeroDevis || '';
+  const lettres = numberToFrenchWords(Math.round(total));
+  const familles = adherents > 1 ? `
+    <table class="fm-familles">
+      <tr><th>Adhérent</th><th>Option</th><th>Assurés</th><th>Prime TTC Santé</th><th>Prime TTC IA</th><th>Prime TTC RC</th><th>Prime totale TTC</th></tr>
+      ${e.Familles.map((f) => `<tr><td>${texte(f.Souscripteur)}</td><td>${texte(f.Option)}</td><td class="m">${f.Effectif}</td>
+        <td class="m">${montant(f.PrimeTtcSante)}</td><td class="m">${montant(f.PrimeTtcIa)}</td><td class="m">${montant(f.PrimeTtcRc)}</td>
+        <td class="m"><b>${montant(f.PrimeTotaleTtc)}</b></td></tr>`).join('')}
+    </table>` : '';
+  return page(`
+    <div class="fm-titre">FACTURE MINENE N° ${texte(numero)}</div>
+    <div class="fm-objet">MINENE SANTÉ : SANTÉ, INDIVIDUELLE ACCIDENTS ET RESPONSABILITÉ CIVILE CHEF DE FAMILLE</div>
+    ${contrat ? '' : `<div class="fm-proforma">Facture proforma du devis N° ${texte(q.NumeroDevis || d.bordereau.NumeroDevis)}, non encore confirmé en contrat</div>`}
+    <table class="fm-table">
+      <colgroup><col style="width:20%"/><col style="width:16%"/><col style="width:16%"/><col style="width:16%"/><col style="width:16%"/><col style="width:16%"/></colgroup>
+      <tr><td class="cie" colspan="6">Compagnie : <b>${texte(q.RaisonSociale)}</b> &nbsp;·&nbsp; Intermédiaire : <b>${texte(q.LibelleIntermediaire || nomCabinet())}</b></td></tr>
+      <tr><th colspan="3">SOUSCRIPTEUR</th><th colspan="3">ASSURÉ PRINCIPAL</th></tr>
+      <tr><td class="pers" colspan="3">${souscripteur}</td><td class="pers" colspan="3">${assure}</td></tr>
+      <tr><th>${contrat ? 'Police Santé' : 'Devis Santé'}</th><th>Police IA</th><th>Police RC</th><th>Effet</th><th>Échéance</th><th>Effectif</th></tr>
+      <tr><td class="v">${texte(e.Contrat || q.NumeroDevis || d.bordereau.NumeroDevis)}</td>
+        <td class="v">${polices(e.PolicesIa, 'À émettre')}</td><td class="v">${polices(e.PolicesRc, 'À émettre')}</td>
+        <td class="v">${date(e.DateEffet || q.DateEffet)}</td><td class="v">${date(e.DateExpiration || q.DateExpiration)}</td>
+        <td class="v">${adherents} adh. / ${personnes} ass.</td></tr>
+    </table>
+    ${familles}
+    <table class="fm-recap">
+      <tr class="titre"><td colspan="2">MINENE SANTÉ : ${adherents} adhérent${adherents > 1 ? 's' : ''}, ${personnes} assuré${personnes > 1 ? 's' : ''}</td></tr>
+      <tr><td>Prime TTC Santé</td><td class="m">${montant(somme('PrimeTtcSante'))}</td></tr>
+      <tr><td>Prime TTC Individuelle Accidents</td><td class="m">${montant(somme('PrimeTtcIa'))}</td></tr>
+      <tr><td>Prime TTC RC chef de famille</td><td class="m">${montant(somme('PrimeTtcRc'))}</td></tr>
+      <tr class="titre"><td>PRIME TOTALE TTC</td><td class="m">${montant(total)}</td></tr>
+      <tr><td>Encaissement</td><td class="m">${montant(contrat ? e.Encaissement : 0)}</td></tr>
+      <tr class="solde"><td>Solde à payer</td><td class="m">${montant(e.Solde)}</td></tr>
+    </table>
+    <div class="fm-texte">Arrêtée la présente facture à la somme de <b>${texte(lettres)} FRANCS CFA</b> (${montant(total)} F CFA)${Number(e.Solde) > 0 && Number(e.Solde) !== total ? `, dont <b>${montant(e.Solde)} F CFA</b> restant à régler` : Number(e.Solde) <= 0 ? ', entièrement réglée' : ''}.</div>
+    ${e.Nature ? `<div class="fm-texte">Encaissements : ${texte(e.Nature)}.</div>` : ''}
+    <div class="fm-cima">Conformément à l'article 13 du Code CIMA, la prise d'effet des garanties est subordonnée au paiement intégral de la prime.</div>
+    <div class="fm-texte">Dans cette attente, nous vous prions d'agréer, nos distinguées salutations.</div>
+    <div class="fm-fait">Fait à ${texte(villeSignature())}, le ${new Date().toLocaleDateString('fr-FR')}</div>
+    <div class="fm-signe">Pour la société</div>`);
+};
+
 // ------------------------------------------------------------------ Ayants droit (IA MINENE)
 const pageAyantsDroit = (d) => {
   const ayants = d.ayantsDroit || [];
@@ -506,6 +603,8 @@ const DOCUMENTS = {
   bareme: { titre: 'Bareme MINENE', pages: (d) => [pageBareme(d)] },
   affilies: { titre: 'Liste des assures', pages: (d) => [pageAffilies(d)] },
   ayants: { titre: 'Liste des ayants droit', pages: (d) => [pageAyantsDroit(d)] },
+  // Facture MINENE : Santé, IA et RC chef de famille, à l'en-tête du client (récapitulatif de l'état des cotisations)
+  facture: { titre: 'Facture MINENE', pages: (d) => [pageFactureMinene(d)], styles: FACTURE },
   // MINENE : état des cotisations au modèle d'OREOLE ; autres offres et avenants : bordereau par assuré
   bordereau: {
     titre: 'Bordereau des primes',
@@ -526,12 +625,21 @@ export const imprimerDocumentSante = async (type, ids, fenetre = ouvrirApercuImp
   try {
     const d = await charger(ids);
     // Bordereau des primes par assuré ; CP MINENE : réduction ou majoration de l'année au tableau des primes
-    if (type === 'bordereau' || (type === 'cp' && d.minene)) {
+    if (type === 'bordereau' || type === 'facture' || (type === 'cp' && d.minene)) {
       const idDevis = Number(d.quittance?.IdDevis || d.saisie?.devis?.iddevis || ids.iddevis) || 0;
       d.bordereau = await impressionSanteApi.bordereau(idDevis).catch((err) => {
-        if (type === 'bordereau') throw err;
+        if (type === 'bordereau' || type === 'facture') throw err;
         return null;
       });
+    }
+    // Facture MINENE : seulement pour une offre MINENE dont les familles sont enregistrées
+    if (type === 'facture' && !d.bordereau?.Etat) {
+      if (fenetre) {
+        fenetre.document.open();
+        fenetre.document.write('<p style="font-family:Arial;padding:20px;">La facture MINENE ne concerne que les devis et polices MINENE SANTÉ dont les adhérents sont enregistrés.</p>');
+        fenetre.document.close();
+      }
+      return true;
     }
     if (!d.minene && (type === 'cp' || type === 'bareme')) {
       if (type === 'bareme' && fenetre) {
@@ -545,7 +653,8 @@ export const imprimerDocumentSante = async (type, ids, fenetre = ouvrirApercuImp
     // Bordereau MINENE : état des cotisations (titre et mise en page du modèle d'OREOLE)
     const etat = type === 'bordereau' && Boolean(d.bordereau?.Etat);
     const titre = type === 'cp' && !d.quittance?.NumeroPolice ? 'Devis' : etat ? 'Etat des cotisations MINENE' : doc.titre;
-    const html = documentHtml(`${titre} ${d.quittance?.NumeroPolice || d.quittance?.NumeroDevis || ''}`.trim(), doc.pages(d),
+    const numeroDocument = type === 'facture' ? (d.quittance?.NumeroFacture || d.quittance?.NumeroPolice || d.quittance?.NumeroDevis) : null;
+    const html = documentHtml(`${titre} ${numeroDocument || d.quittance?.NumeroPolice || d.quittance?.NumeroDevis || ''}`.trim(), doc.pages(d),
       etat ? `${doc.styles}${ETAT}` : doc.styles);
     if (fenetre) {
       fenetre.document.open();

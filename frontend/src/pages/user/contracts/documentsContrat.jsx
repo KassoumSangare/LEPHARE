@@ -61,6 +61,18 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
     return () => { actif = false; };
   }, [idContrat]);
 
+  // IA ou RC chef de famille MINENE : police Santé MINENE qu'elle porte en police connexe (facture MINENE commune)
+  const saisieConnexe = String(contrat.raw?.numeropoliceconnexe || '').trim();
+  const policeConnexe = !contratSante && [2, 8].includes(idProduit) && !/^(RAS|NEANT|NÉANT|NA|-+)$/i.test(saisieConnexe) ? saisieConnexe : '';
+  const [policeSanteMinene, setPoliceSanteMinene] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    setPoliceSanteMinene(null);
+    if (policeConnexe) contractApi.getPoliceMinene(policeConnexe).then((p) => { if (actif) setPoliceSanteMinene(p); }).catch(() => {});
+    return () => { actif = false; };
+  }, [policeConnexe]);
+  const idContratFactureMinene = mineneConnexes?.Minene ? (contrat.raw?.idcontrat || id) : policeSanteMinene?.IdContrat;
+
   const imprimer = (cle, libelle, ouvrir) => ({ cle, libelle, action: 'Imprimer', ouvrir, fenetre: false });
   const documents = !contract ? [] : [
     ...(contratDommages ? [
@@ -82,6 +94,9 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
       ['bordereau', 'Bordereau récapitulatif des primes par assuré'],
       ...(mineneConnexes?.Minene ? [['ayants', 'Liste des ayants droit (IA MINENE)']] : []),
     ].map(([type, libelle]) => imprimer(`sante-${type}`, libelle, () => imprimerDocumentSante(type, { idcontrat: contrat.raw?.idcontrat || id }))) : []),
+    // MINENE (police Santé, ou IA / RC qui lui est rattachée) : facture des trois assurances, à l'en-tête du client
+    ...(idContratFactureMinene ? [imprimer('facture-minene', 'Facture MINENE',
+      () => imprimerDocumentSante('facture', { idcontrat: idContratFactureMinene }))] : []),
     // Santé, Voyage, RC et Dommages : ni attestation automobile ni carte brune
     ...(!contratVoyage && !contratRc && !contratDommages && !contratSante ? [
       { cle: 'attestation', libelle: 'Editions Attestation', action: 'Editer', ouvrir: () => setFenetreDocument('attestation'), fenetre: true },
