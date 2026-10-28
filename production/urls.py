@@ -9,7 +9,7 @@ from .views_devis_ia import (
 )
 from .views_devis_risques_divers import lire_devis_risques_divers, valeurs_usuelles
 from .import_flotte import analyser_import_flotte
-from . import documents_dommages
+from . import documents_dommages, imposition_garanties
 from .views_devis_dommages import (
     calcul_dommages,
     catalogue_dommages,
@@ -251,6 +251,8 @@ urlpatterns = [
     ),
     # RC et MRH saisis à la main : valeurs habituelles proposées dans les listes déroulantes des montants et taux
     path(r"valeursusuelles/", valeurs_usuelles, name="valeurs_usuelles"),
+    # Imposition des primes garantie par garantie, toutes branches hors Auto (fiche devis « Imposer la prime »)
+    path(r"devis/<int:pk>/imposition-garanties/", imposition_garanties.imposition_garanties, name="imposition_garanties"),
     # Devis IA complet (création / « Modifier ») en une transaction
     path(
         r"devisia/enregistrement/",

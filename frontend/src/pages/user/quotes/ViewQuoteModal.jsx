@@ -22,6 +22,7 @@ import { formatDate } from '../../../utils/dateUtils';
 import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import { ImpositionPrimes } from './ImpositionPrimes';
+import { ImpositionGaranties } from './ImpositionGaranties';
 import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { useModeReprise } from '../reprises/modeReprise';
@@ -156,19 +157,20 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
     && !quote.confirme && !quote.raw?.confirme && !quote.devis_consolide && aLeDroit('devis.primes');
 
   if (imposition) {
-    return (
+    const apresImposition = (devisAJour) => {
+      setQuoteAJour(devisAJour);
+      setImposition(false);
+      if (onQuoteUpdated) onQuoteUpdated(devisAJour);
+    };
+    // Auto : récapitulatif du devis (ses garanties s'imposent dans le formulaire, « Imposer la prime ») ; autres
+    // branches : prime de chaque garantie, comme l'écran Offre de l'Auto
+    return devisAuto ? (
       <Modal isOpen={isOpen} onClose={onClose} title={flotteAuto ? 'Imposer les primes du récapitulatif de la flotte' : `Imposer les primes du devis ${quote.numerodevis || ''}`.trim()} size="medium">
-        <ImpositionPrimes
-          quote={quote}
-          auto={devisAuto}
-          flotte={flotteAuto}
-          onAnnuler={() => setImposition(false)}
-          onEnregistre={(devisAJour) => {
-            setQuoteAJour(devisAJour);
-            setImposition(false);
-            if (onQuoteUpdated) onQuoteUpdated(devisAJour);
-          }}
-        />
+        <ImpositionPrimes quote={quote} auto flotte={flotteAuto} onAnnuler={() => setImposition(false)} onEnregistre={apresImposition} />
+      </Modal>
+    ) : (
+      <Modal isOpen={isOpen} onClose={onClose} title={`Imposer la prime du devis ${quote.numerodevis || ''}`.trim()} size="large">
+        <ImpositionGaranties quote={quote} onAnnuler={() => setImposition(false)} onEnregistre={apresImposition} />
       </Modal>
     );
   }
@@ -378,11 +380,12 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 onClick={() => setImposition(true)}
                 title={flotteAuto
                   ? 'Corriger le récapitulatif des primes de la flotte (prime nette, accessoire, taxes, FGA, CEDEAO, TTC)'
-                  : `Saisir les primes du devis à la main (prime nette, accessoire, taxes${devisAuto ? ', FGA, CEDEAO' : ''}, TTC)`}
+                  : devisAuto ? 'Saisir les primes du devis à la main (prime nette, accessoire, taxes, FGA, CEDEAO, TTC)'
+                    : "Saisir à la main la prime de chaque garantie, l'accessoire, la taxe et la prime TTC"}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
               >
                 <Pencil size={14} />
-                <span>{flotteAuto ? 'Imposer les primes du récapitulatif' : 'Imposer les primes'}</span>
+                <span>{flotteAuto ? 'Imposer les primes du récapitulatif' : devisAuto ? 'Imposer les primes' : 'Imposer la prime'}</span>
               </button>
             )}
           </div>

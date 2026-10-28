@@ -198,6 +198,8 @@ REGLES = [
     # ---- devis : primes (sensible)
     R("POST", r"majrecapprimes/", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"correctiondevis/?$", "devis.primes", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST", r"devis/(?P<pk>\d+)/imposition-garanties/?$", "devis.primes", objet="devis", cles=("pk",),
+      instantane=instantane_devis),
     R("POST,DELETE", r"mrh/devis/(?P<devis_id>\d+)/(maisons/\d+/)?(imposer-prime|imposition-prime)/", "devis.primes",
       objet="devis", cles=("devis_id",), instantane=instantane_devis),
     R("POST", r"mrh/devis/(?P<devis_id>\d+)/repartir-garanties/", "devis.primes", objet="devis", cles=("devis_id",),

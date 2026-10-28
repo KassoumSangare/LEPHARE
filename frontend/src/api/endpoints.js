@@ -849,6 +849,10 @@ export const quoteApi = {
   // déjà enregistré, via sp_maj_manuelle_primes - utilisé par « Modifier » sur le Registre des Devis
   // et par « Imposer les primes du récapitulatif » de la fiche d'un devis flotte)
   updateQuotePrimes: (payload) => apiClient.post('/majrecapprimes/', payload),
+  // GET / POST /api/devis/:id/imposition-garanties/ : primes du devis garantie par garantie (toutes branches hors Auto),
+  // lues puis imposées (« Imposer la prime » de la fiche devis)
+  getImpositionGaranties: async (iddevis) => (await apiClient.get(`/devis/${iddevis}/imposition-garanties/`)).data,
+  imposerGaranties: async (iddevis, payload) => (await apiClient.post(`/devis/${iddevis}/imposition-garanties/`, payload)).data,
   // POST /api/finalisationdevisauto (Finalisation devis flotte)
   finalizeFlotteQuote: (payload) => apiClient.post('/finalisationdevisauto', payload),
   // POST /api/annulationsaisievehicule (Suppression d'un véhicule de flotte)
