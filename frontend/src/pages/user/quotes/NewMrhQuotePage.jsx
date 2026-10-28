@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
-import { quoteApi, mrhApi, customerApi, settingsApi, contractApi } from '../../../api/endpoints';
+import { quoteApi, mrhApi, customerApi, settingsApi, contractApi, piecesJointesApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
   Home, ChevronLeft, ChevronRight, Plus, Trash2, Edit3, CheckCircle2, AlertTriangle, Loader2,
   FileText, Users, ShieldCheck, Calculator, FileCheck, Building, Eye, ChevronDown, Info, Scale, X,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
+import { PieceJointe } from '../../../components/common/PieceJointe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
@@ -178,6 +179,9 @@ export const NewMrhQuotePage = () => {
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
   const [avertissementReprise, setAvertissementReprise] = useState('');
   const [idDevisActuel, setIdDevisActuel] = useState(null);
+  // Pièce jointe du devis (URANUS « Upload de fichier ») : envoyée après l'enregistrement, consultable ensuite
+  const [fichier, setFichier] = useState(null);
+  const [versionPiece, setVersionPiece] = useState(0);
 
   const [step, setStep] = useState(1);
   const [tentative, setTentative] = useState({});
@@ -662,6 +666,15 @@ export const NewMrhQuotePage = () => {
       const devisId = Number(res?.devis_id) || 0;
       if (!devisId) { toastError('Devis MRH non enregistré : le serveur n\'a pas renvoyé de numéro de devis.'); return; }
       success(idDevisActuel ? `Devis MRH N° ${res.numero_devis} modifié.` : `Devis MRH N° ${res.numero_devis} enregistré.`);
+      if (fichier) {
+        try {
+          await piecesJointesApi.attacher('devis', devisId, fichier);
+          setFichier(null);
+          setVersionPiece((v) => v + 1);
+        } catch (errFichier) {
+          toastError(`Devis enregistré, mais le fichier n'a pas été joint : ${messageErreurApi(errFichier)}`);
+        }
+      }
       setIdDevisActuel(devisId);
       setNumeroDevisEdite(res.numero_devis || '');
       setDevisEnregistre({ id: devisId, numero: res.numero_devis, totaux: res.totaux || {} });
@@ -1134,6 +1147,19 @@ export const NewMrhQuotePage = () => {
                   </div>
                 ))}
               </div>
+              <div style={{ marginTop: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
+                <Champ
+                  label="Pièce jointe"
+                  aide={fichier
+                    ? `Jointe à l'enregistrement : ${fichier.name}${idDevisActuel ? ' (remplace la pièce enregistrée)' : ''}`
+                    : 'Facultatif : PDF ou image, consultable ensuite depuis la fiche du devis et du contrat'}
+                >
+                  <input type="file" className="form-control" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFichier(e.target.files?.[0] || null)} />
+                </Champ>
+              </div>
+              {idDevisActuel && (
+                <PieceJointe type="devis" id={idDevisActuel} version={versionPiece} masquerSiAbsente titre="Pièce jointe enregistrée" className="piece-jointe-saisie" />
+              )}
             </>
           )}
 
@@ -1150,6 +1176,7 @@ export const NewMrhQuotePage = () => {
                   <Tuile libelle="Prime TTC" valeur={`${fcfa(resume.prime_ttc)} F`} couleur="var(--primary-500)" fort />
                 </div>
               )}
+              <PieceJointe type="devis" id={devisEnregistre.id} version={versionPiece} className="piece-jointe-saisie" />
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1rem 0' }}>
                 <button type="button" className="btn btn-secondary" onClick={ouvrirApercu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Eye size={15} /> Aperçu et impressions</button>
                 <button type="button" className="btn btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Edit3 size={15} /> Modifier le devis</button>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { confirmer } from '../../../utils/dialogue';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MetricCard } from '../../../components/common/MetricCard';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
@@ -25,6 +25,7 @@ import {
   RotateCcw,
   ClipboardList,
 } from 'lucide-react';
+import { ActiviteCommerciale } from './ActiviteCommerciale';
 import { EditLeadModal } from './EditLeadModal';
 import { canUser, getCurrentUser, validateBusinessRule } from '../../../utils/rbac';
 import {
@@ -66,6 +67,10 @@ const Relance = ({ prospect }) => {
 
 export const CrmPipelinePage = () => {
   const navigate = useNavigate();
+  const [parametres, setParametres] = useSearchParams();
+  // Onglet : activité commerciale réelle (devis, relances, renouvellements) ou prospects ; ?vue=prospects
+  const vue = parametres.get('vue') === 'prospects' ? 'prospects' : 'activite';
+  const choisirVue = (v) => setParametres(v === 'prospects' ? { vue: v } : {}, { replace: true });
   const { success, error: toastError } = useToast();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -228,7 +233,7 @@ export const CrmPipelinePage = () => {
         <div>
           <h1 className="title-xl">Suivi commercial</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            Prospects et affaires en cours, étape par étape.
+            Devis émis et transformés, relances et renouvellements de l'exercice ; prospects étape par étape.
           </p>
         </div>
 
@@ -267,6 +272,20 @@ export const CrmPipelinePage = () => {
         </div>
       </div>
 
+      <div className="crm-onglets" role="tablist" aria-label="Vue du suivi commercial">
+        <button type="button" role="tab" aria-selected={vue === 'activite'} onClick={() => choisirVue('activite')}>
+          <TrendingUp size={15} aria-hidden="true" /> Activité commerciale
+        </button>
+        <button type="button" role="tab" aria-selected={vue === 'prospects'} onClick={() => choisirVue('prospects')}>
+          <Users size={15} aria-hidden="true" /> Prospects
+          {!loading && <span className="compte">{leads.length}</span>}
+        </button>
+      </div>
+
+      {vue === 'activite' && <ActiviteCommerciale />}
+
+      {vue === 'prospects' && (
+      <>
       {/* Indicateurs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
         <MetricCard
@@ -290,7 +309,7 @@ export const CrmPipelinePage = () => {
           color="emerald"
         />
         <MetricCard
-          title="Taux de transformation"
+          title="Prospects transformés"
           value={conversionRate === null ? '-' : `${conversionRate} %`}
           subtitle={cloturees ? `${wonLeads.length} gagnée(s) sur ${cloturees} affaire(s) clôturée(s)` : 'Aucune affaire clôturée'}
           icon={<TrendingUp size={22} color="#818cf8" />}
@@ -586,6 +605,8 @@ export const CrmPipelinePage = () => {
           </div>
         </div>
       ))}
+      </>
+      )}
 
       {/* Création / modification d'un prospect */}
       <EditLeadModal

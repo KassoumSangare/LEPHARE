@@ -115,6 +115,7 @@ from .database import (
     unarchive_quote,
 )
 from .exceltopostgresql import export_excel
+from . import pieces_jointes
 from .import_assures import import_ia_insured, insert_new_assure
 from .releve_compte import releve_compte as donnees_releve_compte
 from .views_devis_ia import completer_assures_devis_ia
@@ -800,6 +801,16 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         except Devis.DoesNotExist:
             raise Http404("Devis introuvable")
 
+    # Pièce jointe téléversée à l'enregistrement (MRH, RC, MRP) : fiche, puis fichier affiché dans l'application
+    @action(detail=True, methods=["get"], url_path="piece-jointe")
+    def piece_jointe(self, request, pk=None):
+        devis = cast(Devis, self.get_object())
+        return Response(pieces_jointes.fiche(devis.piece_jointe, "devis"))
+
+    @action(detail=True, methods=["get"], url_path="piece-jointe/fichier")
+    def piece_jointe_fichier(self, request, pk=None):
+        return pieces_jointes.reponse_fichier(cast(Devis, self.get_object()).piece_jointe)
+
 
 class CertificatTransportView(generics.ListCreateAPIView):
     queryset = CertificatTransport.objects.all().order_by("-date_fin_periode")[
@@ -1341,6 +1352,16 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             )
         except Devis.DoesNotExist:
             raise Http404("Devis introuvable")
+
+    # Pièce jointe du contrat, sinon celle de son devis d'origine : fiche, puis fichier affiché dans l'application
+    @action(detail=True, methods=["get"], url_path="piece-jointe")
+    def piece_jointe(self, request, pk=None):
+        piece, origine = pieces_jointes.piece_du_contrat(cast(Contrat, self.get_object()))
+        return Response(pieces_jointes.fiche(piece, origine))
+
+    @action(detail=True, methods=["get"], url_path="piece-jointe/fichier")
+    def piece_jointe_fichier(self, request, pk=None):
+        return pieces_jointes.reponse_fichier(pieces_jointes.piece_du_contrat(cast(Contrat, self.get_object()))[0])
 
 
 class ContratRestreintViewSet(viewsets.ModelViewSet):

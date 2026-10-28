@@ -31,6 +31,11 @@ CONTRAT_VALIDE = "COALESCE(c.idcontratannulation, 0) = 0"
 DEVIS_NON_CONFIRME = """COALESCE(d.archive, FALSE) = FALSE AND COALESCE(d.confirme, FALSE) = FALSE
     AND d.iddevis NOT IN (SELECT iddevis FROM lephare_reprise_devis)
     AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%confirm%%' AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%contrat%%'"""
+# Devis réellement émis : saisie enregistrée (numéro attribué) à prime non nulle, comme la cloche, hors devis des
+# affaires antérieures (saisis après coup, confirmés d'office)
+DEVIS_ENREGISTRE = """COALESCE(TRIM(d.numerodevis), '') <> '' AND COALESCE(d.primettc, 0) > 0
+    AND NOT EXISTS (SELECT 1 FROM lephare_reprise rp WHERE rp.iddevis = d.iddevis)
+    AND d.iddevis NOT IN (SELECT iddevis FROM lephare_reprise_devis)"""
 
 
 def _lignes(cursor, sql, params=None):
@@ -56,6 +61,32 @@ def _meme_jour(jour, annee):
         return jour.replace(year=annee)
     except ValueError:  # 29 février
         return jour.replace(year=annee, day=28)
+
+
+def echeances_polices(cursor, du, au):
+    """Polices dont la dernière période (affaire nouvelle ou renouvellement) expire du … au …, sans renouvellement plus
+    récent ni résiliation (cockpit, suivi commercial)."""
+    return _lignes(cursor, f"""
+        SELECT c.idcontrat, c.iddevis, c.numeropolice, c.dateexpiration::date AS dateexpiration, c.primettc,
+               TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
+               co.raisonsociale AS compagnie, c.idproduit, NULLIF(TRIM(cl.telephone), '') AS telephone,
+               -- Devis de renouvellement déjà préparé (page de renouvellement : rattaché au devis du contrat)
+               EXISTS (SELECT 1 FROM stddevis d JOIN stdavenant da ON da.idavenant = d.idavenant
+                       WHERE da.codeavenant = 'REN' AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)
+                         AND d.idoldhist = c.iddevis) AS devis_en_cours
+        FROM stdcontrat c
+        JOIN stdavenant a ON a.idavenant = c.idavenant
+        LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+        LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
+        LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
+        WHERE {CONTRAT_VALIDE} AND a.codeavenant IN ('AFN', 'REN')
+          AND c.dateexpiration::date BETWEEN %s AND %s
+          AND NOT EXISTS (SELECT 1 FROM stdcontrat r JOIN stdavenant ra ON ra.idavenant = r.idavenant
+                          WHERE r.numeropolice = c.numeropolice AND COALESCE(r.idcontratannulation, 0) = 0
+                            AND ((ra.codeavenant = 'REN' AND r.dateeffet > c.dateeffet)
+                                 OR (ra.codeavenant = 'RES' AND r.dateeffet >= c.dateeffet)))
+        ORDER BY c.dateexpiration, c.idcontrat
+    """, [du, au])
 
 
 def _production(cursor, jour):
@@ -87,29 +118,8 @@ def _production(cursor, jour):
                           WHERE r.numeropolice = c.numeropolice AND ra.codeavenant = 'RES'
                             AND COALESCE(r.idcontratannulation, 0) = 0 AND r.dateeffet >= c.dateeffet)
     """, [jour])["n"]
-    # Échéances : dernière période (affaire nouvelle ou renouvellement) de chaque police, sans renouvellement
-    # plus récent ni résiliation, échue depuis peu ou à échoir
-    echeances = _lignes(cursor, f"""
-        SELECT c.idcontrat, c.iddevis, c.numeropolice, c.dateexpiration::date AS dateexpiration, c.primettc,
-               TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
-               co.raisonsociale AS compagnie,
-               -- Devis de renouvellement déjà préparé (page de renouvellement : rattaché au devis du contrat)
-               EXISTS (SELECT 1 FROM stddevis d JOIN stdavenant da ON da.idavenant = d.idavenant
-                       WHERE da.codeavenant = 'REN' AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)
-                         AND d.idoldhist = c.iddevis) AS devis_en_cours
-        FROM stdcontrat c
-        JOIN stdavenant a ON a.idavenant = c.idavenant
-        LEFT JOIN stdclient cl ON cl.idclient = c.idclient
-        LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
-        LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
-        WHERE {CONTRAT_VALIDE} AND a.codeavenant IN ('AFN', 'REN')
-          AND c.dateexpiration::date BETWEEN %s AND %s
-          AND NOT EXISTS (SELECT 1 FROM stdcontrat r JOIN stdavenant ra ON ra.idavenant = r.idavenant
-                          WHERE r.numeropolice = c.numeropolice AND COALESCE(r.idcontratannulation, 0) = 0
-                            AND ((ra.codeavenant = 'REN' AND r.dateeffet > c.dateeffet)
-                                 OR (ra.codeavenant = 'RES' AND r.dateeffet >= c.dateeffet)))
-        ORDER BY c.dateexpiration, c.idcontrat
-    """, [jour - timedelta(days=ECHUS_DEPUIS_JOURS), jour + timedelta(days=ECHEANCE_JOURS)])
+    # Échéances : échues depuis peu ou à échoir
+    echeances = echeances_polices(cursor, jour - timedelta(days=ECHUS_DEPUIS_JOURS), jour + timedelta(days=ECHEANCE_JOURS))
     derniers = _lignes(cursor, f"""
         SELECT c.idcontrat, c.numeropolice, c.dateemission::date AS dateemission, c.dateeffet::date AS dateeffet,
                c.dateexpiration::date AS dateexpiration, c.primettc, a.libelleavenant AS avenant,
@@ -165,8 +175,9 @@ def _devis(cursor, jour):
                COALESCE(SUM(d.primettc) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s
                                                   AND d.dateemission::date >= %(limite)s), 0) AS ttc_en_cours,
                COUNT(*) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date < %(jour)s AND d.dateemission::date >= %(debut_expires)s) AS expires,
-               COUNT(*) FILTER (WHERE d.dateemission::date BETWEEN %(debut)s AND %(jour)s) AS emis,
-               COUNT(*) FILTER (WHERE d.dateemission::date BETWEEN %(debut)s AND %(jour)s AND COALESCE(d.confirme, FALSE)) AS confirmes
+               COUNT(*) FILTER (WHERE {DEVIS_ENREGISTRE} AND d.dateemission::date BETWEEN %(debut)s AND %(jour)s) AS emis,
+               COUNT(*) FILTER (WHERE {DEVIS_ENREGISTRE} AND d.dateemission::date BETWEEN %(debut)s AND %(jour)s
+                                  AND COALESCE(d.confirme, FALSE)) AS confirmes
         FROM stddevis d
         WHERE d.dateemission::date >= LEAST(%(limite)s, %(debut_expires)s)
     """, {"jour": jour, "limite": limite, "debut_expires": debut_expires, "debut": date(jour.year, 1, 1)})
@@ -239,16 +250,7 @@ def _caisse(cursor, jour):
 
 def _reversements():
     """Primes encaissées à reverser aux compagnies : mêmes lignes que l'écran des reversements, toutes compagnies."""
-    lignes = views_finance._lignes(
-        views_finance.SQL_LIGNES_ENCAISSEMENT + """
-        WHERE NOT COALESCE(e.piece_annulee, FALSE) AND de.montant_encaissement > COALESCE(de.montantreglement, 0)
-          AND e.dateencaissement::date >= %s
-        """,
-        [views_finance.debut_reversements()],
-    )
-    restes = views_finance._restes_nets({l["numeroquittance"] for l in lignes})
-    a_reverser = [l for l in (views_finance._ligne_encaissement(l, restes) for l in lignes if not views_finance._est_decaissement(l))
-                  if l["ResteAReverser"] > 0]
+    a_reverser = views_finance.encaissements_a_reverser()
     plus_ancien = min((l["DateEncaissement"] for l in a_reverser if l["DateEncaissement"]), default=None)
     return {
         "Nombre": len(a_reverser), "Montant": _franc(sum(l["ResteAReverser"] for l in a_reverser)),

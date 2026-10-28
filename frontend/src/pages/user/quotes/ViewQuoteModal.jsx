@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { Modal } from '../../../components/common/Modal';
+import { PieceJointe } from '../../../components/common/PieceJointe';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import {
   printQuoteFacture,
@@ -351,6 +352,14 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             <Champ libelle="Expiration">{formatDate(quote.date_expiration)}</Champ>
           </div>
         </div>
+
+        {/* Pièce jointe téléversée à l'enregistrement (MRH, RC, MRP : toujours montrée ; autres branches : si présente) */}
+        <PieceJointe
+          type="devis"
+          id={quote.iddevis}
+          className="glass-panel no-print piece-jointe-cadree"
+          masquerSiAbsente={![4, 7, 8].includes(Number(raw.produit?.id_produit ?? raw.produit ?? quote.idproduit))}
+        />
 
         {/* Actuarial Financial Breakdown */}
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>

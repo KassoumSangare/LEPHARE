@@ -3067,6 +3067,97 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
   .cockpit-section { padding: 1rem; }
   .cockpit-branches .part { min-width: 90px; }
 }
+/* Tableaux de chiffres : colonnes alignées à droite, ligne de total */
+.cockpit-branches th.nombre, .cockpit-branches td.nombre { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cockpit-branches tfoot td { font-weight: 700; border-top: 1px solid var(--border-medium); border-bottom: none; }
+.cockpit-branches .secondaire { display: block; font-size: 0.72rem; color: var(--text-muted); font-weight: 400; font-family: var(--font-main); }
+.cockpit-a-traiter .montant-alerte { font-family: var(--font-mono); font-weight: 700; white-space: nowrap; color: var(--text-primary); }
+.cockpit-a-traiter button:disabled { cursor: default; transform: none; }
+.cockpit-exercice { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); }
+.cockpit-exercice select { width: auto; min-width: 7rem; font-size: 0.85rem; }
+.cockpit-chargement { opacity: 0.55; transition: opacity 0.2s ease; }
+.cockpit-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; line-height: 1.5; }
+
+/* Graphique mensuel (components/common/GraphiqueMensuel.jsx) : palette validée en sombre et en clair
+   (production de l'exercice / de l'an dernier : deux pas d'un même bleu ; encaissements : orange) */
+.graphique-mensuel {
+  --viz-n: #3987e5; --viz-n1: #184f95; --viz-enc: #d95926;
+  --viz-grille: rgba(255, 255, 255, 0.07); --viz-axe: rgba(255, 255, 255, 0.2); --viz-surface: #111827;
+  --viz-survol: rgba(255, 255, 255, 0.04);
+}
+[data-theme="light"] .graphique-mensuel {
+  --viz-n: #256abf; --viz-n1: #86b6ef; --viz-enc: #eb6834;
+  --viz-grille: #e5e7eb; --viz-axe: #cbd5e1; --viz-surface: #ffffff; --viz-survol: rgba(15, 23, 42, 0.04);
+}
+.graphique-entete { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.graphique-legende { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-secondary); }
+.graphique-legende li { display: flex; align-items: center; gap: 0.45rem; }
+.graphique-mensuel .cle { display: inline-block; flex: none; }
+.graphique-mensuel .cle-barre { width: 12px; height: 12px; border-radius: 3px; }
+.graphique-mensuel .cle-ligne { width: 14px; height: 2px; border-radius: 1px; }
+.graphique-mensuel .cle.n { background: var(--viz-n); }
+.graphique-mensuel .cle.n1 { background: var(--viz-n1); }
+.graphique-mensuel .cle.enc { background: var(--viz-enc); }
+.graphique-zone { position: relative; width: 100%; overflow: hidden; }
+.graphique-zone svg { display: block; }
+.graphique-zone .grille { stroke: var(--viz-grille); stroke-width: 1; }
+.graphique-zone .axe { stroke: var(--viz-axe); stroke-width: 1; }
+.graphique-zone .graduation { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.graphique-zone .barre.n { fill: var(--viz-n); }
+.graphique-zone .barre.n1 { fill: var(--viz-n1); }
+.graphique-zone .ligne.enc { fill: none; stroke: var(--viz-enc); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.graphique-zone .point.enc { fill: var(--viz-enc); stroke: var(--viz-surface); stroke-width: 2; }
+.graphique-zone .survol { fill: var(--viz-survol); }
+.graphique-zone .zone { fill: transparent; cursor: default; outline: none; }
+.graphique-zone .zone:focus-visible { stroke: var(--border-focus); stroke-width: 2; }
+.graphique-bulle {
+  position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2; min-width: 200px;
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: 8px;
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.25)); padding: 0.55rem 0.7rem; font-size: 0.78rem;
+  animation: graphique-bulle 0.12s ease-out;
+}
+@keyframes graphique-bulle { from { opacity: 0; } to { opacity: 1; } }
+.graphique-bulle .titre { font-weight: 700; color: var(--text-primary); text-transform: capitalize; margin-bottom: 0.3rem; }
+.graphique-bulle .ligne-bulle { display: flex; align-items: center; gap: 0.45rem; line-height: 1.6; }
+.graphique-bulle .ligne-bulle strong { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.graphique-bulle .ligne-bulle span:last-child { color: var(--text-muted); }
+.graphique-tableau .montant { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .graphique-bulle { animation: none; } }
+
+/* Suivi commercial : onglets Activité commerciale / Prospects (pages/user/crm/CrmPipelinePage.jsx) */
+.crm-onglets { display: inline-flex; gap: 0.25rem; padding: 0.25rem; border-radius: 10px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); }
+.crm-onglets button {
+  border: none; background: transparent; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;
+  padding: 0.45rem 0.9rem; border-radius: 7px; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.crm-onglets button[aria-selected="true"] { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.crm-onglets button:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.crm-onglets .compte { font-size: 0.72rem; font-weight: 700; padding: 0.05rem 0.45rem; border-radius: 10px; background: var(--border-subtle); color: var(--text-secondary); }
+.crm-contact { display: flex; flex-direction: column; gap: 0.1rem; }
+.crm-contact a { color: var(--text-primary); text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.crm-contact a:hover { text-decoration: underline; }
+
+/* Pièce jointe d'un devis ou d'un contrat (components/common/PieceJointe.jsx) */
+.piece-jointe { display: flex; flex-direction: column; gap: 0.5rem; }
+.piece-jointe-cadree { padding: 1.25rem; }
+.piece-jointe-saisie { margin-top: 1rem; }
+.piece-jointe-contrat { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle); }
+.piece-jointe-titre { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; }
+.piece-jointe-vide { font-size: 0.85rem; color: var(--text-muted); }
+.piece-jointe-ligne {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md, 8px); background: var(--bg-surface-elevated);
+}
+.piece-jointe-icone { color: var(--primary-500); flex: none; }
+.piece-jointe-infos { display: flex; flex-direction: column; gap: 0.15rem; flex: 1 1 220px; min-width: 0; }
+.piece-jointe-infos strong { color: var(--text-primary); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.piece-jointe-infos > span { font-size: 0.75rem; color: var(--text-muted); }
+.piece-jointe-infos .piece-jointe-absente { display: flex; align-items: center; gap: 0.3rem; color: var(--accent-amber); }
+.piece-jointe-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.piece-jointe-actions .btn { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; padding: 0.35rem 0.7rem; }
+.piece-jointe-cadre { width: 100%; height: 75vh; border: none; border-radius: 6px; background: #fff; }
+.piece-jointe-image { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; border-radius: 6px; }
 
 /* ==========================================================================
    AFFAIRES ANTÉRIEURES (pages/user/reprises/RepriseAffairesPage.jsx)

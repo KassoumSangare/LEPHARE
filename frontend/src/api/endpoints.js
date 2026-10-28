@@ -1549,6 +1549,26 @@ export const cockpitApi = {
   lire: async () => (await apiClient.get('/cockpit/')).data,
   // Cloche : devis arrivant à échéance ou échus récemment, selon les droits (production/views_cockpit.alertes)
   alertes: async () => (await apiClient.get('/alertes/')).data,
+  // Tableau de bord de la direction : exercice choisi (production/views_tableau_de_bord.py, droit reporting.view)
+  tableauDeBord: async (exercice) => (await apiClient.get('/tableau-de-bord/', { params: exercice ? { exercice } : {} })).data,
+  // Suivi commercial : devis émis et transformés, relances, renouvellements (production/views_suivi_commercial.py, droit crm.view)
+  suiviCommercial: async () => (await apiClient.get('/suivi-commercial/')).data,
+};
+
+// Pièce jointe d'un devis ou d'un contrat (type 'devis' ou 'contrat') : fichier téléversé à l'enregistrement (MRH, RC, MRP),
+// recopié sur le contrat à la confirmation (production/pieces_jointes.py)
+export const piecesJointesApi = {
+  // Fiche : Presente, Nom, Type, Taille, Date, Disponible (fichier sur le serveur), Origine, Message
+  fiche: async (type, id) => (await apiClient.get(`/${type}/${id}/piece-jointe/`)).data,
+  // Le fichier lui-même (Blob), pour l'afficher dans l'application
+  fichier: async (type, id) => (await apiClient.get(`/${type}/${id}/piece-jointe/fichier/`, { responseType: 'blob', timeout: 120000 })).data,
+  telecharger: async (type, id, nom) => enregistrerFichier(await piecesJointesApi.fichier(type, id), nom),
+  // POST /api/devis/:id/attacher_piece_jointe/ : remplace la pièce du devis
+  attacher: async (type, id, fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier', fichier);
+    return (await apiClient.post(`/${type}/${id}/attacher_piece_jointe/`, formulaire, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+  },
 };
 
 // Reprise des affaires antérieures (production/views_reprise.py) : contrats et quittances des années passées
@@ -2066,7 +2086,7 @@ export const settingsApi = {
    14. CRM COMMERCIAL & PIPELINE LEADS (institutionnel - Module C)
    ========================================================================= */
 export const crmApi = {
-  // GET /api/crm/leads/ (8 leads réels en BDD)
+  // GET /api/crm/leads/ : prospects du suivi commercial
   getLeads: async () => extractData(await apiClient.get('/crm/leads/')),
   // POST /api/crm/leads/
   createLead: (data) => apiClient.post('/crm/leads/', data),
@@ -2217,6 +2237,11 @@ export const conventionsApi = {
   createConvention: (data) => apiClient.post('/conventions/', data),
   // PATCH /api/conventions/:id/
   updateConvention: (id, data) => apiClient.patch(`/conventions/${id}/`, data),
+  // GET /api/conventions-compagnies/ : une ligne par compagnie du référentiel (code intermédiaire, taux en vigueur,
+  // primes à reverser, commissions, activité, conditions saisies) ; production/views_conventions.py
+  parCompagnie: async () => (await apiClient.get('/conventions-compagnies/')).data,
+  // PUT /api/conventions-compagnies/:idcompagnie/ : conditions de la convention de la compagnie
+  enregistrerConditions: async (idCompagnie, donnees) => (await apiClient.put(`/conventions-compagnies/${idCompagnie}/`, donnees)).data,
 };
 
 /* =========================================================================

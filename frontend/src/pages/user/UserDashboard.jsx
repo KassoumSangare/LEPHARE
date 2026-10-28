@@ -2,9 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   Banknote,
   CalendarClock,
   CalendarX,
@@ -24,93 +22,17 @@ import {
   Wallet,
 } from 'lucide-react';
 
+import {
+  BoutonVoir, cheminDevis, Evolution, francs, Jauge, nombre, pluriel, Section, Tuile,
+} from '../../components/common/Cockpit';
 import { DataTable } from '../../components/common/DataTable';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { cockpitApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate, formatDateLisible } from '../../utils/dateUtils';
-import { moduleDuProduit, moduleOuvert } from '../../utils/parametrage';
-import { MODULES_EDITION_COMPLETE } from '../../utils/quoteRegistry';
 
 // Cockpit opérationnel : chiffres réels de la base (GET /api/cockpit/), chaque bloc selon les droits de l'utilisateur
-const francs = (n) => `${Math.round(Number(n) || 0).toLocaleString('fr-FR')} F`;
-const nombre = (n) => Number(n || 0).toLocaleString('fr-FR');
-const pluriel = (n, un, plusieurs) => `${nombre(n)} ${Number(n) > 1 ? plusieurs : un}`;
-
-const COULEURS_ICONE = {
-  blue: { fond: 'rgba(59, 130, 246, 0.15)', texte: '#60a5fa', bord: 'rgba(59, 130, 246, 0.25)' },
-  emerald: { fond: 'rgba(16, 185, 129, 0.15)', texte: '#34d399', bord: 'rgba(16, 185, 129, 0.25)' },
-  amber: { fond: 'rgba(245, 158, 11, 0.15)', texte: '#fbbf24', bord: 'rgba(245, 158, 11, 0.25)' },
-  purple: { fond: 'rgba(139, 92, 246, 0.15)', texte: '#c084fc', bord: 'rgba(139, 92, 246, 0.25)' },
-  rose: { fond: 'rgba(244, 63, 94, 0.15)', texte: '#fb7185', bord: 'rgba(244, 63, 94, 0.25)' },
-};
-
-// Tuile d'indicateur : ouvre l'écran détaillé quand une destination est donnée
-const Tuile = ({ titre, valeur, icone: Icone, couleur = 'blue', lignes = [], vers, aide }) => {
-  const navigate = useNavigate();
-  const c = COULEURS_ICONE[couleur] || COULEURS_ICONE.blue;
-  const ouvrir = vers ? () => navigate(vers) : undefined;
-  return (
-    <div
-      className={`metric-card cockpit-tuile${vers ? ' cliquable' : ''}`}
-      role={vers ? 'link' : undefined}
-      tabIndex={vers ? 0 : undefined}
-      onClick={ouvrir}
-      onKeyDown={vers ? (e) => { if (e.key === 'Enter') ouvrir(); } : undefined}
-      title={aide}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-        <span style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{titre}</span>
-        <div className="metric-card-icon" style={{ background: c.fond, color: c.texte, border: `1px solid ${c.bord}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icone size={20} />
-        </div>
-      </div>
-      <div className="metric-value">{valeur}</div>
-      {lignes.filter(Boolean).map((ligne, i) => (
-        <div key={i} className="cockpit-tuile-ligne">{ligne}</div>
-      ))}
-    </div>
-  );
-};
-
-// Évolution par rapport à la même date de l'an dernier : flèche + libellé, jamais la couleur seule
-const Evolution = ({ actuel, precedent, au }) => {
-  if (!precedent) return null;
-  const taux = ((actuel - precedent) * 100) / precedent;
-  const hausse = taux >= 0;
-  const Fleche = hausse ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span className={`cockpit-evolution ${hausse ? 'hausse' : 'baisse'}`}>
-      <Fleche size={13} aria-hidden="true" />
-      <strong>{hausse ? '+' : '−'}{Math.abs(taux).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %</strong>
-      <span>{hausse ? 'en hausse' : 'en baisse'} par rapport au {formatDate(au)} ({francs(precedent)})</span>
-    </span>
-  );
-};
-
-const Section = ({ titre, sousTitre, action, children }) => (
-  <section className="glass-panel cockpit-section">
-    <div className="cockpit-section-entete">
-      <div>
-        <h2 className="title-md">{titre}</h2>
-        {sousTitre && <p>{sousTitre}</p>}
-      </div>
-      {action}
-    </div>
-    {children}
-  </section>
-);
-
-const BoutonVoir = ({ libelle, vers }) => {
-  const navigate = useNavigate();
-  return (
-    <button type="button" className="btn btn-secondary cockpit-voir" onClick={() => navigate(vers)}>
-      {libelle}
-      <ArrowRight size={14} />
-    </button>
-  );
-};
 
 export const UserDashboard = () => {
   const navigate = useNavigate();
@@ -141,12 +63,7 @@ export const UserDashboard = () => {
   const commissions = donnees?.Commissions;
   const exercice = donnees?.Exercice || new Date().getFullYear();
 
-  // Devis : formulaire du produit rouvert s'il sait le faire, sinon registre des devis
-  const ouvrirDevis = (d) => {
-    const module = moduleDuProduit(Number(d.IdProduit));
-    if (MODULES_EDITION_COMPLETE.includes(module) && moduleOuvert(module)) navigate(`/user/quotes/${module}?edit=${d.IdDevis}`);
-    else navigate('/user/quotes');
-  };
+  const ouvrirDevis = (d) => navigate(cheminDevis(d.IdProduit, d.IdDevis));
 
   // Points en attente : seulement ceux qui comptent au moins un élément
   const aTraiter = [
@@ -343,9 +260,7 @@ export const UserDashboard = () => {
                   aide="Devis émis depuis le 1er janvier et déjà confirmés en contrat"
                   lignes={[
                     `${nombre(devis.ConfirmesAnnee)} devis confirmés sur ${nombre(devis.EmisAnnee)} émis`,
-                    <div className="cockpit-jauge" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={devis.TauxTransformation} aria-label="Taux de transformation">
-                      <span style={{ width: `${Math.min(100, devis.TauxTransformation)}%` }} />
-                    </div>,
+                    <Jauge taux={devis.TauxTransformation} libelle="Taux de transformation" />,
                   ]}
                 />
               )}

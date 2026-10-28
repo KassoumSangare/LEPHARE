@@ -56,7 +56,7 @@ export const ADMIN_MENU = [
     items: [
       { to: '/admin/guide', label: "Guide de l'administration", icon: Compass, description: "Le plan de cet espace : ce que contient chaque écran et où trouver un réglage." },
       { to: '/admin/dashboard', droit: 'reporting.view', label: 'Tableau de bord', icon: LayoutDashboard, description: 'Production, encaissements, résultats et alertes de conformité du cabinet.' },
-      { to: '/user/crm', droit: 'crm.view', label: 'Suivi commercial', icon: TrendingUp, description: 'Prospects et affaires en cours, étape par étape.' },
+      { to: '/user/crm', droit: 'crm.view', label: 'Suivi commercial', icon: TrendingUp, description: 'Devis émis et transformés, relances, renouvellements et prospects, étape par étape.' },
       { to: '/user/crm/questionnaires', droit: 'crm.view', label: 'Questionnaires prospects', icon: ClipboardList, description: 'Questionnaires à faire remplir par le client (Word, Excel) et questionnaires remplis reçus.' },
       { to: '/user/crm/360', droit: 'clients.view', label: 'Fiche client complète', icon: Users, description: "Tout sur un client : devis, contrats, sinistres et paiements." },
     ],

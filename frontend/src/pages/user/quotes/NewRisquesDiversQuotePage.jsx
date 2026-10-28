@@ -9,6 +9,7 @@ import {
   RefreshCw, Lightbulb, X,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
+import { PieceJointe } from '../../../components/common/PieceJointe';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
@@ -1135,10 +1136,18 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                 <Champ label="Adresse géographique">
                   <input type="text" className="form-control" value={adresseGeo} onChange={(e) => setAdresseGeo(e.target.value)} />
                 </Champ>
-                <Champ label="Pièce jointe" aide={fichier ? `Jointe à l'enregistrement : ${fichier.name}` : 'Facultatif : PDF ou image'}>
+                <Champ
+                  label="Pièce jointe"
+                  aide={fichier
+                    ? `Jointe à l'enregistrement : ${fichier.name}${idDevisEdite ? ' (remplace la pièce enregistrée)' : ''}`
+                    : 'Facultatif : PDF ou image, consultable ensuite depuis la fiche du devis et du contrat'}
+                >
                   <input type="file" className="form-control" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFichier(e.target.files?.[0] || null)} />
                 </Champ>
               </div>
+              {idDevisEdite && (
+                <PieceJointe type="devis" id={idDevisEdite} masquerSiAbsente titre="Pièce jointe enregistrée" className="piece-jointe-saisie" />
+              )}
 
               {pied(
                 boutonPrecedent(2),

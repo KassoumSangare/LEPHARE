@@ -23,7 +23,8 @@ from .views_devis_voyage import (
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
 )
-from . import views_bordereaux, views_cockpit, views_finance, views_reprise
+from . import views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
+from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
@@ -302,6 +303,14 @@ urlpatterns = [
     # entière), réclamation et encaissement des commissions
     # Cockpit opérationnel : chiffres du tableau de bord, chaque bloc selon les droits (production/views_cockpit.py)
     path("cockpit/", views_cockpit.cockpit, name="cockpit"),
+    # Tableau de bord de la direction : production, encaissements, résultats et conformité d'un exercice
+    # (production/views_tableau_de_bord.py)
+    path("tableau-de-bord/", views_tableau_de_bord.tableau_de_bord, name="tableau-de-bord"),
+    # Suivi commercial : devis émis et transformés, relances, renouvellements (production/views_suivi_commercial.py)
+    path("suivi-commercial/", views_suivi_commercial.suivi_commercial, name="suivi-commercial"),
+    # Conventions avec les compagnies : données réelles par compagnie et conditions saisies (production/views_conventions.py)
+    path("conventions-compagnies/", views_conventions.conventions_compagnies, name="conventions-compagnies"),
+    path("conventions-compagnies/<int:id_compagnie>/", views_conventions.convention_compagnie, name="convention-compagnie"),
     # Cloche de la barre du haut : devis arrivant à échéance ou échus récemment, selon les droits
     path("alertes/", views_cockpit.alertes, name="alertes-cloche"),
     # Reprise des affaires antérieures (production/views_reprise.py)

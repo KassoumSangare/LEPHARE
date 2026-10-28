@@ -271,6 +271,20 @@ def _ligne_encaissement(ligne, restes=None):
     }
 
 
+def encaissements_a_reverser():
+    """Lignes d'encaissement encore à reverser, toutes compagnies, décaissements déduits : celles de l'écran des
+    reversements (cockpit, conventions, tableau de bord)."""
+    lignes = _lignes(
+        SQL_LIGNES_ENCAISSEMENT + """
+        WHERE NOT COALESCE(e.piece_annulee, FALSE) AND de.montant_encaissement > COALESCE(de.montantreglement, 0)
+          AND e.dateencaissement::date >= %s
+        """,
+        [debut_reversements()],
+    )
+    restes = _restes_nets({l["numeroquittance"] for l in lignes})
+    return [l for l in (_ligne_encaissement(l, restes) for l in lignes if not _est_decaissement(l)) if l["ResteAReverser"] > 0]
+
+
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])

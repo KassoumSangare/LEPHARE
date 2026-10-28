@@ -150,6 +150,12 @@ REGLES = [
     R("GET", r"cockpit/?$", CONNECTE),
     # Alertes de la cloche : chaque bloc selon le droit de lecture de son module (views_cockpit.alertes)
     R("GET", r"alertes/?$", CONNECTE),
+    # Tableau de bord de la direction et suivi commercial : chiffres réservés au droit de la page (vérifié aussi dans la vue)
+    R("GET", r"tableau-de-bord/?$", "reporting.view"),
+    R("GET", r"suivi-commercial/?$", "crm.view"),
+    # Conventions avec les compagnies : primes à reverser et commissions par compagnie, réservées au droit de la page
+    R("GET", r"conventions-compagnies/", "parametrage.update"),
+    R("PUT", r"conventions-compagnies/\d+/?$", "parametrage.update", objet="parametre", cles=("id_compagnie",)),
     R("POST", r"securite/moi/mot-de-passe/", CONNECTE, objet="utilisateur", action="securite.mot_de_passe"),
     R("GET", r"securite/utilisateurs/", "users.view"),
     R("POST", r"securite/utilisateurs/$", "users.create", objet="utilisateur"),
