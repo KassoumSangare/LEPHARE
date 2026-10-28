@@ -158,6 +158,13 @@ const DEFAULT_OFFRES = [
 const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, pa: null, pn: null, ttc: null };
 
 // Message d'erreur lisible d'un appel d'enregistrement (erreurs DRF ou OutputMessage des procédures)
+// Message d'une procédure PL/pgSQL sans le préfixe « ERREUR: » ni le contexte technique
+// (« fonction PL/pgsql sp_enregistrement_vehicule(integer, …), ligne 230 à RAISE »)
+const sansContexteSql = (texte) => String(texte || '')
+  .replace(/^\s*(ERREUR|ERROR)\s*:\s*/i, '')
+  .replace(/\s*:?\s*(fonction PL\/pgsql|PL\/pgSQL function|CONTEXTE?\s*:)[\s\S]*$/i, '')
+  .trim();
+
 const messageEnregistrement = (e) => {
   const reponse = e?.response?.data;
   // Erreurs de validation Django ({ "Valeur accessoire": ["…"] }) : seuls les messages sont affichés
@@ -168,7 +175,7 @@ const messageEnregistrement = (e) => {
     ? reponse[0]?.OutputMessage
     : (reponse?.OutputMessage || reponse?.detail || messagesValidation
       || (reponse && typeof reponse === 'object' ? JSON.stringify(reponse) : null));
-  return detail || e?.message || 'erreur du serveur';
+  return sansContexteSql(detail) || e?.message || 'erreur du serveur';
 };
 
 // Garanties d'un véhicule telles que le moteur CIMA les calcule (fn_garantie_offre)
@@ -2311,7 +2318,34 @@ export const NewAutoQuotePage = () => {
 
     let idDevis = editIddevis || 0;
     let aFinaliser = finalisationFlotteEnAttente;
-    const aEnvoyer = vehicules.filter(vehiculeAEnvoyer);
+
+    // Véhicule nouveau à l'écran mais dont l'immatriculation est déjà en base dans ce devis (flotte remplacée par
+    // un fichier, véhicule retiré puis ressaisi, ou enregistré lors d'un essai interrompu) : il reprend la ligne
+    // existante, mise à jour au lieu d'un second ajout que sp_enregistrement_vehicule refuse (« Ce vehicule est
+    // déjà enregistré dans ce devis! ») ; cette ligne n'est alors plus à supprimer
+    let retires = vehiculesRetires;
+    if (idDevis && vehicules.some((v) => !v.enregistre)) {
+      const lignesEnBase = await quoteApi.getDevisDetailsAuto(idDevis).catch(() => []);
+      const cleImmat = (texte) => String(texte || '').replace(/\s+/g, '').toUpperCase();
+      const enBase = new Map(lignesEnBase.map((l) => [cleImmat(l.matricule), Number(l.iddevisdetail)]));
+      const prises = new Set(vehicules.filter((v) => v.enregistre && v.idDevisDetail).map((v) => Number(v.idDevisDetail)));
+      let repris = 0;
+      vehicules = vehicules.map((v) => {
+        const id = v.enregistre ? 0 : enBase.get(cleImmat(v.immatriculation));
+        if (!id || prises.has(id)) return v;
+        prises.add(id);
+        repris += 1;
+        retires = retires.filter((r) => Number(r.idDevisDetail) !== id);
+        return { ...v, idDevisDetail: id, enregistre: true, origine: null };
+      });
+      // Gardé tout de suite : un essai interrompu ne doit plus supprimer la ligne reprise
+      if (repris) {
+        setFlotteVehicules(vehicules);
+        setVehiculesRetires(retires);
+      }
+    }
+    // Mises à jour avant les ajouts : une immatriculation libérée par un véhicule modifié peut être reprise
+    const aEnvoyer = [...vehicules.filter((v) => v.enregistre), ...vehicules.filter((v) => !v.enregistre)].filter(vehiculeAEnvoyer);
 
     // Garanties non admises pour l'âge d'un véhicule tarifé au barème : sp_creation_devis les accorde,
     // elles sont retirées ensuite comme des garanties personnalisées. Gardées dans l'état pour qu'un
@@ -2350,7 +2384,7 @@ export const NewAutoQuotePage = () => {
           },
         });
         obj = Array.isArray(res?.data) ? res.data[0] : res?.data;
-        if (!obj?.IdDevis) erreur = obj?.OutputMessage || 'réponse inattendue du serveur';
+        if (!obj?.IdDevis) erreur = sansContexteSql(obj?.OutputMessage) || 'réponse inattendue du serveur';
       } catch (e) {
         erreur = messageEnregistrement(e);
       }
@@ -2379,7 +2413,7 @@ export const NewAutoQuotePage = () => {
 
     // Véhicules retirés de la liste (sp_suppression_vehicule)
     const nonSupprimes = [];
-    for (const r of vehiculesRetires) {
+    for (const r of retires) {
       try {
         const res = await quoteApi.deleteFlotteVehicle(r.idDevisDetail);
         const message = (Array.isArray(res?.data) ? res.data[0]?.OutputMessage : res?.data?.OutputMessage) || '';
