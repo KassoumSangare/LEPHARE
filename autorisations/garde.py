@@ -265,7 +265,7 @@ REGLES = [
              r"listevehiculedevis|reductionflottedevis|devisvoyage|devisia|devisrisquesdivers|devissante|dommages|"
              r"assureiainfo|assureiapardevis|adherents-sante-pour-devis-ia|saisiesanteencours|numerosaisiesante|"
              r"(adherent|affilie|filiale)(liste)?ensaisie|listeaffiliesante|ayantdroitia|ayantdroitminene|mrh/devis|"
-             r"brouillons|devisdetgarantie)(/|$)", "devis.view"),
+             r"brouillons|devisdetgarantie|valeursusuelles)(/|$)", "devis.view"),
     # ---- contrats
     R("GET", r"renouvellement/\d+/?$", "contrats.view"),
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),

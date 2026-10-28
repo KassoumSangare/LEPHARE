@@ -1766,6 +1766,9 @@ class MRHCalculService:
             item["id_maison"]: Decimal(str(item["montant"]))
             for item in (repartition_maisons or [])
         }
+        # Taxe imposée répartie sur les maisons au prorata de leurs nouvelles primes (la somme des primes
+        # en cours mêlait primes déjà imposées et primes calculées : taxe d'une maison faussée)
+        total_nouvelles_primes = sum(map_repartition.values()) if map_repartition else Decimal(str(montant_impose))
 
         for maison in maisons:
             if map_repartition:
@@ -1784,8 +1787,7 @@ class MRHCalculService:
             # Taxe par maison : imposée globalement → répartir proportionnellement,
             # sinon recalculer via le ratio actuel taxe/prime
             if montant_taxe is not None and montant_taxe > 0:
-                total_prime_pour_ratio = sum(m.primenette for m in maisons) or Decimal("1")
-                ratio_maison = nouvelle_prime_maison / total_prime_pour_ratio if total_prime_pour_ratio else Decimal("0")
+                ratio_maison = nouvelle_prime_maison / total_nouvelles_primes if total_nouvelles_primes else Decimal("0")
                 nouvelle_taxe_maison = self._arrondir(montant_taxe * ratio_maison)
             elif maison.primenette and maison.primenette != 0:
                 ratio_taxe_maison = maison.taxeenregistrement / maison.primenette

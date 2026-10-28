@@ -510,6 +510,14 @@ export const impressionSanteApi = {
   bordereau: async (idDevis) => (await apiClient.get(`/devissante/${idDevis}/bordereau/`)).data,
 };
 
+// Facture de prime RC (modèle OREOLE, comme la facture OREOLE d'URANUS) : quittance du contrat ({ idcontrat }) ou
+// de la proposition ({ iddevis })
+export const impressionRcApi = {
+  get: async ({ iddevis, idcontrat }) => donneesEntete(
+    await apiClient.get(idcontrat ? `/quittancecontrat/${idcontrat}` : `/quittanceproposition/${iddevis}`),
+  ) || {},
+};
+
 // Proposition MRH (gabarit URANUS) : quittance de la proposition et garanties de chaque maison
 // (capital, franchises, primes) lues dans le résumé financier du devis
 // Proposition MRH (gabarit URANUS) : quittance de la proposition, garanties souscrites (cumulées
@@ -1114,6 +1122,12 @@ export const santeApi = {
 const CHEMINS_RISQUES_DIVERS = {
   7: { garanties: '/offregarantiemrp', enregistrement: '/enregistrementdevismrp' },
   8: { garanties: '/offregarantierc', enregistrement: '/enregistrementdevisrc' },
+};
+
+// GET /api/valeursusuelles/?produit= : valeurs habituelles des devis du produit (accessoire, réduction, taux de prime,
+// capitaux, et par sous-garantie capital, franchises et taux), proposées dans les listes des montants saisis à la main
+export const valeursUsuellesApi = {
+  get: async (idProduit) => (await apiClient.get('/valeursusuelles/', { params: { produit: Number(idProduit) } })).data || {},
 };
 
 export const risquesDiversApi = {

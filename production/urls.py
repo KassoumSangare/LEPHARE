@@ -7,7 +7,7 @@ from .views_devis_ia import (
     garanties_devis_ia,
     taux_taxe_devis_ia,
 )
-from .views_devis_risques_divers import lire_devis_risques_divers
+from .views_devis_risques_divers import lire_devis_risques_divers, valeurs_usuelles
 from .import_flotte import analyser_import_flotte
 from . import documents_dommages
 from .views_devis_dommages import (
@@ -249,6 +249,8 @@ urlpatterns = [
         lire_devis_risques_divers,
         name="lecture_devis_risques_divers",
     ),
+    # RC et MRH saisis à la main : valeurs habituelles proposées dans les listes déroulantes des montants et taux
+    path(r"valeursusuelles/", valeurs_usuelles, name="valeurs_usuelles"),
     # Devis IA complet (création / « Modifier ») en une transaction
     path(
         r"devisia/enregistrement/",

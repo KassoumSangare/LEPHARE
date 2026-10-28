@@ -2,7 +2,7 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionRcApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
 import { arrondirMontant, construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, ttcRetombe, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 import { estDevisSante, imprimerDocumentSante } from './impressionsSante';
@@ -2736,6 +2736,117 @@ export const printPieceDommages = async (idContrat, piece = 'facture') => {
 };
 
 /* =========================================================================
+   FACTURE DE PRIME RC au modèle OREOLE (« FACTURE DE PRIME N° 000005/01/26 » transmis le 2026-10-28) : logo du
+   cabinet et son anneau en filigrane, « ASSURANCE RESPONSABILITE CIVILE », compagnie (ordre des chèques), souscripteur
+   et assuré, références de la police, primes, montant en lettres, « Fait à …, le 01 Décembre 2025 », « Pour la société ».
+   Données : quittance du contrat ou du devis (quittancecontrat / quittanceproposition, comme la facture OREOLE
+   d'URANUS : Id. Police = identifiant du contrat, N° Acte = numéro d'avenant). Un devis garde son titre
+   « DEVIS N° … » et la colonne N° Devis, sans identifiant (colonne Id. Devis retirée le 2026-10-28). Frais de gestion
+   (RC chef de famille MINENE) : colonne ajoutée s'il y en a.
+   ========================================================================= */
+const STYLES_FACTURE_RC = `
+  .fp { overflow: hidden; }
+  .fp > :not(.fp-filigrane) { position: relative; z-index: 1; }
+  .fp-filigrane { position: absolute; z-index: 0; left: 50%; top: 55%; width: 170mm; transform: translate(-50%, -50%); opacity: 0.06; }
+  .fp-table th { font-weight: 400; white-space: nowrap; }
+  .fp-montants tr:first-child th { border-top: none; }
+  .fp-montants.cinq th { font-size: 10pt; }
+`;
+
+export const estDevisRc = (quote) => quote?.branche === 'RC'
+  || Number(quote?.raw?.idproduit?.id_produit ?? quote?.raw?.idproduit?.IdProduit ?? quote?.raw?.idproduit) === 8;
+
+export const buildFacturePrimeRc = (q, { contrat = true } = {}) => {
+  const e = echapperHtml;
+  const f = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/ /g, ' ');
+  const renseigne = (v) => {
+    const t = String(v ?? '').trim();
+    return /^(-+|\.|NA|N\/A|NEANT|NÉANT|RAS)$/i.test(t) ? '' : t;
+  };
+  const bloc = (...lignes) => lignes.map(renseigne).filter(Boolean).map(e).join('<br/>');
+  const telephone = renseigne(q.TelephoneClient) || renseigne(q.MobileClient);
+  const souscripteur = bloc(q.NomClient, renseigne(q.AdresseClient) || q.AdresseGeographique, telephone);
+  const memePersonne = !renseigne(q.NomAssure) || String(q.NomAssure).trim() === String(q.NomClient || '').trim();
+  const assure = memePersonne ? souscripteur : bloc(q.NomAssure, q.AdresseAssure);
+  const produit = String(q.LibelleProduit || 'RESPONSABILITE CIVILE').toUpperCase();
+  const categorie = String(q.LibelleCategorie || '').trim().toUpperCase();
+  const objet = `ASSURANCE ${produit}${categorie && categorie !== produit ? ` - ${categorie}` : ''}`;
+  const compagnie = String(documentsCompagnie(q.RaisonSociale)?.OrdreCheque || '').trim() || q.RaisonSociale || '';
+  const acte = String(q.NumeroAvenant || '').trim().replace(/^0+(?=\d)/, '');
+  // Contrat : Id. Police en première colonne ; devis : pas d'identifiant, une colonne de moins
+  const colonnes = contrat ? 6 : 5;
+  const [pn, accessoire, taxe, frais] = [q.PrimeNetteHorsFga ?? q.PrimeNette, q.Accessoire, q.TaxeEnregistrement, q.FraisGestion]
+    .map((v) => Math.round(Number(v) || 0));
+  const ttc = Math.round(Number(q.PrimeTtc) || 0);
+  const somme = pn + accessoire + taxe + frais;
+  const alerte = ttcRetombe(ttc, somme, { idProduit: 8 }) ? '' : `
+    <div class="alerte-ecart no-print"><strong>Écart sur la prime TTC.</strong> Prime TTC enregistrée : ${f(ttc)} FCFA,
+      somme des primes imprimées : ${f(somme)} FCFA. Vérifiez la quittance avant de transmettre la facture.
+      <em>(Ce bandeau n'apparaît pas à l'impression.)</em></div>`;
+  const jour = new Date(`${String(q.DateEmission || new Date().toISOString()).slice(0, 10)}T00:00:00`);
+  const mois = jour.toLocaleDateString('fr-FR', { month: 'long' });
+  const fait = Number.isNaN(jour.getTime()) ? ''
+    : `${String(jour.getDate()).padStart(2, '0')} ${mois.charAt(0).toUpperCase()}${mois.slice(1)} ${jour.getFullYear()}`;
+  return `<style>${PIECES_DOMMAGES_STYLES}${STYLES_FACTURE_RC}</style>
+  ${alerte}
+  <div class="fp">
+    <img class="fp-filigrane" src="${e(logoCabinetPied())}" alt="" />
+    <img class="fp-logo" src="${e(logoCabinetEntete())}" alt="${e(nomCabinet())}" />
+    <div class="fp-titre">${contrat ? `FACTURE DE PRIME N° ${e(q.NumeroFacture || '')}` : e(titreDevis(q.NumeroDevis))}</div>
+    <div class="fp-objet">${e(objet)}</div>
+    <table class="fp-table">
+      ${contrat
+        ? '<colgroup><col style="width:18%"/><col style="width:20%"/><col style="width:17%"/><col style="width:11%"/><col style="width:17%"/><col style="width:17%"/></colgroup>'
+        : '<colgroup><col style="width:30%"/><col style="width:20%"/><col style="width:12%"/><col style="width:19%"/><col style="width:19%"/></colgroup>'}
+      <tr><td class="cie" colspan="${colonnes}">Compagnie : ${e(compagnie)}</td></tr>
+      <tr><th colspan="${colonnes - 3}">SOUSCRIPTEUR</th><th colspan="3">ASSURE</th></tr>
+      <tr><td class="pers" colspan="${colonnes - 3}">${souscripteur}</td><td class="pers" colspan="3">${assure}</td></tr>
+      <tr>${contrat ? '<th>Id. Police</th>' : ''}<th>${contrat ? 'N° Police' : 'N° Devis'}</th><th>Effet</th><th>N° Acte</th><th>Effet Acte</th><th>Expiration</th></tr>
+      <tr>${contrat ? `<td class="v">${e(q.IdContrat ?? '')}</td>` : ''}<td class="v">${e((contrat ? q.NumeroPolice : q.NumeroDevis) || '')}</td>
+        <td class="v">${e(dateCourte(q.DateEffet))}</td><td class="v">${e(acte)}</td><td class="v">${e(dateCourte(q.DateEffet))}</td>
+        <td class="v">${e(dateCourte(q.DateExpiration))}</td></tr>
+      <tr><td class="blanc" colspan="${colonnes}"></td></tr>
+    </table>
+    <table class="fp-table fp-montants${frais ? ' cinq' : ''}">
+      ${frais ? `
+      <colgroup><col style="width:18%"/><col style="width:18%"/><col style="width:15%"/><col style="width:26%"/><col style="width:23%"/></colgroup>
+      <tr><th>PRIME NETTE</th><th>ACCESSOIRE</th><th>TAXES</th><th>FRAIS DE GESTION</th><th>PRIME TTC</th></tr>
+      <tr><td class="v">${f(pn)}</td><td class="v">${f(accessoire)}</td><td class="v">${f(taxe)}</td><td class="v">${f(frais)}</td><td class="v">${f(ttc)}</td></tr>` : `
+      <colgroup><col style="width:21%"/><col style="width:22%"/><col style="width:25%"/><col style="width:32%"/></colgroup>
+      <tr><th>PRIME NETTE</th><th>ACCESSOIRE</th><th>TAXES</th><th>PRIME TTC</th></tr>
+      <tr><td class="v">${f(pn)}</td><td class="v">${f(accessoire)}</td><td class="v">${f(taxe)}</td><td class="v">${f(ttc)}</td></tr>`}
+    </table>
+    <div class="fp-texte">En votre aimable règlement par chèque à l'ordre de <b>${e(compagnie)}</b> ou par tout règlement la somme de <b>${e(numberToFrenchWords(ttc))} FRANCS CFA.</b></div>
+    <div class="fp-texte">Dans cette attente, nous vous prions d'agréer, nos distinguées salutations.</div>
+    <div class="fp-fait">Fait à ${e(villeSignature())}, le ${e(fait)}</div>
+    <div class="fp-signe">Pour la société</div>
+  </div>`;
+};
+
+/** Facture de prime d'un contrat RC, ou facture proforma d'un devis RC, au modèle OREOLE. */
+export const printFacturePrimeRc = async (quote) => {
+  if (!quote) return;
+  const contrat = estImpressionContrat(quote);
+  const fenetre = ouvrirApercuImpression();
+  if (fenetre) fenetre.document.write('<p style="font-family:Arial;padding:20px;">Préparation de la facture…</p>');
+  try {
+    const q = await impressionRcApi.get(contrat
+      ? { idcontrat: quote.raw?.idcontrat || quote.iddevis || quote.id }
+      : { iddevis: quote.iddevis || quote.id });
+    if (!q.IdDevis && !q.IdContrat) throw new Error('Quittance introuvable.');
+    const numero = contrat ? (q.NumeroFacture || q.NumeroPolice) : q.NumeroDevis;
+    openPrintWindow(`${contrat ? 'Facture de prime' : 'Devis'} ${numero || ''}`.trim(), buildFacturePrimeRc(q, { contrat }), fenetre);
+  } catch (err) {
+    console.error('Erreur facture RC :', err);
+    if (fenetre) {
+      fenetre.document.open();
+      fenetre.document.write('<p style="font-family:Arial;padding:20px;color:#b91c1c;">Impossible de préparer la facture. Veuillez réessayer.</p>');
+      fenetre.document.close();
+    }
+  }
+};
+
+/* =========================================================================
    RELEVÉ DE COMPTE : quittance remise au client quand un devis Dommages est confirmé, au format du
    relevé OREOLE reçu le 2026-10-08 (STEP BY STEP, 13/01/2026) : logo du cabinet, client, une ligne
    par quittance (période, branche, opération, prime TTC, encaissement, solde), compagnie à l'ordre
@@ -3987,6 +4098,8 @@ export const printQuoteFacture = (quote) => {
   if (estDevisIa(quote)) {
     return imprimerDocumentIa(quote, `Devis ${quote.numerodevis || ''}`.trim(), buildFactureIa);
   }
+  // RC (devis et contrat) : facture de prime au modèle OREOLE
+  if (estDevisRc(quote)) return printFacturePrimeRc(quote);
   // Devis Voyage : numéro d'attestation et adresses lus sur le devis (absents de la liste des devis)
   if (estDevisVoyage(quote) && !quote.confirme && (quote.iddevis || quote.id)) {
     const fenetre = ouvrirApercuImpression();

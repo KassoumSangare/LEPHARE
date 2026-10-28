@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
-import { quoteApi, customerApi, settingsApi, contractApi, risquesDiversApi } from '../../../api/endpoints';
+import { quoteApi, customerApi, settingsApi, contractApi, risquesDiversApi, valeursUsuellesApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
   Check, Plus, Shield, AlertTriangle, ChevronLeft, ChevronRight, FileText, ListChecks, Calculator, Users, Loader2,
@@ -18,6 +18,7 @@ import { DureeContratSelect } from '../../../components/common/DureeContratSelec
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { sortUniqueBy, trierParLibelle } from '../../../utils/sortUtils';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { ChampPropose, propositionMontant, propositionTaux, propositionsUsuelles, sansDoublon } from '../../../components/common/ListePropositions';
 import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
@@ -72,18 +73,26 @@ const expirationPour = (dateEffet, dureeId, personnalisee) => {
   return d.toISOString().split('T')[0];
 };
 
-// Ligne renvoyée par offregarantie{rc|mrp} -> garantie éditable du formulaire
-const garantieDepuisApi = (r, acquise) => ({
-  id: Number(r.IdSousGarantie),
-  libelle: r.LibelleSousGarantie,
-  acquise,
-  capital: Math.round(Number(r.Capital) || 0),
-  franchiseMinimum: Math.round(Number(r.FranchiseMinimum) || 0),
-  franchiseMaximum: Math.round(Number(r.FranchiseMaximum) || 0),
-  tauxFranchise: Number(r.TauxFranchise) || 0,
-  montantFranchise: Math.round(Number(r.MontantFranchise) || 0),
-  primeNette: Math.round(Number(r.PrimeNette) || 0),
-});
+// Ligne renvoyée par offregarantie{rc|mrp} -> garantie éditable du formulaire ; montant nul affiché vide.
+// vide : garantie proposée par l'offre en saisie manuelle (RC sans barème), capitaux et franchises à saisir
+const garantieDepuisApi = (r, acquise, vide = false) => {
+  const valeur = (v, arrondi = true) => (vide ? '' : (arrondi ? Math.round(Number(v) || 0) : Number(v) || 0) || '');
+  return {
+    id: Number(r.IdSousGarantie),
+    libelle: r.LibelleSousGarantie,
+    acquise,
+    capital: valeur(r.Capital),
+    franchiseMinimum: valeur(r.FranchiseMinimum),
+    franchiseMaximum: valeur(r.FranchiseMaximum),
+    tauxFranchise: valeur(r.TauxFranchise, false),
+    montantFranchise: valeur(r.MontantFranchise),
+    primeNette: Math.round(Number(r.PrimeNette) || 0),
+  };
+};
+
+// Champ montant ou taux laissé vide (et non « 0 ») tant que rien n'est saisi
+const montantSaisi = (v) => v || '';
+const tauxSaisi = (texte, max = Infinity) => (texte === '' ? '' : Math.max(0, Math.min(max, Number(texte) || 0)));
 
 export const NewRisquesDiversQuotePage = ({ produit }) => {
   const idProduit = Number(produit);
@@ -128,7 +137,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const dateEmission = aujourdhui();
   const [dateEffet, setDateEffet] = useState(aujourdhui);
   const [expirationPersonnalisee, setExpirationPersonnalisee] = useState('');
-  const [reduction, setReduction] = useState(0);
+  const [reduction, setReduction] = useState('');
   const [numeroPoliceCompagnie, setNumeroPoliceCompagnie] = useState('');
   const [numeroPoliceConnexe, setNumeroPoliceConnexe] = useState('');
   const dateExpiration = useMemo(
@@ -141,11 +150,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [localisation, setLocalisation] = useState('');
   const [dateDebut, setDateDebut] = useState('');
   const [nombreParticipants, setNombreParticipants] = useState(0);
-  const [assiettePrime, setAssiettePrime] = useState(0);
-  const [tauxPrime, setTauxPrime] = useState(0);
-  const [capitalDommageCorporel, setCapitalDommageCorporel] = useState(0);
-  const [capitalIntoxication, setCapitalIntoxication] = useState(0);
-  const [capitalDommageMateriel, setCapitalDommageMateriel] = useState(0);
+  const [assiettePrime, setAssiettePrime] = useState('');
+  const [tauxPrime, setTauxPrime] = useState('');
+  const [capitalDommageCorporel, setCapitalDommageCorporel] = useState('');
+  const [capitalIntoxication, setCapitalIntoxication] = useState('');
+  const [capitalDommageMateriel, setCapitalDommageMateriel] = useState('');
 
   // Étape 2 : garanties
   const [garanties, setGaranties] = useState([]);
@@ -154,9 +163,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const [primeTarif, setPrimeTarif] = useState(null);
 
   // Étape 3 : primes et assuré
-  const [primeNette, setPrimeNette] = useState(0);
-  const [accessoire, setAccessoire] = useState(0);
-  const [taxe, setTaxe] = useState(0);
+  const [primeNette, setPrimeNette] = useState('');
+  const [accessoire, setAccessoire] = useState('');
+  const [taxe, setTaxe] = useState('');
   // TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants)
   const primeTtc = arrondirMontant((Number(primeNette) || 0) + (Number(accessoire) || 0) + (Number(taxe) || 0), idProduit);
   // Calcul à partir de la prime nette (bouton « Calculer » d'URANUS, automatique ici) : accessoire du
@@ -193,6 +202,19 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   };
 
   const offreMinene = Number(idOffre) === ID_OFFRE_MINENE;
+  // RC hors MINENE : aucun barème (décision du 2026-10-28), primes, accessoire, taxe, capitaux et taux saisis à la
+  // main, rien n'est proposé d'office ; le taux de taxe du produit ne sert qu'à contrôler le minimum légal
+  const saisieManuelle = estRc && !offreMinene;
+  // Listes déroulantes de ces champs : valeurs habituelles des devis RC enregistrés (rien n'est rempli d'office)
+  const [usuelles, setUsuelles] = useState({});
+  useEffect(() => {
+    if (!estRc) return undefined;
+    let actif = true;
+    valeursUsuellesApi.get(idProduit).then((d) => { if (actif) setUsuelles(d); }).catch(() => {});
+    return () => { actif = false; };
+  }, [estRc, idProduit]);
+  const proposees = (cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles[cle], options) : []);
+  const proposeesGarantie = (id, cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles.Garanties?.[String(id)]?.[cle], options) : []);
   // Devis repris d'URANUS sans ligne de détail en base
   const [avertissementReprise, setAvertissementReprise] = useState('');
 
@@ -319,9 +341,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         if (!actif) return;
         setTauxTaxe(r.tauxTaxe);
         setAccessoireBareme(r.accessoire);
-        if (!accessoireManuel) setAccessoire(r.accessoire);
+        if (!accessoireManuel && !saisieManuelle) setAccessoire(r.accessoire);
       } catch (err) {
-        if (actif) toastError(`Accessoire et taxe non calculés : ${messageErreurApi(err)}. Saisissez-les.`);
+        if (actif && !saisieManuelle) toastError(`Accessoire et taxe non calculés : ${messageErreurApi(err)}. Saisissez-les.`);
       } finally {
         if (actif) setCalculEnCours(false);
       }
@@ -330,10 +352,10 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idProduit, compagnieId, idOffre, primeNette, dateEffet, offreMinene, accessoireManuel]);
 
-  // Taxe tenue à jour (taux × (prime nette + accessoire)), sauf montant retouché à la main
+  // Taxe tenue à jour (taux × (prime nette + accessoire)), sauf montant retouché à la main ou saisie manuelle
   useEffect(() => {
-    if (!taxeManuelle && taxeCalculee !== null) setTaxe(taxeCalculee);
-  }, [taxeCalculee, taxeManuelle]);
+    if (!saisieManuelle && !taxeManuelle && taxeCalculee !== null) setTaxe(taxeCalculee);
+  }, [taxeCalculee, taxeManuelle, saisieManuelle]);
 
   // -------------------------------------------------------------
   // GARANTIES DE L'OFFRE (et, en modification, celles enregistrées sur le devis)
@@ -362,7 +384,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
       const liste = (offre || [])
         .filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0)
         // Création : toutes cochées (comme URANUS) ; modification : cochées = enregistrées sur le devis
-        .map((r) => enregistrees.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, !depuisDevis));
+        .map((r) => enregistrees.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, !depuisDevis, saisieManuelle));
       // Garanties du devis qui ne figurent plus dans l'offre : conservées
       lignesDevis.forEach((r) => {
         if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push(garantieDepuisApi(r, true));
@@ -435,7 +457,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setTermeId(charge.termeId);
         setDateEffet(jour(raw.dateeffet) || aujourdhui());
         setExpirationPersonnalisee(jour(raw.dateexpiration));
-        setReduction(Number(ligne.TauxReduction) || 0);
+        setReduction(Number(ligne.TauxReduction) || '');
         setNumeroPoliceCompagnie(raw.numero_police_compagnie || '');
         setNumeroPoliceConnexe(raw.numero_police_connexe || raw.numeropoliceconnexe || '');
         setActivite(ligne.Activite || '');
@@ -443,17 +465,17 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         setLocalisation(ligne.Localisation || '');
         setDateDebut(jour(ligne.DateDebut));
         setNombreParticipants(Number(ligne.NombreParticipants) || 0);
-        setAssiettePrime(Math.round(Number(ligne.AssiettePrime) || 0));
-        setTauxPrime(Number(ligne.TauxPrime) || 0);
-        setCapitalDommageCorporel(Math.round(Number(ligne.CapitalDommageCorporel) || 0));
-        setCapitalIntoxication(Math.round(Number(ligne.CapitalIntoxicationAlimentaire) || 0));
-        setCapitalDommageMateriel(Math.round(Number(ligne.CapitalDommageMateriel) || 0));
+        setAssiettePrime(montantSaisi(Math.round(Number(ligne.AssiettePrime) || 0)));
+        setTauxPrime(Number(ligne.TauxPrime) || '');
+        setCapitalDommageCorporel(montantSaisi(Math.round(Number(ligne.CapitalDommageCorporel) || 0)));
+        setCapitalIntoxication(montantSaisi(Math.round(Number(ligne.CapitalIntoxicationAlimentaire) || 0)));
+        setCapitalDommageMateriel(montantSaisi(Math.round(Number(ligne.CapitalDommageMateriel) || 0)));
         // Primes : saisies à la création (ou calculées par la base pour MINENE), donc reprises
         // telles qu'enregistrées. Les devis repris d'URANUS n'ont pas le drapeau prime_imposee :
         // ne les reprendre que dans ce cas les affichait à 0.
-        setPrimeNette(Math.round(Number(raw.primenette) || 0));
-        setAccessoire(Math.round(Number(raw.accessoire) || 0));
-        setTaxe(Math.round(Number(raw.taxe) || 0));
+        setPrimeNette(montantSaisi(Math.round(Number(raw.primenette) || 0)));
+        setAccessoire(montantSaisi(Math.round(Number(raw.accessoire) || 0)));
+        setTaxe(montantSaisi(Math.round(Number(raw.taxe) || 0)));
         // Montants enregistrés gardés tels quels ; une nouvelle prime nette recalcule la taxe
         setAccessoireManuel(true);
         setTaxeManuelle(true);
@@ -492,9 +514,10 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         if (!actif) return;
         const enregistrees = (lignesDevis || []).filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0 && r.Acquise);
         const parId = new Map(enregistrees.map((r) => [Number(r.IdSousGarantie), garantieDepuisApi(r, true)]));
+        const manuelle = estRc && Number(ligne.IdOffre) !== ID_OFFRE_MINENE;
         const liste = (offre || [])
           .filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0)
-          .map((r) => parId.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, false));
+          .map((r) => parId.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, false, manuelle));
         enregistrees.forEach((r) => {
           if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push(garantieDepuisApi(r, true));
         });
@@ -587,6 +610,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     if (!offreMinene && !garantiesAcquises.length) { toastError('Cochez au moins une garantie.'); setStep(2); return; }
     if (!offreMinene && !(Number(primeNette) > 0)) {
       toastError('Saisissez la prime nette : elle est répartie sur les garanties cochées.');
+      setStep(3);
+      return;
+    }
+    if (saisieManuelle && !(Number(taxe) > 0)) {
+      toastError('Saisissez la taxe.');
       setStep(3);
       return;
     }
@@ -778,7 +806,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           {numeroDevisEdite
             ? <>Devis <strong>N° {numeroDevisEdite}</strong>.</>
             : estRc
-              ? "Contrat et risque, garanties de l'offre, puis prime et souscripteur. La prime nette est saisie ; l'accessoire et la taxe sont proposés."
+              ? "Contrat et risque, garanties de l'offre, puis prime et souscripteur. La prime nette, l'accessoire et la taxe sont saisis à la main."
               : "Contrat, garanties de l'offre, puis prime et souscripteur. La prime nette est saisie ; l'accessoire et la taxe sont proposés."}
           {isLoadingEdit && <span style={{ color: couleur, fontWeight: 600 }}> Chargement du devis à modifier…</span>}
         </p>
@@ -844,8 +872,11 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   <input type="text" className="form-control" value={numeroPoliceCompagnie} onChange={(e) => setNumeroPoliceCompagnie(e.target.value)} />
                 </Champ>
                 <Champ label="Réduction commerciale (%)" aide={estRc ? `${reductionMaxRc()} % au plus` : 'De 0 à 100 %'}>
-                  <input type="number" min="0" max={estRc ? reductionMaxRc() : 100} className="form-control" value={reduction}
-                    onChange={(e) => setReduction(Math.max(0, Math.min(estRc ? reductionMaxRc() : 100, Number(e.target.value) || 0)))} />
+                  <ChampPropose onChoisir={setReduction} propositions={saisieManuelle ? sansDoublon(proposees('TauxReduction', { taux: true }),
+                    [5, 10, 15, 20, 25, 30, 35].filter((t) => t <= reductionMaxRc()).map((t) => propositionTaux(t))) : []}>
+                    <input type="number" min="0" max={estRc ? reductionMaxRc() : 100} className="form-control" value={reduction}
+                      onChange={(e) => setReduction(tauxSaisi(e.target.value, estRc ? reductionMaxRc() : 100))} />
+                  </ChampPropose>
                 </Champ>
                 {offreMinene && (
                   <PoliceMineneConnexe
@@ -929,19 +960,27 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   <div style={sousTitre}>Base de tarification et capitaux</div>
                   <div style={grille}>
                     <Champ label="Assiette de prime" aide="Chiffre d'affaires, masse salariale…">
-                      <AmountInput value={assiettePrime} onChange={setAssiettePrime} />
+                      <AmountInput value={assiettePrime} onChange={(v) => setAssiettePrime(montantSaisi(v))} />
                     </Champ>
                     <Champ label="Taux de prime (%)" aide={primeAssietteTaux > 0 ? `Soit ${fcfa(primeAssietteTaux)} F de prime nette` : undefined}>
-                      <input type="number" min="0" step="0.01" className="form-control" value={tauxPrime} onChange={(e) => setTauxPrime(Math.max(0, Number(e.target.value) || 0))} />
+                      <ChampPropose onChoisir={setTauxPrime} propositions={proposees('TauxPrime', { taux: true })}>
+                        <input type="number" min="0" step="0.01" className="form-control" value={tauxPrime} onChange={(e) => setTauxPrime(tauxSaisi(e.target.value))} />
+                      </ChampPropose>
                     </Champ>
                     <Champ label="Capital dommages corporels" aide={estMinene ? 'Barème MINENE' : undefined}>
-                      <AmountInput value={capitalDommageCorporel} onChange={setCapitalDommageCorporel} disabled={estMinene} />
+                      <ChampPropose onChoisir={setCapitalDommageCorporel} propositions={proposees('CapitalDommageCorporel')} inactif={estMinene}>
+                        <AmountInput value={capitalDommageCorporel} onChange={(v) => setCapitalDommageCorporel(montantSaisi(v))} disabled={estMinene} />
+                      </ChampPropose>
                     </Champ>
                     <Champ label="Capital intoxication alimentaire" aide={estMinene ? 'Barème MINENE' : undefined}>
-                      <AmountInput value={capitalIntoxication} onChange={setCapitalIntoxication} disabled={estMinene} />
+                      <ChampPropose onChoisir={setCapitalIntoxication} propositions={proposees('CapitalIntoxicationAlimentaire')} inactif={estMinene}>
+                        <AmountInput value={capitalIntoxication} onChange={(v) => setCapitalIntoxication(montantSaisi(v))} disabled={estMinene} />
+                      </ChampPropose>
                     </Champ>
                     <Champ label="Capital dommages matériels" aide={estMinene ? 'Barème MINENE' : undefined}>
-                      <AmountInput value={capitalDommageMateriel} onChange={setCapitalDommageMateriel} disabled={estMinene} />
+                      <ChampPropose onChoisir={setCapitalDommageMateriel} propositions={proposees('CapitalDommageMateriel')} inactif={estMinene}>
+                        <AmountInput value={capitalDommageMateriel} onChange={(v) => setCapitalDommageMateriel(montantSaisi(v))} disabled={estMinene} />
+                      </ChampPropose>
                     </Champ>
                   </div>
                 </>
@@ -997,10 +1036,10 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                     <tr>
                       <th style={{ ...th, textAlign: 'center', width: '60px' }}>Acquise</th>
                       <th style={{ ...th, minWidth: '220px' }}>Garantie</th>
-                      <th style={{ ...th, textAlign: 'right', width: '150px' }}>Capital</th>
-                      <th style={{ ...th, textAlign: 'right', width: '120px' }}>Franchise min.</th>
-                      <th style={{ ...th, textAlign: 'right', width: '120px' }}>Franchise max.</th>
-                      <th style={{ ...th, textAlign: 'right', width: '90px' }}>Taux (%)</th>
+                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '190px' : '150px' }}>Capital</th>
+                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise min.</th>
+                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise max.</th>
+                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '130px' : '90px' }}>Taux (%)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1014,11 +1053,17 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                             style={{ width: 17, height: 17, accentColor: couleur, cursor: 'pointer' }} />
                         </td>
                         <td style={{ ...td, fontWeight: 600, cursor: 'pointer' }} onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>{g.libelle}</td>
-                        <td style={td}><AmountInput value={g.capital} onChange={(v) => majGarantie(g.id, 'capital', v)} suffix="" /></td>
-                        <td style={td}><AmountInput value={g.franchiseMinimum} onChange={(v) => majGarantie(g.id, 'franchiseMinimum', v)} suffix="" /></td>
-                        <td style={td}><AmountInput value={g.franchiseMaximum} onChange={(v) => majGarantie(g.id, 'franchiseMaximum', v)} suffix="" /></td>
+                        {[['capital', 'Capital'], ['franchiseMinimum', 'FranchiseMinimum'], ['franchiseMaximum', 'FranchiseMaximum']].map(([champ, cle]) => (
+                          <td key={champ} style={td}>
+                            <ChampPropose onChoisir={(v) => majGarantie(g.id, champ, v)} propositions={proposeesGarantie(g.id, cle)}>
+                              <AmountInput value={g[champ]} onChange={(v) => majGarantie(g.id, champ, montantSaisi(v))} suffix="" />
+                            </ChampPropose>
+                          </td>
+                        ))}
                         <td style={td}>
-                          <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', Math.max(0, Number(e.target.value) || 0))} />
+                          <ChampPropose onChoisir={(v) => majGarantie(g.id, 'tauxFranchise', v)} propositions={proposeesGarantie(g.id, 'TauxFranchise', { taux: true })}>
+                            <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', tauxSaisi(e.target.value))} />
+                          </ChampPropose>
                         </td>
                       </tr>
                     ))}
@@ -1058,10 +1103,13 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
               ) : (
                 <>
                   <p style={texteAide}>
-                    La prime nette est répartie par la base sur les garanties cochées. L'accessoire suit le barème de la compagnie et la taxe
-                    {tauxTaxe !== null ? ` vaut ${tauxTaxe} %` : ' suit le taux du produit'} de (prime nette + accessoire) ; les deux restent modifiables.
+                    {saisieManuelle
+                      ? "Pas de barème RC : la prime nette, l'accessoire et la taxe sont saisis à la main. La prime nette est répartie par la base sur les garanties cochées."
+                      : <>La prime nette est répartie par la base sur les garanties cochées. L'accessoire suit le barème de la compagnie et la taxe
+                        {tauxTaxe !== null ? ` vaut ${tauxTaxe} %` : ' suit le taux du produit'} de (prime nette + accessoire) ; les deux restent modifiables.</>}
                   </p>
-                  {[[primeTarif > 0 ? Math.round(primeTarif) : 0, 'Prime du tarif'], [primeAssietteTaux, 'Assiette × taux']]
+                  {/* Saisie manuelle : « Assiette × taux » est proposé dans la liste de la prime nette */}
+                  {!saisieManuelle && [[primeTarif > 0 ? Math.round(primeTarif) : 0, 'Prime du tarif'], [primeAssietteTaux, 'Assiette × taux']]
                     .filter(([montant]) => montant > 0 && montant !== Math.round(Number(primeNette) || 0)).length > 0 && (
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '1rem' }}>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Lightbulb size={14} /> Propositions :</span>
@@ -1077,10 +1125,13 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   )}
                   <div style={grille}>
                     <Champ label="Prime nette" requis>
-                      <AmountInput value={primeNette} onChange={(v) => { setPrimeNette(v); setTaxeManuelle(false); }} />
+                      <ChampPropose onChoisir={(v) => { setPrimeNette(v); setTaxeManuelle(false); }}
+                        propositions={saisieManuelle && primeAssietteTaux > 0 ? [propositionMontant(primeAssietteTaux, 'assiette × taux de prime')] : []}>
+                        <AmountInput value={primeNette} onChange={(v) => { setPrimeNette(montantSaisi(v)); setTaxeManuelle(false); }} />
+                      </ChampPropose>
                     </Champ>
                     <Champ label="Accessoire"
-                      aide={(
+                      aide={saisieManuelle ? 'À saisir ; vide : pas d\'accessoire' : (
                         <>
                           {calculEnCours ? 'Calcul…' : accessoireBareme !== null ? `Barème : ${fcfa(accessoireBareme)} F${accessoireManuel && Number(accessoire) !== accessoireBareme ? ' (montant saisi)' : ''}` : 'Proposé dès la saisie de la prime nette'}
                           {accessoireManuel && accessoireBareme !== null && Number(accessoire) !== accessoireBareme && (
@@ -1088,19 +1139,29 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                           )}
                         </>
                       )}>
-                      <AmountInput value={accessoire} onChange={(v) => { setAccessoire(v); setAccessoireManuel(true); setTaxeManuelle(false); }} />
+                      <ChampPropose onChoisir={(v) => { setAccessoire(v); setAccessoireManuel(true); setTaxeManuelle(false); }} propositions={proposees('Accessoire')}>
+                        <AmountInput value={accessoire} onChange={(v) => { setAccessoire(montantSaisi(v)); setAccessoireManuel(true); setTaxeManuelle(false); }} />
+                      </ChampPropose>
                     </Champ>
-                    <Champ label="Taxe"
-                      erreur={tauxTaxe !== null && Number(taxe) < taxeMinimum ? `Minimum légal : ${fcfa(taxeMinimum)} F (${tauxTaxe} % de la prime nette)` : undefined}
-                      aide={(
-                        <>
-                          {tauxTaxe !== null ? `${tauxTaxe} % × (prime nette + accessoire)` : 'Calculée dès la saisie de la prime nette'}
-                          {taxeManuelle && taxeCalculee !== null && Number(taxe) !== taxeCalculee && (
-                            <> · <button type="button" style={lienAction} onClick={() => setTaxeManuelle(false)}>recalculer ({fcfa(taxeCalculee)} F)</button></>
-                          )}
-                        </>
-                      )}>
-                      <AmountInput value={taxe} onChange={(v) => { setTaxe(v); setTaxeManuelle(true); }} />
+                    <Champ label="Taxe" requis={saisieManuelle}
+                      erreur={tauxTaxe !== null && (!saisieManuelle || Number(taxe) > 0) && Number(taxe) < taxeMinimum ? `Minimum légal : ${fcfa(taxeMinimum)} F (${String(tauxTaxe).replace('.', ',')} % de la prime nette)` : undefined}
+                      aide={saisieManuelle
+                        ? (tauxTaxe !== null && taxeMinimum > 0 ? `À saisir ; minimum légal ${fcfa(taxeMinimum)} F (${String(tauxTaxe).replace('.', ',')} % de la prime nette)` : 'À saisir')
+                        : (
+                          <>
+                            {tauxTaxe !== null ? `${tauxTaxe} % × (prime nette + accessoire)` : 'Calculée dès la saisie de la prime nette'}
+                            {taxeManuelle && taxeCalculee !== null && Number(taxe) !== taxeCalculee && (
+                              <> · <button type="button" style={lienAction} onClick={() => setTaxeManuelle(false)}>recalculer ({fcfa(taxeCalculee)} F)</button></>
+                            )}
+                          </>
+                        )}>
+                      <ChampPropose onChoisir={(v) => { setTaxe(v); setTaxeManuelle(true); }}
+                        propositions={saisieManuelle && tauxTaxe !== null && Number(primeNette) > 0 ? sansDoublon(
+                          propositionMontant(taxeCalculee, `${String(tauxTaxe).replace('.', ',')} % de (prime nette + accessoire)`),
+                          propositionMontant(taxeMinimum, `minimum légal : ${String(tauxTaxe).replace('.', ',')} % de la prime nette`),
+                        ) : []}>
+                        <AmountInput value={taxe} onChange={(v) => { setTaxe(montantSaisi(v)); setTaxeManuelle(true); }} />
+                      </ChampPropose>
                     </Champ>
                     {tuile('Prime TTC', primeTtc, true)}
                   </div>

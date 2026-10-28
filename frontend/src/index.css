@@ -3276,3 +3276,21 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
   .reprises-branches { grid-template-columns: 1fr 1fr; }
 }
 
+
+/* ---- Montants et taux saisis à la main avec valeurs proposées (components/common/ListePropositions.jsx) */
+.champ-propose { display: flex; gap: 0.35rem; align-items: stretch; min-width: 0; }
+.champ-propose-saisie { flex: 1; min-width: 0; }
+.champ-propose-bouton { flex: none; width: 2.3rem; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.champ-propose-bouton svg { transition: transform var(--mouvement-rapide, 150ms) var(--courbe-entree); }
+.champ-propose-liste {
+  position: fixed; z-index: 1200; list-style: none; margin: 0; padding: 4px; max-height: 260px; overflow-y: auto;
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-medium); border-radius: 8px; box-shadow: var(--shadow-lg);
+  animation: mouvement-descend var(--mouvement-normal) var(--courbe-entree);
+}
+.champ-propose-liste button {
+  width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.5rem 0.65rem;
+  border: none; border-radius: 6px; background: transparent; color: var(--text-primary); cursor: pointer; text-align: left; font-size: 0.84rem;
+}
+.champ-propose-liste button:hover, .champ-propose-liste button:focus-visible { background: var(--primary-glow); outline: none; }
+.champ-propose-liste .valeur { font-family: var(--font-mono); font-weight: 700; white-space: nowrap; }
+.champ-propose-liste .detail { color: var(--text-muted); font-size: 0.76rem; text-align: right; }

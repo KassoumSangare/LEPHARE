@@ -85,3 +85,80 @@ def lire_devis_risques_divers(request, iddevis):
             "CapitalCautionnement": _nombre(ligne[17]),
         }
     )
+
+
+# Valeurs habituelles d'un champ : les plus fréquentes parmi les devis du produit (montant ou taux > 0)
+NOMBRE_VALEURS_USUELLES = 6
+
+CHAMPS_USUELS = {
+    "Accessoire": "d.accessoire",
+    "TauxReduction": "dd.tauxreduction",
+    "TauxPrime": "rc.tauxprime",
+    "CapitalDommageCorporel": "dd.valeurneuve",
+    "CapitalIntoxicationAlimentaire": "dd.valeurvenale",
+    "CapitalDommageMateriel": "dd.valeuraccessoire",
+}
+
+CHAMPS_USUELS_GARANTIE = {
+    "Capital": "g.capital",
+    "FranchiseMinimum": "g.minfranchise",
+    "FranchiseMaximum": "g.maxfranchise",
+    "TauxFranchise": "g.tauxfranchise",
+}
+
+
+@api_view(["GET"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def valeurs_usuelles(request):
+    """GET /api/valeursusuelles/?produit=<id> : valeurs proposées dans les listes déroulantes des montants et taux
+    saisis à la main (RC et MRH sans barème, décision du 2026-10-28), lues dans les devis déjà enregistrés du
+    produit : accessoire, réduction, taux de prime et capitaux du risque, et par sous-garantie capital, franchises
+    et taux de franchise. Chaque liste : [{"Valeur", "Nombre"}] du plus fréquent au moins fréquent."""
+    try:
+        produit = int(request.query_params.get("produit") or 0)
+    except ValueError:
+        produit = 0
+    if not produit:
+        return Response({"error": "Produit attendu (?produit=)."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def liste(lignes):
+        return [{"Valeur": _nombre(v), "Nombre": n} for v, n in lignes]
+
+    reponse = {}
+    garanties = {}
+    with connection.cursor() as cursor:
+        for cle, colonne in CHAMPS_USUELS.items():
+            cursor.execute(
+                f"""
+                SELECT {colonne}, COUNT(DISTINCT d.iddevis)
+                FROM stddevis d
+                JOIN stddevisdetail dd ON dd.iddevis = d.iddevis
+                LEFT JOIN stdcomplementdevisdetailrc rc ON rc.iddevisdetail = dd.iddevisdetail
+                WHERE d.idproduit = %s AND {colonne} > 0
+                GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT %s
+                """,
+                [produit, NOMBRE_VALEURS_USUELLES],
+            )
+            reponse[cle] = liste(cursor.fetchall())
+        for cle, colonne in CHAMPS_USUELS_GARANTIE.items():
+            cursor.execute(
+                f"""
+                SELECT idgarantie, valeur, nombre FROM (
+                    SELECT g.idgarantie, {colonne} AS valeur, COUNT(*) AS nombre,
+                           ROW_NUMBER() OVER (PARTITION BY g.idgarantie ORDER BY COUNT(*) DESC, {colonne}) AS rang
+                    FROM stddevisdetgarantie g
+                    JOIN stddevisdetail dd ON dd.iddevisdetail = g.iddevisdet
+                    JOIN stddevis d ON d.iddevis = dd.iddevis
+                    WHERE d.idproduit = %s AND {colonne} > 0
+                    GROUP BY g.idgarantie, {colonne}
+                ) t WHERE rang <= %s ORDER BY idgarantie, rang
+                """,
+                [produit, NOMBRE_VALEURS_USUELLES],
+            )
+            for idgarantie, valeur, nombre in cursor.fetchall():
+                garanties.setdefault(str(idgarantie), {}).setdefault(cle, []).append(
+                    {"Valeur": _nombre(valeur), "Nombre": nombre}
+                )
+    reponse["Garanties"] = garanties
+    return Response(reponse)

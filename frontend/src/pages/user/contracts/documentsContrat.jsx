@@ -83,8 +83,8 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
       ...[['facture', 'Facture de prime'], ...documentsDommages.map((d) => [d.Id, d.Titre.charAt(0) + d.Titre.slice(1).toLowerCase()])]
         .map(([piece, libelle]) => imprimer(`piece-${piece}`, libelle, () => printPieceDommages(id, piece))),
     ] : []),
-    // Dommages : la facture de prime est celle du modèle OREOLE ci-dessus
-    ...(!contratVoyage && !contratDommages ? [imprimer('facture', 'Facture', () => printContratFacture(contrat))] : []),
+    // Dommages : la facture de prime est celle du modèle OREOLE ci-dessus ; RC : même modèle (printFacturePrimeRc)
+    ...(!contratVoyage && !contratDommages ? [imprimer('facture', contratRc ? 'Facture de prime' : 'Facture', () => printContratFacture(contrat))] : []),
     imprimer('cp', contratVoyage ? 'Attestation d’assurance et d’assistance voyage' : 'Conditions particulières',
       () => printContratConditionsParticulieres(contrat)),
     // Santé (gabarits URANUS) : liste des assurés ; MINENE : barème et ayants droit de l'IA MINENE de la police

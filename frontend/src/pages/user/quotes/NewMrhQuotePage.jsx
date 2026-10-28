@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
-import { quoteApi, mrhApi, customerApi, settingsApi, contractApi, piecesJointesApi } from '../../../api/endpoints';
+import { quoteApi, mrhApi, customerApi, settingsApi, contractApi, piecesJointesApi, valeursUsuellesApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
   Home, ChevronLeft, ChevronRight, Plus, Trash2, Edit3, CheckCircle2, AlertTriangle, Loader2,
@@ -14,6 +14,7 @@ import { TermeContratSelect } from '../../../components/common/TermeContratSelec
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
+import { ChampPropose, propositionMontant, propositionsUsuelles } from '../../../components/common/ListePropositions';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
 import { confirmer } from '../../../utils/dialogue';
@@ -21,10 +22,12 @@ import { arrondirMontant, compagnieParDefaut } from '../../../utils/parametrage'
 
 // Production Multirisques Habitation d'URANUS (Contrat, Maisons, Offre/récapitulatif, Souscripteur) :
 // un devis porte une ou plusieurs maisons ; chaque maison a un usage (statut d'occupation) qui fixe
-// les capitaux à saisir, la formule de calcul, les garanties obligatoires, les garanties facultatives
-// et les options. Les primes viennent du moteur MRH du serveur (POST /api/mrh/calcul/maison/), le
-// devis est enregistré d'un bloc (POST/PUT /api/mrh/devis/), puis la répartition de la prime de
-// chaque maison par garantie peut être ajustée comme dans URANUS (repartir-garanties).
+// les capitaux à saisir, les garanties obligatoires, les garanties facultatives et les options.
+// Pas de barème MRH (décision du 2026-10-28) : la prime nette de chaque maison, la taxe et l'accessoire
+// sont saisis à la main et envoyés en prime imposée ; le moteur MRH du serveur (POST /api/mrh/calcul/maison/)
+// ne sert plus qu'à contrôler la maison et lister ses garanties. Le devis est enregistré d'un bloc
+// (POST/PUT /api/mrh/devis/), puis la répartition de la prime de chaque maison par garantie peut être
+// ajustée comme dans URANUS (repartir-garanties).
 
 const ID_PRODUIT_MRH = 4;
 const ID_TARIF_MRH = 81;
@@ -139,32 +142,14 @@ const ChampMontant = ({ valeur, onChange, placeholder }) => (
   </div>
 );
 
-// Détail des garanties d'une maison (calcul du moteur ou garanties enregistrées)
-const TableauGaranties = ({ garanties }) => (
-  <div style={{ overflowX: 'auto' }}>
-    <table style={styles.tableau}>
-      <thead>
-        <tr>
-          <th style={styles.th}>Garantie</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Prime nette</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Taxe</th>
-          <th style={{ ...styles.th, textAlign: 'right' }}>Prime TTC</th>
-        </tr>
-      </thead>
-      <tbody>
-        {garanties.map((g) => (
-          <tr key={g.code}>
-            <td style={styles.td}>
-              {g.libelle}{' '}
-              {g.optionnelle && <span style={styles.pastille('var(--accent-purple)')}>facultative</span>}
-            </td>
-            <td style={{ ...styles.td, ...styles.num }}>{fcfa(g.prime_nette)}</td>
-            <td style={{ ...styles.td, ...styles.num }}>{fcfa(g.taxe)}{g.taux_taxe != null && <span style={{ color: 'var(--text-muted)' }}> ({g.taux_taxe} %)</span>}</td>
-            <td style={{ ...styles.td, ...styles.num, fontWeight: 700 }}>{fcfa(g.prime_ttc)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+// Garanties d'une maison (liste du moteur ou garanties enregistrées), sans les primes du moteur : pas de barème MRH
+const ListeGaranties = ({ garanties }) => (
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+    {garanties.map((g) => (
+      <span key={g.code} style={{ ...styles.pastille(g.optionnelle ? 'var(--accent-purple)' : 'var(--accent-emerald)'), padding: '0.3rem 0.65rem' }}>
+        <ShieldCheck size={12} /> {g.libelle}{g.optionnelle ? ' (facultative)' : ''}
+      </span>
+    ))}
   </div>
 );
 
@@ -230,12 +215,10 @@ export const NewMrhQuotePage = () => {
   const [calculMaisonEnCours, setCalculMaisonEnCours] = useState(false);
   const currentUsage = useMemo(() => usages.find((u) => u.code === currentUsageCode) || null, [usages, currentUsageCode]);
 
-  // Étape 3 : imposition
-  const [isImpositionActive, setIsImpositionActive] = useState(false);
-  const [imposedPrimesParMaison, setImposedPrimesParMaison] = useState({});
-  const [imposedTaxe, setImposedTaxe] = useState('0');
-  const [imposedAccessoire, setImposedAccessoire] = useState(''); // vide = accessoire du barème
-  const [impositionMotif, setImpositionMotif] = useState('');
+  // Étape 3 : primes saisies à la main (pas de barème MRH) : prime nette de chaque maison, taxe et accessoire du devis
+  const [primesParMaison, setPrimesParMaison] = useState({});
+  const [taxeSaisie, setTaxeSaisie] = useState('');
+  const [accessoireSaisi, setAccessoireSaisi] = useState('');
 
   // Étape 4 : souscripteur / assuré
   const [souscripteur, setSouscripteur] = useState(null);
@@ -298,45 +281,33 @@ export const NewMrhQuotePage = () => {
     return () => { actif = false; };
   }, [currentUsageCode]);
 
-  // ------------------------------------------------------------------ totaux (règles du serveur)
-  const primeNetteMaison = (m) => (
-    isImpositionActive && imposedPrimesParMaison[m.id] !== undefined ? cleanNum(imposedPrimesParMaison[m.id]) : Number(m.prime_nette) || 0
-  );
-  const primeNetteMaisons = maisons.reduce((s, m) => s + primeNetteMaison(m), 0);
-  // Prime imposée : même rapport taxe / prime que la prime calculée (imposer_prime_devis)
-  const taxeMaison = (m) => {
-    const pnCalculee = Number(m.prime_nette) || 0;
-    const taxeCalculee = Number(m.taxe) || 0;
-    const pn = primeNetteMaison(m);
-    return pn !== pnCalculee && pnCalculee ? Math.round((taxeCalculee * pn) / pnCalculee) : taxeCalculee;
-  };
+  // ------------------------------------------------------------------ totaux (montants saisis)
+  const primeNetteMaison = (m) => cleanNum(primesParMaison[m.id]);
+  const totalsFinanciers = useMemo(() => {
+    const primeNette = maisons.reduce((s, m) => s + primeNetteMaison(m), 0);
+    const taxes = cleanNum(taxeSaisie);
+    const accessoires = cleanNum(accessoireSaisi);
+    return { primeNette, taxes, accessoires, primeTtc: arrondirMontant(primeNette + taxes + accessoires, 4) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maisons, primesParMaison, taxeSaisie, accessoireSaisi]);
 
-  const [accessoireBareme, setAccessoireBareme] = useState({ accessoire: 0, taxe: 0 });
+  // Listes déroulantes de la taxe et de l'accessoire (rien n'est rempli d'office) : accessoires habituels des devis
+  // MRH enregistrés ; taxe = prime saisie de chaque maison aux taux de taxe de ses garanties (rapport taxe / prime
+  // de la maison), plus 14,5 % de l'accessoire
+  const [accessoiresUsuels, setAccessoiresUsuels] = useState([]);
   useEffect(() => {
     let actif = true;
-    if (!primeNetteMaisons) { setAccessoireBareme({ accessoire: 0, taxe: 0 }); return undefined; }
-    mrhApi.getAccessoire({ idcompagnie: Number(compagnieId), prime_nette: primeNetteMaisons })
-      .then((r) => { if (actif) setAccessoireBareme({ accessoire: Number(r?.accessoire) || 0, taxe: Number(r?.taxe_accessoire) || 0 }); })
-      .catch(() => { if (actif) setAccessoireBareme({ accessoire: 0, taxe: 0 }); });
+    valeursUsuellesApi.get(ID_PRODUIT_MRH).then((d) => { if (actif) setAccessoiresUsuels(propositionsUsuelles(d.Accessoire)); }).catch(() => {});
     return () => { actif = false; };
-  }, [primeNetteMaisons, compagnieId]);
-
-  const totalsFinanciers = useMemo(() => {
-    let primeNette = 0;
-    let taxesGaranties = 0;
-    maisons.forEach((m) => { primeNette += primeNetteMaison(m); taxesGaranties += taxeMaison(m); });
-    let accessoires = accessoireBareme.accessoire;
-    let taxeAccessoire = accessoireBareme.taxe;
-    if (isImpositionActive && imposedAccessoire !== '') {
-      accessoires = cleanNum(imposedAccessoire);
-      taxeAccessoire = Math.round(accessoires * 0.145);
-    }
-    let taxes = taxesGaranties + taxeAccessoire;
-    const taxeImposee = isImpositionActive && cleanNum(imposedTaxe) > 0;
-    if (taxeImposee) taxes = cleanNum(imposedTaxe);
-    return { primeNette, taxesGaranties, taxeAccessoire, taxeImposee, taxes, accessoires, primeTtc: arrondirMontant(primeNette + taxes + accessoires, 4) };
+  }, []);
+  const taxesProposees = useMemo(() => {
+    if (!maisons.length || maisons.some((m) => primeNetteMaison(m) <= 0 || !(Number(m.prime_nette) > 0))) return [];
+    const garanties = maisons.reduce((s, m) => s + Math.round((primeNetteMaison(m) * Number(m.taxe)) / Number(m.prime_nette)), 0);
+    const taux = String(Math.round((garanties * 1000) / totalsFinanciers.primeNette) / 10).replace('.', ',');
+    return [propositionMontant(garanties + Math.round(cleanNum(accessoireSaisi) * 0.145),
+      `taux des garanties (${taux} % de la prime nette)${cleanNum(accessoireSaisi) ? ' + 14,5 % de l\'accessoire' : ''}`)];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maisons, isImpositionActive, imposedPrimesParMaison, imposedTaxe, imposedAccessoire, accessoireBareme]);
+  }, [maisons, primesParMaison, accessoireSaisi, totalsFinanciers.primeNette]);
 
   // ------------------------------------------------------------------ maisons
   const viderFormulaireMaison = () => {
@@ -362,7 +333,8 @@ export const NewMrhQuotePage = () => {
     setCalculMaisonEnCours(true);
     let calcRes;
     try {
-      // Prime calculée par le moteur MRH du serveur, celui-là même qui enregistre le devis
+      // Moteur MRH du serveur, celui-là même qui enregistre le devis : contrôle de la maison et liste de ses
+      // garanties (ses primes ne sont pas reprises : la prime de la maison est saisie à l'étape Tarification)
       calcRes = await mrhApi.calculerPrimeMaison({
         code_usage: currentUsageCode,
         id_tarif: Number(categorieId),
@@ -372,7 +344,7 @@ export const NewMrhQuotePage = () => {
         sous_garanties_optionnelles: selectedGaranties.map((g) => ({ code_sous_garantie: g })),
       });
     } catch (err) {
-      toastError(`Calcul de la prime impossible : ${messageErreurApi(err)}`);
+      toastError(`Maison non ${editingMaisonId ? 'modifiée' : 'ajoutée'} : ${messageErreurApi(err)}`);
       return;
     } finally {
       setCalculMaisonEnCours(false);
@@ -419,7 +391,7 @@ export const NewMrhQuotePage = () => {
   const handleRemoveMaison = async (m, idx) => {
     if (!(await confirmer({
       ton: 'danger', titre: `Retirer la maison ${idx + 1} ?`, confirmer: 'Retirer',
-      message: `${m.usage_libelle || 'Maison'}${m.adresse ? `, ${m.adresse}` : ''} : prime nette ${fcfa(primeNetteMaison(m))} F. La maison et ses garanties sont retirées du devis.`,
+      message: `${m.usage_libelle || 'Maison'}${m.adresse ? `, ${m.adresse}` : ''}${primeNetteMaison(m) ? ` : prime nette ${fcfa(primeNetteMaison(m))} F` : ''}. La maison et ses garanties sont retirées du devis.`,
     }))) return;
     const id = m.id;
     setMaisons((prev) => prev.filter((x) => x.id !== id));
@@ -464,12 +436,11 @@ export const NewMrhQuotePage = () => {
         if (assureLu) { setAssureDifferent(true); setAssureChoisi(personneDepuisClient(assureLu)); }
         setTelephoneAssure((personneDepuisClient(assureLu || clientLu) || {}).Telephone || '');
 
-        // Maisons : valeurs enregistrées ; prime « calculée » recalculée par le moteur quand la prime
-        // du devis avait été imposée
+        // Maisons : valeurs enregistrées
         const maisonsDevis = detail?.maisons || [];
-        const maisonsChargees = await Promise.all(maisonsDevis.map(async (m) => {
+        const maisonsChargees = maisonsDevis.map((m) => {
           const p = m.parametres || {};
-          const maison = {
+          return {
             id: m.maison_id,
             maison_id: m.maison_id,
             code_usage: m.code_usage,
@@ -486,50 +457,29 @@ export const NewMrhQuotePage = () => {
             prime_ttc: Number(m.prime_ttc) || 0,
             garanties: garantiesDepuisCalcul(m.garanties),
           };
-          if (!raw.prime_imposee) return maison;
-          try {
-            const calc = await mrhApi.calculerPrimeMaison({
-              code_usage: maison.code_usage, id_tarif: ID_TARIF_MRH, id_offre: 0,
-              valeur_batiment: maison.valeur_batiment, valeur_contenu: maison.valeur_contenu,
-              loyer_mensuel: maison.loyer_mensuel, capital_rvt: maison.capital_rvt,
-              options: maison.options.map((o) => ({ code_option: o })),
-              sous_garanties_optionnelles: maison.sous_garanties_optionnelles.map((g) => ({ code_sous_garantie: g })),
-            });
-            const pn = Math.round(Number(calc?.prime_nette_totale) || 0);
-            const tx = Math.round(Number(calc?.taxe_totale) || 0);
-            return { ...maison, prime_nette: pn, taxe: tx, prime_ttc: pn + tx, garanties: garantiesDepuisCalcul(calc?.sous_garanties) };
-          } catch {
-            return maison;
-          }
-        }));
-        if (!actif) return;
+        });
         setMaisons(maisonsChargees);
 
-        if (raw.prime_imposee) {
-          setIsImpositionActive(true);
-          setImposedPrimesParMaison(Object.fromEntries(maisonsDevis.map((m) => [m.maison_id, String(Math.round(Number(m.prime_nette) || 0))])));
-          setImposedTaxe(String(Math.round(Number(raw.taxe) || 0)));
-          setImposedAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
-        }
-        // Devis repris d'URANUS : maisons souvent sans usage ni prime, seul l'en-tête porte les montants.
-        // Ils sont repris en prime imposée, répartis au prorata des capitaux.
+        // Montants enregistrés repris dans les champs de saisie (vides s'ils sont nuls)
+        const saisi = (v) => (Math.round(Number(v) || 0) ? String(Math.round(Number(v))) : '');
+        let primes = maisonsChargees.map((m) => Math.round(m.prime_nette));
+        // Devis repris d'URANUS : maisons souvent sans usage ni prime, seul l'en-tête porte les montants ;
+        // la prime nette est répartie au prorata des capitaux.
         const pnEnTete = Math.round(Number(raw.primenette) || 0);
-        const pnMaisons = maisonsChargees.reduce((s, m) => s + m.prime_nette, 0);
-        if (!raw.prime_imposee && pnEnTete > 0 && pnMaisons === 0 && maisonsChargees.length > 0) {
+        if (pnEnTete > 0 && primes.every((p) => !p) && maisonsChargees.length > 0) {
           const poids = maisonsChargees.map((m) => m.valeur_batiment + m.valeur_contenu);
           const totalPoids = poids.reduce((a, b) => a + b, 0);
           let reste = pnEnTete;
-          const parts = maisonsChargees.map((m, i) => {
+          primes = maisonsChargees.map((m, i) => {
             if (i === maisonsChargees.length - 1) return reste;
             const part = Math.round(totalPoids > 0 ? (pnEnTete * poids[i]) / totalPoids : pnEnTete / maisonsChargees.length);
             reste -= part;
             return part;
           });
-          setIsImpositionActive(true);
-          setImposedPrimesParMaison(Object.fromEntries(maisonsChargees.map((m, i) => [m.id, String(parts[i])])));
-          setImposedTaxe(String(Math.round(Number(raw.taxe) || 0)));
-          setImposedAccessoire(String(Math.round(Number(raw.accessoire) || 0)));
         }
+        setPrimesParMaison(Object.fromEntries(maisonsChargees.map((m, i) => [m.id, saisi(primes[i])])));
+        setTaxeSaisie(saisi(raw.taxe));
+        setAccessoireSaisi(saisi(raw.accessoire));
         const alertes = [];
         if (maisonsDevis.length === 0 && Number(raw.primettc) > 0) {
           alertes.push(`Aucune maison n'est enregistrée pour ce devis (repris d'URANUS). Montants enregistrés : prime nette ${fcfa(raw.primenette)} F, `
@@ -562,8 +512,9 @@ export const NewMrhQuotePage = () => {
       if (!maisons.length) e.maisons = 'Ajoutez au moins une maison au devis.';
       else if (maisons.some((m) => !m.code_usage)) e.maisons = 'Une maison n\'a pas d\'usage d\'occupation : modifiez-la.';
     }
-    if (n === 3 && isImpositionActive && maisons.some((m) => primeNetteMaison(m) <= 0)) {
-      e.imposition = 'Prime imposée : chaque maison doit avoir une prime nette supérieure à 0.';
+    if (n === 3) {
+      if (maisons.some((m) => primeNetteMaison(m) <= 0)) e.primes = 'Saisissez la prime nette de chaque maison.';
+      if (!(cleanNum(taxeSaisie) > 0)) e.taxe = 'Saisissez la taxe.';
     }
     if (n === 4) {
       if (!souscripteur?.IdClient) e.souscripteur = 'Choisissez le souscripteur dans la liste.';
@@ -576,7 +527,7 @@ export const NewMrhQuotePage = () => {
     ...(tentative[2] ? erreursEtape(2) : {}),
     ...(tentative[3] ? erreursEtape(3) : {}),
     ...(tentative[4] ? erreursEtape(4) : {}),
-  }), [tentative, compagnieId, dateEffet, calculatedDateExpiration, maisons, isImpositionActive, imposedPrimesParMaison, souscripteur, assureDifferent, assureChoisi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [tentative, compagnieId, dateEffet, calculatedDateExpiration, maisons, primesParMaison, taxeSaisie, souscripteur, assureDifferent, assureChoisi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allerA = (cible) => {
     if (cible <= step) { setStep(cible); return; }
@@ -651,14 +602,13 @@ export const NewMrhQuotePage = () => {
         options: m.options || [],
         sous_garanties_optionnelles: m.sous_garanties_optionnelles || [],
       })),
-      imposition: isImpositionActive
-        ? {
-          montants_maisons: maisons.map((m) => primeNetteMaison(m)),
-          montant_taxe: cleanNum(imposedTaxe) > 0 ? cleanNum(imposedTaxe) : null,
-          montant_accessoire: imposedAccessoire === '' ? null : cleanNum(imposedAccessoire),
-          motif: impositionMotif,
-        }
-        : null,
+      // Montants saisis à la main, enregistrés en prime imposée
+      imposition: {
+        montants_maisons: maisons.map((m) => primeNetteMaison(m)),
+        montant_taxe: cleanNum(taxeSaisie),
+        montant_accessoire: cleanNum(accessoireSaisi),
+        motif: 'Primes saisies à la main (pas de barème MRH)',
+      },
     };
     setIsSubmitting(true);
     try {
@@ -760,7 +710,6 @@ export const NewMrhQuotePage = () => {
       <span style={{ textAlign: 'right', fontWeight: fort ? 800 : 600, color: 'var(--text-primary)' }}>{valeur || '-'}</span>
     </div>
   );
-  const formule = reparerTexte(parametresUsage?.formule_texte);
 
   if (isLoadingEdit) {
     return (
@@ -784,8 +733,8 @@ export const NewMrhQuotePage = () => {
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0' }}>
           {numeroDevisEdite
-            ? <>Devis <strong>N° {numeroDevisEdite}</strong>. Les primes sont recalculées par le moteur MRH à l'enregistrement.</>
-            : 'Une ou plusieurs maisons par devis. L\'usage de chaque maison fixe les capitaux à saisir, les garanties et la formule de calcul.'}
+            ? <>Devis <strong>N° {numeroDevisEdite}</strong>. Les primes, la taxe et l'accessoire sont saisis à la main.</>
+            : 'Une ou plusieurs maisons par devis. L\'usage de chaque maison fixe les capitaux à saisir et les garanties ; les primes, la taxe et l\'accessoire sont saisis à la main.'}
         </p>
       </div>
 
@@ -869,8 +818,9 @@ export const NewMrhQuotePage = () => {
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Prime nette</div>
-                            <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fcfa(primeNetteMaison(m))} F</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>TTC hors accessoire {fcfa(primeNetteMaison(m) + taxeMaison(m))} F</div>
+                            {primeNetteMaison(m) > 0
+                              ? <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{fcfa(primeNetteMaison(m))} F</div>
+                              : <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>À saisir à l'étape Tarification</div>}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
@@ -882,7 +832,7 @@ export const NewMrhQuotePage = () => {
                           <button type="button" className="btn btn-secondary" onClick={() => handleEditMaison(m)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem' }}><Edit3 size={14} /> Modifier</button>
                           <button type="button" className="btn btn-secondary" onClick={() => handleRemoveMaison(m, idx)} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.65rem', fontSize: '0.78rem', color: 'var(--accent-rose)' }}><Trash2 size={14} /> Retirer</button>
                         </div>
-                        {ouverte && m.garanties?.length > 0 && <div style={{ marginTop: '0.75rem' }}><TableauGaranties garanties={m.garanties} /></div>}
+                        {ouverte && m.garanties?.length > 0 && <div style={{ marginTop: '0.75rem' }}><ListeGaranties garanties={m.garanties} /></div>}
                       </div>
                     );
                   })}
@@ -921,11 +871,6 @@ export const NewMrhQuotePage = () => {
                     </Champ>
                   ))}
                 </div>
-                {formule && (
-                  <div style={{ ...styles.aide, display: 'flex', gap: '0.4rem', alignItems: 'flex-start', marginTop: '0.75rem' }}>
-                    <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} /> Formule de l'usage : {formule}
-                  </div>
-                )}
 
                 {garantiesUsage.obligatoires.length > 0 && (
                   <>
@@ -933,11 +878,10 @@ export const NewMrhQuotePage = () => {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
                       {garantiesUsage.obligatoires.map((g) => (
                         <span key={g.code} style={{ ...styles.pastille('var(--accent-emerald)'), padding: '0.3rem 0.65rem' }}>
-                          <ShieldCheck size={12} /> {g.libelle}{g.taux_repartition != null ? ` · ${g.taux_repartition} %` : ''}
+                          <ShieldCheck size={12} /> {g.libelle}
                         </span>
                       ))}
                     </div>
-                    <p style={styles.aide}>Le pourcentage est la part de la prime de base attribuée à la garantie.</p>
                   </>
                 )}
 
@@ -967,17 +911,11 @@ export const NewMrhQuotePage = () => {
                       {availableOptions.map((o) => {
                         const code = o.code_option || o.code;
                         const actif = selectedOptions.includes(code);
-                        const effet = o.taux_ajustement != null && o.sous_garantie_cible_libelle
-                          ? `${o.signe_ajustement === '-' ? '−' : '+'}${Number(o.taux_ajustement)} % sur ${o.sous_garantie_cible_libelle}`
-                          : o.montant_forfait != null ? `${o.signe_ajustement === '-' ? '−' : '+'}${fcfa(o.montant_forfait)} F` : '';
                         return (
                           <label key={code} style={styles.choix(actif)}>
                             <input type="checkbox" checked={actif} style={{ marginTop: 2, accentColor: 'var(--primary-500)' }}
                               onChange={() => setSelectedOptions((prev) => (prev.includes(code) ? prev.filter((x) => x !== code) : [...prev, code]))} />
-                            <span>
-                              <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block' }}>{o.libelle || code}</span>
-                              {effet && <span style={{ fontSize: '0.74rem', color: o.signe_ajustement === '-' ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>{effet}</span>}
-                            </span>
+                            <span style={{ fontSize: '0.84rem', fontWeight: 600, color: 'var(--text-primary)' }}>{o.libelle || code}</span>
                           </label>
                         );
                       })}
@@ -988,7 +926,7 @@ export const NewMrhQuotePage = () => {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
                   <button type="button" className="btn btn-primary" onClick={handleSaveMaison} disabled={calculMaisonEnCours} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                     {calculMaisonEnCours ? <Loader2 size={16} className="spin" /> : editingMaisonId ? <CheckCircle2 size={16} /> : <Plus size={16} />}
-                    {editingMaisonId ? 'Recalculer et enregistrer la maison' : 'Calculer et ajouter la maison'}
+                    {editingMaisonId ? 'Enregistrer la maison' : 'Ajouter la maison'}
                   </button>
                 </div>
                 </div>
@@ -1004,76 +942,58 @@ export const NewMrhQuotePage = () => {
           {/* ---------------------------------------------------------- ÉTAPE 3 : TARIFICATION */}
           {step === 3 && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <h2 style={{ ...styles.titreCarte, margin: 0 }}><Calculator size={18} style={{ color: 'var(--primary-500)' }} /> Tarification</h2>
-                {isImpositionActive ? (
-                  <button type="button" className="btn btn-secondary" onClick={() => { setIsImpositionActive(false); setImposedPrimesParMaison({}); setImpositionMotif(''); setImposedAccessoire(''); setImposedTaxe('0'); }}
-                    style={{ color: 'var(--accent-rose)', fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>Revenir aux primes calculées</button>
-                ) : (
-                  <button type="button" className="btn btn-secondary" onClick={() => setIsImpositionActive(true)} style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <Scale size={14} /> Imposer les primes
-                  </button>
-                )}
-              </div>
+              <h2 style={styles.titreCarte}><Calculator size={18} style={{ color: 'var(--primary-500)' }} /> Tarification</h2>
+              <Alerte couleur="var(--primary-500)" icone={Info}>
+                Pas de barème MRH : saisissez la prime nette de chaque maison, puis la taxe et l'accessoire du devis.
+              </Alerte>
 
-              <div style={styles.sousTitre}>Prime de chaque maison</div>
+              <div style={styles.sousTitre}>Prime nette de chaque maison</div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={styles.tableau}>
                   <thead>
                     <tr>
                       <th style={styles.th}>Maison</th>
-                      <th style={{ ...styles.th, textAlign: 'right' }}>Prime calculée</th>
-                      <th style={{ ...styles.th, textAlign: 'right' }}>{isImpositionActive ? 'Prime nette imposée' : 'Prime nette'}</th>
-                      <th style={{ ...styles.th, textAlign: 'right' }}>Taxe</th>
+                      <th style={{ ...styles.th, textAlign: 'right' }}>Prime nette</th>
                     </tr>
                   </thead>
                   <tbody>
                     {maisons.map((m, idx) => (
                       <tr key={m.id}>
-                        <td style={styles.td}><strong>Maison {idx + 1}</strong> <span style={{ color: 'var(--text-muted)' }}>{m.usage_libelle}</span></td>
-                        <td style={{ ...styles.td, ...styles.num, color: 'var(--text-muted)' }}>{fcfa(m.prime_nette)}</td>
-                        <td style={{ ...styles.td, ...styles.num, width: isImpositionActive ? 200 : undefined }}>
-                          {isImpositionActive ? (
-                            <input type="text" inputMode="numeric" className="form-control" style={{ textAlign: 'right', fontWeight: 700 }}
-                              value={fcfa(imposedPrimesParMaison[m.id] !== undefined ? imposedPrimesParMaison[m.id] : m.prime_nette)}
-                              onChange={(e) => setImposedPrimesParMaison((prev) => ({ ...prev, [m.id]: chiffres(e.target.value) }))} />
-                          ) : <strong>{fcfa(m.prime_nette)}</strong>}
+                        <td style={styles.td}><strong>Maison {idx + 1}</strong> <span style={{ color: 'var(--text-muted)' }}>{m.usage_libelle}{m.adresse ? `, ${m.adresse}` : ''}</span></td>
+                        <td style={{ ...styles.td, width: 240 }}>
+                          <ChampMontant valeur={primesParMaison[m.id] || ''} placeholder="À saisir"
+                            onChange={(v) => setPrimesParMaison((prev) => ({ ...prev, [m.id]: v }))} />
                         </td>
-                        <td style={{ ...styles.td, ...styles.num }}>{fcfa(taxeMaison(m))}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              {erreurs.imposition && <div style={{ marginTop: '0.6rem' }}><Alerte couleur="var(--accent-rose)">{erreurs.imposition}</Alerte></div>}
+              {erreurs.primes && <div style={{ marginTop: '0.6rem' }}><Alerte couleur="var(--accent-rose)">{erreurs.primes}</Alerte></div>}
 
-              {isImpositionActive && (
-                <>
-                  <div style={styles.sousTitre}>Imposition</div>
-                  <div style={styles.grille}>
-                    <Champ label="Taxe imposée" aide="Vide ou 0 : taxe calculée">
-                      <ChampMontant valeur={imposedTaxe === '0' ? '' : imposedTaxe} onChange={(v) => setImposedTaxe(v || '0')} />
-                    </Champ>
-                    <Champ label="Accessoire imposé" aide="Vide : accessoire du barème">
-                      <ChampMontant valeur={imposedAccessoire} onChange={setImposedAccessoire} />
-                    </Champ>
-                    <Champ label="Motif de l'imposition" large>
-                      <input type="text" className="form-control" value={impositionMotif} onChange={(e) => setImpositionMotif(e.target.value)} />
-                    </Champ>
-                  </div>
-                  <p style={styles.aide}>
-                    À l'enregistrement, la prime imposée de chaque maison est répartie sur ses garanties au prorata de leurs primes calculées ;
-                    la répartition reste ajustable ensuite, garantie par garantie.
-                  </p>
-                </>
-              )}
+              <div style={styles.sousTitre}>Taxe et accessoire</div>
+              <div style={styles.grille}>
+                <Champ label="Taxe" requis erreur={erreurs.taxe}>
+                  <ChampPropose onChoisir={(v) => setTaxeSaisie(String(v))} propositions={taxesProposees}>
+                    <ChampMontant valeur={taxeSaisie} onChange={setTaxeSaisie} placeholder="À saisir" />
+                  </ChampPropose>
+                </Champ>
+                <Champ label="Accessoire" aide="Vide : pas d'accessoire">
+                  <ChampPropose onChoisir={(v) => setAccessoireSaisi(String(v))} propositions={accessoiresUsuels}>
+                    <ChampMontant valeur={accessoireSaisi} onChange={setAccessoireSaisi} placeholder="À saisir" />
+                  </ChampPropose>
+                </Champ>
+              </div>
+              <p style={styles.aide}>
+                À l'enregistrement, la prime nette de chaque maison est répartie sur ses garanties ; la répartition reste ajustable ensuite,
+                garantie par garantie.
+              </p>
 
               <div style={styles.sousTitre}>Décompte</div>
               <div style={styles.tuiles}>
                 <Tuile libelle="Prime nette" valeur={`${fcfa(totalsFinanciers.primeNette)} F`} />
-                <Tuile libelle={totalsFinanciers.taxeImposee ? 'Taxes (imposées)' : 'Taxes des garanties'} valeur={`${fcfa(totalsFinanciers.taxeImposee ? totalsFinanciers.taxes : totalsFinanciers.taxesGaranties)} F`} />
+                <Tuile libelle="Taxe" valeur={`${fcfa(totalsFinanciers.taxes)} F`} />
                 <Tuile libelle="Accessoire" valeur={`${fcfa(totalsFinanciers.accessoires)} F`} />
-                {!totalsFinanciers.taxeImposee && <Tuile libelle="Taxe sur accessoire" valeur={`${fcfa(totalsFinanciers.taxeAccessoire)} F`} />}
                 <Tuile libelle="Prime TTC" valeur={`${fcfa(totalsFinanciers.primeTtc)} F`} couleur="var(--primary-500)" fort />
               </div>
             </>
@@ -1135,7 +1055,6 @@ export const NewMrhQuotePage = () => {
                   {ligneRecap('Taxes', `${fcfa(totalsFinanciers.taxes)} F`)}
                   {ligneRecap('Accessoire', `${fcfa(totalsFinanciers.accessoires)} F`)}
                   {ligneRecap('Prime TTC', `${fcfa(totalsFinanciers.primeTtc)} F`, true)}
-                  {isImpositionActive && ligneRecap('Imposition', impositionMotif || 'sans motif')}
                 </div>
               </div>
               {titreRecap('Habitations', 2)}
@@ -1293,7 +1212,6 @@ export const NewMrhQuotePage = () => {
               ['Période', dateEffet && calculatedDateExpiration ? `${dateFr(dateEffet)} → ${dateFr(calculatedDateExpiration)}` : ''],
               ['Maisons', maisons.length || ''],
               ['Souscripteur', souscripteur?.Nom],
-              isImpositionActive && ['Primes', 'imposées'],
             ]}
             montant={maisons.length ? `${fcfa(totalsFinanciers.primeTtc)} F` : null}
             detail={maisons.length > 0 ? `dont prime nette ${fcfa(totalsFinanciers.primeNette)} F` : null}
