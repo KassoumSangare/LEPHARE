@@ -21,7 +21,7 @@ import { imprimerDocumentSante } from '../../../utils/impressionsSante';
 import { formatDate } from '../../../utils/dateUtils';
 import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
-import { ImpositionRecapFlotte } from './ImpositionRecapFlotte';
+import { ImpositionPrimes } from './ImpositionPrimes';
 import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { useModeReprise } from '../reprises/modeReprise';
@@ -146,13 +146,22 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
   if (!isOpen || !quote) return null;
 
   const flotteAuto = estDevisFlotteAuto(quote);
-  const imposable = flotteAuto && !quote.confirme && !quote.raw?.confirme && !quote.devis_consolide;
+  // Imposition des primes ouverte à toutes les branches (demande du 2026-10-28, auparavant flotte auto seulement) :
+  // devis non confirmé, hors devis consolidés, pour qui a le droit « Imposer ou corriger les primes »
+  const produitDevis = quote.raw?.produit;
+  const idProduitDevis = Number(produitDevis && typeof produitDevis === 'object'
+    ? (produitDevis.id_produit ?? produitDevis.IdProduit) : (quote.raw?.idproduit ?? produitDevis));
+  const devisAuto = idProduitDevis ? idProduitDevis === 1 : quote.branche === 'Auto';
+  const imposable = Number(quote.iddevis || quote.raw?.iddevis) > 0 && !quote.raw?.idcontrat
+    && !quote.confirme && !quote.raw?.confirme && !quote.devis_consolide && aLeDroit('devis.primes');
 
   if (imposition) {
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Imposer les primes du récapitulatif de la flotte" size="medium">
-        <ImpositionRecapFlotte
+      <Modal isOpen={isOpen} onClose={onClose} title={flotteAuto ? 'Imposer les primes du récapitulatif de la flotte' : `Imposer les primes du devis ${quote.numerodevis || ''}`.trim()} size="medium">
+        <ImpositionPrimes
           quote={quote}
+          auto={devisAuto}
+          flotte={flotteAuto}
           onAnnuler={() => setImposition(false)}
           onEnregistre={(devisAJour) => {
             setQuoteAJour(devisAJour);
@@ -367,11 +376,13 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 type="button"
                 className="btn btn-secondary no-print"
                 onClick={() => setImposition(true)}
-                title="Corriger le récapitulatif des primes de la flotte (prime nette, accessoire, taxes, FGA, CEDEAO, TTC)"
+                title={flotteAuto
+                  ? 'Corriger le récapitulatif des primes de la flotte (prime nette, accessoire, taxes, FGA, CEDEAO, TTC)'
+                  : `Saisir les primes du devis à la main (prime nette, accessoire, taxes${devisAuto ? ', FGA, CEDEAO' : ''}, TTC)`}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
               >
                 <Pencil size={14} />
-                <span>Imposer les primes du récapitulatif</span>
+                <span>{flotteAuto ? 'Imposer les primes du récapitulatif' : 'Imposer les primes'}</span>
               </button>
             )}
           </div>

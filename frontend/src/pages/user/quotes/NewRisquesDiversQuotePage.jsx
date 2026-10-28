@@ -202,17 +202,17 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   };
 
   const offreMinene = Number(idOffre) === ID_OFFRE_MINENE;
-  // RC hors MINENE : aucun barème (décision du 2026-10-28), primes, accessoire, taxe, capitaux et taux saisis à la
-  // main, rien n'est proposé d'office ; le taux de taxe du produit ne sert qu'à contrôler le minimum légal
-  const saisieManuelle = estRc && !offreMinene;
-  // Listes déroulantes de ces champs : valeurs habituelles des devis RC enregistrés (rien n'est rempli d'office)
+  // RC hors MINENE et MRP : aucun barème (décisions du 2026-10-28), primes, accessoire, taxe, capitaux et taux saisis
+  // à la main, rien n'est proposé d'office ; le taux de taxe du produit ne sert qu'à contrôler le minimum légal.
+  // L'écran ne sert que ces deux produits : seule l'offre RC chef de famille MINENE (barème OREOLE) reste calculée
+  const saisieManuelle = !offreMinene;
+  // Listes déroulantes de ces champs : valeurs habituelles des devis enregistrés du produit (rien n'est rempli d'office)
   const [usuelles, setUsuelles] = useState({});
   useEffect(() => {
-    if (!estRc) return undefined;
     let actif = true;
     valeursUsuellesApi.get(idProduit).then((d) => { if (actif) setUsuelles(d); }).catch(() => {});
     return () => { actif = false; };
-  }, [estRc, idProduit]);
+  }, [idProduit]);
   const proposees = (cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles[cle], options) : []);
   const proposeesGarantie = (id, cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles.Garanties?.[String(id)]?.[cle], options) : []);
   // Devis repris d'URANUS sans ligne de détail en base
@@ -514,7 +514,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         if (!actif) return;
         const enregistrees = (lignesDevis || []).filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0 && r.Acquise);
         const parId = new Map(enregistrees.map((r) => [Number(r.IdSousGarantie), garantieDepuisApi(r, true)]));
-        const manuelle = estRc && Number(ligne.IdOffre) !== ID_OFFRE_MINENE;
+        const manuelle = Number(ligne.IdOffre) !== ID_OFFRE_MINENE;
         const liste = (offre || [])
           .filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0)
           .map((r) => parId.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, false, manuelle));
@@ -807,7 +807,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
             ? <>Devis <strong>N° {numeroDevisEdite}</strong>.</>
             : estRc
               ? "Contrat et risque, garanties de l'offre, puis prime et souscripteur. La prime nette, l'accessoire et la taxe sont saisis à la main."
-              : "Contrat, garanties de l'offre, puis prime et souscripteur. La prime nette est saisie ; l'accessoire et la taxe sont proposés."}
+              : "Contrat, garanties de l'offre, puis prime et souscripteur. La prime nette, l'accessoire et la taxe sont saisis à la main."}
           {isLoadingEdit && <span style={{ color: couleur, fontWeight: 600 }}> Chargement du devis à modifier…</span>}
         </p>
       </div>
@@ -1104,7 +1104,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                 <>
                   <p style={texteAide}>
                     {saisieManuelle
-                      ? "Pas de barème RC : la prime nette, l'accessoire et la taxe sont saisis à la main. La prime nette est répartie par la base sur les garanties cochées."
+                      ? `Pas de barème ${infos.court} : la prime nette, l'accessoire et la taxe sont saisis à la main. La prime nette est répartie par la base sur les garanties cochées.`
                       : <>La prime nette est répartie par la base sur les garanties cochées. L'accessoire suit le barème de la compagnie et la taxe
                         {tauxTaxe !== null ? ` vaut ${tauxTaxe} %` : ' suit le taux du produit'} de (prime nette + accessoire) ; les deux restent modifiables.</>}
                   </p>
