@@ -4,7 +4,6 @@ import { contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, 
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { PieceJointe } from '../../../components/common/PieceJointe';
 import { PolicyMovementModal } from './PolicyMovementModal';
 import { ListeDocumentsContrat, useDocumentsContrat } from './documentsContrat';
 import {
@@ -366,13 +365,6 @@ export const ContractDetailPage = () => {
           {/* Selon la branche : Dommages (relevé de compte, cotation, pièces), Voyage (attestation seule), Santé (listes
               et barème), Automobile (attestation, carte brune) ; documentsContrat.jsx */}
           <ListeDocumentsContrat documents={documents} />
-          {/* Fichier téléversé à l'enregistrement du devis (MRH, RC, MRP), recopié sur le contrat à la confirmation */}
-          <PieceJointe
-            type="contrat"
-            id={contract.idcontrat || id}
-            className="piece-jointe-contrat"
-            masquerSiAbsente={!/habitation|responsabilit|professionnelle/i.test(contract.produit || '')}
-          />
         </div>
       </div>
 

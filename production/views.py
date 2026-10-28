@@ -6593,8 +6593,8 @@ class DetailMaisonView(APIView):
             "proprietaire_occupant_rez": "Propriétaire occupant - Rez-de-chaussée",
             "proprietaire_bailleur": "Propriétaire bailleur",
             "proprietaire_non_occupant": "Propriétaire non occupant",
-            "locataire": "Locataire",
-            "locataire_saisonnier": "Locataire saisonnier",
+            "locataire": "Location",
+            "locataire_saisonnier": "Location saisonnière",
             "locaux_commerciaux": "Locaux commerciaux",
             "batiment_usage_mixte": "Bâtiment à usage mixte",
         }

@@ -3,6 +3,7 @@ import { Paperclip } from 'lucide-react';
 import { contractApi, dommagesApi } from '../../../api/endpoints';
 import { printContratFacture, printContratConditionsParticulieres, estDevisVoyage, estDevisDommages, printCotationDommagesContrat, printPieceDommages } from '../../../utils/exportUtils';
 import { estDevisSante, imprimerDocumentSante } from '../../../utils/impressionsSante';
+import { FenetrePieceJointe, usePieceJointe } from '../../../components/common/PieceJointe';
 import { ContractDocumentsModal } from './ContractDocumentsModal';
 import { ReleveCompteModal } from './ReleveCompteModal';
 
@@ -34,6 +35,9 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
 
   const [releveOuvert, setReleveOuvert] = useState(false);
   const [fenetreDocument, setFenetreDocument] = useState(null);
+  // Fichier téléversé à l'enregistrement du devis (MRH, RC, MRP), recopié sur le contrat à la confirmation
+  const pieceJointe = usePieceJointe('contrat', contract ? id : null);
+  const [pieceOuverte, setPieceOuverte] = useState(false);
 
   // Dommages : documents de production de la catégorie (ex. « Garantie de soumission » d'une caution de soumission,
   // Réglages Dommages), proposés d'après le risque saisi
@@ -83,6 +87,9 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
       { cle: 'attestation', libelle: 'Editions Attestation', action: 'Editer', ouvrir: () => setFenetreDocument('attestation'), fenetre: true },
       { cle: 'carte_brune', libelle: 'Carte Brune', action: 'Imprimer', ouvrir: () => setFenetreDocument('carte_brune'), fenetre: true },
     ] : []),
+    ...(pieceJointe?.Presente ? [
+      { cle: 'piece-jointe', libelle: 'Pièce jointe', detail: pieceJointe.Nom, action: 'Consulter', ouvrir: () => setPieceOuverte(true), fenetre: true },
+    ] : []),
   ];
 
   const fenetres = (
@@ -98,6 +105,7 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
       />
       {/* Relevé de compte (quittance remise au client, modèle OREOLE) */}
       <ReleveCompteModal isOpen={releveOuvert} onClose={() => setReleveOuvert(false)} idContrat={id} />
+      <FenetrePieceJointe type="contrat" id={id} fiche={pieceJointe} isOpen={pieceOuverte} onClose={() => setPieceOuverte(false)} />
     </>
   );
 
@@ -112,6 +120,7 @@ export const ListeDocumentsContrat = ({ documents, onChoisir = (d) => d.ouvrir()
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
           <Paperclip size={16} color="#94a3b8" />
           <span style={{ color: 'var(--text-primary)' }}>{d.libelle}</span>
+          {d.detail && <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '22rem' }} title={d.detail}>{d.detail}</span>}
         </span>
         <button
           type="button"

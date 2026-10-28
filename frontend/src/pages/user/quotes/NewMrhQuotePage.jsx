@@ -8,7 +8,7 @@ import {
   FileText, Users, ShieldCheck, Calculator, FileCheck, Building, Eye, ChevronDown, Info, Scale, X,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
-import { PieceJointe } from '../../../components/common/PieceJointe';
+import { BoutonPieceJointe, PieceJointe } from '../../../components/common/PieceJointe';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
@@ -1176,9 +1176,9 @@ export const NewMrhQuotePage = () => {
                   <Tuile libelle="Prime TTC" valeur={`${fcfa(resume.prime_ttc)} F`} couleur="var(--primary-500)" fort />
                 </div>
               )}
-              <PieceJointe type="devis" id={devisEnregistre.id} version={versionPiece} className="piece-jointe-saisie" />
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', margin: '1rem 0' }}>
                 <button type="button" className="btn btn-secondary" onClick={ouvrirApercu} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Eye size={15} /> Aperçu et impressions</button>
+                <BoutonPieceJointe type="devis" id={devisEnregistre.id} version={versionPiece} />
                 <button type="button" className="btn btn-secondary" onClick={() => setStep(1)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Edit3 size={15} /> Modifier le devis</button>
                 <button type="button" className="btn btn-primary" onClick={() => confirmerEnContrat(null)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><CheckCircle2 size={15} /> Confirmer en contrat</button>
               </div>

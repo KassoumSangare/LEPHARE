@@ -310,7 +310,7 @@ def alertes(request):
     GET /api/alertes/ : alertes de la cloche, selon les droits.
 
     Devis (devis.view) : devis non confirmés dont l'échéance (date d'expiration) tombe dans les N prochains jours, ou
-    échus depuis N jours au plus (la confirmation d'un devis expiré est bloquée : il faut relancer le client avant).
+    échus depuis N jours au plus (un devis expiré reste confirmable, avec ses dates : relancer le client avant).
     N = « devis.alerte_echeance_jours » (Administration > Le cabinet, 30 par défaut). Les saisies jamais enregistrées
     (sans numéro) et les devis à prime nulle sont écartés. Les chèques à déposer restent lus par /api/chequesalertes/.
     """

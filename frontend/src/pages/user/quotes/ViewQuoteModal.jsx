@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { Modal } from '../../../components/common/Modal';
-import { PieceJointe } from '../../../components/common/PieceJointe';
+import { confirmer } from '../../../utils/dialogue';
+import { BoutonPieceJointe } from '../../../components/common/PieceJointe';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import {
   printQuoteFacture,
@@ -353,13 +354,6 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
           </div>
         </div>
 
-        {/* Pièce jointe téléversée à l'enregistrement (MRH, RC, MRP : toujours montrée ; autres branches : si présente) */}
-        <PieceJointe
-          type="devis"
-          id={quote.iddevis}
-          className="glass-panel no-print piece-jointe-cadree"
-          masquerSiAbsente={![4, 7, 8].includes(Number(raw.produit?.id_produit ?? raw.produit ?? quote.idproduit))}
-        />
 
         {/* Actuarial Financial Breakdown */}
         <div className="glass-panel" style={{ padding: '1.25rem', background: 'rgba(255,255,255,0.02)' }}>
@@ -855,6 +849,9 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : estDevisVoyage(quote) ? 'Imprimer l’attestation' : 'Imprimer Conditions Particulières'}</span>
             </button>
 
+            {/* Fichier téléversé à l'enregistrement (MRH, RC, MRP) : bouton présent seulement s'il y en a un */}
+            <BoutonPieceJointe type="devis" id={idDevisBase} />
+
             {estDevisIaImprimable(quote) && (
               <button
                 type="button"
@@ -942,8 +939,15 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={isExpired || isPendingApproval}
-                    onClick={() => {
+                    disabled={isPendingApproval}
+                    onClick={async () => {
+                      // Devis expiré : confirmable (demande du 2026-10-28), le contrat reprend la période du devis
+                      if (isExpired && !(await confirmer({
+                        ton: 'attention',
+                        titre: `Confirmer le devis expiré ${quote.numerodevis || ''} ?`.replace('  ', ' '),
+                        message: `Sa période, du ${formatDate(quote.date_effet)} au ${formatDate(quote.date_expiration)}, est échue : le contrat sera émis avec ces dates. Pour couvrir une nouvelle période, modifiez d'abord les dates du devis.`,
+                        confirmer: 'Confirmer en contrat',
+                      }))) return;
                       onClose();
                       onConvertToContract(quote);
                     }}
@@ -951,12 +955,12 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.4rem',
-                      backgroundColor: (isExpired || isPendingApproval) ? '#475569' : '#059669',
-                      cursor: (isExpired || isPendingApproval) ? 'not-allowed' : 'pointer',
+                      backgroundColor: isPendingApproval ? '#475569' : '#059669',
+                      cursor: isPendingApproval ? 'not-allowed' : 'pointer',
                     }}
                     title={
                       isExpired
-                        ? 'Devis expiré : conversion bloquée (CA-07.3)'
+                        ? 'Devis expiré : le contrat sera émis avec les dates du devis (avertissement à la confirmation)'
                         : isPendingApproval
                         ? 'En attente d\'approbation de la dérogation (CA-07.4)'
                         : 'Transformer en police d\'assurance (E08)'
@@ -964,9 +968,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                   >
                     <CheckCircle size={15} />
                     <span>
-                      {isExpired
-                        ? 'Devis Expiré (Non transformable)'
-                        : isPendingApproval
+                      {isPendingApproval
                         ? 'Visa Direction Requis'
                         : 'Transformer en Police CIMA'}
                     </span>

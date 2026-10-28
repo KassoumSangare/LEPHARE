@@ -3140,9 +3140,7 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 
 /* Pièce jointe d'un devis ou d'un contrat (components/common/PieceJointe.jsx) */
 .piece-jointe { display: flex; flex-direction: column; gap: 0.5rem; }
-.piece-jointe-cadree { padding: 1.25rem; }
 .piece-jointe-saisie { margin-top: 1rem; }
-.piece-jointe-contrat { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle); }
 .piece-jointe-titre { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; }
 .piece-jointe-vide { font-size: 0.85rem; color: var(--text-muted); }
 .piece-jointe-ligne {
@@ -3158,6 +3156,12 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .piece-jointe-actions .btn { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; padding: 0.35rem 0.7rem; }
 .piece-jointe-cadre { width: 100%; height: 75vh; border: none; border-radius: 6px; background: #fff; }
 .piece-jointe-image { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; border-radius: 6px; }
+.piece-jointe-message { display: flex; align-items: center; gap: 0.5rem; padding: 0.85rem 1rem; border-radius: 8px; font-size: 0.875rem;
+  color: var(--text-primary); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35); }
+.piece-jointe-message svg { color: var(--accent-amber); flex: none; }
+.piece-jointe-chargement { display: flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 12rem; color: var(--text-muted); font-size: 0.875rem; }
+.piece-jointe-pied { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
+.piece-jointe-pied .btn { display: flex; align-items: center; gap: 0.4rem; }
 
 /* ==========================================================================
    AFFAIRES ANTÉRIEURES (pages/user/reprises/RepriseAffairesPage.jsx)

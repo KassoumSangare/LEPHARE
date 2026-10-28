@@ -506,11 +506,11 @@ export const QuoteListPage = () => {
             onView={() => setViewingQuote(row)}
             viewTitle="Consulter l'intégralité du devis et l'imprimer"
             showConfirm={!isConsolidated && canConvert}
-            confirmLabel={isExpired ? 'Expiré' : isPendingApproval ? 'En Visa' : 'Confirmer'}
-            confirmDisabled={isExpired || isPendingApproval}
+            confirmLabel={isPendingApproval ? 'En Visa' : 'Confirmer'}
+            confirmDisabled={isPendingApproval}
             confirmTitle={
               isExpired
-                ? 'Devis expiré : conversion bloquée (CA-07.3)'
+                ? `Devis expiré (période échue le ${formatDateTime(row.date_expiration)}) : le contrat sera émis avec les dates du devis`
                 : isPendingApproval
                 ? 'Visa Direction Requis avant confirmation (CA-07.4)'
                 : 'Confirmer le devis et générer le contrat (E08)'
@@ -704,7 +704,7 @@ export const QuoteListPage = () => {
             {quotes.length === 0
               ? (selectedBranchFilter === 'EXPIRED' ? 'Aucun devis expiré' : 'Aucun devis en attente de confirmation')
               : selectedBranchFilter === 'EXPIRED'
-                ? <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis expirés depuis le 1er janvier {new Date().getFullYear() - parametre('devis.registre_expires_annees', 1)} : modifiez les dates d'un devis pour le confirmer</>
+                ? <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis expirés depuis le 1er janvier {new Date().getFullYear() - parametre('devis.registre_expires_annees', 1)} : confirmables avec leurs dates, ou à modifier avant pour une nouvelle période</>
                 : <><strong>{quotes.length.toLocaleString('fr-FR')}</strong> devis non confirmés{selectedBranchFilter !== 'ALL' ? ` (${getTabLabel(selectedBranchFilter)})` : ''}{(() => {
                   const expires = quotes.filter(isExpiredQuote).length;
                   return expires ? `, dont ${expires.toLocaleString('fr-FR')} expirés` : '';
@@ -770,8 +770,15 @@ export const QuoteListPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
             Êtes-vous sûr de vouloir valider et transformer le devis{' '}
-            <strong style={{ color: '#fff' }}>{selectedQuote?.numerodevis}</strong> ({selectedQuote?.client_nom}) en contrat d'assurance définitif ?
+            <strong style={{ color: 'var(--text-primary)' }}>{selectedQuote?.numerodevis}</strong> ({selectedQuote?.client_nom}) en contrat d'assurance définitif ?
           </p>
+          {/* Devis expiré : confirmable (demande du 2026-10-28), le contrat reprend la période du devis */}
+          {selectedQuote && isExpiredQuote(selectedQuote) && (
+            <div role="alert" style={{ padding: '0.75rem 0.9rem', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.1)', color: 'var(--text-primary)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              <strong>Devis expiré.</strong> Sa période, du {formatDateTime(selectedQuote.date_effet)} au {formatDateTime(selectedQuote.date_expiration)}, est échue :
+              le contrat sera émis avec ces dates. Pour couvrir une nouvelle période, annulez et modifiez d'abord les dates du devis.
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
             <button type="button" className="btn btn-secondary" onClick={() => setIsConfirmModalOpen(false)}>
               Annuler
