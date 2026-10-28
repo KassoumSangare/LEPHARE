@@ -23,9 +23,9 @@ import { useToast } from '../../context/ToastContext';
 
 const REFERENTIELS = ['compagnie', 'produit', 'garantie', 'sousgarantie', 'tarif'];
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
-const formatMontant = (v) => (v === null || v === undefined || v === '' ? '—' : `${Math.round(Number(v)).toLocaleString('fr-FR').replace(/ | /g, ' ')} F`);
-const formatNombre = (v, decimales = 2) => (v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString('fr-FR', { maximumFractionDigits: decimales }));
-const formatDate = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '—');
+const formatMontant = (v) => (v === null || v === undefined || v === '' ? '-' : `${Math.round(Number(v)).toLocaleString('fr-FR').replace(/ | /g, ' ')} F`);
+const formatNombre = (v, decimales = 2) => (v === null || v === undefined || v === '' ? '-' : Number(v).toLocaleString('fr-FR', { maximumFractionDigits: decimales }));
+const formatDate = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '-');
 const normaliser = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 // Montant reçu de l'API en texte décimal (« 5000.0000 ») : AmountInput n'attend que des chiffres
 const montantSaisi = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? '' : Math.round(Number(v)));
@@ -98,7 +98,7 @@ export const TableBareme = ({
     }
     if (types.has('tarif')) {
       demandes.push(parametrageApi.bareme('tarif').lister().then((l) => ['tarif', l
-        .map((t) => ({ id: t.IdTarif, libelle: `${t.CodeCategorie} — ${t.Libelle}`, code: String(t.CodeCategorie || '') }))
+        .map((t) => ({ id: t.IdTarif, libelle: `${t.CodeCategorie} - ${t.Libelle}`, code: String(t.CodeCategorie || '') }))
         .sort((a, b) => a.libelle.localeCompare(b.libelle, 'fr'))]));
     }
     Promise.all(demandes)
@@ -107,7 +107,7 @@ export const TableBareme = ({
   }, [route]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const libelleRef = (type, id) => {
-    if (id === null || id === undefined || id === '') return '—';
+    if (id === null || id === undefined || id === '') return '-';
     const trouve = referentiels[type]?.find((r) => Number(r.id) === Number(id));
     return trouve ? trouve.libelle : `n° ${id}`;
   };
@@ -116,11 +116,11 @@ export const TableBareme = ({
     const v = ligne[c.champ];
     if (REFERENTIELS.includes(c.type)) return libelleRef(c.type, v);
     if (c.type === 'montant') return formatMontant(v);
-    if (c.type === 'pourcentage') return v === null || v === undefined || v === '' ? '—' : `${formatNombre(v)} %`;
+    if (c.type === 'pourcentage') return v === null || v === undefined || v === '' ? '-' : `${formatNombre(v)} %`;
     if (c.type === 'nombre') return formatNombre(v, 4);
-    if (c.type === 'entier') return v === null || v === undefined || v === '' ? '—' : String(v);
+    if (c.type === 'entier') return v === null || v === undefined || v === '' ? '-' : String(v);
     if (c.type === 'date') return formatDate(v);
-    return v || '—';
+    return v || '-';
   };
 
   const visibles = useMemo(() => {
@@ -259,8 +259,8 @@ export const TableBareme = ({
       const options = (referentiels[c.type] || []).filter(c.options || (() => true));
       return (
         <select {...commun} className="form-control" value={v ?? ''} onChange={(e) => changer(c.champ, e.target.value === '' ? '' : Number(e.target.value))}>
-          <option value="">— Choisir —</option>
-          {options.map((o) => <option key={o.id} value={o.id}>{o.libelle}{o.inactif ? ' — inactif' : ''}</option>)}
+          <option value="">Choisir</option>
+          {options.map((o) => <option key={o.id} value={o.id}>{o.libelle}{o.inactif ? ' - inactif' : ''}</option>)}
         </select>
       );
     }

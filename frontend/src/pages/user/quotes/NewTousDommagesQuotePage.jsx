@@ -50,7 +50,7 @@ const DUREES = [...DUREES_CONTRAT, { id: ID_DUREE_LIBRE, mois: null, libelle: 'A
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
-const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
+const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '-');
 const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 4 })} %`;
 const casePhrase = (texte) => {
   const t = String(texte || '').toLowerCase();
@@ -102,7 +102,7 @@ const styles = {
 
 // Valeur en lecture seule présentée comme un champ (rubriques de la fiche remplies d'office)
 const Lecture = ({ label, children, aide }) => (
-  <Champ label={label} aide={aide}><div style={styles.lecture}>{children || '—'}</div></Champ>
+  <Champ label={label} aide={aide}><div style={styles.lecture}>{children || '-'}</div></Champ>
 );
 
 export const NewTousDommagesQuotePage = () => {
@@ -498,7 +498,7 @@ export const NewTousDommagesQuotePage = () => {
   const ligneRecap = (libelle, valeur, fort) => (
     <div style={styles.ligneRecap}>
       <span style={{ color: 'var(--text-muted)' }}>{libelle}</span>
-      <span style={{ textAlign: 'right', fontWeight: fort ? 800 : 600, color: 'var(--text-primary)' }}>{valeur || '—'}</span>
+      <span style={{ textAlign: 'right', fontWeight: fort ? 800 : 600, color: 'var(--text-primary)' }}>{valeur || '-'}</span>
     </div>
   );
   const IconeCategorie = categorie ? (ICONES_CATEGORIE[Number(categorie.CodeCategorie)] || Layers) : Layers;
@@ -522,7 +522,7 @@ export const NewTousDommagesQuotePage = () => {
         <AmountInput value={Number(risque[c.Cle]) || 0} onChange={(v) => setRisque((r) => ({ ...r, [c.Cle]: v ? String(v) : '' }))} />
       ) : c.Type === 'liste' ? (
         <select className="form-control" value={risque[c.Cle] || ''} onChange={(e) => setRisque((r) => ({ ...r, [c.Cle]: e.target.value }))}>
-          <option value="">—</option>
+          <option value="">-</option>
           {(c.Options || []).map((o) => <option key={o} value={o}>{o}</option>)}
           {risque[c.Cle] && !(c.Options || []).includes(risque[c.Cle]) && <option value={risque[c.Cle]}>{risque[c.Cle]}</option>}
         </select>
@@ -546,7 +546,7 @@ export const NewTousDommagesQuotePage = () => {
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0' }}>
             {idDevisEdite
-              ? <>Devis <strong>N° {numeroDevisEdite}</strong> — les primes sont recalculées à l'enregistrement.</>
+              ? <>Devis <strong>N° {numeroDevisEdite}</strong> - les primes sont recalculées à l'enregistrement.</>
               : 'Branche Dommages : Caution, Tous Risques Informatiques, Chantiers, Montage, Bris de Machines, Globale de Banque…'}
           </p>
         </div>
@@ -686,10 +686,10 @@ export const NewTousDommagesQuotePage = () => {
               <Champ label="Prime nette" erreur={erreurs.prime}
                 aide={taux > 0 ? 'Calculée : capital × taux' : `Taux à 0 : prime saisie${principale && garanties.length > 1 ? ` (${casePhrase(principale.Libelle)})` : ''}`}>
                 {taux > 0
-                  ? <input type="text" className="form-control" readOnly value={cumul ? `${fcfa(cumul.PrimeNette)} FCFA` : '—'} style={{ fontWeight: 700 }} />
+                  ? <input type="text" className="form-control" readOnly value={cumul ? `${fcfa(cumul.PrimeNette)} FCFA` : '-'} style={{ fontWeight: 700 }} />
                   : <AmountInput value={montantPrime} onChange={setMontantPrime} />}
               </Champ>
-              <Champ label="Accessoires — optionnel"
+              <Champ label="Accessoires - optionnel"
                 aide={accessoireImpose ? 'Montant imposé, partagé compagnie / cabinet comme le barème' : `Vide : barème ${nomCompagnie || 'de la compagnie'}${cumul ? ` (${fcfa(cumul.Accessoire)} F)` : ''}`}>
                 <AmountInput value={accessoire} onChange={(v) => setAccessoire(Number(v) || 0)} />
               </Champ>
@@ -726,7 +726,7 @@ export const NewTousDommagesQuotePage = () => {
           <div style={{ marginTop: '1rem', padding: '0.9rem', borderRadius: '12px', background: 'var(--primary-glow)', border: '1px solid var(--primary-500)' }}>
             <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 800, color: 'var(--primary-500)' }}>Prime TTC</div>
             {/* TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants) */}
-            <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{cumul && cumul.PrimeNette > 0 ? `${fcfa(arrondirMontant(cumul.PrimeTtc, 9))} F` : '—'}</div>
+            <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{cumul && cumul.PrimeNette > 0 ? `${fcfa(arrondirMontant(cumul.PrimeTtc, 9))} F` : '-'}</div>
             {cumul && cumul.PrimeNette > 0 && (
               <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: '0.25rem', letterSpacing: '0.02em' }}>
                 {numberToFrenchWords(arrondirMontant(cumul.PrimeTtc, 9))} FRANCS CFA

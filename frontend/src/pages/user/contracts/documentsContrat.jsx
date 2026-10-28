@@ -60,7 +60,7 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
   const imprimer = (cle, libelle, ouvrir) => ({ cle, libelle, action: 'Imprimer', ouvrir, fenetre: false });
   const documents = !contract ? [] : [
     ...(contratDommages ? [
-      { cle: 'releve', libelle: 'Quittance — relevé de compte', action: 'Imprimer', ouvrir: () => setReleveOuvert(true), fenetre: true },
+      { cle: 'releve', libelle: 'Quittance - relevé de compte', action: 'Imprimer', ouvrir: () => setReleveOuvert(true), fenetre: true },
       imprimer('cotation', 'Cotation d’assurance', () => printCotationDommagesContrat(contrat)),
       // Pièces de production (compte rendu du 12-10-2026) : facture de prime au modèle OREOLE et documents de la
       // catégorie, ex. « Garantie de soumission »

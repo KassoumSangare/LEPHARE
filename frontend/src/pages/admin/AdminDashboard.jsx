@@ -102,7 +102,7 @@ export const AdminDashboard = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
         <MetricCard
           title="Chiffre d'Affaires Global"
-          value="— FCFA"
+          value="- FCFA"
           subtext="Volume d'affaires émis"
           trend="+22.4% vs N-1"
           icon={TrendingUp}
@@ -110,7 +110,7 @@ export const AdminDashboard = () => {
         />
         <MetricCard
           title="Taux de Recouvrement"
-          value="—%"
+          value="-%"
           subtext="Efficience de caisse"
           trend="+3.1 points"
           icon={Coins}

@@ -41,7 +41,7 @@ const fcfa = (val) => Math.round(Number(String(val ?? 0).replace(/\s/g, '')) || 
 const cleanNum = (str) => (typeof str === 'number' ? str : parseFloat(String(str || '0').replace(/\s/g, '')) || 0);
 const chiffres = (v) => String(v || '').replace(/[^0-9]/g, '');
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
-const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
+const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '-');
 
 const messageErreurApi = (err) => {
   const data = err?.response?.data;
@@ -55,10 +55,10 @@ const messageErreurApi = (err) => {
 };
 
 // Formule de calcul stockée en base avec des accents mal encodés (UTF-8 relu en Windows-1252,
-// ex. « Ã— » pour « × ») : remise en UTF-8 pour l'affichage
+// ex. « Ã- » pour « × ») : remise en UTF-8 pour l'affichage
 const CP1252 = {
   '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, 'ˆ': 0x88, '‰': 0x89, 'Š': 0x8a, '‹': 0x8b,
-  'Œ': 0x8c, 'Ž': 0x8e, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '˜': 0x98, '™': 0x99,
+  'Œ': 0x8c, 'Ž': 0x8e, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '-': 0x97, '˜': 0x98, '™': 0x99,
   'š': 0x9a, '›': 0x9b, 'œ': 0x9c, 'ž': 0x9e, 'Ÿ': 0x9f,
 };
 const reparerTexte = (texte) => {
@@ -744,7 +744,7 @@ export const NewMrhQuotePage = () => {
   const ligneRecap = (libelle, valeur, fort) => (
     <div style={styles.ligneRecap}>
       <span style={{ color: 'var(--text-muted)' }}>{libelle}</span>
-      <span style={{ textAlign: 'right', fontWeight: fort ? 800 : 600, color: 'var(--text-primary)' }}>{valeur || '—'}</span>
+      <span style={{ textAlign: 'right', fontWeight: fort ? 800 : 600, color: 'var(--text-primary)' }}>{valeur || '-'}</span>
     </div>
   );
   const formule = reparerTexte(parametresUsage?.formule_texte);
@@ -842,7 +842,7 @@ export const NewMrhQuotePage = () => {
                       <div key={m.id} style={{ ...styles.bloc, borderColor: editingMaisonId === m.id ? 'var(--primary-500)' : 'var(--border-subtle)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Maison {idx + 1} — {m.usage_libelle || <span style={{ color: 'var(--accent-amber)' }}>usage à choisir</span>}</div>
+                            <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Maison {idx + 1} - {m.usage_libelle || <span style={{ color: 'var(--accent-amber)' }}>usage à choisir</span>}</div>
                             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                               {[m.adresse, ...CAPITAUX.filter((c) => Number(m[c.cle]) > 0).map((c) => `${c.libelle.split(' (')[0]} ${fcfa(m[c.cle])} F`)].filter(Boolean).join(' • ')}
                             </div>
@@ -1129,7 +1129,7 @@ export const NewMrhQuotePage = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {maisons.map((m, idx) => (
                   <div key={m.id} style={{ ...styles.bloc, display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', fontSize: '0.83rem' }}>
-                    <span><strong>Maison {idx + 1}</strong> — {m.usage_libelle}{m.adresse ? ` — ${m.adresse}` : ''}</span>
+                    <span><strong>Maison {idx + 1}</strong> - {m.usage_libelle}{m.adresse ? ` - ${m.adresse}` : ''}</span>
                     <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{fcfa(primeNetteMaison(m))} F</span>
                   </div>
                 ))}
@@ -1183,7 +1183,7 @@ export const NewMrhQuotePage = () => {
                 return (
                   <div key={m.maison_id} style={{ ...styles.bloc, marginBottom: '0.75rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.6rem' }}>
-                      <strong style={{ color: 'var(--text-primary)' }}>Maison {idx + 1} — {m.usage_libelle}{m.adresse ? ` — ${m.adresse}` : ''}</strong>
+                      <strong style={{ color: 'var(--text-primary)' }}>Maison {idx + 1} - {m.usage_libelle}{m.adresse ? ` - ${m.adresse}` : ''}</strong>
                       <span style={styles.pastille(ecart === 0 ? 'var(--accent-emerald)' : 'var(--accent-rose)')}>
                         {ecart === 0 ? `Répartis ${fcfa(somme)} / ${fcfa(total)} F` : ecart > 0 ? `Reste à répartir ${fcfa(ecart)} F` : `Dépassement de ${fcfa(-ecart)} F`}
                       </span>

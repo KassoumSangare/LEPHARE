@@ -39,7 +39,7 @@ const Carte = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => 
 
 // ------------------------------------------------------------------ état récapitulatif
 const DROITE = { textAlign: 'right' };
-const libelleMois = (cle) => (cle ? new Date(`${cle}-01T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—');
+const libelleMois = (cle) => (cle ? new Date(`${cle}-01T00:00:00`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '-');
 const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`;
 // Ancienneté d'une commission en attente : au-delà de 30 jours à relancer, au-delà de 60 jours en retard
 const Anciennete = ({ jours }) => (jours === null || jours === undefined ? null
@@ -89,7 +89,7 @@ const EtatRecapitulatif = ({ recap }) => {
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' }}>
-        <Carte libelle="Commissions dues" valeur={`${fcfa(t.CommissionDue)} F`} detail={`${t.Nombre} quittance(s) — ${fcfa(t.PrimesReversees)} F de primes reversées`} />
+        <Carte libelle="Commissions dues" valeur={`${fcfa(t.CommissionDue)} F`} detail={`${t.Nombre} quittance(s) - ${fcfa(t.PrimesReversees)} F de primes reversées`} />
         <Carte libelle="Commissions payées" valeur={`${fcfa(t.CommissionPayee)} F`} couleur="var(--accent-emerald)" detail={`Recouvré : ${pourcent(t.TauxRecouvrement)}`} />
         <Carte libelle="En attente : réclamées" valeur={`${fcfa(t.EnAttenteReclamee)} F`} couleur="var(--accent-amber)" detail={`${reclamations.length} bordereau(x) en attente du règlement de l'assureur`} />
         <Carte libelle="En attente : non réclamées" valeur={`${fcfa(t.EnAttenteAReclamer)} F`} couleur="var(--accent-amber)" detail="Bordereau récapitulatif à émettre" />
@@ -106,7 +106,7 @@ const EtatRecapitulatif = ({ recap }) => {
         </Section>
       )}
 
-      <Section titre="Commissions payées — règlements reçus des assureurs"
+      <Section titre="Commissions payées - règlements reçus des assureurs"
         detail="Montant de chaque règlement et part imputée sur les quittances de la période (leur total est celui des commissions payées).">
         {reglements.length ? (
           <div className="table-wrapper">
@@ -127,7 +127,7 @@ const EtatRecapitulatif = ({ recap }) => {
         ) : <Vide>Aucun règlement de commission reçu pour ces quittances.</Vide>}
       </Section>
 
-      <Section titre="En attente de paiement — commissions réclamées à l'assureur"
+      <Section titre="En attente de paiement - commissions réclamées à l'assureur"
         detail="Bordereaux récapitulatifs émis dont le règlement n'est pas reçu en totalité ; ancienneté depuis leur émission.">
         {reclamations.length ? (
           <div className="table-wrapper">
@@ -148,7 +148,7 @@ const EtatRecapitulatif = ({ recap }) => {
         ) : <Vide>Aucun bordereau de réclamation en attente de règlement.</Vide>}
       </Section>
 
-      <Section titre="En attente de paiement — commissions non encore réclamées"
+      <Section titre="En attente de paiement - commissions non encore réclamées"
         detail="Primes reversées dont la commission n'est sur aucun bordereau récapitulatif : à réclamer depuis l'onglet « État des commissions ».">
         {nonReclamees.length ? (
           <div className="table-wrapper">
@@ -197,7 +197,7 @@ const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
 
   return (
     <Modal isOpen={Boolean(reclamation)} onClose={onClose} size="medium" title="Encaissement de commission"
-      subtitle={reclamation ? `${reclamation.Reference} — ${reclamation.Compagnie} — reste dû ${fcfa(reclamation.Reste)} F` : ''}>
+      subtitle={reclamation ? `${reclamation.Reference} - ${reclamation.Compagnie} - reste dû ${fcfa(reclamation.Reste)} F` : ''}>
       {reclamation && (
         <form onSubmit={enregistrer} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
           <div className="form-group" style={{ margin: 0 }}>
@@ -215,7 +215,7 @@ const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
             <label className="form-label" htmlFor="rg-banque">Banque{saisie.Mode === 'CHQ' ? ' du chèque' : ''}</label>
             {/* Tout chèque porte sa banque (demande du 2026-10-21) */}
             <select id="rg-banque" className="form-control" required={saisie.Mode === 'CHQ'} value={saisie.IdBanque || ''} onChange={champ('IdBanque')}>
-              <option value="">{saisie.Mode === 'CHQ' ? '— Choisir —' : '— Facultatif —'}</option>
+              <option value="">{saisie.Mode === 'CHQ' ? 'Choisir' : 'Facultatif'}</option>
               {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
             </select>
           </div>
@@ -250,7 +250,7 @@ const ReglementModal = ({ reclamation, banques, onClose, onEnregistre }) => {
 const ReclamationModal = ({ reclamation, onClose, onRegler, onAnnuler }) => (
   <Modal isOpen={Boolean(reclamation)} onClose={onClose} size="large"
     title={reclamation ? `Bordereau récapitulatif ${reclamation.Reference}` : ''}
-    subtitle={reclamation ? `${reclamation.Compagnie} — période du ${dateFr(reclamation.PeriodeDebut)} au ${dateFr(reclamation.PeriodeFin)} — ${reclamation.LibelleStatut}` : ''}>
+    subtitle={reclamation ? `${reclamation.Compagnie} - période du ${dateFr(reclamation.PeriodeDebut)} au ${dateFr(reclamation.PeriodeFin)} - ${reclamation.LibelleStatut}` : ''}>
     {reclamation && (
       <>
         <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.88rem', marginBottom: '0.9rem' }}>
@@ -330,7 +330,7 @@ const Apporteurs = () => {
     const corps = { ...edition, TauxRetrocession: edition.TauxRetrocession === '' ? null : edition.TauxRetrocession };
     try {
       const resultat = edition.IdApporteur ? await apporteurApi.modifier(edition.IdApporteur, corps) : await apporteurApi.creer(corps);
-      success(`Apporteur ${resultat.Code} — ${resultat.Nom} enregistré.`);
+      success(`Apporteur ${resultat.Code} - ${resultat.Nom} enregistré.`);
       setEdition(null);
       charger();
     } catch (err) {
@@ -357,7 +357,7 @@ const Apporteurs = () => {
               <tr key={a.IdApporteur}>
                 <td style={{ fontFamily: 'var(--font-mono)' }}>{a.Code}</td><td style={{ fontWeight: 700 }}>{a.Nom}</td>
                 <td>{a.TypePersonne === 'M' ? 'Personne morale' : 'Personne physique'}</td><td>{a.PieceIdentite}</td><td>{a.Telephone}</td><td>{a.Email}</td>
-                <td style={{ textAlign: 'right' }}>{a.TauxRetrocession !== null && a.TauxRetrocession !== '' ? `${Number(a.TauxRetrocession).toLocaleString('fr-FR')} %` : '—'}</td>
+                <td style={{ textAlign: 'right' }}>{a.TauxRetrocession !== null && a.TauxRetrocession !== '' ? `${Number(a.TauxRetrocession).toLocaleString('fr-FR')} %` : '-'}</td>
                 <td><StatusBadge label={a.Actif ? 'Actif' : 'Inactif'} /></td>
                 <td><button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem' }} onClick={() => setEdition({ ...a, TauxRetrocession: a.TauxRetrocession ?? '' })} aria-label="Modifier"><Edit2 size={14} /></button></td>
               </tr>
@@ -538,7 +538,7 @@ export const CommissionDashboardPage = () => {
     const libelle = FILTRES_STATUT.find(([v]) => v === filtres.statut)?.[1] || '';
     const charge = {
       filename: `Etat_Commissions_${aujourdhui()}`,
-      title: `ÉTAT DES COMMISSIONS — ${libelle.toUpperCase()}`,
+      title: `ÉTAT DES COMMISSIONS - ${libelle.toUpperCase()}`,
       subtitle: [filtres.du && `reversements du ${dateFr(filtres.du)}`, filtres.au && `au ${dateFr(filtres.au)}`].filter(Boolean).join(' '),
       metadata: {
         'Quittances': String(totaux?.Nombre || 0), 'Primes reversées': `${fcfa(totaux?.PrimesReversees)} F`,
@@ -606,7 +606,7 @@ export const CommissionDashboardPage = () => {
 
           {totaux && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.75rem' }}>
-              <Carte libelle="Commissions dues (sélection)" valeur={`${fcfa(totaux.CommissionDue)} F`} detail={`${totaux.Nombre} quittance(s) — ${fcfa(totaux.PrimesReversees)} F de primes reversées`} />
+              <Carte libelle="Commissions dues (sélection)" valeur={`${fcfa(totaux.CommissionDue)} F`} detail={`${totaux.Nombre} quittance(s) - ${fcfa(totaux.PrimesReversees)} F de primes reversées`} />
               <Carte libelle="Commissions encaissées" valeur={`${fcfa(totaux.CommissionPayee)} F`} couleur="var(--accent-emerald)" detail="Chiffre d'affaires encaissé" />
               <Carte libelle="Reste dû par les assureurs" valeur={`${fcfa(totaux.Reste)} F`} couleur="var(--accent-amber)" />
               <Carte libelle="Réclamé, en attente de règlement" valeur={`${fcfa(reclameesNonPayees)} F`} detail="Tous les bordereaux émis" />
@@ -663,7 +663,7 @@ export const CommissionDashboardPage = () => {
                 <div style={{ fontSize: '0.9rem' }}>
                   <div>
                     <button type="button" className="btn btn-link" style={{ padding: 0 }} onClick={() => setSelection(new Set(reclamables.map((l) => l.IdDetailReversement)))}>Tout cocher</button>
-                    {' — '}<strong>{cochees.length}</strong> quittance(s) cochée(s) : <strong style={{ fontSize: '1.05rem' }}>{fcfa(cochees.reduce((s, l) => s + l.CommissionDue, 0))} F</strong> de commissions
+                    {' - '}<strong>{cochees.length}</strong> quittance(s) cochée(s) : <strong style={{ fontSize: '1.05rem' }}>{fcfa(cochees.reduce((s, l) => s + l.CommissionDue, 0))} F</strong> de commissions
                   </div>
                   {compagniesCochees.size > 1 && <div style={{ color: 'var(--accent-rose)', fontSize: '0.8rem' }}>Plusieurs compagnies cochées : un bordereau par compagnie.</div>}
                 </div>

@@ -365,7 +365,7 @@ def referentiels(request):
                                        "WHERE active AND idproduit BETWEEN 1 AND 9 ORDER BY idproduit")
         for p in produits:
             p.update(risque_branche(p["id"]))
-            p["categories"] = [{"id": t, "libelle": f"{c} — {l}", "code": c}
+            p["categories"] = [{"id": t, "libelle": f"{c} - {l}", "code": c}
                                for t, l, c in _lignes_sql_brut(cursor, "SELECT id_tarif, libelle_tarif, TRIM(code_categorie) "
                                                                        "FROM fn_liste_tarif_produit(%s) ORDER BY 3, 1", [p["id"]])]
         energies = _lignes_sql(cursor, "SELECT idenergie AS id, libelle FROM stdenergie WHERE idenergie > 0 ORDER BY 1")

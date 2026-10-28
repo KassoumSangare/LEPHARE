@@ -102,7 +102,7 @@ export const ClocheNotifications = ({ alertesCheques = 0, voitCaisse = false, al
   const groupeDevis = (titre, liste, Icone, classe, lienTous) => liste.length > 0 && (
     <>
       <div className="cloche-section">
-        <span>{titre} — {liste.length}</span>
+        <span>{titre} - {liste.length}</span>
         {liste.length > PAR_GROUPE && (
           <button type="button" className="cloche-lien" onClick={() => { setOuvert(false); navigate(lienTous); }}>Tout voir</button>
         )}
@@ -114,7 +114,7 @@ export const ClocheNotifications = ({ alertesCheques = 0, voitCaisse = false, al
               title={`Ouvrir le devis ${d.NumeroDevis}`}>
               <span className={`cloche-icone ${classe}`} aria-hidden="true"><Icone size={15} /></span>
               <span className="cloche-texte">
-                <span className="cloche-titre">{d.NumeroDevis}{d.Produit ? ` — ${d.Produit}` : ''}</span>
+                <span className="cloche-titre">{d.NumeroDevis}{d.Produit ? ` - ${d.Produit}` : ''}</span>
                 <span className="cloche-message">{d.Client || 'Client non renseigné'} • {francs(d.PrimeTtc)}</span>
                 <span className="cloche-heure">{echeance(d)}</span>
               </span>

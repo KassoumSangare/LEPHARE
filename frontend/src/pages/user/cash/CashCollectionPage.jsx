@@ -280,7 +280,7 @@ export const CashCollectionPage = () => {
                 <span>Assuré: <strong>{selectedContract.client_nom}</strong></span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginTop: '0.35rem' }}>
-                <span>Quittance: <strong>{numeroQuittance(selectedContract) || '—'}</strong></span>
+                <span>Quittance: <strong>{numeroQuittance(selectedContract) || '-'}</strong></span>
                 <span>Prime globale: {selectedContract.prime_totale.toLocaleString('fr-FR')} F</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.875rem', marginTop: '0.35rem' }}>

@@ -310,7 +310,7 @@ def donnees_etat_encaissements(parametres):
         for l in lignes:
             if l["Statut"] in ("ANNULE", "IMPAYE"):
                 continue
-            groupe = resultat.setdefault(l[cle] or "—", {"Libelle": l[cle] or "—", "Nombre": 0, "Montant": 0.0, "Reverse": 0.0})
+            groupe = resultat.setdefault(l[cle] or "-", {"Libelle": l[cle] or "-", "Nombre": 0, "Montant": 0.0, "Reverse": 0.0})
             groupe["Nombre"] += 1
             groupe["Montant"] += l["Montant"]
             groupe["Reverse"] += l["MontantReverse"]

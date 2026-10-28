@@ -835,7 +835,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                 </Champ>
                 <Champ label="Offre" requis erreur={!offres.length && idTarif ? 'Aucune offre pour cette catégorie' : undefined}>
                   <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))}>
-                    {offres.length === 0 && <option value={0}>—</option>}
+                    {offres.length === 0 && <option value={0}>-</option>}
                     {trierParLibelle(offres, (o) => o.LibelleOffre).map((o) => (<option key={o.IdOffre} value={o.IdOffre}>{o.LibelleOffre}</option>))}
                   </select>
                 </Champ>
@@ -899,7 +899,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                       )}>
                       {nouveauDomaine === null ? (
                         <select className="form-control" value={idDomaineActivite} onChange={(e) => setIdDomaineActivite(Number(e.target.value))}>
-                          <option value={0}>— Non précisé —</option>
+                          <option value={0}>Non précisé</option>
                           {trierParLibelle(domaines, (d) => d.libelle).map((d) => (<option key={d.id_domaine_activite} value={d.id_domaine_activite}>{d.libelle}</option>))}
                         </select>
                       ) : (

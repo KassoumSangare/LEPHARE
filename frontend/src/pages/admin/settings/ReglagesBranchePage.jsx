@@ -145,7 +145,7 @@ export const ReglagesBranchePage = () => {
               </label>
               <div className="rb-champ">
                 <span className="rb-champ-libelle">Onglet du registre</span>
-                <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{saisie.Onglet || '—'} <Link to="/admin/settings/products" style={{ fontSize: '0.78rem', fontWeight: 400 }}>Produits</Link></span>
+                <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>{saisie.Onglet || '-'} <Link to="/admin/settings/products" style={{ fontSize: '0.78rem', fontWeight: 400 }}>Produits</Link></span>
               </div>
               <div className="rb-actions">
                 {modifie && <button type="button" className="btn btn-secondary" onClick={() => setSaisie({ ...produit })} title="Annuler les changements"><RotateCcw size={14} /></button>}

@@ -12,8 +12,8 @@ const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
 // Formule d'une famille dans les listes (sans parenthèses) : option MINENE et sa taille, sinon libellé de l'offre
 const libelleFormule = (o) => (o.Option
-  ? `${o.Option} — ${o.PersonnesMin === o.PersonnesMax ? pluriel(o.PersonnesMax, 'personne') : `${o.PersonnesMin} à ${o.PersonnesMax} personnes`}`
-  : String(o.Formule || '').replace(/\s*\(([^)]*)\)/g, ' — $1'));
+  ? `${o.Option} - ${o.PersonnesMin === o.PersonnesMax ? pluriel(o.PersonnesMax, 'personne') : `${o.PersonnesMin} à ${o.PersonnesMax} personnes`}`
+  : String(o.Formule || '').replace(/\s*\(([^)]*)\)/g, ' - $1'));
 
 /**
  * Avenant de modification d'un contrat Santé en cours (CR OREOLE du 26-10-2026 : passer de FAMILLE à FAMILLE PLUS après
@@ -82,7 +82,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="medium" title="Changer de formule ou incorporer un membre"
-      subtitle={contrat ? `Police ${contrat.NumeroPolice} — ${contrat.Client || ''}` : undefined}>
+      subtitle={contrat ? `Police ${contrat.NumeroPolice} - ${contrat.Client || ''}` : undefined}>
       {erreur && <div style={{ color: 'var(--accent-amber)', fontSize: '0.85rem' }}>{erreur}</div>}
       {!erreur && !donnees && <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Lecture du contrat…</div>}
       {donnees && (
@@ -123,10 +123,10 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
                   <span style={{ fontWeight: 600 }}>Famille concernée</span>
                   <select className="form-control" value={idAdherent} onChange={(e) => choisirFamille(e.target.value)}>
-                    <option value={0}>Aucune — incorporation saisie dans l'écran</option>
+                    <option value={0}>Aucune - incorporation saisie dans l'écran</option>
                     {donnees.Familles.map((f) => (
                       <option key={f.IdAdherent} value={f.IdAdherent}>
-                        {f.Adherent} — {f.Option || libelleFormule(f)} — {pluriel(Number(f.Personnes), 'personne')}
+                        {f.Adherent} - {f.Option || libelleFormule(f)} - {pluriel(Number(f.Personnes), 'personne')}
                       </option>
                     ))}
                   </select>
@@ -137,7 +137,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                     <select className="form-control" value={idOffre} onChange={(e) => setIdOffre(Number(e.target.value))}>
                       {famille.Formules.map((o) => (
                         <option key={o.IdOffre} value={o.IdOffre}>
-                          {libelleFormule(o)}{o.IdOffre === famille.IdOffre ? ' — actuelle' : ''}
+                          {libelleFormule(o)}{o.IdOffre === famille.IdOffre ? ' - actuelle' : ''}
                         </option>
                       ))}
                     </select>
@@ -157,7 +157,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               {donnees.Avenants?.length > 0 && (
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
                   Avenants déjà émis sur la période :{' '}
-                  {donnees.Avenants.map((a) => `${formatDate(a.DateEffet)} — ${Math.round(a.PrimeTtc || 0).toLocaleString('fr-FR')} F TTC`).join(' ; ')}
+                  {donnees.Avenants.map((a) => `${formatDate(a.DateEffet)} - ${Math.round(a.PrimeTtc || 0).toLocaleString('fr-FR')} F TTC`).join(' ; ')}
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>

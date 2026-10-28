@@ -46,8 +46,8 @@ export const EtapesDevis = ({ etapes, etape, onAller, couleur }) => {
 const ligne = { display: 'flex', justifyContent: 'space-between', gap: '0.75rem', padding: '0.4rem 0', borderBottom: '1px dashed var(--border-subtle)', fontSize: '0.84rem' };
 
 /**
- * Résumé permanent à droite du formulaire. lignes : [[libellé, valeur]] (valeur vide : « — ») ; montant : prime mise en
- * avant (null : « — ») ; libelleMontant (« Prime TTC ») ; detail : texte sous le montant ; children : contenu ajouté.
+ * Résumé permanent à droite du formulaire. lignes : [[libellé, valeur]] (valeur vide : « - ») ; montant : prime mise en
+ * avant (null : « - ») ; libelleMontant (« Prime TTC ») ; detail : texte sous le montant ; children : contenu ajouté.
  */
 export const ResumeDevis = ({ titre = 'Votre devis', icone: Icone, couleur, lignes = [], libelleMontant = 'Prime TTC', montant, detail, children }) => {
   const accent = couleur || 'var(--primary-500)';
@@ -59,13 +59,13 @@ export const ResumeDevis = ({ titre = 'Votre devis', icone: Icone, couleur, lign
       {lignes.filter(Boolean).map(([libelle, valeur]) => (
         <div key={libelle} style={ligne}>
           <span style={{ color: 'var(--text-muted)' }}>{libelle}</span>
-          <span style={{ fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{valeur || valeur === 0 ? valeur : '—'}</span>
+          <span style={{ fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{valeur || valeur === 0 ? valeur : '-'}</span>
         </div>
       ))}
       {children}
       <div style={{ marginTop: '1rem', padding: '0.9rem', borderRadius: '12px', background: teinte(couleur), border: `1px solid ${accent}` }}>
         <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 800, color: accent }}>{libelleMontant}</div>
-        <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{montant === null || montant === undefined ? '—' : montant}</div>
+        <div style={{ fontSize: '1.45rem', fontWeight: 900, color: 'var(--text-primary)' }}>{montant === null || montant === undefined ? '-' : montant}</div>
         {detail && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{detail}</div>}
       </div>
     </aside>

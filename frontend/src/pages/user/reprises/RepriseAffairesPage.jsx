@@ -252,7 +252,7 @@ export const ImportAffaires = ({ onImporte }) => {
             <strong>{resultat ? 'Import terminé' : 'Analyse'}</strong> : {compteRendu.Correctes} ligne{compteRendu.Correctes > 1 ? 's' : ''} correcte{compteRendu.Correctes > 1 ? 's' : ''}
             {' '}pour {fcfa(compteRendu.PrimeTtc)}, {compteRendu.Erreurs} refusée{compteRendu.Erreurs > 1 ? 's' : ''}
             {compteRendu.NouveauxClients ? `, ${compteRendu.NouveauxClients} nouveau${compteRendu.NouveauxClients > 1 ? 'x' : ''} client${compteRendu.NouveauxClients > 1 ? 's' : ''}` : ''}
-            {resultat ? '.' : ' — rien n\'est encore enregistré.'}
+            {resultat ? '.' : ' - rien n\'est encore enregistré.'}
           </div>
           <div className="table-wrapper" style={{ maxHeight: 340, overflowY: 'auto' }}>
             <table className="data-table">
@@ -264,7 +264,7 @@ export const ImportAffaires = ({ onImporte }) => {
                     <td>{l.Statut === 'OK'
                       ? <span className="badge badge-emerald"><CheckCircle2 size={12} /> {resultat ? 'Reprise' : 'Correcte'}</span>
                       : <span className="badge badge-rose"><X size={12} /> Refusée</span>}</td>
-                    <td>{l.Client}{l.NouveauClient ? <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}> — nouveau</span> : ''}</td>
+                    <td>{l.Client}{l.NouveauClient ? <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}> - nouveau</span> : ''}</td>
                     <td>{l.NumeroPoliceCompagnie}</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{l.PrimeTtc !== null && l.PrimeTtc !== undefined ? fcfa(l.PrimeTtc) : ''}</td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{l.NumeroPolice ? `${l.NumeroPolice} / ${l.NumeroQuittance}` : ''}</td>
@@ -538,11 +538,11 @@ export const RepriseAffairesPage = () => {
             data={enAttente}
             columns={[
               { header: 'Devis', accessor: 'NumeroDevis', render: (d) => <strong style={{ fontFamily: 'var(--font-mono)' }}>{d.NumeroDevis}</strong> },
-              { header: 'Client', accessor: 'Client', render: (d) => d.Client || '—' },
+              { header: 'Client', accessor: 'Client', render: (d) => d.Client || '-' },
               {
                 header: 'Compagnie et branche', accessor: 'Compagnie',
                 render: (d) => (
-                  <div>{d.Compagnie}<div className="reprise-description">{d.Branche}{d.Champs.length ? ` — ${d.Champs.map((c) => c.Valeur).join(', ')}` : ''}</div></div>
+                  <div>{d.Compagnie}<div className="reprise-description">{d.Branche}{d.Champs.length ? ` - ${d.Champs.map((c) => c.Valeur).join(', ')}` : ''}</div></div>
                 ),
               },
               { header: 'Effet → échéance', accessor: 'DateEffet', render: (d) => <span style={{ whiteSpace: 'nowrap' }}>{dateFr(d.DateEffet)} → {dateFr(d.DateExpiration)}</span> },

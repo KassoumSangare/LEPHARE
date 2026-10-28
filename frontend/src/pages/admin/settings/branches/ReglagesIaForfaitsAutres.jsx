@@ -42,7 +42,7 @@ const TableauReglages = ({ colonnes, lignes, parametres, onEnregistre, libelle }
 
   const cellule = (cle) => {
     const p = cle && parCle[cle];
-    if (!p) return <span className="rb-discret">—</span>;
+    if (!p) return <span className="rb-discret">-</span>;
     const v = saisie[cle];
     return (
       <div>

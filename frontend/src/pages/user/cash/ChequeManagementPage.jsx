@@ -323,7 +323,7 @@ export const ChequeManagementPage = () => {
     { header: 'Montant', render: (row) => <strong>{fcfa(row.montant)}</strong> },
     {
       header: 'Affecté / Solde',
-      render: (row) => (row.statut === 'A_DEPOSER' ? '—' : (
+      render: (row) => (row.statut === 'A_DEPOSER' ? '-' : (
         <span>
           <span style={{ color: '#34d399' }}>{fcfa(row.affecte)}</span>
           {' / '}
@@ -331,7 +331,7 @@ export const ChequeManagementPage = () => {
         </span>
       )),
     },
-    { header: 'Quittance(s)', accessor: 'quittances_reglees', render: (row) => <span style={{ fontFamily: 'var(--font-mono)' }}>{row.quittances_reglees || '—'}</span> },
+    { header: 'Quittance(s)', accessor: 'quittances_reglees', render: (row) => <span style={{ fontFamily: 'var(--font-mono)' }}>{row.quittances_reglees || '-'}</span> },
     {
       header: 'Statut',
       accessor: 'statut_libelle',
@@ -415,7 +415,7 @@ export const ChequeManagementPage = () => {
                 <StatusBadge label={ALERTES[c.niveau_alerte].libelle} color={ALERTES[c.niveau_alerte].couleur} />
                 <span>
                   Chèque <strong style={{ fontFamily: 'var(--font-mono)' }}>{c.numero_cheque}</strong> ({c.nom_banque}) de <strong>{c.client_nom}</strong>,
-                  {' '}{fcfa(c.montant)} — {c.niveau_alerte === 'ECHU' ? 'à déposer depuis le' : 'dépôt prévu le'} <strong>{formatDate(c.date_echeance)}</strong>
+                  {' '}{fcfa(c.montant)} - {c.niveau_alerte === 'ECHU' ? 'à déposer depuis le' : 'dépôt prévu le'} <strong>{formatDate(c.date_echeance)}</strong>
                 </span>
               </div>
             ))}
@@ -472,7 +472,7 @@ export const ChequeManagementPage = () => {
                   if (choisi) setRechercheClient(choisi.nom);
                 }}
               >
-                <option value="">{chargementClients ? 'Chargement des clients…' : '— Choisir —'}</option>
+                <option value="">{chargementClients ? 'Chargement des clients…' : 'Choisir'}</option>
                 {clientsFiltres.map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </select>
             </div>
@@ -504,7 +504,7 @@ export const ChequeManagementPage = () => {
                 <tr key={i}>
                   <td style={{ padding: '0.25rem', minWidth: 170 }}>
                     <select className="form-control" value={l.banque} onChange={(e) => changerLigne(i, 'banque', e.target.value)}>
-                      <option value="">— Banque —</option>
+                      <option value="">Banque</option>
                       {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
                     </select>
                   </td>
@@ -567,7 +567,7 @@ export const ChequeManagementPage = () => {
               <AlertTriangle size={18} color="#f87171" style={{ flexShrink: 0 }} />
               <div>
                 Chèque <strong>{decaissement.cheque.numero_cheque}</strong> ({decaissement.cheque.nom_banque}) de {fcfa(decaissement.cheque.montant)}.
-                {' '}Les encaissements qu'il a réglés ({decaissement.cheque.quittances_reglees || '—'}) seront annulés : les quittances redeviennent à encaisser.
+                {' '}Les encaissements qu'il a réglés ({decaissement.cheque.quittances_reglees || '-'}) seront annulés : les quittances redeviennent à encaisser.
               </div>
             </div>
             <div className="form-group">
@@ -602,7 +602,7 @@ export const ChequeManagementPage = () => {
         {reencaissement && (
           <form onSubmit={enregistrerReencaissement}>
             <div style={{ padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(30, 41, 59, 0.6)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-              Chèque impayé <strong>{reencaissement.cheque.numero_cheque}</strong> ({reencaissement.cheque.nom_banque}) —
+              Chèque impayé <strong>{reencaissement.cheque.numero_cheque}</strong> ({reencaissement.cheque.nom_banque}) -
               {' '}décaissé le {formatDate(reencaissement.cheque.date_decaissement)} : « {reencaissement.cheque.motif_decaissement} ».
               {' '}Montant impayé : <strong>{fcfa(reencaissement.cheque.montant_impaye)}</strong>
               {Number(reencaissement.cheque.montant_reencaisse) > 0 && <>, déjà réencaissé : {fcfa(reencaissement.cheque.montant_reencaisse)}</>}.
@@ -619,7 +619,7 @@ export const ChequeManagementPage = () => {
                 {reencaissement.quittances.map((q, i) => (
                   <tr key={q.numero}>
                     <td style={{ padding: '0.3rem', fontFamily: 'var(--font-mono)' }}>{q.numero}</td>
-                    <td style={{ padding: '0.3rem' }}>{q.client || '—'}</td>
+                    <td style={{ padding: '0.3rem' }}>{q.client || '-'}</td>
                     <td style={{ padding: '0.3rem' }}>
                       <input type="number" className="form-control" min="0" value={q.montant}
                         onChange={(e) => setReencaissement((prev) => ({

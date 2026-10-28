@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 const fmtDate = (v) => {
-  if (!v) return '—';
+  if (!v) return '-';
   const d = new Date(v);
   if (isNaN(d.getTime())) return String(v);
   const pad = (n) => String(n).padStart(2, '0');
@@ -82,7 +82,7 @@ export const ArchivesPage = () => {
           nom: c.nomcomplet || [c.Nom || c.nom, c.Prenoms || c.prenom].filter(Boolean).join(' ') || 'Client sans nom',
           detail: c.profession || c.libelleprofession || (c.typeclient === 'Entreprise' ? 'Entreprise' : 'Particulier'),
           dateArchivage: c.date_archivage || null,
-          motif: c.motif_archivage || '—',
+          motif: c.motif_archivage || '-',
           raw: c,
         })),
         ...quotes.map((q) => ({
@@ -91,9 +91,9 @@ export const ArchivesPage = () => {
           reference: q.numerodevis || `DEV-${q.id}`,
           numerodevis: q.numerodevis || `DEV-${q.id}`, // alias pour la recherche intégrée de DataTable
           nom: q.client_nom || q.nom_client || q.souscripteur || 'Client',
-          detail: q.branche || q.produit || '—',
+          detail: q.branche || q.produit || '-',
           dateArchivage: q.date_archivage || null,
-          motif: q.motif_archivage || '—',
+          motif: q.motif_archivage || '-',
           raw: q,
         })),
         ...contracts.map((c) => ({
@@ -102,9 +102,9 @@ export const ArchivesPage = () => {
           reference: c.numeropolice || `POL-${c.id}`,
           numeropolice: c.numeropolice || `POL-${c.id}`, // alias pour la recherche intégrée de DataTable
           nom: c.client_nom || c.souscripteur || c.assure || 'Assuré',
-          detail: c.produit || c.branche || '—',
+          detail: c.produit || c.branche || '-',
           dateArchivage: c.date_archivage || null,
-          motif: c.motif_archivage || '—',
+          motif: c.motif_archivage || '-',
           raw: c,
         })),
         ...claims.map((c) => ({
@@ -113,9 +113,9 @@ export const ArchivesPage = () => {
           reference: c.numero_sinistre || `SIN-${c.id}`,
           codeclient: c.numero_sinistre || `SIN-${c.id}`, // alias pour la recherche intégrée de DataTable
           nom: c.client_nom || c.souscripteur || 'Assuré',
-          detail: c.nature || '—',
+          detail: c.nature || '-',
           dateArchivage: c.date_archivage || c.date_cloture || null,
-          motif: c.motif_archivage || '—',
+          motif: c.motif_archivage || '-',
           raw: c,
         })),
       ];

@@ -6,7 +6,7 @@ import { customerApi } from '../../api/endpoints';
 // toute la clientèle) et fiche du client choisi. Utilisés par les devis Voyage, MRH, RC, MRP, Dommages et Transport.
 
 const jour = (v) => (v ? String(v).slice(0, 10) : '');
-const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
+const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '-');
 
 const stylesChamp = {
   listeDeroulante: {
@@ -123,9 +123,9 @@ export const RechercheClient = ({ label, personne, onChoisir, onNouveau, erreur,
 
 export const FichePersonne = ({ personne }) => (
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: '0.5rem 1rem', padding: '0.85rem 1rem', borderRadius: '10px', background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-subtle)', fontSize: '0.82rem' }}>
-    <div><span style={{ color: 'var(--text-muted)' }}>Téléphone</span><div style={{ fontWeight: 600 }}>{personne.Telephone ? `+225 ${personne.Telephone}` : '—'}</div></div>
-    <div><span style={{ color: 'var(--text-muted)' }}>Adresse</span><div style={{ fontWeight: 600 }}>{personne.Adresse || '—'}</div></div>
-    <div><span style={{ color: 'var(--text-muted)' }}>Adresse géographique</span><div style={{ fontWeight: 600 }}>{personne.AdresseGeographique || '—'}</div></div>
+    <div><span style={{ color: 'var(--text-muted)' }}>Téléphone</span><div style={{ fontWeight: 600 }}>{personne.Telephone ? `+225 ${personne.Telephone}` : '-'}</div></div>
+    <div><span style={{ color: 'var(--text-muted)' }}>Adresse</span><div style={{ fontWeight: 600 }}>{personne.Adresse || '-'}</div></div>
+    <div><span style={{ color: 'var(--text-muted)' }}>Adresse géographique</span><div style={{ fontWeight: 600 }}>{personne.AdresseGeographique || '-'}</div></div>
     <div><span style={{ color: 'var(--text-muted)' }}>Date de naissance</span><div style={{ fontWeight: 600 }}>{dateFr(personne.DateNaissance)}</div></div>
   </div>
 );

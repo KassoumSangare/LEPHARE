@@ -715,7 +715,7 @@ def apres_reponse(view, request, reponse):
     description = complements.get("description") or libelle
     journaliser(
         request=request, module=module, action=action,
-        description=f"{description}{' — échec : ' + message if message else ''}"
+        description=f"{description}{' - échec : ' + message if message else ''}"
                     f"{'' if contexte['cartographiee'] else ' (route non cartographiée : ' + contexte['module_vue'] + ')'}",
         objet_type=complements.get("objet_type") or (regle.objet if regle and regle.objet else OBJETS_PAR_MODULE.get(module, "")),
         objet_id=complements.get("objet_id") or objet_id or "", resultat=RESULTAT_SUCCES if reussie else RESULTAT_ECHEC,

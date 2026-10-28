@@ -977,7 +977,7 @@ def tableau_reversement(id_compagnie, du, au):
             "CommissionPercue": _nombre(percue),
             "SoldeCommission": _nombre(a_percevoir - percue),
             "ChequesCommission": " ; ".join(cheques_commission.values()),
-            "Observation": " — ".join(observations),
+            "Observation": " - ".join(observations),
             "Soldee": reste <= 0,
             "ResteAEncaisser": _nombre(reste),
             "Reversements": sous_lignes,
@@ -1278,7 +1278,7 @@ def _classeur_reclamation(rc, nom_compagnie):
         ws.column_dimensions[get_column_letter(i)].width = largeur
 
     ws.merge_cells("C2:N2")
-    cellule(ws, 2, 3, f"BORDEREAU RECAPITULATIF DE REVERSEMENT — RECLAMATION DE COMMISSIONS {nom_compagnie}",
+    cellule(ws, 2, 3, f"BORDEREAU RECAPITULATIF DE REVERSEMENT - RECLAMATION DE COMMISSIONS {nom_compagnie}",
             gras=True, taille=16, fond=gris)
     for colonne in range(4, 15):
         ws.cell(row=2, column=colonne).border = cadre
@@ -1397,9 +1397,9 @@ def _situation_commission(l):
         return f"Payée ({l['Reclamation']})" if l["Reclamation"] else "Payée"
     reference = f"{l['Reclamation']} du {_jma(date.fromisoformat(l['DateReclamation']))}" if l["DateReclamation"] else l["Reclamation"]
     if l["Statut"] == "PARTIELLE":
-        return f"Payée en partie — {reference}"
+        return f"Payée en partie - {reference}"
     if l["Statut"] == "RECLAMEE":
-        return f"Réclamée — {reference}"
+        return f"Réclamée - {reference}"
     return "À réclamer"
 
 
@@ -1457,7 +1457,7 @@ def _classeur_recapitulatif_commissions(r, nom):
         n = len(largeurs)
         fusion(ws, 2, 1, n, titre, gras=True, taille=15, fond=gris)
         ws.row_dimensions[2].height = 34
-        fusion(ws, 3, 1, n, f"{titre_cie} — PRIMES REVERSEES {periode}", gras=True)
+        fusion(ws, 3, 1, n, f"{titre_cie} - PRIMES REVERSEES {periode}", gras=True)
         fusion(ws, 4, 1, n, f"Situation au {situation}", gauche=False)
         return ws
 
@@ -1522,7 +1522,7 @@ def _classeur_recapitulatif_commissions(r, nom):
 
     # ---- 2. commissions payées : règlements reçus des assureurs
     ws = feuille("COMMISSIONS PAYEES", [15, 30, 21, 21, 12, 22, 22, 12, 18, 20],
-                 "ETAT DES COMMISSIONS PAYEES — REGLEMENTS RECUS DES ASSUREURS")
+                 "ETAT DES COMMISSIONS PAYEES - REGLEMENTS RECUS DES ASSUREURS")
     entetes(ws, 6, ["DATE DU REGLEMENT", "COMPAGNIE", "N° DU REGLEMENT", "BORDEREAU DE RECLAMATION", "MODE",
                     "N° DU CHEQUE / DU VIREMENT", "BANQUE", "QUITTANCES", "MONTANT DU REGLEMENT",
                     "COMMISSIONS REGLEES (PERIODE)"])
@@ -1675,7 +1675,7 @@ def _classeur_recapitulatif_encaissements(etat, nom, filtres_texte):
         ws.column_dimensions[get_column_letter(i)].width = largeur
     fusion(ws, 2, 1, 11, "BORDEREAU RECAPITULATIF DES ENCAISSEMENTS", gras=True, taille=15, fond=gris)
     ws.row_dimensions[2].height = 32
-    fusion(ws, 3, 1, 11, f"{nom or 'TOUTES LES COMPAGNIES'} — ENCAISSEMENTS {_periode_texte(etat['Du'], etat['Au'])}", gras=True)
+    fusion(ws, 3, 1, 11, f"{nom or 'TOUTES LES COMPAGNIES'} - ENCAISSEMENTS {_periode_texte(etat['Du'], etat['Au'])}", gras=True)
     fusion(ws, 4, 1, 11, filtres_texte or "Tous les modes et tous les statuts")
 
     entetes = ["N° DU BORDEREAU D'ENCAISSEMENT", "DATE DE SAISIE", "NOM DU CLIENT", "COMPAGNIE", "ASSURANCE", "N° POLICE",
@@ -1686,7 +1686,7 @@ def _classeur_recapitulatif_encaissements(etat, nom, filtres_texte):
     rangee = 6
     for l in etat["Lignes"]:
         rangee += 1
-        reference = " — ".join(x for x in (l["Reference"], l["Banque"]) if x)
+        reference = " - ".join(x for x in (l["Reference"], l["Banque"]) if x)
         valeurs = [(l["NumeroPiece"], None), (datetime.fromisoformat(l["DateEncaissement"]) if l["DateEncaissement"] else None, JOUR),
                    (l["Client"], None), (l["Compagnie"], None), (_branche(None, l["Branche"]), None), (l["NumeroPolice"], None),
                    (l["NumeroQuittance"], None), (l["Mode"], None), (reference, None), (l["Montant"], MONTANT),
@@ -1764,7 +1764,7 @@ def recapitulatif_encaissements_excel(request):
         filtres.append(f"Mode : {etat['Lignes'][0]['Mode']}" if etat["Lignes"] else "Mode choisi")
     if request.query_params.get("statut") in LIBELLES_STATUT:
         filtres.append(f"Statut : {LIBELLES_STATUT[request.query_params['statut']]}")
-    reponse = HttpResponse(_classeur_recapitulatif_encaissements(etat, nom, " — ".join(filtres)),
+    reponse = HttpResponse(_classeur_recapitulatif_encaissements(etat, nom, " - ".join(filtres)),
                            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     fichier = f"BORDEREAU RECAPITULATIF DES ENCAISSEMENTS {nom or 'TOUTES COMPAGNIES'} {_periode_texte(etat['Du'], etat['Au'])}"
     reponse["Content-Disposition"] = f'attachment; filename="{fichier.replace("/", "-").replace(chr(39), " ")}.xlsx"'

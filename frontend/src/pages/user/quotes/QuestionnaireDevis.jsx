@@ -120,7 +120,7 @@ export const ContenuQuestionnaire = ({ lecture, max = 400 }) => {
             <dl>
               {reponses.map((r, k) => (
                 <React.Fragment key={`${r.libelle}-${k}`}>
-                  <dt>{r.libelle || '—'}</dt>
+                  <dt>{r.libelle || '-'}</dt>
                   <dd>{r.genre === 'choix' ? <span className="qd-choix">{r.valeur}</span> : r.valeur}</dd>
                 </React.Fragment>
               ))}

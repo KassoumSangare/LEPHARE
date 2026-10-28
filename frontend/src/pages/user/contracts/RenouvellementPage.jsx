@@ -10,8 +10,8 @@ import { useToast } from '../../../context/ToastContext';
 // puis devis de renouvellement sous la même police, ouvert ensuite dans son écran de saisie pour les ajouts,
 // les garanties et la tarification. production/renouvellement.py
 
-const montant = (v) => (v === null || v === undefined ? '—' : `${Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ')} F`);
-const dateFr = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '—');
+const montant = (v) => (v === null || v === undefined ? '-' : `${Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ')} F`);
+const dateFr = (v) => (v ? String(v).slice(0, 10).split('-').reverse().join('/') : '-');
 const ageTexte = (mois) => (mois === null || mois === undefined ? '' : `${Math.floor(mois / 12)} an${Math.floor(mois / 12) > 1 ? 's' : ''}${mois % 12 ? ` ${mois % 12} mois` : ''}`);
 const LIBELLE_AVENANT = { AFN: 'Affaire nouvelle', REN: 'Renouvellement', INC: 'Incorporation', MOD: 'Modification', RET: 'Retrait', ANL: 'Annulation', ANP: 'Annulation' };
 const cellule = { padding: '0.55rem 0.6rem', borderTop: '1px solid var(--border-subtle)', verticalAlign: 'top', fontSize: '0.84rem' };
@@ -121,7 +121,7 @@ export const RenouvellementPage = () => {
                   n° {d.NumeroDevis} (effet {dateFr(d.DateEffet)}) <ExternalLink size={13} />
                 </Link>
               ))}
-              <span style={{ color: 'var(--text-muted)' }}>— reprenez-le plutôt que d'en créer un autre.</span>
+              <span style={{ color: 'var(--text-muted)' }}>- reprenez-le plutôt que d'en créer un autre.</span>
             </div>
           )}
 
@@ -183,11 +183,11 @@ export const RenouvellementPage = () => {
                     return (
                       <tr key={o.Matricule} style={{ opacity: retenu ? 1 : 0.5 }}>
                         <td style={cellule}><input type="checkbox" checked={retenu} onChange={() => basculer(o.Matricule)} aria-label={`Renouveler ${o.Matricule}`} /></td>
-                        <td style={{ ...cellule, fontWeight: 700 }}>{familles ? (o.NumeroAdherent || '—') : o.Matricule}</td>
+                        <td style={{ ...cellule, fontWeight: 700 }}>{familles ? (o.NumeroAdherent || '-') : o.Matricule}</td>
                         {familles && (
                           <>
                             <td style={cellule}>{o.Assure}</td>
-                            <td style={cellule}>{o.Categorie || '—'}</td>
+                            <td style={cellule}>{o.Categorie || '-'}</td>
                             <td style={cellule}>{o.Personnes}</td>
                             <td style={cellule}>{dateFr(o.DateNaissance)}</td>
                           </>

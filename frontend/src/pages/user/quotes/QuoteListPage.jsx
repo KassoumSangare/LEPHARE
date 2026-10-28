@@ -284,7 +284,7 @@ export const QuoteListPage = () => {
         q.client_nom || q.nomcomplet || 'Client Particulier',
         branchProd,
         q.compagnie || 'LE PHARE',
-        q.avenant || '—',
+        q.avenant || '-',
         q.flotte ? 'Flotte' : 'Mono',
         formatDateTime(q.date_emission),
         formatDateTime(q.date_expiration),
@@ -300,7 +300,7 @@ export const QuoteListPage = () => {
     exportToPdf({
       filename: `Registre_Devis_${tabName}_LE_PHARE_${new Date().toISOString().slice(0, 10)}.pdf`,
       title: `REGISTRE OFFICIEL DES DEVIS [${tabName.toUpperCase()}]`,
-      subtitle: branchToUse !== 'ALL' ? `Branche / Catégorie : ${tabName} — Conforme aux normes d'audit CIMA` : 'État global de souscription conforme aux normes CIMA',
+      subtitle: branchToUse !== 'ALL' ? `Branche / Catégorie : ${tabName} - Conforme aux normes d'audit CIMA` : 'État global de souscription conforme aux normes CIMA',
       metadata: {
         'Date d\'édition': today,
         'Édité par': user?.nom ? `${user.nom} (${user.email || ''})` : (user?.email || 'Gestionnaire'),
@@ -394,7 +394,7 @@ export const QuoteListPage = () => {
       render: (row) => (
         row.categorie
           ? <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{row.categorie}</span>
-          : <span style={{ color: 'var(--text-muted)' }}>—</span>
+          : <span style={{ color: 'var(--text-muted)' }}>-</span>
       ),
     },
     {
@@ -407,7 +407,7 @@ export const QuoteListPage = () => {
       header: 'Avenant',
       accessor: 'avenant',
       sortable: true,
-      render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{row.avenant || '—'}</div>,
+      render: (row) => <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{row.avenant || '-'}</div>,
     },
     {
       header: 'Type',

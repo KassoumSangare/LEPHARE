@@ -168,7 +168,7 @@ export const taxeGarantie = (g) => {
 };
 
 // Base de l'accessoire (fn_get_accessoire) : prime nette des garanties acquises, CEDEAO comprise,
-// plus le FGA — comme prime_nette_totale du moteur et stddevis.primenette à l'enregistrement
+// plus le FGA - comme prime_nette_totale du moteur et stddevis.primenette à l'enregistrement
 export const baseAccessoireAuto = (garanties) => {
   const totaux = calculerTotauxDevisAuto({ garanties });
   return totaux.pn + totaux.cedeao + totaux.fga;

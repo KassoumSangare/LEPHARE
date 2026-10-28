@@ -939,7 +939,7 @@ export const DecisionalStatesPage = () => {
               </div>
             </div>
             <div style={{ padding: '0.75rem', background: 'var(--bg-muted)', borderRadius: '8px', marginBottom: '1.25rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-              Vous êtes sur le point de supprimer <strong>« {deleteTarget.code_etat} — {deleteTarget.libelle_etat} »</strong>.
+              Vous êtes sur le point de supprimer <strong>« {deleteTarget.code_etat} - {deleteTarget.libelle_etat} »</strong>.
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary" onClick={() => setIsDeleteOpen(false)} disabled={isDeleting}>Annuler</button>

@@ -296,7 +296,7 @@ export const ContractDetailPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Immatriculation / Réf. Risque :</span>
               <strong style={{ color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>
-                {contract.details?.immatriculation || contract.immatriculation || '—'}
+                {contract.details?.immatriculation || contract.immatriculation || '-'}
               </strong>
             </div>
             {contract.details?.marque && (
@@ -511,8 +511,8 @@ export const ContractDetailPage = () => {
                   {lies.map((l) => (
                     <div key={l.IdDevis} style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>
                       {l.IdContrat
-                        ? <span>Contrat <strong>{l.NumeroPolice}</strong> — {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: '0.8rem' }} onClick={() => navigate(`/user/contracts/${l.IdContrat}`)}>Ouvrir</button></span>
-                        : <span>Devis <strong>{l.NumeroDevis}</strong> non confirmé — {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC</span>}
+                        ? <span>Contrat <strong>{l.NumeroPolice}</strong> - {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: '0.8rem' }} onClick={() => navigate(`/user/contracts/${l.IdContrat}`)}>Ouvrir</button></span>
+                        : <span>Devis <strong>{l.NumeroDevis}</strong> non confirmé - {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC</span>}
                     </div>
                   ))}
                   <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/quotes/${module}?${parametres}`)}

@@ -143,7 +143,7 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
       <div className="form-group">
         <label className="form-label">Mode de paiement</label>
         <select className="form-control" required value={valeurs.idMode} onChange={saisie('idMode')}>
-          <option value="">— Choisir —</option>
+          <option value="">Choisir</option>
           {modes.map((m) => (
             <option key={m.idmodeencaissement} value={m.idmodeencaissement}>{m.libellemodepaiement}</option>
           ))}
@@ -168,7 +168,7 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
           <div className="form-group">
             <label className="form-label">Banque émettrice</label>
             <select className="form-control" required value={valeurs.idBanque} onChange={saisie('idBanque')}>
-              <option value="">— Choisir —</option>
+              <option value="">Choisir</option>
               {banques.map((b) => (
                 <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>
               ))}

@@ -1047,7 +1047,7 @@ export const ClientListPage = () => {
                     <option value="">-- Sélectionner une profession --</option>
                     {trierParLibelle(refData.professions, (p) => `${p.Libelle} ${p.CodeProfession ? `(${p.CodeProfession})` : ''}`).map((p) => (
                       <option key={p.IdProfession} value={p.IdProfession}>
-                        {p.Libelle}{p.CodeProfession ? ` — ${p.CodeProfession}` : ''}
+                        {p.Libelle}{p.CodeProfession ? ` - ${p.CodeProfession}` : ''}
                       </option>
                     ))}
                   </select>
@@ -1279,7 +1279,7 @@ export const ClientListPage = () => {
       </Modal>
 
       {/* =====================================================================
-          MODAL AJOUT RAPIDE — Secteur d'Activité Économique (stdsecteuractivite)
+          MODAL AJOUT RAPIDE - Secteur d'Activité Économique (stdsecteuractivite)
           ===================================================================== */}
       {isAddSecteurOpen && (
         <div
@@ -1378,7 +1378,7 @@ export const ClientListPage = () => {
       )}
 
       {/* =====================================================================
-          MODAL AJOUT RAPIDE — Profession (stdprofession)
+          MODAL AJOUT RAPIDE - Profession (stdprofession)
           ===================================================================== */}
       {isAddProfessionOpen && (
         <div

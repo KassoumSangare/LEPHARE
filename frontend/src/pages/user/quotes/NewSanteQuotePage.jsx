@@ -611,9 +611,9 @@ export const NewSanteQuotePage = () => {
     if (r?.Importes) {
       success(`${r.Importes} personne${r.Importes > 1 ? 's' : ''} importée${r.Importes > 1 ? 's' : ''}.`);
     }
-    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge — ${detail('dérogation')}`);
+    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge - ${detail('dérogation')}`);
     if (r?.Refuses || r?.Ignores) {
-      toastError(`${r.Refuses + r.Ignores} personne${r.Refuses + r.Ignores > 1 ? 's' : ''} non importée${r.Refuses + r.Ignores > 1 ? 's' : ''} — `
+      toastError(`${r.Refuses + r.Ignores} personne${r.Refuses + r.Ignores > 1 ? 's' : ''} non importée${r.Refuses + r.Ignores > 1 ? 's' : ''} - `
         + [detail('refusé'), detail('ignoré')].filter(Boolean).join(' ; '));
     } else {
       setFichierImport(null);
@@ -696,8 +696,8 @@ export const NewSanteQuotePage = () => {
     const lignes = r?.Lignes || [];
     const detail = (statut) => lignes.filter((l) => l.Statut === statut).map((l) => `${l.Nom} : ${l.Message}`).join(' ; ');
     if (r?.Importes) success(`${r.Importes} personne${r.Importes > 1 ? 's' : ''} du bulletin importée${r.Importes > 1 ? 's' : ''}.`);
-    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge — ${detail('dérogation')}`);
-    if (r?.Refuses || r?.Ignores) toastError(`Non importé(s) — ${[detail('refusé'), detail('ignoré')].filter(Boolean).join(' ; ')}`);
+    if (r?.Derogations) warning(`Admis par dérogation à la limite d'âge - ${detail('dérogation')}`);
+    if (r?.Refuses || r?.Ignores) toastError(`Non importé(s) - ${[detail('refusé'), detail('ignoré')].filter(Boolean).join(' ; ')}`);
   }, 'Import du bulletin refusé');
 
   // Données de l'enregistrement, et de l'aperçu des primes calculé par la base sans rien enregistrer
@@ -878,7 +878,7 @@ export const NewSanteQuotePage = () => {
           <Users size={18} color="#db2777" style={{ flexShrink: 0, marginTop: 2 }} />
           <span>
             <strong style={{ color: 'var(--text-primary)' }}>Avenant de modification de la police {avenantModification.NumeroPolice}</strong>
-            {' '}— effet du {dateFr(dateEffet)} à l'échéance du {dateFr(avenantModification.DateExpirationContrat)}
+            {' '}- effet du {dateFr(dateEffet)} à l'échéance du {dateFr(avenantModification.DateExpirationContrat)}
             {avenantModification.JoursPeriode > 0 && `, prorata ${avenantModification.Jours} jours sur ${avenantModification.JoursPeriode}`}.
             {' '}Changez la couverture de la famille (Modifier l'adhérent, champ Filiale ; couverture de la nouvelle formule à l'étape 2),
             ajoutez le nouveau membre, puis enregistrez : la prime de l'avenant est l'écart de prime annuelle avec la composition
@@ -919,7 +919,7 @@ export const NewSanteQuotePage = () => {
                       <td>
                         <select className="form-control" value={p.sexe} aria-label={`Sexe de ${p.nom} ${p.prenoms}`}
                           onChange={(e) => setPersonnesBulletin((l) => l.map((x) => (x.cle === p.cle ? { ...x, sexe: e.target.value } : x)))}>
-                          <option value="">—</option>
+                          <option value="">-</option>
                           <option value="M">M</option>
                           <option value="F">F</option>
                         </select>
@@ -1159,7 +1159,7 @@ export const NewSanteQuotePage = () => {
               <h3 style={{ ...titreSection, margin: 0 }}>
                 Adhérents ({adherents.length}) et affiliés ({nombreAffilies})
                 <span style={{ fontWeight: 500, fontSize: '0.8em', color: 'var(--text-muted)', textTransform: 'none' }}>
-                  {' '}— {nombrePersonnes} personne{nombrePersonnes > 1 ? 's' : ''} assurée{nombrePersonnes > 1 ? 's' : ''}
+                  {' '}- {nombrePersonnes} personne{nombrePersonnes > 1 ? 's' : ''} assurée{nombrePersonnes > 1 ? 's' : ''}
                 </span>
               </h3>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -1219,7 +1219,7 @@ export const NewSanteQuotePage = () => {
                 {resultatClassique && (
                   <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                     <div style={{ fontSize: '0.84rem' }}>
-                      <strong>{resultatClassique.analyse ? 'Analyse — rien n\'est encore enregistré' : 'Import terminé'}</strong> :
+                      <strong>{resultatClassique.analyse ? 'Analyse - rien n\'est encore enregistré' : 'Import terminé'}</strong> :
                       {' '}{resultatClassique.Familles} famille{resultatClassique.Familles > 1 ? 's' : ''}, {resultatClassique.Personnes} personne{resultatClassique.Personnes > 1 ? 's' : ''}
                       {!resultatClassique.analyse && `, ${resultatClassique.Importes} importée${resultatClassique.Importes > 1 ? 's' : ''}`}
                       {resultatClassique.DateEffet && ` ; effet le ${resultatClassique.DateEffet.split('-').reverse().join('/')}`}
@@ -1250,7 +1250,7 @@ export const NewSanteQuotePage = () => {
                       ...(resultatClassique.Lignes || []).filter((l) => l.Statut !== 'importé'),
                       ...(resultatClassique.Avertissements || []).map((e) => ({ ...e, Statut: 'à vérifier' }))].map((l) => (
                       <div key={`${l.Ligne}-${l.Statut}`} style={{ fontSize: '0.78rem', color: l.Statut === 'à vérifier' || l.Statut === 'dérogation' ? 'var(--accent-amber)' : 'var(--accent-rose)' }}>
-                        Ligne {l.Ligne} {l.Nom} — {l.Statut} : {l.Message}
+                        Ligne {l.Ligne} {l.Nom} - {l.Statut} : {l.Message}
                       </div>
                     ))}
                   </div>
@@ -1500,7 +1500,7 @@ export const NewSanteQuotePage = () => {
                   <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                     {estMinene ? 'Primes calculées par le barème MINENE' : 'Primes calculées'}
                     {/* Avenant : âges à la date d'effet du contrat de la période (sp_creation_devis_sante v9) */}
-                    {dateEffet && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}> — âges au {dateFr(avenantModification?.DateEffetContrat || dateEffet)}</span>}
+                    {dateEffet && <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}> - âges au {dateFr(avenantModification?.DateEffetContrat || dateEffet)}</span>}
                   </div>
                   {apercuChargement && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Calcul…</span>}
                 </div>
@@ -1519,7 +1519,7 @@ export const NewSanteQuotePage = () => {
                   const av = apercu.Avenant;
                   const tuiles = av ? [
                     ['Prime annuelle avant modification', av.PrimeAnnuellePrecedente], ['Nouvelle prime annuelle', av.PrimeAnnuelle],
-                    [`Prime nette de l'avenant — ${av.Jours} j sur ${av.JoursPeriode}`, apercu.Totaux.PrimeNette],
+                    [`Prime nette de l'avenant - ${av.Jours} j sur ${av.JoursPeriode}`, apercu.Totaux.PrimeNette],
                     ['Accessoires', apercu.Totaux.Accessoire], ['Taxes', apercu.Totaux.Taxe], ['Prime TTC', apercu.Totaux.PrimeTtc],
                   ] : [
                     ...(ajustement ? [['Prime nette avant ajustement', apercu.Totaux.PrimeNetteAvantAjustement], [libelleAjustement, ajustement]] : []),

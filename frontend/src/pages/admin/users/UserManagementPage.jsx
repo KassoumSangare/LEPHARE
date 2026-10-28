@@ -12,7 +12,7 @@ import { useToast } from '../../../context/ToastContext';
 
 // Administration > Utilisateurs : comptes LE PHARE (repris d'URANUS ou créés ici), rôles attribués,
 // droits effectifs et activité récente. API : autorisations/views_securite.py
-const dateHeure = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const dateHeure = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '-');
 const pastille = (fond, couleur) => ({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.1rem 0.5rem', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, background: fond, color: couleur, whiteSpace: 'nowrap' });
 const COULEURS_RESULTAT = { SUCCES: 'var(--accent-emerald)', ECHEC: 'var(--accent-rose)', REFUS: 'var(--accent-amber)' };
 
@@ -190,7 +190,7 @@ export const UserManagementPage = () => {
               {liste.map((u) => (
                 <tr key={u.id} style={{ borderTop: '1px solid var(--border-subtle)', opacity: u.actif ? 1 : 0.6 }}>
                   <td style={{ padding: '0.55rem 0.4rem' }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.86rem' }}>{u.nom || '—'}{u.id === moi?.id && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> (vous)</span>}</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.86rem' }}>{u.nom || '-'}{u.id === moi?.id && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}> (vous)</span>}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</div>
                   </td>
                   <td style={{ padding: '0.55rem 0.4rem' }}>
@@ -284,7 +284,7 @@ export const UserManagementPage = () => {
                     <div key={a.id} style={{ display: 'flex', gap: '0.6rem', padding: '0.45rem 0.7rem', borderBottom: '1px solid var(--border-subtle)', fontSize: '0.78rem' }}>
                       <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{dateHeure(a.date)}</span>
                       <span style={{ color: COULEURS_RESULTAT[a.resultat] || 'var(--text-secondary)', fontWeight: 700, whiteSpace: 'nowrap' }}>{a.resultat}</span>
-                      <span style={{ flex: 1 }}>{a.description}{a.objet_id ? ` — ${a.objet_type} ${a.objet_id}` : ''}</span>
+                      <span style={{ flex: 1 }}>{a.description}{a.objet_id ? ` - ${a.objet_type} ${a.objet_id}` : ''}</span>
                     </div>
                   ))}
                 </div>

@@ -214,7 +214,7 @@ export const UserDashboard = () => {
 
   const colonnesDevis = [
     { header: 'N° Devis', accessor: 'NumeroDevis', render: (d) => <strong style={{ fontFamily: 'var(--font-mono)' }}>{d.NumeroDevis}</strong> },
-    { header: 'Client', accessor: 'Client', render: (d) => d.Client || '—' },
+    { header: 'Client', accessor: 'Client', render: (d) => d.Client || '-' },
     { header: 'Branche', accessor: 'Produit' },
     { header: 'Valable jusqu\'au', accessor: 'DateExpiration', render: (d) => formatDate(d.DateExpiration) },
     { header: 'Prime TTC', accessor: 'PrimeTtc', render: (d) => <span style={{ fontFamily: 'var(--font-mono)' }}>{francs(d.PrimeTtc)}</span> },

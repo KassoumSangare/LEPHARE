@@ -39,7 +39,7 @@ import {
 } from './suiviCommercial';
 
 const enMillions = (v) => `${(v / 1000000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} M FCFA`;
-const texte = (v) => (v && String(v).trim()) || '—';
+const texte = (v) => (v && String(v).trim()) || '-';
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 
 // Devis à ouvrir pour un prospect : le formulaire Automobile pour l'auto et la flotte
@@ -291,7 +291,7 @@ export const CrmPipelinePage = () => {
         />
         <MetricCard
           title="Taux de transformation"
-          value={conversionRate === null ? '—' : `${conversionRate} %`}
+          value={conversionRate === null ? '-' : `${conversionRate} %`}
           subtitle={cloturees ? `${wonLeads.length} gagnée(s) sur ${cloturees} affaire(s) clôturée(s)` : 'Aucune affaire clôturée'}
           icon={<TrendingUp size={22} color="#818cf8" />}
           color="purple"

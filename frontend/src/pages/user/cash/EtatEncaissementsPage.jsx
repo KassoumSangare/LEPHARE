@@ -74,7 +74,7 @@ export const EtatEncaissementsPage = () => {
     Lignes: lignesVisibles,
     Total: { Nombre: valides.length, Montant: somme(valides, 'Montant'), Reverse: somme(valides, 'MontantReverse'), ResteAReverser: somme(valides, 'ResteAReverser') },
     ParMode: Object.values(valides.reduce((acc, l) => {
-      const g = acc[l.Mode || '—'] || { Libelle: l.Mode || '—', Nombre: 0, Montant: 0, Reverse: 0 };
+      const g = acc[l.Mode || '-'] || { Libelle: l.Mode || '-', Nombre: 0, Montant: 0, Reverse: 0 };
       g.Nombre += 1; g.Montant += l.Montant; g.Reverse += l.MontantReverse;
       return { ...acc, [g.Libelle]: g };
     }, {})),
@@ -88,7 +88,7 @@ export const EtatEncaissementsPage = () => {
     filtres.mode && `Mode : ${modes.find((m) => String(m.idmodeencaissement) === String(filtres.mode))?.libellemodepaiement || ''}`,
     filtres.statut && `Statut : ${STATUTS.find(([v]) => v === filtres.statut)?.[1] || ''}`,
     filtre && `Recherche : « ${recherche.trim()} »`,
-  ].filter(Boolean).join(' — ');
+  ].filter(Boolean).join(' - ');
   const imprimerRecapitulatif = () => etatAffiche && imprimerRecapitulatifEncaissements(etatAffiche, { compagnie: libelleCompagnie, filtres: libelleFiltres() });
   const telechargerRecapitulatif = async () => {
     setTelechargement(true);
@@ -154,7 +154,7 @@ export const EtatEncaissementsPage = () => {
         </div>
         <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
           <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginRight: 'auto' }}>
-            Bordereau récapitulatif des encaissements du {dateFr(filtres.du)} au {dateFr(filtres.au)}{libelleCompagnie ? ` — ${libelleCompagnie}` : ''}
+            Bordereau récapitulatif des encaissements du {dateFr(filtres.du)} au {dateFr(filtres.au)}{libelleCompagnie ? ` - ${libelleCompagnie}` : ''}
           </span>
           <button type="button" className="btn btn-primary" onClick={imprimerRecapitulatif} disabled={!etat || chargement}
             style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -213,7 +213,7 @@ export const EtatEncaissementsPage = () => {
                 )}
               </div>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                {filtre ? `${lignesVisibles.length} ligne(s) sur ${etat.Lignes.length} — encaissé net ${fcfa(etatAffiche.Total.Montant)} F` : `${etat.Lignes.length} ligne(s)`} — du plus récent au plus ancien
+                {filtre ? `${lignesVisibles.length} ligne(s) sur ${etat.Lignes.length} - encaissé net ${fcfa(etatAffiche.Total.Montant)} F` : `${etat.Lignes.length} ligne(s)`} - du plus récent au plus ancien
               </span>
             </div>
             <div className="table-wrapper">
@@ -235,10 +235,10 @@ export const EtatEncaissementsPage = () => {
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{l.NumeroQuittance}</td>
                       <td>{l.Mode}</td>
                       <td>
-                        {[l.Reference, l.Banque].filter(Boolean).join(' — ') || '—'}
+                        {[l.Reference, l.Banque].filter(Boolean).join(' - ') || '-'}
                         {(l.DateCheque || l.DateReceptionCheque) && (
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            {[l.DateCheque && `émis le ${dateFr(l.DateCheque)}`, l.DateReceptionCheque && `reçu le ${dateFr(l.DateReceptionCheque)}`].filter(Boolean).join(' — ')}
+                            {[l.DateCheque && `émis le ${dateFr(l.DateCheque)}`, l.DateReceptionCheque && `reçu le ${dateFr(l.DateReceptionCheque)}`].filter(Boolean).join(' - ')}
                           </div>
                         )}
                       </td>

@@ -70,10 +70,10 @@ const MODULES_SOUSCRIPTION = [
 
 const dateFr = (valeur) => {
   const m = String(valeur || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : '—';
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '-';
 };
 const montant = (valeur) => (valeur === null || valeur === undefined || valeur === ''
-  ? '—'
+  ? '-'
   : `${Math.round(Number(valeur)).toLocaleString('fr-FR').replace(/[  ]/g, ' ')} F`);
 const nombre = (n) => Number(n || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
 const joursAvant = (valeur) => {
@@ -302,7 +302,7 @@ export const ContractListPage = () => {
         metadata: {
           "Date d'édition": new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }),
           'Édité par': user?.nom || user?.email || '',
-          Sélection: [brancheCourante.libelle, libelleStatut, ...filtresActifs.filter((f) => f.cle === 'q' || f.cle === 'periode').map((f) => f.libelle)].join(' — '),
+          Sélection: [brancheCourante.libelle, libelleStatut, ...filtresActifs.filter((f) => f.cle === 'q' || f.cle === 'periode').map((f) => f.libelle)].join(' - '),
           Volume: total > contrats.length ? `${nombre(contrats.length)} premières lignes sur ${pluriel(total, 'contrat')}` : pluriel(total, 'contrat'),
           'Total primes TTC': montant(lignes.reduce((s, l) => s + Number(l.primeTtc || 0), 0)),
         },
@@ -508,20 +508,20 @@ export const ContractListPage = () => {
                       <tr key={c.id}>
                         <td data-label="Police">
                           <button type="button" className="portefeuille-police" onClick={() => navigate(`/user/contracts/${c.id}`)} title="Ouvrir la fiche du contrat">
-                            {v.police || '—'}
+                            {v.police || '-'}
                           </button>
                           {v.mouvement && <div className="portefeuille-secondaire">{v.mouvement.charAt(0) + v.mouvement.slice(1).toLowerCase()}</div>}
                         </td>
                         <td data-label="Client">
                           {v.clientId ? (
                             <button type="button" className="portefeuille-client" onClick={() => navigate(`/user/clients/${v.clientId}`)} title="Ouvrir la fiche du client">
-                              {v.client || '—'}
+                              {v.client || '-'}
                             </button>
-                          ) : <span className="portefeuille-client">{v.client || '—'}</span>}
+                          ) : <span className="portefeuille-client">{v.client || '-'}</span>}
                         </td>
                         <td data-label="Produit">
-                          <div className="portefeuille-principal">{v.produit || '—'}</div>
-                          <div className="portefeuille-secondaire">{v.compagnie || '—'}</div>
+                          <div className="portefeuille-principal">{v.produit || '-'}</div>
+                          <div className="portefeuille-secondaire">{v.compagnie || '-'}</div>
                         </td>
                         <td data-label="Période">
                           <div className="portefeuille-periode-cellule">
@@ -543,7 +543,7 @@ export const ContractListPage = () => {
                         <td data-label="Statut">
                           {statutInfo ? (
                             <span title={statutInfo.aide}><StatusBadge label={statutInfo.libelle} color={statutInfo.badge} /></span>
-                          ) : '—'}
+                          ) : '-'}
                         </td>
                         <td data-label="Actions" className="portefeuille-cellule-actions">
                           <div className="portefeuille-boutons">

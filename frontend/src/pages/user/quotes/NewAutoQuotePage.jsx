@@ -436,8 +436,8 @@ export const NewAutoQuotePage = () => {
   const [offreId, setOffreId] = useState(2);
   const [offreSelectionnee, setOffreSelectionnee] = useState('OFFRE AUTOMOBILE TOUS RISQUES');
   // Offres proposées pour le véhicule, comme dans URANUS : celles de sa catégorie
-  // (fn_liste_offre_produit) — { idTarif, liste } — et, pour les signaler, celles que la
-  // compagnie a paramétrées (stdoffregarantie) — Map id → nombre de garanties
+  // (fn_liste_offre_produit) - { idTarif, liste } - et, pour les signaler, celles que la
+  // compagnie a paramétrées (stdoffregarantie) - Map id → nombre de garanties
   const [offresCategorie, setOffresCategorie] = useState(null);
   const [offresCompagnie, setOffresCompagnie] = useState(null);
   // Vrai quand l'utilisateur vient de changer de catégorie : l'offre suit alors la nouvelle liste
@@ -457,7 +457,7 @@ export const NewAutoQuotePage = () => {
 
   // Tableau des garanties interactives avec inline editing et suppressions.
   // Vide au départ : les garanties viennent uniquement de l'offre (moteur CIMA / stdoffregarantie)
-  // ou du devis rouvert — plus de liste figée avec des primes fictives.
+  // ou du devis rouvert - plus de liste figée avec des primes fictives.
   const [garanties, setGaranties] = useState([]);
   // Garanties non admises pour l'âge du véhicule que l'utilisateur a cochées quand même : un
   // recalcul du barème ne les décoche plus
@@ -490,7 +490,7 @@ export const NewAutoQuotePage = () => {
   };
 
   // Ligne cumul (IdGarantie = 0) renvoyée par fn_garantie_offre : accessoire (fn_get_accessoire,
-  // fonction de la tranche de prime nette) et taxe sur accessoire — introuvables autrement côté écran.
+  // fonction de la tranche de prime nette) et taxe sur accessoire - introuvables autrement côté écran.
   const [ligneCumul, setLigneCumul] = useState(null);
   // Numéro du dernier calcul de garanties lancé (handleRecalculateApi)
   const dernierCalculRef = useRef(0);
@@ -612,7 +612,7 @@ export const NewAutoQuotePage = () => {
   // (valeurs véhicule à 0, réduction/BNS initiaux…) saisies avant l'écran Véhicule.
   const offreSelectionneeObj = offresList.find((o) => o.id === Number(offreId));
   // Comme URANUS, le calcul utilise la catégorie (grille stdtarif) choisie à l'écran
-  // Contrat — c'est aussi celle transmise à l'enregistrement (details.idTarif). Calculer
+  // Contrat - c'est aussi celle transmise à l'enregistrement (details.idTarif). Calculer
   // avec la grille de l'offre affichait un montant différent du montant enregistré, par
   // exemple pour une société en catégorie 212 (RC +5 %) avec une offre paramétrée en 201.
   // Tant que les vraies grilles ne sont pas chargées (DEFAULT_CATEGORIES contient des
@@ -1503,7 +1503,7 @@ export const NewAutoQuotePage = () => {
     const donnees = Object.fromEntries(Object.entries(champsBrouillon).map(([cle, [valeur]]) => [cle, valeur]));
     const client = clients.find((c) => String(c.id) === String(souscripteurId));
     const vehicule = [marqueVehicule, immatriculation].filter(Boolean).join(' ');
-    const libelle = [client?.nomcomplet || nomAssure, vehicule].filter(Boolean).join(' — ') || 'Devis automobile sans client';
+    const libelle = [client?.nomcomplet || nomAssure, vehicule].filter(Boolean).join(' - ') || 'Devis automobile sans client';
     const charge = { type_brouillon: 'DEVIS_AUTO', libelle, etape: step, donnees, iddevis: editIddevis || null };
     try {
       const res = brouillonId ? await brouillonApi.update(brouillonId, charge) : await brouillonApi.create(charge);
@@ -1551,7 +1551,7 @@ export const NewAutoQuotePage = () => {
   // chargement du devis en édition.
   useEffect(() => {
     // Pendant le chargement d'un devis existant, on attend que ses garanties
-    // réellement enregistrées soient chargées avant d'envisager un recalcul —
+    // réellement enregistrées soient chargées avant d'envisager un recalcul -
     // sinon un appel lancé avec les valeurs par défaut (avant l'arrivée des
     // vraies données) pourrait, selon le timing réseau, écraser ces garanties.
     // En mode "Imposer la prime" (en cours ou enregistré), on ne réécrase pas non plus les primes saisies.
@@ -1694,7 +1694,7 @@ export const NewAutoQuotePage = () => {
         }
         setNumeroPoliceCompagnie(d.numero_police_compagnie || '');
         // d.compagnie peut être soit un id simple, soit l'objet compagnie complet
-        // selon le point d'API — gérer les deux pour ne jamais obtenir NaN
+        // selon le point d'API - gérer les deux pour ne jamais obtenir NaN
         // (NaN est falsy et empêcherait silencieusement le calcul des garanties).
         const compagnieIdFromDevis = d.compagnie?.IdCompagnie ?? d.compagnie;
         if (compagnieIdFromDevis !== undefined && compagnieIdFromDevis !== null) {
@@ -1765,7 +1765,7 @@ export const NewAutoQuotePage = () => {
           });
         }
 
-        // Souscripteur / conducteur — d.client peut être un id simple ou l'objet
+        // Souscripteur / conducteur - d.client peut être un id simple ou l'objet
         // client complet ({IdClient, Nom, ...}) selon le point d'API : gérer les
         // deux, sinon la comparaison vaut "[object Object]" et ne matche jamais,
         // laissant le client du devis sur la valeur par défaut au lieu de la vraie.
@@ -1875,7 +1875,7 @@ export const NewAutoQuotePage = () => {
             setOffresList(mappedOffres);
             // Filet de sécurité : sur une nouvelle offre (pas en édition), si l'id par
             // défaut ne correspond pas réellement au libellé affiché dans le menu
-            // (décalage id/libellé codé en dur), on recale sur le vrai id — sinon le
+            // (décalage id/libellé codé en dur), on recale sur le vrai id - sinon le
             // calcul partirait silencieusement sur une offre inexistante ou différente.
             if (!editIddevisParam && !brouillonParam) {
               const matching = mappedOffres.find((o) => o.libelle === offreSelectionnee);
@@ -2033,8 +2033,8 @@ export const NewAutoQuotePage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listeOffresCategorie, offresList, offresCompagnie, categories, offreId, offreSelectionnee]);
 
-  const libelleOptionOffre = (o) => `${o.libelle}${o.horsCategorie ? ' — hors de cette catégorie' : ''}`
-    + `${o.parametree ? '' : ` — non paramétrée pour ${compagnie || 'cette compagnie'}`}`;
+  const libelleOptionOffre = (o) => `${o.libelle}${o.horsCategorie ? ' - hors de cette catégorie' : ''}`
+    + `${o.parametree ? '' : ` - non paramétrée pour ${compagnie || 'cette compagnie'}`}`;
 
   const choisirOffre = (id) => {
     const offre = offresProposees.find((o) => o.id === Number(id));
@@ -3705,7 +3705,7 @@ export const NewAutoQuotePage = () => {
                             {veh.importe && (
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                                 Importé (ligne {veh.importe.ligne})
-                                {veh.importe.primeNetteFichier != null && ` — PN du fichier : ${Number(veh.importe.primeNetteFichier).toLocaleString('fr-FR')} F`}
+                                {veh.importe.primeNetteFichier != null && ` - PN du fichier : ${Number(veh.importe.primeNetteFichier).toLocaleString('fr-FR')} F`}
                               </div>
                             )}
                             {garantiesPersonnalisees(veh) && (
@@ -4376,7 +4376,7 @@ export const NewAutoQuotePage = () => {
               )}
             </div>
 
-            {/* Tuile 5 : TOTAL PRIME NETTE — toutes les garanties de la liste, CEDEAO comprise
+            {/* Tuile 5 : TOTAL PRIME NETTE - toutes les garanties de la liste, CEDEAO comprise
                 (elle n'a plus de tuile à part : prime nette + taxe + FGA + accessoire = TTC) */}
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
@@ -4477,7 +4477,7 @@ export const NewAutoQuotePage = () => {
                 >
                   {clientsProposes.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.nomcomplet} — {c.codeclient}
+                      {c.nomcomplet} - {c.codeclient}
                     </option>
                   ))}
                 </select>

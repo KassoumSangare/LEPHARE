@@ -279,7 +279,7 @@ const pageBareme = (d) => {
   const groupes = sectionsSante(d);
   const santes = groupes.length <= 1
     ? sante(groupes[0]?.formules[0] || formuleSante(17) || {}, 'SANTE')
-    : groupes.map((g) => sante(g.formules[0], `SANTE — OPTION ${g.formules.map((f) => `${f.Option} : ${personnes(f)}`).join(' / ')}`)).join('');
+    : groupes.map((g) => sante(g.formules[0], `SANTE - OPTION ${g.formules.map((f) => `${f.Option} : ${personnes(f)}`).join(' / ')}`)).join('');
   return page(`
     <div class="titre-bareme">BAREME</div>
     <table class="bareme">
@@ -312,8 +312,8 @@ const pageAffilies = (d) => {
     return `${entete}<tr><td>${texte(a.lienparente || a.lien)}</td><td>${texte(a.nom)}</td><td>${texte(a.prenom)}</td><td>${date(a.datenaissance)}</td><td>${texte(a.numerocmu)}</td></tr>`;
   }).join('');
   return page(`
-    <div class="titre-liste">LISTE DES ASSURÉS — ${q.NumeroPolice ? 'POLICE' : 'DEVIS'} N° ${texte(q.NumeroPolice || q.NumeroDevis)}</div>
-    <p><b>Souscripteur :</b> ${texte(q.NomClient)} &nbsp;—&nbsp; <b>Option :</b> ${texte(d.option)}</p>
+    <div class="titre-liste">LISTE DES ASSURÉS - ${q.NumeroPolice ? 'POLICE' : 'DEVIS'} N° ${texte(q.NumeroPolice || q.NumeroDevis)}</div>
+    <p><b>Souscripteur :</b> ${texte(q.NomClient)} &nbsp;-&nbsp; <b>Option :</b> ${texte(d.option)}</p>
     <table class="liste">
       <tr><th>Statut</th><th>Nom</th><th>Prénoms</th><th>Date de naissance</th><th>Numéro CMU</th></tr>
       ${lignes || '<tr><td colspan="5">Aucun affilié enregistré pour ce devis.</td></tr>'}
@@ -372,9 +372,9 @@ const pageBordereau = (d) => {
         ${ajustementRecap ? `<tr><td>Prime nette avant ajustement</td><td class="m">${montant(Number(r.PrimeNette) - ajustementRecap)}</td></tr>
         <tr><td>${libelleAjustement(b.TauxAjustement)}</td><td class="m">${ajustementRecap < 0 ? '- ' : '+ '}${montant(Math.abs(ajustementRecap))}</td></tr>` : ''}
         ${b.Avenant ? `
-        <tr><td>PRIME NETTE ANNUELLE — nouvelle composition</td><td class="m">${montant(r.PrimeNette)}</td></tr>
+        <tr><td>PRIME NETTE ANNUELLE - nouvelle composition</td><td class="m">${montant(r.PrimeNette)}</td></tr>
         <tr><td>Prime annuelle avant modification</td><td class="m">${montant(b.Avenant.PrimeAnnuellePrecedente)}</td></tr>
-        <tr class="titre"><td colspan="2">AVENANT DU ${date(b.Avenant.DateEffet)} AU ${date(b.Avenant.DateExpiration)} — ${b.Avenant.Jours} j sur ${b.Avenant.JoursPeriode}</td></tr>
+        <tr class="titre"><td colspan="2">AVENANT DU ${date(b.Avenant.DateEffet)} AU ${date(b.Avenant.DateExpiration)} - ${b.Avenant.Jours} j sur ${b.Avenant.JoursPeriode}</td></tr>
         <tr><td>PRIME NETTE DE L'AVENANT</td><td class="m">${montant(b.Avenant.PrimeNette)}</td></tr>
         <tr><td>ACCESSOIRES</td><td class="m">${montant(b.Avenant.Accessoire)}</td></tr>
         <tr><td>TAXES</td><td class="m">${montant(b.Avenant.Taxe)}</td></tr>
@@ -493,7 +493,7 @@ const pageAyantsDroit = (d) => {
   // Part : colonne seulement si l'assuré en a précisé une (0 en base = non précisée)
   const avecParts = ayants.some((a) => Number(a.part) > 0);
   return page(`
-    <div class="titre-liste">LISTES DES AYANT DROITS — POLICE N° ${texte(d.quittance?.NumeroPolice)}</div>
+    <div class="titre-liste">LISTES DES AYANT DROITS - POLICE N° ${texte(d.quittance?.NumeroPolice)}</div>
     <table class="liste">
       <tr><th>Qualité</th><th>Nom</th><th>Prénoms</th>${avecParts ? '<th>Part</th>' : ''}</tr>
       ${ayants.map((a) => `<tr><td>${texte(a.libelle_qualite)}</td><td>${texte(a.nom_ayant_droit)}</td><td>${texte(a.prenoms_ayant_droit)}</td>${avecParts ? `<td>${Number(a.part) > 0 ? `${a.part} %` : ''}</td>` : ''}</tr>`).join('')

@@ -868,8 +868,8 @@ export const NewIaQuotePage = () => {
     }
   };
 
-  // Création MINENE (comme URANUS) : le serveur reprend le contrat Santé connexe — client du
-  // contrat = souscripteur, adhérents = assurés, affiliés = ayants droit — aux capitaux fixes
+  // Création MINENE (comme URANUS) : le serveur reprend le contrat Santé connexe - client du
+  // contrat = souscripteur, adhérents = assurés, affiliés = ayants droit - aux capitaux fixes
   const handleSaveMinene = async () => {
     if (!numeroPoliceConnexe.trim()) { toastError('Saisissez le numéro de police Santé connexe.'); setStep(2); return; }
     if (!dateExpiration) { toastError('Saisissez la date d\'expiration.'); setStep(1); return; }
@@ -1043,7 +1043,7 @@ export const NewIaQuotePage = () => {
             <p style={{ color: 'var(--accent-purple)', fontSize: '0.875rem', fontWeight: 600 }}>Chargement du devis à modifier…</p>
           ) : (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-              Garanties Décès accidentel, Infirmité permanente et Frais de traitement — {flotte ? 'contrat groupe (plusieurs assurés)' : 'contrat individuel (un assuré)'}.
+              Garanties Décès accidentel, Infirmité permanente et Frais de traitement - {flotte ? 'contrat groupe (plusieurs assurés)' : 'contrat individuel (un assuré)'}.
             </p>
           )}
           {avertissementReprise && (
@@ -1363,7 +1363,7 @@ export const NewIaQuotePage = () => {
                 {/* Liste de la base seule : elle contient déjà « AUTRE » (id 0, classe 01) */}
                 <select className="form-control" value={assureEnCours.IdProfession} onChange={(e) => setAssureEnCours((p) => ({ ...p, IdProfession: Number(e.target.value) }))}>
                   {professionsTriees.map((p) => (
-                    <option key={p.id} value={p.id}>{p.libelle_profession} — classe {p.code_classe_assure}</option>
+                    <option key={p.id} value={p.id}>{p.libelle_profession} - classe {p.code_classe_assure}</option>
                   ))}
                 </select>
               </div>
@@ -1437,7 +1437,7 @@ export const NewIaQuotePage = () => {
             {/* Ayants droit de l'assuré */}
             <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
               <h4 style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 700, margin: '0 0 0.75rem' }}>
-                Ayants droit (bénéficiaires en cas de décès){totalParts > 0 ? ` — total des parts ${totalParts} %` : ''}
+                Ayants droit (bénéficiaires en cas de décès){totalParts > 0 ? ` - total des parts ${totalParts} %` : ''}
               </h4>
               {assureEnCours.AyantsDroit.length > 0 && (
                 <table className="table" style={{ width: '100%', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
@@ -1456,7 +1456,7 @@ export const NewIaQuotePage = () => {
                         <td style={{ padding: '0.4rem' }}>{libelleQualite(d.IdQualiteAyantDroit)}</td>
                         <td style={{ padding: '0.4rem' }}>{d.Nom}</td>
                         <td style={{ padding: '0.4rem' }}>{d.Prenoms}</td>
-                        <td style={{ padding: '0.4rem', textAlign: 'right' }}>{Number(d.Part) > 0 ? `${d.Part} %` : '—'}</td>
+                        <td style={{ padding: '0.4rem', textAlign: 'right' }}>{Number(d.Part) > 0 ? `${d.Part} %` : '-'}</td>
                         <td style={{ padding: '0.4rem', textAlign: 'right' }}>
                           <button type="button" className="btn btn-secondary" title="Retirer" style={{ padding: '0.25rem 0.45rem', color: '#ef4444' }}
                             onClick={() => setAssureEnCours((p) => ({ ...p, AyantsDroit: p.AyantsDroit.filter((_, j) => j !== i) }))}
@@ -1485,7 +1485,7 @@ export const NewIaQuotePage = () => {
                   <input type="text" className="form-control" value={ayantEnCours.Prenoms} onChange={(e) => setAyantEnCours((p) => ({ ...p, Prenoms: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ margin: 0 }}>
-                  <label className="form-label">Part (%) — facultative</label>
+                  <label className="form-label">Part (%) - facultative</label>
                   <input type="number" min="0" max="100" className="form-control" value={ayantEnCours.Part} onChange={(e) => setAyantEnCours((p) => ({ ...p, Part: e.target.value }))} />
                 </div>
                 <button type="button" className="btn btn-secondary" onClick={ajouterAyant} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -1544,7 +1544,7 @@ export const NewIaQuotePage = () => {
                       <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(a.FraisTraitement)}</td>
                       <td style={{ padding: '0.6rem', textAlign: 'center' }}>{a.AyantsDroit.length}</td>
                       <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--accent-purple)', fontWeight: 700 }}>
-                        {a.prime ? `${fcfa(a.prime.primeNette)} FCFA` : '—'}
+                        {a.prime ? `${fcfa(a.prime.primeNette)} FCFA` : '-'}
                       </td>
                       <td style={{ padding: '0.6rem', textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
@@ -1628,7 +1628,7 @@ export const NewIaQuotePage = () => {
                   <td style={{ padding: '0.6rem', fontWeight: 600 }}>
                     {a.Nom}
                     <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                      {' '}— {a.AyantsDroit ? `${a.AyantsDroit} ayant${a.AyantsDroit > 1 ? 's' : ''} droit` : 'sans ayant droit'}
+                      {' '}- {a.AyantsDroit ? `${a.AyantsDroit} ayant${a.AyantsDroit > 1 ? 's' : ''} droit` : 'sans ayant droit'}
                     </span>
                   </td>
                   <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fcfa(apercuMinene.Unitaire.PrimeNette)}</td>
@@ -1658,8 +1658,8 @@ export const NewIaQuotePage = () => {
                         </button>
                         {a.Nom} {a.Prenoms}
                       </td>
-                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.primeNette) : '—'}</td>
-                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.taxe) : '—'}</td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.primeNette) : '-'}</td>
+                      <td style={{ padding: '0.6rem', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{a.prime ? fcfa(a.prime.taxe) : '-'}</td>
                       <td style={{ padding: '0.6rem', color: 'var(--text-muted)' }}>
                         {!idDevisEdite ? 'Nouveau' : !a.IdDevisDetail ? 'Ajouté' : ligneAChanger(a) ? 'Recalculé' : 'Inchangé (prime enregistrée)'}
                       </td>

@@ -306,18 +306,18 @@ export const configRefApi = {
    3b. SECTEURS D'ACTIVITÉ ÉCONOMIQUE - API CRUD (configuration_api)
    ========================================================================= */
 export const secteurActiviteApi = {
-  // GET /api/secteuractivite/ — Liste complète avec client_count
+  // GET /api/secteuractivite/ - Liste complète avec client_count
   getAll: async () => extractData(await apiClient.get('/secteuractivite/')),
-  // POST /api/secteuractivite/ — Créer un nouveau secteur
+  // POST /api/secteuractivite/ - Créer un nouveau secteur
   create: (data) => apiClient.post('/secteuractivite/', data),
-  // PUT /api/secteuractivite/{id}/ — Modifier un secteur
+  // PUT /api/secteuractivite/{id}/ - Modifier un secteur
   update: (id, data) => apiClient.put(`/secteuractivite/${id}/`, data),
-  // DELETE /api/secteuractivite/{id}/ — Supprimer (bloqué si clients liés)
+  // DELETE /api/secteuractivite/{id}/ - Supprimer (bloqué si clients liés)
   delete: (id) => apiClient.delete(`/secteuractivite/${id}/`),
 };
 
 /* =========================================================================
-   3c. TYPE DE SOUSCRIPTEUR (stdtypesouscripteur) — CRUD
+   3c. TYPE DE SOUSCRIPTEUR (stdtypesouscripteur) - CRUD
    ========================================================================= */
 export const typeSouscripteurApi = {
   // GET /api/typesouscripteur/
@@ -331,7 +331,7 @@ export const typeSouscripteurApi = {
 };
 
 /* =========================================================================
-   3d. TYPE D'ASSURÉ (stdtypeassure) — CRUD
+   3d. TYPE D'ASSURÉ (stdtypeassure) - CRUD
    ========================================================================= */
 export const typeAssureApi = {
   // GET /api/typeassure/
@@ -345,7 +345,7 @@ export const typeAssureApi = {
 };
 
 /* =========================================================================
-   3e. PROFESSION / MÉTIER (stdprofession) — CRUD
+   3e. PROFESSION / MÉTIER (stdprofession) - CRUD
    ========================================================================= */
 export const professionApi = {
   // GET /api/profession/
@@ -799,7 +799,7 @@ export const quoteApi = {
     return normalizeDevis(res.data);
   },
   // GET /api/devisdetail/:iddevis (détail véhicule + devis imbriqué, pour préremplir
-  // le formulaire d'édition Auto — cf. bouton « Modifier » du Registre des Devis)
+  // le formulaire d'édition Auto - cf. bouton « Modifier » du Registre des Devis)
   getDevisDetailAuto: async (iddevis) => (await quoteApi.getDevisDetailsAuto(iddevis))[0] || null,
   // Tous les véhicules du devis (une ligne stddevisdetail par véhicule d'une flotte)
   getDevisDetailsAuto: async (iddevis) => {
@@ -838,7 +838,7 @@ export const quoteApi = {
   // POST /api/correctiondevis/ (Enregistrement des primes & garanties imposées / modifiées)
   correctQuote: (payload) => apiClient.post('/correctiondevis/', payload),
   // POST /api/majrecapprimes/ (Mise à jour manuelle du récapitulatif des primes d'un devis
-  // déjà enregistré, via sp_maj_manuelle_primes — utilisé par « Modifier » sur le Registre des Devis
+  // déjà enregistré, via sp_maj_manuelle_primes - utilisé par « Modifier » sur le Registre des Devis
   // et par « Imposer les primes du récapitulatif » de la fiche d'un devis flotte)
   updateQuotePrimes: (payload) => apiClient.post('/majrecapprimes/', payload),
   // POST /api/finalisationdevisauto (Finalisation devis flotte)
@@ -1215,11 +1215,11 @@ export const mrhApi = {
   getDevis: async (id) => (await apiClient.get(`/mrh/devis/${id}/`)).data,
   // PATCH /api/mrh/devis/:id/
   updateDevis: async (id, data) => (await apiClient.patch(`/mrh/devis/${id}/`, data)).data,
-  // PUT /api/mrh/devis/:id/ — « Modifier » : en-tête + toutes les maisons recalculées d'un bloc
+  // PUT /api/mrh/devis/:id/ - « Modifier » : en-tête + toutes les maisons recalculées d'un bloc
   modifierDevis: async (id, data) => (await apiClient.put(`/mrh/devis/${id}/`, data)).data,
-  // GET /api/mrh/devis/:id/maisons/ — maisons enregistrées (valeurs, options, garanties choisies)
+  // GET /api/mrh/devis/:id/maisons/ - maisons enregistrées (valeurs, options, garanties choisies)
   getMaisons: async (idDevis) => (await apiClient.get(`/mrh/devis/${idDevis}/maisons/`)).data,
-  // POST /api/mrh/devis/accessoire/ — accessoire du barème pour une prime nette totale
+  // POST /api/mrh/devis/accessoire/ - accessoire du barème pour une prime nette totale
   getAccessoire: async (data) => (await apiClient.post('/mrh/devis/accessoire/', data)).data,
   // DELETE /api/mrh/devis/:id/
   supprimerDevis: async (id) => (await apiClient.delete(`/mrh/devis/${id}/`)).data,
@@ -1818,7 +1818,7 @@ export const financeApi = {
   emettreBordereaux: async (payload) => (await apiClient.post('/finance/bordereaux/', payload)).data,
   dechargeBordereau: async (idReversement, dateDecharge) => (await apiClient.post(`/finance/bordereaux/${idReversement}/decharge/`, { DateDecharge: dateDecharge })).data,
   annulerBordereau: async (idReversement, motif) => (await apiClient.post(`/finance/bordereaux/${idReversement}/annuler/`, { Motif: motif })).data,
-  // Bordereau récapitulatif de reversement — réclamation de commissions, en Excel (présentation COMMI-MOIS)
+  // Bordereau récapitulatif de reversement - réclamation de commissions, en Excel (présentation COMMI-MOIS)
   telechargerReclamationExcel: async (idReclamation, nomFichier) => {
     const res = await apiClient.get(`/finance/commissions/reclamations/${idReclamation}/excel/`, { responseType: 'blob', timeout: 120000 });
     const url = URL.createObjectURL(res.data);
@@ -1960,11 +1960,11 @@ export const settingsApi = {
   updateSousGarantie: (id, data) => apiClient.put(`/sousgarantie/${id}/`, data),
   // DELETE /api/sousgarantie/{id}/
   deleteSousGarantie: (id) => apiClient.delete(`/sousgarantie/${id}/`),
-  // GET /api/categorie/ (catégories CIMA en BDD) — branche optionnelle (code stdbranche, ex: '200' = Automobile)
+  // GET /api/categorie/ (catégories CIMA en BDD) - branche optionnelle (code stdbranche, ex: '200' = Automobile)
   getCategories: async (branche) => extractData(await apiClient.get('/categorie/', { params: branche ? { branche } : undefined })),
   // GET /api/tarif/ (26 grilles tarifaires en BDD)
   getTarifs: async () => extractData(await apiClient.get('/tarif/')),
-  // GET /api/tarifdetail/?IdTarif={id} — montants réels (taux, prime forfaitaire,
+  // GET /api/tarifdetail/?IdTarif={id} - montants réels (taux, prime forfaitaire,
   // capital min/max) par grille tarifaire + sous-garantie (stdtarifdetail)
   getTarifDetailsParTarif: async (idTarif) =>
     extractData(await apiClient.get('/tarifdetail/', { params: { IdTarif: idTarif, page_size: 1000 } })),
@@ -1998,7 +1998,7 @@ export const settingsApi = {
   updateRepartitionPrimeSante: (id, data) => apiClient.put(`/repartitionprimesante/${id}/`, data),
   // DELETE /api/repartitionprimesante/{id}/
   deleteRepartitionPrimeSante: (id) => apiClient.delete(`/repartitionprimesante/${id}/`),
-  // POST /api/calculrepartitionprimesante/ — { prime_ht, avec_apporteur } → ventilation NSIA/OREOLE/VITALIS/ADEC
+  // POST /api/calculrepartitionprimesante/ - { prime_ht, avec_apporteur } → ventilation NSIA/OREOLE/VITALIS/ADEC
   calculerRepartitionPrimeSante: async (primeHt, avecApporteur = false) => {
     const res = await apiClient.post('/calculrepartitionprimesante/', {
       prime_ht: primeHt,
@@ -2006,7 +2006,7 @@ export const settingsApi = {
     });
     return res?.data;
   },
-  // GET /api/offre/ — idCompagnie optionnel : ne garde que les offres ayant au
+  // GET /api/offre/ - idCompagnie optionnel : ne garde que les offres ayant au
   // moins une garantie liée à cette compagnie (stdoffregarantie)
   getOffres: async (idCompagnie) =>
     extractData(await apiClient.get('/offre/', { params: idCompagnie ? { idcompagnie: idCompagnie } : undefined })),

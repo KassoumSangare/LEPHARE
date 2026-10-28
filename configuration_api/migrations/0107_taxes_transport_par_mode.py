@@ -22,7 +22,7 @@ def creer(apps, schema_editor):
             Cle=f"transport.taux_taxe_{mode}",
             defaults={
                 "Groupe": "transport_tarif",
-                "Libelle": f"Taxe Transport — {libelle}",
+                "Libelle": f"Taxe Transport - {libelle}",
                 "Aide": f"Taux de taxe appliqué à la prime nette et aux accessoires pour le transport {libelle.lower()}.",
                 "Type": "pourcentage",
                 "Valeur": valeur,

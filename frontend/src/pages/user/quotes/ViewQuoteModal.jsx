@@ -176,7 +176,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
       arrondiNsia: Number(raw.compagnie?.IdCompagnie ?? raw.compagnie) === 1,
     }) ? 0 : Number(raw.cedeao || 0))
     : Number(quote.prime_nette || 0) + Number(quote.cedeao || 0);
-  const telephone = details.telephoneClient || raw.numerotelephoneassure || raw.telephoneclient || '—';
+  const telephone = details.telephoneClient || raw.numerotelephoneassure || raw.telephoneclient || '-';
   const numeroActe = raw.numeroavenant || details.numeroAvenant || '0000001';
   // Santé MINENE (offres commerciales 87, 102, 153 ; catégorie 123) : barème et CP du modèle OREOLE
   const detailSante = quote.branche === 'Santé' ? detailBranche?.detail : null;
@@ -343,8 +343,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
             Références
           </div>
           <div className="fiche-devis-grille">
-            <Champ libelle="Id. Devis">{quote.iddevis || '—'}</Champ>
-            <Champ libelle="N° Devis">{quote.numerodevis || '—'}</Champ>
+            <Champ libelle="Id. Devis">{quote.iddevis || '-'}</Champ>
+            <Champ libelle="N° Devis">{quote.numerodevis || '-'}</Champ>
             <Champ libelle="Effet">{formatDate(quote.date_effet)}</Champ>
             <Champ libelle="N° Acte">{numeroActe}</Champ>
             <Champ libelle="Effet Acte">{formatDate(quote.date_effet)}</Champ>
@@ -451,7 +451,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                     return (
                       <div key={m.maison_id || idx} style={{ padding: '0.65rem 0.75rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', background: 'var(--bg-surface-elevated)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <strong>Maison {idx + 1} — {m.usage_libelle || m.code_usage || 'usage non renseigné'}{m.adresse ? ` — ${m.adresse}` : ''}</strong>
+                          <strong>Maison {idx + 1} - {m.usage_libelle || m.code_usage || 'usage non renseigné'}{m.adresse ? ` - ${m.adresse}` : ''}</strong>
                           <span style={{ fontWeight: 700 }}>{fcfa(m.prime_nette)}{m.prime_imposee ? ' (imposée)' : ''}</span>
                         </div>
                         {capitaux.length > 0 && (
@@ -487,10 +487,10 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
-                    <div><strong>Offre commerciale :</strong> {detailBranche.detail?.libelle_tarif || detailBranche.filiales?.[0]?.libelle_offre || '—'}</div>
-                    <div><strong>Formule de couverture :</strong> {detailBranche.detail?.libelle_offre || '—'}</div>
-                    <div><strong>Type de contrat :</strong> {detailBranche.detail?.libelle_type_contrat || '—'}</div>
-                    <div><strong>Gestionnaire :</strong> {detailBranche.detail?.gestionnairesante || '—'}</div>
+                    <div><strong>Offre commerciale :</strong> {detailBranche.detail?.libelle_tarif || detailBranche.filiales?.[0]?.libelle_offre || '-'}</div>
+                    <div><strong>Formule de couverture :</strong> {detailBranche.detail?.libelle_offre || '-'}</div>
+                    <div><strong>Type de contrat :</strong> {detailBranche.detail?.libelle_type_contrat || '-'}</div>
+                    <div><strong>Gestionnaire :</strong> {detailBranche.detail?.gestionnairesante || '-'}</div>
                     {/* Chaque adhérent est aussi un affilié de lien A : affiliés = conjoints et enfants */}
                     <div>
                       <strong>Adhérents :</strong> {detailBranche.adherents?.length || 0} • <strong>Affiliés :</strong>{' '}
@@ -550,13 +550,13 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                         <tr key={a.id_devis_detail}>
                           <td>{a.nom} {a.prenoms}</td>
                           <td>{formatDate(a.date_naissance)}</td>
-                          <td>{a.profession || a.libelle_profession || '—'}</td>
+                          <td>{a.profession || a.libelle_profession || '-'}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_deces || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_infirmite || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right' }}>{Number(a.capital_frais_traitement || 0).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right' }}>{Math.round(Number(a.prime_nette || 0)).toLocaleString('fr-FR')}</td>
                           <td style={{ textAlign: 'right', fontWeight: 700, color: '#34d399' }}>
-                            {a.prime_ttc != null ? Math.round(Number(a.prime_ttc)).toLocaleString('fr-FR') : '—'}
+                            {a.prime_ttc != null ? Math.round(Number(a.prime_ttc)).toLocaleString('fr-FR') : '-'}
                           </td>
                         </tr>
                       ))}
@@ -571,7 +571,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                           <td style={{ textAlign: 'right', color: '#34d399' }}>
                             {detailBranche.assures.some((a) => a.prime_ttc != null)
                               ? Math.round(detailBranche.assures.reduce((s, a) => s + Number(a.prime_ttc || 0), 0)).toLocaleString('fr-FR')
-                              : '—'}
+                              : '-'}
                           </td>
                         </tr>
                       </tfoot>
@@ -595,10 +595,10 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
-                    <div><strong>Catégorie :</strong> {detailBranche.Detail?.LibelleTarif || '—'}{detailBranche.Detail?.CodeCategorie ? ` (${detailBranche.Detail.CodeCategorie})` : ''}</div>
-                    <div><strong>Compagnie :</strong> {detailBranche.Compagnie || '—'}</div>
+                    <div><strong>Catégorie :</strong> {detailBranche.Detail?.LibelleTarif || '-'}{detailBranche.Detail?.CodeCategorie ? ` (${detailBranche.Detail.CodeCategorie})` : ''}</div>
+                    <div><strong>Compagnie :</strong> {detailBranche.Compagnie || '-'}</div>
                     <div><strong>Période :</strong> du {formatDate(detailBranche.DateEffet)} au {formatDate(detailBranche.DateExpiration)}</div>
-                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '—'}</div>
+                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '-'}</div>
                     {Number(detailBranche.Detail?.TauxReduction) > 0 && <div><strong>Réduction :</strong> {detailBranche.Detail.TauxReduction} %</div>}
                     {(detailBranche.Risque || []).map((r) => (
                       <div key={r.libelle} style={{ gridColumn: String(r.valeur).length > 60 ? '1 / -1' : undefined }}><strong>{r.libelle} :</strong> {r.valeur}</div>
@@ -621,8 +621,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                           {detailBranche.Garanties.map((g) => (
                             <tr key={g.IdSousGarantie}>
                               <td>{g.Libelle}</td>
-                              <td style={{ textAlign: 'right', paddingRight: '1rem' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '—'}</td>
-                              <td style={{ paddingLeft: '1rem' }}>{g.TexteFranchise && g.TexteFranchise !== 'NEANT' ? g.TexteFranchise : '—'}</td>
+                              <td style={{ textAlign: 'right', paddingRight: '1rem' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '-'}</td>
+                              <td style={{ paddingLeft: '1rem' }}>{g.TexteFranchise && g.TexteFranchise !== 'NEANT' ? g.TexteFranchise : '-'}</td>
                               <td style={{ textAlign: 'right' }}>{Math.round(g.PrimeAnnuelle || 0).toLocaleString('fr-FR')}</td>
                               <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(g.PrimeNette || 0).toLocaleString('fr-FR')}</td>
                               <td style={{ textAlign: 'right' }}>{Math.round(g.Taxe || 0).toLocaleString('fr-FR')}</td>
@@ -650,21 +650,21 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.5rem 1rem' }}>
-                    <div><strong>Formule :</strong> {detailBranche.Detail?.LibelleTarif || '—'}</div>
-                    <div><strong>Offre :</strong> {detailBranche.Detail?.IdOffre ? detailBranche.Detail.LibelleOffre : '—'}</div>
-                    <div><strong>Destination :</strong> {detailBranche.Complement?.LibellePaysDestination || '—'}{detailBranche.LibelleZone ? ` (${detailBranche.LibelleZone})` : ''}</div>
-                    <div><strong>Schengen :</strong> {detailBranche.Complement ? (detailBranche.Complement.Schengen ? 'Oui' : 'Non') : '—'}</div>
+                    <div><strong>Formule :</strong> {detailBranche.Detail?.LibelleTarif || '-'}</div>
+                    <div><strong>Offre :</strong> {detailBranche.Detail?.IdOffre ? detailBranche.Detail.LibelleOffre : '-'}</div>
+                    <div><strong>Destination :</strong> {detailBranche.Complement?.LibellePaysDestination || '-'}{detailBranche.LibelleZone ? ` (${detailBranche.LibelleZone})` : ''}</div>
+                    <div><strong>Schengen :</strong> {detailBranche.Complement ? (detailBranche.Complement.Schengen ? 'Oui' : 'Non') : '-'}</div>
                     <div>
                       <strong>Période :</strong> du {formatDate(detailBranche.DateEffet)} au {formatDate(detailBranche.DateExpiration)}
                       {detailBranche.DateEffet && detailBranche.DateExpiration
                         ? ` (${Math.round((new Date(detailBranche.DateExpiration) - new Date(detailBranche.DateEffet)) / 86400000)} jours)` : ''}
                     </div>
                     <div><strong>Voyageur né(e) le :</strong> {formatDate(detailBranche.Detail?.DateNaissance)}</div>
-                    <div><strong>Nationalité :</strong> {detailBranche.Complement?.Nationalite || '—'}</div>
-                    <div><strong>Passeport :</strong> {detailBranche.Complement?.NumeroPasseport || '—'}</div>
-                    <div><strong>N° attestation :</strong> {detailBranche.Complement?.NumeroAttestation || '—'}</div>
-                    <div><strong>Référence contrat :</strong> {detailBranche.Complement?.ReferenceContrat || '—'}</div>
-                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '—'}</div>
+                    <div><strong>Nationalité :</strong> {detailBranche.Complement?.Nationalite || '-'}</div>
+                    <div><strong>Passeport :</strong> {detailBranche.Complement?.NumeroPasseport || '-'}</div>
+                    <div><strong>N° attestation :</strong> {detailBranche.Complement?.NumeroAttestation || '-'}</div>
+                    <div><strong>Référence contrat :</strong> {detailBranche.Complement?.ReferenceContrat || '-'}</div>
+                    <div><strong>N° police compagnie :</strong> {detailBranche.NumeroPoliceCompagnie || '-'}</div>
                     {Number(detailBranche.Detail?.TauxReduction) > 0 && <div><strong>Réduction :</strong> {detailBranche.Detail.TauxReduction} %</div>}
                   </div>
                   {(detailBranche.Garanties || []).length > 0 ? (
@@ -683,8 +683,8 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                           {detailBranche.Garanties.map((g) => (
                             <tr key={g.IdSousGarantie}>
                               <td>{g.LibelleSousGarantie}</td>
-                              <td style={{ textAlign: 'right' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '—'}</td>
-                              <td style={{ textAlign: 'right' }}>{g.Franchise ? Math.round(g.Franchise).toLocaleString('fr-FR') : '—'}</td>
+                              <td style={{ textAlign: 'right' }}>{g.Capital ? Math.round(g.Capital).toLocaleString('fr-FR') : '-'}</td>
+                              <td style={{ textAlign: 'right' }}>{g.Franchise ? Math.round(g.Franchise).toLocaleString('fr-FR') : '-'}</td>
                               <td style={{ textAlign: 'right' }}>{Math.round(g.PrimeAnnuelle || 0).toLocaleString('fr-FR')}</td>
                               <td style={{ textAlign: 'right', fontWeight: 700 }}>{Math.round(g.PrimeNette || 0).toLocaleString('fr-FR')}</td>
                             </tr>
@@ -810,7 +810,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => printDocumentDevisDommages(idDevisBase, d.Id)}
-                title={`${libelleDocumentDommages(d.Titre)} au modèle de la compagnie, avec les données du devis — enregistrable en PDF`}
+                title={`${libelleDocumentDommages(d.Titre)} au modèle de la compagnie, avec les données du devis - enregistrable en PDF`}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
               >
                 <Printer size={15} />
@@ -836,10 +836,10 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               className="btn btn-secondary"
               onClick={() => printConditionsParticulieres(quote)}
               title={estDevisDommages(quote)
-                ? "Cotation d'assurance au format de la fiche NSIA (intermédiaire, prospect, cotation, primes, clauses) — enregistrable en PDF"
+                ? "Cotation d'assurance au format de la fiche NSIA (intermédiaire, prospect, cotation, primes, clauses) - enregistrable en PDF"
                 : estDevisVoyage(quote)
-                ? "Attestation d'assurance et d'assistance voyage (demande de visa), au modèle de la compagnie — enregistrable en PDF"
-                : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) — enregistrable en PDF'}
+                ? "Attestation d'assurance et d'assistance voyage (demande de visa), au modèle de la compagnie - enregistrable en PDF"
+                : 'Conditions Particulières (références client / quittance, garanties, récapitulatif) - enregistrable en PDF'}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
               {estDevisVoyage(quote) ? <Printer size={15} /> : <FileText size={15} />}
@@ -851,7 +851,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => printAnnexeIa(quote)}
-                title="Annexe : liste des assurés du devis avec leurs capitaux et ayants droit — enregistrable en PDF"
+                title="Annexe : liste des assurés du devis avec leurs capitaux et ayants droit - enregistrable en PDF"
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
               >
                 <Users size={15} />
@@ -866,7 +866,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                     type="button"
                     className="btn btn-secondary"
                     onClick={() => imprimerDocumentSante('bareme', { iddevis: idDevisBase })}
-                    title="Barème MINENE (capitaux IA, garanties RC, plafonds Santé, carences, surprimes) — enregistrable en PDF"
+                    title="Barème MINENE (capitaux IA, garanties RC, plafonds Santé, carences, surprimes) - enregistrable en PDF"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                   >
                     <FileText size={15} />
@@ -877,7 +877,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => imprimerDocumentSante('affilies', { iddevis: idDevisBase })}
-                  title="Liste des assurés (adhérents, conjoints, enfants) du devis — enregistrable en PDF"
+                  title="Liste des assurés (adhérents, conjoints, enfants) du devis - enregistrable en PDF"
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                 >
                   <Users size={15} />
@@ -887,7 +887,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => imprimerDocumentSante('bordereau', { iddevis: idDevisBase })}
-                  title="Bordereau récapitulatif des primes par assuré : prime de base, surprimes, réduction ou majoration — enregistrable en PDF"
+                  title="Bordereau récapitulatif des primes par assuré : prime de base, surprimes, réduction ou majoration - enregistrable en PDF"
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                 >
                   <FileText size={15} />
@@ -901,7 +901,7 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => printAnnexeFlotte(quote)}
-                title="Annexe : liste des véhicules de la flotte avec leurs primes par garantie et le décompte de prime — enregistrable en PDF"
+                title="Annexe : liste des véhicules de la flotte avec leurs primes par garantie et le décompte de prime - enregistrable en PDF"
                 style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
               >
                 <Car size={15} />
