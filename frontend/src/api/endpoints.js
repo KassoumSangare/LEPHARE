@@ -1637,7 +1637,7 @@ export const contractApi = {
     return list.map(normalizeContrat);
   },
   // GET /api/contrat/ paginé pour le Portefeuille des Contrats : une page de contrats et le total.
-  // Paramètres serveur : page, page_size, idproduit, statut, recherche, effet_du/au, echeance_du/au, ordre
+  // Paramètres serveur : page, page_size, idproduit, statut, recherche, effet_du/au, echeance_du/au, emission_du/au, ordre
   getPortefeuille: async (params = {}) => {
     const res = await apiClient.get('/contrat/', { params });
     return { contrats: extractData(res).map(normalizeContrat), total: Number(res?.data?.count ?? 0) };

@@ -47,6 +47,7 @@ const STATUTS = {
   annule: { libelle: 'Annulé', badge: 'rose', aide: "Annulé par un avenant d'annulation" },
 };
 const ONGLETS_STATUT = ['tous', 'en_cours', 'a_renouveler', 'echu', 'renouvele', 'resilie', 'annule'];
+const LIBELLES_PERIODE = { effet: 'Effet', echeance: 'Échéance', emission: 'Émission' };
 // Onglets rarement remplis : affichés seulement s'ils comptent des contrats (ou sont sélectionnés)
 const ONGLETS_DISCRETS = ['resilie', 'annule'];
 // Statuts pour lesquels le renouvellement de la police a un sens
@@ -127,7 +128,7 @@ export const ContractListPage = () => {
   const branche = BRANCHES.some((b) => b.cle === parametres.get('branche')) ? parametres.get('branche') : 'ALL';
   const statut = ONGLETS_STATUT.includes(parametres.get('statut')) ? parametres.get('statut') : 'tous';
   const recherche = parametres.get('q') || '';
-  const champPeriode = parametres.get('periode') === 'echeance' ? 'echeance' : 'effet';
+  const champPeriode = ['echeance', 'emission'].includes(parametres.get('periode')) ? parametres.get('periode') : 'effet';
   const du = parametres.get('du') || '';
   const au = parametres.get('au') || '';
   const ordre = parametres.get('ordre') || '';
@@ -250,7 +251,7 @@ export const ContractListPage = () => {
     statut !== 'tous' && { cle: 'statut', libelle: `Statut : ${STATUTS[statut].libelle}`, retirer: () => majFiltres({ statut: '' }) },
     (du || au) && {
       cle: 'periode',
-      libelle: `${champPeriode === 'echeance' ? 'Échéance' : 'Effet'} ${du ? `du ${dateFr(du)}` : ''} ${au ? `au ${dateFr(au)}` : ''}`.replace(/\s+/g, ' ').trim(),
+      libelle: `${LIBELLES_PERIODE[champPeriode]} ${du ? `du ${dateFr(du)}` : ''} ${au ? `au ${dateFr(au)}` : ''}`.replace(/\s+/g, ' ').trim(),
       retirer: () => majFiltres({ du: '', au: '', periode: '' }),
     },
   ].filter(Boolean);
@@ -372,6 +373,7 @@ export const ContractListPage = () => {
             <select className="form-control" value={champPeriode} onChange={(e) => majFiltres({ periode: e.target.value })} aria-label="Date filtrée">
               <option value="effet">Date d'effet</option>
               <option value="echeance">Date d'échéance</option>
+              <option value="emission">Date d'émission</option>
             </select>
             <input type="date" className="form-control" value={du} max={au || undefined} onChange={(e) => majFiltres({ du: e.target.value })} aria-label="Du" title="Du" />
             <ArrowRight size={14} aria-hidden="true" className="portefeuille-fleche" />

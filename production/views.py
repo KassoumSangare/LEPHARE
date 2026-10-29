@@ -1157,21 +1157,27 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                     | Q(idproduit__libelle_produit__icontains=mot)
                     | Q(idcompagnie__RaisonSociale__icontains=mot)
                 )
-        else:
-            # Sans recherche : contrats émis durant les 3 dernières années (même fenêtre que le
-            # Registre des Devis) ; un contrat plus ancien reste consultable par son identifiant
-            queryset = queryset.filter(dateemission__gte=timezone.now() - timedelta(days=365 * 3))
+        filtre_emission = False
         for champ, parametre, operateur in (
             ("dateeffet", "effet_du", "gte"),
             ("dateeffet", "effet_au", "lte"),
             ("dateexpiration", "echeance_du", "gte"),
             ("dateexpiration", "echeance_au", "lte"),
+            ("dateemission", "emission_du", "gte"),
+            ("dateemission", "emission_au", "lte"),
         ):
             try:
                 jour = date.fromisoformat(str(params.get(parametre) or "")[:10])
             except ValueError:
                 continue
+            if champ == "dateemission":
+                filtre_emission = True
             queryset = queryset.filter(**{f"{champ}__date__{operateur}": jour})
+        if not recherche and not filtre_emission:
+            # Sans recherche ni période d'émission explicite : contrats émis durant les 3 dernières
+            # années (même fenêtre que le Registre des Devis). Un filtre d'émission peut consulter
+            # tout l'historique, y compris les contrats plus anciens.
+            queryset = queryset.filter(dateemission__gte=timezone.now() - timedelta(days=365 * 3))
         return queryset
 
     def _statut_portefeuille(self, queryset):
