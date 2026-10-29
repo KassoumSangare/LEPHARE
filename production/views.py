@@ -370,6 +370,70 @@ TABLES_CONDITIONS_PARTICULIERES = {
            "energie": "se.codeenergie = dd.codecarburant"},
 }
 
+ID_PRODUIT_MRH = 4
+
+
+def sites_conditions_particulieres_mrh(pk, contrat=False):
+    """
+    Maisons (sites) d'un devis ou d'un contrat MRH pour les Conditions Particulières « Liste des
+    garanties MRH multisites » (modèle NSIA) : usage, adresse, valeurs déclarées et prime de
+    chaque site, puis ses garanties acquises avec le capital, la franchise et les primes
+    enregistrés (saisis à la répartition des garanties). Rien n'est déduit des valeurs déclarées.
+    """
+    t = TABLES_CONDITIONS_PARTICULIERES[contrat]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT dd.{t['detail_pk']}, u.libelle, dd.adressecnd, dd.valeurneuve,
+                   dd.valeurvenale, dd.valeuraccessoire, dd.primenette
+            FROM {t['detail']} dd
+            LEFT JOIN stdmrh_usage_habitation u ON u.code = dd.modelevehicule
+            WHERE dd.{t['cle']} = %s
+            ORDER BY dd.{t['detail_pk']}
+            """,
+            [pk],
+        )
+        sites = [
+            {
+                "id": iddetail,
+                "usage": usage,
+                "adresse": (adresse or "").strip() or None,
+                "valeur_batiment": int(batiment or 0),
+                "valeur_contenu": int(contenu or 0),
+                "capital_rvt": int(rvt or 0),
+                "prime_nette": int(prime or 0),
+                "garanties": [],
+            }
+            for iddetail, usage, adresse, batiment, contenu, rvt, prime in cursor.fetchall()
+        ]
+        cursor.execute(
+            f"""
+            SELECT dg.{t['garantie_fk']}, sg.idsousgarantie, sg.libellesousgarantie, dg.capital,
+                   dg.franchise, dg.textefranchise, dg.tauxfranchise, dg.minfranchise,
+                   dg.maxfranchise, dg.primenette
+            FROM {t['detail']} dd
+            JOIN {t['garantie']} dg ON dg.{t['garantie_fk']} = dd.{t['detail_pk']}
+            JOIN stdsousgarantie sg ON sg.idsousgarantie = dg.idgarantie
+            WHERE dd.{t['cle']} = %s AND dg.acquise AND dg.idgarantie <> 0
+            """,
+            [pk],
+        )
+        par_site = {s["id"]: s for s in sites}
+        for (iddetail, idg, libelle, capital, fixe, texte, taux, mini, maxi,
+             prime) in cursor.fetchall():
+            par_site[iddetail]["garanties"].append({
+                "id_garantie": idg,
+                "libelle": libelle,
+                "capital": int(capital or 0),
+                "franchise": int(fixe or 0),
+                "texte_franchise": (texte or "").strip() or None,
+                "taux_franchise": float(taux or 0),
+                "min_franchise": int(mini or 0),
+                "max_franchise": int(maxi or 0),
+                "prime_nette": int(prime or 0),
+            })
+    return sites
+
 
 def vehicules_conditions_particulieres_flotte(pk, contrat=False):
     """
@@ -471,7 +535,7 @@ def donnees_conditions_particulieres(objet, contrat=False):
                    q.libelle, p.libelle,
                    a.nom, a.prenoms, a.adresse1, a.adresse2,
                    i.libelleintermediaire, o.idoffre, o.libelleoffre, av.libelleavenant,
-                   d.numeropoliceconnexe, c.email, ta.libelletype, a.datenaissance
+                   d.numeropoliceconnexe, c.email, ta.libelletype, a.datenaissance, c.fax
             FROM {t['entete']} d
             LEFT JOIN stdclient c ON c.idclient = d.idclient
             LEFT JOIN stdqualite q ON q.idqualite = c.idqualite
@@ -490,7 +554,7 @@ def donnees_conditions_particulieres(objet, contrat=False):
             titre, profession,
             a_nom, a_prenoms, a_adr1, a_adr2,
             intermediaire, idoffre, libelle_offre, mouvement,
-            police_connexe, c_email, type_client, a_naissance,
+            police_connexe, c_email, type_client, a_naissance, c_fax,
         ) = cursor.fetchone()
 
         # Offre non spécifiée au niveau du devis (idoffre 0) : on reprend celle
@@ -579,6 +643,8 @@ def donnees_conditions_particulieres(objet, contrat=False):
 
     return {
             "risque": risque,
+            # MRH : maisons et garanties de chaque maison (« Liste des garanties MRH multisites »)
+            "sites": sites_conditions_particulieres_mrh(objet.pk, contrat) if id_produit == ID_PRODUIT_MRH else None,
             "client": {
                 "titre": clean(titre),
                 "nom": nom_complet(c_nom, c_prenoms),
@@ -589,6 +655,9 @@ def donnees_conditions_particulieres(objet, contrat=False):
                 "mobile": clean(c_mobile) or clean(c_tel),
                 "email": clean(c_email),
                 "type": clean(type_client),
+                # Utilisés par la CP MRH (modèle NSIA : « Téléphone » et « Fax » du souscripteur)
+                "fixe": clean(c_fixe),
+                "fax": clean(c_fax),
             },
             "intermediaire": clean(intermediaire),
             "quittance": {

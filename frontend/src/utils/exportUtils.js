@@ -2,7 +2,7 @@
  * UTILS D'EXPORTATION MULTI-FORMATS LE PHARE (PDF, EXCEL, CSV, XML)
  * Conforme aux exigences réglementaires du Code CIMA et de la comptabilité générale.
  */
-import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionRcApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
+import { annexeFlotteApi, cashApi, conditionsParticulieresFlotteApi, conditionsParticulieresMonoApi, conditionsParticulieresMrhApi, contractApi, customerApi, dommagesApi, impressionIaApi, impressionMrhApi, impressionRcApi, impressionVoyageApi, quoteApi, transportApi } from '../api/endpoints';
 import { arrondirMontant, construireModeleAttestation, documentsCompagnie, logoCabinetEntete, logoCabinetPied, logoCompagnie, mentionCabinet, modeleAttestationVoyage, nomCabinet, parametre, ttcRetombe, villeSignature } from './parametrage';
 import { cedeaoDansPrimeNette } from './tarificationAuto';
 import { estDevisSante, imprimerDocumentSante } from './impressionsSante';
@@ -1165,6 +1165,7 @@ const ID_GARANTIE_RC = 1;
 const fcfa = (v) => String(Math.round(Number(v) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 
 const buildConditionsParticulieres = (quote, cp) => {
+  const rc = estDevisRc(quote);
   const val = (v) => (v === undefined || v === null || v === '' ? VIDE : v);
   const date = (v) => (v ? formatFrDate(v) : VIDE);
   const client = cp.client || {};
@@ -1221,9 +1222,9 @@ const buildConditionsParticulieres = (quote, cp) => {
     <tr>
       <td class="g-lib">${g.nature}</td>
       <td>${enAnnexe ? 'Voir Annexes' : 'ACQUISE'}</td>
-      <td class="g-num">${sommesGaranties(g)}</td>
-      <td>${franchise(g)}</td>
-      <td class="g-num">${fcfa(g.prime_nette)}</td>
+      <td class="g-num">${rc ? VIDE : sommesGaranties(g)}</td>
+      <td>${rc ? VIDE : franchise(g)}</td>
+      <td class="g-num">${rc ? VIDE : fcfa(g.prime_nette)}</td>
     </tr>`;
 
   return `
@@ -1777,6 +1778,201 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
             <tr><td>Prime TTC</td><td>${montant(q.PrimeTtc)}</td></tr>
           </table>
           <div class="cpf-net"><span>Total net à payer</span><span>${montant(q.PrimeTtc)}</span></div>
+        </div>
+      </div>
+    </div>`;
+};
+
+// --- CONDITIONS PARTICULIÈRES MRH - « Liste des garanties MRH multisites » (modèle NSIA imprimé,
+// police 20003201906101, reçu le 2026-10-29) : cadres « Références du Souscripteur » et « Références
+// de la Quittance », liste des garanties (capitaux, franchise, prime nette annuelle et du contrat),
+// total général, récapitulatif et signatures ; ni logo ni pied de page, comme le modèle. Plusieurs
+// maisons : un intertitre et un total par site. Sources : quittanceproposition|quittancecontrat et
+// /devis|contrat/:id/conditions-particulieres/ (sites et garanties de chaque site).
+
+// Ordre des garanties du modèle NSIA (stdsousgarantie : tempête, vol, bris de glaces, denrées, RC vie
+// privée, RC des membres de la famille, incendie, dommages électriques, dégâts des eaux) ; les autres
+// suivent par libellé
+const ORDRE_GARANTIES_CP_MRH = [50, 12, 9, 156, 59, 131, 30, 40, 47];
+
+const CP_MRH_STYLES = `
+  body { max-width: 192mm; color: #000; }
+  @media print { body { padding: 12mm 9mm 10mm 12mm; } }
+  .cpm { font-family: 'Times New Roman', Times, serif; font-size: 10pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .cpm-devis { text-align: center; font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 13pt; margin-bottom: 3mm; }
+  .cpm-refs { display: flex; gap: 2mm; align-items: stretch; }
+  .cpm-cadre { flex: 1; border: 1px solid #000; border-radius: 10px; padding-bottom: 2mm; }
+  .cpm-cadre-titre { text-align: center; font-weight: 700; font-style: italic; font-size: 11.5pt; border-bottom: 1px solid #000; padding: 1mm 0 0.8mm; margin-bottom: 1mm; }
+  /* Libellé suivi de sa valeur ; une seconde paire commence à --g de la largeur du cadre (modèle) */
+  .cpm-ligne { display: flex; align-items: baseline; padding: 0.6mm 2mm; font-style: italic; }
+  .cpm-ligne > span { display: flex; flex: 0 0 var(--g, 52%); min-width: 0; }
+  .cpm-ligne > span:only-child { flex-basis: 100%; }
+  .cpm-ligne > span + span { flex: 1; }
+  .cpm-ligne b { flex: none; font-weight: 700; margin-right: 3mm; }
+  .cpm-ligne .petit { font-size: 7.5pt; line-height: 1.2; }
+  .cpm-saut { height: 2.5mm; }
+  .cpm-titre { width: 112mm; margin: 4mm auto 5mm; border: 1px solid #000; border-radius: 6px; padding: 3mm 0; text-align: center; font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 15pt; }
+  table.cpm-garanties { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1.5px solid #000; }
+  table.cpm-garanties td { border: 1px solid #000; padding: 0.3mm 1.5mm; height: 5.6mm; font-size: 7pt; vertical-align: middle; overflow-wrap: anywhere; }
+  table.cpm-garanties tr { break-inside: avoid; }
+  table.cpm-garanties td.lib { font-size: 6.5pt; text-transform: uppercase; }
+  table.cpm-garanties td.p { font-size: 9pt; white-space: nowrap; }
+  table.cpm-garanties tr.entete td { height: 12mm; padding: 0.3mm 0.5mm; font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 8.5pt; text-align: center; }
+  table.cpm-garanties tr.entete td.p { font-size: 7.8pt; }
+  table.cpm-garanties tr.site td { font-weight: 700; font-size: 8pt; text-transform: uppercase; background: #f2f2f2; }
+  table.cpm-garanties tr.total td { height: 8mm; }
+  table.cpm-garanties tr.total td.l { text-align: right; padding-right: 3mm; font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-size: 11pt; }
+  table.cpm-garanties tr.sous-total td.l { font-size: 8.5pt; }
+  table.cpm-garanties tr.general td { border-top: 1.5px solid #000; }
+  .cpm-fin { break-inside: avoid; }
+  .cpm-recap { display: grid; grid-template-columns: 30% 27% 43%; border: 1px solid #000; margin-top: 1.5mm; padding: 5mm 3mm 2mm; font-size: 11pt; }
+  .cpm-recap b, .cpm-ttc b { font-family: Arial, Helvetica, sans-serif; }
+  .cpm-recap b { font-size: 10.5pt; }
+  .cpm-ttc { width: 61mm; margin: 1.5mm 0 0 auto; border: 1px solid #000; background: #e6e6e6; padding: 3.5mm 4mm; font-size: 11.5pt; }
+  .cpm-ttc b { font-size: 12.5pt; }
+  .cpm-signatures { display: flex; justify-content: space-between; min-height: 42mm; padding: 13mm 20mm 0 8mm; font-family: Arial, Helvetica, sans-serif; font-weight: 700; font-style: italic; font-size: 11pt; text-decoration: underline; }
+  .cpm-signatures div + div { margin-top: -3mm; }
+`;
+
+const buildConditionsParticulieresMrh = (quote, { quittance, cp }, { contrat = false } = {}) => {
+  const q = quittance || {};
+  const client = cp?.client || {};
+  const qcp = cp?.quittance || {};
+  const sites = cp?.sites || [];
+  const propre = (x) => (x === undefined || x === null || ['', '-'].includes(String(x).trim()) ? '' : String(x).trim());
+  const t = (x) => echapperHtml(propre(x));
+  const date = (x) => (x ? formatFrDate(x) : VIDE);
+
+  // Prime saisie pour la durée du contrat (pas de barème MRH) : ramenée à l'année au prorata des jours
+  // pour un contrat de moins d'un an, égale sinon
+  const duree = Number(q.Duree) || Number(qcp.duree_jours) || 0;
+  const annuelle = (prime) => Math.round((Number(prime) || 0) * (duree > 0 && duree < 365 ? 365 / duree : 1));
+  // Capital et franchise dans l'écriture du modèle : « 66852845.00 », « 10% Mini. 20000 Maxi. 200000 »
+  const capital = (g) => (Number(g.capital) > 0 ? Number(g.capital).toFixed(2) : VIDE);
+  const franchise = (g) => {
+    if (propre(g.texte_franchise) && !/^n[ée]ant$/i.test(propre(g.texte_franchise))) return propre(g.texte_franchise);
+    const parts = [];
+    if (Number(g.taux_franchise) > 0) parts.push(`${Number(g.taux_franchise)}%`);
+    if (Number(g.min_franchise) > 0) parts.push(`Mini. ${Number(g.min_franchise)}`);
+    if (Number(g.max_franchise) > 0) parts.push(`Maxi. ${Number(g.max_franchise)}`);
+    if (parts.length) return parts.join(' ');
+    return Number(g.franchise) > 0 ? String(Number(g.franchise)) : VIDE;
+  };
+  const rang = (g) => {
+    const i = ORDRE_GARANTIES_CP_MRH.indexOf(Number(g.id_garantie));
+    return i < 0 ? ORDRE_GARANTIES_CP_MRH.length : i;
+  };
+  const trier = (liste) => [...(liste || [])].sort((a, b) => rang(a) - rang(b)
+    || String(a.libelle || '').localeCompare(String(b.libelle || ''), 'fr'));
+  const totaux = (liste) => liste.reduce((s, g) => ({
+    annuelle: s.annuelle + annuelle(g.prime_nette),
+    contrat: s.contrat + Math.round(Number(g.prime_nette) || 0),
+  }), { annuelle: 0, contrat: 0 });
+
+  const ligne = (g) => `
+    <tr>
+      <td class="lib">${t(g.libelle)}</td>
+      <td>${capital(g)}</td>
+      <td>${t(franchise(g))}</td>
+      <td class="p">${VIDE}</td>
+      <td class="p">${VIDE}</td>
+    </tr>`;
+  const ligneTotal = (libelle, total, classe) => `
+    <tr class="total ${classe}">
+      <td colspan="3" class="l">${libelle}</td>
+      <td class="p">${VIDE}</td>
+      <td class="p">${VIDE}</td>
+    </tr>`;
+
+  const plusieurs = sites.length > 1;
+  const toutes = sites.flatMap((s) => s.garanties || []);
+  const corps = sites.map((s, i) => {
+    const garanties = trier(s.garanties);
+    const site = [propre(s.usage).toUpperCase(), propre(s.adresse)].filter(Boolean).join(' - ');
+    return `
+      ${plusieurs ? `<tr class="site"><td colspan="5">Site N° ${i + 1}${site ? ` : ${echapperHtml(site)}` : ''}</td></tr>` : ''}
+      ${garanties.map(ligne).join('')}
+      ${plusieurs && garanties.length ? ligneTotal(`TOTAL SITE N° ${i + 1}`, totaux(garanties), 'sous-total') : ''}`;
+  }).join('');
+  const totalGeneral = totaux(toutes);
+
+  // Récapitulatif : montants enregistrés sur le devis ou le contrat (prime imposée comprise)
+  const m = cp?.montants || {};
+  const primeNette = q.PrimeNette ?? totalGeneral.contrat;
+  const accessoire = q.Accessoire ?? m.accessoire;
+  const taxe = q.TaxeEnregistrement ?? m.taxe;
+  const primeTtc = q.PrimeTtc ?? m.prime_ttc_enregistree;
+  const alerteEcart = toutes.length && Math.abs(Number(primeNette) - totalGeneral.contrat) > 1 ? `
+    <div class="alerte-ecart no-print">
+      <strong>⚠ Écart avec la prime enregistrée.</strong> Total des garanties : <strong>${fcfa(totalGeneral.contrat)}</strong>
+      - prime nette enregistrée : <strong>${fcfa(primeNette)}</strong>. Vérifiez la répartition des garanties avant de transmettre ces Conditions Particulières.
+      <em>(Ce bandeau n'apparaît pas à l'impression.)</em>
+    </div>` : '';
+
+  const telephones = [...new Set([q.TelephoneClient, q.MobileClient, client.fixe].map(propre).filter(Boolean))];
+  const usages = [...new Set(sites.map((s) => propre(s.usage).toUpperCase()).filter(Boolean))];
+  const categorie = [propre(q.LibelleCategorie).toUpperCase(), usages.join(' / ')].filter(Boolean).join(' ');
+  // Ligne d'un cadre : une ou deux paires libellé / valeur (valeurs déjà échappées)
+  const ligneRef = ([l1, v1], second = null, g = '52%') => `
+    <div class="cpm-ligne" style="--g:${g}">
+      <span><b>${l1}</b><span>${v1}</span></span>${second ? `<span><b>${second[0]}</b><span>${second[1]}</span></span>` : ''}
+    </div>`;
+  const avenant = Number(q.NumeroAvenant) ? Number(q.NumeroAvenant) : t(q.NumeroAvenant);
+  const intermediaire = [propre(q.LibelleIntermediaire) || propre(cp?.intermediaire), propre(q.CodeIntermediaire) ? `( ${propre(q.CodeIntermediaire)} )` : '']
+    .filter(Boolean).join(' ');
+
+  return `
+    <style>${CP_MRH_STYLES}</style>
+    ${alerteEcart}
+    <div class="cpm">
+      ${contrat ? '' : `<div class="cpm-devis">${titreDevis(t(q.NumeroDevis || quote.numerodevis))}</div>`}
+      <div class="cpm-refs">
+        <div class="cpm-cadre">
+          <div class="cpm-cadre-titre">Références du Souscripteur</div>
+          ${ligneRef(['Numéro', t(q.IdClient)], ['Titre', t(q.TitreClient || client.titre)], '40%')}
+          ${ligneRef(['Nom et prénoms', t(q.NomClient || client.nom)])}
+          ${ligneRef(['Adresse', t(q.AdresseClient || client.adresse)])}
+          ${ligneRef(['Téléphone', echapperHtml(telephones.join(' / '))], ['Fax', t(client.fax)], '70%')}
+          ${ligneRef(['Profession', t(q.ProfessionClient || client.profession)])}
+          ${ligneRef(['Mail', t(q.EmailClient || client.email)])}
+          <div class="cpm-saut"></div>
+          ${ligneRef(['Réseau', t(q.LibelleIntermediaire || cp?.intermediaire)])}
+          ${ligneRef(['Intermédiaire', echapperHtml(intermediaire)])}
+        </div>
+        <div class="cpm-cadre">
+          <div class="cpm-cadre-titre">Références de la Quittance</div>
+          ${ligneRef(['Quittance', contrat ? t(q.NumeroQuittance) : VIDE], ['Emission', date(q.DateEmission || qcp.date_emission)])}
+          ${ligneRef([contrat ? 'N° Police' : 'N° Devis', t(contrat ? (propre(q.NumeroPolice) || quote.numerodevis) : (q.NumeroDevis || quote.numerodevis))], ['Avenant', avenant])}
+          ${ligneRef(['Assuré(e)', t(q.NomAssure || qcp.assure)])}
+          ${ligneRef(['Adresse', t(q.AdresseAssure || qcp.adresse_assure)])}
+          ${ligneRef(['Effet', date(q.DateEffet || qcp.date_effet)], ['Expiration', date(q.DateExpiration || qcp.date_expiration)], '46%')}
+          ${ligneRef(['Catégorie', `<span class="petit">${echapperHtml(categorie)}</span>`])}
+          ${ligneRef(['Mouvement', t(q.LibelleMouvement || qcp.mouvement)])}
+          ${ligneRef(['Ecriture', t(q.LibelleBareme)], ['Durée', duree ? `${duree} jours` : VIDE])}
+        </div>
+      </div>
+
+      <div class="cpm-titre">Liste des garanties MRH multisites</div>
+
+      <table class="cpm-garanties">
+        <colgroup><col style="width:36%" /><col style="width:19%" /><col style="width:19%" /><col style="width:11%" /><col style="width:15%" /></colgroup>
+        <tr class="entete">
+          <td>GARANTIES</td><td>CAPITAUX</td><td>FRANCHISE</td><td class="p">PRIME NETTE<br/>ANNUELLE</td><td class="p">PRIME NETTE<br/>CONTRAT</td>
+        </tr>
+        ${toutes.length ? corps : '<tr><td colspan="5" style="text-align:center">Aucune garantie enregistrée</td></tr>'}
+        ${ligneTotal('TOTAL GENERAL', totalGeneral, 'general')}
+      </table>
+
+      <div class="cpm-fin">
+        <div class="cpm-recap">
+          <div><b>Prime Nette :</b> ${fcfa(primeNette)}</div>
+          <div><b>Accessoires :</b> ${fcfa(accessoire)}</div>
+          <div><b>Taxe d'enregistrement :</b> ${fcfa(taxe)}</div>
+        </div>
+        <div class="cpm-ttc"><b>PRIME TTC :</b> ${fcfa(primeTtc)}</div>
+        <div class="cpm-signatures">
+          <div>L'Assuré(e)</div>
+          <div>Pour la Compagnie</div>
         </div>
       </div>
     </div>`;
@@ -4244,6 +4440,10 @@ export const printConditionsParticulieres = async (quote, { contrat = false } = 
     } else if (auto) {
       const cp = await conditionsParticulieresFlotteApi.get(id, { contrat });
       openPrintWindow(title, buildConditionsParticulieresFlotte(quote, cp, { contrat }), printWindow);
+    } else if (estDevisMrh(quote)) {
+      // MRH (devis et contrat) : « Liste des garanties MRH multisites », modèle NSIA
+      const donnees = await conditionsParticulieresMrhApi.get(id, { contrat });
+      openPrintWindow(title, buildConditionsParticulieresMrh(quote, donnees, { contrat }), printWindow);
     } else {
       const cp = contrat
         ? await contractApi.getConditionsParticulieres(id)

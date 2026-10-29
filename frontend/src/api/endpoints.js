@@ -468,6 +468,18 @@ export const conditionsParticulieresFlotteApi = {
   },
 };
 
+// Conditions Particulières MRH « Liste des garanties MRH multisites » (modèle NSIA) : quittance du
+// devis ou du contrat et données des CP (souscripteur, maisons et garanties de chaque maison)
+export const conditionsParticulieresMrhApi = {
+  get: async (id, { contrat = false } = {}) => {
+    const [q, cp] = await Promise.all([
+      apiClient.get(contrat ? `/quittancecontrat/${id}` : `/quittanceproposition/${id}`).catch(() => ({ data: [] })),
+      apiClient.get(contrat ? `/contrat/${id}/conditions-particulieres/` : `/devis/${id}/conditions-particulieres/`),
+    ]);
+    return { quittance: donneesEntete(q) || {}, cp: cp.data || {} };
+  },
+};
+
 // Impressions IA (mêmes sources qu'URANUS) : quittance de la proposition, garanties souscrites,
 // assurés du devis (avec leurs ayants droit) et bénéficiaires en cas de décès du souscripteur
 export const impressionIaApi = {
