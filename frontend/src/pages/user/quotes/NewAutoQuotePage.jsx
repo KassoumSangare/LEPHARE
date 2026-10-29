@@ -159,10 +159,12 @@ const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, pa: null,
 
 // Message d'erreur lisible d'un appel d'enregistrement (erreurs DRF ou OutputMessage des procédures)
 // Message d'une procédure PL/pgSQL sans le préfixe « ERREUR: » ni le contexte technique
-// (« fonction PL/pgsql sp_enregistrement_vehicule(integer, …), ligne 230 à RAISE »)
+// (« fonction PL/pgsql sp_enregistrement_vehicule(integer, …), ligne 230 à RAISE »), ni sa ponctuation finale :
+// il est repris dans une phrase qui a la sienne (« changer.. »)
 const sansContexteSql = (texte) => String(texte || '')
   .replace(/^\s*(ERREUR|ERROR)\s*:\s*/i, '')
   .replace(/\s*:?\s*(fonction PL\/pgsql|PL\/pgSQL function|CONTEXTE?\s*:)[\s\S]*$/i, '')
+  .replace(/[\s.!]+$/, '')
   .trim();
 
 const messageEnregistrement = (e) => {
