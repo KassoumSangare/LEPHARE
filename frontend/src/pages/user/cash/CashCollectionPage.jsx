@@ -32,6 +32,10 @@ const dateEmission = (contract) => contract?.raw
   ? contract.raw.dateemission || contract.raw.date_emission || ''
   : contract?.date_emission || '';
 const montantFormate = (montant) => Math.round(Number(montant) || 0).toLocaleString('fr-FR');
+const resteAEncaisser = (contract) => {
+  const reste = (Number(contract?.prime_totale) || 0) - (Number(contract?.montant_encaisse) || 0);
+  return reste <= 4 ? 0 : reste;
+};
 
 // Aperçu du reçu ouvert au clic, rempli une fois l'encaissement enregistré
 const ouvrirFenetreRecu = (message) => {
@@ -93,8 +97,8 @@ export const CashCollectionPage = () => {
 
   const handleOpenPayment = (contract) => {
     setSelectedContract(contract);
-    const reste = contract.prime_totale - (contract.montant_encaisse || 0);
-    setMontantEncaisse(reste > 0 ? reste : contract.prime_totale);
+    const reste = resteAEncaisser(contract);
+    setMontantEncaisse(reste);
     const especes = modes.find((m) => natureMode(m).especes);
     setReglement({
       ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
@@ -173,7 +177,7 @@ export const CashCollectionPage = () => {
     const totalPrimes = contratsFiltres.reduce((total, contract) => total + (Number(contract.prime_totale) || 0), 0);
     const totalEncaisse = contratsFiltres.reduce((total, contract) => total + (Number(contract.montant_encaisse) || 0), 0);
     const totalRestant = contratsFiltres.reduce(
-      (total, contract) => total + Math.max((Number(contract.prime_totale) || 0) - (Number(contract.montant_encaisse) || 0), 0),
+      (total, contract) => total + resteAEncaisser(contract),
       0,
     );
     const periode = filtres.du || filtres.au
@@ -199,7 +203,7 @@ export const CashCollectionPage = () => {
         numeroQuittance(contract),
         `${montantFormate(contract.prime_totale)} F`,
         `${montantFormate(contract.montant_encaisse)} F`,
-        `${montantFormate(Math.max((Number(contract.prime_totale) || 0) - (Number(contract.montant_encaisse) || 0), 0))} F`,
+        `${montantFormate(resteAEncaisser(contract))} F`,
         contract.statut_encaissement,
       ]),
       totals: ['TOTAL', '', '', '', '', `${montantFormate(totalPrimes)} F`, `${montantFormate(totalEncaisse)} F`, `${montantFormate(totalRestant)} F`, ''],
@@ -235,7 +239,7 @@ export const CashCollectionPage = () => {
     {
       header: 'Reste à Encaisser',
       render: (row) => {
-        const reste = row.prime_totale - row.montant_encaisse;
+        const reste = resteAEncaisser(row);
         return (
           <strong style={{ color: reste > 0 ? '#fb7185' : '#34d399', fontFamily: 'var(--font-mono)' }}>
             {reste.toLocaleString('fr-FR')} F
@@ -401,7 +405,7 @@ export const CashCollectionPage = () => {
                 <span>Prime globale: {selectedContract.prime_totale.toLocaleString('fr-FR')} F</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.875rem', marginTop: '0.35rem' }}>
-                <span>Reste dû: <strong style={{ color: '#fb7185' }}>{(selectedContract.prime_totale - selectedContract.montant_encaisse).toLocaleString('fr-FR')} F</strong></span>
+                <span>Reste dû: <strong style={{ color: '#fb7185' }}>{resteAEncaisser(selectedContract).toLocaleString('fr-FR')} F</strong></span>
               </div>
             </div>
 

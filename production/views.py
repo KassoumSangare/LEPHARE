@@ -1289,7 +1289,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 solde_quittance=F("idquittance__primettc")
                 - Coalesce(F("idquittance__mt_encaisse"), Value(Decimal(0)))
             ).filter(
-                idquittance__police=F("numeropolice"), solde_quittance__gt=0
+                idquittance__police=F("numeropolice"), solde_quittance__gt=Decimal("4")
             )
             queryset = self._filtre_produit(queryset).order_by("-idcontrat")
         elif self.action != "list":
