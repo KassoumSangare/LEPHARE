@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { EnTeteParametrage } from '../../../components/admin/EnTeteParametrage';
+import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { SqueletteTableau } from '../../../components/common/Squelette';
 import { useToast } from '../../../context/ToastContext';
@@ -211,6 +212,7 @@ export const AdminContractManagementPage = () => {
   const [liste, setListe] = useState({ results: [], count: 0, par_produit: {}, par_statut: {} });
   const [chargementListe, setChargementListe] = useState(true);
   const [contratEdite, setContratEdite] = useState(null);
+  const [pageEdition, setPageEdition] = useState(0);
   const [valeursInitiales, setValeursInitiales] = useState(null);
   const [chargementContrat, setChargementContrat] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
@@ -247,6 +249,7 @@ export const AdminContractManagementPage = () => {
       const resultat = await contractApi.getAdministrationContract(id);
       setContratEdite(resultat);
       setValeursInitiales(JSON.stringify(resultat));
+      setPageEdition(0);
     } catch (error) {
       toastError(`Le contrat n’a pas pu être ouvert : ${messageErreurApi(error)}`);
     } finally {
@@ -374,6 +377,32 @@ export const AdminContractManagementPage = () => {
       .filter(([statutCompte]) => statutCompte !== 'annule')
       .reduce((total, [, valeur]) => total + Number(valeur), 0);
     return Number(liste.par_statut?.[cle] || 0);
+  };
+  const pagesEdition = useMemo(() => {
+    if (!contratEdite) return [];
+    return [
+      { cle: 'contrat', type: 'contrat', titre: 'Informations du contrat' },
+      ...contratEdite.details.flatMap((detail, indexDetail) => [
+        {
+          cle: `risque-${detail.idcontratdetail}`,
+          type: 'detail',
+          indexDetail,
+          titre: `Risque / véhicule ${indexDetail + 1} — ${detail.matricule || detail.assure || `#${detail.idcontratdetail}`}`,
+        },
+        ...(detail.garanties || []).map((garantie, indexGarantie) => ({
+          cle: `garantie-${garantie.idcontratdetgarantie}`,
+          type: 'garantie',
+          indexDetail,
+          indexGarantie,
+          titre: `Garantie ${indexGarantie + 1} — ${garantie.idgarantie}`,
+        })),
+      ]),
+    ];
+  }, [contratEdite]);
+  const fermerEditeur = () => {
+    setContratEdite(null);
+    setValeursInitiales(null);
+    setPageEdition(0);
   };
 
   return (
@@ -520,68 +549,81 @@ export const AdminContractManagementPage = () => {
         )}
       </section>
 
-      {contratEdite && (
-        <section className="glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Contrat {contratEdite.contrat.numeropolice || `#${contratEdite.contrat.idcontrat}`}</h2>
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Les identifiants de structure et la quittance liée ne sont pas modifiables depuis cet écran.</span>
+      <Modal
+        isOpen={Boolean(contratEdite)}
+        onClose={fermerEditeur}
+        title={contratEdite ? `Contrat ${contratEdite.contrat.numeropolice || `#${contratEdite.contrat.idcontrat}`}` : ''}
+        subtitle="Les identifiants de structure et la quittance liée ne sont pas modifiables depuis cet écran."
+        maxWidth="1100px"
+      >
+        {contratEdite && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.75rem', borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+              <AlertTriangle size={17} style={{ flexShrink: 0, color: 'var(--accent-amber)' }} />
+              <span>Cette modification administrative ne crée pas d’avenant et ne recalcule pas automatiquement les quittances. Vérifiez les données et le motif avant l’enregistrement.</span>
             </div>
-            <button type="button" className="btn btn-secondary" onClick={() => { setContratEdite(null); setValeursInitiales(null); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-              <X size={15} /> Fermer
-            </button>
-          </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.75rem', borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
-            <AlertTriangle size={17} style={{ flexShrink: 0, color: 'var(--accent-amber)' }} />
-            <span>Cette modification administrative ne crée pas d’avenant et ne recalcule pas automatiquement les quittances. Vérifiez les données et le motif avant l’enregistrement.</span>
-          </div>
+            <div aria-live="polite">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <strong>{pagesEdition[pageEdition]?.titre}</strong>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                  Étape {pageEdition + 1} / {pagesEdition.length}
+                </span>
+              </div>
+              <div style={{ height: 4, borderRadius: 999, overflow: 'hidden', background: 'var(--border-subtle)', marginBottom: '1rem' }}>
+                <div style={{ height: '100%', width: `${((pageEdition + 1) / pagesEdition.length) * 100}%`, background: 'var(--primary-500)', transition: 'width 0.2s ease' }} />
+              </div>
 
-          <details open>
-            <summary style={{ cursor: 'pointer', fontWeight: 700, padding: '0.4rem 0' }}>Informations du contrat</summary>
-            <ChampsEdition
-              valeurs={contratEdite.contrat}
-              identifiantsMasques={['idcontrat', 'iddevis', 'idproduit', 'idintermediaire', 'idavenant', 'idquittance', 'piece_jointe', 'idcontratannulation', 'idoperateur', 'auteur', 'idoldhist', 'oldnumerodevis']}
-              onChange={modifierContrat}
-            />
-          </details>
-
-          {contratEdite.details.map((detail, indexDetail) => (
-            <details key={detail.idcontratdetail} open={indexDetail === 0}>
-              <summary style={{ cursor: 'pointer', fontWeight: 700, padding: '0.4rem 0' }}>
-                Risque / véhicule {indexDetail + 1} — {detail.matricule || detail.assure || `#${detail.idcontratdetail}`}
-              </summary>
-              <ChampsEdition
-                valeurs={detail}
-                identifiantsMasques={['idcontratdetail', 'idcontrat', 'garanties']}
-                onChange={(cle, valeur) => modifierDetail(indexDetail, cle, valeur)}
-              />
-              {(detail.garanties || []).map((garantie, indexGarantie) => (
-                <details key={garantie.idcontratdetgarantie} style={{ margin: '0.7rem 0 0 1rem' }}>
-                  <summary style={{ cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.85rem', padding: '0.35rem 0' }}>
-                    Garantie {indexGarantie + 1} — {garantie.idgarantie}
-                  </summary>
+              {pagesEdition[pageEdition]?.type === 'contrat' && (
+                <ChampsEdition
+                  valeurs={contratEdite.contrat}
+                  identifiantsMasques={['idcontrat', 'iddevis', 'idproduit', 'idintermediaire', 'idavenant', 'idquittance', 'piece_jointe', 'idcontratannulation', 'idoperateur', 'auteur', 'idoldhist', 'oldnumerodevis']}
+                  onChange={modifierContrat}
+                />
+              )}
+              {pagesEdition[pageEdition]?.type === 'detail' && (() => {
+                const { indexDetail } = pagesEdition[pageEdition];
+                const detail = contratEdite.details[indexDetail];
+                return (
+                  <ChampsEdition
+                    valeurs={detail}
+                    identifiantsMasques={['idcontratdetail', 'idcontrat', 'garanties']}
+                    onChange={(cle, valeur) => modifierDetail(indexDetail, cle, valeur)}
+                  />
+                );
+              })()}
+              {pagesEdition[pageEdition]?.type === 'garantie' && (() => {
+                const { indexDetail, indexGarantie } = pagesEdition[pageEdition];
+                const garantie = contratEdite.details[indexDetail].garanties[indexGarantie];
+                return (
                   <ChampsEdition
                     valeurs={garantie}
                     identifiantsMasques={['idcontratdetgarantie', 'idcontratdetail']}
                     onChange={(cle, valeur) => modifierGarantie(indexDetail, indexGarantie, cle, valeur)}
                   />
-                </details>
-              ))}
-            </details>
-          ))}
+                );
+              })()}
+            </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => { setContratEdite(null); setValeursInitiales(null); }} disabled={enregistrement}>
-              <ArrowLeft size={15} /> Retour à la liste
-            </button>
-            <button type="button" className="btn btn-primary" onClick={enregistrer} disabled={!modifier || enregistrement} aria-busy={enregistrement} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-              {enregistrement ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
-              Enregistrer les modifications
-            </button>
+            <nav aria-label="Pagination des éléments du contrat" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.9rem' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setPageEdition((valeur) => Math.max(0, valeur - 1))} disabled={pageEdition === 0 || enregistrement}>
+                <ChevronLeft size={15} /> Précédent
+              </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {pageEdition < pagesEdition.length - 1 && (
+                  <button type="button" className="btn btn-secondary" onClick={() => setPageEdition((valeur) => Math.min(pagesEdition.length - 1, valeur + 1))}>
+                    Suivant <ChevronRight size={15} />
+                  </button>
+                )}
+                <button type="button" className="btn btn-primary" onClick={enregistrer} disabled={!modifier || enregistrement} aria-busy={enregistrement} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                  {enregistrement ? <Loader2 className="spin" size={15} /> : <Save size={15} />}
+                  Enregistrer les modifications
+                </button>
+              </div>
+            </nav>
           </div>
-        </section>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };
