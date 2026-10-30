@@ -35,6 +35,10 @@ import { ViewQuoteModal } from './ViewQuoteModal';
 import { GarantiesVehiculeFlotteModal } from './GarantiesVehiculeFlotteModal';
 import { ImportFlotteModal } from './ImportFlotteModal';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
+import {
+  messageErreurDemandeEditionAttestation,
+  telechargerDemandeEditionAttestationAuto,
+} from '../../../utils/attestationAuto';
 import { aLeDroit } from '../../../utils/droits';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
@@ -2719,19 +2723,41 @@ export const NewAutoQuotePage = () => {
       success(`Devis Automobile ${saved.numerodevis} ${editIddevis ? 'mis à jour' : 'créé'} avec succès !`);
     }
 
+    if (!editIddevis) {
+      try {
+        await telechargerDemandeEditionAttestationAuto(devisApiId);
+      } catch (e) {
+        console.error('Téléchargement de la demande d’édition d’attestation impossible', e);
+        toastError(`Devis créé, mais le modèle de demande d’attestation n’a pas pu être généré : ${await messageErreurDemandeEditionAttestation(e)}.`);
+      }
+    }
+
     setCreatedQuote(devisEnregistre || saved);
   };
 
   const handleConvertToContract = async (quoteToConvert) => {
+    let idContrat;
     try {
-      await contractApi.createContractFromQuote(quoteToConvert.id);
+      const res = await contractApi.createContractFromQuote(quoteToConvert.id);
+      idContrat = Number(res?.data?.[0]?.ObjectId);
+      if (!Number.isInteger(idContrat) || idContrat <= 0) {
+        throw new Error('Le serveur n’a pas retourné l’identifiant du contrat créé.');
+      }
     } catch (e) {
-      console.warn('Fallback conversion contrat');
+      console.error('Conversion du devis automobile en contrat impossible', e);
+      toastError(e.response?.data?.detail || e.response?.data?.message || e.message || 'Le contrat n’a pas pu être créé.');
+      return;
+    }
+    try {
+      await telechargerDemandeEditionAttestationAuto(quoteToConvert.id);
+    } catch (e) {
+      console.error('Téléchargement de la demande d’édition d’attestation impossible', e);
+      toastError(`Contrat créé, mais le modèle de demande d’attestation n’a pas pu être généré : ${await messageErreurDemandeEditionAttestation(e)}.`);
     }
     const newContract = dataStore.convertQuoteToContract(quoteToConvert);
     success(`Devis ${quoteToConvert.numerodevis} converti en Contrat sous le numéro ${newContract.numeropolice} !`);
     setCreatedQuote(null);
-    navigate(`/user/contracts/${newContract.id || newContract.numeropolice}`);
+    navigate(`/user/contracts/${idContrat}`);
   };
 
   if (isLoadingEdit) {

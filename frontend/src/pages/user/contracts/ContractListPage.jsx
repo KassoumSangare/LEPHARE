@@ -323,6 +323,7 @@ export const ContractListPage = () => {
   };
 
   const peutRenouveler = peut('contrats.avenant');
+  const peutAdministrerContrats = peut('contrats.admin_update');
 
   return (
     <div className="portefeuille">
@@ -336,6 +337,17 @@ export const ContractListPage = () => {
           </div>
         </div>
         <div className="portefeuille-actions">
+          {peutAdministrerContrats && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate('/admin/contracts/edit')}
+              title="Ouvrir l’administration des contrats"
+            >
+              <Shield size={16} />
+              <span>Modifier les contrats</span>
+            </button>
+          )}
           <button type="button" className="btn btn-secondary" onClick={imprimer} disabled={impression || chargement || !liste.total} title="Imprimer les contrats de la sélection en cours">
             <Printer size={16} />
             <span>{impression ? 'Préparation…' : "Imprimer l'état"}</span>

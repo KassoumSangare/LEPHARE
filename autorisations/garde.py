@@ -104,6 +104,27 @@ def instantane_contrat(idcontrat):
     )
 
 
+def instantane_contrat_administration(idcontrat):
+    from production.models import Contrat, ContratDetail, ContratDetGarantie
+
+    contrat = Contrat.objects.filter(pk=idcontrat).values().first()
+    if not contrat:
+        return None
+    details = list(
+        ContratDetail.objects.filter(idcontrat_id=idcontrat)
+        .order_by("pk")
+        .values()
+    )
+    garanties = list(
+        ContratDetGarantie.objects.filter(
+            idcontratdetail__idcontrat_id=idcontrat
+        )
+        .order_by("pk")
+        .values()
+    )
+    return {"contrat": contrat, "details": details, "garanties": garanties}
+
+
 def auteur_devis(iddevis):
     ligne = _une_ligne("SELECT idoperateur FROM stddevis WHERE iddevis = %s", [iddevis])
     return ligne and ligne["idoperateur"]
@@ -146,8 +167,9 @@ R = Regle
 REGLES = [
     # ---- sécurité : utilisateurs, rôles, journal (autorisations/views_securite.py)
     R("GET", r"securite/moi/", CONNECTE),
-    # Cockpit opérationnel : chaque bloc n'est calculé qu'avec le droit de lecture de son module (views_cockpit.py)
-    R("GET", r"cockpit/?$", CONNECTE),
+    # Cockpit opérationnel : accordé rôle par rôle (Administration > Rôles), puis chaque bloc n'est calculé qu'avec le
+    # droit de lecture de son module (views_cockpit.py)
+    R("GET", r"cockpit/?$", "cockpit.view"),
     # Alertes de la cloche : chaque bloc selon le droit de lecture de son module (views_cockpit.alertes)
     R("GET", r"alertes/?$", CONNECTE),
     # Tableau de bord de la direction et suivi commercial : chiffres réservés au droit de la page (vérifié aussi dans la vue)
@@ -276,6 +298,10 @@ REGLES = [
     R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
+    R("GET", r"contrat/administration/?$", "contrats.admin_update"),
+    R("GET", r"contrat/\d+/administration/?$", "contrats.admin_update"),
+    R("PATCH", r"contrat/(?P<pk>\d+)/administration/?$", "contrats.admin_update",
+      objet="contrat", cles=("pk",), instantane=instantane_contrat_administration),
     R("POST", r"contrat/(?P<pk>\d+)/attacher_piece_jointe", "contrats.update", objet="contrat", cles=("pk",)),
     R("POST,PUT,PATCH,DELETE", r"contratdetgarantie/", "contrats.update", objet="garantie_contrat", cles=("pk",)),
     R("GET", r"(contrat|contratdetail|garantiecontrat|garantiesouscritecontrat|quittancecontrat|listevehiculecontrat|"

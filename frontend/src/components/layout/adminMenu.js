@@ -70,6 +70,14 @@ export const ADMIN_MENU = [
     ],
   },
   {
+    id: 'contrats',
+    titre: 'Contrats',
+    description: 'Consultation et correction exceptionnelle des contrats, risques et garanties.',
+    items: [
+      { to: '/admin/contracts/edit', droit: 'contrats.admin_update', label: 'Modifier les contrats', icon: FileSignature, description: 'Rechercher un contrat et modifier ses informations, ses risques/véhicules et ses garanties. Chaque changement est justifié et journalisé.' },
+    ],
+  },
+  {
     id: 'argent',
     titre: 'Argent & validations',
     description: "Ce que le cabinet reverse, ce qu'il perçoit et ce qui attend l'accord de la direction.",

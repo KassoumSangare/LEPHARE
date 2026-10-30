@@ -669,6 +669,61 @@ class ContratSerializer(serializers.ModelSerializer):
             return representation
 
 
+class ContratAdministrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Contrat
+        fields = [
+            field.name
+            for field in Contrat._meta.concrete_fields
+            if field.name
+            not in {
+                "iddevis",
+                "idproduit",
+                "idintermediaire",
+                "idavenant",
+                "idquittance",
+                "piece_jointe",
+                "idcontratannulation",
+                "idoperateur",
+                "auteur",
+                "idoldhist",
+                "oldnumerodevis",
+            }
+        ]
+        read_only_fields = ["idcontrat"]
+
+    def validate(self, attrs):
+        date_effet = attrs.get("dateeffet", getattr(self.instance, "dateeffet", None))
+        date_expiration = attrs.get(
+            "dateexpiration", getattr(self.instance, "dateexpiration", None)
+        )
+        if date_effet and date_expiration and date_expiration < date_effet:
+            raise serializers.ValidationError(
+                {"dateexpiration": "La date d’échéance doit être postérieure à la date d’effet."}
+            )
+        return attrs
+
+
+class ContratDetailAdministrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContratDetail
+        fields = [
+            field.name
+            for field in ContratDetail._meta.concrete_fields
+            if field.name not in {"idcontratdetail", "idcontrat"}
+        ]
+
+
+class ContratGarantieAdministrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContratDetGarantie
+        fields = [
+            field.name
+            for field in ContratDetGarantie._meta.concrete_fields
+            if field.name not in {"idcontratdetgarantie", "idcontratdetail"}
+        ]
+
+
 class ContratDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContratDetail

@@ -49,6 +49,7 @@ import {
   UserPlus,
   Pencil,
   Layers,
+  Download,
 } from 'lucide-react';
 
 const fcfa = (montant) => `${Number(montant || 0).toLocaleString('fr-FR')} FCFA`;
@@ -62,7 +63,16 @@ const Champ = ({ libelle, couleur, libelleColore = false, className, children })
   </div>
 );
 
-export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvertToContract, onQuoteUpdated }) => {
+export const ViewQuoteModal = ({
+  isOpen,
+  onClose,
+  quote: quoteInitial,
+  onConvertToContract,
+  onQuoteUpdated,
+  showDownloadAttestation = false,
+  downloadingAttestation = false,
+  onDownloadAttestation,
+}) => {
   // Devis relu après une imposition des primes du récapitulatif, et formulaire d'imposition
   // affiché à la place de la fiche (comme le panneau d'URANUS)
   const [quoteAJour, setQuoteAJour] = useState(null);
@@ -862,6 +872,20 @@ export const ViewQuoteModal = ({ isOpen, onClose, quote: quoteInitial, onConvert
               {estDevisVoyage(quote) ? <Printer size={15} /> : <FileText size={15} />}
               <span>{estDevisDommages(quote) ? 'Imprimer Cotation' : estDevisVoyage(quote) ? 'Imprimer l’attestation' : 'Imprimer Conditions Particulières'}</span>
             </button>
+            {showDownloadAttestation && onDownloadAttestation && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onDownloadAttestation}
+                disabled={downloadingAttestation}
+                aria-busy={downloadingAttestation}
+                title="Télécharger le modèle Excel de demande d’édition d’attestation"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+              >
+                <Download size={15} />
+                <span>{downloadingAttestation ? 'Téléchargement…' : 'Télécharger Excel'}</span>
+              </button>
+            )}
 
             {/* Fichier téléversé à l'enregistrement (MRH, RC, MRP) : bouton présent seulement s'il y en a un */}
             <BoutonPieceJointe type="devis" id={idDevisBase} />

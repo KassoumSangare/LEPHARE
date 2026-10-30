@@ -21,6 +21,10 @@ import { useAuth } from '../../../context/AuthContext';
 import { canUser, validateBusinessRule } from '../../../utils/rbac';
 import { estDevisDommages, exportToPdf } from '../../../utils/exportUtils';
 import {
+  messageErreurDemandeEditionAttestation,
+  telechargerDemandeEditionAttestationAuto,
+} from '../../../utils/attestationAuto';
+import {
   FileText,
   Plus,
   CheckCircle,
@@ -74,6 +78,7 @@ export const QuoteListPage = () => {
   // Onglets du registre : un par « Onglet du registre » des produits, « Autres » pour un produit non réglé
   const onglets = ongletsRegistre();
   const [selectedQuote, setSelectedQuote] = useState(null);
+  const [downloadingAttestationId, setDownloadingAttestationId] = useState(null);
   const [viewingQuote, setViewingQuote] = useState(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState(null);
@@ -219,6 +224,14 @@ export const QuoteListPage = () => {
     try {
       const res = await contractApi.createContractFromQuote(selectedQuote.id);
       success(`Devis ${selectedQuote.numerodevis} confirmé : le contrat a bien été créé.`);
+      if (getBranchOf(selectedQuote) === 'AUTO') {
+        try {
+          await telechargerDemandeEditionAttestationAuto(selectedQuote.id);
+        } catch (downloadError) {
+          console.error('Téléchargement de la demande d’édition d’attestation impossible', downloadError);
+          toastError(`Contrat créé, mais le modèle de demande d’attestation n’a pas pu être généré : ${await messageErreurDemandeEditionAttestation(downloadError)}.`);
+        }
+      }
       setIsConfirmModalOpen(false);
       // Dommages : fiche du contrat avec son relevé de compte (quittance remise au client)
       const idContrat = Number(res?.data?.[0]?.ObjectId);
@@ -227,6 +240,20 @@ export const QuoteListPage = () => {
     } catch (err) {
       toastError(err.response?.data?.detail || err.response?.data?.message || 'Le devis n\'a pas pu être confirmé. Veuillez réessayer.');
       setIsConfirmModalOpen(false);
+    }
+  };
+
+  const telechargerAttestation = async (quote) => {
+    const idDevis = quote.iddevis || quote.id;
+    setDownloadingAttestationId(idDevis);
+    try {
+      await telechargerDemandeEditionAttestationAuto(idDevis);
+      success('Le fichier Excel de demande d’attestation a été téléchargé.');
+    } catch (downloadError) {
+      console.error('Téléchargement de la demande d’édition d’attestation impossible', downloadError);
+      toastError(`Le fichier Excel n’a pas pu être téléchargé : ${await messageErreurDemandeEditionAttestation(downloadError)}.`);
+    } finally {
+      setDownloadingAttestationId(null);
     }
   };
 
@@ -742,6 +769,9 @@ export const QuoteListPage = () => {
           isOpen={!!viewingQuote}
           onClose={() => setViewingQuote(null)}
           quote={viewingQuote}
+          showDownloadAttestation={getBranchOf(viewingQuote) === 'AUTO'}
+          downloadingAttestation={downloadingAttestationId === (viewingQuote.iddevis || viewingQuote.id)}
+          onDownloadAttestation={() => telechargerAttestation(viewingQuote)}
           onQuoteUpdated={(devisAJour) => setRegistry((prec) => (prec || []).map((q) => (
             String(q.iddevis) === String(devisAJour.iddevis) ? devisAJour : q
           )))}

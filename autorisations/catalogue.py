@@ -10,6 +10,7 @@ Pour un nouveau module : ajouter ses droits ici et ses routes dans garde.REGLES,
 """
 
 MODULES = [
+    ("cockpit", "Cockpit opérationnel"),
     ("clients", "Clients"),
     ("devis", "Devis et production"),
     ("contrats", "Contrats et avenants"),
@@ -32,6 +33,10 @@ MODULES = [
 
 # (code, libellé, description, sensible, motif obligatoire à l'installation, séparation des tâches possible)
 DROITS = [
+    ("cockpit.view", "Consulter le cockpit opérationnel",
+     "Écran d'accueil de l'espace Production ; chaque bloc de chiffres reste soumis au droit de lecture de son module.",
+     False, False, False),
+
     ("clients.view", "Consulter les clients", "Liste, recherche, fiche et dossier 360° des clients.", False, False, False),
     ("clients.create", "Créer un client", "", False, False, False),
     ("clients.update", "Modifier un client", "Identité, coordonnées, qualité : valeurs avant / après journalisées.", True, False, False),
@@ -50,6 +55,8 @@ DROITS = [
 
     ("contrats.view", "Consulter les contrats", "Portefeuille, quittances, garanties, véhicules, certificats.", False, False, False),
     ("contrats.update", "Modifier un contrat", "Garanties du contrat, pièces jointes.", True, False, False),
+    ("contrats.admin_update", "Modifier toutes les informations d’un contrat",
+     "Écran d’administration : contrat, risques/véhicules et garanties ; justification obligatoire et journal avant/après.", True, True, False),
     ("contrats.avenant", "Établir un avenant", "Renouvellement, incorporation, retrait, changement d'immatriculation, prise d'effet.", True, False, False),
     ("contrats.cancel", "Annuler un contrat", "Avenant d'annulation ou de résiliation.", True, True, False),
     ("contrats.reprise", "Saisir les affaires antérieures",

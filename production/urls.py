@@ -35,6 +35,7 @@ from .views_transport_guce import (
     importer_bordereau,
     liste_bordereaux,
 )
+from .views_attestation import telecharger_demande_edition_attestation_auto
 from .importation_views import (
     ImportAssuresAPIView,
     ImportsHistoriqueDetailAPIView,
@@ -193,6 +194,11 @@ router.register(
 
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+        "devis/<int:iddevis>/demande-edition-attestation/",
+        telecharger_demande_edition_attestation_auto,
+        name="demande_edition_attestation_auto",
+    ),
     path(
         r"enregistrementdevis",
         create_quotation,

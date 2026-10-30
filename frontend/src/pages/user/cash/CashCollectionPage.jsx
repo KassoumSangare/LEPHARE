@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { cashApi, contractApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { CreditCard, Check, Receipt } from 'lucide-react';
+import { CreditCard, Check, Receipt, FileSpreadsheet, FileText, ListChecks, Search, X } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
-import { printRecuEncaissement } from '../../../utils/exportUtils';
+import { exportToExcel, exportToPdf, printRecuEncaissement } from '../../../utils/exportUtils';
 import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
+import { correspondRecherche } from '../../../utils/financeUtils';
 import {
   actionReglement,
   ChampsReglement,
@@ -26,6 +28,10 @@ const aujourdhui = () => {
 
 // Quittance générée à la confirmation du devis (sp_confirmation_devis → sp_generation_quittance)
 const numeroQuittance = (contract) => contract?.raw?.idquittance?.numeroquittance || '';
+const dateEmission = (contract) => contract?.raw
+  ? contract.raw.dateemission || contract.raw.date_emission || ''
+  : contract?.date_emission || '';
+const montantFormate = (montant) => Math.round(Number(montant) || 0).toLocaleString('fr-FR');
 
 // Aperçu du reçu ouvert au clic, rempli une fois l'encaissement enregistré
 const ouvrirFenetreRecu = (message) => {
@@ -52,6 +58,7 @@ export const CashCollectionPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modes, setModes] = useState([]);
   const [banques, setBanques] = useState([]);
+  const [filtres, setFiltres] = useState({ du: '', au: '', compagnie: '', statut: '', recherche: '' });
   const { success, error: toastError } = useToast();
 
   const loadContracts = async () => {
@@ -143,6 +150,66 @@ export const CashCollectionPage = () => {
       setEnregistrement(false);
     }
   };
+
+  const compagnies = useMemo(
+    () => [...new Set(contracts.map((contract) => contract.compagnie).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'fr')),
+    [contracts],
+  );
+  const contratsFiltres = useMemo(() => contracts.filter((contract) => {
+    const emission = String(dateEmission(contract)).slice(0, 10);
+    if (filtres.du && (!emission || emission < filtres.du)) return false;
+    if (filtres.au && (!emission || emission > filtres.au)) return false;
+    if (filtres.compagnie && contract.compagnie !== filtres.compagnie) return false;
+    if (filtres.statut && contract.statut_encaissement !== filtres.statut) return false;
+    return correspondRecherche(filtres.recherche, [
+      contract.numeropolice, contract.client_nom, contract.compagnie, contract.produit,
+      contract.statut_encaissement, dateEmission(contract), numeroQuittance(contract),
+      contract.prime_totale, contract.montant_encaisse,
+    ]);
+  }), [contracts, filtres]);
+
+  const exporterEtat = (format) => {
+    const totalPrimes = contratsFiltres.reduce((total, contract) => total + (Number(contract.prime_totale) || 0), 0);
+    const totalEncaisse = contratsFiltres.reduce((total, contract) => total + (Number(contract.montant_encaisse) || 0), 0);
+    const totalRestant = contratsFiltres.reduce(
+      (total, contract) => total + Math.max((Number(contract.prime_totale) || 0) - (Number(contract.montant_encaisse) || 0), 0),
+      0,
+    );
+    const periode = filtres.du || filtres.au
+      ? `Du ${filtres.du ? formatDate(filtres.du) : 'début'} au ${filtres.au ? formatDate(filtres.au) : 'aujourd’hui'}`
+      : 'Toutes les dates';
+    const statut = filtres.statut || 'Tous les statuts';
+    const charge = {
+      filename: 'Etat_Encaissement_Primes',
+      title: 'ÉTAT DES PRIMES À ENCAISSER',
+      subtitle: `${periode} - ${filtres.compagnie || 'Toutes les compagnies'}`,
+      metadata: {
+        'Compagnie': filtres.compagnie || 'Toutes les compagnies',
+        'Statut': statut,
+        'Recherche': filtres.recherche || 'Aucune',
+        'Nombre de contrats': String(contratsFiltres.length),
+      },
+      headers: ['N° police', 'Souscripteur', 'Compagnie', "Date d'émission", 'N° quittance', 'Prime totale', 'Déjà encaissé', 'Reste à encaisser', 'Statut'],
+      rows: contratsFiltres.map((contract) => [
+        contract.numeropolice,
+        contract.client_nom,
+        contract.compagnie,
+        dateEmission(contract) ? formatDate(dateEmission(contract)) : '',
+        numeroQuittance(contract),
+        `${montantFormate(contract.prime_totale)} F`,
+        `${montantFormate(contract.montant_encaisse)} F`,
+        `${montantFormate(Math.max((Number(contract.prime_totale) || 0) - (Number(contract.montant_encaisse) || 0), 0))} F`,
+        contract.statut_encaissement,
+      ]),
+      totals: ['TOTAL', '', '', '', '', `${montantFormate(totalPrimes)} F`, `${montantFormate(totalEncaisse)} F`, `${montantFormate(totalRestant)} F`, ''],
+    };
+    if (format === 'excel') exportToExcel(charge);
+    else exportToPdf(charge);
+  };
+
+  const champFiltre = (cle) => (e) => setFiltres((actuels) => ({ ...actuels, [cle]: e.target.value }));
+  const reinitialiserFiltres = () => setFiltres({ du: '', au: '', compagnie: '', statut: '', recherche: '' });
 
   const columns = [
     {
@@ -262,11 +329,61 @@ export const CashCollectionPage = () => {
         </span>
       </div>
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
+      <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="encaissement-du">Émission du</label>
+            <input id="encaissement-du" type="date" className="form-control" value={filtres.du} onChange={champFiltre('du')} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="encaissement-au">Émission au</label>
+            <input id="encaissement-au" type="date" className="form-control" value={filtres.au} onChange={champFiltre('au')} />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="encaissement-compagnie">Compagnie</label>
+            <select id="encaissement-compagnie" className="form-control" value={filtres.compagnie} onChange={champFiltre('compagnie')}>
+              <option value="">Toutes les compagnies</option>
+              {compagnies.map((compagnie) => <option key={compagnie} value={compagnie}>{compagnie}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label" htmlFor="encaissement-statut">Statut</label>
+            <select id="encaissement-statut" className="form-control" value={filtres.statut} onChange={champFiltre('statut')}>
+              <option value="">Tous les statuts</option>
+              <option value="À Encaisser">À encaisser</option>
+              <option value="Soldé">Soldé</option>
+            </select>
+          </div>
+          <div style={{ position: 'relative' }}>
+            <label className="form-label" htmlFor="encaissement-recherche">Recherche</label>
+            <Search size={15} style={{ position: 'absolute', left: 10, bottom: 11, color: 'var(--text-muted)' }} />
+            <input id="encaissement-recherche" type="search" className="form-control" style={{ paddingLeft: '2rem' }}
+              value={filtres.recherche} onChange={champFiltre('recherche')} placeholder="Police, client, quittance…" />
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-secondary" onClick={reinitialiserFiltres} title="Effacer les filtres">
+              <X size={15} /> Réinitialiser
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => exporterEtat('excel')} disabled={!contratsFiltres.length}
+              title="Exporter les résultats filtrés en Excel">
+              <FileSpreadsheet size={15} /> Excel
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={() => exporterEtat('pdf')} disabled={!contratsFiltres.length}
+              title="Exporter les résultats filtrés en PDF">
+              <FileText size={15} /> PDF
+            </button>
+            <Link to="/user/cash/etat" className="btn btn-primary" title="Consulter l'état détaillé des encaissements">
+              <ListChecks size={15} /> États
+            </Link>
+          </div>
+        </div>
+        <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+          {contratsFiltres.length} contrat(s) affiché(s) sur {contracts.length} ; les exports reprennent cette sélection.
+        </div>
         <DataTable
           columns={columns}
-          data={contracts}
-          searchPlaceholder="Rechercher un contrat ou souscripteur à encaisser..."
+          data={contratsFiltres}
+          searchable={false}
         />
       </div>
 

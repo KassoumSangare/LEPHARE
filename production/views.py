@@ -160,6 +160,9 @@ from .serializers import (  # Serializers requêtes; Serializers réponses
     ConsolidationDevisClientSerializer,
     ContractForPremiumCollectionSerializer,
     ContratDetailSerializer,
+    ContratAdministrationSerializer,
+    ContratDetailAdministrationSerializer,
+    ContratGarantieAdministrationSerializer,
     ContratDetGarantieSerializer,
     ContratSerializer,
     CorrectionDevisSerializer,
@@ -1354,6 +1357,191 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         ).distinct("idgarantie_id")
         serializer = ContratDetGarantieSerializer(garanties, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _donnees_administration(self, contrat):
+        details = ContratDetail.objects.filter(idcontrat=contrat).order_by(
+            "idcontratdetail"
+        ).prefetch_related(
+            Prefetch(
+                "garanties",
+                queryset=ContratDetGarantie.objects.order_by("idcontratdetgarantie"),
+            )
+        )
+        resultat_details = []
+        for detail in details:
+            garanties = detail.garanties.all()
+            resultat_details.append(
+                {
+                    **ContratDetailAdministrationSerializer(detail).data,
+                    "idcontratdetail": detail.pk,
+                    "garanties": [
+                        {
+                            **ContratGarantieAdministrationSerializer(garantie).data,
+                            "idcontratdetgarantie": garantie.pk,
+                        }
+                        for garantie in garanties
+                    ],
+                }
+            )
+        return {
+            "contrat": ContratAdministrationSerializer(contrat).data,
+            "details": resultat_details,
+        }
+
+    @action(detail=False, methods=["get"], url_path="administration")
+    def administration_liste(self, request):
+        from django.db.models import Count
+
+        params = request.query_params
+        base = self._filtres_portefeuille(Contrat.objects.all())
+        par_produit = {
+            str(ligne["idproduit_id"]): ligne["n"]
+            for ligne in base.filter(idcontratannulation=0)
+            .values("idproduit_id").annotate(n=Count("pk")).order_by()
+        }
+        par_statut = {
+            ligne["statut_portefeuille"]: ligne["n"]
+            for ligne in self._statut_portefeuille(self._filtre_produit(base))
+            .values("statut_portefeuille").annotate(n=Count("pk")).order_by()
+        }
+        statut = params.get("statut")
+        queryset = base if statut == "annule" else base.filter(idcontratannulation=0)
+        queryset = self._statut_portefeuille(self._filtre_produit(queryset))
+        if statut in self.STATUTS_PORTEFEUILLE:
+            queryset = queryset.filter(statut_portefeuille=statut)
+        ordre = params.get("ordre") or ""
+        champ = self.ORDRES_PORTEFEUILLE.get(ordre.lstrip("-"))
+        if champ:
+            queryset = queryset.order_by(f"{'-' if ordre.startswith('-') else ''}{champ}", "-idcontrat")
+        else:
+            queryset = queryset.order_by("-idcontrat")
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+            page_size = min(1000, max(1, int(request.query_params.get("page_size", 25))))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Les paramètres de pagination sont invalides."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        total = queryset.count()
+        contrats = queryset[(page - 1) * page_size : page * page_size]
+        return Response(
+            {
+                "count": total,
+                "page": page,
+                "page_size": page_size,
+                "results": ContratSerializer(contrats, many=True).data,
+                "par_produit": par_produit,
+                "par_statut": par_statut,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["get", "patch"], url_path="administration")
+    def administration_detail(self, request, pk=None):
+        contrat = get_object_or_404(
+            Contrat.objects.select_related("idclient", "idcompagnie"), pk=pk
+        )
+        if request.method == "GET":
+            return Response(
+                self._donnees_administration(contrat),
+                status=status.HTTP_200_OK,
+            )
+
+        payload = request.data
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("contrat"), dict)
+            or not isinstance(payload.get("details", []), list)
+        ):
+            return Response(
+                {"detail": "Le format des modifications du contrat est invalide."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        contrat_serializer = ContratAdministrationSerializer(
+            contrat, data=payload["contrat"], partial=True
+        )
+        if not contrat_serializer.is_valid():
+            return Response(contrat_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        details_a_sauver = []
+        garanties_a_sauver = []
+        detail_ids = set()
+        for detail_data in payload.get("details", []):
+            if not isinstance(detail_data, dict) or not isinstance(
+                detail_data.get("garanties", []), list
+            ):
+                return Response(
+                    {"details": "Le format d’un détail de contrat est invalide."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            valeurs_detail = dict(detail_data)
+            id_detail = valeurs_detail.pop("idcontratdetail", None)
+            if not id_detail or id_detail in detail_ids:
+                return Response(
+                    {"details": "Identifiant de détail absent ou répété."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            detail_ids.add(id_detail)
+            detail = get_object_or_404(
+                ContratDetail.objects.filter(idcontrat=contrat),
+                pk=id_detail,
+            )
+            garanties_data = valeurs_detail.pop("garanties", [])
+            serializer_detail = ContratDetailAdministrationSerializer(
+                detail, data=valeurs_detail, partial=True
+            )
+            if not serializer_detail.is_valid():
+                return Response(
+                    {"details": {str(id_detail): serializer_detail.errors}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            details_a_sauver.append(serializer_detail)
+
+            garantie_ids = set()
+            for garantie_data in garanties_data:
+                if not isinstance(garantie_data, dict):
+                    return Response(
+                        {"garanties": "Le format d’une garantie est invalide."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                valeurs_garantie = dict(garantie_data)
+                id_garantie = valeurs_garantie.pop("idcontratdetgarantie", None)
+                if not id_garantie or id_garantie in garantie_ids:
+                    return Response(
+                        {"garanties": "Identifiant de garantie absent ou répété."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                garantie_ids.add(id_garantie)
+                garantie = get_object_or_404(
+                    ContratDetGarantie.objects.filter(idcontratdetail=detail),
+                    pk=id_garantie,
+                )
+                serializer_garantie = ContratGarantieAdministrationSerializer(
+                    garantie, data=valeurs_garantie, partial=True
+                )
+                if not serializer_garantie.is_valid():
+                    return Response(
+                        {
+                            "garanties": {
+                                str(id_garantie): serializer_garantie.errors
+                            }
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                garanties_a_sauver.append(serializer_garantie)
+
+        with transaction.atomic():
+            contrat_serializer.save()
+            for serializer_detail in details_a_sauver:
+                serializer_detail.save()
+            for serializer_garantie in garanties_a_sauver:
+                serializer_garantie.save()
+
+        return Response(
+            self._donnees_administration(contrat),
+            status=status.HTTP_200_OK,
+        )
 
     @action(
         detail=True,

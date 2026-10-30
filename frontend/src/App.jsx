@@ -28,6 +28,7 @@ import NewTransportHorsGucePage from './pages/user/quotes/NewTransportHorsGucePa
 import TransportAbonnementsPage from './pages/user/quotes/TransportAbonnementsPage';
 import ContractListPage from './pages/user/contracts/ContractListPage';
 import ContractDetailPage from './pages/user/contracts/ContractDetailPage';
+import AdminContractManagementPage from './pages/admin/contracts/AdminContractManagementPage';
 import EndorsementPage from './pages/user/endorsements/EndorsementPage';
 import RepriseAffairesPage from './pages/user/reprises/RepriseAffairesPage';
 import CashCollectionPage from './pages/user/cash/CashCollectionPage';
@@ -111,6 +112,32 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+const premierePageProduction = (peut) => [
+  ['crm.view', '/user/crm'],
+  ['clients.view', '/user/clients'],
+  ['devis.view', '/user/quotes'],
+  ['contrats.view', '/user/contracts'],
+  ['encaissements.view', '/user/cash'],
+  ['sinistres.view', '/user/claims'],
+  ['documents.view', '/user/documents'],
+  ['approbations.view', '/user/derogations'],
+].find(([droit]) => peut(droit))?.[1];
+
+const CockpitRoute = ({ children }) => {
+  const { peut } = useAuth();
+  if (peut('cockpit.view')) return children;
+
+  const destination = premierePageProduction(peut);
+  if (destination) return <Navigate to={destination} replace />;
+
+  return (
+    <main className="page-container" role="alert">
+      <h1 className="title-xl">Accès restreint</h1>
+      <p>Votre rôle ne vous donne pas accès au Cockpit opérationnel. Demandez à l’administrateur de vous attribuer un rôle autorisé.</p>
+    </main>
+  );
+};
+
 // Default Route Redirector
 const DefaultRedirect = () => {
   const auth = useAuth() || {};
@@ -142,7 +169,7 @@ function App() {
                 <Route path="/" element={<DefaultRedirect />} />
 
                 {/* ===== ESPACE OPÉRATEUR / UTILISATEUR ===== */}
-                <Route path="/user/dashboard" element={<UserDashboard />} />
+                <Route path="/user/dashboard" element={<CockpitRoute><UserDashboard /></CockpitRoute>} />
                 {/* ===== MODULE C – CRM & RELATION CLIENT ===== */}
                 <Route path="/user/crm" element={<CrmPipelinePage />} />
                 <Route path="/user/crm/360" element={<Customer360Page />} />
@@ -202,6 +229,7 @@ function App() {
                 {/* ===== ESPACE ADMINISTRATION / DIRECTION (DIRECTEUR & ADMIN SEULEMENT) ===== */}
                 <Route path="/admin/guide" element={<AdminRoute><AdminGuidePage /></AdminRoute>} />
                 <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+                <Route path="/admin/contracts/edit" element={<AdminContractManagementPage />} />
                 <Route path="/admin/conventions" element={<AdminRoute><ConventionsEnginePage /></AdminRoute>} />
                 <Route path="/admin/compliance" element={<AdminRoute><ComplianceAuditPage /></AdminRoute>} />
                 <Route path="/admin/reporting/cima" element={<AdminRoute><CimaReportsPage /></AdminRoute>} />

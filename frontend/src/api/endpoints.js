@@ -826,6 +826,10 @@ export const quoteApi = {
     const res = await apiClient.get(`/devisdetail/${iddevis}`);
     return Array.isArray(res.data) ? res.data : [];
   },
+  telechargerDemandeEditionAttestationAuto: (iddevis) => apiClient.get(
+    `/devis/${iddevis}/demande-edition-attestation/`,
+    { responseType: 'blob' },
+  ),
   // POST /api/enregistrementdevis (Auto CIMA)
   createAutoQuote: (data) => {
     const payload = formatAutoQuoteForApi(data);
@@ -1665,6 +1669,15 @@ export const contractApi = {
     const res = await apiClient.get(`/contrat/${id}/`);
     return normalizeContrat(res.data);
   },
+  getAdministrationContracts: async (params = {}) => (
+    await apiClient.get('/contrat/administration/', { params })
+  ).data,
+  getAdministrationContract: async (id) => (
+    await apiClient.get(`/contrat/${id}/administration/`)
+  ).data,
+  updateAdministrationContract: async (id, data) => (
+    await apiClient.patch(`/contrat/${id}/administration/`, data)
+  ).data,
   // POST /api/confirmationdevis (Validation et conversion d'un devis en contrat définitif)
   createContractFromQuote: (data) => {
     const devisId = typeof data === 'object' ? (data.IdDevis || data.iddevis || data.id) : data;

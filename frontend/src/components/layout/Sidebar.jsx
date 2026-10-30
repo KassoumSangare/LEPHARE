@@ -228,10 +228,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>Gestion Opérationnelle</span>
             </div>
 
-            <NavLink to="/user/dashboard" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
-              <LayoutDashboard size={16} className="nav-icon" />
-              <span>Cockpit Opérationnel</span>
-            </NavLink>
+            {peut('cockpit.view') && (
+              <NavLink to="/user/dashboard" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+                <LayoutDashboard size={16} className="nav-icon" />
+                <span>Cockpit Opérationnel</span>
+              </NavLink>
+            )}
 
             {peut(['crm.view', 'clients.view']) && <div>
               <div
