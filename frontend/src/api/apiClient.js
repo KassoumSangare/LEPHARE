@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { demanderMotif } from '../utils/motif';
+import { contientDetailTechnique, messageErreurLisible } from '../utils/messageUtilisateur';
 
 // Client de l'API : jeton de la session ouverte par POST /api/users/login (aucun jeton par défaut :
 // sans connexion, le serveur répond 401 et l'écran revient à la page de connexion).
@@ -47,6 +48,12 @@ apiClient.interceptors.response.use(
   async (error) => {
     const requete = error.config || {};
     const statut = error.response?.status;
+    if (error.response && (statut >= 500 || contientDetailTechnique(error.response.data))) {
+      error.response.data = {
+        detail: messageErreurLisible(error.response.data?.detail || error.response.data?.error || error.message, statut),
+        error: messageErreurLisible(error.response.data?.detail || error.response.data?.error || error.message, statut),
+      };
+    }
     if (!requete.sansSignalement && !axios.isCancel(error) && (!error.response || statut >= 500)) {
       window.dispatchEvent(new Event(EVENEMENT_ERREUR_API));
     }

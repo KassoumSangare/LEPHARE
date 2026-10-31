@@ -185,6 +185,18 @@ export const ContractDetailPage = () => {
             <span>Renouveler la Police</span>
           </button>
 
+          {contract.branche === 'Auto' && contract.raw?.flotte && aLeDroit('contrats.avenant') && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate(`/user/contracts/${id}/incorporation`)}
+              title="Ajouter un véhicule à la flotte jusqu'à l'échéance initiale de la police"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Car size={16} />
+              <span>Incorporer un véhicule</span>
+            </button>
+          )}
+
           {/* Avenant et transformation retirés le 2026-10-14 : ils n'enregistraient rien en base
               (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
               d'avenant de modification n'existent pas encore (sp_avenant_modification) */}

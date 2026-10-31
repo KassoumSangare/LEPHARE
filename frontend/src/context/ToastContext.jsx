@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { useAuth } from './AuthContext';
+import { estErreurTechnique, messageErreurLisible } from '../utils/messageUtilisateur';
 
 /* =========================================================================
    NOTIFICATIONS DE LE PHARE
@@ -27,25 +28,11 @@ const MAX_VISIBLES = 4;
 const DUREE_MAX = 16000;
 const DUREE_SORTIE = 180;
 
-// Messages techniques à ne pas montrer aux utilisateurs (erreurs et avertissements seulement)
-const TECHNIQUE = /request failed with status code|network error|timeout of \d+ms|\beconn\w*|\berr_\w+|unexpected token|is not a function|cannot read propert|is not defined|undefined is not|null is not|syntaxerror|typeerror|referenceerror|traceback|<!doctype|<html|psycopg|errno|internal server error|\[object object\]/i;
-
 const messageLisible = (message, type) => {
   if (React.isValidElement(message)) return message;
-  let texte = message instanceof Error ? message.message : message;
-  texte = texte === null || texte === undefined ? '' : String(texte).trim();
-  if (type !== 'error' && type !== 'warning') return texte;
-  if (!texte) return 'Une erreur est survenue. Veuillez réessayer.';
-  if (!TECHNIQUE.test(texte)) return texte;
-  console.warn('[notification] message technique remplacé pour l’utilisateur :', texte);
-  if (/status code 5\d\d|network error|timeout of|econn|internal server error/i.test(texte)) {
-    return 'Le serveur ne répond pas pour le moment. Vérifiez la connexion puis réessayez.';
-  }
-  if (/status code 401/i.test(texte)) return 'Votre session a expiré : reconnectez-vous.';
-  if (/status code 403/i.test(texte)) return "Vous n'avez pas les droits nécessaires pour cette opération.";
-  if (/status code 404/i.test(texte)) return "L'élément demandé est introuvable : il a peut-être été retiré entre-temps.";
-  if (/status code 4\d\d/i.test(texte)) return "La demande n'a pas été acceptée. Vérifiez les informations saisies.";
-  return 'Une erreur inattendue est survenue. Veuillez réessayer ; si le problème persiste, contactez le support.';
+  const texte = message instanceof Error ? message.message : message;
+  if (type === 'error' || type === 'warning') return messageErreurLisible(texte);
+  return estErreurTechnique(texte) ? messageErreurLisible(texte) : texte;
 };
 
 // Temps de lecture : au moins la durée du type, plus ~1/4 s par mot

@@ -18,6 +18,7 @@ from customer.models import Client
 from uranus.settings import MAX_LIMIT_FOR_SEARCH
 
 from .iautils import convert_to_date, unpack_ia_quotation_post_data
+from .incorporation import _verifier_periode_devis
 from .models import (
     AssureIaInfo,
     AssureIaParDevisOuContrat,
@@ -1306,6 +1307,20 @@ def save_quotation(input_data):
             )
 
     try:
+        if IdDevis:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT a.codeavenant, d.dateeffet::date, d.dateexpiration::date
+                       FROM stddevis d
+                       JOIN stdavenant a ON a.idavenant = d.idavenant
+                       WHERE d.iddevis = %s""",
+                    [IdDevis],
+                )
+                devis_mouvement = cursor.fetchone()
+            if devis_mouvement:
+                _verifier_periode_devis(
+                    devis_mouvement[0], devis_mouvement[1], devis_mouvement[2], DateEffet, DateExpiration,
+                )
         with connection.cursor() as cursor:
             cursor.execute(
                 "CALL sp_creation_devis(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",

@@ -1,4 +1,5 @@
 import { exportBordereauExcel, exportBordereauPdf, exportToExcel, exportToPdf } from './exportUtils';
+import { messageErreurLisible } from './messageUtilisateur';
 
 // Outils communs aux écrans financiers : état des encaissements, reversements aux compagnies,
 // réclamation et encaissement des commissions (routes /api/finance/…).
@@ -32,11 +33,11 @@ export const recentsDabord = (date, id) => (a, b) => String(date(b) || '').local
 
 export const messageErreurApi = (err) => {
   const data = err?.response?.data;
-  if (!data) return err?.message || 'serveur injoignable';
-  if (typeof data === 'string') return data.slice(0, 200);
+  if (!data) return messageErreurLisible(err?.message || 'Le serveur ne répond pas.', err?.response?.status);
+  if (typeof data === 'string') return messageErreurLisible(data.slice(0, 200), err?.response?.status);
   const direct = data.error || data.detail || data.message;
-  if (direct) return typeof direct === 'string' ? direct : JSON.stringify(direct);
-  return Object.entries(data).map(([k, v]) => `${k} : ${Array.isArray(v) ? v.join(' ') : v}`).join(' ; ');
+  if (direct) return messageErreurLisible(typeof direct === 'string' ? direct : JSON.stringify(direct), err?.response?.status);
+  return messageErreurLisible(Object.entries(data).map(([k, v]) => `${k} : ${Array.isArray(v) ? v.join(' ') : v}`).join(' ; '), err?.response?.status);
 };
 
 // Mention réglementaire des bordereaux de reversement

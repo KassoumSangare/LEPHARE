@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Car, ChevronLeft, ChevronRight,
-  HeartPulse, Home, Layers, Loader2, Pencil, Plane, Search, Save, Shield, Ship, X,
+  HeartPulse, Home, Layers, Loader2, Pencil, Plane, RefreshCw, Search, Save, Shield, ShieldCheck, Ship, X,
 } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
-import { EnTeteParametrage } from '../../../components/admin/EnTeteParametrage';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { SqueletteTableau } from '../../../components/common/Squelette';
@@ -151,7 +150,7 @@ const champsModifies = (courant, initial, exclus = []) => Object.fromEntries(
 const ChampEdition = ({ cle, valeur, onChange }) => {
   if (CLES_BOOLS.has(cle) || typeof valeur === 'boolean') {
     return (
-      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minHeight: 40 }}>
+      <label className="admin-contrats-field admin-contrats-toggle">
         <input type="checkbox" checked={Boolean(valeur)} onChange={(event) => onChange(event.target.checked)} />
         <span>{libelleChamp(cle)}</span>
       </label>
@@ -173,7 +172,7 @@ const ChampEdition = ({ cle, valeur, onChange }) => {
   };
 
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+    <label className="admin-contrats-field">
       <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{libelleChamp(cle)}</span>
       {multiline
         ? <textarea {...commonProps} rows={2} />
@@ -183,7 +182,7 @@ const ChampEdition = ({ cle, valeur, onChange }) => {
 };
 
 const ChampsEdition = ({ valeurs, identifiantsMasques = [], onChange }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>
+  <div className="admin-contrats-fields" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.75rem' }}>
     {Object.entries(valeurs || {})
       .filter(([cle]) => !identifiantsMasques.includes(cle) && cle !== 'garanties')
       .map(([cle, valeur]) => (
@@ -406,14 +405,39 @@ export const AdminContractManagementPage = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.5rem' }}>
-      <EnTeteParametrage
-        icone={Pencil}
-        titre="Administration des contrats"
-        description="Modification contrôlée des données du contrat, des risques/véhicules et des garanties. Chaque enregistrement exige un motif et conserve les valeurs avant/après dans le journal d’audit."
-      />
+    <div className="admin-contrats-page">
+      <header className="admin-contrats-hero">
+        <div className="admin-contrats-hero-copy">
+          <div className="admin-contrats-eyebrow"><ShieldCheck size={14} /> Espace de gestion sécurisé</div>
+          <h1>Administration des contrats</h1>
+          <p>Consultez et corrigez les contrats, leurs risques et leurs garanties. Chaque modification est justifiée et conservée dans le journal d’audit.</p>
+        </div>
+        <div className="admin-contrats-hero-actions">
+          <div className="admin-contrats-audit">
+            <span className="admin-contrats-audit-dot" />
+            <span>Traçabilité activée</span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary admin-contrats-refresh"
+            onClick={chargerListe}
+            disabled={chargementListe}
+            aria-busy={chargementListe}
+          >
+            {chargementListe ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+            Actualiser
+          </button>
+        </div>
+      </header>
 
       <section className="glass-panel portefeuille-filtres" aria-label="Recherche et filtres">
+        <div className="admin-contrats-section-heading">
+          <div>
+            <h2>Explorer les contrats</h2>
+            <p>Affinez la liste par mot-clé, période ou branche d’assurance.</p>
+          </div>
+          <span className="admin-contrats-result-count">{nombre(liste.count)} résultat(s)</span>
+        </div>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -422,7 +446,7 @@ export const AdminContractManagementPage = () => {
           }}
           className="portefeuille-ligne-recherche"
         >
-          <label className="portefeuille-recherche">
+          <div className="portefeuille-recherche">
             <Search size={17} aria-hidden="true" />
             <input
               type="search"
@@ -432,10 +456,11 @@ export const AdminContractManagementPage = () => {
               placeholder="N° de police, client, produit ou compagnie…"
               aria-label="Rechercher un contrat"
             />
-            <button type="submit" className="btn btn-primary" aria-label="Rechercher">
+            <button type="submit" className="btn btn-primary admin-contrats-search" aria-label="Rechercher">
               <Search size={16} />
+              <span>Rechercher</span>
             </button>
-          </label>
+          </div>
           <div className="portefeuille-periode" role="group" aria-label="Période">
             <select className="form-control" value={champPeriode} onChange={(event) => { setChampPeriode(event.target.value); setPage(1); }}>
               <option value="effet">Date d’effet</option>
@@ -465,6 +490,13 @@ export const AdminContractManagementPage = () => {
       </section>
 
       <section className="glass-panel portefeuille-liste" aria-label="Contrats">
+        <div className="admin-contrats-section-heading admin-contrats-list-heading">
+          <div>
+            <h2>Portefeuille des contrats</h2>
+            <p>Suivez les échéances et accédez aux dossiers à mettre à jour.</p>
+          </div>
+          <span className="admin-contrats-page-indicator">Page {page} <span>/</span> {totalPages}</span>
+        </div>
         <div className="portefeuille-statuts" role="tablist" aria-label="Statut des contrats">
           {ONGLETS_STATUT.map((cle) => (
             <button key={cle} type="button" role="tab" aria-selected={statut === cle}
@@ -557,21 +589,44 @@ export const AdminContractManagementPage = () => {
         maxWidth="1100px"
       >
         {contratEdite && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.6rem', padding: '0.75rem', borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+          <div className="admin-contrats-editor">
+            <section className="admin-contrats-summary" aria-label="Résumé du contrat">
+              <div className="admin-contrats-summary-main">
+                <span className="admin-contrats-summary-icon"><Pencil size={18} /></span>
+                <div>
+                  <span className="admin-contrats-summary-label">Police d’assurance</span>
+                  <strong>{contratEdite.contrat.numeropolice || contratEdite.contrat.numero_police_compagnie || `Contrat #${contratEdite.contrat.idcontrat}`}</strong>
+                </div>
+              </div>
+              <div className="admin-contrats-summary-item">
+                <span>Assuré / client</span>
+                <strong>{nomClient(contratEdite.contrat)}</strong>
+              </div>
+              <div className="admin-contrats-summary-item">
+                <span>Produit</span>
+                <strong>{contratEdite.contrat.idproduit?.libelle_produit || 'Non renseigné'}</strong>
+              </div>
+              <div className="admin-contrats-summary-item">
+                <span>Échéance</span>
+                <strong>{dateFr(contratEdite.contrat.dateexpiration)}</strong>
+              </div>
+            </section>
+
+            <div className="admin-contrats-warning">
               <AlertTriangle size={17} style={{ flexShrink: 0, color: 'var(--accent-amber)' }} />
               <span>Cette modification administrative ne crée pas d’avenant et ne recalcule pas automatiquement les quittances. Vérifiez les données et le motif avant l’enregistrement.</span>
             </div>
 
-            <div aria-live="polite">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                <strong>{pagesEdition[pageEdition]?.titre}</strong>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-                  Étape {pageEdition + 1} / {pagesEdition.length}
-                </span>
+            <section className="admin-contrats-edit-section" aria-live="polite">
+              <div className="admin-contrats-edit-heading">
+                <div>
+                  <span className="admin-contrats-summary-label">Édition par étapes · {pageEdition + 1} / {pagesEdition.length}</span>
+                  <h2>{pagesEdition[pageEdition]?.titre}</h2>
+                </div>
+                <span className="admin-contrats-step-tag">{pagesEdition[pageEdition]?.type === 'contrat' ? 'Contrat' : pagesEdition[pageEdition]?.type === 'detail' ? 'Risque' : 'Garantie'}</span>
               </div>
-              <div style={{ height: 4, borderRadius: 999, overflow: 'hidden', background: 'var(--border-subtle)', marginBottom: '1rem' }}>
-                <div style={{ height: '100%', width: `${((pageEdition + 1) / pagesEdition.length) * 100}%`, background: 'var(--primary-500)', transition: 'width 0.2s ease' }} />
+              <div className="admin-contrats-progress" role="progressbar" aria-label="Progression de l’édition" aria-valuemin={0} aria-valuemax={pagesEdition.length} aria-valuenow={pageEdition + 1}>
+                <div style={{ width: `${((pageEdition + 1) / pagesEdition.length) * 100}%` }} />
               </div>
 
               {pagesEdition[pageEdition]?.type === 'contrat' && (
@@ -603,9 +658,9 @@ export const AdminContractManagementPage = () => {
                   />
                 );
               })()}
-            </div>
+            </section>
 
-            <nav aria-label="Pagination des éléments du contrat" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.9rem' }}>
+            <nav className="admin-contrats-editor-actions" aria-label="Pagination des éléments du contrat">
               <button type="button" className="btn btn-secondary" onClick={() => setPageEdition((valeur) => Math.max(0, valeur - 1))} disabled={pageEdition === 0 || enregistrement}>
                 <ChevronLeft size={15} /> Précédent
               </button>

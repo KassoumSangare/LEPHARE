@@ -1697,6 +1697,8 @@ export const contractApi = {
     params: { date_effet: dateEffet || undefined, date_expiration: dateExpiration || undefined },
   })).data,
   creerRenouvellement: async (idContrat, donnees) => (await apiClient.post(`/renouvellement/${idContrat}/`, donnees)).data,
+  preparerIncorporation: async (idContrat) => (await apiClient.get(`/incorporation/${idContrat}/`)).data,
+  creerIncorporation: async (idContrat, donnees) => (await apiClient.post(`/incorporation/${idContrat}/`, donnees)).data,
   // IA et RC MINENE rattachées à la police Santé MINENE du contrat (production/minene_connexes.py)
   getMineneConnexes: async (idContrat) => (await apiClient.get(`/minene/${idContrat}/connexes/`)).data,
   // Police Santé MINENE par son numéro (client, période, durée, IA et RC liées) ; recherche par numéro ou client

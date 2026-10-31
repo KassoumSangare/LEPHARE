@@ -28,6 +28,7 @@ from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
+from . import incorporation as incorporation_views
 from .views_transport_guce import (
     analyser_bordereau,
     certificats_transport,
@@ -633,6 +634,8 @@ urlpatterns = [
     ),
     # Renouvellement LE PHARE : préparation (GET) et devis de renouvellement sous la même police (POST)
     path("renouvellement/<int:pk>/", renouvellement_views.renouvellement, name="renouvellement-contrat"),
+    # Incorporation Automobile flotte : date d'effet distincte, échéance du contrat conservée
+    path("incorporation/<int:pk>/", incorporation_views.incorporation, name="incorporation-flotte"),
     # IA et RC MINENE rattachées à la police Santé MINENE d'un contrat
     path("minene/<int:pk>/connexes/", minene_connexes.connexes, name="minene-connexes"),
     path("minene/ia/apercu/", minene_connexes.apercu_ia, name="minene-ia-apercu"),

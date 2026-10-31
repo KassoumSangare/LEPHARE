@@ -292,10 +292,12 @@ REGLES = [
              r"brouillons|devisdetgarantie|valeursusuelles)(/|$)", "devis.view"),
     # ---- contrats
     R("GET", r"renouvellement/\d+/?$", "contrats.view"),
+    R("GET", r"incorporation/\d+/?$", "contrats.view"),
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
     R("GET", r"minene/(ia|rc)/apercu/?$", "devis.view"),
     R("GET", r"minene/police/?$", "devis.view"),
     R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
+    R("POST", r"incorporation/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("GET", r"contrat/administration/?$", "contrats.admin_update"),

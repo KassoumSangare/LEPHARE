@@ -699,13 +699,13 @@ export const DecisionalStatesPage = () => {
                 {totals.taxe.toLocaleString('fr-FR')} F
               </div>
             </div>
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.75rem 1rem', background: 'rgba(52,211,153,0.05)' }}>
+            <div style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
               <div style={{ fontSize: '0.7rem', color: '#34d399', fontWeight: 700, textTransform: 'uppercase' }}>Total Prime TTC</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#34d399', marginTop: '0.15rem' }}>
                 {totals.primeTtc.toLocaleString('fr-FR')} F
               </div>
             </div>
-            <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '0.75rem 1rem', background: 'rgba(167,139,250,0.05)' }}>
+            <div style={{ background: 'rgba(167,139,250,0.05)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '0.75rem 1rem' }}>
               <div style={{ fontSize: '0.7rem', color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase' }}>Comm. Intermédiaire</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#a78bfa', marginTop: '0.15rem' }}>
                 {totals.commission.toLocaleString('fr-FR')} F

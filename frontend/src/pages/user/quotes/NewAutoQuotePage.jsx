@@ -284,6 +284,8 @@ const toDmy = (dStr) => {
 
 export const NewAutoQuotePage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const incorporationParam = searchParams.get('incorporation') === '1';
   const { success, error: toastError, info } = useToast();
 
   // Navigation étapes : 1 = CONTRAT, 2 = VÉHICULE, 3 = OFFRE & DÉCOMPTE, 4 = CLIENT/ASSURÉ/CONDUCTEUR
@@ -373,6 +375,7 @@ export const NewAutoQuotePage = () => {
   const [dureeId, setDureeId] = useState(4); // 1: 1M, 2: 3M, 3: 6M, 4: 12M, 5: libre (terme « Autre »)
   const [dureeContrat, setDureeContrat] = useState('Annuelle');
   const [customDateExpiration, setCustomDateExpiration] = useState('');
+  const [dateExpirationIncorporation, setDateExpirationIncorporation] = useState('');
 
   // Calcul dynamique de la Date d'expiration selon Date Effet + Durée
   const calculatedDateExpiration = useMemo(() => {
@@ -391,7 +394,9 @@ export const NewAutoQuotePage = () => {
     return d.toISOString().split('T')[0];
   }, [dateEffet, dureeId, customDateExpiration]);
 
-  const effectiveDateExpiration = Number(dureeId) === 5 ? (customDateExpiration || calculatedDateExpiration) : calculatedDateExpiration;
+  const effectiveDateExpiration = incorporationParam
+    ? (dateExpirationIncorporation || customDateExpiration || calculatedDateExpiration)
+    : Number(dureeId) === 5 ? (customDateExpiration || calculatedDateExpiration) : calculatedDateExpiration;
 
   // ----------------------------------------------------
   // ÉCRAN 2 : VÉHICULE & FLOTTE
@@ -1413,7 +1418,6 @@ export const NewAutoQuotePage = () => {
   // MODE ÉDITION : préremplissage depuis un devis existant
   // (bouton « Modifier » du Registre des Devis, /user/quotes/auto?edit=<iddevis>)
   // ----------------------------------------------------
-  const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
   // Devis de renouvellement (page Renouvellement) : véhicules retarifés à l'enregistrement (âge, valeurs vénales)
   const renouvellementParam = searchParams.get('renouvellement') === '1';
@@ -1724,6 +1728,7 @@ export const NewAutoQuotePage = () => {
         setTermeContrat(libelleTerme(charge.termeId));
         setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
         setCustomDateExpiration(toIsoDate(d.dateexpiration));
+        if (incorporationParam) setDateExpirationIncorporation(toIsoDate(d.dateexpiration));
 
         // Véhicule (le premier pour une flotte) ; devis sans véhicule en base : seule l'offre
         // de l'en-tête est reprise, le reste de l'écran Véhicule est à compléter
@@ -3110,23 +3115,32 @@ export const NewAutoQuotePage = () => {
                 className="form-control"
                 value={dateEffet}
                 onChange={(e) => setDateEffet(e.target.value)}
+                disabled={incorporationParam}
               />
             </div>
 
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              <DureeContratSelect
-                value={dureeId}
-                onChange={(id) => {
-                  setDureeId(id);
-                  setDureeContrat(libelleDuree(id));
-                }}
-              />
+              {incorporationParam ? (
+                <div className="form-control" aria-readonly="true">
+                  Durée restante jusqu’à l’échéance initiale
+                </div>
+              ) : (
+                <DureeContratSelect
+                  value={dureeId}
+                  onChange={(id) => {
+                    setDureeId(id);
+                    setDureeContrat(libelleDuree(id));
+                  }}
+                />
+              )}
             </div>
 
             <div className="form-group">
               <label className="form-label">Date d'expiration (* requis)</label>
-              {Number(dureeId) === 5 ? (
+              {incorporationParam ? (
+                <input type="date" className="form-control" value={effectiveDateExpiration} readOnly disabled />
+              ) : Number(dureeId) === 5 ? (
                 <input
                   type="date"
                   className="form-control"
