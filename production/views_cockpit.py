@@ -71,15 +71,18 @@ def echeances_polices(cursor, du, au):
         SELECT c.idcontrat, c.iddevis, c.numeropolice, c.dateexpiration::date AS dateexpiration, c.primettc,
                TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
                co.raisonsociale AS compagnie, c.idproduit, NULLIF(TRIM(cl.telephone), '') AS telephone,
-               -- Devis de renouvellement déjà préparé (page de renouvellement : rattaché au devis du contrat)
-               EXISTS (SELECT 1 FROM stddevis d JOIN stdavenant da ON da.idavenant = d.idavenant
-                       WHERE da.codeavenant = 'REN' AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)
-                         AND d.idoldhist = c.iddevis) AS devis_en_cours
+               -- Devis de renouvellement déjà préparé (page de renouvellement : rattaché au devis du contrat). Ensemble
+               -- calculé une seule fois (jointure) : un EXISTS corrélé relisait toute la table des devis pour chaque
+               -- police (25 000 devis × 143 polices : 3 s, jusqu'à l'expiration de la requête sur un serveur plus lent)
+               (en_cours.idoldhist IS NOT NULL) AS devis_en_cours
         FROM stdcontrat c
         JOIN stdavenant a ON a.idavenant = c.idavenant
         LEFT JOIN stdclient cl ON cl.idclient = c.idclient
         LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
         LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
+        LEFT JOIN (SELECT DISTINCT d.idoldhist FROM stddevis d JOIN stdavenant da ON da.idavenant = d.idavenant
+                   WHERE da.codeavenant = 'REN' AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)
+                     AND d.idoldhist IS NOT NULL) en_cours ON en_cours.idoldhist = c.iddevis
         WHERE {CONTRAT_VALIDE} AND a.codeavenant IN ('AFN', 'REN')
           AND c.dateexpiration::date BETWEEN %s AND %s
           AND NOT EXISTS (SELECT 1 FROM stdcontrat r JOIN stdavenant ra ON ra.idavenant = r.idavenant

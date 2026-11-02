@@ -54,7 +54,8 @@ const champ = (libelle, controle, aide) => (
  * Avenant de modification d'un contrat Santé en cours, sous la même police (sante/avenant.py) :
  * - incorporation d'un membre dans une famille (demande du 2026-11-02) : la famille complète passe d'office dans la
  *   formule de sa nouvelle taille (FAMILLE de 3 personnes + 1 : FAMILLE PLUS) et la prime de la nouvelle personne est
- *   l'écart entre les deux formules, au prorata des jours restants ;
+ *   l'écart entre les deux formules : dû en entier pour une police MINENE (tarif forfaitaire, 800 000 - 600 000 F TTC),
+ *   au prorata des jours restants pour les autres offres ;
  * - changement de formule d'une famille (CR OREOLE du 26-10-2026) ;
  * - autre modification saisie dans l'écran Santé (nouvelle famille…).
  * Le devis d'avenant s'ouvre ensuite dans l'écran Santé.
@@ -104,6 +105,8 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const joursRestants = contrat ? jours(dateEffet, contrat.DateExpiration) : 0;
   const joursPeriode = contrat ? jours(contrat.DateEffet, contrat.DateExpiration) : 0;
   const enCours = donnees?.EnCours?.[0];
+  // Police MINENE : prime fixée par formule, l'écart annuel est dû en entier (sans prorata)
+  const forfaitaire = Boolean(donnees?.Forfaitaire);
 
   // Incorporation : formule de la famille après l'arrivée du membre et écart de prime de base entre les deux formules
   const apres = famille ? formuleApresIncorporation(famille) : null;
@@ -111,6 +114,9 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const primesConnues = changeFormule && apres.PrimeBase != null && famille.PrimeBase != null;
   const ecartAnnuel = primesConnues ? Number(apres.PrimeBase) - Number(famille.PrimeBase) : 0;
   const estimation = joursPeriode > 0 ? Math.round((ecartAnnuel * Math.max(joursRestants, 0)) / joursPeriode) : 0;
+  // Écart TTC au barème des deux formules (MINENE : 800 000 - 600 000 = 200 000 F)
+  const ttcAvant = famille ? famille.Formules.find((o) => o.IdOffre === famille.IdOffre)?.PrimeTtc : null;
+  const ecartTtc = changeFormule && ttcAvant != null && apres.PrimeTtc != null ? Number(apres.PrimeTtc) - Number(ttcAvant) : null;
   const age = ageAu(membre.DateNaissance, dateEffet);
   const certificatPropose = membre.Lien === 'E' && age !== null && age > Number(surprimes.ageMaxEnfant);
   const affectionsMax = Math.max(0, Number(surprimes.affectionsMax) || 0);
@@ -167,7 +173,9 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
           <div style={{ color: 'var(--text-secondary)' }}>
             Période du contrat : du <strong>{formatDate(contrat.DateEffet)}</strong> au <strong>{formatDate(contrat.DateExpiration)}</strong>, échéance inchangée.
             {' '}L'avenant reprend la composition en vigueur sous la même police ; sa prime est l'écart de prime annuelle entre la
-            nouvelle composition et l'actuelle, au prorata des jours restants, sans ristourne.
+            nouvelle composition et l'actuelle, {forfaitaire
+              ? <>dû <strong>en entier</strong> : tarif forfaitaire MINENE, sans prorata ni ristourne.</>
+              : 'au prorata des jours restants, sans ristourne.'}
           </div>
 
           {enCours ? (
@@ -198,7 +206,8 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 {champ(mode === 'incorporation' ? 'Date d\'incorporation *' : 'Date d\'effet de l\'avenant *',
                   <input type="date" className="form-control" value={dateEffet} min={contrat.DateEffet} max={contrat.DateExpiration}
                     onChange={(e) => setDateEffet(e.target.value)} />,
-                  joursPeriode > 0 && joursRestants > 0 ? `Prorata : ${joursRestants} jours sur ${joursPeriode}` : undefined)}
+                  forfaitaire ? 'Tarif forfaitaire : pas de prorata'
+                    : joursPeriode > 0 && joursRestants > 0 ? `Prorata : ${joursRestants} jours sur ${joursPeriode}` : undefined)}
                 {mode !== 'ecran' && champ('Famille *',
                   <select className="form-control" value={idAdherent} onChange={(e) => choisirFamille(e.target.value)}>
                     <option value={0}>Choisir la famille</option>
@@ -276,24 +285,36 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                             de {pluriel(Number(famille.Personnes), 'personne')} à {Number(famille.Personnes) + 1} : sa formule {famille.Option}
                             {' '}est complète, elle passe en <strong style={{ color: 'var(--text-primary)' }}>{apres.Option || apres.Formule}</strong>.
                           </span>
-                          {primesConnues ? (
+                          {forfaitaire && ecartTtc != null ? (
+                            <span>
+                              Prime de la nouvelle personne : écart entre les deux formules, {fcfa(apres.PrimeTtc)} − {fcfa(ttcAvant)} ={' '}
+                              <strong style={{ color: 'var(--text-primary)' }}>{fcfa(ecartTtc)} F TTC</strong> (prime nette {fcfa(ecartAnnuel)} F),
+                              dû en entier : tarif forfaitaire, sans prorata.
+                            </span>
+                          ) : primesConnues ? (
                             <span>
                               Prime de la nouvelle personne : écart entre les deux formules, {fcfa(apres.PrimeBase)} − {fcfa(famille.PrimeBase)} ={' '}
                               <strong style={{ color: 'var(--text-primary)' }}>{fcfa(ecartAnnuel)} F par an</strong>
-                              {joursPeriode > 0 && <>, soit environ <strong style={{ color: 'var(--text-primary)' }}>{fcfa(estimation)} F</strong> de prime nette pour {joursRestants} jours sur {joursPeriode}</>}.
+                              {forfaitaire
+                                ? ', dû en entier : tarif forfaitaire, sans prorata'
+                                : joursPeriode > 0 && <>, soit environ <strong style={{ color: 'var(--text-primary)' }}>{fcfa(estimation)} F</strong> de prime nette pour {joursRestants} jours sur {joursPeriode}</>}.
                             </span>
                           ) : (
-                            <span>Prime de la nouvelle personne : écart entre les deux formules, au prorata des jours restants.</span>
+                            <span>
+                              Prime de la nouvelle personne : écart entre les deux formules{forfaitaire ? ', dû en entier' : ', au prorata des jours restants'}.
+                            </span>
                           )}
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Surprimes, réduction ou majoration de la famille, supplément d'accessoire et taxe sont calculés à la création de l'avenant.
+                            {forfaitaire
+                              ? 'Montant au barème : une réduction, une majoration ou des surprimes de la famille le modifient ; le montant exact est calculé à la création de l\'avenant.'
+                              : 'Surprimes, réduction ou majoration de la famille, supplément d\'accessoire et taxe sont calculés à la création de l\'avenant.'}
                           </span>
                         </span>
                       ) : famille.PersonnesMax ? (
                         <span>
                           La famille {famille.Adherent} passe à {pluriel(Number(famille.Personnes) + 1, 'personne')} et reste
                           en <strong style={{ color: 'var(--text-primary)' }}>{libelleFormule(famille)}</strong> : pas
-                          d'écart de formule. Seules d'éventuelles surprimes du nouveau membre (âge, affections) s'ajoutent, au prorata.
+                          d'écart de formule. Seules d'éventuelles surprimes du nouveau membre (âge, affections) s'ajoutent{forfaitaire ? '' : ', au prorata'}.
                         </span>
                       ) : (
                         <span>

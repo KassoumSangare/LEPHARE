@@ -10,10 +10,11 @@ Santé : avenant de modification en cours de contrat, sous la même police (CR O
   choisie, couverture de la nouvelle formule (créée au besoin avec le collège, la zone et les dates de la sienne) et
   famille rattachée à cette couverture. Membre (incorporation, demande du 2026-11-02) : nouveau membre ajouté à la
   famille par sp_saisie_affilie_sante v6 ; une famille complète passe d'office dans la formule de sa nouvelle taille
-  (FAMILLE de 3 personnes + 1 : FAMILLE PLUS). sp_creation_devis_sante v9 tarife l'avenant : écart entre la prime
+  (FAMILLE de 3 personnes + 1 : FAMILLE PLUS). sp_creation_devis_sante v11 tarife l'avenant : écart entre la prime
   annuelle de la nouvelle composition et celle de la composition précédente (pour une famille qui change de formule :
-  l'écart entre les deux formules), au prorata des jours restants jusqu'à l'échéance, sans ristourne ; supplément
-  d'accessoire du barème. Le devis s'ouvre ensuite dans l'écran Santé ; la confirmation (sp_confirmation_devis) émet
+  l'écart entre les deux formules), sans ristourne ; supplément d'accessoire du barème. Police MINENE (tarif forfaitaire
+  par formule) : écart annuel dû en entier, sans prorata (demande du 2026-11-02) ; autres offres : au prorata des jours
+  restants jusqu'à l'échéance. Le devis s'ouvre ensuite dans l'écran Santé ; la confirmation (sp_confirmation_devis) émet
   l'avenant et sa quittance sous la police du contrat.
 """
 
@@ -68,9 +69,33 @@ def _annuelle(cursor, id_devis):
     return float((cursor.fetchone() or [0])[0] or 0)
 
 
+def _forfaitaire(cursor, id_devis):
+    """Police MINENE : familles couvertes par des formules à prime fixe (lephare_sante_formule), avenant sans prorata
+    (sp_creation_devis_sante v11)."""
+    cursor.execute(
+        """SELECT EXISTS (SELECT 1 FROM stdadherent a JOIN stdfiliale f ON f.idfiliale = a.idfiliale
+                          JOIN lephare_sante_formule sf ON sf.idoffre = f.idoffresante WHERE a.iddevis = %s)""", [id_devis])
+    return bool(cursor.fetchone()[0])
+
+
+def _ttc_formule(cursor, id_offre, prime_base):
+    """Prime TTC annuelle d'une famille au barème de sa formule MINENE : prime de base, accessoire de la grille, taxe Santé
+    du jour, arrondi des primes (TARIFICATION MINENE SANTE.xlsx, 70 %-80 % : 386 800 / 600 000 / 800 000 F)."""
+    cursor.execute(
+        """SELECT fn_lephare_arrondi_montant(%(base)s + a.accessoire_compagnie + a.accessoire_intermediaire + a.taxe_sur_accessoire
+                  + ROUND(%(base)s * COALESCE((SELECT t.tauxtaxe FROM stdtauxtaxegarantieproduit t
+                                                WHERE t.idproduit = %(produit)s AND t.idgarantie = 98
+                                                  AND CURRENT_DATE BETWEEN t.debutvalidite AND t.finvalidite
+                                                ORDER BY t.debutvalidite DESC LIMIT 1), 0) / 100, 0), %(produit)s)
+           FROM fn_get_accessoire_sante_minene(%(offre)s, %(base)s, 0, 1) a""",
+        {"base": prime_base, "offre": id_offre, "produit": ID_PRODUIT_SANTE})
+    ligne = cursor.fetchone()
+    return float(ligne[0]) if ligne and ligne[0] is not None else None
+
+
 def detail_avenant_modification(cursor, id_devis):
     """Devis d'avenant MOD Santé : police, période du contrat, jours restants, prime annuelle de la nouvelle composition
-    (après enregistrement) et de la précédente ; None pour un autre devis."""
+    (après enregistrement) et de la précédente, tarif forfaitaire (MINENE : sans prorata) ; None pour un autre devis."""
     cursor.execute(
         """SELECT d.idoldhist, a.codeavenant, d.dateeffet::date, d.dateexpiration::date, COALESCE(d.primeannuelle, 0), d.idproduit
            FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant WHERE d.iddevis = %s""", [id_devis])
@@ -96,11 +121,12 @@ def detail_avenant_modification(cursor, id_devis):
            FROM lephare_avenant_sante_reference WHERE iddevis = %s""", [id_devis])
     nombre_reference, total_reference = cursor.fetchone()
     annuelle_precedente = float(total_reference) if nombre_reference else _annuelle(cursor, precedent)
+    forfaitaire = _forfaitaire(cursor, id_devis)
     return {
         "NumeroPolice": police, "IdContrat": id_contrat, "DateEffetContrat": _iso(effet_base),
         "DateExpirationContrat": _iso(expiration_base), "DateEffet": _iso(effet), "DateExpiration": _iso(expiration),
-        "Jours": jours, "JoursPeriode": jours_periode,
-        "Prorata": round(min(max(jours / jours_periode, 0), 1), 6) if jours_periode > 0 else 0,
+        "Jours": jours, "JoursPeriode": jours_periode, "Forfaitaire": forfaitaire,
+        "Prorata": 1 if forfaitaire else round(min(max(jours / jours_periode, 0), 1), 6) if jours_periode > 0 else 0,
         "PrimeAnnuelle": float(annuelle), "PrimeAnnuellePrecedente": annuelle_precedente,
         "EcartAnnuel": float(annuelle) - annuelle_precedente,
     }
@@ -288,6 +314,9 @@ def avenant_sante(request, idcontrat):
                 for f in familles:
                     if f["IdTarif"] and f["IdTarif"] not in formules:
                         formules[f["IdTarif"]] = _numeriques(_formules(cursor, f["IdTarif"]))
+                        # MINENE : prime TTC de chaque formule au barème, pour annoncer l'écart dû à l'incorporation
+                        for o in formules[f["IdTarif"]]:
+                            o["PrimeTtc"] = _ttc_formule(cursor, o["IdOffre"], o["PrimeBase"]) if o["PrimeBase"] else None
                     f["Formules"] = formules.get(f["IdTarif"], [])
                 avenants = _numeriques(_avenants(cursor, base))
                 return Response({
@@ -300,6 +329,8 @@ def avenant_sante(request, idcontrat):
                     "DateEffet": _iso(effet),
                     "Composition": composition,
                     "Familles": familles,
+                    # Police MINENE (tarif forfaitaire par formule) : avenant sans prorata
+                    "Forfaitaire": bool(composition) and _forfaitaire(cursor, composition),
                     "Avenants": avenants,
                     "EnCours": _numeriques(_en_cours(cursor, base)),
                 })

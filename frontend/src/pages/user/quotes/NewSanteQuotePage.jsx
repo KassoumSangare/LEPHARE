@@ -872,18 +872,21 @@ export const NewSanteQuotePage = () => {
         </div>
       )}
 
-      {/* Avenant de modification d'un contrat en cours : même police, prime = écart annuel au prorata (sante/avenant.py) */}
+      {/* Avenant de modification d'un contrat en cours : même police, prime = écart annuel, entier pour une police MINENE
+          (tarif forfaitaire), au prorata des jours restants sinon (sante/avenant.py) */}
       {avenantModification && (
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid rgba(236, 72, 153, 0.45)', background: 'rgba(236, 72, 153, 0.07)', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
           <Users size={18} color="#db2777" style={{ flexShrink: 0, marginTop: 2 }} />
           <span>
             <strong style={{ color: 'var(--text-primary)' }}>Avenant de modification de la police {avenantModification.NumeroPolice}</strong>
             {' '}- effet du {dateFr(dateEffet)} à l'échéance du {dateFr(avenantModification.DateExpirationContrat)}
-            {avenantModification.JoursPeriode > 0 && `, prorata ${avenantModification.Jours} jours sur ${avenantModification.JoursPeriode}`}.
+            {avenantModification.Forfaitaire
+              ? ', tarif forfaitaire MINENE : sans prorata'
+              : avenantModification.JoursPeriode > 0 && `, prorata ${avenantModification.Jours} jours sur ${avenantModification.JoursPeriode}`}.
             {' '}Un membre ajouté à une famille complète la fait passer d'office dans la formule de sa taille (FAMILLE de 3 personnes + 1 :
             FAMILLE PLUS). La prime de l'avenant est l'écart de prime annuelle avec la composition d'avant la modification, soit
-            l'écart entre les deux formules pour une famille qui en change, au prorata, sans ristourne ; enregistrez le devis après
-            toute modification.
+            l'écart entre les deux formules pour une famille qui en change, {avenantModification.Forfaitaire ? 'dû en entier' : 'au prorata'}, sans
+            ristourne ; enregistrez le devis après toute modification.
           </span>
         </div>
       )}
@@ -1520,7 +1523,8 @@ export const NewSanteQuotePage = () => {
                   const av = apercu.Avenant;
                   const tuiles = av ? [
                     ['Prime annuelle avant modification', av.PrimeAnnuellePrecedente], ['Nouvelle prime annuelle', av.PrimeAnnuelle],
-                    [`Prime nette de l'avenant - ${av.Jours} j sur ${av.JoursPeriode}`, apercu.Totaux.PrimeNette],
+                    [av.Forfaitaire ? "Prime nette de l'avenant - écart annuel entier" : `Prime nette de l'avenant - ${av.Jours} j sur ${av.JoursPeriode}`,
+                      apercu.Totaux.PrimeNette],
                     ['Accessoires', apercu.Totaux.Accessoire], ['Taxes', apercu.Totaux.Taxe], ['Prime TTC', apercu.Totaux.PrimeTtc],
                   ] : [
                     ...(ajustement ? [['Prime nette avant ajustement', apercu.Totaux.PrimeNetteAvantAjustement], [libelleAjustement, ajustement]] : []),
