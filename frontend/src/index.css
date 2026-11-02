@@ -3540,3 +3540,75 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .champ-propose-liste button:hover, .champ-propose-liste button:focus-visible { background: var(--primary-glow); outline: none; }
 .champ-propose-liste .valeur { font-family: var(--font-mono); font-weight: 700; white-space: nowrap; }
 .champ-propose-liste .detail { color: var(--text-muted); font-size: 0.76rem; text-align: right; }
+
+/* ---- Garanties d'un devis risques divers (MRP, RC : NewRisquesDiversQuotePage.jsx, demande du 2026-11-02 : contenu des
+   champs plus visible). Une ligne par garantie quand le pavé est large ; sinon le nom sur toute la ligne puis ses quatre
+   champs dessous, chacun sur un quart de la largeur avec son libellé. Montants en gras, alignés à droite. */
+.garanties-saisie { container-type: inline-size; font-size: 0.85rem; overflow-x: auto; }
+.garantie-ligne {
+  display: grid; align-items: center; column-gap: 0.6rem; row-gap: 0.4rem; padding: 0.55rem 0.35rem;
+  grid-template-columns: 2.4rem minmax(11rem, 1.5fr) minmax(9.5rem, 1.15fr) minmax(8.5rem, 1fr) minmax(8.5rem, 1fr) minmax(7.5rem, 0.8fr) 2.4rem;
+  grid-template-areas: "case nom capital fmin fmax taux retrait";
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background-color var(--mouvement-rapide, 150ms);
+}
+.garanties-saisie.sans-retrait .garantie-ligne {
+  grid-template-columns: 2.4rem minmax(11rem, 1.5fr) minmax(9.5rem, 1.15fr) minmax(8.5rem, 1fr) minmax(8.5rem, 1fr) minmax(7.5rem, 0.8fr);
+  grid-template-areas: "case nom capital fmin fmax taux";
+}
+.garantie-ligne:not(.garantie-entete):hover { background: color-mix(in srgb, var(--couleur-branche, var(--primary-500)) 5%, transparent); }
+.garantie-entete {
+  padding-top: 0.45rem; padding-bottom: 0.45rem; border-bottom-color: var(--border-medium);
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted);
+}
+.garantie-case { grid-area: case; display: flex; justify-content: center; }
+.garantie-case input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--couleur-branche, var(--primary-500)); }
+.garantie-nom { grid-area: nom; min-width: 0; font-weight: 600; line-height: 1.35; color: var(--text-primary); cursor: pointer; }
+.garantie-entete .garantie-nom { color: inherit; font-weight: inherit; cursor: default; }
+.garantie-capital { grid-area: capital; }
+.garantie-franchiseMinimum { grid-area: fmin; }
+.garantie-franchiseMaximum { grid-area: fmax; }
+.garantie-tauxFranchise { grid-area: taux; }
+.garantie-champ { min-width: 0; }
+/* Champ sans valeurs proposées : place du bouton gardée, les champs d'une colonne restent alignés */
+.garantie-champ .champ-propose:not(:has(.champ-propose-bouton)) .champ-propose-saisie { margin-right: 2.65rem; }
+.garantie-retrait { grid-area: retrait; display: flex; justify-content: center; }
+.garantie-champ-libelle { display: none; margin-bottom: 0.25rem; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); }
+.garantie-champ .form-control {
+  min-width: 0; padding: 0.5rem 0.6rem; font-size: 0.98rem; font-weight: 600; text-align: right;
+  font-variant-numeric: tabular-nums; color: var(--text-primary);
+}
+.garantie-champ .form-control:focus {
+  border-color: var(--couleur-branche, var(--primary-500));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--couleur-branche, var(--primary-500)) 20%, transparent);
+}
+.garantie-ligne.non-acquise .garantie-nom { color: var(--text-muted); font-weight: 500; }
+.garantie-ligne.non-acquise .garantie-champ { opacity: 0.6; }
+.garantie-ajoutee {
+  margin-left: 0.45rem; padding: 0.08rem 0.45rem; border-radius: 999px; white-space: nowrap;
+  font-size: 0.68rem; font-weight: 700; border: 1px solid var(--couleur-branche); color: var(--couleur-branche);
+}
+.garanties-vide { padding: 1.25rem; text-align: center; color: var(--text-muted); }
+@container (max-width: 980px) {
+  .garantie-entete { display: none; }
+  .garantie-ligne { padding: 0.7rem 0.35rem; }
+  .garanties-saisie .garantie-ligne {
+    grid-template-columns: 2.4rem repeat(4, minmax(0, 1fr)) 2.4rem;
+    grid-template-areas: "case nom nom nom nom retrait" ". capital fmin fmax taux .";
+  }
+  .garanties-saisie.sans-retrait .garantie-ligne {
+    grid-template-columns: 2.4rem repeat(4, minmax(0, 1fr));
+    grid-template-areas: "case nom nom nom nom" ". capital fmin fmax taux";
+  }
+  .garantie-champ-libelle { display: block; }
+}
+@container (max-width: 560px) {
+  .garanties-saisie .garantie-ligne {
+    grid-template-columns: 2.4rem repeat(2, minmax(0, 1fr)) 2.4rem;
+    grid-template-areas: "case nom nom retrait" ". capital fmin ." ". fmax taux .";
+  }
+  .garanties-saisie.sans-retrait .garantie-ligne {
+    grid-template-columns: 2.4rem repeat(2, minmax(0, 1fr));
+    grid-template-areas: "case nom nom" ". capital fmin" ". fmax taux";
+  }
+}

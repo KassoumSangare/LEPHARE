@@ -32,6 +32,13 @@ const PRODUITS = {
 };
 // Garanties ajoutées au devis ou retirées à la saisie, comme dans l'Automobile (demande du 2026-11-02) : MRP
 const PRODUITS_AJOUT_GARANTIES = [7];
+// Champs saisis pour chaque garantie : champ de l'écran, clé des valeurs proposées, libellé
+const CHAMPS_GARANTIE = [
+  ['capital', 'Capital', 'Capital'],
+  ['franchiseMinimum', 'FranchiseMinimum', 'Franchise min.'],
+  ['franchiseMaximum', 'FranchiseMaximum', 'Franchise max.'],
+  ['tauxFranchise', 'TauxFranchise', 'Taux de franchise (%)'],
+];
 // Offre RC chef de famille MINENE : primes calculées par la base, n° de police Santé connexe exigé
 const ID_OFFRE_MINENE = 67;
 const ID_TARIF_MINENE = 104;
@@ -781,8 +788,6 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.8rem 1rem', borderRadius: '10px',
     border: `1px solid ${teinte}`, background: 'var(--bg-surface-elevated)', fontSize: '0.85rem', color: 'var(--text-primary)',
   });
-  const th = { textAlign: 'left', padding: '0.5rem 0.55rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-medium)', whiteSpace: 'nowrap' };
-  const td = { padding: '0.4rem 0.55rem', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', verticalAlign: 'middle' };
   const dateFr = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '');
   const nomCompagnie = companies.find((c) => String(c.id) === String(compagnieId))?.nom || '';
   const libelleOffre = offres.find((o) => Number(o.IdOffre) === Number(idOffre))?.LibelleOffre || '';
@@ -1097,60 +1102,54 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   {ajoutPossible && " Ajoutez une garantie de la branche absente de l'offre, ou retirez-en une avec la corbeille."}
                 </p>
               )}
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: '0.83rem', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...th, textAlign: 'center', width: '60px' }}>Acquise</th>
-                      <th style={{ ...th, minWidth: '220px' }}>Garantie</th>
-                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '190px' : '150px' }}>Capital</th>
-                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise min.</th>
-                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise max.</th>
-                      <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '130px' : '90px' }}>Taux (%)</th>
-                      {ajoutPossible && <th style={{ ...th, width: '48px' }} aria-label="Retirer" />}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {garanties.length === 0 && (
-                      <tr><td colSpan={ajoutPossible ? 7 : 6} style={{ ...td, padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)' }}>{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</td></tr>
-                    )}
-                    {garanties.map((g) => (
-                      <tr key={g.id} style={{ opacity: g.acquise ? 1 : 0.55 }}>
-                        <td style={{ ...td, textAlign: 'center' }}>
-                          <input type="checkbox" checked={g.acquise} onChange={() => majGarantie(g.id, 'acquise', !g.acquise)} aria-label={`Garantie ${g.libelle}`}
-                            style={{ width: 17, height: 17, accentColor: couleur, cursor: 'pointer' }} />
-                        </td>
-                        <td style={{ ...td, fontWeight: 600, cursor: 'pointer' }} onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>
-                          {g.libelle}
-                          {g.ajoutee && (
-                            <span title="Garantie ajoutée hors de l'offre" style={{ marginLeft: '0.45rem', fontSize: '0.68rem', fontWeight: 700, padding: '0.08rem 0.45rem', borderRadius: '999px', border: `1px solid ${couleur}`, color: couleur, whiteSpace: 'nowrap' }}>
-                              ajoutée
-                            </span>
-                          )}
-                        </td>
-                        {[['capital', 'Capital'], ['franchiseMinimum', 'FranchiseMinimum'], ['franchiseMaximum', 'FranchiseMaximum']].map(([champ, cle]) => (
-                          <td key={champ} style={td}>
-                            <ChampPropose onChoisir={(v) => majGarantie(g.id, champ, v)} propositions={proposeesGarantie(g.id, cle)}>
-                              <AmountInput value={g[champ]} onChange={(v) => majGarantie(g.id, champ, montantSaisi(v))} suffix="" />
-                            </ChampPropose>
-                          </td>
-                        ))}
-                        <td style={td}>
-                          <ChampPropose onChoisir={(v) => majGarantie(g.id, 'tauxFranchise', v)} propositions={proposeesGarantie(g.id, 'TauxFranchise', { taux: true })}>
-                            <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', tauxSaisi(e.target.value))} />
+              {/* Garanties en grille (index.css, .garanties-saisie) : une ligne par garantie quand le pavé est large ; sinon le
+                  nom puis ses quatre champs sur toute la largeur, chacun avec son libellé, pour que les montants restent lisibles */}
+              <div className={`garanties-saisie${ajoutPossible ? '' : ' sans-retrait'}`} role="table" aria-label="Garanties de l'offre"
+                style={{ '--couleur-branche': couleur }}>
+                <div className="garantie-ligne garantie-entete" role="row">
+                  <span role="columnheader" className="garantie-case">Acquise</span>
+                  <span role="columnheader" className="garantie-nom">Garantie</span>
+                  {CHAMPS_GARANTIE.map(([champ, , libelle]) => (
+                    <span key={champ} role="columnheader" className={`garantie-champ garantie-${champ}`}>{libelle}</span>
+                  ))}
+                  {ajoutPossible && <span role="columnheader" className="garantie-retrait" aria-label="Retirer" />}
+                </div>
+                {garanties.length === 0 && (
+                  <div className="garanties-vide">{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</div>
+                )}
+                {garanties.map((g) => (
+                  <div key={g.id} role="row" className={`garantie-ligne${g.acquise ? '' : ' non-acquise'}`}>
+                    <div role="cell" className="garantie-case">
+                      <input type="checkbox" checked={g.acquise} onChange={() => majGarantie(g.id, 'acquise', !g.acquise)} aria-label={`Garantie ${g.libelle}`} />
+                    </div>
+                    <div role="cell" className="garantie-nom" onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>
+                      {g.libelle}
+                      {g.ajoutee && <span className="garantie-ajoutee" title="Garantie ajoutée hors de l'offre">ajoutée</span>}
+                    </div>
+                    {CHAMPS_GARANTIE.map(([champ, cle, libelle]) => (
+                      <div key={champ} role="cell" className={`garantie-champ garantie-${champ}`}>
+                        <label className="garantie-champ-libelle" htmlFor={`garantie-${g.id}-${champ}`}>{libelle}</label>
+                        {champ === 'tauxFranchise' ? (
+                          <ChampPropose onChoisir={(v) => majGarantie(g.id, champ, v)} propositions={proposeesGarantie(g.id, cle, { taux: true })}>
+                            <input id={`garantie-${g.id}-${champ}`} type="number" min="0" step="0.01" inputMode="decimal" className="form-control"
+                              value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, champ, tauxSaisi(e.target.value))} />
                           </ChampPropose>
-                        </td>
-                        {ajoutPossible && (
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            <button type="button" className="admin-bouton-icone" onClick={() => retirerGarantie(g)} title="Retirer cette garantie du devis" aria-label={`Retirer la garantie ${g.libelle}`}>
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
+                        ) : (
+                          <ChampPropose onChoisir={(v) => majGarantie(g.id, champ, v)} propositions={proposeesGarantie(g.id, cle)}>
+                            <AmountInput id={`garantie-${g.id}-${champ}`} value={g[champ]} onChange={(v) => majGarantie(g.id, champ, montantSaisi(v))} suffix="" />
+                          </ChampPropose>
                         )}
-                      </tr>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                    {ajoutPossible && (
+                      <div role="cell" className="garantie-retrait">
+                        <button type="button" className="admin-bouton-icone" onClick={() => retirerGarantie(g)} title="Retirer cette garantie du devis" aria-label={`Retirer la garantie ${g.libelle}`}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
               {pied(boutonPrecedent(1), boutonSuivant(3, 'Suivant : prime et souscripteur'))}
             </>
