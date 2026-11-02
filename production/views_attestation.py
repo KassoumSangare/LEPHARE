@@ -61,6 +61,7 @@ def _ligne_attestation(devis, detail, contrat, souscripteur, assure, tarifs):
     usage = getattr(detail.idusage, "code_usage_asaci", "") or getattr(
         detail.idusage, "CodeUsage", ""
     )
+    periode = contrat or devis
     numero_police = (
         contrat.numeropolice if contrat else devis.numero_police_compagnie
     )
@@ -88,8 +89,8 @@ def _ligne_attestation(devis, detail, contrat, souscripteur, assure, tarifs):
         assure.CodePostal,
         _prime_rc(detail),
         numero_police,
-        _date_texte(devis.dateeffet),
-        _date_texte(devis.dateexpiration),
+        _date_texte(periode.dateeffet),
+        _date_texte(periode.dateexpiration),
     ]
 
 

@@ -1601,8 +1601,17 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                     )
                 garanties_a_sauver.append(serializer_garantie)
 
+        periode_modifiee = any(
+            champ in contrat_serializer.validated_data
+            for champ in ("dateeffet", "dateexpiration")
+        )
         with transaction.atomic():
-            contrat_serializer.save()
+            contrat_enregistre = contrat_serializer.save()
+            if periode_modifiee and contrat_enregistre.idquittance_id:
+                Quittance.objects.filter(pk=contrat_enregistre.idquittance_id).update(
+                    dateeffet=contrat_enregistre.dateeffet,
+                    dateexpiration=contrat_enregistre.dateexpiration,
+                )
             for serializer_detail in details_a_sauver:
                 serializer_detail.save()
             for serializer_garantie in garanties_a_sauver:
