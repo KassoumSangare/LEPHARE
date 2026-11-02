@@ -67,35 +67,35 @@ export const UserDashboard = () => {
 
   // Points en attente : seulement ceux qui comptent au moins un élément
   const aTraiter = [
-    production?.Echeances?.Echues > 0 && {
+    peut('contrats.view') && production?.Echeances?.Echues > 0 && {
       icone: CalendarX, ton: 'critique', vers: '/user/contracts?statut=echu',
       libelle: `${pluriel(production.Echeances.Echues, 'police échue', 'polices échues')} depuis moins de 30 jours, sans renouvellement`,
     },
-    production?.Echeances?.AEchoir > 0 && {
+    peut('contrats.view') && production?.Echeances?.AEchoir > 0 && {
       icone: CalendarClock, ton: 'attention', vers: '/user/contracts?statut=a_renouveler',
       libelle: `${pluriel(production.Echeances.AEchoir, 'police arrive', 'polices arrivent')} à échéance dans les 30 jours`,
     },
-    devis?.Expires > 0 && {
+    peut('devis.view') && devis?.Expires > 0 && {
       icone: FileText, ton: 'attention', vers: '/user/quotes?onglet=EXPIRED',
       libelle: `${pluriel(devis.Expires, 'devis expiré', 'devis expirés')} depuis le ${formatDate(devis.ExpiresDepuis)} à relancer ou modifier`,
     },
-    caisse?.Cheques?.ADeposer > 0 && {
+    peut('encaissements.view') && caisse?.Cheques?.ADeposer > 0 && {
       icone: Landmark, ton: caisse.Cheques.Echus > 0 ? 'critique' : 'attention', vers: '/user/cheques',
       libelle: `${pluriel(caisse.Cheques.ADeposer, 'chèque', 'chèques')} à déposer d'ici un mois pour ${francs(caisse.Cheques.Montant)}${caisse.Cheques.Echus > 0 ? `, dont ${nombre(caisse.Cheques.Echus)} en retard` : ''}`,
     },
-    reversements?.Nombre > 0 && isDirectorOrAdmin && {
+    reversements?.Nombre > 0 && isDirectorOrAdmin && peut('reversements.view') && {
       icone: Banknote, ton: 'info', vers: '/admin/remittances',
       libelle: `${francs(reversements.Montant)} de primes encaissées à reverser à ${pluriel(reversements.Compagnies, 'compagnie', 'compagnies')}`,
     },
-    commissions?.AReclamer > 0 && isDirectorOrAdmin && {
+    commissions?.AReclamer > 0 && isDirectorOrAdmin && peut('commissions.view') && {
       icone: HandCoins, ton: 'info', vers: '/admin/commissions',
       libelle: `${francs(commissions.AReclamer)} de commissions à réclamer aux compagnies`,
     },
-    donnees?.Sinistres?.Ouverts > 0 && {
+    peut('sinistres.view') && donnees?.Sinistres?.Ouverts > 0 && {
       icone: AlertTriangle, ton: 'attention', vers: '/user/claims',
       libelle: `${pluriel(donnees.Sinistres.Ouverts, 'sinistre en cours', 'sinistres en cours')} de traitement, ${francs(donnees.Sinistres.MontantReclame)} réclamés`,
     },
-    donnees?.Questionnaires?.ATraiter > 0 && {
+    peut('crm.view') && donnees?.Questionnaires?.ATraiter > 0 && {
       icone: ClipboardList, ton: 'info', vers: '/user/crm/questionnaires',
       libelle: `${pluriel(donnees.Questionnaires.ATraiter, 'questionnaire prospect', 'questionnaires prospects')} en attente de devis`,
     },
@@ -124,8 +124,8 @@ export const UserDashboard = () => {
     {
       header: 'Action',
       render: (e) => (e.DevisEnCours
-        ? <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => navigate('/user/quotes')}>Devis préparé</button>
-        : <button type="button" className="btn btn-primary cockpit-bouton-ligne" onClick={() => navigate(`/user/contracts/${e.IdContrat}/renouvellement`)}>Renouveler</button>),
+        ? peut('devis.view') && <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => navigate('/user/quotes')}>Devis préparé</button>
+        : peut('contrats.view') && peut('contrats.avenant') && <button type="button" className="btn btn-primary cockpit-bouton-ligne" onClick={() => navigate(`/user/contracts/${e.IdContrat}/renouvellement`)}>Renouveler</button>),
     },
   ];
 
@@ -135,7 +135,7 @@ export const UserDashboard = () => {
     { header: 'Branche', accessor: 'Produit' },
     { header: 'Valable jusqu\'au', accessor: 'DateExpiration', render: (d) => formatDate(d.DateExpiration) },
     { header: 'Prime TTC', accessor: 'PrimeTtc', render: (d) => <span style={{ fontFamily: 'var(--font-mono)' }}>{francs(d.PrimeTtc)}</span> },
-    { header: 'Action', render: (d) => <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => ouvrirDevis(d)}>Ouvrir</button> },
+    { header: 'Action', render: (d) => peut(['devis.create', 'devis.update']) && <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => ouvrirDevis(d)}>Ouvrir</button> },
   ];
 
   const colonnesContrats = [
@@ -150,7 +150,7 @@ export const UserDashboard = () => {
         ? <StatusBadge label={`Reste ${francs(c.Reste)}`} color="amber" />
         : <StatusBadge label="Soldé" color="emerald" />),
     },
-    { header: 'Action', render: (c) => <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => navigate(`/user/contracts/${c.IdContrat}`)}>Ouvrir</button> },
+    { header: 'Action', render: (c) => peut('contrats.view') && <button type="button" className="btn btn-secondary cockpit-bouton-ligne" onClick={() => navigate(`/user/contracts/${c.IdContrat}`)}>Ouvrir</button> },
   ];
 
   return (
@@ -166,22 +166,22 @@ export const UserDashboard = () => {
           </p>
         </div>
         <div className="cockpit-raccourcis">
-          {peut('devis.create') && (
+          {peut('devis.create') && peut('devis.view') && (
             <button type="button" className="btn btn-primary" onClick={() => navigate('/user/quotes')}>
               <FilePlus size={16} /><span>Nouveau devis</span>
             </button>
           )}
-          {peut('clients.create') && (
+          {peut('clients.create') && peut('clients.view') && (
             <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/clients')}>
               <UserPlus size={16} /><span>Nouveau client</span>
             </button>
           )}
-          {peut('encaissements.create') && (
+          {peut('encaissements.create') && peut('encaissements.view') && (
             <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/cash')}>
               <CreditCard size={16} /><span>Encaisser une prime</span>
             </button>
           )}
-          {peut('contrats.reprise') && (
+          {peut('contrats.reprise') && peut('contrats.view') && (
             <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/reprises')}>
               <History size={16} /><span>Affaires antérieures</span>
             </button>
@@ -213,7 +213,7 @@ export const UserDashboard = () => {
                   valeur={francs(production.Annee.PrimeTtc)}
                   icone={TrendingUp}
                   couleur="purple"
-                  vers="/user/contracts"
+                  vers={peut('contrats.view') ? '/user/contracts' : undefined}
                   aide="Primes TTC des actes émis depuis le 1er janvier, contrats annulés exclus"
                   lignes={[
                     `${pluriel(production.Annee.Nombre, 'acte', 'actes')} : ${nombre(production.Annee.AffairesNouvelles)} affaires nouvelles, ${nombre(production.Annee.Renouvellements)} renouvellements`,
@@ -228,7 +228,7 @@ export const UserDashboard = () => {
                   valeur={nombre(production.PolicesEnVigueur)}
                   icone={ShieldCheck}
                   couleur="emerald"
-                  vers="/user/contracts?statut=en_cours"
+                  vers={peut('contrats.view') ? '/user/contracts?statut=en_cours' : undefined}
                   aide="Polices dont la période d'affaire nouvelle ou de renouvellement couvre aujourd'hui, résiliations exclues"
                   lignes={[
                     `${pluriel(production.Echeances.AEchoir, 'échéance', 'échéances')} dans les 30 jours`,
@@ -242,7 +242,7 @@ export const UserDashboard = () => {
                   valeur={nombre(devis.EnCours)}
                   icone={FileText}
                   couleur="blue"
-                  vers="/user/quotes"
+                  vers={peut('devis.view') ? '/user/quotes' : undefined}
                   aide="Devis ni confirmés ni archivés, encore valables"
                   lignes={[
                     `${francs(devis.PrimeTtcEnCours)} de primes proposées`,
@@ -256,7 +256,7 @@ export const UserDashboard = () => {
                   valeur={`${Number(devis.TauxTransformation).toLocaleString('fr-FR')} %`}
                   icone={Percent}
                   couleur="amber"
-                  vers="/user/quotes"
+                  vers={peut('devis.view') ? '/user/quotes' : undefined}
                   aide="Devis émis depuis le 1er janvier et déjà confirmés en contrat"
                   lignes={[
                     `${nombre(devis.ConfirmesAnnee)} devis confirmés sur ${nombre(devis.EmisAnnee)} émis`,
@@ -276,7 +276,7 @@ export const UserDashboard = () => {
                   valeur={francs(caisse.Annee.Montant)}
                   icone={Wallet}
                   couleur="emerald"
-                  vers="/user/cash/etat"
+                  vers={peut('encaissements.view') ? '/user/cash/etat' : undefined}
                   aide="Encaissements saisis depuis le 1er janvier, pièces annulées exclues, décaissements déduits"
                   lignes={[
                     `${pluriel(caisse.Annee.Pieces, 'pièce de caisse', 'pièces de caisse')}`,
@@ -290,7 +290,7 @@ export const UserDashboard = () => {
                   valeur={francs(caisse.ResteAEncaisser.Montant)}
                   icone={CreditCard}
                   couleur="rose"
-                  vers="/user/cash"
+                  vers={peut('encaissements.view') ? '/user/cash' : undefined}
                   aide="Quittances non soldées des contrats en vigueur ou échus, émises depuis le 1er janvier"
                   lignes={[
                     `${pluriel(caisse.ResteAEncaisser.Nombre, 'quittance', 'quittances')} de l'exercice`,
@@ -305,7 +305,7 @@ export const UserDashboard = () => {
                   valeur={francs(reversements.Montant)}
                   icone={Banknote}
                   couleur="blue"
-                  vers={isDirectorOrAdmin ? '/admin/remittances' : undefined}
+                  vers={isDirectorOrAdmin && peut('reversements.view') ? '/admin/remittances' : undefined}
                   aide="Primes encaissées pas encore reversées, prime entière (Code CIMA)"
                   lignes={[
                     `${pluriel(reversements.Nombre, 'encaissement', 'encaissements')}, ${pluriel(reversements.Compagnies, 'compagnie', 'compagnies')}`,
@@ -319,7 +319,7 @@ export const UserDashboard = () => {
                   valeur={francs(commissions.AReclamer + commissions.Reclamees)}
                   icone={HandCoins}
                   couleur="purple"
-                  vers={isDirectorOrAdmin ? '/admin/commissions' : undefined}
+                  vers={isDirectorOrAdmin && peut('commissions.view') ? '/admin/commissions' : undefined}
                   aide="Commissions des primes reversées pas encore payées par les compagnies"
                   lignes={[
                     `À réclamer : ${francs(commissions.AReclamer)}`,
@@ -389,7 +389,7 @@ export const UserDashboard = () => {
             <Section
               titre="Échéances à suivre"
               sousTitre="Polices échues depuis moins de 30 jours ou à échoir dans les 30 jours, sans renouvellement enregistré"
-              action={<BoutonVoir libelle="Toutes les échéances" vers="/user/contracts?statut=a_renouveler" />}
+              action={peut('contrats.view') && <BoutonVoir libelle="Toutes les échéances" vers="/user/contracts?statut=a_renouveler" />}
             >
               {production.Echeances.Lignes.length === 0
                 ? <div className="cockpit-rien"><CheckCircle2 size={18} aria-hidden="true" /><span>Aucune échéance à suivre.</span></div>
@@ -401,7 +401,7 @@ export const UserDashboard = () => {
             <Section
               titre="Derniers devis en cours"
               sousTitre="Devis encore valables, à confirmer en contrat"
-              action={<BoutonVoir libelle="Tous les devis" vers="/user/quotes" />}
+              action={peut('devis.view') && <BoutonVoir libelle="Tous les devis" vers="/user/quotes" />}
             >
               {devis.Derniers.length === 0
                 ? <div className="cockpit-rien"><span>Aucun devis en cours.</span></div>
@@ -413,7 +413,7 @@ export const UserDashboard = () => {
             <Section
               titre="Derniers contrats émis"
               sousTitre="Polices et avenants les plus récents, avec leur règlement"
-              action={<BoutonVoir libelle="Tous les contrats" vers="/user/contracts" />}
+              action={peut('contrats.view') && <BoutonVoir libelle="Tous les contrats" vers="/user/contracts" />}
             >
               <DataTable columns={colonnesContrats} data={production.Derniers} searchable={false} itemsPerPage={8} />
             </Section>

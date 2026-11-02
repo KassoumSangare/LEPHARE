@@ -18,6 +18,7 @@
  */
 
 import apiClient from './apiClient';
+import { estSolde } from '../utils/resteEncaissement';
 
 /* =========================================================================
    HELPER : Extraction standard des résultats paginés ou bruts
@@ -1210,6 +1211,19 @@ export const risquesDiversApi = {
    4.0 ter DOMMAGES (produit 9) : Caution, Tous Risques Informatiques, Chantiers, Bris de Machines…
    Toutes catégories, garanties réglées dans l'admin (production/views_devis_dommages.py)
    ========================================================================= */
+// Branche Vie, devis AFA (production/afa.py) : assurés avec capital, prime et bénéficiaires ; import de la liste Excel
+export const afaApi = {
+  referentiels: async (idClient) => (await apiClient.get('/afa/referentiels/', { params: { client: idClient || undefined } })).data,
+  analyserImport: async (fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier_excel', fichier);
+    return (await apiClient.post('/afa/import/analyse/', formulaire, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })).data;
+  },
+  modele: async () => (await apiClient.get('/afa/modele/', { responseType: 'blob' })).data,
+  enregistrer: async (donnees) => (await apiClient.post('/afa/devis/', donnees, { timeout: 120000 })).data,
+  lire: async (idDevis) => (await apiClient.get(`/afa/devis/${idDevis}/`)).data,
+};
+
 export const dommagesApi = {
   // GET /api/dommages/catalogue/?compagnie= : catégories ouvertes, garanties et taxes de la compagnie
   getCatalogue: async (idCompagnie) => (await apiClient.get('/dommages/catalogue/', { params: { compagnie: idCompagnie || undefined } })).data,
@@ -1534,7 +1548,8 @@ export const normalizeContrat = (bc) => {
   const primeNette = Number(bc.primenette || bc.prime_nette || 0);
   const primeTotale = Number(bc.primettc || bc.prime_totale || primeNette);
   const montantEncaisse = Number(bc.montant_encaisse || (bc.idquittance && typeof bc.idquittance === 'object' ? bc.idquittance.mt_encaisse : 0));
-  const isSolde = montantEncaisse >= primeTotale && primeTotale > 0;
+  // Reliquat de moins de 5 F compté comme nul (utils/resteEncaissement.js)
+  const isSolde = estSolde(primeTotale, montantEncaisse) && primeTotale > 0;
 
   return {
     id,
@@ -1675,8 +1690,11 @@ export const contractApi = {
   getAdministrationContract: async (id) => (
     await apiClient.get(`/contrat/${id}/administration/`)
   ).data,
-  updateAdministrationContract: async (id, data) => (
-    await apiClient.patch(`/contrat/${id}/administration/`, data)
+  // Motif saisi dans l'écran : envoyé d'emblée (en-tête X-Motif de la garde), sans la fenêtre de saisie de la réponse 428
+  updateAdministrationContract: async (id, data, motif) => (
+    await apiClient.patch(`/contrat/${id}/administration/`, data, motif
+      ? { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true }
+      : undefined)
   ).data,
   // POST /api/confirmationdevis (Validation et conversion d'un devis en contrat définitif)
   createContractFromQuote: (data) => {
@@ -1699,6 +1717,8 @@ export const contractApi = {
   creerRenouvellement: async (idContrat, donnees) => (await apiClient.post(`/renouvellement/${idContrat}/`, donnees)).data,
   preparerIncorporation: async (idContrat) => (await apiClient.get(`/incorporation/${idContrat}/`)).data,
   creerIncorporation: async (idContrat, donnees) => (await apiClient.post(`/incorporation/${idContrat}/`, donnees)).data,
+  // Période et mode (prorata / forfaitaire) d'un devis d'incorporation ; { Incorporation: false } pour un autre devis
+  lireDevisIncorporation: async (idDevis) => (await apiClient.get(`/incorporation/devis/${idDevis}/`)).data,
   // IA et RC MINENE rattachées à la police Santé MINENE du contrat (production/minene_connexes.py)
   getMineneConnexes: async (idContrat) => (await apiClient.get(`/minene/${idContrat}/connexes/`)).data,
   // Police Santé MINENE par son numéro (client, période, durée, IA et RC liées) ; recherche par numéro ou client

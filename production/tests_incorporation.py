@@ -2,7 +2,7 @@ from datetime import date
 
 from django.test import SimpleTestCase
 
-from .incorporation import ErreurRenouvellement, _verifier_periode, _verifier_periode_devis
+from .incorporation import ErreurRenouvellement, _cle_immatriculation, _verifier_periode, _verifier_periode_devis
 
 
 class IncorporationPeriodeTests(SimpleTestCase):
@@ -39,3 +39,7 @@ class IncorporationPeriodeTests(SimpleTestCase):
 
     def test_periode_des_autres_mouvements_inchangee(self):
         _verifier_periode_devis("REN", self.jour, self.echeance, self.debut, self.debut)
+
+    def test_immatriculation_comparee_sans_espaces_ni_tirets(self):
+        self.assertEqual(_cle_immatriculation(" 5267 ja-01 "), _cle_immatriculation("5267JA01"))
+        self.assertNotEqual(_cle_immatriculation("5267JA01"), _cle_immatriculation("5267JA02"))

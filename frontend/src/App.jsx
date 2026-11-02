@@ -20,6 +20,7 @@ const NewSanteQuotePage = lazy(() => import('./pages/user/quotes/NewSanteQuotePa
 const NewIaQuotePage = lazy(() => import('./pages/user/quotes/NewIaQuotePage'));
 const NewRisquesDiversQuotePage = lazy(() => import('./pages/user/quotes/NewRisquesDiversQuotePage'));
 const NewTousDommagesQuotePage = lazy(() => import('./pages/user/quotes/NewTousDommagesQuotePage'));
+const NewAfaQuotePage = lazy(() => import('./pages/user/quotes/NewAfaQuotePage'));
 const NewVoyageQuotePage = lazy(() => import('./pages/user/quotes/NewVoyageQuotePage'));
 const NewTransportQuotePage = lazy(() => import('./pages/user/quotes/NewTransportQuotePage'));
 const TransportAccueilPage = lazy(() => import('./pages/user/quotes/TransportAccueilPage'));
@@ -183,6 +184,7 @@ function App() {
                 <Route path="/user/quotes/rc" element={<NewRisquesDiversQuotePage key="rc" produit={8} />} />
                 <Route path="/user/quotes/mrp" element={<NewRisquesDiversQuotePage key="mrp" produit={7} />} />
                 <Route path="/user/quotes/tous-dommages" element={<NewTousDommagesQuotePage />} />
+                <Route path="/user/quotes/afa" element={<NewAfaQuotePage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/quotes/transport" element={<TransportAccueilPage />} />
                 <Route path="/user/quotes/transport/hors-guce" element={<NewTransportHorsGucePage />} />

@@ -18,7 +18,12 @@ from customer.models import Client
 from uranus.settings import MAX_LIMIT_FOR_SEARCH
 
 from .iautils import convert_to_date, unpack_ia_quotation_post_data
-from .incorporation import _verifier_periode_devis
+from .incorporation import (
+    _verifier_periode_devis,
+    controler_vehicule_incorpore,
+    mode_incorporation,
+    tarification_incorporation,
+)
 from .models import (
     AssureIaInfo,
     AssureIaParDevisOuContrat,
@@ -1306,6 +1311,7 @@ def save_quotation(input_data):
                 list(chain(queryset_vide, data_insertion_result_list)),
             )
 
+    mode_tarif = None
     try:
         if IdDevis:
             with connection.cursor() as cursor:
@@ -1317,11 +1323,16 @@ def save_quotation(input_data):
                     [IdDevis],
                 )
                 devis_mouvement = cursor.fetchone()
-            if devis_mouvement:
-                _verifier_periode_devis(
-                    devis_mouvement[0], devis_mouvement[1], devis_mouvement[2], DateEffet, DateExpiration,
-                )
-        with connection.cursor() as cursor:
+                if devis_mouvement:
+                    _verifier_periode_devis(
+                        devis_mouvement[0], devis_mouvement[1], devis_mouvement[2], DateEffet, DateExpiration,
+                    )
+                # Incorporation dans une flotte : véhicule pas encore assuré dans la police, prime au prorata des
+                # jours restants jusqu'à l'échéance (affaire forfaitaire : prime annuelle entière)
+                mode_tarif = mode_incorporation(cursor, IdDevis)
+                if mode_tarif:
+                    controler_vehicule_incorpore(cursor, IdDevis, Matricule)
+        with tarification_incorporation(mode_tarif), connection.cursor() as cursor:
             cursor.execute(
                 "CALL sp_creation_devis(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
                 (

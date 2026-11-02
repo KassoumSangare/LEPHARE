@@ -11,7 +11,7 @@ import { exportToPdf } from '../../../utils/exportUtils';
 import { useNombreAnime } from '../../../utils/useNombreAnime';
 import {
   Activity, AlertCircle, ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BellRing, Building2, Car, ChevronLeft,
-  ChevronRight, Eye, FileCheck, HeartPulse, Home, Inbox, Layers, Plane, Plus, Printer, RefreshCw, Search, Shield,
+  ChevronRight, Eye, FileCheck, HeartHandshake, HeartPulse, Home, Inbox, Layers, Plane, Plus, Printer, RefreshCw, Search, Shield,
   ShieldCheck, Ship, UserPlus, X,
 } from 'lucide-react';
 
@@ -29,7 +29,8 @@ import {
 const BRANCHES = [
   { cle: 'ALL', libelle: 'Toutes les branches', icone: Layers, produits: null },
   { cle: 'AUTO', libelle: 'Automobile', icone: Car, produits: [1] },
-  { cle: 'SANTE', libelle: 'Santé & Vie', icone: HeartPulse, produits: [5, 10] },
+  { cle: 'SANTE', libelle: 'Santé', icone: HeartPulse, produits: [5] },
+  { cle: 'VIE', libelle: 'Vie', icone: HeartHandshake, produits: [10] },
   { cle: 'IA', libelle: 'Individuelle Accidents', icone: Activity, produits: [2] },
   { cle: 'VOYAGE', libelle: 'Voyage', icone: Plane, produits: [3] },
   { cle: 'TRANSPORT', libelle: 'Transport', icone: Ship, produits: [6] },
@@ -63,6 +64,7 @@ const MODULES_SOUSCRIPTION = [
   ['transport', Ship, 'Transport'],
   ['mrh', Home, 'Habitation (MRH)'],
   ['sante', HeartPulse, 'Santé'],
+  ['afa', HeartHandshake, 'Vie - AFA'],
   ['ia', UserPlus, 'Individuelle Accidents'],
   ['rc', Shield, 'Responsabilité Civile'],
   ['mrp', Building2, 'Multirisque Pro.'],

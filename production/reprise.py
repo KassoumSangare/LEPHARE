@@ -24,6 +24,8 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import connection, transaction
 
+from .reste_encaissement import reste_a_encaisser
+
 ID_INTERMEDIAIRE = 1
 ID_AVENANT_AFFAIRE_NOUVELLE = 1
 ID_PRODUIT_AUTO = 1
@@ -459,7 +461,8 @@ def _creer_quittance(cursor, id_contrat, montant_encaisse):
                   %s, %s, false, 0, numeropolice, idaperiteur, COALESCE(coassurance, false), idproduit, taux_commission, dateemission, NULL
            FROM stdcontrat WHERE idcontrat = %s
            RETURNING idquittance""",
-        [numero, date_effet.year, SOURCE_REPRISE, STATUT_QUITTANCE_EN_COURS, montant_encaisse >= ttc, montant_encaisse, id_contrat],
+        [numero, date_effet.year, SOURCE_REPRISE, STATUT_QUITTANCE_EN_COURS, reste_a_encaisser(ttc, montant_encaisse) == 0, montant_encaisse,
+         id_contrat],
     )
     id_quittance = cursor.fetchone()[0]
     cursor.execute(

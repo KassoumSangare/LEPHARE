@@ -4015,6 +4015,7 @@ class ProduitParametre(models.Model):
         ("rc", "Responsabilité Civile"),
         ("mrp", "Multirisque Professionnelle"),
         ("tous-dommages", "Tous Dommages"),
+        ("afa", "Vie - AFA"),
     ]
 
     IdProduit = models.IntegerField(primary_key=True, db_column="idproduit")

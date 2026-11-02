@@ -2185,25 +2185,25 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .admin-contrats-page .portefeuille-cellule-actions .btn { border-radius: var(--radius-md); }
 .admin-contrats-page .portefeuille-pagination { padding-top: 0.25rem; }
 
-/* L'éditeur reprend le cadre et les espacements des autres modales. */
-.admin-contrats-editor { display: flex; flex-direction: column; gap: 1rem; }
+/* Éditeur d'un contrat (pleine page) : onglets, groupes de champs, garanties en tableau, récapitulatif avant / après */
+.admin-editeur { display: flex; flex-direction: column; gap: 1rem; }
+.admin-editeur-entete { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.admin-editeur-entete .btn { display: inline-flex; align-items: center; gap: 0.4rem; }
+.admin-editeur-titre { flex: 1; min-width: 0; }
+.admin-editeur-titre h1 { font-family: var(--font-mono); font-size: clamp(1.15rem, 2.4vw, 1.45rem); font-weight: 750; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.admin-editeur-badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .admin-contrats-summary {
   display: grid; grid-template-columns: minmax(210px, 1.5fr) repeat(3, minmax(120px, 1fr)); gap: 0.85rem;
   padding: 0.95rem 1rem; border: 1px solid color-mix(in srgb, var(--primary-500) 20%, var(--border-subtle));
   border-radius: var(--radius-lg);
   background: linear-gradient(115deg, color-mix(in srgb, var(--primary-500) 8%, var(--bg-surface-elevated)), var(--bg-surface-elevated));
 }
-.admin-contrats-summary-main { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
-.admin-contrats-summary-icon {
-  display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: var(--radius-md);
-  color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--primary-500) 22%, transparent);
-}
 .admin-contrats-summary-label { display: block; margin-bottom: 0.22rem; color: var(--text-muted); font-size: 0.66rem; font-weight: 750; letter-spacing: 0.075em; text-transform: uppercase; }
-.admin-contrats-summary-main strong { display: block; overflow: hidden; color: var(--text-primary); font-family: var(--font-mono); font-size: 0.88rem; text-overflow: ellipsis; white-space: nowrap; }
 .admin-contrats-summary-item { align-self: center; min-width: 0; padding-left: 0.85rem; border-left: 1px solid var(--border-medium); }
 .admin-contrats-summary-item > span { display: block; margin-bottom: 0.22rem; color: var(--text-muted); font-size: 0.69rem; }
 .admin-contrats-summary-item strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 0.78rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.admin-editeur-resume { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.admin-editeur-resume .admin-contrats-summary-item:first-child { border-left: 0; padding-left: 0; }
 .admin-contrats-warning {
   display: flex; align-items: flex-start; gap: 0.65rem; padding: 0.78rem 0.9rem;
   border: 1px solid color-mix(in srgb, var(--accent-amber) 32%, transparent); border-radius: var(--radius-md);
@@ -2211,34 +2211,134 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
   font-size: 0.78rem; line-height: 1.55;
 }
 .admin-contrats-warning > svg { flex: none; margin-top: 1px; }
-.admin-contrats-edit-section { padding: 1rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--bg-surface-elevated) 42%, transparent); }
-.admin-contrats-edit-heading { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
-.admin-contrats-edit-heading h2 { font-size: 0.98rem; font-weight: 700; letter-spacing: -0.012em; }
-.admin-contrats-step-tag {
-  flex: none; padding: 0.28rem 0.6rem; border: 1px solid color-mix(in srgb, var(--primary-500) 28%, transparent);
-  border-radius: var(--radius-full); background: color-mix(in srgb, var(--primary-500) 9%, transparent);
-  color: var(--primary-500); font-size: 0.7rem; font-weight: 700;
+.admin-onglets { display: flex; gap: 0.35rem; flex-wrap: wrap; border-bottom: 1px solid var(--border-subtle); }
+.admin-onglet {
+  display: inline-flex; align-items: center; gap: 0.45rem; margin-bottom: -1px; padding: 0.6rem 0.9rem;
+  border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-muted);
+  font-size: 0.82rem; font-weight: 650; cursor: pointer; transition: color var(--transition-fast), border-color var(--transition-fast);
 }
-.admin-contrats-progress { height: 5px; overflow: hidden; margin-bottom: 1rem; border-radius: var(--radius-full); background: var(--border-subtle); }
-.admin-contrats-progress > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary-600), var(--accent-cyan)); transition: width 0.25s ease; }
-.admin-contrats-fields { gap: 0.85rem !important; }
-.admin-contrats-field { display: flex; min-width: 0; flex-direction: column; gap: 0.35rem; }
-.admin-contrats-field > span { color: var(--text-secondary) !important; font-size: 0.72rem !important; font-weight: 600; }
-.admin-contrats-field .form-input { min-height: 39px; border-radius: var(--radius-md); font-size: 0.82rem; }
-.admin-contrats-field textarea.form-input { min-height: 72px; resize: vertical; }
-.admin-contrats-field .form-input:focus { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-glow); }
-.admin-contrats-field.admin-contrats-toggle {
-  min-height: 42px; flex-direction: row; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface);
-  color: var(--text-secondary); font-size: 0.78rem; font-weight: 600;
+.admin-onglet:hover { color: var(--text-primary); }
+.admin-onglet.actif { color: var(--primary-500); border-bottom-color: var(--primary-500); }
+.admin-pastille {
+  display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 0.35rem; border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent-amber) 22%, transparent); color: var(--accent-amber); font-size: 0.68rem; font-weight: 750;
 }
-.admin-contrats-toggle input { width: 16px; height: 16px; accent-color: var(--primary-500); }
-.admin-contrats-editor-actions {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
-  padding-top: 0.9rem; border-top: 1px solid var(--border-subtle);
+.admin-panneau { display: flex; flex-direction: column; gap: 0.9rem; }
+.admin-groupe {
+  min-width: 0; margin: 0; padding: 0.85rem 1rem 1rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-surface-elevated) 42%, transparent);
 }
-.admin-contrats-editor-actions > div { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
-.admin-contrats-editor-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 38px; }
+.admin-groupe legend { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0 0.4rem; color: var(--text-primary); font-size: 0.8rem; font-weight: 700; }
+.admin-groupe-champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem 0.85rem; }
+.admin-champ { display: flex; min-width: 0; flex-direction: column; gap: 0.25rem; }
+.admin-champ label { display: flex; flex-direction: column; gap: 0.3rem; }
+.admin-champ-libelle { color: var(--text-secondary); font-size: 0.72rem; font-weight: 600; }
+.admin-champ .form-control, .admin-garanties-table .form-control { width: 100%; min-height: 38px; border-radius: var(--radius-md); font-size: 0.82rem; }
+.admin-champ .form-control:focus, .admin-garanties-table .form-control:focus { border-color: var(--primary-500); box-shadow: 0 0 0 3px var(--primary-glow); }
+.admin-champ textarea.form-control { min-height: 64px; resize: vertical; }
+.admin-champ-zone { grid-column: 1 / -1; }
+.admin-champ-bool { justify-content: flex-end; }
+.admin-champ-bool label {
+  flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: 0.55rem; min-height: 38px; padding: 0 0.7rem;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); cursor: pointer;
+}
+.admin-champ input[type="checkbox"], .admin-garanties-table input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary-500); }
+.admin-champ-modifie .form-control, .admin-champ-modifie.admin-champ-bool label {
+  border-color: var(--accent-amber); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-amber) 18%, transparent);
+}
+.admin-champ-precision { overflow: hidden; color: var(--text-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.admin-champ-avant { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; color: var(--accent-amber); font-size: 0.7rem; }
+.admin-champ-avant button {
+  display: inline-flex; align-items: center; gap: 0.2rem; padding: 0; border: 0; background: none;
+  color: var(--primary-500); font-size: 0.7rem; font-weight: 650; cursor: pointer;
+}
+.admin-autres { padding: 0.7rem 1rem; border: 1px dashed var(--border-medium); border-radius: var(--radius-lg); }
+.admin-autres > summary { display: flex; align-items: center; gap: 0.45rem; color: var(--text-secondary); font-size: 0.8rem; font-weight: 650; cursor: pointer; }
+.admin-autres[open] > summary { margin-bottom: 0.8rem; }
+.admin-risques { display: grid; grid-template-columns: minmax(200px, 240px) 1fr; align-items: start; gap: 1rem; }
+.admin-risques-liste { position: sticky; top: calc(var(--navbar-height) + 1rem); display: flex; max-height: calc(100vh - var(--navbar-height) - 8rem); flex-direction: column; gap: 0.5rem; overflow: auto; }
+.admin-risques-liste ul { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; list-style: none; }
+.admin-risques-recherche { position: relative; }
+.admin-risques-recherche svg { position: absolute; top: 50%; left: 0.65rem; color: var(--text-muted); transform: translateY(-50%); }
+.admin-risques-recherche .form-control { width: 100%; min-height: 36px; padding-left: 2rem; }
+.admin-risque {
+  position: relative; display: flex; width: 100%; flex-direction: column; gap: 0.15rem; padding: 0.6rem 2.4rem 0.6rem 0.75rem;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface); text-align: left; cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.admin-risque:hover { border-color: var(--border-medium); }
+.admin-risque.actif { border-color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 8%, var(--bg-surface)); }
+.admin-risque .admin-pastille { position: absolute; top: 50%; right: 0.6rem; transform: translateY(-50%); }
+.admin-risque-nom { color: var(--text-primary); font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; overflow-wrap: anywhere; }
+.admin-risque-prime { color: var(--text-muted); font-size: 0.72rem; }
+.admin-risque-detail { display: flex; min-width: 0; flex-direction: column; gap: 0.9rem; }
+.admin-risque-detail h2 { font-size: 1rem; font-weight: 700; }
+.admin-garanties { display: flex; flex-direction: column; gap: 0.6rem; }
+.admin-garanties-table th, .admin-garanties-table td { padding: 0.4rem 0.45rem; vertical-align: middle; }
+.admin-garanties-table .droite { text-align: right; }
+.admin-garanties-table td .form-control { min-width: 84px; padding: 0.4rem 0.55rem; }
+.admin-garanties-table .admin-col-capital .form-control { min-width: 132px; }
+.admin-garanties-table .admin-col-textefranchise .form-control { min-width: 112px; }
+.admin-garanties-table .admin-col-acquise { width: 1%; text-align: center; }
+.admin-garantie-nom { display: flex; align-items: center; gap: 0.5rem; min-width: 170px; font-size: 0.78rem; font-weight: 650; }
+.admin-garantie-nom .admin-bouton-icone { flex: none; }
+.admin-garantie-non-acquise td { opacity: 0.6; }
+.admin-cellule-modifiee .form-control { border-color: var(--accent-amber); }
+.admin-ligne-modifiee .admin-garantie-nom { color: var(--accent-amber); }
+.admin-garantie-details td { padding: 0.8rem; background: color-mix(in srgb, var(--bg-surface-elevated) 60%, transparent); }
+.admin-garanties-table tfoot td { border-top: 1px solid var(--border-medium); font-size: 0.78rem; font-weight: 700; }
+.admin-bouton-icone {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); background: var(--bg-surface); color: var(--text-secondary); cursor: pointer;
+}
+.admin-bouton-icone:hover { border-color: var(--primary-500); color: var(--primary-500); }
+.admin-controle { display: flex; align-items: center; gap: 0.4rem; margin: 0; color: var(--text-muted); font-size: 0.76rem; }
+.admin-controle.ecart { color: var(--accent-amber); }
+.admin-vide { padding: 0.75rem 0; color: var(--text-muted); font-size: 0.82rem; }
+.admin-recap td { font-size: 0.8rem; vertical-align: middle; }
+.admin-recap-avant { color: var(--text-muted); text-decoration: line-through; }
+.admin-recap-apres { color: var(--text-primary); font-weight: 650; }
+.admin-motif { display: flex; flex-direction: column; gap: 0.35rem; }
+.admin-motif span { color: var(--text-secondary); font-size: 0.78rem; font-weight: 650; }
+.admin-motif textarea { min-height: 80px; resize: vertical; }
+.admin-barre-actions {
+  position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;
+  padding: 0.75rem 1rem; border: 1px solid var(--border-medium); border-radius: var(--radius-lg); background: var(--bg-surface-elevated); box-shadow: var(--shadow-md);
+}
+.admin-barre-actions > div { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.admin-barre-actions .btn { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 38px; }
+.admin-barre-compte { color: var(--text-secondary); font-size: 0.82rem; font-weight: 650; }
+
+/* Devis Vie - AFA : tableau des assurés saisissable, contrôles par ligne, fiche client retrouvée ou à reprendre */
+.afa-table th, .afa-table td { padding: 0.4rem 0.35rem; vertical-align: top; }
+.afa-table .droite { text-align: right; }
+.afa-table td .form-control { min-width: 96px; padding: 0.4rem 0.45rem; font-size: 0.79rem; }
+.afa-table td:nth-child(2) .form-control { min-width: 120px; }
+.afa-table td:nth-child(3) .form-control { min-width: 140px; }
+.afa-table td:nth-child(4) .form-control { min-width: 128px; }
+.afa-table td:nth-child(8) .form-control { min-width: 170px; }
+/* N° et nom restent visibles quand le tableau défile à l'horizontale */
+.afa-table thead th:nth-child(-n+2), .afa-table tbody tr:not(.afa-ligne-message) td:nth-child(-n+2), .afa-table tfoot td:first-child {
+  position: sticky; z-index: 1; background: var(--bg-surface);
+}
+.afa-table thead th:first-child, .afa-table tbody tr:not(.afa-ligne-message) td:first-child, .afa-table tfoot td:first-child { left: 0; width: 34px; min-width: 34px; }
+.afa-table thead th:nth-child(2), .afa-table tbody tr:not(.afa-ligne-message) td:nth-child(2) { left: 34px; box-shadow: 6px 0 6px -6px rgba(0, 0, 0, 0.18); }
+.afa-table input[type="number"] { text-align: right; }
+.afa-table tfoot td { border-top: 1px solid var(--border-medium); font-size: 0.8rem; font-weight: 700; }
+.afa-ligne-erreur td .form-control { border-color: color-mix(in srgb, var(--accent-rose) 55%, var(--border-medium)); }
+.afa-ligne-message td { padding-top: 0; border-top: 0; }
+.afa-age { display: block; margin-top: 0.2rem; color: var(--text-muted); font-size: 0.7rem; }
+.afa-message { display: flex; align-items: center; gap: 0.35rem; margin: 0.15rem 0; color: var(--accent-amber); font-size: 0.75rem; line-height: 1.45; }
+.afa-message.erreur { color: var(--accent-rose); }
+.afa-fiche { white-space: nowrap; }
+.afa-statut {
+  display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle); background: var(--bg-surface); font-size: 0.72rem; font-weight: 650;
+}
+.afa-statut.connu { color: var(--accent-emerald); border-color: color-mix(in srgb, var(--accent-emerald) 40%, transparent); }
+.afa-statut.nouveau { color: var(--text-muted); }
+.afa-statut.proposition { color: var(--accent-amber); border-color: color-mix(in srgb, var(--accent-amber) 45%, transparent); cursor: pointer; }
+.afa-statut.proposition:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-amber) 10%, var(--bg-surface)); }
 
 /* Téléphone et petite tablette : chaque contrat devient une carte lisible plutôt qu'un tableau réduit */
 @media (max-width: 760px) {
@@ -2278,21 +2378,17 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
   .admin-contrats-page .portefeuille-periode { padding: 0; border: none; background: transparent; }
   .admin-contrats-page .portefeuille-periode select,
   .admin-contrats-page .portefeuille-periode input[type="date"] { border-color: var(--border-subtle); background: var(--bg-input); }
-  .modal-content:has(.admin-contrats-editor) .modal-header { padding: 0.85rem 1rem; }
-  .modal-content:has(.admin-contrats-editor) .modal-body { padding: 0.85rem; }
-  .admin-contrats-editor { gap: 0.75rem; }
   .admin-contrats-summary { grid-template-columns: 1fr 1fr; gap: 0.75rem; padding: 0.8rem; }
-  .admin-contrats-summary-main { grid-column: 1 / -1; }
   .admin-contrats-summary-item { padding-left: 0.6rem; }
-  .admin-contrats-summary-item:nth-child(2) { border-left: 0; padding-left: 0; }
-  .admin-contrats-edit-section { padding: 0.8rem; }
-  .admin-contrats-fields { grid-template-columns: 1fr !important; }
-  .admin-contrats-editor-actions { align-items: stretch; }
-  .admin-contrats-editor-actions > button,
-  .admin-contrats-editor-actions > div,
-  .admin-contrats-editor-actions > div .btn { flex: 1; }
-  .admin-contrats-editor-actions > div { justify-content: flex-end; }
-  .admin-contrats-editor-actions > button { justify-content: flex-start; }
+  .admin-editeur-resume .admin-contrats-summary-item:nth-child(odd) { border-left: 0; padding-left: 0; }
+  .admin-onglets { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .admin-onglet { flex: none; }
+  .admin-risques { grid-template-columns: 1fr; }
+  .admin-risques-liste { position: static; max-height: 14rem; }
+  .admin-groupe { padding: 0.75rem; }
+  .admin-groupe-champs { grid-template-columns: 1fr; }
+  .admin-barre-actions { padding: 0.65rem; }
+  .admin-barre-actions > div, .admin-barre-actions > div .btn { flex: 1; justify-content: center; }
 }
 
 /* ==========================================================================

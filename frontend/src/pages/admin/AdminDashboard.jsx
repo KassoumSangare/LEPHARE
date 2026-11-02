@@ -72,6 +72,7 @@ export const AdminDashboard = () => {
 
   const totalCompagnies = (d?.ParCompagnie || []).reduce((s, c) => s + Math.max(c.PrimeTtc, 0), 0);
   const branches = d?.ParBranche || [];
+  const alertesVisibles = situation?.Alertes?.filter((alerte) => peut(alerte.Droit)) || [];
   const total = (cle) => branches.reduce((s, b) => s + (b[cle] || 0), 0);
   const tauxTotal = (part, base) => (base ? (part * 100) / base : null);
 
@@ -186,24 +187,21 @@ export const AdminDashboard = () => {
               titre="Alertes de conformité"
               sousTitre={`Situation au ${formatDate(d.Jour)}, d'après la base`}
             >
-              {d.Alertes.length === 0 ? (
+              {alertesVisibles.length === 0 ? (
                 <div className="cockpit-rien">
                   <CheckCircle2 size={18} aria-hidden="true" />
-                  <span>Aucune alerte : reversements, chèques, primes et commissions à jour.</span>
+                  <span>{situation?.Alertes?.length ? 'Aucune alerte accessible.' : 'Aucune alerte : reversements, chèques, primes et commissions à jour.'}</span>
                 </div>
               ) : (
                 <ul className="cockpit-a-traiter">
-                  {d.Alertes.map((a) => {
+                  {alertesVisibles.map((a) => {
                     const Icone = ICONES_ALERTE[a.Code] || (a.Ton === 'critique' ? ShieldAlert : Info);
-                    const autorise = peut(a.Droit);
                     return (
                       <li key={a.Code}>
                         <button
                           type="button"
                           className={`ton-${a.Ton}`}
-                          disabled={!autorise}
                           onClick={() => navigate(a.Vers)}
-                          title={autorise ? undefined : 'Écran réservé à un autre droit'}
                         >
                           <Icone size={16} aria-hidden="true" />
                           <span>
@@ -211,7 +209,7 @@ export const AdminDashboard = () => {
                             {a.Nombre !== null && <> : {nombre(a.Nombre)}</>}
                           </span>
                           {a.Montant !== null && <span className="montant-alerte">{francs(a.Montant)}</span>}
-                          {autorise && <ArrowRight size={14} aria-hidden="true" className="fleche" />}
+                          <ArrowRight size={14} aria-hidden="true" className="fleche" />
                         </button>
                       </li>
                     );

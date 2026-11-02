@@ -1,4 +1,4 @@
-import { Car, Plane, Ship, Home, Building2, Layers, HeartPulse, UserPlus, Shield } from 'lucide-react';
+import { Car, Plane, Ship, Home, Building2, Layers, HeartHandshake, HeartPulse, UserPlus, Shield } from 'lucide-react';
 
 /**
  * Branches de production et ce que l'administration règle pour chacune (Réglages par branche) :
@@ -48,6 +48,10 @@ export const BRANCHES = [
     description: 'Gestionnaire des contrats Santé, seuils du contrat groupe (Santé classique et micro) ; MINENE SANTÉ : formules, barème de soins, surprimes, IA et RC chef de famille, répartition de la prime.',
     parametres: ['sante.gestionnaire', 'sante.groupe_adherents', 'sante.groupe_affilies'],
     pages: ['/admin/settings/sante'],
+  },
+  {
+    module: 'afa', idProduit: 10, libelle: 'Vie', icone: HeartHandshake,
+    description: "Contrats AFA de groupe : assurés avec capital, prime et bénéficiaires, import de la liste Excel ; compagnie proposée (SANLAM), commissions et accessoires de la branche.",
   },
   {
     module: 'ia', idProduit: 2, libelle: 'Individuelle Accidents', icone: UserPlus, brancheCima: '100',

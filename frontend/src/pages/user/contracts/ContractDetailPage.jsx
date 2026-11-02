@@ -33,6 +33,7 @@ import { estDevisSante } from '../../../utils/impressionsSante';
 import { AvenantSanteModal } from './AvenantSanteModal';
 import { aLeDroit } from '../../../utils/droits';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
+import { resteAEncaisser } from '../../../utils/resteEncaissement';
 
 export const ContractDetailPage = () => {
   const { id } = useParams();
@@ -466,13 +467,13 @@ export const ContractDetailPage = () => {
           </div>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reste à Recouvrer</div>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (Number(contract.prime_totale || 396851) - Number(contract.montant_encaisse || 0)) > 0 ? '#fb7185' : '#34d399', fontFamily: 'var(--font-mono)' }}>
-              {Math.max(0, Number(contract.prime_totale || 396851) - Number(contract.montant_encaisse || 0)).toLocaleString('fr-FR')} FCFA
+            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: resteAEncaisser(contract.prime_totale || 396851, contract.montant_encaisse) > 0 ? '#fb7185' : '#34d399', fontFamily: 'var(--font-mono)' }}>
+              {resteAEncaisser(contract.prime_totale || 396851, contract.montant_encaisse).toLocaleString('fr-FR')} FCFA
             </div>
           </div>
           <div style={{ padding: '0.75rem', background: 'var(--surface-sunken)', borderRadius: '6px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Statut Comptable</div>
-            <StatusBadge label={contract.statut_encaissement || (Number(contract.montant_encaisse || 0) >= Number(contract.prime_totale || 396851) ? 'Soldé' : 'À Encaisser')} color={Number(contract.montant_encaisse || 0) >= Number(contract.prime_totale || 396851) ? 'emerald' : 'amber'} />
+            <StatusBadge label={contract.statut_encaissement || (resteAEncaisser(contract.prime_totale || 396851, contract.montant_encaisse) === 0 ? 'Soldé' : 'À Encaisser')} color={resteAEncaisser(contract.prime_totale || 396851, contract.montant_encaisse) === 0 ? 'emerald' : 'amber'} />
           </div>
         </div>
       </div>

@@ -16,6 +16,7 @@ from autorisations.rbac import a_le_droit
 from configuration_api.parametrage import valeur_parametre
 
 from . import views_finance
+from .reste_encaissement import sql_reste
 from .views_reprise import AUTHENTIFICATION
 
 # Échéances suivies : contrats échus depuis moins de … jours (non renouvelés) et à échoir d'ici …
@@ -124,7 +125,7 @@ def _production(cursor, jour):
         SELECT c.idcontrat, c.numeropolice, c.dateemission::date AS dateemission, c.dateeffet::date AS dateeffet,
                c.dateexpiration::date AS dateexpiration, c.primettc, a.libelleavenant AS avenant,
                TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
-               co.raisonsociale AS compagnie, GREATEST(COALESCE(q.primettc, 0) - COALESCE(q.mt_encaisse, 0), 0) AS reste
+               co.raisonsociale AS compagnie, {sql_reste()} AS reste
         FROM stdcontrat c
         JOIN stdavenant a ON a.idavenant = c.idavenant
         LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
@@ -221,14 +222,14 @@ def _caisse(cursor, jour):
         LEFT JOIN stdmodeencaissement m ON m.idmodeencaissement = e.idmodepaiement
         WHERE NOT COALESCE(e.piece_annulee, FALSE) AND e.dateencaissement::date BETWEEN %(debut)s AND %(jour)s
     """, {"debut": debut, "debut_mois": debut_mois, "jour": jour, "decaissements": sorted(views_finance.MODES_DECAISSEMENT)})
-    # Reste à encaisser : même règle que la caisse (quittance du contrat non soldée)
+    # Reste à encaisser : même règle que la caisse (quittance du contrat non soldée, reliquat de moins de 5 F compté nul)
     reste = _une(cursor, f"""
         SELECT COUNT(*) FILTER (WHERE q.dateemission::date >= %(debut)s) AS nombre,
-               COALESCE(SUM(q.primettc - COALESCE(q.mt_encaisse, 0)) FILTER (WHERE q.dateemission::date >= %(debut)s), 0) AS montant,
+               COALESCE(SUM({sql_reste()}) FILTER (WHERE q.dateemission::date >= %(debut)s), 0) AS montant,
                COUNT(*) FILTER (WHERE q.dateemission::date < %(debut)s) AS nombre_ant,
-               COALESCE(SUM(q.primettc - COALESCE(q.mt_encaisse, 0)) FILTER (WHERE q.dateemission::date < %(debut)s), 0) AS montant_ant
+               COALESCE(SUM({sql_reste()}) FILTER (WHERE q.dateemission::date < %(debut)s), 0) AS montant_ant
         FROM stdquittance q
-        WHERE q.primettc - COALESCE(q.mt_encaisse, 0) > 0
+        WHERE {sql_reste()} > 0
           AND EXISTS (SELECT 1 FROM stdcontrat c WHERE c.idquittance = q.idquittance AND c.numeropolice = q.numeropolice
                         AND {CONTRAT_VALIDE})
     """, {"debut": debut})

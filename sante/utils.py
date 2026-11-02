@@ -13,6 +13,7 @@ from openpyxl import load_workbook
 from core.date_parser import date_emission_du_jour
 from core.utils import convert_to_date
 from production.models import ComplementDevisDetailSante, DataInsertionResult, DevisDetail
+from production.reste_encaissement import reste_a_encaisser
 
 from .avenant import detail_avenant_modification
 
@@ -818,7 +819,9 @@ def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc
         statut = "Contrat échu"
     else:
         statut = "Contrat en cours"
-    resultat.update({"Contrat": police, "Encaissement": encaisse, "Solde": total - encaisse, "Statut": statut})
+    # Solde : un reliquat de moins de 5 F compte comme nul
+    resultat.update({"Contrat": police, "Encaissement": encaisse, "Solde": float(reste_a_encaisser(total, encaisse)),
+                     "Statut": statut})
     return resultat
 
 

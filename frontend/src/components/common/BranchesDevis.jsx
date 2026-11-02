@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Car, FileText, HeartPulse, Home, Layers, Plane, Printer, Shield, Ship, UserPlus } from 'lucide-react';
+import { Building2, Car, FileText, HeartHandshake, HeartPulse, Home, Layers, Plane, Printer, Shield, Ship, UserPlus } from 'lucide-react';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../utils/modulesActifs';
 
 /* =========================================================================
@@ -17,6 +17,7 @@ export const BRANCHES_DEVIS = [
   ['transport', Ship, 'Devis Transport'],
   ['mrh', Home, 'Devis MRH'],
   ['sante', HeartPulse, 'Devis Santé'],
+  ['afa', HeartHandshake, 'Devis AFA'],
   ['ia', UserPlus, 'Devis IA'],
   ['rc', Shield, 'Devis RC'],
   ['mrp', Building2, 'Devis MRP'],
@@ -30,6 +31,7 @@ export const ICONES_ONGLET = {
   TRANSPORT: <Ship size={13} color="#38bdf8" />,
   MRH: <Home size={13} />,
   SANTE: <HeartPulse size={13} />,
+  VIE: <HeartHandshake size={13} />,
   IA: <UserPlus size={13} />,
   RC: <Shield size={13} />,
   MRP: <Building2 size={13} />,

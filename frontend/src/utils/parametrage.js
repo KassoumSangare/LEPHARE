@@ -16,7 +16,8 @@ const PRODUITS_ORIGINE = [
   { IdProduit: 7, Libelle: 'MULTIRISQUES PROFESSIONNELLE', Onglet: 'MRP', ModuleSaisie: 'mrp', SaisieOuverte: false, Ordre: 5, IdCompagnieDefaut: 1 },
   { IdProduit: 9, Libelle: 'TOUS DOMMAGES', Onglet: 'Dommages', ModuleSaisie: 'tous-dommages', SaisieOuverte: true, Ordre: 6, IdCompagnieDefaut: 1 },
   { IdProduit: 5, Libelle: 'SANTE', Onglet: 'Santé', ModuleSaisie: 'sante', SaisieOuverte: true, Ordre: 7, IdCompagnieDefaut: 1 },
-  { IdProduit: 10, Libelle: 'VIE', Onglet: 'Santé', ModuleSaisie: '', SaisieOuverte: false, Ordre: 8, IdCompagnieDefaut: null },
+  // Vie séparée de la Santé (2026-11-02) : onglet propre, formulaire AFA, SANLAM qui gère la Vie
+  { IdProduit: 10, Libelle: 'VIE', Onglet: 'Vie', ModuleSaisie: 'afa', SaisieOuverte: true, Ordre: 8, IdCompagnieDefaut: 30 },
   { IdProduit: 2, Libelle: 'INDIVIDUELLE ACCIDENTS', Onglet: 'IA', ModuleSaisie: 'ia', SaisieOuverte: true, Ordre: 9, IdCompagnieDefaut: 1 },
   { IdProduit: 8, Libelle: 'RESPONSABILITE CIVILE', Onglet: 'RC', ModuleSaisie: 'rc', SaisieOuverte: false, Ordre: 10, IdCompagnieDefaut: 1 },
 ];

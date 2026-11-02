@@ -16,4 +16,4 @@ export const isUnconfirmedQuote = (q) => {
 // Formulaires qui savent rouvrir un devis enregistré (?edit=<iddevis>) ; le formulaire d'un produit
 // est réglé dans Administration > Produits. Transport : la cotation hors GUCE rouvre ses devis (ceux des
 // bordereaux GUCE sont confirmés dès l'import).
-export const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'rc', 'mrp', 'tous-dommages', 'transport'];
+export const MODULES_EDITION_COMPLETE = ['auto', 'ia', 'voyage', 'mrh', 'sante', 'afa', 'rc', 'mrp', 'tous-dommages', 'transport'];

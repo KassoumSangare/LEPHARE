@@ -26,7 +26,7 @@ from .models import (
     TarifAutoGrille, TarifAutoGrilleLigne,
 )
 from .serializers import DemandeGarantieSerializer
-from .utils import parametres_garantie_offre
+from .utils import parametres_garantie_offre, tarification_demandee
 from .parametrage import ErreurParametrage, _auteur, _cache, _journal, _parametre_json, _reponse_erreur, _texte, _valider_parametre
 from .views_grilles_voyage import AUTHENTIFICATION, EstAdministrateur
 
@@ -627,7 +627,8 @@ def prime_garantie(request):
     for offre in offres:
         parametres[1] = offre["idoffre"]
         try:
-            with transaction.atomic(), connection.cursor() as cursor:
+            # Devis d'incorporation : prorata des jours restants, ou prime entière (affaire forfaitaire)
+            with tarification_demandee(donnees), transaction.atomic(), connection.cursor() as cursor:
                 cursor.callproc("fn_garantie_offre", parametres)
                 colonnes = [c[0] for c in cursor.description]
                 lignes = [dict(zip(colonnes, ligne)) for ligne in cursor.fetchall()]

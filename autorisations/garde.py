@@ -268,6 +268,8 @@ REGLES = [
     # ---- imports
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
     R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
+    R("POST", r"afa/import/analyse/?$", "imports.excel", lecture=True),
+    R("POST", r"afa/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
     # Transport hors GUCE : décompte sans écriture, devis, voyages déclarés et ressortie d'une police d'abonnement
     R("POST", r"transport/hors-guce/calcul/$", "devis.view", lecture=True),
@@ -293,6 +295,8 @@ REGLES = [
     # ---- contrats
     R("GET", r"renouvellement/\d+/?$", "contrats.view"),
     R("GET", r"incorporation/\d+/?$", "contrats.view"),
+    R("GET", r"incorporation/devis/\d+/?$", "devis.view"),
+    R("GET", r"afa/", "devis.view"),
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
     R("GET", r"minene/(ia|rc)/apercu/?$", "devis.view"),
     R("GET", r"minene/police/?$", "devis.view"),

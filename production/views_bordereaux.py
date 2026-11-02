@@ -41,6 +41,7 @@ from rest_framework.response import Response
 from configuration_api.parametrage import valeur_parametre
 
 from .models import BordereauReversement
+from .reste_encaissement import reste_a_encaisser
 from .views_finance import (
     AUTHENTIFICATION,
     ZERO,
@@ -208,7 +209,8 @@ def _infos_quittance(q):
 
 def _paiements(numeros):
     """Encaissements valides de chaque quittance, dans l'ordre : rang, cumul payé après chacun, statut (comptant,
-    1er acompte…, solde). Un décaissement (DMA) diminue le cumul sans compter comme paiement."""
+    1er acompte…, solde). Un décaissement (DMA) diminue le cumul sans compter comme paiement. Un reliquat de moins de
+    5 F compte comme soldé."""
     if not numeros:
         return {}
     lignes = _lignes(
@@ -232,7 +234,7 @@ def _paiements(numeros):
         cumul = precedent["Cumul"] + (-l["montant_encaissement"] if decaissement else l["montant_encaissement"])
         rang = precedent["Rang"] + (0 if decaissement else 1)
         ttc = l["primettc"] or ZERO
-        if ttc > 0 and cumul >= ttc:
+        if ttc > 0 and reste_a_encaisser(ttc, cumul) == 0:
             code = "COMPTANT" if rang == 1 else "SOLDE"
         else:
             code = "ACOMPTE"
@@ -497,7 +499,7 @@ def lire_bordereau(id_reversement):
         dernier = siens[-1]
         p = _paiement_de(paiements, numero, dernier["iddetailencaissement"]) or {"Cumul": ZERO, "Rang": 0, "Code": "ACOMPTE"}
         ttc = q["primettc"] or ZERO
-        reste = max(ttc - p["Cumul"], ZERO)
+        reste = reste_a_encaisser(ttc, p["Cumul"])
         lignes.append({
             **_infos_quittance(q),
             "Avenant": _avenant(q),
@@ -959,7 +961,7 @@ def tableau_reversement(id_compagnie, du, au):
             cheques_commission[c["id"]] = (f"{'CHQ' if c['mode_paiement'] == 'CHQ' else 'VIR'} {banque}N°{c['reference_paiement']} "
                                            f"du {_jma(c['date_paiement'])} de FCFA {_f(c['montant_total'])}")
         ttc = q["primettc"] or ZERO
-        reste = max(ttc - reverse, ZERO)
+        reste = reste_a_encaisser(ttc, reverse)
         observations = []
         if reste > 0:
             observations.append(f"Reste à encaisser : {_f(reste)}")

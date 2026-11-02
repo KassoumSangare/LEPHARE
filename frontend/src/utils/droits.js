@@ -35,7 +35,7 @@ const DROITS_ECRANS_PRODUCTION = [
   ['/user/quotes/transport', ['devis.create', 'devis.update', 'contrats.view', 'imports.guce']],
   ['/user/quotes/transport/hors-guce', ['devis.create', 'devis.update']],
   ['/user/quotes/transport/abonnements', 'contrats.view'],
-  ['/user/quotes/transport/guce', ['imports.guce', 'devis.create', 'devis.update']],
+  ['/user/quotes/transport/guce', 'imports.guce'],
   ['/user/contracts', 'contrats.view'],
   ['/user/endorsements', 'contrats.view'],
   ['/user/reprises', 'contrats.view'],

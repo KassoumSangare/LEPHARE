@@ -118,6 +118,7 @@ from .exceltopostgresql import export_excel
 from . import pieces_jointes
 from .import_assures import import_ia_insured, insert_new_assure
 from .releve_compte import releve_compte as donnees_releve_compte
+from .reste_encaissement import RELIQUAT_NEGLIGEABLE, reste_a_encaisser
 from .views_devis_ia import completer_assures_devis_ia
 from sante.models import Adherent, Affilie
 from .models import (
@@ -1279,9 +1280,9 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
 
         if params.get("a_encaisser") in ("1", "true"):
             # Caisse : même règle que fn_liste_contrat_encaissement (URANUS), la quittance du
-            # contrat n'est pas soldée. Sans fenêtre de 3 ans : un devis ancien confirmé
-            # aujourd'hui garde sa date d'émission. Derniers contrats confirmés en tête, sinon
-            # ils sortent des 200 lignes de la page.
+            # contrat n'est pas soldée (un reliquat de moins de 5 F compte comme nul). Sans
+            # fenêtre de 3 ans : un devis ancien confirmé aujourd'hui garde sa date d'émission.
+            # Derniers contrats confirmés en tête, sinon ils sortent des 200 lignes de la page.
             from django.db.models import Value
             from django.db.models.functions import Coalesce
 
@@ -1289,7 +1290,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 solde_quittance=F("idquittance__primettc")
                 - Coalesce(F("idquittance__mt_encaisse"), Value(Decimal(0)))
             ).filter(
-                idquittance__police=F("numeropolice"), solde_quittance__gt=Decimal("4")
+                idquittance__police=F("numeropolice"), solde_quittance__gte=RELIQUAT_NEGLIGEABLE
             )
             queryset = self._filtre_produit(queryset).order_by("-idcontrat")
         elif self.action != "list":
@@ -1386,6 +1387,75 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         return {
             "contrat": ContratAdministrationSerializer(contrat).data,
             "details": resultat_details,
+            "contexte": self._contexte_administration(contrat, resultat_details),
+            "referentiels": self._referentiels_administration(),
+        }
+
+    # Listes de choix de l'administration des contrats : identifiants montrés avec leur libellé (« code - libellé »)
+    REFERENTIELS_ADMINISTRATION = {
+        "compagnies": "SELECT idcompagnie, TRIM(raisonsociale) FROM stdcompagnie ORDER BY 2",
+        "marques": "SELECT idmarque, TRIM(libellemarque) FROM stdmarque ORDER BY 2",
+        "genres": "SELECT idgenre, TRIM(libellegenre) FROM stdgenrevehicule ORDER BY 2",
+        "types": "SELECT id, TRIM(libelletype) FROM stdtypevehicule ORDER BY 2",
+        "usages": "SELECT idusage, TRIM(COALESCE(codeusage, '')) || ' - ' || TRIM(libelleusage) FROM stdusage ORDER BY 2",
+        "carrosseries": "SELECT idcarrosserie, TRIM(libellecarrosserie) FROM stdcarrosserie ORDER BY 2",
+        "tarifs": "SELECT idtarif, TRIM(COALESCE(codecategorie, '')) || ' - ' || TRIM(libelle) FROM stdtarif ORDER BY 2",
+        "offres": "SELECT idoffre, TRIM(libelleoffre) FROM stdoffre ORDER BY 2",
+        "garanties": "SELECT idsousgarantie, TRIM(libellesousgarantie) FROM stdsousgarantie ORDER BY 2",
+        "professions": "SELECT idprofession, TRIM(libelle) FROM stdprofession ORDER BY 2",
+    }
+
+    def _referentiels_administration(self):
+        resultat = {}
+        with connection.cursor() as cursor:
+            for nom, sql in self.REFERENTIELS_ADMINISTRATION.items():
+                cursor.execute(sql)
+                # « 000 - » (code sans libellé) : le tiret et les blancs de bord sont retirés
+                resultat[nom] = [{"id": i, "libelle": (libelle or "").strip(" -") or f"N° {i}"} for i, libelle in cursor.fetchall()]
+        return resultat
+
+    def _contexte_administration(self, contrat, details):
+        """Libellés du contrat (client, assuré, compagnie, produit, mouvement, devis, quittance liée) et noms des
+        assurés de ses risques, pour l'écran d'administration."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')),
+                       TRIM(COALESCE(asu.nom, '') || ' ' || COALESCE(asu.prenoms, '')),
+                       TRIM(co.raisonsociale), TRIM(ap.raisonsociale), c.idproduit, TRIM(p.libelleproduit),
+                       a.codeavenant, TRIM(a.libelleavenant), TRIM(i.libelleintermediaire), d.numerodevis,
+                       q.numeroquittance, q.primettc, COALESCE(q.mt_encaisse, 0), COALESCE(c.idcontratannulation, 0)
+                FROM stdcontrat c
+                LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+                LEFT JOIN stdclient asu ON asu.idclient = c.idassure
+                LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
+                LEFT JOIN stdcompagnie ap ON ap.idcompagnie = c.idaperiteur
+                LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
+                LEFT JOIN stdavenant a ON a.idavenant = c.idavenant
+                LEFT JOIN stdintermediaire i ON i.idintermediaire = c.idintermediaire
+                LEFT JOIN stddevis d ON d.iddevis = c.iddevis
+                LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
+                WHERE c.idcontrat = %s
+                """,
+                [contrat.pk],
+            )
+            (client, assure, compagnie, aperiteur, id_produit, produit, code_avenant, avenant, intermediaire, numero_devis,
+             numero_quittance, ttc_quittance, encaisse, annule) = cursor.fetchone()
+            ids_assures = sorted({d["idassure"] for d in details if d.get("idassure")} | {contrat.idclient_id, contrat.idassure})
+            cursor.execute(
+                "SELECT idclient, TRIM(COALESCE(nom, '') || ' ' || COALESCE(prenoms, '')) FROM stdclient WHERE idclient = ANY(%s)",
+                [[i for i in ids_assures if i]],
+            )
+            noms = {str(i): nom for i, nom in cursor.fetchall()}
+        return {
+            "Client": client or "", "Assure": assure or "", "Compagnie": compagnie or "", "Aperiteur": aperiteur or "",
+            "IdProduit": id_produit, "Produit": produit or "", "CodeMouvement": code_avenant or "", "Mouvement": avenant or "",
+            "Intermediaire": intermediaire or "", "NumeroDevis": numero_devis or "", "Annule": bool(annule),
+            "Quittance": {
+                "Numero": numero_quittance, "PrimeTtc": float(ttc_quittance or 0), "Encaisse": float(encaisse or 0),
+                "Reste": float(reste_a_encaisser(ttc_quittance, encaisse)),
+            } if numero_quittance else None,
+            "Noms": noms,
         }
 
     @action(detail=False, methods=["get"], url_path="administration")

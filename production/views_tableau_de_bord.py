@@ -19,6 +19,7 @@ from autorisations.rbac import a_le_droit
 from institutionnel.models import ConventionAssureur
 
 from . import views_finance
+from .reste_encaissement import sql_reste
 from .views_cockpit import CONTRAT_VALIDE, _franc, _lignes, _meme_jour, _une
 from .views_reprise import AUTHENTIFICATION
 
@@ -122,11 +123,12 @@ def _par_branche(cursor, p):
         WHERE NOT COALESCE(e.piece_annulee, FALSE) AND e.dateencaissement::date BETWEEN %(debut)s AND %(au)s
         GROUP BY 1, 2
     """, p)
-    # Recouvrement des primes émises sur l'exercice : quittances des contrats, encaissé à ce jour
+    # Recouvrement des primes émises sur l'exercice : quittances des contrats, encaissé à ce jour (reliquat de moins
+    # de 5 F compté nul)
     recouvrement = _lignes(cursor, f"""
-        SELECT q.idproduit, COUNT(*) FILTER (WHERE q.primettc - COALESCE(q.mt_encaisse, 0) > 0) AS impayees,
+        SELECT q.idproduit, COUNT(*) FILTER (WHERE {sql_reste()} > 0) AS impayees,
                SUM(q.primettc) AS ttc, SUM(LEAST(GREATEST(COALESCE(q.mt_encaisse, 0), 0), q.primettc)) AS encaisse,
-               SUM(GREATEST(q.primettc - COALESCE(q.mt_encaisse, 0), 0)) AS reste
+               SUM({sql_reste()}) AS reste
         FROM stdquittance q
         WHERE q.primettc > 0 AND q.idquittance IN (
             SELECT c.idquittance FROM stdcontrat c
@@ -231,9 +233,9 @@ def _situation(cursor, jour):
     """, [jour])
     # Polices en vigueur dont la prime n'est pas soldée … jours après l'effet (la garantie suit le paiement de la prime)
     impayes = _une(cursor, f"""
-        SELECT COUNT(*) AS n, COALESCE(SUM(q.primettc - COALESCE(q.mt_encaisse, 0)), 0) AS m
+        SELECT COUNT(*) AS n, COALESCE(SUM({sql_reste()}), 0) AS m
         FROM stdquittance q
-        WHERE q.primettc - COALESCE(q.mt_encaisse, 0) > 0 AND q.dateeffet::date < %s AND q.dateexpiration::date >= %s
+        WHERE {sql_reste()} > 0 AND q.dateeffet::date < %s AND q.dateexpiration::date >= %s
           AND EXISTS (SELECT 1 FROM stdcontrat c WHERE c.idquittance = q.idquittance AND c.numeropolice = q.numeropolice
                         AND {CONTRAT_VALIDE})
     """, [jour - timedelta(days=IMPAYE_APRES_JOURS), jour])

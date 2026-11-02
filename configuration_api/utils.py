@@ -171,11 +171,27 @@ def parametres_garantie_offre(request_data):
     ]
 
 
+def tarification_demandee(request_data):
+    """Écran Auto d'un devis d'incorporation (IdDevisIncorporation) : le moteur calcule comme à l'enregistrement du
+    véhicule, au prorata des jours restants ou sans prorata pour une affaire forfaitaire (production/incorporation.py)."""
+    from production.incorporation import mode_incorporation, tarification_incorporation
+
+    try:
+        id_devis = int(request_data.get("IdDevisIncorporation") or 0)
+    except (AttributeError, TypeError, ValueError):
+        id_devis = 0
+    mode = None
+    if id_devis:
+        with connection.cursor() as cursor:
+            mode = mode_incorporation(cursor, id_devis)
+    return tarification_incorporation(mode)
+
+
 def get_garantie_offre(request_data):
     parametres = parametres_garantie_offre(request_data)
     try:
         status = 0
-        with connection.cursor() as cursor:
+        with tarification_demandee(request_data), connection.cursor() as cursor:
             cursor.callproc("fn_garantie_offre", parametres)
 
             result = cursor.fetchall()

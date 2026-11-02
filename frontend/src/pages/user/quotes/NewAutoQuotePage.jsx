@@ -67,6 +67,7 @@ import {
   ID_SOUS_GARANTIE_CEDEAO,
   noteCalculGarantie,
   sansGarantiesNonAdmises,
+  ventilerPrimeFichier,
 } from '../../../utils/tarificationAuto';
 
 // Références conformes Django std & CIMA pour fallback instantané si API indisponible
@@ -272,6 +273,9 @@ const listeGarantiesVehicule = (garanties) => garanties
     capital: g.is_new_garantie ? Number(g.capitalMontant) || 0 : null,
   }));
 
+// Date AAAA-MM-JJ affichée JJ/MM/AAAA
+const dateFrIso = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
+
 // Formateur DD-MM-YYYY pour Django
 const toDmy = (dStr) => {
   if (!dStr) return '';
@@ -287,6 +291,25 @@ export const NewAutoQuotePage = () => {
   const [searchParams] = useSearchParams();
   const incorporationParam = searchParams.get('incorporation') === '1';
   const { success, error: toastError, info } = useToast();
+
+  // Devis d'incorporation dans une flotte (page Incorporation, ou devis INC rouvert depuis le registre) : période
+  // fixée (date d'incorporation, échéance du contrat principal) et tarification au prorata des jours restants, ou
+  // affaire forfaitaire : prime annuelle sans prorata, prime nette du fichier Excel reprise telle quelle
+  const idDevisEdite = searchParams.get('edit');
+  const [incorporation, setIncorporation] = useState(null);
+  const enIncorporation = incorporationParam || Boolean(incorporation);
+  const forfaitIncorporation = Boolean(incorporation?.Forfaitaire);
+  useEffect(() => {
+    if (!idDevisEdite) {
+      setIncorporation(null);
+      return undefined;
+    }
+    let actif = true;
+    contractApi.lireDevisIncorporation(idDevisEdite)
+      .then((r) => { if (actif) setIncorporation(r?.Incorporation ? r : null); })
+      .catch(() => { if (actif) setIncorporation(null); });
+    return () => { actif = false; };
+  }, [idDevisEdite]);
 
   // Navigation étapes : 1 = CONTRAT, 2 = VÉHICULE, 3 = OFFRE & DÉCOMPTE, 4 = CLIENT/ASSURÉ/CONDUCTEUR
   const [step, setStep] = useState(1);
@@ -394,8 +417,8 @@ export const NewAutoQuotePage = () => {
     return d.toISOString().split('T')[0];
   }, [dateEffet, dureeId, customDateExpiration]);
 
-  const effectiveDateExpiration = incorporationParam
-    ? (dateExpirationIncorporation || customDateExpiration || calculatedDateExpiration)
+  const effectiveDateExpiration = enIncorporation
+    ? (incorporation?.DateExpiration || dateExpirationIncorporation || customDateExpiration || calculatedDateExpiration)
     : Number(dureeId) === 5 ? (customDateExpiration || calculatedDateExpiration) : calculatedDateExpiration;
 
   // ----------------------------------------------------
@@ -744,6 +767,8 @@ export const NewAutoQuotePage = () => {
       TransportEmployes: Boolean(v.transportEmployes),
       TansportPassagerSupplementaire: Boolean(v.transportPassagerSupplementaire),
       IdOptionAssistance: Number(v.idOptionAssistance || 0),
+      // Incorporation : le moteur calcule comme à l'enregistrement (prorata des jours restants, ou prime entière)
+      ...(incorporation ? { IdDevisIncorporation: Number(incorporation.IdDevis) } : {}),
     };
   };
 
@@ -752,7 +777,7 @@ export const NewAutoQuotePage = () => {
     valeurVenale, valeurAccessoire, puissanceFiscale, chargeUtile, reductionCommerciale, dateEffet,
     effectiveDateExpiration, dateMec, bonusMalus, remorqueAttelee, genreVehicule, isNsiaCompany, formuleSecuriteCode,
     nombrePlace, usageId, carburantAutreMatiere, transportEleves, transportEmployes, transportPassagerSupplementaire,
-    formuleAssistanceId,
+    formuleAssistanceId, incorporation,
   ]);
 
   // Tarif à lecture directe applicable (un véhicule) : recherché à chaque changement des données de tarification
@@ -1208,17 +1233,21 @@ export const NewAutoQuotePage = () => {
       importe: { ligne: l.Ligne, primeNetteFichier: l.Fichier?.PrimeNette ?? null },
     }));
     const retirees = new Map(lignes.map((l, i) => [ajouts[i].cle, new Set((l.GarantiesRetirees || []).map(Number))]));
+    // Incorporation dans une affaire à tarif forfaitaire : la prime nette du fichier est celle du véhicule, sans
+    // prorata (répartie sur ses garanties) ; sinon le fichier n'est qu'indicatif et le barème s'applique
+    const primeFichier = (v) => (forfaitIncorporation ? Number(v.importe?.primeNetteFichier) || 0 : 0);
     const personnalisees = {};
     const echecs = [];
-    const aPersonnaliser = ajouts.filter((v) => retirees.get(v.cle).size);
+    const aPersonnaliser = ajouts.filter((v) => retirees.get(v.cle).size || primeFichier(v) > 0);
     for (let i = 0; i < aPersonnaliser.length; i += 4) {
       // eslint-disable-next-line no-await-in-loop
       await Promise.all(aPersonnaliser.slice(i, i + 4).map(async (v) => {
         try {
           const bareme = await chargerBaremeVehicule(v);
           const sans = retirees.get(v.cle);
+          const garanties = bareme.map((g) => (sans.has(Number(g.id_garantie)) ? { ...g, acquise: false } : g));
           personnalisees[v.cle] = {
-            garanties: bareme.map((g) => (sans.has(Number(g.id_garantie)) ? { ...g, acquise: false } : g)),
+            garanties: primeFichier(v) > 0 ? ventilerPrimeFichier(garanties, primeFichier(v)) : garanties,
             signature: signatureTarif(v),
           };
         } catch {
@@ -1247,7 +1276,15 @@ export const NewAutoQuotePage = () => {
       success(`${ajouts.length} véhicule${ajouts.length > 1 ? 's' : ''} ajouté${ajouts.length > 1 ? 's' : ''} à la flotte : enregistrez le devis pour les tarifer définitivement.`);
     }
     if (echecs.length) {
-      toastError(`Garanties « Non » du fichier non retirées pour ${echecs.join(', ')} : ajustez-les avec « Garanties de l'offre ».`);
+      toastError(forfaitIncorporation
+        ? `Garanties « Non » ou prime du fichier non appliquées pour ${echecs.join(', ')} : ajustez-les avec « Garanties de l'offre ».`
+        : `Garanties « Non » du fichier non retirées pour ${echecs.join(', ')} : ajustez-les avec « Garanties de l'offre ».`);
+    }
+    if (forfaitIncorporation) {
+      const sansPrime = ajouts.filter((v) => !(primeFichier(v) > 0)).map((v) => v.immatriculation);
+      if (sansPrime.length) {
+        info(`Affaire forfaitaire : aucune prime nette dans le fichier pour ${sansPrime.join(', ')} ; prime annuelle du barème, sans prorata.`);
+      }
     }
   };
 
@@ -1728,7 +1765,7 @@ export const NewAutoQuotePage = () => {
         setTermeContrat(libelleTerme(charge.termeId));
         setDateEffet(toIsoDate(d.dateeffet) || dateEffet);
         setCustomDateExpiration(toIsoDate(d.dateexpiration));
-        if (incorporationParam) setDateExpirationIncorporation(toIsoDate(d.dateexpiration));
+        setDateExpirationIncorporation(toIsoDate(d.dateexpiration));
 
         // Véhicule (le premier pour une flotte) ; devis sans véhicule en base : seule l'offre
         // de l'en-tête est reprise, le reste de l'écran Véhicule est à compléter
@@ -2791,6 +2828,16 @@ export const NewAutoQuotePage = () => {
             <Car size={26} color="#3b82f6" />
             {editIddevis ? `Modifier le Devis Automobile [${editNumeroDevis || editIddevis}]` : 'Nouveau Devis Automobile'}
           </h1>
+          {enIncorporation && (
+            <p role="note" style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(37, 99, 235, 0.1)', border: '1px solid rgba(37, 99, 235, 0.35)', color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '760px', lineHeight: 1.55 }}>
+              <strong>Incorporation{incorporation?.NumeroPolice ? ` dans la police ${incorporation.NumeroPolice}` : ''}</strong>
+              {incorporation && ` : du ${dateFrIso(incorporation.DateEffet)} à l'échéance inchangée du ${dateFrIso(incorporation.DateExpiration)} (${incorporation.JoursCouverts} jours).`}
+              {' '}
+              {forfaitIncorporation
+                ? "Affaire à tarif forfaitaire : aucun prorata. Les véhicules importés d'un fichier Excel gardent la prime nette du fichier, les autres la prime annuelle du barème."
+                : incorporation && `Prime du véhicule : prime annuelle du tarif × ${incorporation.JoursCouverts}/${incorporation.JoursAnnee} (${(incorporation.Prorata * 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %).`}
+            </p>
+          )}
           {avertissementReprise && (
             <p style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#f59e0b', fontSize: '0.85rem', maxWidth: '760px' }}>
               {avertissementReprise}
@@ -3109,21 +3156,21 @@ export const NewAutoQuotePage = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Date d'effet (* requis)</label>
+              <label className="form-label">{enIncorporation ? "Date d'incorporation" : "Date d'effet (* requis)"}</label>
               <input
                 type="date"
                 className="form-control"
                 value={dateEffet}
                 onChange={(e) => setDateEffet(e.target.value)}
-                disabled={incorporationParam}
+                disabled={enIncorporation}
               />
             </div>
 
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              {incorporationParam ? (
+              {enIncorporation ? (
                 <div className="form-control" aria-readonly="true">
-                  Durée restante jusqu’à l’échéance initiale
+                  {incorporation ? `${incorporation.JoursCouverts} jours jusqu'à l'échéance` : "Durée restante jusqu'à l'échéance initiale"}
                 </div>
               ) : (
                 <DureeContratSelect
@@ -3137,8 +3184,8 @@ export const NewAutoQuotePage = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Date d'expiration (* requis)</label>
-              {incorporationParam ? (
+              <label className="form-label">{enIncorporation ? 'Échéance du contrat principal (inchangée)' : "Date d'expiration (* requis)"}</label>
+              {enIncorporation ? (
                 <input type="date" className="form-control" value={effectiveDateExpiration} readOnly disabled />
               ) : Number(dureeId) === 5 ? (
                 <input

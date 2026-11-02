@@ -31,6 +31,7 @@ from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
 from .reprise import (PAIEMENTS, ErreurReprise, controler, description_devis, devis_a_finaliser, devis_reprise, enregistrer,
                       marquer_devis, normaliser, reprendre, reprendre_devis, risque_branche, supprimer)
+from .reste_encaissement import reste_a_encaisser
 from .views import ContratViewSet
 
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
@@ -192,13 +193,14 @@ def reprises(request):
     resultat = []
     for l in lignes:
         ttc, encaisse = Decimal(l["primettc"] or 0), Decimal(l["encaisse"] or 0)
-        statut = "PAYEE" if encaisse >= ttc else "PARTIELLE" if encaisse > 0 else "IMPAYEE"
+        reste = reste_a_encaisser(ttc, encaisse)
+        statut = "PAYEE" if reste == 0 else "PARTIELLE" if encaisse > 0 else "IMPAYEE"
         resultat.append({
             "Id": l["id"], "IdContrat": l["idcontrat"], "NumeroPolice": l["numeropolice"], "NumeroPoliceCompagnie": l["numeropolicecompagnie"] or "",
             "NumeroQuittance": l["numeroquittance"], "Client": l["client"] or "", "IdClient": l["idclient"],
             "Compagnie": l["compagnie"] or "", "Branche": l["branche"] or "", "DateEmission": _iso(l["dateemission"]),
             "DateEffet": _iso(l["dateeffet"]), "DateExpiration": _iso(l["dateexpiration"]), "PrimeTtc": float(ttc),
-            "Encaisse": float(encaisse), "Reste": float(ttc - encaisse), "Paiement": statut, "PaiementLibelle": PAIEMENTS[statut],
+            "Encaisse": float(encaisse), "Reste": float(reste), "Paiement": statut, "PaiementLibelle": PAIEMENTS[statut],
             "Commission": float(l["commission"] or 0), "TauxCommission": float(l["taux_commission"] or 0),
             "CommissionPercue": l["commission_percue"], "Mode": l["mode"], "Lot": l["lot"] or "", "CreePar": l["creepar"],
             "Auteur": l["idutilisateur"] == request.user.id, "DateCreation": _iso(l["datecreation"]),
@@ -242,7 +244,8 @@ def _fiche(ligne):
     donnees = ligne["donnees"] if isinstance(ligne["donnees"], dict) else {}
     risque = risque_branche(ligne["idproduit"])
     ttc, encaisse = Decimal(ligne["primettc"] or 0), Decimal(ligne["encaisse"] or 0)
-    statut = "PAYEE" if encaisse >= ttc else "PARTIELLE" if encaisse > 0 else "IMPAYEE"
+    reste = reste_a_encaisser(ttc, encaisse)
+    statut = "PAYEE" if reste == 0 else "PARTIELLE" if encaisse > 0 else "IMPAYEE"
     return {
         "Id": ligne["id"], "IdContrat": ligne["idcontrat"], "NumeroPolice": ligne["numeropolice"],
         "NumeroPoliceCompagnie": ligne["numeropolicecompagnie"] or "", "NumeroQuittance": ligne["numeroquittance"],
@@ -253,7 +256,7 @@ def _fiche(ligne):
         "Fga": float(ligne["fga"] or 0), "Cedeao": float(ligne["cedeao"] or 0), "PrimeTtc": float(ttc),
         "TauxCommission": float(ligne["taux_commission"] or 0), "Commission": float(ligne["commissionintermediaire"] or 0),
         "CommissionPercue": ligne["commission_percue"], "DateCommissionPercue": _iso(ligne["date_commission_percue"]),
-        "Encaisse": float(encaisse), "Reste": float(ttc - encaisse), "Paiement": statut, "PaiementLibelle": PAIEMENTS[statut],
+        "Encaisse": float(encaisse), "Reste": float(reste), "Paiement": statut, "PaiementLibelle": PAIEMENTS[statut],
         "Etape": risque["Etape"], "Description": donnees.get("Description") or "",
         "Champs": [{"Libelle": l, "Valeur": val} for l, val in donnees.get("Affichage") or []],
         "Precisions": donnees.get("Risque") or "", "Observation": donnees.get("Observation") or "",

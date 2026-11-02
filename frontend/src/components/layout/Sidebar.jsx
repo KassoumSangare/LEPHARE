@@ -342,10 +342,10 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>Documents (GED)</span>
             </NavLink>}
 
-            <NavLink to="/user/derogations" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+            {peut('approbations.view') && <NavLink to="/user/derogations" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <KeyRound size={16} className="nav-icon" />
               <span>Workflows & Dérogations</span>
-            </NavLink>
+            </NavLink>}
 
             {peut('devis.view') && <NavLink to="/user/archives" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <Archive size={16} className="nav-icon" />

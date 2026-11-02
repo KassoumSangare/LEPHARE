@@ -10,6 +10,7 @@ import { formatDate } from '../../../utils/dateUtils';
 import { exportToExcel, exportToPdf, printRecuEncaissement } from '../../../utils/exportUtils';
 import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
 import { correspondRecherche } from '../../../utils/financeUtils';
+import { resteAEncaisser as resteQuittance } from '../../../utils/resteEncaissement';
 import {
   actionReglement,
   ChampsReglement,
@@ -32,10 +33,8 @@ const dateEmission = (contract) => contract?.raw
   ? contract.raw.dateemission || contract.raw.date_emission || ''
   : contract?.date_emission || '';
 const montantFormate = (montant) => Math.round(Number(montant) || 0).toLocaleString('fr-FR');
-const resteAEncaisser = (contract) => {
-  const reste = (Number(contract?.prime_totale) || 0) - (Number(contract?.montant_encaisse) || 0);
-  return reste <= 4 ? 0 : reste;
-};
+// Reliquat de moins de 5 F compté comme nul (utils/resteEncaissement.js)
+const resteAEncaisser = (contract) => resteQuittance(contract?.prime_totale, contract?.montant_encaisse);
 
 // Aperçu du reçu ouvert au clic, rempli une fois l'encaissement enregistré
 const ouvrirFenetreRecu = (message) => {
