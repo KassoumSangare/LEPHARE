@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { cashApi } from '../../api/endpoints';
+import { ChoixBanque } from './BanqueModal';
 import { aujourdhui, dateFr } from '../../utils/financeUtils';
 import { nomCabinet } from '../../utils/parametrage';
 
@@ -102,8 +103,9 @@ export const champsReglementApi = (valeurs, mode) => {
 
 const fcfa = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR');
 
-// montantAEncaisser (facultatif) : total réglé par ce chèque, comparé à son solde disponible
-export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEncaisser }) => {
+// montantAEncaisser (facultatif) : total réglé par ce chèque, comparé à son solde disponible ;
+// onBanqueCreee (facultatif) : banque créée par le bouton « + », pour compléter la liste de l'écran
+export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEncaisser, onBanqueCreee }) => {
   const mode = modes.find((m) => String(m.idmodeencaissement) === String(valeurs.idMode));
   const nature = natureMode(mode);
   const saisie = (champ, filtre = (v) => v) => (e) => onChange(champ, filtre(e.target.value));
@@ -166,13 +168,10 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
       {nature.bancaire && (
         <div className="responsive-form-row">
           <div className="form-group">
-            <label className="form-label">Banque émettrice</label>
-            <select className="form-control" required value={valeurs.idBanque} onChange={saisie('idBanque')}>
-              <option value="">Choisir</option>
-              {banques.map((b) => (
-                <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>
-              ))}
-            </select>
+            <label className="form-label" htmlFor="reglement-banque">Banque émettrice</label>
+            {/* « + » : banque absente de la liste créée sans quitter l'encaissement */}
+            <ChoixBanque id="reglement-banque" banques={banques} value={valeurs.idBanque} required
+              onChange={(idBanque) => onChange('idBanque', idBanque)} onBanqueCreee={onBanqueCreee} />
           </div>
           <div className="form-group">
             <label className="form-label">{nature.libelleNumero}</label>

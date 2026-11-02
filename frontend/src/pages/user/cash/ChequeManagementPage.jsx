@@ -17,6 +17,7 @@ import {
   natureMode,
   reglementVide,
 } from '../../../components/cash/ChampsReglement';
+import { ChoixBanque } from '../../../components/cash/BanqueModal';
 
 const fcfa = (v) => `${Math.round(Number(v) || 0).toLocaleString('fr-FR')} F`;
 // Nom comparé sans majuscules, accents ni espaces en trop
@@ -502,11 +503,9 @@ export const ChequeManagementPage = () => {
               {echeancier.lignes.map((l, i) => (
                 // eslint-disable-next-line react/no-array-index-key
                 <tr key={i}>
-                  <td style={{ padding: '0.25rem', minWidth: 170 }}>
-                    <select className="form-control" value={l.banque} onChange={(e) => changerLigne(i, 'banque', e.target.value)}>
-                      <option value="">Banque</option>
-                      {banques.map((b) => <option key={b.idbanque} value={b.idbanque}>{b.libelle}</option>)}
-                    </select>
+                  <td style={{ padding: '0.25rem', minWidth: 210 }}>
+                    <ChoixBanque banques={banques} value={l.banque} libelleVide="Banque" onChange={(idBanque) => changerLigne(i, 'banque', idBanque)}
+                      onBanqueCreee={(banque) => setBanques((liste) => [...liste, banque])} />
                   </td>
                   <td style={{ padding: '0.25rem' }}>
                     <input type="text" className="form-control" maxLength={50} value={l.numero}
@@ -650,6 +649,7 @@ export const ChequeManagementPage = () => {
             <ChampsReglement
               modes={modes}
               banques={banques}
+              onBanqueCreee={(banque) => setBanques((liste) => [...liste, banque])}
               valeurs={reencaissement.reglement}
               onChange={(champ, valeur) => setReencaissement((prev) => ({ ...prev, reglement: { ...prev.reglement, [champ]: valeur } }))}
             />

@@ -7,7 +7,7 @@ from .views_devis_ia import (
     garanties_devis_ia,
     taux_taxe_devis_ia,
 )
-from .views_devis_risques_divers import lire_devis_risques_divers, valeurs_usuelles
+from .views_devis_risques_divers import garanties_ajoutables, lire_devis_risques_divers, valeurs_usuelles
 from .import_flotte import analyser_import_flotte
 from . import documents_dommages, imposition_garanties
 from .views_devis_dommages import (
@@ -256,6 +256,12 @@ urlpatterns = [
         r"devisrisquesdivers/<int:iddevis>/",
         lire_devis_risques_divers,
         name="lecture_devis_risques_divers",
+    ),
+    # Garanties que l'on peut ajouter à un devis RC / MRP (taxe réglée pour le produit), comme l'Automobile
+    path(
+        r"devisrisquesdivers/garanties/<int:idproduit>/",
+        garanties_ajoutables,
+        name="garanties_ajoutables_risques_divers",
     ),
     # RC et MRH saisis à la main : valeurs habituelles proposées dans les listes déroulantes des montants et taux
     path(r"valeursusuelles/", valeurs_usuelles, name="valeurs_usuelles"),

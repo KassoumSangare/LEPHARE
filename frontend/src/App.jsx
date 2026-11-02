@@ -58,6 +58,7 @@ const VehicleGeoSettingsPage = lazy(() => import('./pages/admin/settings/Vehicle
 const SecteursActivitePage = lazy(() => import('./pages/admin/settings/SecteursActivitePage').then((module) => ({ default: module.SecteursActivitePage })));
 const TypeSouscripteurPage = lazy(() => import('./pages/admin/settings/TypeSouscripteurPage').then((module) => ({ default: module.TypeSouscripteurPage })));
 const TypeAssurePage = lazy(() => import('./pages/admin/settings/TypeAssurePage').then((module) => ({ default: module.TypeAssurePage })));
+const BanquesPage = lazy(() => import('./pages/admin/settings/BanquesPage'));
 const ProfessionsPage = lazy(() => import('./pages/admin/settings/ProfessionsPage').then((module) => ({ default: module.ProfessionsPage })));
 const ParametrageGarantiesPage = lazy(() => import('./pages/admin/settings/ParametrageGarantiesPage'));
 const ParametrageOffresPage = lazy(() => import('./pages/admin/settings/ParametrageOffresPage'));
@@ -253,6 +254,7 @@ function App() {
                 <Route path="/admin/settings/professions" element={<AdminRoute><ProfessionsPage /></AdminRoute>} />
                 <Route path="/admin/settings/types-souscripteur" element={<AdminRoute><TypeSouscripteurPage /></AdminRoute>} />
                 <Route path="/admin/settings/types-assure" element={<AdminRoute><TypeAssurePage /></AdminRoute>} />
+                <Route path="/admin/settings/banques" element={<AdminRoute><BanquesPage /></AdminRoute>} />
                 {/* Modules de Paramétrage OREOLE Fidèles */}
                 <Route path="/admin/settings/garanties-oreole" element={<AdminRoute><ParametrageGarantiesPage /></AdminRoute>} />
                 <Route path="/admin/settings/offres" element={<AdminRoute><ParametrageOffresPage /></AdminRoute>} />

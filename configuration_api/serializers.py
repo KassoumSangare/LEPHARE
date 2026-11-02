@@ -1,3 +1,5 @@
+import unicodedata
+
 from django_celery_beat.models import (
     ClockedSchedule,
     CrontabSchedule,
@@ -585,10 +587,41 @@ class TypeReductionSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+def cle_banque(libelle):
+    """Nom de banque comparé sans accents, espaces ni ponctuation : « GT BANK » et « GTBANK » sont la même banque."""
+    texte = unicodedata.normalize("NFKD", str(libelle or "")).encode("ascii", "ignore").decode()
+    return "".join(c for c in texte.upper() if c.isalnum())
+
+
 class BanqueSerializer(serializers.ModelSerializer):
+    """Banque des chèques, virements et traites (stdbanque) : nom et code en majuscules, sans doublon. Code facultatif
+    (« 00 » d'URANUS quand il n'est pas connu)."""
+
     class Meta:
         model = Banque
         fields = "__all__"
+
+    def _autres(self):
+        return Banque.objects.exclude(pk=self.instance.pk) if self.instance else Banque.objects.all()
+
+    def validate_libelle(self, valeur):
+        libelle = " ".join(str(valeur or "").split()).upper()
+        if not libelle:
+            raise serializers.ValidationError("Saisissez le nom de la banque.")
+        cle = cle_banque(libelle)
+        doublon = next((b for b in self._autres() if cle_banque(b.libelle) == cle), None)
+        if doublon:
+            raise serializers.ValidationError(f"Cette banque existe déjà : {doublon.libelle.strip()}.")
+        return libelle
+
+    def validate_code_banque(self, valeur):
+        code = "".join(str(valeur or "").split()).upper()
+        if code in ("", "00"):
+            return "00"
+        doublon = self._autres().filter(code_banque__iexact=code).first()
+        if doublon:
+            raise serializers.ValidationError(f"Ce code est déjà celui de la banque {doublon.libelle.strip()}.")
+        return code
 
 
 class ModeEncaissementSerializer(serializers.ModelSerializer):

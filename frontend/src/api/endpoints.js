@@ -1089,7 +1089,8 @@ const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export const santeApi = {
   // Avenant de modification d'un contrat en cours (changement de formule, incorporation) : préparation, puis devis d'avenant
-  // { DateEffet, IdAdherent, IdOffre } ouvert dans l'écran Santé (sante/avenant.py)
+  // { DateEffet, IdAdherent, IdOffre, Membre? } ouvert dans l'écran Santé (sante/avenant.py) ; Membre { Lien, Nom, Prenom,
+  // DateNaissance, Sexe, Certificat, NombrePathologie } incorporé dans la famille, qui change de formule si elle est complète
   preparerAvenant: async (idContrat, dateEffet) => (await apiClient.get(`/devissante/avenant/${idContrat}/`, {
     params: dateEffet ? { date_effet: dateEffet } : {},
   })).data,
@@ -1175,6 +1176,11 @@ export const risquesDiversApi = {
   },
   // GET /api/devisrisquesdivers/:iddevis/ : tout ce qui a été saisi sur la ligne du devis
   lireDevis: async (idDevis) => (await apiClient.get(`/devisrisquesdivers/${idDevis}/`)).data,
+  // GET /api/devisrisquesdivers/garanties/:idproduit/ : garanties que l'on peut ajouter au devis (catalogue « risques
+  // divers » d'URANUS, TauxTaxe vide sans taux réglé pour le produit), « Ajouter une garantie » comme l'Automobile
+  garantiesAjoutables: async (idProduit, dateEffet) => (
+    await apiClient.get(`/devisrisquesdivers/garanties/${idProduit}/`, { params: { date: dateEffet || undefined } })
+  ).data,
   // POST /api/enregistrementdevis{rc|mrp} : création (IdDevis 0) ou modification du devis
   enregistrer: async (idProduit, payload) => {
     const res = await apiClient.post(CHEMINS_RISQUES_DIVERS[idProduit].enregistrement, payload);
@@ -2059,8 +2065,16 @@ export const settingsApi = {
   getMarques: async () => extractData(await apiClient.get('/marque/')),
   // POST /api/marque/ (Créer une nouvelle marque de véhicule)
   createMarque: (data) => apiClient.post('/marque/', data),
-  // GET /api/banque/ (44 banques en BDD)
+  // GET /api/banque/ : banques par ordre alphabétique (stdbanque)
   getBanques: async () => extractData(await apiClient.get('/banque/')),
+  // POST /api/banque/ { libelle, code_banque } : nom et code mis en majuscules, doublon refusé (« GT BANK » = « GTBANK ») ;
+  // depuis la caisse (droit encaissements.create) ou l'administration (parametrage.update)
+  createBanque: async (data) => (await apiClient.post('/banque/', data)).data,
+  // PATCH / DELETE /api/banque/{id}/ : administration ; « NEANT » protégée, banque déjà utilisée non supprimable
+  updateBanque: async (id, data) => (await apiClient.patch(`/banque/${id}/`, data)).data,
+  deleteBanque: (id) => apiClient.delete(`/banque/${id}/`),
+  // GET /api/banque/utilisations/ : { idbanque: { Encaissements, Cheques, Reversements, PaiementsCommission } }
+  getUtilisationsBanques: async () => (await apiClient.get('/banque/utilisations/')).data,
   // GET /api/modeencaissement/ (27 modes en BDD)
   getModesEncaissement: async () => extractData(await apiClient.get('/modeencaissement/')),
   // GET /api/usage/ (usages véhicules en BDD)

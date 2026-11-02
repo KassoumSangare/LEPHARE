@@ -13,6 +13,8 @@ et le capital cautionnement n'est gardé que sur la garantie « CAUTION ».
 Aucune API ne les renvoyait ensemble.
 """
 
+from datetime import date
+
 from django.db import connection
 from rest_framework import permissions, status
 from rest_framework.authentication import BasicAuthentication
@@ -162,3 +164,43 @@ def valeurs_usuelles(request):
                 )
     reponse["Garanties"] = garanties
     return Response(reponse)
+
+
+@api_view(["GET"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def garanties_ajoutables(request, idproduit):
+    """GET /api/devisrisquesdivers/garanties/<idproduit>/?date=AAAA-MM-JJ : garanties que l'écran propose d'ajouter au
+    devis (« Ajouter une garantie », comme l'Automobile) : le catalogue des garanties « risques divers » d'URANUS
+    (stdsousgarantie.saisierd) et celles dont la taxe est réglée pour le produit. TauxTaxe : taux réglé pour le produit à
+    la date d'effet, sinon vide (sp_calcul_devis_prime_imposee v2 applique alors le taux habituel du produit)."""
+    try:
+        jour = date.fromisoformat(str(request.query_params.get("date") or "")[:10])
+    except ValueError:
+        jour = date.today()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT sg.idsousgarantie, TRIM(sg.libellesousgarantie), TRIM(COALESCE(sg.codesousgarantie, '')),
+                   (SELECT tt.tauxtaxe FROM stdtauxtaxegarantieproduit tt
+                     WHERE tt.idproduit = %s AND tt.idgarantie = sg.idsousgarantie AND %s BETWEEN tt.debutvalidite AND tt.finvalidite
+                     ORDER BY tt.debutvalidite DESC LIMIT 1)
+            FROM stdsousgarantie sg
+            WHERE COALESCE(sg.active, TRUE)
+              AND (COALESCE(sg.saisierd, FALSE)
+                   OR EXISTS (SELECT 1 FROM stdtauxtaxegarantieproduit tt WHERE tt.idproduit = %s AND tt.idgarantie = sg.idsousgarantie))
+            """,
+            [idproduit, jour, idproduit],
+        )
+        lignes = cursor.fetchall()
+    # Libellés en double (ex. DOMMAGES ÉLECTRIQUES) : le code de la garantie après un tiret les distingue
+    occurrences = {}
+    for _, libelle, _, _ in lignes:
+        occurrences[(libelle or "").upper()] = occurrences.get((libelle or "").upper(), 0) + 1
+    garanties = []
+    for i, libelle, code, taux in lignes:
+        libelle = libelle or f"Garantie {i}"
+        if occurrences[libelle.upper()] > 1 and code:
+            libelle = f"{libelle} - {code}"
+        garanties.append({"IdSousGarantie": i, "LibelleSousGarantie": libelle, "TauxTaxe": _nombre(taux) if taux is not None else None})
+    return Response(sorted(garanties, key=lambda g: g["LibelleSousGarantie"]))

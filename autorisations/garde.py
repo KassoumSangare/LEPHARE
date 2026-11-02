@@ -160,6 +160,12 @@ def _devis_creer_ou_modifier(request, view):
     return "devis.create"
 
 
+def _banque_creation(request, view):
+    """Banque créée depuis la caisse (bouton « + » de la banque émettrice) par qui peut encaisser, sinon depuis
+    l'administration (paramétrage général)."""
+    return "encaissements.create" if a_le_droit(request.user, "encaissements.create") else "parametrage.update"
+
+
 CLES_DEVIS = ("iddevis", "IdDevis", "id_devis", "devis_id", "idDevis")
 CLES_CONTRAT = ("idcontrat", "IdContrat", "id_contrat", "contrat_id")
 R = Regle
@@ -324,6 +330,9 @@ REGLES = [
       cles=("pk", "IdQuittance", "idquittance")),
     R("GET", r"(encaissement|encaissementrecherche|infoencaissement|listedetailencaissement|cheques|finance/encaissements|"
              r"paiementmobileinfo|distripaytransaction|quittances-cima|contratpourencaissement)(/|$)", "encaissements.view"),
+    # Banques : création depuis la caisse ou l'administration, modification et suppression depuis l'administration
+    R("POST", r"banque/?$", _banque_creation, objet="banque", cles=("idbanque",)),
+    R("PUT,PATCH,DELETE", r"banque/(?P<pk>\d+)/?$", "parametrage.update", objet="banque", cles=("pk",)),
     # ---- reversements
     # Bordereaux et courriers au modèle d'OREOLE (production/views_bordereaux.py) : émission (un bordereau de
     # réclamation est payé d'office, chèques du client transmis), décharge, ordre d'un règlement, police de la

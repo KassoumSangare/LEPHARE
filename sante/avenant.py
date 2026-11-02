@@ -5,13 +5,16 @@ Santé : avenant de modification en cours de contrat, sous la même police (CR O
 - GET  /api/devissante/avenant/<idcontrat>/ : préparation (n'écrit rien) — contrat de la période, composition en vigueur
   (familles, formule, personnes), formules possibles pour chaque famille (même offre commerciale), avenants déjà émis sur
   la période, avenant en cours de saisie.
-- POST /api/devissante/avenant/<idcontrat>/ {DateEffet, IdAdherent, IdOffre} : devis d'avenant MOD
+- POST /api/devissante/avenant/<idcontrat>/ {DateEffet, IdAdherent, IdOffre, Membre} : devis d'avenant MOD
   (sp_avenant_creation_devis_initial v6, composition en vigueur recopiée au nom de l'opérateur) puis, pour la famille
   choisie, couverture de la nouvelle formule (créée au besoin avec le collège, la zone et les dates de la sienne) et
-  famille rattachée à cette couverture. Le devis s'ouvre dans l'écran Santé (ajout du nouveau membre…), où
-  sp_creation_devis_sante v9 le tarife : écart entre la prime annuelle de la nouvelle composition et celle de la
-  composition précédente, au prorata des jours restants jusqu'à l'échéance, sans ristourne ; supplément d'accessoire du
-  barème. La confirmation (sp_confirmation_devis) émet l'avenant et sa quittance sous la police du contrat.
+  famille rattachée à cette couverture. Membre (incorporation, demande du 2026-11-02) : nouveau membre ajouté à la
+  famille par sp_saisie_affilie_sante v6 ; une famille complète passe d'office dans la formule de sa nouvelle taille
+  (FAMILLE de 3 personnes + 1 : FAMILLE PLUS). sp_creation_devis_sante v9 tarife l'avenant : écart entre la prime
+  annuelle de la nouvelle composition et celle de la composition précédente (pour une famille qui change de formule :
+  l'écart entre les deux formules), au prorata des jours restants jusqu'à l'échéance, sans ristourne ; supplément
+  d'accessoire du barème. Le devis s'ouvre ensuite dans l'écran Santé ; la confirmation (sp_confirmation_devis) émet
+  l'avenant et sa quittance sous la police du contrat.
 """
 
 from datetime import date
@@ -21,10 +24,14 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
+from autorisations.rbac import a_le_droit
 from production.renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _date, _iso, _lignes
 
 ID_PRODUIT_SANTE = 5
 CODES_PERIODE = ("AFN", "REN", "RPP", "TRP", "MOD")
+# Droit des utilisateurs habilités à admettre un assuré au-delà des limites d'âge des conditions
+DROIT_DEROGATION_AGE = "devis.derogation_age"
+LIENS_MEMBRE = {"C": "conjoint(e)", "E": "enfant"}
 
 # Dernier contrat de la période (affaire nouvelle ou renouvellement, puis avenants de modification), même règle que
 # sp_creation_devis_sante v9 et sp_avenant_creation_devis_initial v6
@@ -144,6 +151,61 @@ def _tarifer(cursor, user_id, id_devis, reference=False):
             {"devis": id_devis})
 
 
+def _membre(valeur):
+    """Nouveau membre à incorporer {Lien C|E, Nom, Prenom, DateNaissance, Sexe M|F, Certificat, NombrePathologie} ;
+    None sans membre."""
+    if not valeur:
+        return None
+    if not isinstance(valeur, dict):
+        raise ErreurRenouvellement("Nouveau membre illisible.")
+    texte = lambda cle: str(valeur.get(cle) or "").strip().upper()  # noqa: E731
+    membre = {"lien": texte("Lien"), "nom": texte("Nom"), "prenom": texte("Prenom"), "sexe": texte("Sexe")[:1],
+              "naissance": _date(valeur.get("DateNaissance")),
+              "certificat": str(valeur.get("Certificat")).strip().lower() in ("true", "1", "on", "oui")}
+    if membre["lien"] not in LIENS_MEMBRE:
+        raise ErreurRenouvellement("Choisissez le lien du nouveau membre : conjoint(e) ou enfant.")
+    if not membre["nom"]:
+        raise ErreurRenouvellement("Saisissez le nom du nouveau membre.")
+    if not membre["naissance"]:
+        raise ErreurRenouvellement("Saisissez la date de naissance du nouveau membre.")
+    if membre["sexe"] not in ("M", "F"):
+        raise ErreurRenouvellement("Précisez le sexe du nouveau membre.")
+    try:
+        membre["pathologies"] = int(valeur.get("NombrePathologie") or 0)
+    except (TypeError, ValueError):
+        raise ErreurRenouvellement("Nombre d'affections du nouveau membre illisible.") from None
+    return membre
+
+
+def _incorporer(cursor, utilisateur, id_devis, id_adherent, membre, effet):
+    """Nouveau membre ajouté à la famille id_adherent du devis d'avenant (sp_saisie_affilie_sante v6 : une famille
+    complète passe dans la formule de sa nouvelle taille), adhésion et consommation à la date d'incorporation, âge
+    apprécié à cette date, dérogation aux limites d'âge pour l'utilisateur habilité. Renvoie le message de la base."""
+    try:
+        with transaction.atomic():
+            cursor.execute("SELECT set_config('lephare.derogation_age', %s, true), set_config('lephare.date_effet_age', %s, true)",
+                           ["on" if a_le_droit(utilisateur, DROIT_DEROGATION_AGE) else "", effet.isoformat()])
+            cursor.execute("CALL sp_saisie_affilie_sante(" + ", ".join(["%s"] * 24) + ")", [
+                membre["nom"], membre["prenom"], membre["naissance"], membre["sexe"], "", "", "", membre["lien"], effet,
+                membre["certificat"], "", "RAS", False, effet, False, 0, membre["pathologies"], "", "NS", utilisateur.id,
+                0, id_adherent, id_devis, ""])
+            message = cursor.fetchone()[3]
+            cursor.execute("SELECT set_config('lephare.derogation_age', '', true), set_config('lephare.date_effet_age', '', true)")
+    except DatabaseError as erreur:
+        raise ErreurRenouvellement(f"{membre['nom']} {membre['prenom']} non incorporé(e) : "
+                                   + str(erreur).splitlines()[0][:250]) from erreur
+    return message or ""
+
+
+def _formule_famille(cursor, id_adherent):
+    """Formule de la couverture d'une famille : option MINENE (SOLO, FAMILLE, FAMILLE PLUS), sinon libellé de l'offre."""
+    cursor.execute(
+        """SELECT COALESCE(sf.option, o.libelleoffre, '') FROM stdadherent a JOIN stdfiliale f ON f.idfiliale = a.idfiliale
+           JOIN stdoffre o ON o.idoffre = f.idoffresante LEFT JOIN lephare_sante_formule sf ON sf.idoffre = o.idoffre
+           WHERE a.idadherent = %s""", [id_adherent])
+    return (cursor.fetchone() or [""])[0]
+
+
 def _base_sante(cursor, id_contrat):
     base = _contrat_base(cursor, id_contrat)
     if base["idproduit"] != ID_PRODUIT_SANTE:
@@ -159,7 +221,7 @@ def _familles(cursor, id_devis, date_effet):
                o.idtarif AS "IdTarif", f.idcollege AS "IdCollege", f.idzonecouverture AS "IdZone",
                (SELECT COUNT(*) FROM stdaffilie x WHERE x.idadherent = a.idadherent AND COALESCE(x.actif, TRUE)
                   AND (x.datesortie IS NULL OR x.datesortie > %(effet)s)) AS "Personnes",
-               sf.personnesmax AS "PersonnesMax"
+               sf.personnesmin AS "PersonnesMin", sf.personnesmax AS "PersonnesMax", sf.primebase AS "PrimeBase"
         FROM stdadherent a
         LEFT JOIN stdfiliale f ON f.idfiliale = a.idfiliale
         LEFT JOIN stdoffre o ON o.idoffre = f.idoffresante
@@ -173,7 +235,7 @@ def _formules(cursor, id_tarif):
     """Formules de la même offre commerciale (tarif) : options MINENE avec leur nombre de personnes, ou offres du tarif."""
     return _lignes(cursor, """
         SELECT o.idoffre AS "IdOffre", o.libelleoffre AS "Formule", sf.option AS "Option",
-               sf.personnesmin AS "PersonnesMin", sf.personnesmax AS "PersonnesMax"
+               sf.personnesmin AS "PersonnesMin", sf.personnesmax AS "PersonnesMax", sf.primebase AS "PrimeBase"
         FROM stdoffre o LEFT JOIN lephare_sante_formule sf ON sf.idoffre = o.idoffre
         WHERE o.idtarif = %s AND COALESCE(o.actif, TRUE)
         ORDER BY sf.personnesmax NULLS LAST, o.libelleoffre
@@ -221,11 +283,11 @@ def avenant_sante(request, idcontrat):
                 base = _base_sante(cursor, idcontrat)
                 effet = _date(request.query_params.get("date_effet")) or max(min(date.today(), base["dateexpiration"]), base["dateeffet"])
                 composition = _dernier_devis(cursor, base["numeropolice"], base["dateeffet"], base["dateexpiration"], avec_familles=True)
-                familles = _familles(cursor, composition, effet) if composition else []
+                familles = _numeriques(_familles(cursor, composition, effet)) if composition else []
                 formules = {}
                 for f in familles:
                     if f["IdTarif"] and f["IdTarif"] not in formules:
-                        formules[f["IdTarif"]] = _formules(cursor, f["IdTarif"])
+                        formules[f["IdTarif"]] = _numeriques(_formules(cursor, f["IdTarif"]))
                     f["Formules"] = formules.get(f["IdTarif"], [])
                 avenants = _numeriques(_avenants(cursor, base))
                 return Response({
@@ -245,6 +307,9 @@ def avenant_sante(request, idcontrat):
         donnees = request.data
         id_adherent = int(donnees.get("IdAdherent") or 0)
         id_offre = int(donnees.get("IdOffre") or 0)
+        membre = _membre(donnees.get("Membre"))
+        if membre and not id_adherent:
+            raise ErreurRenouvellement("Choisissez la famille dans laquelle incorporer le nouveau membre.")
         with transaction.atomic(), connection.cursor() as cursor:
             base = _base_sante(cursor, idcontrat)
             encours = _en_cours(cursor, base)
@@ -283,14 +348,16 @@ def avenant_sante(request, idcontrat):
             # Référence : composition recopiée tarifée avant toute modification (même calcul, mêmes conditions)
             _tarifer(cursor, request.user.id, id_devis, reference=True)
 
-            formule = ""
-            if choisie and id_offre and id_offre != choisie["IdOffre"]:
-                # Famille recopiée de même rang ; couverture de la nouvelle formule (même collège et zone) créée au besoin
+            nouvelle = None
+            if choisie:
+                # Famille recopiée de même rang dans le devis d'avenant
                 cursor.execute("SELECT idadherent FROM stdadherent WHERE iddevis = %s ORDER BY idadherent", [id_devis])
                 nouvelles = [l[0] for l in cursor.fetchall()]
                 if len(nouvelles) != len(anciennes):
-                    raise ErreurRenouvellement("Familles de l'avenant différentes de celles du contrat : changement de formule impossible.")
+                    raise ErreurRenouvellement("Familles de l'avenant différentes de celles du contrat : modification impossible.")
                 nouvelle = dict(zip([f["IdAdherent"] for f in anciennes], nouvelles))[id_adherent]
+            if choisie and id_offre and id_offre != choisie["IdOffre"]:
+                # Couverture de la nouvelle formule (même collège et zone) créée au besoin
                 cursor.execute(
                     """SELECT idfiliale FROM stdfiliale WHERE iddevis = %s AND idoffresante = %s
                        AND idcollege IS NOT DISTINCT FROM %s AND idzonecouverture IS NOT DISTINCT FROM %s LIMIT 1""",
@@ -305,15 +372,21 @@ def avenant_sante(request, idcontrat):
                          request.user.id, id_devis])
                     id_filiale = cursor.fetchone()[0]
                 cursor.execute("UPDATE stdadherent SET idfiliale = %s WHERE idadherent = %s", [id_filiale, nouvelle])
-                cursor.execute("SELECT libelleoffre FROM stdoffre WHERE idoffre = %s", [id_offre])
-                formule = (cursor.fetchone() or [""])[0]
+            # Incorporation : le membre rejoint sa famille, qui change de formule si elle était complète
+            message_membre = _incorporer(cursor, request.user, id_devis, nouvelle, membre, effet) if membre else ""
             # Montants de l'avenant dès sa création (écart au prorata), jamais une prime annuelle entière
             _tarifer(cursor, request.user.id, id_devis)
-            cursor.execute("SELECT numerodevis FROM stddevis WHERE iddevis = %s", [id_devis])
-            numero = cursor.fetchone()[0]
+            cursor.execute("SELECT numerodevis, COALESCE(primenette, 0), COALESCE(primettc, 0) FROM stddevis WHERE iddevis = %s",
+                           [id_devis])
+            numero, prime_nette, prime_ttc = cursor.fetchone()
+            formule_avant = (choisie["Option"] or choisie["Formule"] or "") if choisie else ""
+            formule_apres = _formule_famille(cursor, nouvelle) if choisie else ""
         return Response({
             "IdDevis": id_devis, "NumeroDevis": numero, "Module": "sante", "DateEffet": _iso(effet),
-            "Famille": choisie["Adherent"] if choisie else "", "Formule": formule, "Message": message,
+            "Famille": choisie["Adherent"] if choisie else "", "FormuleAvant": formule_avant,
+            "Formule": formule_apres if formule_apres != formule_avant else "",
+            "Membre": f"{membre['nom']} {membre['prenom']}".strip() if membre else "", "MessageMembre": message_membre,
+            "PrimeNette": float(prime_nette), "PrimeTtc": float(prime_ttc), "Message": message,
         }, status=status.HTTP_201_CREATED)
     except (ErreurRenouvellement, ValueError) as erreur:
         return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)

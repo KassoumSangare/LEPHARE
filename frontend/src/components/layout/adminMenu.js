@@ -7,6 +7,7 @@ import {
   Archive,
   AlertTriangle,
   BadgeCheck,
+  Banknote,
   Bus,
   BarChart3,
   Boxes,
@@ -137,6 +138,7 @@ export const ADMIN_MENU = [
       { to: '/admin/settings/secteurs-activite', droit: 'parametrage.update', label: "Secteurs d'activité", icon: Factory, description: "Secteurs d'activité des entreprises clientes." },
       { to: '/admin/settings/types-souscripteur', droit: 'parametrage.update', label: 'Types de souscripteur', icon: UserPlus, description: 'Personne physique, entreprise, association…' },
       { to: '/admin/settings/types-assure', droit: 'parametrage.update', label: "Types d'assuré", icon: UserCheck, description: "Catégories de personnes ou de biens assurés." },
+      { to: '/admin/settings/banques', droit: 'parametrage.update', label: 'Banques', icon: Banknote, description: "Banques proposées pour les chèques, virements et traites : caisse, échéanciers, reversements, paiements de commissions." },
     ],
   },
   {

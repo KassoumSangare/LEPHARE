@@ -41,7 +41,7 @@ from production.database import enregistrer_terme_devis
 from production.models import Devis
 
 from . import import_classique
-from .avenant import detail_avenant_modification
+from .avenant import DROIT_DEROGATION_AGE, detail_avenant_modification
 from .models import Adherent, Affilie, FilialeSante
 from .serializers import EnregistrementDevisSanteSerializer
 from .utils import (
@@ -59,8 +59,6 @@ from .utils import (
 )
 
 ID_PRODUIT_SANTE = 5
-# Droit des utilisateurs habilités à admettre un assuré au-delà des limites d'âge des conditions
-DROIT_DEROGATION_AGE = "devis.derogation_age"
 # Colonnes du fichier d'import (modèle d'URANUS), en minuscules comme les lit load_people_data_from_excel
 COLONNES_IMPORT = (
     "nom", "prenoms", "numerocni", "datenaissance", "numerocmu", "sexe", "numerotelephone", "lienparente", "dateeffet",

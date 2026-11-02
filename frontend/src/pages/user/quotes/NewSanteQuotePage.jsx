@@ -880,9 +880,10 @@ export const NewSanteQuotePage = () => {
             <strong style={{ color: 'var(--text-primary)' }}>Avenant de modification de la police {avenantModification.NumeroPolice}</strong>
             {' '}- effet du {dateFr(dateEffet)} à l'échéance du {dateFr(avenantModification.DateExpirationContrat)}
             {avenantModification.JoursPeriode > 0 && `, prorata ${avenantModification.Jours} jours sur ${avenantModification.JoursPeriode}`}.
-            {' '}Changez la couverture de la famille (Modifier l'adhérent, champ Filiale ; couverture de la nouvelle formule à l'étape 2),
-            ajoutez le nouveau membre, puis enregistrez : la prime de l'avenant est l'écart de prime annuelle avec la composition
-            d'avant la modification, au prorata, sans ristourne.
+            {' '}Un membre ajouté à une famille complète la fait passer d'office dans la formule de sa taille (FAMILLE de 3 personnes + 1 :
+            FAMILLE PLUS). La prime de l'avenant est l'écart de prime annuelle avec la composition d'avant la modification, soit
+            l'écart entre les deux formules pour une famille qui en change, au prorata, sans ristourne ; enregistrez le devis après
+            toute modification.
           </span>
         </div>
       )}

@@ -204,10 +204,10 @@ export const ContractDetailPage = () => {
           {/* Santé : avenant de modification réel (changement de formule, incorporation), sante/avenant.py */}
           {contratSante && aLeDroit('contrats.avenant') && (
             <button className="btn btn-secondary" onClick={() => setAvenantSanteOuvert(true)}
-              title="Changer la formule d'une famille (FAMILLE → FAMILLE PLUS) ou incorporer un membre en cours de contrat : avenant sous la même police, prime au prorata"
+              title="Incorporer un membre dans une famille (une famille complète passe d'office dans la formule de sa taille, FAMILLE → FAMILLE PLUS) ou changer de formule en cours de contrat : avenant sous la même police, prime = écart entre les formules au prorata"
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Users size={16} />
-              <span>Changer de formule</span>
+              <span>Incorporer un membre</span>
             </button>
           )}
 

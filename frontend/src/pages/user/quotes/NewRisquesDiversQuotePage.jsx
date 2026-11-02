@@ -6,7 +6,7 @@ import { quoteApi, customerApi, settingsApi, contractApi, risquesDiversApi, vale
 import { useToast } from '../../../context/ToastContext';
 import {
   Check, Plus, Shield, AlertTriangle, ChevronLeft, ChevronRight, FileText, ListChecks, Calculator, Users, Loader2,
-  RefreshCw, Lightbulb, X,
+  RefreshCw, Lightbulb, Trash2, X,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { PieceJointe } from '../../../components/common/PieceJointe';
@@ -22,12 +22,16 @@ import { ChampPropose, propositionMontant, propositionTaux, propositionsUsuelles
 import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
+import { Modal } from '../../../components/common/Modal';
+import { confirmer } from '../../../utils/dialogue';
 
 // Produits servis par ce formulaire (même procédure URANUS : sp_creation_devis_risques_divers)
 const PRODUITS = {
   7: { libelle: 'Multirisque Professionnelle', court: 'MRP', couleur: '#0891b2' },
   8: { libelle: 'Responsabilité Civile', court: 'RC', couleur: '#dc2626' },
 };
+// Garanties ajoutées au devis ou retirées à la saisie, comme dans l'Automobile (demande du 2026-11-02) : MRP
+const PRODUITS_AJOUT_GARANTIES = [7];
 // Offre RC chef de famille MINENE : primes calculées par la base, n° de police Santé connexe exigé
 const ID_OFFRE_MINENE = 67;
 const ID_TARIF_MINENE = 104;
@@ -158,6 +162,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
 
   // Étape 2 : garanties
   const [garanties, setGaranties] = useState([]);
+  // Garanties que l'on peut ajouter (catalogue « risques divers ») et saisie de la garantie ajoutée (null : fenêtre fermée)
+  const [catalogueGaranties, setCatalogueGaranties] = useState([]);
+  const [ajoutGarantie, setAjoutGarantie] = useState(null);
   const [offreDesGaranties, setOffreDesGaranties] = useState(null);
   const [chargementGaranties, setChargementGaranties] = useState(false);
   const [primeTarif, setPrimeTarif] = useState(null);
@@ -213,6 +220,15 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
     valeursUsuellesApi.get(idProduit).then((d) => { if (actif) setUsuelles(d); }).catch(() => {});
     return () => { actif = false; };
   }, [idProduit]);
+  // Garanties ajoutables (MRP) : catalogue « risques divers » d'URANUS, taux de taxe du produit à la date d'effet
+  useEffect(() => {
+    if (!PRODUITS_AJOUT_GARANTIES.includes(idProduit)) return undefined;
+    let actif = true;
+    risquesDiversApi.garantiesAjoutables(idProduit, dateEffet)
+      .then((liste) => { if (actif) setCatalogueGaranties(Array.isArray(liste) ? liste : []); })
+      .catch(() => { if (actif) setCatalogueGaranties([]); });
+    return () => { actif = false; };
+  }, [idProduit, dateEffet]);
   const proposees = (cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles[cle], options) : []);
   const proposeesGarantie = (id, cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles.Garanties?.[String(id)]?.[cle], options) : []);
   // Devis repris d'URANUS sans ligne de détail en base
@@ -385,11 +401,14 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         .filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0)
         // Création : toutes cochées (comme URANUS) ; modification : cochées = enregistrées sur le devis
         .map((r) => enregistrees.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, !depuisDevis, saisieManuelle));
-      // Garanties du devis qui ne figurent plus dans l'offre : conservées
+      // Garanties du devis qui ne figurent pas dans l'offre (ajoutées à la saisie) : conservées
       lignesDevis.forEach((r) => {
-        if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push(garantieDepuisApi(r, true));
+        if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push({ ...garantieDepuisApi(r, true), ajoutee: true });
       });
-      setGaranties(trierParLibelle(liste, (g) => g.libelle));
+      // Garanties ajoutées à l'écran depuis : gardées par « Recharger », qui remet seulement l'offre à jour
+      setGaranties((avant) => trierParLibelle(
+        [...liste, ...avant.filter((g) => g.ajoutee && !liste.some((x) => x.id === g.id))], (g) => g.libelle,
+      ));
       const cumul = (offre || []).find((r) => Number(r.IdGarantie) === 0);
       setPrimeTarif(cumul ? Math.round(Number(cumul.PrimeNette) || 0) : null);
       setOffreDesGaranties(Number(idOffre));
@@ -519,7 +538,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           .filter((r) => Number(r.IdGarantie) !== 0 && Number(r.IdSousGarantie) !== 0)
           .map((r) => parId.get(Number(r.IdSousGarantie)) || garantieDepuisApi(r, false, manuelle));
         enregistrees.forEach((r) => {
-          if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push(garantieDepuisApi(r, true));
+          if (!liste.some((g) => g.id === Number(r.IdSousGarantie))) liste.push({ ...garantieDepuisApi(r, true), ajoutee: true });
         });
         setGaranties(trierParLibelle(liste, (g) => g.libelle));
         setOffreDesGaranties(Number(ligne.IdOffre));
@@ -791,6 +810,46 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   );
   const cocherToutes = (acquise) => setGaranties((prev) => prev.map((g) => ({ ...g, acquise })));
 
+  // Ajout et retrait de garanties (MRP), même principe que l'Automobile : une garantie retirée n'est plus enregistrée
+  // sur le devis ; une garantie ajoutée, cochée d'office, reçoit sa part de la prime nette répartie par la base
+  const ajoutPossible = PRODUITS_AJOUT_GARANTIES.includes(idProduit) && !offreMinene;
+  const garantiesProposees = trierParLibelle(
+    catalogueGaranties.filter((c) => !garanties.some((g) => g.id === Number(c.IdSousGarantie))),
+    (c) => c.LibelleSousGarantie,
+  );
+  const ouvrirAjoutGarantie = () => setAjoutGarantie({ id: '', capital: '', franchiseMinimum: '', franchiseMaximum: '', tauxFranchise: '' });
+  const ajouterGarantie = () => {
+    const choisie = catalogueGaranties.find((c) => String(c.IdSousGarantie) === String(ajoutGarantie?.id));
+    if (!choisie) { toastError('Choisissez la garantie à ajouter.'); return; }
+    if (garanties.some((g) => g.id === Number(choisie.IdSousGarantie))) { toastError('Cette garantie est déjà dans la liste.'); return; }
+    setGaranties((prev) => trierParLibelle([...prev, {
+      id: Number(choisie.IdSousGarantie),
+      libelle: choisie.LibelleSousGarantie,
+      acquise: true,
+      capital: montantSaisi(ajoutGarantie.capital),
+      franchiseMinimum: montantSaisi(ajoutGarantie.franchiseMinimum),
+      franchiseMaximum: montantSaisi(ajoutGarantie.franchiseMaximum),
+      tauxFranchise: ajoutGarantie.tauxFranchise === '' ? '' : tauxSaisi(ajoutGarantie.tauxFranchise),
+      montantFranchise: '',
+      primeNette: 0,
+      ajoutee: true,
+    }], (g) => g.libelle));
+    setAjoutGarantie(null);
+    success(`Garantie « ${choisie.LibelleSousGarantie} » ajoutée au devis.`);
+  };
+  const retirerGarantie = async (g) => {
+    if (!(await confirmer({
+      ton: 'attention',
+      titre: `Retirer la garantie « ${g.libelle} » ?`,
+      message: g.ajoutee
+        ? "La garantie sera retirée du devis à l'enregistrement."
+        : "La garantie sera retirée du devis à l'enregistrement ; « Recharger » la remet avec les autres garanties de l'offre.",
+      confirmer: 'Retirer la garantie',
+    }))) return;
+    setGaranties((prev) => prev.filter((x) => x.id !== g.id));
+    info(`Garantie « ${g.libelle} » retirée.`);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '1280px', margin: '0 auto', paddingBottom: '3rem' }}>
       {/* EN-TÊTE */}
@@ -1008,6 +1067,13 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                   )}
                 </h2>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  {ajoutPossible && (
+                    <button type="button" className="btn btn-primary" onClick={ouvrirAjoutGarantie} disabled={!garantiesProposees.length}
+                      title={garantiesProposees.length ? "Ajouter une garantie hors de l'offre" : 'Toutes les garanties de la branche sont déjà dans la liste'}
+                      style={{ fontSize: '0.78rem', padding: '0.3rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem', background: couleur, borderColor: couleur }}>
+                      <Plus size={13} /> Ajouter une garantie
+                    </button>
+                  )}
                   {garanties.length > 0 && !offreMinene && (
                     <>
                       <button type="button" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem' }} onClick={() => cocherToutes(true)}>Tout cocher</button>
@@ -1028,6 +1094,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
               ) : (
                 <p style={texteAide}>
                   Cochez les garanties couvertes : la prime nette saisie à l'étape suivante est répartie sur elles. Capitaux et franchises restent modifiables.
+                  {ajoutPossible && " Ajoutez une garantie de la branche absente de l'offre, ou retirez-en une avec la corbeille."}
                 </p>
               )}
               <div style={{ overflowX: 'auto' }}>
@@ -1040,11 +1107,12 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                       <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise min.</th>
                       <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '160px' : '120px' }}>Franchise max.</th>
                       <th style={{ ...th, textAlign: 'right', width: saisieManuelle ? '130px' : '90px' }}>Taux (%)</th>
+                      {ajoutPossible && <th style={{ ...th, width: '48px' }} aria-label="Retirer" />}
                     </tr>
                   </thead>
                   <tbody>
                     {garanties.length === 0 && (
-                      <tr><td colSpan={6} style={{ ...td, padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)' }}>{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</td></tr>
+                      <tr><td colSpan={ajoutPossible ? 7 : 6} style={{ ...td, padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)' }}>{chargementGaranties ? 'Chargement des garanties…' : 'Aucune garantie pour cette offre.'}</td></tr>
                     )}
                     {garanties.map((g) => (
                       <tr key={g.id} style={{ opacity: g.acquise ? 1 : 0.55 }}>
@@ -1052,7 +1120,14 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                           <input type="checkbox" checked={g.acquise} onChange={() => majGarantie(g.id, 'acquise', !g.acquise)} aria-label={`Garantie ${g.libelle}`}
                             style={{ width: 17, height: 17, accentColor: couleur, cursor: 'pointer' }} />
                         </td>
-                        <td style={{ ...td, fontWeight: 600, cursor: 'pointer' }} onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>{g.libelle}</td>
+                        <td style={{ ...td, fontWeight: 600, cursor: 'pointer' }} onClick={() => majGarantie(g.id, 'acquise', !g.acquise)}>
+                          {g.libelle}
+                          {g.ajoutee && (
+                            <span title="Garantie ajoutée hors de l'offre" style={{ marginLeft: '0.45rem', fontSize: '0.68rem', fontWeight: 700, padding: '0.08rem 0.45rem', borderRadius: '999px', border: `1px solid ${couleur}`, color: couleur, whiteSpace: 'nowrap' }}>
+                              ajoutée
+                            </span>
+                          )}
+                        </td>
                         {[['capital', 'Capital'], ['franchiseMinimum', 'FranchiseMinimum'], ['franchiseMaximum', 'FranchiseMaximum']].map(([champ, cle]) => (
                           <td key={champ} style={td}>
                             <ChampPropose onChoisir={(v) => majGarantie(g.id, champ, v)} propositions={proposeesGarantie(g.id, cle)}>
@@ -1065,6 +1140,13 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
                             <input type="number" min="0" step="0.01" className="form-control" value={g.tauxFranchise} onChange={(e) => majGarantie(g.id, 'tauxFranchise', tauxSaisi(e.target.value))} />
                           </ChampPropose>
                         </td>
+                        {ajoutPossible && (
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            <button type="button" className="admin-bouton-icone" onClick={() => retirerGarantie(g)} title="Retirer cette garantie du devis" aria-label={`Retirer la garantie ${g.libelle}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1254,6 +1336,54 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           onConvertToContract={handleConvertToContract}
         />
       )}
+
+      {/* Garantie ajoutée au devis (MRP), comme « Ajouter une garantie » de l'Automobile */}
+      <Modal isOpen={Boolean(ajoutGarantie)} onClose={() => setAjoutGarantie(null)} title="Ajouter une garantie"
+        subtitle="Catalogue des garanties « risques divers » : la garantie choisie est enregistrée sur ce devis seulement." maxWidth="580px">
+        {ajoutGarantie && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <Champ label="Garantie" requis>
+              <select className="form-control" value={ajoutGarantie.id} onChange={(e) => setAjoutGarantie((a) => ({ ...a, id: e.target.value }))} autoFocus>
+                <option value="">Choisir une garantie…</option>
+                {garantiesProposees.map((c) => <option key={c.IdSousGarantie} value={c.IdSousGarantie}>{c.LibelleSousGarantie}</option>)}
+              </select>
+            </Champ>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '0.85rem' }}>
+              <Champ label="Capital">
+                <AmountInput value={ajoutGarantie.capital} onChange={(v) => setAjoutGarantie((a) => ({ ...a, capital: v }))} suffix="" />
+              </Champ>
+              <Champ label="Taux de franchise (%)">
+                <input type="number" min="0" step="0.01" className="form-control" value={ajoutGarantie.tauxFranchise}
+                  onChange={(e) => setAjoutGarantie((a) => ({ ...a, tauxFranchise: e.target.value }))} />
+              </Champ>
+              <Champ label="Franchise minimum">
+                <AmountInput value={ajoutGarantie.franchiseMinimum} onChange={(v) => setAjoutGarantie((a) => ({ ...a, franchiseMinimum: v }))} suffix="" />
+              </Champ>
+              <Champ label="Franchise maximum">
+                <AmountInput value={ajoutGarantie.franchiseMaximum} onChange={(v) => setAjoutGarantie((a) => ({ ...a, franchiseMaximum: v }))} suffix="" />
+              </Champ>
+            </div>
+            <p style={{ ...texteAide, margin: 0 }}>
+              Aucune prime à saisir ici : la prime nette du devis, saisie à l'étape suivante, est répartie par la base sur toutes les
+              garanties cochées, celle-ci comprise.
+              {(() => {
+                const choisie = catalogueGaranties.find((c) => String(c.IdSousGarantie) === String(ajoutGarantie.id));
+                if (!choisie) return null;
+                return choisie.TauxTaxe !== null && choisie.TauxTaxe !== undefined
+                  ? ` Taxe de cette garantie : ${String(choisie.TauxTaxe).replace('.', ',')} %.`
+                  : " Aucun taux de taxe réglé pour cette garantie : le taux habituel de la branche s'applique.";
+              })()}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setAjoutGarantie(null)}>Annuler</button>
+              <button type="button" className="btn btn-primary" onClick={ajouterGarantie} disabled={!ajoutGarantie.id}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: couleur, borderColor: couleur }}>
+                <Plus size={15} /> Ajouter la garantie
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <QuickAddClientModal
         isOpen={Boolean(nouveauClientPour)}
