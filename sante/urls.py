@@ -33,6 +33,7 @@ from .avenant import avenant_sante
 from .views_devis_sante import (
     apercu_devis_sante_vue,
     bordereau_primes,
+    bordereau_primes_contrat,
     enregistrer_adherent,
     enregistrer_affilie,
     enregistrer_devis_sante,
@@ -134,6 +135,8 @@ urlpatterns = [
     path(r"devissante/apercu/", apercu_devis_sante_vue, name="apercu_devis_sante"),
     path(r"devissante/<int:iddevis>/", lire_devis_sante, name="lecture_devis_sante"),
     path(r"devissante/<int:iddevis>/bordereau/", bordereau_primes, name="bordereau_primes_sante"),
+    # Contrat : familles et primes de sa période, incorporations comprises (documents du contrat)
+    path(r"devissante/contrat/<int:idcontrat>/bordereau/", bordereau_primes_contrat, name="bordereau_primes_contrat_sante"),
     # Avenant de modification d'un contrat en cours (changement de formule, incorporation) : préparation et devis
     path(r"devissante/avenant/<int:idcontrat>/", avenant_sante, name="avenant_sante"),
 

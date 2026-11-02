@@ -39,6 +39,7 @@ from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from production.database import enregistrer_terme_devis
 from production.models import Devis
+from production.periode_contrat import periode_contrat
 
 from . import import_classique
 from .avenant import DROIT_DEROGATION_AGE, detail_avenant_modification
@@ -510,6 +511,29 @@ def bordereau_primes(request, iddevis):
     donnees = bordereau_primes_sante(iddevis)
     if donnees is None:
         return Response({"error": "Devis Santé introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    return Response(donnees)
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def bordereau_primes_contrat(request, idcontrat):
+    """GET /api/devissante/contrat/<idcontrat>/bordereau/?document= : bordereau des primes (MINENE : état des
+    cotisations) d'un contrat. Contrat de base d'une période : familles en vigueur, incorporations comprises, primes et
+    encaissements de la période (production.periode_contrat, demande du 2026-11-02). Avenant : son propre bordereau
+    (montants de l'avenant), sauf la facture MINENE (document=facture), qui couvre toute la période de la police."""
+    with connection.cursor() as cursor:
+        periode = periode_contrat(cursor, idcontrat)
+        cursor.execute("SELECT iddevis FROM stdcontrat WHERE idcontrat = %s", [idcontrat])
+        devis_contrat = (cursor.fetchone() or [None])[0]
+    if periode is None or not devis_contrat:
+        return Response({"error": "Contrat Santé introuvable."}, status=status.HTTP_404_NOT_FOUND)
+    if periode["EstBase"] or request.query_params.get("document") == "facture":
+        donnees = bordereau_primes_sante(periode["IdDevisComposition"] or periode["IdDevisBase"], periode=periode)
+    else:
+        donnees = bordereau_primes_sante(devis_contrat)
+    if donnees is None:
+        return Response({"error": "Contrat Santé introuvable."}, status=status.HTTP_404_NOT_FOUND)
     return Response(donnees)
 
 

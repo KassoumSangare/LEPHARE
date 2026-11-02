@@ -117,6 +117,7 @@ from .database import (
 from .exceltopostgresql import export_excel
 from . import pieces_jointes
 from .import_assures import import_ia_insured, insert_new_assure
+from .periode_contrat import objets_periode, periode_contrat
 from .releve_compte import releve_compte as donnees_releve_compte
 from .reste_encaissement import RELIQUAT_NEGLIGEABLE, reste_a_encaisser
 from .views_devis_ia import completer_assures_devis_ia
@@ -444,9 +445,16 @@ def vehicules_conditions_particulieres_flotte(pk, contrat=False):
     Véhicules d'une flotte automobile pour les Conditions Particulières « Liste des véhicules
     en Automobile » (modèle NSIA) : caractéristiques, catégorie / tarif, et chaque garantie
     du véhicule avec son état (acquise), son capital, sa franchise et sa prime nette.
+    Contrat de base d'une période qui a des avenants : véhicules à jour de la période, incorporés compris et retirés
+    écartés (production.periode_contrat, demande du 2026-11-02).
     """
     t = TABLES_CONDITIONS_PARTICULIERES[contrat]
     with connection.cursor() as cursor:
+        filtre, valeur = f"dd.{t['cle']} = %s", pk
+        if contrat:
+            periode = periode_contrat(cursor, pk)
+            if periode and periode["EstBase"] and len(periode["Contrats"]) > 1:
+                filtre, valeur = f"dd.{t['detail_pk']} = ANY(%s)", objets_periode(cursor, periode)
         cursor.execute(
             f"""
             SELECT dd.{t['detail_pk']}, dd.matricule, m.libellemarque, dd.modelevehicule,
@@ -459,10 +467,10 @@ def vehicules_conditions_particulieres_flotte(pk, contrat=False):
             LEFT JOIN stdenergie se ON {t['energie']}
             LEFT JOIN stdtarif tr ON tr.idtarif = dd.idtarif
             LEFT JOIN stdcategorie cat ON cat.idcategorie = tr.idcategorie
-            WHERE dd.{t['cle']} = %s
+            WHERE {filtre}
             ORDER BY cat.codecategorie, tr.idtarif, dd.{t['detail_pk']}
             """,
-            [pk],
+            [valeur],
         )
         vehicules = [
             {
@@ -497,10 +505,10 @@ def vehicules_conditions_particulieres_flotte(pk, contrat=False):
                    dg.deces, dg.primenette
             FROM {t['garantie']} dg
             JOIN {t['detail']} dd ON dd.{t['detail_pk']} = dg.{t['garantie_fk']}
-            WHERE dd.{t['cle']} = %s AND dg.idgarantie <> 0
+            WHERE {filtre} AND dg.idgarantie <> 0
             ORDER BY dg.idgarantie
             """,
-            [pk],
+            [valeur],
         )
         par_vehicule = {v["id"]: v["garanties"] for v in vehicules}
         for iddetail, idgarantie, acquise, capital, franchise, deces, prime in cursor.fetchall():

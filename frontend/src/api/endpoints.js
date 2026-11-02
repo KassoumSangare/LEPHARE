@@ -457,15 +457,33 @@ export const conditionsParticulieresMonoApi = {
   },
 };
 
+// Contrat de base d'une période qui a des avenants (incorporations…) : ses documents décrivent la police à jour, primes
+// de la période (contrat et avenants) à la place de celles de sa seule quittance (production/periode_contrat.py)
+const periodeAvecAvenants = (periode) => Boolean(periode?.EstBase && periode.Mouvements?.length);
+const primesDeLaPeriode = (quittance, periode) => (periodeAvecAvenants(periode) ? {
+  ...quittance,
+  PrimeNette: periode.Totaux.PrimeNette, PrimeNetteHorsFga: periode.Totaux.PrimeNetteHorsFga, Fga: periode.Totaux.Fga,
+  Cedeao: periode.Totaux.Cedeao, Accessoire: periode.Totaux.Accessoire, TaxeEnregistrement: periode.Totaux.TaxeEnregistrement,
+  FraisGestion: periode.Totaux.FraisGestion, PrimeTtc: periode.Totaux.PrimeTtc,
+} : quittance);
+const lirePeriode = async (idContrat) => (await apiClient.get(`/contrat/${idContrat}/periode/`).catch(() => ({ data: null }))).data;
+
 // Conditions Particulières d'une flotte auto (« Liste des véhicules en Automobile », modèle NSIA) :
 // quittance du devis / contrat et véhicules avec l'état, le capital et la prime de chaque garantie
 export const conditionsParticulieresFlotteApi = {
+  // Contrat de base d'une période avec avenants : véhicules à jour (incorporés compris, retirés écartés, côté serveur)
+  // et primes de la période
   get: async (id, { contrat = false } = {}) => {
-    const [q, v] = await Promise.all([
+    const [q, v, periode] = await Promise.all([
       apiClient.get(contrat ? `/quittancecontrat/${id}` : `/quittanceproposition/${id}`),
       apiClient.get(contrat ? `/contrat/${id}/vehicules-flotte/` : `/devis/${id}/vehicules-flotte/`),
+      contrat ? lirePeriode(id) : Promise.resolve(null),
     ]);
-    return { quittance: donneesEntete(q) || {}, vehicules: Array.isArray(v.data) ? v.data : [] };
+    return {
+      quittance: primesDeLaPeriode(donneesEntete(q) || {}, periode),
+      vehicules: Array.isArray(v.data) ? v.data : [],
+      periode: periodeAvecAvenants(periode) ? periode : null,
+    };
   },
 };
 
@@ -507,9 +525,14 @@ export const impressionIaApi = {
 // du contrat ({ idcontrat }), saisie Santé du devis (couvertures, adhérents), liste des affiliés et,
 // pour un contrat, ayants droit de l'IA MINENE rattachée à la police
 export const impressionSanteApi = {
+  // Contrat : familles en vigueur de sa période (incorporations comprises) pour le contrat de base, primes de la période
   get: async ({ iddevis, idcontrat }) => {
-    const quittance = donneesEntete(await apiClient.get(idcontrat ? `/quittancecontrat/${idcontrat}` : `/quittanceproposition/${iddevis}`)) || {};
-    const idDevis = Number(quittance.IdDevis || iddevis) || 0;
+    const [entete, periode] = await Promise.all([
+      apiClient.get(idcontrat ? `/quittancecontrat/${idcontrat}` : `/quittanceproposition/${iddevis}`),
+      idcontrat ? lirePeriode(idcontrat) : Promise.resolve(null),
+    ]);
+    const quittance = primesDeLaPeriode(donneesEntete(entete) || {}, periode);
+    const idDevis = Number((periode?.EstBase && periode.IdDevisComposition) || quittance.IdDevis || iddevis) || 0;
     const [s, a, ad] = await Promise.all([
       apiClient.get(`/devissante/${idDevis}/`).catch(() => ({ data: {} })),
       apiClient.get(`/listeaffiliesante/${idDevis}`).catch(() => ({ data: [] })),
@@ -517,10 +540,14 @@ export const impressionSanteApi = {
         ? apiClient.get(`/ayantdroitminene/${encodeURIComponent(quittance.NumeroPolice)}`).catch(() => ({ data: {} }))
         : Promise.resolve({ data: {} }),
     ]);
-    return { quittance, saisie: s.data || {}, affilies: donneesListe(a), ayantsDroit: ad.data?.ayantdroits || [] };
+    return { quittance, saisie: s.data || {}, affilies: donneesListe(a), ayantsDroit: ad.data?.ayantdroits || [], periode };
   },
-  // GET /api/devissante/:iddevis/bordereau/ : primes par assuré (prime de base, surprimes, réduction ou majoration)
-  bordereau: async (idDevis) => (await apiClient.get(`/devissante/${idDevis}/bordereau/`)).data,
+  // GET /api/devissante/:iddevis/bordereau/ : primes par assuré (prime de base, surprimes, réduction ou majoration) ;
+  // contrat : GET /api/devissante/contrat/:id/bordereau/?document= (période à jour ; facture MINENE : toute la période)
+  bordereau: async (idDevis, { idcontrat, document } = {}) => (await apiClient.get(
+    idcontrat ? `/devissante/contrat/${idcontrat}/bordereau/` : `/devissante/${idDevis}/bordereau/`,
+    { params: idcontrat && document ? { document } : undefined },
+  )).data,
 };
 
 // Facture de prime RC (modèle OREOLE, comme la facture OREOLE d'URANUS) : quittance du contrat ({ idcontrat }) ou

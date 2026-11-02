@@ -1594,9 +1594,11 @@ const CP_FLOTTE_STYLES = `
   .cpf-recap td:first-child { text-align: right; padding-right: 10px; }
   .cpf-recap .cpf-net { border-top: 1px solid #000; margin: 4px -12px 0; padding: 5px 12px; text-align: center; font-weight: 700; font-size: 9.5pt; }
   .cpf-recap .cpf-net span + span { margin-left: 10px; }
+  .cpf-recap .cpf-avenants { margin-top: 5px; font-size: 7.5pt; font-style: italic; line-height: 1.3; }
 `;
 
-const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { contrat = false } = {}) => {
+// periode : contrat de base dont la période a des avenants (incorporations…) : véhicules et primes à jour, avenants rappelés
+const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules, periode }, { contrat = false } = {}) => {
   const q = quittance || {};
   const t = (x) => echapperHtml(x === undefined || x === null ? '' : String(x).trim());
   const date = (x) => (x ? formatFrDate(x) : VIDE);
@@ -1778,6 +1780,9 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules }, { c
             <tr><td>Prime TTC</td><td>${montant(q.PrimeTtc)}</td></tr>
           </table>
           <div class="cpf-net"><span>Total net à payer</span><span>${montant(q.PrimeTtc)}</span></div>
+          ${periode?.Mouvements?.length ? `<div class="cpf-avenants">Liste et primes de la période, avenants compris : ${periode.Mouvements
+            .map((m) => `avenant${m.NumeroAvenant ? ` n° ${t(m.NumeroAvenant)}` : ''} (${t((m.LibelleAvenant || m.Avenant).toLowerCase())}) du ${date(m.DateEffet)} : ${montant(m.PrimeTtc)}`)
+            .join(' ; ')}.</div>` : ''}
         </div>
       </div>
     </div>`;

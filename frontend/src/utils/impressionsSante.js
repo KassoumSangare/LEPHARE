@@ -105,6 +105,7 @@ const STYLES = `
   .primes td { border: 1px solid #555; padding: 4px 8px; font-weight: 700; }
   .rubrique { font-weight: 700; text-decoration: underline; margin: 14px 0 6px; }
   p { margin: 6px 0; text-align: justify; line-height: 1.35; }
+  p.mention-avenants { font-size: 8.5pt; font-style: italic; margin: 5px 0 8px; }
   .ajustement td { border: 1px solid #555; padding: 3px 8px; font-weight: 700; font-size: 9pt; }
   .signatures { display: flex; justify-content: space-between; margin-top: 46px; font-weight: 700; text-decoration: underline; }
   .bareme td { border: 1px solid #777; padding: 5px 8px; vertical-align: top; font-weight: 700; font-size: 9pt; }
@@ -146,6 +147,15 @@ ${pages.join('')}
 <script>window.onload = function () { setTimeout(function () { window.print(); }, 400); };</script></body></html>`;
 
 // ------------------------------------------------------------------ Conditions Particulières
+// Contrat de base d'une période qui a des avenants (incorporation d'un membre, changement de formule…) : documents à jour
+// de ces avenants, primes de la période (production/periode_contrat.py), avenants rappelés sous le tableau des primes
+const mentionAvenants = (periode, debut = 'Primes de la période, avenants compris') => {
+  if (!periode?.EstBase || !periode.Mouvements?.length) return '';
+  const avenants = periode.Mouvements.map((m) => `avenant${m.NumeroAvenant ? ` n° ${texte(m.NumeroAvenant)}` : ''} `
+    + `(${texte((m.LibelleAvenant || m.Avenant).toLowerCase())}) du ${date(m.DateEffet)} : ${montant(m.PrimeTtc)} F TTC`);
+  return `<p class="mention-avenants">${debut} : ${avenants.join(' ; ')}.</p>`;
+};
+
 const pagesCp = (d) => {
   const q = d.quittance || {};
   const r = reglagesMinene();
@@ -156,8 +166,10 @@ const pagesCp = (d) => {
   const numero = q.NumeroPolice || q.NumeroDevis || '';
   // Réduction (négative) ou majoration (positive) de l'année, si le détail recalculé retrouve la prime enregistrée
   const ajustement = d.bordereau?.Minene && !Number(d.bordereau.Recap?.Ecart) ? Number(d.bordereau.Recap?.Ajustement) || 0 : 0;
+  // Imprimées depuis un avenant (incorporation…) : primes de l'avenant, familles à sa date
+  const avenant = Boolean(d.periode && !d.periode.EstBase);
   const page1 = `
-    <div class="bandeau">${q.NumeroPolice ? 'CONDITIONS PARTICULIERES POLICE' : 'DEVIS'} N° ${texte(numero)}</div>
+    <div class="bandeau">${q.NumeroPolice ? `CONDITIONS PARTICULIERES${avenant ? ` - AVENANT N° ${texte(q.NumeroAvenant)} -` : ''} POLICE` : 'DEVIS'} N° ${texte(numero)}</div>
     <table class="cadre entete">
       ${ligne('Compagnie', texte(q.RaisonSociale), physique ? 'Nom et Prénoms assuré' : 'Raison Sociale', texte(q.NomAssure || q.NomClient))}
       ${ligne('Nature du risque', 'MINENE SANTE', physique ? 'Date et lieu de naissance' : 'Numéro registre de commerce', texte(naissance))}
@@ -174,6 +186,7 @@ const pagesCp = (d) => {
       <tr>${ajustement ? `<td>Prime Nette avant ajustement</td><td>${libelleAjustement(d.bordereau.TauxAjustement)}</td>` : ''}<td>Prime Nette</td><td>Accessoires</td><td>Taxe</td><td>Frais de Gestion</td><td>Prime TTC</td></tr>
       <tr>${ajustement ? `<td>${montant(d.bordereau.Recap.PrimeNetteAvantAjustement)}</td><td>${ajustement < 0 ? '- ' : '+ '}${montant(Math.abs(ajustement))}</td>` : ''}<td>${montant(q.PrimeNetteHorsFga ?? q.PrimeNette)}</td><td>${montant(q.Accessoire)}</td><td>${montant(q.TaxeEnregistrement)}</td><td>${montant(q.FraisGestion)}</td><td>${montant(q.PrimeTtc)}</td></tr>
     </table>
+    ${mentionAvenants(d.periode)}
     <div class="rubrique">OBJET DU CONTRAT</div>
     <p><b>MINÉNÉ SANTÉ</b> est une offre composée de 3 produits d’assurances indissociables les uns des autres.<br />
     Se sont :<b>L’assurance Santé, L’assurance Individuelle, L’assurance Responsabilité Civile chef de famille</b></p>
@@ -315,6 +328,7 @@ const pageAffilies = (d) => {
   return page(`
     <div class="titre-liste">LISTE DES ASSURÉS - ${q.NumeroPolice ? 'POLICE' : 'DEVIS'} N° ${texte(q.NumeroPolice || q.NumeroDevis)}</div>
     <p><b>Souscripteur :</b> ${texte(q.NomClient)} &nbsp;-&nbsp; <b>Option :</b> ${texte(d.option)}</p>
+    ${mentionAvenants(d.periode, 'Liste à jour')}
     <table class="liste">
       <tr><th>Statut</th><th>Nom</th><th>Prénoms</th><th>Date de naissance</th><th>Numéro CMU</th></tr>
       ${lignes || '<tr><td colspan="5">Aucun affilié enregistré pour ce devis.</td></tr>'}
@@ -627,7 +641,8 @@ export const imprimerDocumentSante = async (type, ids, fenetre = ouvrirApercuImp
     // Bordereau des primes par assuré ; CP MINENE : réduction ou majoration de l'année au tableau des primes
     if (type === 'bordereau' || type === 'facture' || (type === 'cp' && d.minene)) {
       const idDevis = Number(d.quittance?.IdDevis || d.saisie?.devis?.iddevis || ids.iddevis) || 0;
-      d.bordereau = await impressionSanteApi.bordereau(idDevis).catch((err) => {
+      // Contrat : familles et primes de sa période, incorporations comprises (facture MINENE : toute la période)
+      d.bordereau = await impressionSanteApi.bordereau(idDevis, ids.idcontrat ? { idcontrat: ids.idcontrat, document: type } : {}).catch((err) => {
         if (type === 'bordereau' || type === 'facture') throw err;
         return null;
       });

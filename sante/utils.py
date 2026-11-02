@@ -608,14 +608,17 @@ def _familles_minene(cursor, parametres, par_operateur=True):
 FILIATIONS = {"A": "ASSURÉ PRINCIPAL", "C": "CONJOINT", "E": "ENFANT"}
 
 
-def bordereau_primes_sante(id_devis):
+def bordereau_primes_sante(id_devis, periode=None):
     """Bordereau récapitulatif des primes par assuré d'un devis Santé enregistré (ou du devis d'un contrat), sur le
     modèle de l'état des assurés de la compagnie : une ligne par personne (carte, filiation, formule, identité, date
     d'entrée, prime de base, surprimes, réduction ou majoration de l'année, prime nette), puis le récapitulatif
     (effectifs, prime nette avant ajustement, ajustement, prime nette, accessoires, taxes, prime TTC).
     MINENE : calcul par famille de sp_creation_devis_sante (prime de base de la famille sur l'assuré principal,
     surprimes sur chaque personne, ajustement réparti au prorata). Autres offres : prime par famille sur l'assuré
-    principal, par affilié sur chacun, prime globale au récapitulatif seulement ; surprime de chaque personne."""
+    principal, par affilié sur chacun, prime globale au récapitulatif seulement ; surprime de chaque personne.
+    periode (production.periode_contrat) : documents d'un contrat à jour des avenants de sa période (demande du
+    2026-11-02) ; id_devis est alors le devis des familles en vigueur (incorporations comprises), les primes et les
+    encaissements sont ceux de la période (contrat et avenants), et non ceux d'un avenant."""
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT d.idavenant, d.dateeffet::date, dd.idoffre, COALESCE(c.primefamille, 0), COALESCE(c.primeaffilie, 0),
@@ -631,6 +634,12 @@ def bordereau_primes_sante(id_devis):
             return None
         (id_avenant, effet, id_offre, prime_famille, prime_affilie, prime_globale, montant_surprime, accessoire_manuel, taux,
          pn, acc, taxe, frais, ttc, numero, expiration) = ligne
+        # Période d'un contrat : ses dates et ses primes (contrat et avenants), le devis ne donnant que les familles
+        debut_etat, fin_etat = effet, expiration
+        if periode:
+            t = periode["Totaux"]
+            pn, acc, taxe, frais, ttc = t["PrimeNette"], t["Accessoire"], t["TaxeEnregistrement"], t["FraisGestionMinene"], t["PrimeTtc"]
+            debut_etat, fin_etat = date.fromisoformat(periode["DateEffet"]), date.fromisoformat(periode["DateExpiration"])
         cursor.execute(
             """SELECT AF.idaffilie, AF.idadherent, TRIM(COALESCE(AF.lien, '')), AF.nom, AF.prenom, AF.datenaissance::date,
                       AF.sexe, NULLIF(TRIM(COALESCE(AF.matricule, '')), 'NA'), NULLIF(TRIM(COALESCE(AF.numerocmu, '')), 'NA'),
@@ -693,7 +702,7 @@ def bordereau_primes_sante(id_devis):
     # Avenant de modification : les lignes sont la nouvelle composition, comparée à sa prime annuelle ; les montants de
     # l'avenant (écart au prorata, accessoire, taxes) sont rendus à part
     with connection.cursor() as cursor:
-        avenant = detail_avenant_modification(cursor, id_devis)
+        avenant = None if periode else detail_avenant_modification(cursor, id_devis)
     reference = avenant["PrimeAnnuelle"] if avenant else float(pn or 0)
     ecart = round(reference) - total_lignes if (minene or not global_saisi) and lignes else 0
     if avenant:
@@ -703,8 +712,8 @@ def bordereau_primes_sante(id_devis):
     etat = None
     if minene and familles and lignes and not avenant:
         with connection.cursor() as cursor:
-            etat = _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, float(ttc or 0),
-                                     conforme=abs(ecart) <= len(lignes))
+            etat = _etat_cotisations(cursor, id_devis, familles, lignes, debut_etat, fin_etat, float(ttc or 0),
+                                     conforme=abs(ecart) <= len(lignes), periode=periode)
     return {
         "NumeroDevis": numero or "", "Minene": minene, "PrimeGlobale": global_saisi,
         "TauxAjustement": float(-_decimal(taux)) if minene else 0.0, "Lignes": lignes,
@@ -721,7 +730,7 @@ def bordereau_primes_sante(id_devis):
     }
 
 
-def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc_enregistree, conforme):
+def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc_enregistree, conforme, periode=None):
     """État des cotisations MINENE Santé d'un devis ou d'un contrat, au modèle d'OREOLE (« ETATS DES COTISATIONS MINENE
     SANTE », demande du 2026-10-27) : un bloc par famille (souscripteur = adhérent, assurés et dates de naissance,
     option, effectif, période, prime de base, surprimes pour pathologie, d'âge et pour enfants supplémentaires, puis la
@@ -730,7 +739,8 @@ def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc
     TTC Santé d'une famille : prime TTC enregistrée répartie au prorata de sa prime nette et de son accessoire, quand le
     détail retrouve la prime enregistrée (conforme) ou pour un contrat émis (le solde suit ce qui a été facturé) ; sinon
     taxe de la base appliquée au détail recalculé (devis à réenregistrer). IA et RC : forfait MINENE par adhérent
-    (production.minene_connexes.forfait_adherent)."""
+    (production.minene_connexes.forfait_adherent).
+    periode : contrat de base de la période (statut), quittances et encaissements du contrat et de ses avenants."""
     from production.minene_connexes import _devis_lies, forfait_adherent
 
     blocs = []
@@ -748,11 +758,12 @@ def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc
             "SurprimeEnfants": 0, "Ajustement": f["Ajustement"], "PrimeNette": base + pathologie + age + f["Ajustement"],
             "Accessoire": f["Accessoire"],
         })
-    # Contrat issu du devis : statut, quittances Santé, IA et RC de la police, encaissements
-    cursor.execute("""SELECT c.idcontrat, c.numeropolice, c.dateeffet, COALESCE(c.idcontratannulation, 0),
-                             q.numeroquittance, COALESCE(q.mt_encaisse, 0)
-                      FROM stdcontrat c LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
-                      WHERE c.iddevis = %s ORDER BY c.idcontrat DESC LIMIT 1""", [id_devis])
+    # Contrat issu du devis (période : contrat de base) : statut, quittances Santé, IA et RC de la police, encaissements
+    cursor.execute(f"""SELECT c.idcontrat, c.numeropolice, c.dateeffet, COALESCE(c.idcontratannulation, 0),
+                              q.numeroquittance, COALESCE(q.mt_encaisse, 0)
+                       FROM stdcontrat c LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
+                       WHERE {"c.idcontrat" if periode else "c.iddevis"} = %s ORDER BY c.idcontrat DESC LIMIT 1""",
+                   [periode["IdContratBase"] if periode else id_devis])
     contrat = cursor.fetchone()
     # Prime TTC Santé de chaque famille
     cursor.execute("""SELECT d.idcompagnie, d.idproduit, dd.idoffre FROM stddevis d JOIN stddevisdetail dd ON dd.iddevis = d.iddevis
@@ -789,6 +800,8 @@ def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc
     resultat["PolicesIa"] = [l["NumeroPolice"] for l in lies["IA"] if l["IdContrat"]]
     resultat["PolicesRc"] = [l["NumeroPolice"] for l in lies["RC"] if l["IdContrat"]]
     quittances, encaisse = [quittance_sante] if quittance_sante else [], float(encaisse_sante or 0)
+    if periode:
+        quittances, encaisse = list(periode["Quittances"]), float(periode["Encaisse"])
     if contrats_lies:
         cursor.execute("""SELECT q.numeroquittance, COALESCE(q.mt_encaisse, 0) FROM stdcontrat c
                           JOIN stdquittance q ON q.idquittance = c.idquittance WHERE c.idcontrat = ANY(%s)""",

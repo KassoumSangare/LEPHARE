@@ -29,6 +29,7 @@ from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
 from . import incorporation as incorporation_views
+from . import periode_contrat as periode_contrat_views
 from . import afa as afa_views
 from .views_transport_guce import (
     analyser_bordereau,
@@ -645,6 +646,8 @@ urlpatterns = [
     path("incorporation/<int:pk>/", incorporation_views.incorporation, name="incorporation-flotte"),
     # Période et mode de tarification (prorata ou forfaitaire) d'un devis d'incorporation, pour l'écran Auto
     path("incorporation/devis/<int:iddevis>/", incorporation_views.devis_incorporation, name="incorporation-devis"),
+    # Période d'un contrat, ses avenants et ses primes : documents du contrat à jour des incorporations
+    path("contrat/<int:idcontrat>/periode/", periode_contrat_views.periode, name="contrat-periode"),
     # Branche Vie : devis AFA (assurés, bénéficiaires), import de la liste Excel, modèle vierge
     path("afa/referentiels/", afa_views.referentiels, name="afa-referentiels"),
     path("afa/import/analyse/", afa_views.analyse_import, name="afa-import-analyse"),
