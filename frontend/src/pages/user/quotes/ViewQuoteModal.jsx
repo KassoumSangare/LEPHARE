@@ -415,7 +415,7 @@ export const ViewQuoteModal = ({
             <Champ libelle="Prime Nette" couleur="#60a5fa">{fcfa(primeNetteAffichee)}</Champ>
             <Champ libelle="Accessoire">{fcfa(quote.accessoires)}</Champ>
             <Champ libelle="Taxes">{fcfa(quote.taxes)}</Champ>
-            <Champ libelle="FDG">{fcfa(quote.fga)}</Champ>
+            <Champ libelle="FGA">{fcfa(quote.fga)}</Champ>
             {/* Frais de gestion MINENE (IA, RC chef de famille : 1 500 F par adhérent), compris dans la prime TTC */}
             {Number(raw.accessoiregestionnaire) > 0 && <Champ libelle="Frais de gestion">{fcfa(raw.accessoiregestionnaire)}</Champ>}
             <Champ libelle="Prime TTC" couleur="#34d399" libelleColore className="fiche-devis-ttc">{fcfa(quote.prime_totale)}</Champ>
@@ -545,7 +545,7 @@ export const ViewQuoteModal = ({
                     </div>
                   )}
                   {!(detailBranche.adherents || []).length && (
-                    <div style={{ color: 'var(--text-muted)' }}>Aucun adhérent en base pour ce devis (devis repris d'URANUS sans saisie détaillée).</div>
+                    <div style={{ color: 'var(--text-muted)' }}>Aucun adhérent en base pour ce devis (aucune saisie détaillée enregistrée).</div>
                   )}
                 </div>
               )
@@ -556,7 +556,7 @@ export const ViewQuoteModal = ({
               !detailBranche ? (
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des assurés…</div>
               ) : !(detailBranche.assures || []).length ? (
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun assuré en base pour ce devis (devis repris d'URANUS sans détail).</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun assuré en base pour ce devis (aucun détail enregistré).</div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
@@ -659,10 +659,10 @@ export const ViewQuoteModal = ({
                       </table>
                     </div>
                   ) : (
-                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (devis repris d'URANUS sans détail).</div>
+                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (aucun détail enregistré).</div>
                   )}
                   {detailBranche.Saisie?.Origine === 'URANUS' && detailBranche.Detail && (
-                    <div style={{ color: 'var(--text-muted)' }}>Devis enregistré par URANUS : la description du risque n'a pas été saisie.</div>
+                    <div style={{ color: 'var(--text-muted)' }}>La description du risque n'a pas été saisie pour ce devis.</div>
                   )}
                 </div>
               )
@@ -720,10 +720,10 @@ export const ViewQuoteModal = ({
                       </table>
                     </div>
                   ) : (
-                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (devis repris d'URANUS sans détail).</div>
+                    <div style={{ color: 'var(--text-muted)' }}>Aucune garantie en base pour ce devis (aucun détail enregistré).</div>
                   )}
                   {detailBranche.Detail && !detailBranche.Complement && (
-                    <div style={{ color: 'var(--text-muted)' }}>Devis repris d'URANUS : destination, nationalité et passeport non enregistrés.</div>
+                    <div style={{ color: 'var(--text-muted)' }}>Destination, nationalité et passeport non enregistrés pour ce devis.</div>
                   )}
                 </div>
               )
@@ -734,7 +734,7 @@ export const ViewQuoteModal = ({
               !detailBranche ? (
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des certificats…</div>
               ) : detailBranche.erreur || !(detailBranche.Certificats || []).length ? (
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun certificat GUCE rattaché à ce devis (devis repris d'URANUS ou saisi hors GUCE).</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun certificat GUCE rattaché à ce devis (devis saisi hors GUCE).</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.85rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>

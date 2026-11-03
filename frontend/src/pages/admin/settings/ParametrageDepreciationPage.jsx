@@ -202,7 +202,7 @@ export const ParametrageDepreciationPage = () => {
           </SectionParametrage>
 
           <SectionParametrage icone={ListOrdered} titre="Ligne du tableau retenue pour un véhicule"
-            description="Règles examinées dans l'ordre : la première dont tous les critères renseignés correspondent au véhicule donne la ligne du tableau. La catégorie sert aux véhicules repris d'URANUS, sans genre."
+            description="Règles examinées dans l'ordre : la première dont tous les critères renseignés correspondent au véhicule donne la ligne du tableau. La catégorie sert aux véhicules importés sans genre."
             actions={(
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setRegles((l) => [...l, { Classe: donnees.Classes[0]?.Code, IdGenre: null, IdTypeVehicule: null, IdCarrosserie: null, CodeCategorie: '', ChargeUtileSuperieureA: null }])}

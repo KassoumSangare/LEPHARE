@@ -361,7 +361,7 @@ export const NewTousDommagesQuotePage = () => {
           setAssureChoisi(assureLu);
         }
         setAvertissementReprise(!d.Detail
-          ? `Devis repris d'URANUS sans catégorie ni garanties en base : choisissez la catégorie et saisissez les capitaux ; les primes sont recalculées à l'enregistrement${d.Saisie?.AccessoireImpose ? ` (accessoire enregistré ${fcfa(d.Saisie.AccessoireImpose)} F conservé)` : ''}.`
+          ? `Aucune catégorie ni garantie n'est enregistrée pour ce devis : choisissez la catégorie et saisissez les capitaux ; les primes sont recalculées à l'enregistrement${d.Saisie?.AccessoireImpose ? ` (accessoire enregistré ${fcfa(d.Saisie.AccessoireImpose)} F conservé)` : ''}.`
           : '');
       } catch (err) {
         if (actif) {
@@ -678,7 +678,7 @@ export const NewTousDommagesQuotePage = () => {
               </Champ>
               {/* Comme URANUS : la réduction ne porte que sur une prime calculée au taux, une prime saisie est reprise telle quelle */}
               <Champ label="Taux de réduction (%)" erreur={erreurs.reduction}
-                aide={taux > 0 ? undefined : 'Sans effet sur une prime saisie (comme URANUS) : saisissez la prime déjà réduite'}>
+                aide={taux > 0 ? undefined : 'Sans effet sur une prime saisie : saisissez la prime déjà réduite'}>
                 <input type="number" className="form-control" min={0} max={100} step="0.01" value={taux > 0 ? reduction : 0}
                   disabled={!(taux > 0)}
                   onChange={(e) => setReduction(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} />

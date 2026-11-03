@@ -149,7 +149,7 @@ export const UserManagementPage = () => {
       <EnTeteParametrage
         icone={Users}
         titre="Utilisateurs"
-        description="Comptes de connexion à LE PHARE. Les comptes repris d'URANUS gardent leur adresse e-mail et leur mot de passe ; leurs droits viennent des rôles attribués ici."
+        description="Comptes de connexion à LE PHARE. Les comptes existants gardent leur adresse e-mail et leur mot de passe ; leurs droits viennent des rôles attribués ici."
         usage="Les droits sont contrôlés par le serveur à chaque opération ; toute modification de compte est inscrite au journal d'audit. Un compte désactivé est déconnecté immédiatement."
         actions={peut('users.create') && (
           <button type="button" className="btn btn-primary" onClick={() => setCreation({ email: '', nom: '', roles: [], mot_de_passe: '', confirmation: '' })} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -232,7 +232,7 @@ export const UserManagementPage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
             {detail.administrateur && (
               <div style={{ display: 'flex', gap: '0.5rem', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(139,92,246,0.4)', fontSize: '0.82rem' }}>
-                <ShieldCheck size={16} style={{ color: '#a78bfa', flexShrink: 0 }} /> Compte administrateur repris d'URANUS : accès complet quels que soient ses rôles (ses actions restent journalisées).
+                <ShieldCheck size={16} style={{ color: '#a78bfa', flexShrink: 0 }} /> Compte administrateur historique : accès complet quels que soient ses rôles (ses actions restent journalisées).
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '0.75rem' }}>

@@ -1316,9 +1316,10 @@ def save_quotation(input_data):
         if IdDevis:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """SELECT a.codeavenant, d.dateeffet::date, d.dateexpiration::date
+                    """SELECT a.codeavenant, b.dateeffet::date, d.dateexpiration::date
                        FROM stddevis d
                        JOIN stdavenant a ON a.idavenant = d.idavenant
+                       LEFT JOIN stddevis b ON b.iddevis = d.idoldhist
                        WHERE d.iddevis = %s""",
                     [IdDevis],
                 )

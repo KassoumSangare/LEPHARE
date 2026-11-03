@@ -3,6 +3,7 @@ import { confirmer } from '../../../utils/dialogue';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
+import { joursAnneeDepuis, joursInclusifs } from '../../../utils/dateUtils';
 import { quoteApi, customerApi, settingsApi, contractApi, brouillonApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -420,6 +421,10 @@ export const NewAutoQuotePage = () => {
   const effectiveDateExpiration = enIncorporation
     ? (incorporation?.DateExpiration || dateExpirationIncorporation || customDateExpiration || calculatedDateExpiration)
     : Number(dureeId) === 5 ? (customDateExpiration || calculatedDateExpiration) : calculatedDateExpiration;
+  // Incorporation : date au choix, seule l'échéance est figée ; durée et prorata suivent la date affichée
+  const joursCouverts = joursInclusifs(dateEffet, effectiveDateExpiration);
+  const joursAnneeCouverte = joursAnneeDepuis(dateEffet);
+  const prorataIncorporation = Math.min(1, joursCouverts / joursAnneeCouverte);
 
   // ----------------------------------------------------
   // ÉCRAN 2 : VÉHICULE & FLOTTE
@@ -1689,7 +1694,7 @@ export const NewAutoQuotePage = () => {
         if (!isMounted) return;
         if (!d.iddevis) throw new Error('devis introuvable');
         setAvertissementReprise(lignes.length ? '' : (
-          'Ce devis repris d\'URANUS n\'a aucun véhicule ni garantie en base : seuls l\'en-tête et les montants ont été repris. '
+          'Aucun véhicule ni aucune garantie n\'est enregistré pour ce devis : seuls l\'en-tête et les montants sont disponibles. '
           + 'Complétez le véhicule puis « Recalculer CIMA » avant d\'enregistrer.'
         ));
 
@@ -2556,7 +2561,7 @@ export const NewAutoQuotePage = () => {
       // En mode édition (Modifier), on repasse le vrai id du devis existant : save_quotation
       // (Django) le détecte et met à jour ce devis/véhicule au lieu d'en créer un nouveau.
       id: editIddevis || undefined,
-      client_nom: selectedClient?.nomcomplet || nomAssure || 'Assuré Uranus',
+      client_nom: selectedClient?.nomcomplet || nomAssure || 'Assuré',
       client_id: selectedClient?.id,
       produit: typeContrat === 'FLOTTE'
         ? `Flotte Automobile (${flotteVehicules.length} Véhicules)`
@@ -2831,11 +2836,11 @@ export const NewAutoQuotePage = () => {
           {enIncorporation && (
             <p role="note" style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(37, 99, 235, 0.1)', border: '1px solid rgba(37, 99, 235, 0.35)', color: 'var(--text-secondary)', fontSize: '0.85rem', maxWidth: '760px', lineHeight: 1.55 }}>
               <strong>Incorporation{incorporation?.NumeroPolice ? ` dans la police ${incorporation.NumeroPolice}` : ''}</strong>
-              {incorporation && ` : du ${dateFrIso(incorporation.DateEffet)} à l'échéance inchangée du ${dateFrIso(incorporation.DateExpiration)} (${incorporation.JoursCouverts} jours).`}
+              {incorporation && ` : du ${dateFrIso(dateEffet)} à l'échéance inchangée du ${dateFrIso(incorporation.DateExpiration)} (${joursCouverts} jours). La date d'émission n'est pas imprimée sur les documents.`}
               {' '}
               {forfaitIncorporation
                 ? "Affaire à tarif forfaitaire : aucun prorata. Les véhicules importés d'un fichier Excel gardent la prime nette du fichier, les autres la prime annuelle du barème."
-                : incorporation && `Prime du véhicule : prime annuelle du tarif × ${incorporation.JoursCouverts}/${incorporation.JoursAnnee} (${(incorporation.Prorata * 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %).`}
+                : incorporation && `Prime du véhicule : prime annuelle du tarif × ${joursCouverts}/${joursAnneeCouverte} (${(prorataIncorporation * 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %).`}
             </p>
           )}
           {avertissementReprise && (
@@ -3162,7 +3167,8 @@ export const NewAutoQuotePage = () => {
                 className="form-control"
                 value={dateEffet}
                 onChange={(e) => setDateEffet(e.target.value)}
-                disabled={enIncorporation}
+                min={enIncorporation ? incorporation?.DateEffetContrat : undefined}
+                max={enIncorporation ? effectiveDateExpiration : undefined}
               />
             </div>
 
@@ -3170,7 +3176,7 @@ export const NewAutoQuotePage = () => {
               <label className="form-label">Durée du contrat</label>
               {enIncorporation ? (
                 <div className="form-control" aria-readonly="true">
-                  {incorporation ? `${incorporation.JoursCouverts} jours jusqu'à l'échéance` : "Durée restante jusqu'à l'échéance initiale"}
+                  {incorporation ? `${joursCouverts} jours jusqu'à l'échéance` : "Durée restante jusqu'à l'échéance initiale"}
                 </div>
               ) : (
                 <DureeContratSelect

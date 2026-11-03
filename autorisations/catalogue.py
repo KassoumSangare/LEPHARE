@@ -48,6 +48,7 @@ DROITS = [
     ("devis.update", "Modifier un devis", "« Modifier », garanties, véhicules, assurés, pièces jointes.", False, False, False),
     ("devis.validate", "Transformer un devis en contrat", "Confirmation du devis : police et quittance émises.", True, False, True),
     ("devis.cancel", "Archiver un devis", "Archivage, désarchivage et abandon d'une saisie.", True, False, False),
+    ("devis.delete", "Supprimer un devis", "Suppression définitive d'un devis non confirmé et de sa saisie.", True, True, False),
     ("devis.primes", "Imposer ou corriger les primes", "Primes imposées, correction des primes, répartition des garanties.", True, True, False),
     ("devis.derogation_age", "Déroger à la limite d'âge",
      "Admettre un assuré au-delà des limites d'âge des conditions (Santé MINENE : adulte, enfant), en saisie ou à l'import.",
@@ -59,6 +60,8 @@ DROITS = [
      "Écran d’administration : contrat, risques/véhicules et garanties ; justification obligatoire et journal avant/après.", True, True, False),
     ("contrats.avenant", "Établir un avenant", "Renouvellement, incorporation, retrait, changement d'immatriculation, prise d'effet.", True, False, False),
     ("contrats.cancel", "Annuler un contrat", "Avenant d'annulation ou de résiliation.", True, True, False),
+    ("contrats.delete", "Supprimer un contrat",
+     "Suppression définitive d'un contrat sans encaissement et de sa quittance ; son devis revient en attente.", True, True, False),
     ("contrats.reprise", "Saisir les affaires antérieures",
      "Reprise des contrats et quittances des années passées absents de LE PHARE : saisie, import Excel, suppression d'une "
      "reprise erronée par son auteur.", False, False, False),
@@ -102,7 +105,7 @@ DROITS = [
     ("tarifs.update", "Modifier les tarifs et barèmes", "Offres, garanties, taxes, accessoires, commissions, réductions, grilles, réglages Dommages.", True, False, False),
 
     ("parametrage.update", "Paramétrage général", "Cabinet, compagnies, produits, règles de gestion, listes de référence, apporteurs, conventions.", True, False, False),
-    ("parametrage.technique", "Paramétrage technique", "Tables internes, numérotation, tâches planifiées, menus d'URANUS.", True, False, False),
+    ("parametrage.technique", "Paramétrage technique", "Tables internes, numérotation, tâches planifiées et menus de l'application.", True, False, False),
 
     ("users.view", "Consulter les utilisateurs", "", False, False, False),
     ("users.create", "Créer un utilisateur", "", True, False, False),
@@ -138,7 +141,7 @@ ROLES_INITIAUX = [
          "audit.view", "tarifs.view",
      ]),
     ("GESTIONNAIRE", "Gestionnaire", "Production complète (clients, devis, contrats, caisse, sinistres, imports) "
-     "sans paramétrage ; rôle donné aux comptes repris d'URANUS non administrateurs.",
+     "sans paramétrage ; attribué aux comptes importés non administrateurs.",
      _VUES_METIER + [
          "clients.create", "clients.update", "devis.create", "devis.update", "devis.validate", "devis.cancel",
          "devis.primes", "contrats.update", "contrats.avenant", "encaissements.create", "reversements.create",

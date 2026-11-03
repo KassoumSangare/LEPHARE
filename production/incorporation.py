@@ -1,4 +1,8 @@
-"""Incorporation d'un véhicule dans une police Automobile flotte en cours.
+"""Incorporation d'un véhicule dans une police Automobile flotte, ou d'une personne dans un contrat Individuelle Accidents
+à plusieurs personnes (demande du 2026-11-03).
+
+IA : la personne se saisit dans l'écran IA, sa prime est le tarif de l'offre (fn_garantie_offre_ia), comme les incorporations
+IA d'URANUS ; le Prorata et le mode forfaitaire ci-dessous ne concernent que l'Automobile.
 
 Le devis d'incorporation (avenant INC) garde l'échéance du contrat principal ; sa date d'effet est la date
 d'incorporation. Prime du véhicule : prime annuelle au prorata des jours couverts jusqu'à l'échéance
@@ -19,7 +23,9 @@ from rest_framework.response import Response
 
 from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _date, _iso, _lignes
 
-MODULE_AUTO = "auto"
+ID_PRODUIT_AUTO = 1
+ID_PRODUIT_IA = 2
+MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia"}
 MODE_PRORATA = "prorata"
 MODE_FORFAIT = "forfait"
 logger = logging.getLogger(__name__)
@@ -34,30 +40,43 @@ SQL_ENTETE_A_ZERO = """
 """
 
 
-def _verifier_periode(date_effet, debut, expiration, jour):
+def _verifier_periode(date_effet, debut, expiration):
+    """Date d'incorporation au choix, passée ou future, dans la période du contrat (demande du 2026-11-03)."""
     if not date_effet:
         raise ErreurRenouvellement("Saisissez la date d'incorporation.")
-    if date_effet < jour or date_effet > expiration or date_effet < debut:
+    if date_effet > expiration or date_effet < debut:
         raise ErreurRenouvellement(
-            f"La date d'incorporation doit être comprise entre le {max(jour, debut):%d/%m/%Y} "
-            f"et le {expiration:%d/%m/%Y}."
+            f"La date d'incorporation doit être comprise dans la période du contrat, du {debut:%d/%m/%Y} "
+            f"au {expiration:%d/%m/%Y}."
         )
 
 
-def _verifier_periode_devis(code_avenant, effet_stocke, expiration_stockee, effet_demande, expiration_demandee):
-    if code_avenant == "INC" and (
-        effet_stocke != effet_demande or expiration_stockee != expiration_demandee
-    ):
-        raise ValueError("La période d'un devis d'incorporation ne peut pas être modifiée.")
+def _verifier_periode_devis(code_avenant, debut_contrat, expiration_stockee, effet_demande, expiration_demandee):
+    """Devis d'incorporation : seule l'échéance est figée ; la date d'incorporation reste dans la période du contrat."""
+    if code_avenant != "INC":
+        return
+    if expiration_stockee != expiration_demandee:
+        raise ValueError("L'échéance d'un devis d'incorporation reste celle du contrat.")
+    if debut_contrat and not debut_contrat <= effet_demande <= expiration_stockee:
+        raise ValueError(
+            f"La date d'incorporation doit être comprise dans la période du contrat, du {debut_contrat:%d/%m/%Y} "
+            f"au {expiration_stockee:%d/%m/%Y}."
+        )
+
+
+def _personnes(cursor, police):
+    """Personnes ou véhicules de la période en cours de la police, incorporations comprises."""
+    cursor.execute("SELECT COUNT(*) FROM fn_liste_objets_assures(%s)", [police])
+    return cursor.fetchone()[0]
 
 
 def _contrat_flottant(cursor, id_contrat):
     base = _contrat_base(cursor, id_contrat)
-    if base["idproduit"] != 1 or not base["flotte"]:
-        raise ErreurRenouvellement("L'incorporation est réservée aux contrats Automobile flotte.")
-    jour = timezone.localdate()
-    if base["dateexpiration"] < jour or base["dateeffet"] > jour:
-        raise ErreurRenouvellement("Le contrat doit être en cours de validité pour incorporer un véhicule.")
+    if base["idproduit"] == ID_PRODUIT_IA:
+        if not base["flotte"] and _personnes(cursor, base["numeropolice"]) <= 1:
+            raise ErreurRenouvellement("Contrat individuel : l'incorporation est réservée aux contrats à plusieurs personnes.")
+    elif base["idproduit"] != ID_PRODUIT_AUTO or not base["flotte"]:
+        raise ErreurRenouvellement("L'incorporation est réservée aux flottes Automobile et aux contrats Individuelle Accidents à plusieurs personnes.")
     return base
 
 
@@ -76,16 +95,17 @@ def _devis_en_cours(cursor, id_devis_base):
 
 
 def _devis_incorporation(cursor, id_devis):
-    """Devis d'incorporation Automobile (None pour tout autre devis) : période, mode et police du contrat."""
+    """Devis d'incorporation Automobile ou IA (None pour tout autre devis) : période, mode et police du contrat."""
     lignes = _lignes(cursor, """
         SELECT d.iddevis, d.dateeffet::date AS dateeffet, d.dateexpiration::date AS dateexpiration, d.idoldhist,
-               COALESCE(i.forfaitaire, FALSE) AS forfaitaire,
+               COALESCE(i.forfaitaire, FALSE) AS forfaitaire, d.idproduit,
+               (SELECT c.dateeffet::date FROM stdcontrat c WHERE c.iddevis = d.idoldhist ORDER BY c.idcontrat DESC LIMIT 1) AS debut,
                (SELECT c.numeropolice FROM stdcontrat c WHERE c.iddevis = d.idoldhist ORDER BY c.idcontrat DESC LIMIT 1) AS police,
                (SELECT c.idcontrat FROM stdcontrat c WHERE c.iddevis = d.idoldhist ORDER BY c.idcontrat DESC LIMIT 1) AS idcontrat
         FROM stddevis d
         JOIN stdavenant a ON a.idavenant = d.idavenant
         LEFT JOIN lephare_incorporation i ON i.iddevis = d.iddevis
-        WHERE d.iddevis = %s AND a.codeavenant = 'INC' AND d.idproduit = 1
+        WHERE d.iddevis = %s AND a.codeavenant = 'INC' AND d.idproduit IN (1, 2)
     """, [id_devis])
     return lignes[0] if lignes else None
 
@@ -136,6 +156,33 @@ def controler_vehicule_incorpore(cursor, id_devis, matricule):
         raise ValueError(f"Le véhicule {matricule} est déjà assuré dans la flotte {devis['police']} : il ne peut pas être incorporé.")
 
 
+def controler_assure_incorpore(cursor, id_devis, id_assure, nom):
+    """Une personne déjà assurée sous la police (période en cours, incorporations comprises) ne s'incorpore pas."""
+    devis = _devis_incorporation(cursor, id_devis)
+    if not devis or not devis["police"]:
+        return
+    # Même fiche, ou fiche homonyme de la même personne (mêmes nom, prénoms et date de naissance)
+    cursor.execute(
+        """SELECT 1 FROM fn_liste_objets_assures(%s) l
+           JOIN stdclient c ON LPAD(c.idclient::text, 20, '0') = TRIM(l.matricule)
+           JOIN stdclient n ON n.idclient = %s
+           WHERE c.idclient = n.idclient OR (LOWER(TRIM(c.nom)) = LOWER(TRIM(n.nom))
+                 AND LOWER(TRIM(COALESCE(c.prenoms, ''))) = LOWER(TRIM(COALESCE(n.prenoms, '')))
+                 AND c.datenaissance IS NOT DISTINCT FROM n.datenaissance)
+           LIMIT 1""",
+        [devis["police"], id_assure],
+    )
+    if cursor.fetchone():
+        raise ValueError(f"{nom} est déjà assuré(e) dans la police {devis['police']} : cette personne ne peut pas être incorporée.")
+
+
+def _id_avenant_incorporation():
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT idavenant FROM stdavenant WHERE codeavenant = 'INC'")
+        ligne = cursor.fetchone()
+    return ligne[0] if ligne else None
+
+
 def _duree_annuelle(cursor, effet):
     cursor.execute("SELECT fn_get_duree_annuelle_contrat(%s)", [effet])
     return int(cursor.fetchone()[0] or 365)
@@ -158,14 +205,15 @@ def incorporation(request, pk):
                         "IdContrat": base["idcontrat"], "NumeroPolice": base["numeropolice"],
                         "Client": base["client"], "Compagnie": base["compagnie"],
                         "DateEffet": _iso(base["dateeffet"]), "DateExpiration": _iso(base["dateexpiration"]),
-                        "Produit": base["produit"],
+                        "Produit": base["produit"], "Module": MODULES[base["idproduit"]],
+                        "Personnes": _personnes(cursor, base["numeropolice"]),
                     },
                     "DevisEnCours": devis,
                 })
 
-        forfaitaire = request.data.get("Forfaitaire") in (True, "true", "1", 1)
         with transaction.atomic(), connection.cursor() as cursor:
             base = _contrat_flottant(cursor, pk)
+            forfaitaire = base["idproduit"] == ID_PRODUIT_AUTO and request.data.get("Forfaitaire") in (True, "true", "1", 1)
             en_cours = _devis_en_cours(cursor, base["iddevis"])
             if en_cours:
                 raise ErreurRenouvellement(
@@ -173,7 +221,7 @@ def incorporation(request, pk):
                     "terminez-le ou supprimez-le d'abord."
                 )
             effet = _date(request.data.get("DateEffet"))
-            _verifier_periode(effet, base["dateeffet"], base["dateexpiration"], timezone.localdate())
+            _verifier_periode(effet, base["dateeffet"], base["dateexpiration"])
             cursor.execute("SELECT idavenant FROM stdavenant WHERE codeavenant = 'INC'")
             avenant = cursor.fetchone()
             if not avenant:
@@ -191,16 +239,25 @@ def incorporation(request, pk):
                 [id_devis],
             )
             devis = cursor.fetchone()
-            if not devis or devis[1] != effet or devis[2] != base["dateexpiration"] or not devis[3] or devis[4] != "INC":
+            if not devis or devis[1] != effet or devis[2] != base["dateexpiration"] or devis[4] != "INC" or (
+                base["idproduit"] == ID_PRODUIT_AUTO and not devis[3]
+            ):
                 raise ErreurRenouvellement("L'échéance du contrat n'a pas été conservée : création du devis annulée.")
             numero = devis[0]
             cursor.execute(SQL_ENTETE_A_ZERO, [id_devis])
+            # IA : l'incorporation se saisit en groupe (sp_creation_devis_ia), même sous un contrat hors catégorie groupe ;
+            # police connexe reprise (obligatoire en MINENE, non recopiée par sp_avenant_creation_devis_initial)
+            cursor.execute(
+                """UPDATE stddevis d SET flotte = TRUE, numeropoliceconnexe = b.numeropoliceconnexe
+                   FROM stddevis b WHERE d.iddevis = %s AND b.iddevis = d.idoldhist""",
+                [id_devis],
+            )
             cursor.execute(
                 "INSERT INTO lephare_incorporation (iddevis, idcontrat, forfaitaire, idutilisateur) VALUES (%s, %s, %s, %s)",
                 [id_devis, base["idcontrat"], forfaitaire, request.user.id],
             )
         return Response({
-            "IdDevis": id_devis, "NumeroDevis": numero, "Module": MODULE_AUTO,
+            "IdDevis": id_devis, "NumeroDevis": numero, "Module": MODULES[base["idproduit"]],
             "DateEffet": _iso(effet), "DateExpiration": _iso(base["dateexpiration"]), "Forfaitaire": forfaitaire,
             "Message": message,
         }, status=status.HTTP_201_CREATED)
@@ -226,9 +283,18 @@ def devis_incorporation(request, iddevis):
             return Response({"Incorporation": False})
         jours = (devis["dateexpiration"] - devis["dateeffet"]).days + 1
         annee = _duree_annuelle(cursor, devis["dateeffet"])
+        # Valeurs reprises de la police pour un devis d'incorporation encore sans objet assuré
+        reprise = _lignes(cursor, """
+            SELECT idtarif, idoffre, COALESCE(tauxreduction, 0) AS tauxreduction FROM stddevisdetail
+            WHERE iddevis = %s ORDER BY iddevisdetail LIMIT 1""", [devis["idoldhist"]])
+        personnes = _personnes(cursor, devis["police"]) if devis["police"] else 0
     return Response({
+        "IdProduit": devis["idproduit"], "Personnes": personnes, "IdAvenant": _id_avenant_incorporation(),
+        "IdTarif": reprise[0]["idtarif"] if reprise else None, "IdOffre": reprise[0]["idoffre"] if reprise else None,
+        "TauxReduction": float(reprise[0]["tauxreduction"]) if reprise else 0,
         "Incorporation": True, "IdDevis": devis["iddevis"], "IdContrat": devis["idcontrat"], "NumeroPolice": devis["police"] or "",
         "DateEffet": _iso(devis["dateeffet"]), "DateExpiration": _iso(devis["dateexpiration"]),
+        "DateEffetContrat": _iso(devis["debut"]),
         "Forfaitaire": devis["forfaitaire"], "Mode": MODE_FORFAIT if devis["forfaitaire"] else MODE_PRORATA,
         "JoursCouverts": jours, "JoursAnnee": annee, "Prorata": round(min(1, jours / annee), 6),
     })

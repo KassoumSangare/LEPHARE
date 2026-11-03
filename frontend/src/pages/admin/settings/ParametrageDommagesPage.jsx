@@ -326,7 +326,7 @@ export const ParametrageDommagesPage = () => {
                     <label className="form-label">Prime au prorata de la durée</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minHeight: '2.4rem' }}>
                       <Interrupteur actif={categorieSaisie.Prorata} onChange={(v) => changerCategorie('Prorata', v)} />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{categorieSaisie.Prorata ? 'Jours couverts / 365 si le contrat n\'est pas annuel' : 'Non : prime saisie pour la période (comme URANUS)'}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{categorieSaisie.Prorata ? 'Jours couverts / 365 si le contrat n\'est pas annuel' : 'Non : prime saisie pour la période'}</span>
                     </div>
                   </div>
                 </div>

@@ -316,7 +316,7 @@ export const NewVoyageQuotePage = () => {
           return;
         }
         if (!d.Detail) {
-          toastError('Ce devis repris d\'URANUS n\'a pas de ligne de détail en base : il ne peut pas être modifié.');
+          toastError('Ce devis ne comporte aucune ligne de détail en base : il ne peut pas être modifié.');
           navigate('/user/quotes');
           return;
         }
@@ -351,7 +351,7 @@ export const NewVoyageQuotePage = () => {
         if (!d.Complement) manques.push('destination, nationalité, passeport, attestation et référence');
         if (!Number(d.Detail.IdOffre)) manques.push('offre');
         setAvertissementReprise(manques.length
-          ? `Devis repris d'URANUS : ${manques.join(' et ')} non enregistrés en base. Complétez-les ; la prime sera recalculée à l'enregistrement.`
+          ? `Données manquantes en base : ${manques.join(' et ')}. Complétez-les ; la prime sera recalculée à l'enregistrement.`
           : '');
       } catch (err) {
         if (actif) {

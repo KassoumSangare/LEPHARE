@@ -34,15 +34,15 @@ CODES_PERIODE = ("AFN", "REN", "RPP", "TRP", "MOD")
 DROIT_DEROGATION_AGE = "devis.derogation_age"
 LIENS_MEMBRE = {"C": "conjoint(e)", "E": "enfant"}
 
-# Dernier contrat de la période (affaire nouvelle ou renouvellement, puis avenants de modification), même règle que
-# sp_creation_devis_sante v9 et sp_avenant_creation_devis_initial v6
+# Dernier contrat émis de la période (affaire nouvelle ou renouvellement, puis avenants de modification), même règle que
+# sp_avenant_creation_devis_initial v7 : la date d'effet est au choix, un avenant antidaté porte quand même toute la composition
 SQL_DERNIER_CONTRAT = f"""
     SELECT c.iddevis
     FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
     WHERE c.numeropolice = %(police)s AND a.codeavenant IN {CODES_PERIODE}
       AND COALESCE(c.idcontratannulation, 0) = 0 AND c.dateeffet::date BETWEEN %(effet)s AND %(expiration)s
       AND c.iddevis <> %(exclu)s {{familles}}
-    ORDER BY c.dateeffet DESC, c.idcontrat DESC
+    ORDER BY c.idcontrat DESC
     LIMIT 1
 """
 
@@ -150,7 +150,7 @@ def _tarifer(cursor, user_id, id_devis, reference=False):
            WHERE d.iddevis = %s ORDER BY dd.iddevisdetail LIMIT 1""", [id_devis])
     ligne = cursor.fetchone()
     if not ligne:
-        raise ErreurRenouvellement("Composition du contrat sans détail de primes (contrat repris d'URANUS) : avenant impossible.")
+        raise ErreurRenouvellement("Composition du contrat sans détail de primes : avenant impossible.")
     (intermediaire, compagnie, produit, offre, avenant, client, assure, effet, expiration, tarif, famille, affilie, globale,
      surprime, accessoire, taux, type_contrat, gestionnaire, duree, police_compagnie) = ligne
     try:
@@ -353,12 +353,9 @@ def avenant_sante(request, idcontrat):
             if not base["dateeffet"] <= effet <= base["dateexpiration"]:
                 raise ErreurRenouvellement(f"La date d'effet doit être comprise dans la période du contrat, du "
                                            f"{base['dateeffet']:%d/%m/%Y} au {base['dateexpiration']:%d/%m/%Y}.")
-            dernier = max([a["DateEffet"] for a in _avenants(cursor, base)] or [base["dateeffet"]])
-            if effet < dernier:
-                raise ErreurRenouvellement(f"Un avenant a déjà pris effet le {dernier:%d/%m/%Y} : la date d'effet ne peut pas être antérieure.")
             composition = _dernier_devis(cursor, base["numeropolice"], base["dateeffet"], base["dateexpiration"], avec_familles=True)
             if not composition:
-                raise ErreurRenouvellement("Aucune famille enregistrée pour ce contrat (contrat repris d'URANUS) : saisissez le "
+                raise ErreurRenouvellement("Aucune famille enregistrée pour ce contrat : saisissez le "
                                            "changement par un nouveau devis.")
             anciennes = _familles(cursor, composition, effet)
             choisie = next((f for f in anciennes if f["IdAdherent"] == id_adherent), None)

@@ -208,7 +208,7 @@ export const ActiviteCommerciale = () => {
       </div>
 
       <div className="cockpit-colonnes" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))' }}>
-        <Section titre="Par chargé d'affaires" sousTitre={`Devis émis en ${n} par leur auteur ; « Repris d'URANUS » : devis importés sans auteur`}>
+        <Section titre="Par chargé d'affaires" sousTitre={`Devis émis en ${n} par leur auteur ; devis importés sans auteur`}>
           <TableauSerie lignes={devis.ParAuteur} colonne={{ cle: 'IdOperateur', libelle: 'Nom' }} libelle="Chargé d'affaires" />
         </Section>
         <Section titre="Par branche" sousTitre={`Devis émis en ${n} et part confirmée en contrat`}>

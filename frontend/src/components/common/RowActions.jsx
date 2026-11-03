@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Edit2, Archive, CheckCircle, Printer, RefreshCw } from 'lucide-react';
+import { Eye, Edit2, Archive, CheckCircle, Printer, RefreshCw, Trash2 } from 'lucide-react';
 
 const baseBtn = {
   display: 'inline-flex',
@@ -50,6 +50,7 @@ const Divider = () => (
  * - Actions secondaires : groupe d'icônes avec infobulle, séparateurs fins.
  * - Archiver : icône rouge au survol, isolée à droite ; la confirmation est gérée par le parent (onArchive ouvre une modale).
  * - Imprimer (facultatif, showPrint) : documents de la ligne, en tête du groupe d'icônes.
+ * - Supprimer (facultatif, showDelete) : suppression définitive, par habilitation ; la confirmation est gérée par le parent.
  * Chaque action se masque avec `show*={false}` ou se désactive avec `*Disabled` + `*Title`.
  */
 export const RowActions = ({
@@ -59,6 +60,7 @@ export const RowActions = ({
   onArchive, archiveTitle = 'Archiver', archiveDisabled = false, showArchive = true,
   onRestore, restoreTitle = 'Désarchiver', showRestore = false,
   onPrint, printTitle = 'Imprimer', showPrint = false,
+  onDelete, deleteTitle = 'Supprimer', showDelete = false,
 }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
     {showConfirm && (
@@ -124,6 +126,12 @@ export const RowActions = ({
             hoverColor="#fff"
             hoverBg="rgba(239,68,68,0.7)"
           />
+        </>
+      )}
+      {showDelete && (
+        <>
+          <Divider />
+          <IconButton icon={Trash2} title={deleteTitle} onClick={onDelete} color="#f87171" hoverColor="#fff" hoverBg="rgba(239,68,68,0.7)" />
         </>
       )}
     </div>

@@ -537,6 +537,8 @@ const renseigne = (x) => {
 };
 const pageFactureMinene = (d) => {
   const q = d.quittance || {};
+  // Avenant : sa date d'incorporation et non celle du jour, la date d'émission n'est pas imprimée (demande du 2026-11-03)
+  const avenant = d.periode && !d.periode.EstBase ? (d.periode.Mouvements || []).find((m) => m.IdContrat === d.periode.IdContrat) : null;
   const e = d.bordereau.Etat;
   const contrat = Boolean(e.Contrat);
   const somme = (cle) => e.Familles.reduce((s, f) => s + Number(f[cle] || 0), 0);
@@ -594,7 +596,7 @@ const pageFactureMinene = (d) => {
     ${e.Nature ? `<div class="fm-texte">Encaissements : ${texte(e.Nature)}.</div>` : ''}
     <div class="fm-cima">Conformément à l'article 13 du Code CIMA, la prise d'effet des garanties est subordonnée au paiement intégral de la prime.</div>
     <div class="fm-texte">Dans cette attente, nous vous prions d'agréer, nos distinguées salutations.</div>
-    <div class="fm-fait">Fait à ${texte(villeSignature())}, le ${new Date().toLocaleDateString('fr-FR')}</div>
+    <div class="fm-fait">Fait à ${texte(villeSignature())}, le ${(avenant?.DateEffet ? new Date(avenant.DateEffet) : new Date()).toLocaleDateString('fr-FR')}</div>
     <div class="fm-signe">Pour la société</div>`);
 };
 

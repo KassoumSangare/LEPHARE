@@ -1064,6 +1064,12 @@ def enregistrer_devis_ia(
     try:
         id_devis = 0
         donnee_devis = copy.deepcopy(entete_devis)
+        # Import dans un devis d'incorporation : pas d'une personne déjà assurée sous la police
+        if int(donnee_devis.get("IdDevis") or 0):
+            from .incorporation import controler_assure_incorpore
+
+            with connection.cursor() as cursor:
+                controler_assure_incorpore(cursor, int(donnee_devis["IdDevis"]), id_assure, assure.get("Nom") or id_assure)
         donnee_devis["IdAssure"] = id_assure
         donnee_devis["CapitalDeces"] = assure["CapitalDeces"]
         donnee_devis["CapitalIpp"] = assure["CapitalInfirmite"]

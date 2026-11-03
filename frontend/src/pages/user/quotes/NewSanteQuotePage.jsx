@@ -439,7 +439,7 @@ export const NewSanteQuotePage = () => {
         appliquerSaisie(donnees);
         if (!devis.operateur_courant) {
           setLectureSeule(devis.operateur_saisie
-            ? `Saisie ouverte dans URANUS par l'opérateur n° ${devis.operateur_saisie} : la base n'accepte ses modifications que de cet opérateur. Le devis est affiché en lecture seule.`
+            ? `Saisie ouverte par l'opérateur n° ${devis.operateur_saisie} : la base n'accepte ses modifications que de cet opérateur. Le devis est affiché en lecture seule.`
             : 'Devis repris sans saisie ouverte : la base n\'accepte pas de modification. Le devis est affiché en lecture seule.');
         }
       } catch (err) {
@@ -1023,9 +1023,11 @@ export const NewSanteQuotePage = () => {
                 disabled={desactive}
               />)}
             {champ('Durée du contrat', <DureeContratSelect value={dureeId} onChange={setDureeId} idsAutorises={[ID_DUREE_ANNUELLE]} disabled={desactive || estDureeLibre(dureeId)} />)}
-            {champ('Date d\'emission', <input type="date" className="form-control" value={dateEmission} readOnly disabled title="Date du jour, non modifiable" />)}
+            {champ('Date d\'émission', <input type="date" className="form-control" value={dateEmission} readOnly disabled title="Date du jour, non modifiable" />,
+              avenantModification ? 'Date du jour, non imprimée sur les documents' : undefined)}
             {champ('Date d\'effet (* requis)',
-              <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} disabled={desactive} />)}
+              <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} disabled={desactive}
+                min={avenantModification?.DateEffetContrat} max={avenantModification?.DateExpirationContrat} />)}
             {champ('Date d\'expiration (* requis)',
               avenantModification
                 ? <input type="date" className="form-control" value={dateExpiration} readOnly disabled title="Avenant : échéance du contrat" />

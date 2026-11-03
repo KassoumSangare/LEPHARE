@@ -17,7 +17,7 @@ const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', AN
 const STATUTS = [
   ['', 'Tous les statuts'], ['A_REVERSER', 'À reverser'], ['PARTIEL', 'Partiellement reversé'], ['REVERSE', 'Reversé à la compagnie'],
   ['DECAISSEMENT', 'Décaissement'], ['DEDUIT', 'Couvert par un décaissement'],
-  ['ANNULE', 'Annulé'], ['IMPAYE', 'Chèque impayé'], ['REPRIS', "Repris d'URANUS"],
+  ['ANNULE', 'Annulé'], ['IMPAYE', 'Chèque impayé'], ['REPRIS', 'Importé'],
 ];
 
 const Carte = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => (

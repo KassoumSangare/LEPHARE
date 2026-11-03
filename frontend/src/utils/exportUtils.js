@@ -989,6 +989,14 @@ const printDocEntete = (compagnie) => {
 // titre « DEVIS N° <numéro du devis> » (demande du 2026-10-12). Les documents d'un contrat passent par les
 // mêmes gabarits (contratCommeDevis, estContrat) et gardent le leur.
 const estImpressionContrat = (quote) => Boolean(quote?.estContrat);
+// Avenant d'incorporation (véhicule en Auto, membre en Santé) : date d'incorporation au choix, y compris passée ; sa date
+// d'émission reste à l'écran et n'est pas imprimée, « Fait à » porte la date d'incorporation (demande du 2026-11-03)
+const estAvenantIncorporation = (quote) => {
+  const raw = quote?.raw || {};
+  const avenant = [raw.idavenant, raw.avenant].find((a) => a && typeof a === 'object');
+  const code = String(avenant?.CodeAvenant || raw.code_avenant || quote?.code_avenant || '').trim();
+  return code === 'INC' || (code === 'MOD' && estDevisSante(quote));
+};
 const titreDevis = (numero) => `DEVIS N° ${numero || ''}`.trim();
 
 const printDocHeader = (quote, docTitle) => `
@@ -1030,7 +1038,7 @@ const buildAutoFacture = (quote) => {
   // et comparée au montant enregistré sur le devis
   const montantValide = (v) => v !== undefined && v !== null && v !== '' && !Number.isNaN(Number(v));
   // Modèle Uranus : stddevis.primenette inclut déjà le FGA et la CEDEAO (sp_finalisation_devis) ;
-  // la Prime Nette imprimée les retire pour que PN + Accessoire + Taxes + FDG + CEDEAO = Prime TTC.
+  // la Prime Nette imprimée les retire pour que PN + Accessoire + Taxes + FGA + CEDEAO = Prime TTC.
   // NSIA (compagnie 1) : la TTC peut être arrondie au multiple de 5 supérieur (fn_calculer_primettc,
   // appliqué sur l'historique mais plus rattaché à aucun trigger) : les deux formes sont acceptées.
   const composantes = [raw.primenette, raw.accessoire, raw.taxe, raw.fga, raw.cedeao];
@@ -1068,7 +1076,7 @@ const buildAutoFacture = (quote) => {
     <div class="alerte-ecart no-print">
       <strong>⚠ Écart détecté sur la Prime TTC.</strong>
       Montant enregistré sur le devis : <strong>${fcfa(ttcEnregistre)} FCFA</strong> -
-      somme Prime Nette + Accessoire + Taxes + FDG + CEDEAO : <strong>${fcfa(ttcCalcule)} FCFA</strong>
+      somme Prime Nette + Accessoire + Taxes + FGA + CEDEAO : <strong>${fcfa(ttcCalcule)} FCFA</strong>
       (écart de ${fcfa(Math.abs(ttcCalcule - ttcEnregistre))} FCFA).
       La facture affiche le montant recalculé. Vérifiez le devis avant de la transmettre.
       <em>(Ce bandeau n'apparaît pas à l'impression.)</em>
@@ -1109,7 +1117,7 @@ const buildAutoFacture = (quote) => {
       </tr>
       <tr><td colspan="6" style="border:none;height:10px;"></td></tr>
       <tr class="ligne-labels">
-        <td>PRIME NETTE</td><td>ACCESSOIRE</td><td>TAXES</td><td>FDG</td><td>CEDEAO</td><td>PRIME TTC</td>
+        <td>PRIME NETTE</td><td>ACCESSOIRE</td><td>TAXES</td><td>FGA</td><td>CEDEAO</td><td>PRIME TTC</td>
       </tr>
       <tr class="ligne-valeurs facture-montants">
         <td><strong>${primeNetteAffichee !== null ? fcfa(primeNetteAffichee) : VIDE}</strong></td>
@@ -1129,7 +1137,7 @@ const buildAutoFacture = (quote) => {
     <p class="texte-politesse">Dans cette attente, nous vous prions d'agréer l'expression de nos sentiments dévoués.</p>
 
     <div class="bloc-signature-droite">
-      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${date(raw.dateemission)}</strong>.</div>
+      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${date(estAvenantIncorporation(quote) ? raw.dateeffet : raw.dateemission)}</strong>.</div>
       <div style="margin-top:28px;"><strong>Pour la société</strong></div>
     </div>
 
@@ -1262,7 +1270,7 @@ const buildConditionsParticulieres = (quote, cp) => {
           <tr><td class="label">Offre</td><td>${q.offre ? String(q.offre).toUpperCase() : VIDE}</td></tr>
           <tr><td class="label">Mouvement</td><td>${q.mouvement ? String(q.mouvement).toUpperCase() : VIDE}</td></tr>
           <tr><td class="label">Durée</td><td>${q.duree_jours !== null && q.duree_jours !== undefined ? `${q.duree_jours} Jours` : VIDE}</td></tr>
-          <tr><td class="label">Date d'émission</td><td>${date(q.date_emission)}</td></tr>
+          ${estAvenantIncorporation(quote) ? '' : `<tr><td class="label">Date d'émission</td><td>${date(q.date_emission)}</td></tr>`}
         </table>
       </div>
     </div>
@@ -1750,7 +1758,7 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules, perio
             ${logo ? `<img src="${logo}" alt="${t(compagnie)}" class="cpf-logo" />` : `<div class="cpf-compagnie">${t(compagnie)}</div>`}
             <table class="cpf-refs">
               <tr><td class="l">Numéro</td><td>${t(q.IdClient)}</td></tr>
-              <tr><td class="l">Date</td><td>${date(q.DateEmission)}</td></tr>
+              ${estAvenantIncorporation(quote) ? '' : `<tr><td class="l">Date</td><td>${date(q.DateEmission)}</td></tr>`}
             </table>
           </div>
           <div class="cpf-nom">${t([q.TitreClient, q.NomClient].filter((x) => x && String(x).trim()).join(' '))}</div>
@@ -1759,7 +1767,9 @@ const buildConditionsParticulieresFlotte = (quote, { quittance, vehicules, perio
         <div class="cpf-titre">${contrat ? 'CONDITIONS PARTICULIERES' : titreDevis(t(q.NumeroDevis || quote.numerodevis))} : Liste des véhicules en Automobile</div>
         <div class="cpf-droite">
           <table class="cpf-refs">
-            <tr><td class="l">Quittance N°</td><td>${contrat ? t(q.NumeroQuittance) : 'DEVIS'}</td><td class="l e">Emission</td><td>${date(q.DateEmission)}</td></tr>
+            <tr><td class="l">Quittance N°</td>${estAvenantIncorporation(quote)
+              ? `<td colspan="3">${contrat ? t(q.NumeroQuittance) : 'DEVIS'}</td>`
+              : `<td>${contrat ? t(q.NumeroQuittance) : 'DEVIS'}</td><td class="l e">Emission</td><td>${date(q.DateEmission)}</td>`}</tr>
             <tr><td class="l">${contrat ? 'N° Police' : 'N° Devis'}</td><td>${t(contrat ? q.NumeroPolice : q.NumeroDevis)}</td>
               <td class="l e">Avenant N°</td><td>${Number(q.NumeroAvenant) ? Number(q.NumeroAvenant) : t(q.NumeroAvenant)}</td></tr>
             <tr><td class="l">Assuré(e)</td><td colspan="3">${t(q.NomAssure)}</td></tr>
@@ -2144,7 +2154,7 @@ const buildPropositionIaGroupe = (quote, donnees) => {
       ${paragrapheProposition(q)}
       ${estCategorieGroupe(q) ? '' : tableauGarantiesIa(donnees.garanties, { capitalTexte: true })}
       ${decompteIa(q, q.PrimeNetteHorsFga)}
-      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())}, le ${dateTiret(q.DateEmission)}</div>
+      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())}, le ${dateTiret(estAvenantIncorporation(quote) ? q.DateEffet : q.DateEmission)}</div>
       <div class="ia-signatures"><div>LE SOUSCRIPTEUR</div><div>POUR LA COMPAGNIE</div></div>
     </div>`;
 };
@@ -2204,7 +2214,7 @@ const buildConditionsParticulieresIa = (quote, donnees) => {
       </div>
       ${tableauGarantiesIa(donnees.garanties)}`}
       ${decompteIa(q, q.PrimeNette)}
-      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())} le ${dateBarre(q.DateEmission)}</div>
+      <div class="ia-fait">Fait à ${echapperHtml(villeSignature())} le ${dateBarre(estAvenantIncorporation(quote) ? q.DateEffet : q.DateEmission)}</div>
       <div class="ia-signatures"><div>Le Souscripteur</div><div>Pour la Compagnie</div></div>
     </div>`;
 };
@@ -2245,7 +2255,7 @@ const buildFactureIa = (quote, donnees) => {
         <div>PRIME TOTALE A PAYER: ${fcfaIa(q.PrimeTtc)}</div>
       </div>
       <div class="iaf-cima">Conformément aux dispositions de l’Article 13 et suivants du Code des Assurances (Code CIMA) « La prise d’effet du contrat est subordonnée au paiement intégral de la prime ». « Pour les polices des risques autres que la maladie, l’automobile et les marchandises transportées dont la prime est supérieure à 80 fois le SMIG annuel, un délai maximum du contrat peut être accordé au souscripteur » de paiement de 60 jours à compter de la date de prise d'effet ou de renouvellement « A défaut du paiement de la prime dans le délai convenu, le contrat est résilié de plein droit. La portion de prime courue reste acquise à l’assureur sans préjudice des éventuels frais de poursuite et de recouvrement » « Lorsqu’un chèque ou effet remis en paiement de la prime revient impayé, l’assuré est mis en demeure de régulariser le paiement dans un délai de 8 jours ouvrés à compter de la réception de l’acte ou de la lettre de mise en demeure. A l’expiration de ce délai, si la régularisation n’est pas effectuée, le contrat est résilié de plein droit La portion de prime courue reste acquise</div>
-      <div class="iaf-fait">Fait à ${echapperHtml(villeSignature())}, le <b>${dateBarre(q.DateEmission)}.</b></div>
+      <div class="iaf-fait">Fait à ${echapperHtml(villeSignature())}, le <b>${dateBarre(estAvenantIncorporation(quote) ? q.DateEffet : q.DateEmission)}.</b></div>
       <div class="iaf-signatures"><div>LE SOUSCRIPTEUR</div><div>LA COMPAGNIE</div></div>
     </div>`;
 };
@@ -3895,8 +3905,8 @@ const buildSimpleFacture = (quote) => {
     <div class="bloc-titre">Détail de la facture</div>
     <table class="bloc-cadre">
       <tr><td class="label">Prime Nette</td><td>${money(quote.prime_nette)}</td></tr>
-      <tr><td class="label">Accessoire</td><td>${money(quote.accessoires)}</td></tr>
-      <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes)}</td></tr>
+      <tr><td class="label">Accessoire</td><td>${money(quote.accessoires ?? quote.accessoire)}</td></tr>
+      <tr><td class="label">Taxe d'enregistrement</td><td>${money(quote.taxes ?? quote.taxe)}</td></tr>
       <tr class="ligne-total"><td class="label">PRIME TOTALE A PAYER</td><td><strong>${money(quote.prime_totale)}</strong></td></tr>
     </table>
 
@@ -3908,7 +3918,7 @@ const buildSimpleFacture = (quote) => {
     </div>
 
     <div class="bloc-signature-simple">
-      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(new Date())}</strong>.</div>
+      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(estAvenantIncorporation(quote) ? quote.raw?.dateeffet : new Date())}</strong>.</div>
       <div class="signatures-deux-colonnes">
         <div>LE SOUSCRIPTEUR</div>
         <div>LA COMPAGNIE</div>

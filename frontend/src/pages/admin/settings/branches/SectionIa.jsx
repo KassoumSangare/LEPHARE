@@ -129,7 +129,7 @@ export const SectionIa = () => {
   return (
     <>
       <SectionParametrage icone={UserPlus} titre={`Tarif ${donnees.Compagnie} par classe d'activité`}
-        description="La classe vient de la profession de l'assuré. Prime = capital × taux ; décès et invalidité en ‰, frais médicaux en %. Les autres compagnies gardent le barème d'URANUS.">
+        description="La classe vient de la profession de l'assuré. Prime = capital × taux ; décès et invalidité en ‰, frais médicaux en %. Les autres compagnies utilisent leur barème enregistré.">
         <div className="rb-modes">
           {donnees.Classes.map((c) => (
             <ClasseIa key={c.Classe} classe={c} onEnregistre={(maj) => setDonnees((d) => ({ ...d, Classes: d.Classes.map((x) => (x.Classe === maj.Classe ? maj : x)) }))} />

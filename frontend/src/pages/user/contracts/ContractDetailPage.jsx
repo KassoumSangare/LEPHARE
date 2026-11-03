@@ -25,12 +25,15 @@ import {
   Ship,
   Eye,
   Users,
+  Trash2,
+  UserPlus,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
 import { printBordereauTransport, estDevisTransport } from '../../../utils/exportUtils';
 import { estDevisSante } from '../../../utils/impressionsSante';
 import { AvenantSanteModal } from './AvenantSanteModal';
+import { SuppressionModal } from '../../../components/common/SuppressionModal';
 import { aLeDroit } from '../../../utils/droits';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 import { resteAEncaisser } from '../../../utils/resteEncaissement';
@@ -92,6 +95,18 @@ export const ContractDetailPage = () => {
   // sur le bordereau des primes ; rien si le contrat a été émis avec un autre calcul (écart)
   const idDevisContrat = Number(contract.raw?.iddevis?.iddevis ?? contract.raw?.iddevis) || 0;
   const [avenantSanteOuvert, setAvenantSanteOuvert] = useState(false);
+  const [suppressionOuverte, setSuppressionOuverte] = useState(false);
+  // IA : incorporation proposée quand le contrat porte plusieurs personnes (le serveur en décide)
+  const idProduitContrat = Number(contract?.raw?.idproduit?.id_produit ?? contract?.raw?.idproduit?.IdProduit ?? contract?.raw?.idproduit) || 0;
+  const [incorporationIa, setIncorporationIa] = useState(false);
+  useEffect(() => {
+    let actif = true;
+    setIncorporationIa(false);
+    if (id && idProduitContrat === 2 && aLeDroit('contrats.avenant')) {
+      contractApi.preparerIncorporation(id).then(() => { if (actif) setIncorporationIa(true); }).catch(() => {});
+    }
+    return () => { actif = false; };
+  }, [id, idProduitContrat]);
   const [ajustementSante, setAjustementSante] = useState(null);
   useEffect(() => {
     let actif = true;
@@ -198,6 +213,18 @@ export const ContractDetailPage = () => {
             </button>
           )}
 
+          {incorporationIa && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => navigate(`/user/contracts/${id}/incorporation`)}
+              title="Ajouter une personne à ce contrat jusqu'à son échéance"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <UserPlus size={16} />
+              <span>Incorporer une personne</span>
+            </button>
+          )}
+
           {/* Avenant et transformation retirés le 2026-10-14 : ils n'enregistraient rien en base
               (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
               d'avenant de modification n'existent pas encore (sp_avenant_modification) */}
@@ -216,6 +243,15 @@ export const ContractDetailPage = () => {
             <Printer size={16} />
             <span>Quittance CIMA</span>
           </button>
+
+          {/* Suppression définitive, par habilitation : les règles et le motif sont dans la fenêtre */}
+          {aLeDroit('contrats.delete') && (
+            <button className="btn btn-danger" onClick={() => setSuppressionOuverte(true)} title="Supprimer définitivement ce contrat"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Trash2 size={16} />
+              <span>Supprimer</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -420,7 +456,7 @@ export const ContractDetailPage = () => {
           </h3>
           {!bordereauTransport && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Chargement des certificats…</div>}
           {bordereauTransport && (bordereauTransport.erreur || !bordereauTransport.Certificats?.length) && (
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun certificat GUCE rattaché à ce contrat (contrat repris d'URANUS ou saisi hors GUCE).</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Aucun certificat GUCE rattaché à ce contrat (contrat importé ou saisi hors GUCE).</div>
           )}
           {bordereauTransport?.Certificats?.length > 0 && (
             <>
@@ -759,6 +795,8 @@ export const ContractDetailPage = () => {
       {/* Attestation, carte brune et relevé de compte (rubrique Documents) */}
       {fenetresDocuments}
       <AvenantSanteModal isOpen={avenantSanteOuvert} onClose={() => setAvenantSanteOuvert(false)} idContrat={contract.idcontrat || id} />
+      <SuppressionModal isOpen={suppressionOuverte} onClose={() => setSuppressionOuverte(false)} type="contrat" id={contract.idcontrat || id}
+        onSupprime={() => navigate('/user/contracts')} />
     </div>
   );
 };

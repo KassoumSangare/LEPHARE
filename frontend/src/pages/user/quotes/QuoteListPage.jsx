@@ -8,6 +8,8 @@ import { TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { moduleDuProduit, moduleOuvert, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { RowActions } from '../../../components/common/RowActions';
+import { SuppressionModal } from '../../../components/common/SuppressionModal';
+import { aLeDroit } from '../../../utils/droits';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { DeleteConfirmModal } from '../../../components/common/DeleteConfirmModal';
@@ -83,6 +85,7 @@ export const QuoteListPage = () => {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState(null);
   const [deletingQuote, setDeletingQuote] = useState(null);
+  const [devisASupprimer, setDevisASupprimer] = useState(null);
   const [deleteValidation, setDeleteValidation] = useState({ allowed: true });
   const [selectedForConsolidation, setSelectedForConsolidation] = useState([]);
   const [consolidating, setConsolidating] = useState(false);
@@ -565,6 +568,9 @@ export const QuoteListPage = () => {
             }}
             archiveDisabled={!canDelete}
             archiveTitle={canDelete ? 'Archiver le devis (Conformité CIMA)' : "Non habilité pour l'archivage"}
+            showDelete={aLeDroit('devis.delete')}
+            deleteTitle="Supprimer définitivement le devis"
+            onDelete={() => setDevisASupprimer(row)}
           />
         );
       },
@@ -841,6 +847,14 @@ export const QuoteListPage = () => {
             }
           }
         }}
+      />
+
+      <SuppressionModal
+        isOpen={!!devisASupprimer}
+        onClose={() => setDevisASupprimer(null)}
+        type="devis"
+        id={devisASupprimer?.iddevis || devisASupprimer?.id}
+        onSupprime={() => { loadQuotes(); loadStats(); }}
       />
     </div>
   );

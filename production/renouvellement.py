@@ -114,14 +114,14 @@ def _periode(cursor, base, date_effet=None, date_expiration=None):
 
 
 def _devis_familles(cursor, base):
-    """Devis dont les familles sont reconduites (sp_avenant_creation_devis_initial v6) : dernier contrat de la période qui
-    en porte (affaire nouvelle ou renouvellement, puis avenants de modification : changement de formule, incorporation)."""
+    """Devis dont les familles sont reconduites (sp_avenant_creation_devis_initial v7) : dernier contrat émis de la période
+    qui en porte (affaire nouvelle ou renouvellement, puis avenants de modification : changement de formule, incorporation)."""
     cursor.execute(
         """SELECT c.iddevis FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
            WHERE c.numeropolice = %s AND a.codeavenant IN ('AFN', 'REN', 'RPP', 'TRP', 'MOD')
              AND COALESCE(c.idcontratannulation, 0) = 0 AND c.dateeffet >= %s
              AND EXISTS (SELECT 1 FROM stdadherent ad WHERE ad.iddevis = c.iddevis)
-           ORDER BY c.dateeffet DESC, c.idcontrat DESC LIMIT 1""",
+           ORDER BY c.idcontrat DESC LIMIT 1""",
         [base["numeropolice"], base["dateeffet"]],
     )
     ligne = cursor.fetchone()

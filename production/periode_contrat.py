@@ -66,11 +66,11 @@ def periode_contrat(cursor, id_contrat):
     # Mêmes définitions que l'en-tête de quittance (fn_quittance_contrat) : prime hors FGA, frais = reste de la TTC
     totaux["PrimeNetteHorsFga"] = totaux["PrimeNette"] - totaux["Fga"]
     totaux["FraisGestion"] = totaux["PrimeTtc"] - totaux["PrimeNette"] - totaux["Accessoire"] - totaux["TaxeEnregistrement"]
-    # Santé : familles en vigueur, celles du dernier contrat de la période qui en porte (incorporations comprises), comme
-    # le renouvellement et l'avenant (sante.avenant._dernier_devis)
+    # Santé : familles en vigueur, celles du dernier contrat émis de la période qui en porte (incorporations comprises),
+    # comme le renouvellement et l'avenant (sante.avenant._dernier_devis)
     cursor.execute("""SELECT c.iddevis FROM stdcontrat c WHERE c.idcontrat = ANY(%s)
                         AND EXISTS (SELECT 1 FROM stdadherent ad WHERE ad.iddevis = c.iddevis)
-                      ORDER BY c.dateeffet DESC, c.idcontrat DESC LIMIT 1""", [[c["idcontrat"] for c in contrats]])
+                      ORDER BY c.idcontrat DESC LIMIT 1""", [[c["idcontrat"] for c in contrats]])
     composition = cursor.fetchone()
     return {
         "IdContrat": contrat["idcontrat"], "CodeAvenant": contrat["codeavenant"], "IdProduit": contrat["idproduit"],

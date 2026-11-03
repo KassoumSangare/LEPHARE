@@ -457,7 +457,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
           TauxReduction: 0,
         };
         setAvertissementReprise(ligneLue ? '' : (
-          `Ce devis repris d'URANUS n'a aucune ligne de détail en base (catégorie, garanties${estRc ? ', risque assuré' : ''}) : `
+          `Aucune ligne de détail n'est enregistrée pour ce devis (catégorie, garanties${estRc ? ', risque assuré' : ''}) : `
           + 'seuls l\'en-tête et les primes ont été repris. Choisissez la catégorie et cochez les garanties avant d\'enregistrer.'
         ));
         if (raw.confirme) {

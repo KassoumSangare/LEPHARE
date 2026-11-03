@@ -31,6 +31,7 @@ from rest_framework.response import Response
 
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
+from .incorporation import _verifier_periode_devis, controler_assure_incorpore
 from .database import enregistrer_terme_devis, id_duree_pour_procedure
 from .import_assures import insert_new_assure
 from .models import Devis, DevisDetail, DevisDetGarantie
@@ -197,13 +198,27 @@ def _enregistrer(data):
         raise ErreurDevisIa("Ajoutez au moins un assuré.")
 
     flotte = bool(data.get("Flotte"))
+    id_devis = int(data.get("IdDevis") or 0)
+    incorporation = False
+    if id_devis:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT a.codeavenant, b.dateeffet::date, d.dateexpiration::date FROM stddevis d
+                   JOIN stdavenant a ON a.idavenant = d.idavenant LEFT JOIN stddevis b ON b.iddevis = d.idoldhist
+                   WHERE d.iddevis = %s""",
+                [id_devis],
+            )
+            mouvement = cursor.fetchone()
+        incorporation = bool(mouvement) and mouvement[0] == "INC"
+    # Incorporation : toujours en groupe, seule l'échéance du contrat est figée
+    if incorporation:
+        flotte = True
     if not flotte and len(assures) > 1:
         raise ErreurDevisIa(
             "Cette catégorie est individuelle : un seul assuré par devis. "
             "Choisissez une catégorie « groupe » pour assurer plusieurs personnes."
         )
 
-    id_devis = int(data.get("IdDevis") or 0)
     id_client = int(data.get("IdClient") or 0)
     if not id_client:
         raise ErreurDevisIa("Choisissez le souscripteur.")
@@ -211,9 +226,15 @@ def _enregistrer(data):
     id_compagnie = int(data["IdCompagnie"])
     id_offre = int(data["IdOffre"])
     id_tarif = int(data["IdTarif"])
-    id_duree = id_duree_pour_procedure(data.get("IdDuree"))
+    # Incorporation : durée déduite des dates, la date d'incorporation étant au choix
+    id_duree = 0 if incorporation else id_duree_pour_procedure(data.get("IdDuree"))
     date_effet = _date(data.get("DateEffet"), "Date d'effet")
     date_expiration = _date(data.get("DateExpiration"), "Date d'expiration")
+    if incorporation:
+        try:
+            _verifier_periode_devis("INC", mouvement[1], mouvement[2], date_effet, date_expiration)
+        except ValueError as erreur:
+            raise ErreurDevisIa(str(erreur))
     date_emission = _date(data.get("DateEmission"), "Date d'émission")
     taux_reduction = _montant(data.get("TauxReduction"))
     numero_police_compagnie = str(data.get("NumeroPoliceCompagnie") or "")
@@ -277,6 +298,11 @@ def _enregistrer(data):
                 )
                 id_assure = client.IdClient
             libelle = f"{libelle} ({assure.get('Nom') or id_assure})"
+            if incorporation and not int(assure.get("IdDevisDetail") or 0):
+                try:
+                    controler_assure_incorpore(cursor, id_devis, id_assure, str(assure.get("Nom") or id_assure).strip())
+                except ValueError as erreur:
+                    raise ErreurDevisIa(str(erreur))
 
             # Ayants droit : la liste saisie remplace celle de l'assuré
             ayants = assure.get("AyantsDroit")

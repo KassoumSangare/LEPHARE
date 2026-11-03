@@ -53,6 +53,14 @@ SQL_POLICES = f"""
            OR EXISTS (SELECT 1 FROM stdfiliale f WHERE f.iddevis = c.iddevis AND f.idoffresante IN {OFFRES_SANTE_MINENE}))
 """
 
+# Contrat le plus récent d'une police : dernière période, puis dernier contrat émis (la date d'effet d'un avenant est au
+# choix : un avenant antidaté porte quand même toute la composition)
+ORDRE_DERNIER_CONTRAT = """
+    ORDER BY (SELECT MAX(b.dateeffet) FROM stdcontrat b JOIN stdavenant ab ON ab.idavenant = b.idavenant
+              WHERE b.numeropolice = c.numeropolice AND ab.codeavenant IN ('AFN', 'REN', 'RPP', 'TRP')
+                AND b.dateeffet <= c.dateeffet) DESC NULLS LAST, c.idcontrat DESC
+"""
+
 
 def _lignes(cursor, sql, params):
     cursor.execute(sql, params)
@@ -133,7 +141,7 @@ def police(request):
     texte = str(request.query_params.get("q") or "").strip()
     with connection.cursor() as cursor:
         if numero:
-            polices = _lignes(cursor, SQL_POLICES + " AND TRIM(c.numeropolice) = %s ORDER BY c.dateeffet DESC LIMIT 1",
+            polices = _lignes(cursor, SQL_POLICES + " AND TRIM(c.numeropolice) = %s" + ORDRE_DERNIER_CONTRAT + " LIMIT 1",
                               [numero])
             if not polices:
                 return Response({"error": f"Aucun contrat Santé MINENE pour la police {numero}."},
@@ -144,8 +152,7 @@ def police(request):
         motif = f"%{texte}%"
         polices = _lignes(cursor, SQL_POLICES + """
             AND (c.numeropolice ILIKE %s OR (COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) ILIKE %s)
-            ORDER BY c.dateeffet DESC LIMIT 30
-        """, [motif, motif])
+        """ + ORDRE_DERNIER_CONTRAT + " LIMIT 30", [motif, motif])
     # Une ligne par police (la période la plus récente)
     vues, resultats = set(), []
     for p in polices:
@@ -191,8 +198,7 @@ def _apercu(request, produit):
             SELECT c.iddevis, c.numeropolice, TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client
             FROM stdcontrat c LEFT JOIN stdclient cl ON cl.idclient = c.idclient
             WHERE c.idproduit = 5 AND TRIM(c.numeropolice) = %s
-            ORDER BY c.dateeffet DESC LIMIT 1
-        """, [police_sante])
+        """ + ORDRE_DERNIER_CONTRAT + " LIMIT 1", [police_sante])
         if not contrats:
             return Response({"error": f"Aucun contrat Santé pour la police {police_sante}."}, status=status.HTTP_404_NOT_FOUND)
         c = contrats[0]

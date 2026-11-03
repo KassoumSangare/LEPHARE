@@ -482,11 +482,11 @@ export const NewMrhQuotePage = () => {
         setAccessoireSaisi(saisi(raw.accessoire));
         const alertes = [];
         if (maisonsDevis.length === 0 && Number(raw.primettc) > 0) {
-          alertes.push(`Aucune maison n'est enregistrée pour ce devis (repris d'URANUS). Montants enregistrés : prime nette ${fcfa(raw.primenette)} F, `
+          alertes.push(`Aucune maison n'est enregistrée pour ce devis. Montants enregistrés : prime nette ${fcfa(raw.primenette)} F, `
             + `taxes ${fcfa(raw.taxe)} F, accessoires ${fcfa(raw.accessoire)} F, TTC ${fcfa(raw.primettc)} F. Saisissez les maisons pour pouvoir l'enregistrer à nouveau.`);
         }
         if (maisonsDevis.some((m) => !m.code_usage)) {
-          alertes.push('Usage d\'occupation non renseigné en base pour une ou plusieurs maisons (devis repris d\'URANUS) : à choisir avant d\'enregistrer.');
+          alertes.push('Usage d\'occupation non renseigné en base pour une ou plusieurs maisons : à choisir avant d\'enregistrer.');
         }
         setAvertissementReprise(alertes.join(' '));
       } catch (err) {
@@ -1104,7 +1104,7 @@ export const NewMrhQuotePage = () => {
 
               <div style={styles.sousTitre}>Répartition des garanties par maison</div>
               <p style={{ ...styles.aide, marginTop: 0 }}>
-                Comme dans URANUS, la prime nette de chaque maison peut être répartie autrement entre ses garanties, et leurs capitaux et franchises renseignés.
+                La prime nette de chaque maison peut être répartie entre ses garanties, et leurs capitaux et franchises renseignés.
                 La somme des primes doit être égale à la prime nette de la maison ; la taxe de chaque garantie est recalculée par le serveur.
               </p>
               {!resume && <Alerte couleur="var(--accent-amber)">Résumé financier indisponible pour ce devis.</Alerte>}

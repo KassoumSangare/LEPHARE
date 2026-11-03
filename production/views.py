@@ -1615,6 +1615,12 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         )
         with transaction.atomic():
             contrat_enregistre = contrat_serializer.save()
+            if periode_modifiee:
+                # Même période sur le devis : les avenants la lisent là (sp_creation_devis_sante)
+                Devis.objects.filter(pk=contrat_enregistre.iddevis_id).update(
+                    dateeffet=contrat_enregistre.dateeffet,
+                    dateexpiration=contrat_enregistre.dateexpiration,
+                )
             if periode_modifiee and contrat_enregistre.idquittance_id:
                 Quittance.objects.filter(pk=contrat_enregistre.idquittance_id).update(
                     dateeffet=contrat_enregistre.dateeffet,
@@ -2182,7 +2188,8 @@ class CreerDevisIAMineneView(APIView):
                         (
                             devis_ia.compagnie_id,
                             devis_ia.produit_id,
-                            devis_ia.offre_id,
+                            # Sans offre : aucune garantie ni prime sur cette ligne (voir plus bas)
+                            0,
                             client.IdClient,
                             12,
                             date_effet,
@@ -2233,6 +2240,14 @@ class CreerDevisIAMineneView(APIView):
                     ayants_droits_crees.append(affilie.idaffilie)
                 except Exception as e_ad:
                     erreurs.append({"type": "ayant_droit", "idaffilie": affilie.idaffilie, "message": str(e_ad).split("\n")[0]})
+
+        # Lignes des autres adhérents : offre et tarif de la ligne de l'assuré principal, lus par la confirmation
+        # (catégorie de la police, exonérations de la quittance), sans garantie ni prime : sp_finalisation_devis
+        # additionne les lignes puis multiplie par le nombre d'adhérents, une prime par ligne serait comptée deux fois
+        if devis_detail_obj:
+            DevisDetail.objects.filter(iddevis=id_devis, idoffre=0).update(
+                idoffre=devis_detail_obj.idoffre, idtarif=devis_detail_obj.idtarif
+            )
 
         return Response(
             {

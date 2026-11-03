@@ -29,6 +29,7 @@ from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
 from . import minene_connexes
 from . import incorporation as incorporation_views
+from . import suppression as suppression_views
 from . import periode_contrat as periode_contrat_views
 from . import afa as afa_views
 from .views_transport_guce import (
@@ -332,6 +333,9 @@ urlpatterns = [
     path("conventions-compagnies/<int:id_compagnie>/", views_conventions.convention_compagnie, name="convention-compagnie"),
     # Cloche de la barre du haut : devis arrivant à échéance ou échus récemment, selon les droits
     path("alertes/", views_cockpit.alertes, name="alertes-cloche"),
+    # Suppression définitive d'un devis ou d'un contrat, par habilitation (production/suppression.py)
+    path("devis/<int:iddevis>/suppression/", suppression_views.suppression_devis, name="suppression_devis"),
+    path("contrat/<int:idcontrat>/suppression/", suppression_views.suppression_contrat, name="suppression_contrat"),
     # Reprise des affaires antérieures (production/views_reprise.py)
     path("reprise/", views_reprise.reprises, name="reprise_liste"),
     path("reprise/referentiels/", views_reprise.referentiels, name="reprise_referentiels"),

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
+import { joursInclusifs } from '../../../utils/dateUtils';
 import { quoteApi, customerApi, settingsApi, contractApi, iaApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
@@ -143,6 +144,8 @@ const ayantsDepuisApi = (liste) => (liste || []).map((d) => ({
   Part: Number(d.part) || 0,
 }));
 
+const dateFr = (valeur) => (valeur ? String(valeur).slice(0, 10).split('-').reverse().join('/') : '');
+
 export const NewIaQuotePage = () => {
   const navigate = useNavigate();
   const { success, error: toastError, info } = useToast();
@@ -152,6 +155,11 @@ export const NewIaQuotePage = () => {
   const editIddevisParam = searchParams.get('edit');
   // Devis de renouvellement (page Renouvellement) : tous les assurés sont retarifés à l'enregistrement
   const renouvellementParam = searchParams.get('renouvellement') === '1';
+  // Devis d'incorporation dans un contrat à plusieurs personnes (page Incorporation, ou devis rouvert du registre) : police
+  // reprise d'office, date d'incorporation au choix, échéance du contrat figée
+  const incorporationParam = searchParams.get('incorporation') === '1';
+  const [incorporation, setIncorporation] = useState(null);
+  const enIncorporation = incorporationParam || Boolean(incorporation);
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [idDevisEdite, setIdDevisEdite] = useState(null);
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
@@ -183,7 +191,8 @@ export const NewIaQuotePage = () => {
   const [compagnieId, setCompagnieId] = useState(() => compagnieParDefaut(2));
   const [idTarif, setIdTarif] = useState(77);
   const [idOffre, setIdOffre] = useState(0);
-  const [flotte, setFlotte] = useState(false);
+  const [tarifGroupe, setTarifGroupe] = useState(false);
+  const flotte = tarifGroupe || enIncorporation;
   // Catégorie à tarif personnalisé (offres « SPECIFIQUE ») : primes saisies par assuré
   const [personnalise, setPersonnalise] = useState(false);
   const [tauxTaxe, setTauxTaxe] = useState(0);
@@ -217,9 +226,10 @@ export const NewIaQuotePage = () => {
   // Récapitulatif d'une création MINENE : adhérents de la police Santé et primes calculées par la base
   const [apercuMinene, setApercuMinene] = useState(null);
   const dateExpiration = useMemo(
-    () => expirationPour(dateEffet, dureeId, expirationPersonnalisee, estMinene),
-    [dateEffet, dureeId, expirationPersonnalisee, estMinene]
+    () => incorporation?.DateExpiration || expirationPour(dateEffet, dureeId, expirationPersonnalisee, estMinene),
+    [incorporation, dateEffet, dureeId, expirationPersonnalisee, estMinene]
   );
+  const joursCouverts = joursInclusifs(dateEffet, dateExpiration);
   // Rechargement du devis ouvert (après un import d'assurés dans ce même devis)
   const [versionChargement, setVersionChargement] = useState(0);
   const [fichierImport, setFichierImport] = useState(null);
@@ -299,7 +309,7 @@ export const NewIaQuotePage = () => {
     ]).then(([liste, groupe, perso]) => {
       if (!actif) return;
       setOffres(liste || []);
-      setFlotte(Boolean(groupe));
+      setTarifGroupe(Boolean(groupe));
       setPersonnalise(Boolean(perso));
       setIdOffre((courant) => ((liste || []).some((o) => Number(o.IdOffre) === Number(courant))
         ? courant
@@ -383,11 +393,12 @@ export const NewIaQuotePage = () => {
     (async () => {
       setIsLoadingEdit(true);
       try {
-        const [devis, lignes, details, garanties] = await Promise.all([
+        const [devis, lignes, details, garanties, lectureIncorporation] = await Promise.all([
           quoteApi.getQuote(editIddevisParam),
           iaApi.getAssuresDevis(editIddevisParam),
           iaApi.getDetailsDevis(editIddevisParam).catch(() => []),
           iaApi.getGarantiesDevis(editIddevisParam).catch(() => []),
+          contractApi.lireDevisIncorporation(editIddevisParam).catch(() => null),
         ]);
         if (!actif) return;
         const raw = devis?.raw || {};
@@ -397,16 +408,19 @@ export const NewIaQuotePage = () => {
           return;
         }
         const detail = (details || [])[0] || {};
+        // Incorporation encore sans personne : catégorie, offre et réduction reprises de la police
+        const devisIncorporation = lectureIncorporation?.Incorporation ? lectureIncorporation : null;
+        setIncorporation(devisIncorporation);
         // Durée libre et terme « Autre » vont ensemble (anciens devis « Divers » compris)
         const charge = termeEtDureeEnregistres(raw.idterme, raw.idduree);
         const entete = {
           compagnieId: Number(raw.compagnie?.IdCompagnie ?? raw.compagnie) || 1,
-          idTarif: Number(detail.idtarif?.IdTarif ?? detail.idtarif) || 77,
-          idOffre: Number(detail.idoffre?.IdOffre ?? detail.idoffre) || 0,
+          idTarif: Number(detail.idtarif?.IdTarif ?? detail.idtarif) || devisIncorporation?.IdTarif || 77,
+          idOffre: Number(detail.idoffre?.IdOffre ?? detail.idoffre) || devisIncorporation?.IdOffre || 0,
           dureeId: charge.dureeId,
           dateEffet: jour(raw.dateeffet) || aujourdhui(),
           dateExpiration: jour(raw.dateexpiration),
-          reduction: Number(detail.taux_reduction) || 0,
+          reduction: Number(detail.taux_reduction) || devisIncorporation?.TauxReduction || 0,
           numeroPoliceCompagnie: raw.numero_police_compagnie || '',
           numeroPoliceConnexe: raw.numero_police_connexe || raw.numeropoliceconnexe || '',
           souscripteurId: Number(raw.client?.IdClient ?? raw.client) || 0,
@@ -434,7 +448,7 @@ export const NewIaQuotePage = () => {
         setNumeroPoliceCompagnie(entete.numeroPoliceCompagnie);
         setNumeroPoliceConnexe(entete.numeroPoliceConnexe);
         setSouscripteurId(entete.souscripteurId);
-        const expirationChargee = expirationPour(entete.dateEffet, entete.dureeId, entete.dateExpiration);
+        const expirationChargee = devisIncorporation ? entete.dateExpiration : expirationPour(entete.dateEffet, entete.dureeId, entete.dateExpiration);
         setEnteteOrigine(JSON.stringify([
           entete.compagnieId, entete.idTarif, entete.idOffre, entete.dureeId, entete.dateEffet,
           expirationChargee, entete.reduction, entete.numeroPoliceCompagnie, entete.numeroPoliceConnexe, entete.souscripteurId,
@@ -488,8 +502,10 @@ export const NewIaQuotePage = () => {
         }));
         if (!actif) return;
         setAssures(chargees);
+        // Rien à ressaisir : directement aux personnes à incorporer
+        if (devisIncorporation) setStep(2);
         setAvertissementReprise(chargees.length === 0 && Number(raw.primettc) > 0
-          ? 'Ce devis repris d\'URANUS n\'a aucun assuré en base : seuls l\'en-tête et les montants ont été repris. '
+          ? 'Aucun assuré n\'est enregistré pour ce devis : seuls l\'en-tête et les montants sont disponibles. '
             + 'Ajoutez les assurés avant d\'enregistrer.'
           : '');
       } catch (err) {
@@ -945,14 +961,15 @@ export const NewIaQuotePage = () => {
     donnees.append('IdCompagnie', Number(compagnieId));
     donnees.append('IdIntermediaire', 1);
     donnees.append('IdOffre', Number(idOffre));
-    donnees.append('IdAvenant', 1);
+    donnees.append('IdAvenant', incorporation?.IdAvenant || 1);
     donnees.append('IdClient', Number(souscripteurId));
     donnees.append('DateEffet', dateTiret(dateEffet));
     donnees.append('DateExpiration', dateTiret(dateExpiration));
     donnees.append('DateEmission', dateTiret(dateEmission));
     donnees.append('IdTarif', Number(idTarif));
     donnees.append('TauxReduction', Number(reduction) || 0);
-    donnees.append('IdDuree', Number(dureeId));
+    // Incorporation : durée déduite des dates par la base
+    donnees.append('IdDuree', incorporation ? 0 : Number(dureeId));
     donnees.append('IdDevis', idDevisEdite || 0);
     donnees.append('NumeroPoliceConnexe', '');
     donnees.append('NumeroPoliceCompagnie', numeroPoliceCompagnie || '');
@@ -1035,7 +1052,9 @@ export const NewIaQuotePage = () => {
           </button>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <UserPlus size={26} color="#8b5cf6" />
-            {editIddevisParam
+            {enIncorporation
+              ? `Incorporation${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
+              : editIddevisParam
               ? `Modifier le Devis Individuelle Accident${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
               : 'Nouveau Devis Individuelle Accident (IA)'}
           </h1>
@@ -1044,6 +1063,13 @@ export const NewIaQuotePage = () => {
           ) : (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
               Garanties Décès accidentel, Infirmité permanente et Frais de traitement - {flotte ? 'contrat groupe (plusieurs assurés)' : 'contrat individuel (un assuré)'}.
+            </p>
+          )}
+          {incorporation && (
+            <p role="note" style={{ marginTop: '0.5rem', padding: '0.6rem 0.75rem', borderRadius: '8px', background: 'rgba(139, 92, 246, 0.1)', border: '1px solid rgba(139, 92, 246, 0.35)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+              <strong>Incorporation dans la police {incorporation.NumeroPolice}</strong>
+              {`, qui compte ${incorporation.Personnes} personne${incorporation.Personnes > 1 ? 's' : ''} : du ${dateFr(dateEffet)} à l'échéance inchangée du ${dateFr(dateExpiration)} (${joursCouverts} jours).`}
+              {' '}Ajoutez ici seulement les personnes à incorporer : la prime de chacune est le tarif de l'offre. La date d'émission n'est pas imprimée sur les documents.
             </p>
           )}
           {avertissementReprise && (
@@ -1132,8 +1158,8 @@ export const NewIaQuotePage = () => {
                 className="form-control"
                 value={compagnieId}
                 onChange={(e) => setCompagnieId(Number(e.target.value))}
-                disabled={estMinene}
-                title={estMinene ? 'Catégorie MINENE : compagnie NSIA imposée' : undefined}
+                disabled={estMinene || enIncorporation}
+                title={enIncorporation ? 'Compagnie de la police' : (estMinene ? 'Catégorie MINENE : compagnie NSIA imposée' : undefined)}
               >
                 {sortUniqueBy(companies, (c) => c.nom).map((c) => (
                   <option key={c.id} value={c.id}>{c.nom}</option>
@@ -1170,19 +1196,24 @@ export const NewIaQuotePage = () => {
             </div>
             <div className="form-group">
               <label className="form-label">Durée du contrat</label>
-              <DureeContratSelect value={dureeId} onChange={setDureeId} idsAutorises={estMinene ? DUREES_MINENE : null} />
+              {enIncorporation ? (
+                <div className="form-control" aria-readonly="true">{joursCouverts} jours jusqu'à l'échéance</div>
+              ) : (
+                <DureeContratSelect value={dureeId} onChange={setDureeId} idsAutorises={estMinene ? DUREES_MINENE : null} />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Date d'émission</label>
               <input type="date" className="form-control" value={dateEmission} readOnly disabled title="Date du jour, non modifiable" />
             </div>
             <div className="form-group">
-              <label className="form-label">Date d'effet (* requis)</label>
-              <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} />
+              <label className="form-label">{enIncorporation ? "Date d'incorporation (* requis)" : "Date d'effet (* requis)"}</label>
+              <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)}
+                min={incorporation?.DateEffetContrat} max={incorporation?.DateExpiration} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date d'expiration (* requis)</label>
-              {Number(dureeId) === 5 && !estMinene ? (
+              <label className="form-label">{enIncorporation ? "Date d'échéance du contrat (non modifiable)" : "Date d'expiration (* requis)"}</label>
+              {Number(dureeId) === 5 && !estMinene && !enIncorporation ? (
                 <input type="date" className="form-control" value={expirationPersonnalisee} onChange={(e) => setExpirationPersonnalisee(e.target.value)} />
               ) : (
                 <input
@@ -1255,9 +1286,11 @@ export const NewIaQuotePage = () => {
             <div className="form-group" style={{ position: 'relative', maxWidth: '560px' }}>
               <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Nom du souscripteur (* requis)</span>
+                {!enIncorporation && (
                 <button type="button" onClick={() => setIsQuickAddClientOpen(true)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-purple)', cursor: 'pointer', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
                   <Plus size={14} /> Nouveau client
                 </button>
+                )}
               </label>
               <input
                 type="text"
@@ -1266,8 +1299,11 @@ export const NewIaQuotePage = () => {
                 value={rechercheSouscripteur}
                 onChange={(e) => { setRechercheSouscripteur(e.target.value); setListeSouscripteurOuverte(true); }}
                 onFocus={() => setListeSouscripteurOuverte(true)}
+                // Incorporation : souscripteur de la police, la finalisation le réécrit sur le devis
+                disabled={enIncorporation}
+                title={enIncorporation ? 'Souscripteur de la police' : undefined}
               />
-              {listeSouscripteurOuverte && (
+              {listeSouscripteurOuverte && !enIncorporation && (
                 <div style={listeDeroulante}>
                   {clientsFiltres(rechercheSouscripteur).map((c) => (
                     <div

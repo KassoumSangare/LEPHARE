@@ -633,7 +633,7 @@ export const normalizeDevis = (bq) => {
   const id = bq.iddevis || bq.id;
   const clientNom = bq.client && typeof bq.client === 'object'
     ? `${bq.client.Nom || ''} ${bq.client.Prenoms || ''}`.trim()
-    : (bq.nomassure || bq.client_nom || bq.souscripteur || 'Client Uranus');
+    : (bq.nomassure || bq.client_nom || bq.souscripteur || 'Client');
   
   const produitNom = bq.produit && typeof bq.produit === 'object'
     ? (bq.produit.LibelleProduit || bq.produit.libelle_produit)
@@ -1020,6 +1020,12 @@ export const quoteApi = {
   // GET /api/mrh/devis/:devis_id/resume-financier/
   getFinancialSummary: (devisId) => apiClient.get(`/mrh/devis/${devisId}/resume-financier/`),
   // POST /api/annulationsaisiedevis
+  // Suppression définitive, par habilitation (production/suppression.py) : ce qui serait supprimé ou ce qui l'empêche, puis
+  // suppression ; motif saisi dans la fenêtre, envoyé d'emblée (en-tête X-Motif de la garde)
+  preparerSuppression: async (id) => (await apiClient.get(`/devis/${id}/suppression/`)).data,
+  supprimer: async (id, motif) => (await apiClient.delete(`/devis/${id}/suppression/`, {
+    headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true,
+  })).data,
   archiveQuote: (id) => apiClient.post('/annulationsaisiedevis', { IdDevis: id }),
   // POST /api/desarchivagedevis
   unarchiveQuote: (id) => apiClient.post('/desarchivagedevis', { IdDevis: id }),
@@ -1748,6 +1754,11 @@ export const contractApi = {
     params: { date_effet: dateEffet || undefined, date_expiration: dateExpiration || undefined },
   })).data,
   creerRenouvellement: async (idContrat, donnees) => (await apiClient.post(`/renouvellement/${idContrat}/`, donnees)).data,
+  // Suppression définitive, par habilitation (production/suppression.py) ; avecDevis : le devis part aussi
+  preparerSuppression: async (id) => (await apiClient.get(`/contrat/${id}/suppression/`)).data,
+  supprimer: async (id, motif, { avecDevis = false } = {}) => (await apiClient.delete(`/contrat/${id}/suppression/`, {
+    params: avecDevis ? { avec_devis: 1 } : undefined, headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true,
+  })).data,
   preparerIncorporation: async (idContrat) => (await apiClient.get(`/incorporation/${idContrat}/`)).data,
   creerIncorporation: async (idContrat, donnees) => (await apiClient.post(`/incorporation/${idContrat}/`, donnees)).data,
   // Période et mode (prorata / forfaitaire) d'un devis d'incorporation ; { Incorporation: false } pour un autre devis

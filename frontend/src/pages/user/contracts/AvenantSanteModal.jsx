@@ -8,6 +8,7 @@ import { fcfa, messageErreurApi } from '../../../utils/financeUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import { reglagesMinene } from '../../../utils/parametrage';
 
+const aujourdhui = () => new Date().toISOString().split('T')[0];
 const jours = (debut, fin) => (debut && fin ? Math.round((new Date(fin) - new Date(debut)) / 86400000) + 1 : 0);
 const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
@@ -84,8 +85,10 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
         setDonnees(d);
         setDateEffet(d.DateEffet || '');
         setMode('incorporation');
-        setIdAdherent(0);
-        setIdOffre(0);
+        // Famille unique de la police : déjà choisie, rien à ressaisir
+        const unique = d.Familles?.length === 1 ? d.Familles[0] : null;
+        setIdAdherent(unique ? unique.IdAdherent : 0);
+        setIdOffre(unique ? (formuleApresIncorporation(unique) || unique).IdOffre : 0);
         setMembre(MEMBRE_VIDE);
       })
       .catch((err) => { if (actif) setErreur(messageErreurApi(err)); });
@@ -190,7 +193,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
             </div>
           ) : !donnees.Familles?.length ? (
             <div style={{ color: 'var(--accent-amber)' }}>
-              Aucune famille enregistrée pour ce contrat (contrat repris d'URANUS) : le changement se saisit par un nouveau devis.
+              Aucune famille enregistrée pour ce contrat : le changement se saisit par un nouveau devis.
             </div>
           ) : (
             <>
@@ -203,11 +206,20 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               </div>
 
               <div style={grille}>
+                {champ('Date d\'émission',
+                  <input type="date" className="form-control" value={aujourdhui()} readOnly disabled title="Date du jour, non modifiable" />,
+                  'Date du jour, non imprimée sur les documents')}
                 {champ(mode === 'incorporation' ? 'Date d\'incorporation *' : 'Date d\'effet de l\'avenant *',
                   <input type="date" className="form-control" value={dateEffet} min={contrat.DateEffet} max={contrat.DateExpiration}
                     onChange={(e) => setDateEffet(e.target.value)} />,
-                  forfaitaire ? 'Tarif forfaitaire : pas de prorata'
-                    : joursPeriode > 0 && joursRestants > 0 ? `Prorata : ${joursRestants} jours sur ${joursPeriode}` : undefined)}
+                  forfaitaire ? 'Au choix dans la période. Tarif forfaitaire : pas de prorata'
+                    : joursPeriode > 0 && joursRestants > 0 ? `Au choix dans la période. Prorata : ${joursRestants} jours sur ${joursPeriode}` : 'Au choix dans la période')}
+                {champ('Date d\'échéance',
+                  <input type="date" className="form-control" value={contrat.DateExpiration} readOnly disabled title="Fin du contrat, non modifiable" />,
+                  'Fin du contrat, non modifiable')}
+              </div>
+
+              <div style={grille}>
                 {mode !== 'ecran' && champ('Famille *',
                   <select className="form-control" value={idAdherent} onChange={(e) => choisirFamille(e.target.value)}>
                     <option value={0}>Choisir la famille</option>

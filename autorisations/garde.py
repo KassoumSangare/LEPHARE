@@ -125,6 +125,18 @@ def instantane_contrat_administration(idcontrat):
     return {"contrat": contrat, "details": details, "garanties": garanties}
 
 
+def instantane_contrat_suppression(idcontrat):
+    """État complet d'un contrat supprimé (contrat, objets, garanties, quittance) : seule trace qui reste, au journal."""
+    etat = instantane_contrat_administration(idcontrat)
+    if etat:
+        etat["quittance"] = _une_ligne(
+            """SELECT q.idquittance, q.numeroquittance, q.primettc, q.mt_encaisse FROM stdquittance q
+               JOIN stdcontrat c ON c.idquittance = q.idquittance WHERE c.idcontrat = %s""",
+            [idcontrat],
+        )
+    return etat
+
+
 def auteur_devis(iddevis):
     ligne = _une_ligne("SELECT idoperateur FROM stddevis WHERE iddevis = %s", [iddevis])
     return ligne and ligne["idoperateur"]
@@ -232,12 +244,19 @@ REGLES = [
       objet="devis", cles=("devis_id",), instantane=instantane_devis),
     R("POST", r"mrh/devis/(?P<devis_id>\d+)/repartir-garanties/", "devis.primes", objet="devis", cles=("devis_id",),
       instantane=instantane_devis),
+    # ---- suppression définitive, par habilitation (production/suppression.py) : préparation sans écriture, puis suppression
+    R("GET", r"devis/\d+/suppression/?$", "devis.delete"),
+    R("DELETE", r"devis/(?P<iddevis>\d+)/suppression/?$", "devis.delete", objet="devis", cles=("iddevis",),
+      instantane=instantane_devis),
+    R("GET", r"contrat/\d+/suppression/?$", "contrats.delete"),
+    R("DELETE", r"contrat/(?P<idcontrat>\d+)/suppression/?$", "contrats.delete", objet="contrat", cles=("idcontrat",),
+      instantane=instantane_contrat_suppression),
     # ---- devis : transformation en contrat, archivage
     R("POST", r"confirmationdevis/?$", "devis.validate", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis,
       auteur=auteur_devis),
     R("POST", r"(archivagedevis|annulationsaisiedevis|desarchivagedevis)/?$", "devis.cancel", objet="devis",
       cles=CLES_DEVIS, instantane=instantane_devis),
-    R("DELETE", r"mrh/devis/(?P<devis_id>\d+)/$", "devis.cancel", objet="devis", cles=("devis_id", "pk"),
+    R("DELETE", r"mrh/devis/(?P<devis_id>\d+)/$", "devis.delete", objet="devis", cles=("devis_id", "pk"),
       instantane=instantane_devis),
     # ---- devis : saisie (création ou modification selon le devis désigné)
     R("POST", r"(enregistrementdevis(ia|mrh|rc|mrp|sante|voyage|tousrisquesinfo|globaledebanque)?|finalisationdevis(auto|ia)|"

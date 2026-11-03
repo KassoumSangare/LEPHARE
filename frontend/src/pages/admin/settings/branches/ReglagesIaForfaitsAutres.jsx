@@ -125,7 +125,7 @@ export const ReglagesIaForfaitsAutres = ({ reglages }) => {
         </div>
         <div style={{ fontWeight: 700, fontSize: '0.9rem', margin: '1rem 0 0.4rem' }}>Frais de traitement par tranche de capital</div>
         <div className="rb-discret" style={{ marginBottom: '0.5rem' }}>
-          Prime forfaitaire selon le capital frais de traitement, multipliée par le coefficient de la première majoration d'âge s'il y a lieu ; la classe 05 n'a pas de frais de traitement (URANUS).
+          Prime forfaitaire selon le capital frais de traitement, multipliée par le coefficient de la première majoration d'âge s'il y a lieu ; la classe 05 n'a pas de frais de traitement.
         </div>
         <TableauReglages libelle="Frais de traitement" parametres={parametres} onEnregistre={remplacer}
           colonnes={['Tranche', 'Capital jusqu\'à', ...CLASSES.map((c) => `Classe ${c}`)]}
