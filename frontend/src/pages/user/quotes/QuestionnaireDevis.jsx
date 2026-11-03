@@ -89,8 +89,9 @@ export const useQuestionnaireDevis = () => {
     telephone: souscripteur.telephone || '',
     email: souscripteur.email || '',
     adresse: souscripteur.adresse || '',
-    NomContact: souscripteur.contact || '',
-    RegistreCommerce: souscripteur.registre_commerce || '',
+    // Noms des champs de stdclient : contact = représentant légal, RCCM dans le champ pièce / RCCM
+    Responsable: souscripteur.contact || '',
+    CniPat: souscripteur.registre_commerce || '',
   } : null;
 
   return {
