@@ -4,6 +4,7 @@ l'utilisateur (production, devis, caisse, reversements, commissions, sinistres, 
 
 GET /api/cockpit/
 """
+import math
 from datetime import date, timedelta
 
 from django.db import connection
@@ -34,7 +35,7 @@ DEVIS_NON_CONFIRME = """COALESCE(d.archive, FALSE) = FALSE AND COALESCE(d.confir
     AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%confirm%%' AND LOWER(COALESCE(d.statut, '')) NOT LIKE '%%contrat%%'"""
 # Devis réellement émis : saisie enregistrée (numéro attribué) à prime non nulle, comme la cloche, hors devis des
 # affaires antérieures (saisis après coup, confirmés d'office)
-DEVIS_ENREGISTRE = """COALESCE(TRIM(d.numerodevis), '') <> '' AND COALESCE(d.primettc, 0) > 0
+DEVIS_ENREGISTRE = """COALESCE(TRIM(d.numerodevis), '') <> '' AND COALESCE(d.primettc, 0) > 0 AND d.primettc <> 'NaN'
     AND NOT EXISTS (SELECT 1 FROM lephare_reprise rp WHERE rp.iddevis = d.iddevis)
     AND d.iddevis NOT IN (SELECT iddevis FROM lephare_reprise_devis)"""
 
@@ -50,7 +51,9 @@ def _une(cursor, sql, params=None):
 
 
 def _franc(valeur):
-    return round(float(valeur or 0))
+    # Prime invalide (NaN : devis importé d'un fichier à cellules vides) comptée pour zéro
+    nombre = float(valeur or 0)
+    return 0 if math.isnan(nombre) else round(nombre)
 
 
 def _iso(valeur):
@@ -176,7 +179,7 @@ def _devis(cursor, jour):
     debut_expires = date(jour.year - annees_expires, 1, 1)
     compte = _une(cursor, f"""
         SELECT COUNT(*) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s AND d.dateemission::date >= %(limite)s) AS en_cours,
-               COALESCE(SUM(d.primettc) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s
+               COALESCE(SUM(NULLIF(d.primettc, 'NaN')) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s
                                                   AND d.dateemission::date >= %(limite)s), 0) AS ttc_en_cours,
                COUNT(*) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date < %(jour)s AND d.dateemission::date >= %(debut_expires)s) AS expires,
                COUNT(*) FILTER (WHERE {DEVIS_ENREGISTRE} AND d.dateemission::date BETWEEN %(debut)s AND %(jour)s) AS emis,

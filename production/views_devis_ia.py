@@ -59,9 +59,12 @@ def _date(valeur, champ):
 
 def _montant(valeur):
     try:
-        return Decimal(str(valeur if valeur not in (None, "") else 0))
+        montant = Decimal(str(valeur if valeur not in (None, "") else 0))
     except InvalidOperation:
         raise ErreurDevisIa(f"Montant invalide : {valeur!r}.")
+    if not montant.is_finite():
+        raise ErreurDevisIa(f"Montant invalide : {valeur!r}.")
+    return montant
 
 
 def _code_activite(id_profession):

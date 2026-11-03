@@ -177,6 +177,17 @@ def verifier_categorie_police(cursor, id_devis):
     confirmation d'une affaire nouvelle, d'un remplacement ou d'un transfert, avec le code catégorie
     du tarif d'une ligne du devis : sans ligne catégorisée, la police sortirait en « 000 ».
     """
+    # Prime invalide (NaN : fichier importé à cellules vides) : elle passerait au contrat et au compte du client
+    cursor.execute(
+        """SELECT 1 FROM stddevis d WHERE d.iddevis = %(devis)s AND ('NaN' IN (d.primenette, d.accessoire, d.taxe, d.primettc)
+           OR EXISTS (SELECT 1 FROM stddevisdetail dd WHERE dd.iddevis = d.iddevis AND dd.primenette = 'NaN'))""",
+        {"devis": id_devis},
+    )
+    if cursor.fetchone():
+        raise ValueError(
+            "Les primes de ce devis sont invalides (fichier importé avec des cellules vides ?) : "
+            "supprimez ce devis ou importez de nouveau le fichier avant de confirmer."
+        )
     cursor.execute(
         """
         SELECT TRIM(COALESCE(a.codeavenant, '')),

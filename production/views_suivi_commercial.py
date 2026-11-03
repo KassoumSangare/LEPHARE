@@ -31,9 +31,9 @@ SANS_AUTEUR = "Repris d'URANUS"
 # Agrégats d'une série de devis émis (saisies enregistrées à prime non nulle)
 AGREGATS_DEVIS = f"""
     COUNT(*) AS emis, COUNT(*) FILTER (WHERE COALESCE(d.confirme, FALSE)) AS confirmes,
-    COALESCE(SUM(d.primettc), 0) AS ttc, COALESCE(SUM(d.primettc) FILTER (WHERE COALESCE(d.confirme, FALSE)), 0) AS ttc_confirme,
+    COALESCE(SUM(NULLIF(d.primettc, 'NaN')), 0) AS ttc, COALESCE(SUM(NULLIF(d.primettc, 'NaN')) FILTER (WHERE COALESCE(d.confirme, FALSE)), 0) AS ttc_confirme,
     COUNT(*) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s) AS en_cours,
-    COALESCE(SUM(d.primettc) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s), 0) AS ttc_en_cours
+    COALESCE(SUM(NULLIF(d.primettc, 'NaN')) FILTER (WHERE {DEVIS_NON_CONFIRME} AND d.dateexpiration::date >= %(jour)s), 0) AS ttc_en_cours
 """
 
 
@@ -105,7 +105,7 @@ def _a_relancer(cursor, jour):
     p = {"du": jour - timedelta(days=jours), "au": jour + timedelta(days=jours), "jour": jour, "max": LIGNES_MAX}
     compte = _une(cursor, f"""
         SELECT COUNT(*) FILTER (WHERE d.dateexpiration::date >= %(jour)s) AS a_echeance,
-               COUNT(*) FILTER (WHERE d.dateexpiration::date < %(jour)s) AS echus, COALESCE(SUM(d.primettc), 0) AS ttc
+               COUNT(*) FILTER (WHERE d.dateexpiration::date < %(jour)s) AS echus, COALESCE(SUM(NULLIF(d.primettc, 'NaN')), 0) AS ttc
         FROM stddevis d WHERE {condition}
     """, p)
     lignes = _lignes(cursor, f"""

@@ -24,6 +24,7 @@ from autorisations.rbac import a_le_droit
 
 from .renouvellement import AUTHENTIFICATION, _lignes
 from .reprise import COMPLEMENTS_CONTRAT
+from .views_cockpit import _franc
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def _existe(cursor, sql, params):
 
 
 def _montant(valeur):
-    return f"{round(float(valeur or 0)):,}".replace(",", " ")
+    return f"{_franc(valeur):,}".replace(",", " ")
 
 
 def _devis(cursor, id_devis):
@@ -205,7 +206,7 @@ def suppression_devis(request, iddevis):
                 blocages = _blocages_devis(cursor, devis)
             return Response({
                 "Reference": (devis["numerodevis"] or "").strip() or f"n° {iddevis}", "Client": devis["client"],
-                "PrimeTtc": float(devis["primettc"] or 0), "Supprimable": not blocages, "Blocages": blocages,
+                "PrimeTtc": _franc(devis["primettc"]), "Supprimable": not blocages, "Blocages": blocages,
                 "Effets": ["Le devis et toute sa saisie (objets assurés, garanties, familles et assurés) sont supprimés.",
                            "Son numéro n'est pas réutilisé."],
             })
@@ -244,7 +245,7 @@ def suppression_contrat(request, idcontrat):
             effets.append("Les numéros de police et de quittance ne sont pas réutilisés." if c["codeavenant"] in CODES_BASE
                           else "Le numéro de quittance n'est pas réutilisé.")
             return Response({
-                "Reference": c["numeropolice"], "Client": c["client"], "Mouvement": c["mouvement"], "PrimeTtc": float(c["primettc"] or 0),
+                "Reference": c["numeropolice"], "Client": c["client"], "Mouvement": c["mouvement"], "PrimeTtc": _franc(c["primettc"]),
                 "NumeroDevis": c["numerodevis"], "Supprimable": not blocages, "Blocages": blocages, "Effets": effets,
                 "DevisSupprimable": devis_supprimable,
             })

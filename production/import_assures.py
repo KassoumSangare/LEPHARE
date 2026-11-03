@@ -109,17 +109,21 @@ def valider_monetaire(valeur, champ: str) -> Decimal:
     Raises:
         ValidationError: Si la valeur n'est pas numérique
     """
-    if valeur is None or str(valeur).strip() == "":
+    # Cellule vide du fichier : « nan » (pandas), que Decimal accepterait comme un nombre et qui rendrait le devis invalide
+    if valeur is None or str(valeur).strip().lower() in ("", "nan"):
         return Decimal("0.00")
 
     try:
         # Normalisation: remplacement de la virgule par un point
         valeur_str = str(valeur).replace(",", ".").strip()
-        return Decimal(valeur_str)
+        montant = Decimal(valeur_str)
     except (InvalidOperation, ValueError) as e:
         raise ValidationError(
             f"Valeur non numérique pour {champ}: '{valeur}' - {str(e)}"
         )
+    if not montant.is_finite():
+        raise ValidationError(f"Valeur non numérique pour {champ}: '{valeur}'")
+    return montant
 
 
 def valider_entier(valeur, champ: str, defaut: int = 0) -> int:
