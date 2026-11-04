@@ -1,11 +1,13 @@
 import io
 from datetime import date, datetime
 from decimal import Decimal
+from unittest import mock
 
 from django.test import SimpleTestCase
 from openpyxl import Workbook
 
 from .afa import ErreurAfa, _acte, _date, _montant, lire_fichier
+from .database import verifier_categorie_police
 
 
 def classeur_afa(lignes, total=True):
@@ -89,3 +91,25 @@ class ConversionsAfaTests(SimpleTestCase):
         self.assertEqual(_acte("incorporation"), "Incorporation")
         self.assertEqual(_acte("Affaire nouvelle"), "Affaire nouvelle")
         self.assertEqual(_acte(None), "")
+
+
+class ConfirmationDevisAfaTests(SimpleTestCase):
+    def test_accepte_la_categorie_non_specifiee_pour_afa(self):
+        curseur = mock.Mock()
+        curseur.fetchone.side_effect = [None, (10, "AFN", 2, 0)]
+
+        verifier_categorie_police(curseur, 123)
+
+    def test_exige_toujours_une_categorie_pour_les_autres_produits(self):
+        curseur = mock.Mock()
+        curseur.fetchone.side_effect = [None, (1, "AFN", 1, 0)]
+
+        with self.assertRaisesRegex(ValueError, "Une ligne du devis"):
+            verifier_categorie_police(curseur, 123)
+
+    def test_exige_toujours_une_ligne_de_detail_pour_afa(self):
+        curseur = mock.Mock()
+        curseur.fetchone.side_effect = [None, (10, "AFN", 0, 0)]
+
+        with self.assertRaisesRegex(ValueError, "aucune ligne de détail"):
+            verifier_categorie_police(curseur, 123)

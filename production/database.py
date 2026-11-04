@@ -190,7 +190,8 @@ def verifier_categorie_police(cursor, id_devis):
         )
     cursor.execute(
         """
-        SELECT TRIM(COALESCE(a.codeavenant, '')),
+        SELECT d.idproduit,
+               TRIM(COALESCE(a.codeavenant, '')),
                COUNT(x.iddevisdetail),
                COUNT(x.iddevisdetail) FILTER (
                    WHERE COALESCE(NULLIF(TRIM(t.codecategorie), ''), '000') <> '000'
@@ -200,20 +201,21 @@ def verifier_categorie_police(cursor, id_devis):
         LEFT JOIN stddevisdetail x ON x.iddevis = d.iddevis
         LEFT JOIN stdtarif t ON t.idtarif = x.idtarif
         WHERE d.iddevis = %s
-        GROUP BY a.codeavenant
+        GROUP BY d.idproduit, a.codeavenant
         """,
         [id_devis],
     )
     row = cursor.fetchone()
-    if not row or row[0] not in ("AFN", "RPP", "TRP"):
+    if not row or row[1] not in ("AFN", "RPP", "TRP"):
         return
-    _, nb_lignes, nb_lignes_categorisees = row
+    id_produit, _, nb_lignes, nb_lignes_categorisees = row
     if nb_lignes == 0:
         raise ValueError(
             "Ce devis n'a aucune ligne de détail : impossible d'attribuer un numéro de police "
             "(code courtier + code catégorie + année). Complétez le devis avant de le confirmer."
         )
-    if nb_lignes_categorisees < nb_lignes:
+    # La Vie/AFA utilise volontairement la catégorie 000 (« non spécifiée »).
+    if id_produit != 10 and nb_lignes_categorisees < nb_lignes:
         raise ValueError(
             "Une ligne du devis n'a pas de catégorie de tarif : le numéro de police porterait la "
             "catégorie 000. Corrigez la catégorie avant de confirmer le devis."
