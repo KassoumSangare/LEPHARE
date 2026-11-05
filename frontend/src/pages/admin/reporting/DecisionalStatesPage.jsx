@@ -202,7 +202,9 @@ export const DecisionalStatesPage = () => {
       exportToPdf({ filename, title, subtitle, metadata, headers, rows });
     }
 
-    success(`États décisionnels (${exportFormat}) téléchargés avec succès.`);
+    success(exportFormat === 'PDF'
+      ? 'Aperçu PDF des états décisionnels ouvert. Utilisez « Imprimer / PDF » pour l’enregistrer.'
+      : `États décisionnels (${exportFormat}) téléchargés avec succès.`);
     setIsExportOpen(false);
   };
 
@@ -424,7 +426,9 @@ export const DecisionalStatesPage = () => {
       exportToPdf({ filename, title, subtitle, metadata, headers, rows, totals: totalsRow });
     }
 
-    success(`Document (${contenuFormat}) téléchargé avec succès.`);
+    success(contenuFormat === 'PDF'
+      ? 'Aperçu PDF ouvert. Utilisez « Imprimer / PDF » pour l’enregistrer.'
+      : `Document (${contenuFormat}) téléchargé avec succès.`);
   };
 
   const columns = [

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { redirigerSiOreole } from './oreole/oreoleCommun';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, Calculator, Check, Download, FileSpreadsheet, FileText, HeartHandshake, Loader2, Plus, Trash2, Upload,
@@ -63,6 +64,8 @@ export const NewAfaQuotePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const idDevisEdite = Number(searchParams.get('edit')) || 0;
+  // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
+  useEffect(() => redirigerSiOreole(idDevisEdite, navigate), [idDevisEdite]); // eslint-disable-line react-hooks/exhaustive-deps
   const { success, error: toastError, info } = useToast();
 
   const [etape, setEtape] = useState(1);

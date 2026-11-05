@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import BlocOreole from './BlocOreole';
+import { imprimerOreole } from '../../../utils/impressionsOreole';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
+import { cashApi, contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { Modal } from '../../../components/common/Modal';
 import { PolicyMovementModal } from './PolicyMovementModal';
 import { ListeDocumentsContrat, useDocumentsContrat } from './documentsContrat';
 import {
@@ -30,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
-import { printBordereauTransport, estDevisTransport } from '../../../utils/exportUtils';
+import { printBordereauTransport, printRecuEncaissement, estDevisTransport } from '../../../utils/exportUtils';
 import { estDevisSante } from '../../../utils/impressionsSante';
 import { AvenantSanteModal } from './AvenantSanteModal';
 import { SuppressionModal } from '../../../components/common/SuppressionModal';
@@ -38,12 +39,14 @@ import { aLeDroit } from '../../../utils/droits';
 import { CertificatsTransportModal } from '../quotes/NewTransportQuotePage';
 import { resteAEncaisser } from '../../../utils/resteEncaissement';
 
+// Date ISO reçue de l'API -> jj/mm/aaaa ; autre texte inchangé
+const dateLisible = (v) => { const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : v; };
+
 export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { success, error: toastError } = useToast();
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const { success, error: toastError, warning } = useToast();
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [movementTab, setMovementTab] = useState('renouvellement');
   const [initialOp, setInitialOp] = useState(null);
@@ -95,6 +98,24 @@ export const ContractDetailPage = () => {
   // sur le bordereau des primes ; rien si le contrat a été émis avec un autre calcul (écart)
   const idDevisContrat = Number(contract.raw?.iddevis?.iddevis ?? contract.raw?.iddevis) || 0;
   const [avenantSanteOuvert, setAvenantSanteOuvert] = useState(false);
+  // Quittance : le vrai reçu du dernier règlement enregistré à la caisse. Sans règlement, rien à quittancer (CIMA, article 13).
+  const imprimerQuittance = async () => {
+    const numero = contract?.raw?.idquittance?.numeroquittance;
+    try {
+      const reglement = numero ? await cashApi.getDernierReglementQuittance(numero) : null;
+      if (!reglement?.iddetailencaissement) {
+        warning("Aucun règlement enregistré sur cette quittance : le reçu sera disponible après l'encaissement.");
+        return;
+      }
+      await printRecuEncaissement(reglement.iddetailencaissement);
+    } catch (err) {
+      toastError('Le reçu de cette quittance est indisponible pour le moment. Veuillez réessayer.');
+    }
+  };
+
+  // Oreole Santé : renouvellement et incorporation depuis le bloc de la branche, pour garder les trois polices ensemble
+  const [contratOreole, setContratOreole] = useState(false);
+  const [devisOreole, setDevisOreole] = useState(0);
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
   // IA : incorporation proposée quand le contrat porte plusieurs personnes (le serveur en décide)
   const idProduitContrat = Number(contract?.raw?.idproduit?.id_produit ?? contract?.raw?.idproduit?.IdProduit ?? contract?.raw?.idproduit) || 0;
@@ -180,7 +201,7 @@ export const ContractDetailPage = () => {
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Action Renouveler (Mise en avant) */}
-          <button
+          {!contratOreole && <button
             className="btn"
             style={{
               padding: '0.45rem 0.9rem',
@@ -199,7 +220,7 @@ export const ContractDetailPage = () => {
           >
             <RefreshCw size={16} />
             <span>Renouveler la Police</span>
-          </button>
+          </button>}
 
           {contract.branche === 'Auto' && contract.raw?.flotte && aLeDroit('contrats.avenant') && (
             <button
@@ -213,7 +234,7 @@ export const ContractDetailPage = () => {
             </button>
           )}
 
-          {incorporationIa && (
+          {incorporationIa && !contratOreole && (
             <button
               className="btn btn-secondary"
               onClick={() => navigate(`/user/contracts/${id}/incorporation`)}
@@ -229,7 +250,7 @@ export const ContractDetailPage = () => {
               (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
               d'avenant de modification n'existent pas encore (sp_avenant_modification) */}
           {/* Santé : avenant de modification réel (changement de formule, incorporation), sante/avenant.py */}
-          {contratSante && aLeDroit('contrats.avenant') && (
+          {contratSante && !contratOreole && aLeDroit('contrats.avenant') && (
             <button className="btn btn-secondary" onClick={() => setAvenantSanteOuvert(true)}
               title="Incorporer un membre dans une famille (une famille complète passe d'office dans la formule de sa taille, FAMILLE → FAMILLE PLUS) ou changer de formule en cours de contrat : avenant sous la même police, prime = écart entre les formules (en entier pour MINENE, tarif forfaitaire)"
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -239,7 +260,7 @@ export const ContractDetailPage = () => {
           )}
 
           {/* Action Imprimer Quittance */}
-          <button className="btn btn-secondary" onClick={() => setIsReceiptModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <button className="btn btn-secondary" onClick={() => (devisOreole ? imprimerOreole('quittance', devisOreole) : imprimerQuittance())} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <Printer size={16} />
             <span>Quittance CIMA</span>
           </button>
@@ -254,6 +275,8 @@ export const ContractDetailPage = () => {
           )}
         </div>
       </div>
+
+      {id && <BlocOreole idContrat={id} onDetection={(oui, idDevis) => { setContratOreole(oui); setDevisOreole(oui ? idDevis : 0); }} />}
 
       {reprise && (
         <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', borderLeft: '4px solid var(--accent-amber)' }}>
@@ -308,7 +331,7 @@ export const ContractDetailPage = () => {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span className="text-muted">Date d'émission :</span>
-              <span style={{ color: '#e2e8f0' }}>{contract.date_emission || contract.date_effet || '2026-01-01'}</span>
+              <span style={{ color: '#e2e8f0' }}>{dateLisible(contract.date_emission || contract.date_effet || '2026-01-01')}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span className="text-muted">Date d'effet :</span>
@@ -321,7 +344,7 @@ export const ContractDetailPage = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.5rem' }}>
               <span className="text-muted">Dernière modification :</span>
               <span style={{ color: '#93c5fd', fontSize: '0.82rem', fontWeight: 600 }}>
-                {contract.date_derniere_modification || contract.DateMaj || contract.date_maj || contract.date_emission || contract.date_effet || '-'}
+                {dateLisible(contract.date_derniere_modification || contract.DateMaj || contract.date_maj || contract.date_emission || contract.date_effet || '-')}
               </span>
             </div>
           </div>
@@ -413,7 +436,15 @@ export const ContractDetailPage = () => {
           </h3>
           {/* Selon la branche : Dommages (relevé de compte, cotation, pièces), Voyage (attestation seule), Santé (listes
               et barème), Automobile (attestation, carte brune) ; documentsContrat.jsx */}
-          <ListeDocumentsContrat documents={documents} />
+          {/* Oreole Santé : une seule quittance et une seule facture pour le package, quelle que soit la police ouverte */}
+          <ListeDocumentsContrat documents={devisOreole
+            ? [
+              ...[['quittance', 'Quittance du package'], ['facture', 'Facture du package'],
+                ...(contratSante ? [['cp', 'Conditions particulières'], ['bareme', 'Barème de soins'], ['liste', 'Liste des adhérents'], ['cotisations', 'État des cotisations']] : [])]
+                .map(([cle, libelle]) => ({ cle, libelle, action: 'Imprimer', ouvrir: () => imprimerOreole(cle, devisOreole), fenetre: false })),
+              ...(contratSante ? [] : documents.filter((d) => d.cle !== 'facture')),
+            ]
+            : documents} />
         </div>
       </div>
 
@@ -714,83 +745,6 @@ export const ContractDetailPage = () => {
           setEndorsements(dataStore.getEndorsementsByPolicy(contract.numeropolice || contract.id));
         }}
       />
-
-      {/* Modal Quittance CIMA */}
-      <Modal
-        isOpen={isReceiptModalOpen}
-        onClose={() => setIsReceiptModalOpen(false)}
-        title="Quittance Officielle de Prime d'Assurance CIMA"
-        subtitle={`Police N° ${contract.numeropolice} • ${contract.compagnie}`}
-        maxWidth="640px"
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '0.75rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-muted)' }}>
-              RÉPUBLIQUE DE CÔTE D'IVOIRE • CODE DES ASSURANCES CIMA (ART. 13)
-            </div>
-            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.25rem' }}>
-              LE PHARE – QUITTANCE D'ENCAISSEMENT DÉFINITIVE
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#60a5fa', marginTop: '0.2rem' }}>
-              Atteste de la libération intégrale des obligations de paiement du souscripteur.
-            </div>
-          </div>
-
-          <div style={{ background: 'var(--bg-surface)', padding: '1.25rem', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '0.65rem', fontSize: '0.85rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Compagnie Assureur :</span>
-              <strong>{contract.compagnie}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Souscripteur / Assuré :</span>
-              <strong style={{ color: '#fff' }}>{contract.client_nom}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Branche & Produit :</span>
-              <span>{contract.produit}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Période d'Assurance :</span>
-              <span>Du {formatDate(contract.date_effet)} au {formatDate(contract.date_expiration)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '0.5rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Montant Net de Prime :</span>
-              <span>{(Number(contract.prime_totale || 396851) * 0.85).toLocaleString('fr-FR')} FCFA</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Accessoires & Taxes Légales :</span>
-              <span>{(Number(contract.prime_totale || 396851) * 0.15).toLocaleString('fr-FR')} FCFA</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '2px solid var(--border-color)', paddingTop: '0.5rem', fontSize: '1.05rem' }}>
-              <span style={{ fontWeight: 700 }}>Total Prime Encaissée TTC :</span>
-              <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{Number(contract.prime_totale || 396851).toLocaleString('fr-FR')} FCFA</strong>
-            </div>
-          </div>
-
-          <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', padding: '0.85rem', borderRadius: '6px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            <strong>Validité Juridique CIMA (Article 13) :</strong>
-            <p style={{ margin: '0.2rem 0 0 0' }}>
-              Le paiement effectif de la prime est la condition substantielle de prise d'effet des garanties. La délivrance de la présente quittance confère plein effet juridique à la couverture d'assurance.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button className="btn btn-secondary" onClick={() => setIsReceiptModalOpen(false)}>
-              Fermer
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                window.print();
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Printer size={15} />
-              <span>Imprimer Quittance</span>
-            </button>
-          </div>
-        </div>
-      </Modal>
 
       {/* Attestation, carte brune et relevé de compte (rubrique Documents) */}
       {fenetresDocuments}

@@ -47,7 +47,7 @@ export const BRANCHES = [
     module: 'sante', idProduit: 5, libelle: 'Santé', icone: HeartPulse, brancheCima: '120',
     description: 'Gestionnaire des contrats Santé, seuils du contrat groupe (Santé classique et micro) ; MINENE SANTÉ : formules, barème de soins, surprimes, IA et RC chef de famille, répartition de la prime.',
     parametres: ['sante.gestionnaire', 'sante.groupe_adherents', 'sante.groupe_affilies'],
-    pages: ['/admin/settings/sante'],
+    pages: ['/admin/settings/sante', '/admin/settings/oreole-sante'],
   },
   {
     module: 'afa', idProduit: 10, libelle: 'Vie', icone: HeartHandshake,

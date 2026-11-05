@@ -4,7 +4,7 @@
 export const RELIQUAT_NEGLIGEABLE = 5;
 
 export const resteAEncaisser = (primeTtc, encaisse) => {
-  const reste = (Number(primeTtc) || 0) - (Number(encaisse) || 0);
+  const reste = Math.round(((Number(primeTtc) || 0) - (Number(encaisse) || 0)) * 100) / 100;
   return reste >= RELIQUAT_NEGLIGEABLE ? reste : 0;
 };
 

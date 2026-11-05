@@ -34,6 +34,7 @@ from rest_framework.response import Response
 
 from autorisations.rbac import a_le_droit
 from configuration_api.models import SanteFormuleMinene
+from .oreole import est_oreole
 from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
@@ -651,6 +652,9 @@ def enregistrer_devis_sante(request):
     data, erreur = _donnees_devis(request)
     if erreur:
         return erreur
+    with connection.cursor() as curseur_oreole:
+        if est_oreole(curseur_oreole, _entier(data.get("IdDevis"))):
+            return Response({"error": "Ce devis Oreole Santé se modifie depuis l'écran Oreole Santé."}, status=status.HTTP_400_BAD_REQUEST)
     # Limites d'âge des conditions vérifiées à la date d'effet définitive (elle a pu changer depuis la saisie des
     # assurés) : au-delà, seul un utilisateur habilité enregistre le devis
     try:
@@ -771,6 +775,50 @@ def _lignes(cursor, sql, params):
     return [{k: _jour(v) if isinstance(v, (date, datetime)) else v for k, v in zip(colonnes, ligne)} for ligne in cursor.fetchall()]
 
 
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def continuer_saisie(request, iddevis):
+    """
+    POST /api/devissante/<iddevis>/continuer/
+
+    Un collègue continue une saisie Santé commencée par un autre (demande du 2026-11-05) : la base n'accepte les
+    modifications que de l'opérateur de la saisie, donc la saisie, les couvertures, les adhérents et les affiliés du devis
+    passent au compte connecté. Devis ni confirmé ni archivé ; droit devis.update, opération tracée au journal (garde).
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT idproduit, COALESCE(confirme, FALSE), COALESCE(archive, FALSE) FROM stddevis WHERE iddevis = %s FOR UPDATE",
+            [iddevis],
+        )
+        ligne = cursor.fetchone()
+        if not ligne:
+            return Response({"error": f"Devis {iddevis} introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        produit, confirme, archive = ligne
+        refus = None
+        if produit != ID_PRODUIT_SANTE:
+            refus = "Ce devis n'est pas un devis Santé."
+        elif confirme:
+            refus = "Ce devis est déjà confirmé : sa saisie ne peut plus être continuée."
+        elif archive:
+            refus = "Ce devis est archivé : désarchivez-le pour continuer sa saisie."
+        elif est_oreole(cursor, iddevis):
+            refus = "Devis Oreole Santé : il se continue depuis la branche Oreole Santé."
+        if refus:
+            return Response({"error": refus}, status=status.HTTP_400_BAD_REQUEST)
+        utilisateur = request.user.id
+        for table in ("stdfiliale", "stdadherent", "stdaffilie"):
+            cursor.execute(f"UPDATE {table} SET idoperateur = %s WHERE iddevis = %s AND idoperateur IS DISTINCT FROM %s", [utilisateur, iddevis, utilisateur])
+        cursor.execute("SELECT 1 FROM stdnumerosaisiesante WHERE iddevis = %s FOR UPDATE", [iddevis])
+        if cursor.fetchone():
+            cursor.execute("UPDATE stdnumerosaisiesante SET idoperateur = %s, saisieencours = TRUE, datemaj = CURRENT_TIMESTAMP WHERE iddevis = %s", [utilisateur, iddevis])
+        else:
+            cursor.execute(
+                """INSERT INTO stdnumerosaisiesante (datecreation, datemaj, saisieencours, iddevis, idoperateur)
+                   VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, %s, %s)""", [iddevis, utilisateur])
+    return Response({"IdDevis": iddevis, "Message": "Saisie reprise : vous pouvez continuer ce devis."})
+
+
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
@@ -794,6 +842,7 @@ def lire_devis_sante(request, iddevis):
                    COALESCE(d.numeropolicecompagnie, '') AS numeropolicecompagnie,
                    d.primenette, d.taxe, d.accessoire, d.primettc, COALESCE(d.primeimposee, false) AS primeimposee,
                    n.idoperateur AS operateur_saisie, COALESCE(n.saisieencours, false) AS saisie_en_cours,
+                   (SELECT u.name FROM account_uranususer u WHERE u.id = n.idoperateur) AS operateur_saisie_nom,
                    av.codeavenant AS code_avenant,
                    -- Renouvellement : taux d'ajustement de l'an dernier, déjà appliqué à la prime de base MINENE
                    (SELECT cp.tauxreductioncommerciale FROM stddevisdetail dp
@@ -814,6 +863,8 @@ def lire_devis_sante(request, iddevis):
         if devis["idproduit"] != ID_PRODUIT_SANTE:
             return Response({"error": "Ce devis n'est pas un devis Santé."}, status=status.HTTP_400_BAD_REQUEST)
         devis["operateur_courant"] = devis["operateur_saisie"] == request.user.id
+        # Saisie d'un collègue ou sans saisie ouverte : continuable tant que le devis n'est ni confirmé ni archivé (continuer_saisie)
+        devis["peut_continuer"] = not devis["operateur_courant"] and not devis["confirme"] and not devis["archive"]
 
         detail = _lignes(
             cursor,

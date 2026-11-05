@@ -1,5 +1,7 @@
 from django.urls import include, path
 
+from . import oreole
+
 # from django_api_admin.sites import site
 
 from rest_framework import routers
@@ -43,6 +45,7 @@ from .views_devis_sante import (
     importer_classique,
     modele_import_classique,
     lire_devis_sante,
+    continuer_saisie,
     supprimer_objet_saisie,
 )
 
@@ -134,11 +137,27 @@ urlpatterns = [
     path(r"devissante/enregistrement/", enregistrer_devis_sante, name="enregistrement_devis_sante_lephare"),
     path(r"devissante/apercu/", apercu_devis_sante_vue, name="apercu_devis_sante"),
     path(r"devissante/<int:iddevis>/", lire_devis_sante, name="lecture_devis_sante"),
+    path(r"devissante/<int:iddevis>/continuer/", continuer_saisie, name="continuer_saisie_sante"),
     path(r"devissante/<int:iddevis>/bordereau/", bordereau_primes, name="bordereau_primes_sante"),
     # Contrat : familles et primes de sa période, incorporations comprises (documents du contrat)
     path(r"devissante/contrat/<int:idcontrat>/bordereau/", bordereau_primes_contrat, name="bordereau_primes_contrat_sante"),
     # Avenant de modification d'un contrat en cours (changement de formule, incorporation) : préparation et devis
     path(r"devissante/avenant/<int:idcontrat>/", avenant_sante, name="avenant_sante"),
+    # Branche Oreole Santé : package Santé + IA + AFA (sante/oreole.py)
+    path(r"oreole/referentiels/", oreole.referentiels, name="oreole-referentiels"),
+    path(r"oreole/apercu/", oreole.calcul, name="oreole-apercu"),
+    path(r"oreole/devis/", oreole.devis, name="oreole-devis"),
+    path(r"oreole/devis/<int:iddevis>/", oreole.lecture, name="oreole-lecture"),
+    path(r"oreole/devis/<int:iddevis>/emission/", oreole.emission, name="oreole-emission"),
+    path(r"oreole/lien/<int:iddevis>/", oreole.lien, name="oreole-lien"),
+    path(r"oreole/devis/<int:iddevis>/encaissement/", oreole.encaissement, name="oreole-encaissement"),
+    path(r"oreole/caisse/", oreole.caisse, name="oreole-caisse"),
+    path(r"oreole/polices/", oreole.polices, name="oreole-polices"),
+    path(r"oreole/contrat/<int:idcontrat>/", oreole.contrat, name="oreole-contrat"),
+    path(r"oreole/contrat/<int:idcontrat>/emission/", oreole.contrat_emission, name="oreole-contrat-emission"),
+    path(r"oreole/contrat/<int:idcontrat>/preparation/", oreole.contrat_preparation, name="oreole-contrat-preparation"),
+    path(r"oreole/import/analyse/", oreole.analyse_import, name="oreole-import-analyse"),
+    path(r"oreole/modele/", oreole.modele, name="oreole-modele"),
 
 ]
 urlpatterns += router.urls

@@ -1128,6 +1128,8 @@ export const santeApi = {
     params: dateEffet ? { date_effet: dateEffet } : {},
   })).data,
   creerAvenant: async (idContrat, donnees) => (await apiClient.post(`/devissante/avenant/${idContrat}/`, donnees)).data,
+  // Un collègue continue une saisie commencée par un autre : elle passe au compte connecté (droit devis.update, tracé au journal)
+  continuerSaisie: async (idDevis) => (await apiClient.post(`/devissante/${idDevis}/continuer/`)).data,
   // GET /api/tarifparproduit/5 : « Offre commerciale » d'URANUS (catégories Santé)
   getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/5')),
   // GET /api/typecontratsante/ : CONTRAT PARTICULIER, CONTRAT SOCIETE
@@ -1261,6 +1263,29 @@ export const afaApi = {
   modele: async () => (await apiClient.get('/afa/modele/', { responseType: 'blob' })).data,
   enregistrer: async (donnees) => (await apiClient.post('/afa/devis/', donnees, { timeout: 120000 })).data,
   lire: async (idDevis) => (await apiClient.get(`/afa/devis/${idDevis}/`)).data,
+};
+
+// Branche Oreole Santé (sante/oreole.py) : package Santé + IA + AFA, classeur des effectifs
+export const oreoleApi = {
+  referentiels: async () => (await apiClient.get('/oreole/referentiels/')).data,
+  apercu: async (donnees) => (await apiClient.post('/oreole/apercu/', donnees)).data,
+  enregistrer: async (donnees) => (await apiClient.post('/oreole/devis/', donnees, { timeout: 300000 })).data,
+  lire: async (idDevis) => (await apiClient.get(`/oreole/devis/${idDevis}/`)).data,
+  lien: async (idDevis) => (await apiClient.get(`/oreole/lien/${idDevis}/`)).data,
+  emettre: async (idDevis, produits) => (await apiClient.post(`/oreole/devis/${idDevis}/emission/`, { Produits: produits }, { timeout: 300000 })).data,
+  polices: async (q) => (await apiClient.get('/oreole/polices/', { params: { q: q || undefined } })).data,
+  // Caisse : packages à encaisser, et règlement unique que le serveur répartit entre les quittances (mêmes champs que collectPremium)
+  caisse: async () => (await apiClient.get('/oreole/caisse/')).data,
+  encaisser: (idDevis, donnees) => apiClient.post(`/oreole/devis/${idDevis}/encaissement/`, donnees),
+  contrat: async (idContrat) => (await apiClient.get(`/oreole/contrat/${idContrat}/`)).data,
+  emettreLie: async (idContrat, produit) => (await apiClient.post(`/oreole/contrat/${idContrat}/emission/`, { Produit: produit }, { timeout: 300000 })).data,
+  preparation: async (idContrat, acte) => (await apiClient.get(`/oreole/contrat/${idContrat}/preparation/`, { params: { acte } })).data,
+  analyserImport: async (fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier', fichier);
+    return (await apiClient.post('/oreole/import/analyse/', formulaire, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })).data;
+  },
+  modele: async () => (await apiClient.get('/oreole/modele/', { responseType: 'blob' })).data,
 };
 
 export const dommagesApi = {
@@ -1424,6 +1449,10 @@ export const parametrageApi = {
   ).data,
   // Réglages Santé MINENE : formules, paramètres sante.minene.*, répartition de la prime
   // (configuration_api/parametrage_sante.py)
+  getOreole: async () => (await apiClient.get('/parametrage/oreole/')).data,
+  modifierOffreOreole: async (idOffre, donnees) => (await apiClient.patch(`/parametrage/oreole/offres/${idOffre}/`, donnees)).data,
+  modifierParametreOreole: async (cle, valeur) => (await apiClient.patch(`/parametrage/oreole/parametres/${cle}/`, { Valeur: valeur })).data,
+  retablirParametreOreole: async (cle) => (await apiClient.patch(`/parametrage/oreole/parametres/${cle}/`, { Retablir: true })).data,
   getSante: async () => (await apiClient.get('/parametrage/sante/')).data,
   modifierFormuleSante: async (idOffre, donnees) => (await apiClient.patch(`/parametrage/sante/formules/${idOffre}/`, donnees)).data,
   modifierParametreSante: async (cle, valeur) => (await apiClient.patch(`/parametrage/sante/parametres/${cle}/`, { Valeur: valeur })).data,
@@ -1888,11 +1917,18 @@ export const remittanceApi = {
 /* =========================================================================
    10. COMMISSIONS APPORTEURS (commissions)
    ========================================================================= */
+// Restauration d'un élément archivé (droit archives.restore) ; le devis garde sa route, quoteApi.unarchiveQuote
+export const archivesApi = {
+  restaurer: (type, id) => apiClient.post(`/archives/${type}/${id}/restauration/`),
+};
+
 // Flux financiers (Code CIMA) : état des encaissements, reversements aux compagnies (prime
 // entière, sans déduction de commission), réclamation et encaissement des commissions
 export const financeApi = {
   // GET /api/finance/encaissements/?du&au&compagnie&mode&statut
   etatEncaissements: async (params) => (await apiClient.get('/finance/encaissements/', { params })).data,
+  // GET /api/finance/encaissements/recherche/?q&mode&du&au : à quoi a servi un chèque ou tout autre règlement
+  rechercherReglements: async (params) => (await apiClient.get('/finance/encaissements/recherche/', { params })).data,
   // GET /api/finance/reversements/a-reverser/?compagnie
   lignesAReverser: async (compagnie) => (await apiClient.get('/finance/reversements/a-reverser/', { params: { compagnie } })).data,
   // GET /api/finance/reversements/?compagnie&du&au

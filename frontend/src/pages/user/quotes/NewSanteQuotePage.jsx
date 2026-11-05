@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { redirigerSiOreole } from './oreole/oreoleCommun';
 import { confirmer } from '../../../utils/dialogue';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
@@ -180,8 +181,13 @@ export const NewSanteQuotePage = () => {
   // « Modifier » depuis le registre : /user/quotes/sante?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editParam = searchParams.get('edit');
+  // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
+  useEffect(() => redirigerSiOreole(editParam, navigate), [editParam]); // eslint-disable-line react-hooks/exhaustive-deps
   const [chargementEdition, setChargementEdition] = useState(Boolean(editParam));
   const [lectureSeule, setLectureSeule] = useState('');
+  // Saisie commencée par un collègue : continuable d'un clic (POST /api/devissante/<id>/continuer/)
+  const [saisieAContinuer, setSaisieAContinuer] = useState(false);
+  const [repriseEnCours, setRepriseEnCours] = useState(false);
   const [numeroDevis, setNumeroDevis] = useState('');
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
   // Devis de renouvellement : taux d'ajustement de l'an dernier (déjà compris dans la prime de base MINENE)
@@ -438,9 +444,12 @@ export const NewSanteQuotePage = () => {
         }
         appliquerSaisie(donnees);
         if (!devis.operateur_courant) {
+          const peutContinuer = Boolean(devis.peut_continuer) && aLeDroit('devis.update');
+          setSaisieAContinuer(peutContinuer);
+          const suite = peutContinuer ? 'Continuez-la pour modifier le devis et l\'enregistrer en votre nom.' : 'Le devis est affiché en lecture seule.';
           setLectureSeule(devis.operateur_saisie
-            ? `Saisie ouverte par l'opérateur n° ${devis.operateur_saisie} : la base n'accepte ses modifications que de cet opérateur. Le devis est affiché en lecture seule.`
-            : 'Devis repris sans saisie ouverte : la base n\'accepte pas de modification. Le devis est affiché en lecture seule.');
+            ? `Saisie commencée par ${devis.operateur_saisie_nom || `l'opérateur n° ${devis.operateur_saisie}`}. ${suite}`
+            : `Devis repris sans saisie ouverte. ${suite}`);
         }
       } catch (err) {
         if (actif) toastError(`Impossible de charger le devis à modifier : ${messageErreurApi(err)}`);
@@ -743,6 +752,17 @@ export const NewSanteQuotePage = () => {
   }, [idDevis, adherents, affilies, filiales, dateEffet, dateExpiration, idTarif, idOffre, compagnieId, typeContrat, ajustement, taux,
     primeFamille, primeAffilie, primeGlobale, montantSurprime, accessoireManuel, lectureSeule, estMinene]);
 
+  const continuerSaisie = async () => {
+    setRepriseEnCours(true);
+    try {
+      await santeApi.continuerSaisie(Number(editParam));
+      window.location.reload();
+    } catch (err) {
+      toastError(messageErreurApi(err));
+      setRepriseEnCours(false);
+    }
+  };
+
   const enregistrerDevis = () => executer(async () => {
     if (!clientId) { toastError('Choisissez le client.'); return; }
     if (client && rechercheClient.trim() !== (client.nomcomplet || '').trim()) {
@@ -868,7 +888,12 @@ export const NewSanteQuotePage = () => {
       {lectureSeule && (
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', color: 'var(--accent-amber)', fontSize: '0.85rem' }}>
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-          <span>{lectureSeule}</span>
+          <span style={{ flex: 1 }}>{lectureSeule}</span>
+          {saisieAContinuer && (
+            <button type="button" className="btn btn-primary" disabled={repriseEnCours} onClick={continuerSaisie} style={{ flexShrink: 0 }}>
+              {repriseEnCours ? 'Reprise en cours…' : 'Continuer la saisie'}
+            </button>
+          )}
         </div>
       )}
 
@@ -972,7 +997,7 @@ export const NewSanteQuotePage = () => {
               </select>)}
             {champ('Offre Commerciale',
               <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))} disabled={desactive || filiales.length > 0}>
-                {tarifs.map((t) => <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>)}
+                {tarifs.filter((t) => !/oreole/i.test(t.LibelleTarif || '')).map((t) => <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>)}
               </select>,
               filiales.length > 0
                 ? 'Couvertures déjà enregistrées : retirez-les pour changer d\'offre commerciale.'

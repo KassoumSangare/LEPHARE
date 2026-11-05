@@ -39,6 +39,9 @@ export const natureMode = (mode) => {
   };
 };
 
+// Modes qui contre-passent ou sortent de l'argent : pas de plafond au reste dû (même règle que save_premium_collection)
+export const modeSansPlafond = (mode) => ['DMA', 'ANL', 'CPA'].includes(String(mode?.abregereglement || '').trim().toUpperCase());
+
 // Libellés de l'opération selon le mode choisi (titre du formulaire, bouton de validation) :
 // décaissement / réencaissement de prime mal affectée, annulation, compensation (CMP…),
 // prélèvement sur salaire ; tout autre mode est un encaissement

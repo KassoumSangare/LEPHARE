@@ -88,7 +88,21 @@ def _blocages_devis(cursor, devis, contrat_supprime=False):
     return blocages
 
 
+def _retirer_du_package_oreole(cursor, id_devis):
+    """Oreole Santé : le devis Santé emporte le package et ses devis liés non confirmés ; un devis lié sort simplement du package."""
+    cursor.execute("SELECT iddevis_ia, iddevis_afa FROM lephare_oreole_package WHERE iddevis_sante = %s", [id_devis])
+    lies = cursor.fetchone()
+    cursor.execute("DELETE FROM lephare_oreole_adherent WHERE iddevis = %s", [id_devis])
+    cursor.execute("DELETE FROM lephare_oreole_package WHERE iddevis_sante = %s", [id_devis])
+    cursor.execute("UPDATE lephare_oreole_package SET iddevis_ia = NULL WHERE iddevis_ia = %s", [id_devis])
+    cursor.execute("UPDATE lephare_oreole_package SET iddevis_afa = NULL WHERE iddevis_afa = %s", [id_devis])
+    for id_lie in lies or ():
+        if id_lie and not _existe(cursor, "SELECT 1 FROM stdcontrat WHERE iddevis = %s LIMIT 1", [id_lie]):
+            _supprimer_devis(cursor, id_lie)
+
+
 def _supprimer_devis(cursor, id_devis):
+    _retirer_du_package_oreole(cursor, id_devis)
     for table in TABLES_DEVIS:
         cursor.execute(f"DELETE FROM {table} WHERE iddevis = %s", [id_devis])
     # Fichier importé de nouveau : plus d'avertissement « déjà importé » pour un devis qui n'existe plus

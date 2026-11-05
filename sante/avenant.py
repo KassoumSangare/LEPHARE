@@ -78,19 +78,47 @@ def _forfaitaire(cursor, id_devis):
     return bool(cursor.fetchone()[0])
 
 
-def _ttc_formule(cursor, id_offre, prime_base):
-    """Prime TTC annuelle d'une famille au barème de sa formule MINENE : prime de base, accessoire de la grille, taxe Santé
-    du jour, arrondi des primes (TARIFICATION MINENE SANTE.xlsx, 70 %-80 % : 386 800 / 600 000 / 800 000 F)."""
+def _decomposition_formule(cursor, id_offre, prime_base):
+    """Prime TTC et composantes annuelles d'une formule MINENE au tarif en vigueur."""
     cursor.execute(
-        """SELECT fn_lephare_arrondi_montant(%(base)s + a.accessoire_compagnie + a.accessoire_intermediaire + a.taxe_sur_accessoire
-                  + ROUND(%(base)s * COALESCE((SELECT t.tauxtaxe FROM stdtauxtaxegarantieproduit t
-                                                WHERE t.idproduit = %(produit)s AND t.idgarantie = 98
-                                                  AND CURRENT_DATE BETWEEN t.debutvalidite AND t.finvalidite
-                                                ORDER BY t.debutvalidite DESC LIMIT 1), 0) / 100, 0), %(produit)s)
+        """SELECT %(base)s,
+                  a.accessoire_compagnie + a.accessoire_intermediaire,
+                  a.taxe_sur_accessoire + ROUND(%(base)s * COALESCE((SELECT t.tauxtaxe FROM stdtauxtaxegarantieproduit t
+                                                                       WHERE t.idproduit = %(produit)s AND t.idgarantie = 98
+                                                                         AND CURRENT_DATE BETWEEN t.debutvalidite AND t.finvalidite
+                                                                       ORDER BY t.debutvalidite DESC LIMIT 1), 0) / 100, 0),
+                  fn_lephare_arrondi_montant(%(base)s + a.accessoire_compagnie + a.accessoire_intermediaire + a.taxe_sur_accessoire
+                    + ROUND(%(base)s * COALESCE((SELECT t.tauxtaxe FROM stdtauxtaxegarantieproduit t
+                                                  WHERE t.idproduit = %(produit)s AND t.idgarantie = 98
+                                                    AND CURRENT_DATE BETWEEN t.debutvalidite AND t.finvalidite
+                                                  ORDER BY t.debutvalidite DESC LIMIT 1), 0) / 100, 0), %(produit)s)
            FROM fn_get_accessoire_sante_minene(%(offre)s, %(base)s, 0, 1) a""",
         {"base": prime_base, "offre": id_offre, "produit": ID_PRODUIT_SANTE})
     ligne = cursor.fetchone()
-    return float(ligne[0]) if ligne and ligne[0] is not None else None
+    if not ligne or ligne[3] is None:
+        return None
+    return {
+        "PrimeNette": float(ligne[0] or 0),
+        "Accessoire": float(ligne[1] or 0),
+        "Taxe": float(ligne[2] or 0),
+        "PrimeTtc": float(ligne[3]),
+    }
+
+
+def _ecart_formule(cursor, avant, apres):
+    """Avenant MINENE d'un changement de formule, comme le calcule sp_creation_devis_sante v12 : TTC = écart entre les deux formules,
+    accessoire du barème sur la prime de l'avenant, pris dans l'écart ; le reste est la prime nette."""
+    if not avant or avant.get("PrimeTtc") is None or apres.get("PrimeTtc") is None:
+        return None
+    hors_taxes = (apres["PrimeNette"] + apres["Accessoire"]) - (avant["PrimeNette"] + avant["Accessoire"])
+    ttc = apres["PrimeTtc"] - avant["PrimeTtc"]
+    if hors_taxes <= 0:
+        return {"PrimeNette": 0.0, "Accessoire": 0.0, "Taxe": 0.0, "PrimeTtc": 0.0}
+    cursor.execute("SELECT fn_get_accessoire_compagnie(%s, %s, 1)", [hors_taxes, ID_PRODUIT_SANTE])
+    accessoire = float(cursor.fetchone()[0] or 0)
+    if accessoire >= hors_taxes:
+        accessoire = max(apres["Accessoire"] - avant["Accessoire"], 0.0)
+    return {"PrimeNette": hors_taxes - accessoire, "Accessoire": accessoire, "Taxe": ttc - hors_taxes, "PrimeTtc": ttc}
 
 
 def detail_avenant_modification(cursor, id_devis):
@@ -281,8 +309,11 @@ def _avenants(cursor, base):
 
 def _en_cours(cursor, base):
     return _lignes(cursor, """
-        SELECT d.iddevis AS "IdDevis", d.numerodevis AS "NumeroDevis", d.dateeffet::date AS "DateEffet", d.primettc AS "PrimeTtc"
+        SELECT d.iddevis AS "IdDevis", d.numerodevis AS "NumeroDevis", d.dateeffet::date AS "DateEffet", d.primettc AS "PrimeTtc",
+               n.idoperateur AS "IdOperateur", u.name AS "Operateur"
         FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant
+        LEFT JOIN stdnumerosaisiesante n ON n.iddevis = d.iddevis
+        LEFT JOIN account_uranususer u ON u.id = n.idoperateur
         WHERE a.codeavenant = 'MOD' AND d.idproduit = %s AND d.idoldhist = %s
           AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)
         ORDER BY d.iddevis DESC
@@ -304,6 +335,11 @@ def _numeriques(lignes):
 @permission_classes([permissions.IsAuthenticated])
 def avenant_sante(request, idcontrat):
     try:
+        with connection.cursor() as curseur_oreole:
+            curseur_oreole.execute(
+                "SELECT 1 FROM stdcontrat c JOIN lephare_oreole_package p ON p.iddevis_sante = c.iddevis WHERE c.idcontrat = %s", [idcontrat])
+            if curseur_oreole.fetchone():
+                raise ErreurRenouvellement("Police Oreole Santé : l'incorporation se fait depuis le bloc Oreole Santé de la fiche du contrat.")
         if request.method == "GET":
             with connection.cursor() as cursor:
                 base = _base_sante(cursor, idcontrat)
@@ -314,11 +350,18 @@ def avenant_sante(request, idcontrat):
                 for f in familles:
                     if f["IdTarif"] and f["IdTarif"] not in formules:
                         formules[f["IdTarif"]] = _numeriques(_formules(cursor, f["IdTarif"]))
-                        # MINENE : prime TTC de chaque formule au barème, pour annoncer l'écart dû à l'incorporation
+                        # MINENE : décomposition TTC de chaque formule, pour annoncer l'écart dû à l'incorporation
                         for o in formules[f["IdTarif"]]:
-                            o["PrimeTtc"] = _ttc_formule(cursor, o["IdOffre"], o["PrimeBase"]) if o["PrimeBase"] else None
+                            details = _decomposition_formule(cursor, o["IdOffre"], o["PrimeBase"]) if o["PrimeBase"] else None
+                            o.update(details or {"PrimeNette": None, "Accessoire": None, "Taxe": None, "PrimeTtc": None})
                     f["Formules"] = formules.get(f["IdTarif"], [])
+                    # Ce que coûterait le passage à chaque autre formule, détaillé comme le fera l'avenant
+                    actuelle = next((o for o in f["Formules"] if o["IdOffre"] == f["IdOffre"]), None)
+                    f["Ecarts"] = {o["IdOffre"]: _ecart_formule(cursor, actuelle, o) for o in f["Formules"] if o["IdOffre"] != f["IdOffre"]}
                 avenants = _numeriques(_avenants(cursor, base))
+                en_cours = _numeriques(_en_cours(cursor, base))
+                for ligne in en_cours:
+                    ligne["MaSaisie"] = ligne["IdOperateur"] == request.user.id
                 return Response({
                     "Contrat": {
                         "IdContrat": base["idcontrat"], "IdDevis": base["iddevis"], "NumeroPolice": base["numeropolice"],
@@ -332,7 +375,7 @@ def avenant_sante(request, idcontrat):
                     # Police MINENE (tarif forfaitaire par formule) : avenant sans prorata
                     "Forfaitaire": bool(composition) and _forfaitaire(cursor, composition),
                     "Avenants": avenants,
-                    "EnCours": _numeriques(_en_cours(cursor, base)),
+                    "EnCours": en_cours,
                 })
 
         donnees = request.data
@@ -346,7 +389,7 @@ def avenant_sante(request, idcontrat):
             encours = _en_cours(cursor, base)
             if encours:
                 raise ErreurRenouvellement(f"Un avenant est déjà en cours de saisie sur cette police (devis {encours[0]['NumeroDevis']}) : "
-                                           "terminez-le ou supprimez-le d'abord.")
+                                           "ouvrez-le pour le continuer, ou supprimez-le d'abord.")
             effet = _date(donnees.get("DateEffet"))
             if not effet:
                 raise ErreurRenouvellement("Saisissez la date d'effet de l'avenant.")

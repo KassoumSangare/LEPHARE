@@ -26,6 +26,14 @@ const date = (x) => {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 };
 const annee = (x) => Number(String(x || '').slice(0, 4)) || new Date().getFullYear();
+// Lendemain de l'échéance en lettres : « 1er janvier 2027 » pour une échéance au 31 décembre, « 16 avril 2026 » au 15 avril
+const lendemainEnLettres = (x) => {
+  const m = String(x || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const jour = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1));
+  const quantieme = jour.getUTCDate();
+  return `${quantieme === 1 ? '1er' : quantieme} ${jour.toLocaleDateString('fr-FR', { month: 'long', timeZone: 'UTC' })} ${jour.getUTCFullYear()}`;
+};
 const nombre = (x) => Number(x || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }).replace(/[  ]/g, ' ');
 const MILLIONS = ['', 'un', 'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix'];
 // « deux (02) millions » comme sur les CP OREOLE ; autre montant : en chiffres
@@ -203,7 +211,7 @@ const pagesCp = (d) => {
     <div class="rubrique">EFFET ET DUREE DU CONTRAT</div>
     <p>Conformément à l’article 13 Nouveau du code CIMA, la prise d’effet du contrat est subordonnée au paiement intégral de la prime correspondante.<br />
     Le présent contrat prend effet à sa souscription au <b>${date(q.DateEffet)}.</b><br />
-    Son échéance est fixée au <b>${date(q.DateExpiration)}.</b> Il se renouvellera au 1er janvier <b>${annee(q.DateEffet) + 1}</b> à zéro heure pour une durée de 12 mois.</p>
+    Son échéance est fixée au <b>${date(q.DateExpiration)}.</b> Il se renouvellera au <b>${lendemainEnLettres(q.DateExpiration) || `1er janvier ${annee(q.DateEffet) + 1}`}</b> à zéro heure pour une durée de 12 mois.</p>
     <p><b>Il est convenu d’accord partie que le barème en annexe fait partie intégrante des présentes conditions particulières.</b></p>`;
   const page2 = `
     <div class="rubrique">DELAI DE CARENCE</div>
@@ -537,7 +545,8 @@ const renseigne = (x) => {
 };
 const pageFactureMinene = (d) => {
   const q = d.quittance || {};
-  // Avenant : sa date d'incorporation et non celle du jour, la date d'émission n'est pas imprimée (demande du 2026-11-03)
+  // Avenant : sa date d'incorporation, effet et « Fait à », la date d'émission n'est pas imprimée (demande du 2026-11-03).
+  // Sinon la date d'émission, la même à chaque impression et sur les autres documents de la police.
   const avenant = d.periode && !d.periode.EstBase ? (d.periode.Mouvements || []).find((m) => m.IdContrat === d.periode.IdContrat) : null;
   const e = d.bordereau.Etat;
   const contrat = Boolean(e.Contrat);
@@ -579,13 +588,16 @@ const pageFactureMinene = (d) => {
       <tr><th>${contrat ? 'Police Santé' : 'Devis Santé'}</th><th>Police IA</th><th>Police RC</th><th>Effet</th><th>Échéance</th><th>Effectif</th></tr>
       <tr><td class="v">${texte(e.Contrat || q.NumeroDevis || d.bordereau.NumeroDevis)}</td>
         <td class="v">${polices(e.PolicesIa, 'À émettre')}</td><td class="v">${polices(e.PolicesRc, 'À émettre')}</td>
-        <td class="v">${date(e.DateEffet || q.DateEffet)}</td><td class="v">${date(e.DateExpiration || q.DateExpiration)}</td>
+        <td class="v">${date(avenant?.DateEffet || e.DateEffet || q.DateEffet)}</td><td class="v">${date(e.DateExpiration || q.DateExpiration)}</td>
         <td class="v">${adherents} adh. / ${personnes} ass.</td></tr>
     </table>
     ${familles}
     <table class="fm-recap">
       <tr class="titre"><td colspan="2">MINENE SANTÉ : ${adherents} adhérent${adherents > 1 ? 's' : ''}, ${personnes} assuré${personnes > 1 ? 's' : ''}</td></tr>
       <tr><td>Prime TTC Santé</td><td class="m">${montant(somme('PrimeTtcSante'))}</td></tr>
+      ${avenant ? `<tr><td>dont prime nette</td><td class="m">${montant(q.PrimeNette)}</td></tr>
+      <tr><td>dont accessoire</td><td class="m">${montant(q.Accessoire)}</td></tr>
+      <tr><td>dont taxes</td><td class="m">${montant(Number(q.PrimeTtc) - Number(q.PrimeNette) - Number(q.Accessoire))}</td></tr>` : ''}
       <tr><td>Prime TTC Individuelle Accidents</td><td class="m">${montant(somme('PrimeTtcIa'))}</td></tr>
       <tr><td>Prime TTC RC chef de famille</td><td class="m">${montant(somme('PrimeTtcRc'))}</td></tr>
       <tr class="titre"><td>PRIME TOTALE TTC</td><td class="m">${montant(total)}</td></tr>
@@ -596,7 +608,7 @@ const pageFactureMinene = (d) => {
     ${e.Nature ? `<div class="fm-texte">Encaissements : ${texte(e.Nature)}.</div>` : ''}
     <div class="fm-cima">Conformément à l'article 13 du Code CIMA, la prise d'effet des garanties est subordonnée au paiement intégral de la prime.</div>
     <div class="fm-texte">Dans cette attente, nous vous prions d'agréer, nos distinguées salutations.</div>
-    <div class="fm-fait">Fait à ${texte(villeSignature())}, le ${(avenant?.DateEffet ? new Date(avenant.DateEffet) : new Date()).toLocaleDateString('fr-FR')}</div>
+    <div class="fm-fait">Fait à ${texte(villeSignature())}, le ${date(avenant?.DateEffet || q.DateEmission) || new Date().toLocaleDateString('fr-FR')}</div>
     <div class="fm-signe">Pour la société</div>`);
 };
 

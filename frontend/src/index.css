@@ -685,6 +685,11 @@ select.form-control {
   font-size: 0.8125rem;
 }
 
+.data-table.compacte th,
+.data-table.compacte td {
+  padding: 0.35rem 0.35rem;
+}
+
 .data-table tbody tr {
   transition: background-color var(--transition-fast);
 }

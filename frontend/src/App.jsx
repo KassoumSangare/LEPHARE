@@ -32,9 +32,14 @@ const IncorporationFlottePage = lazy(() => import('./pages/user/contracts/Incorp
 const AdminContractManagementPage = lazy(() => import('./pages/admin/contracts/AdminContractManagementPage'));
 const EndorsementPage = lazy(() => import('./pages/user/endorsements/EndorsementPage'));
 const RepriseAffairesPage = lazy(() => import('./pages/user/reprises/RepriseAffairesPage'));
+const OreoleAccueilPage = lazy(() => import('./pages/user/quotes/oreole/OreoleAccueilPage'));
+const NewOreolePage = lazy(() => import('./pages/user/quotes/oreole/NewOreolePage'));
+const OreoleFichierPage = lazy(() => import('./pages/user/quotes/oreole/OreoleFichierPage'));
+const ParametrageOreolePage = lazy(() => import('./pages/admin/settings/ParametrageOreolePage'));
 const CashCollectionPage = lazy(() => import('./pages/user/cash/CashCollectionPage'));
 const ChequeManagementPage = lazy(() => import('./pages/user/cash/ChequeManagementPage'));
 const EtatEncaissementsPage = lazy(() => import('./pages/user/cash/EtatEncaissementsPage'));
+const RechercheReglementPage = lazy(() => import('./pages/user/cash/RechercheReglementPage'));
 const AsaciPage = lazy(() => import('./pages/user/asaci/AsaciPage'));
 const MyDerogationsPage = lazy(() => import('./pages/user/derogations/MyDerogationsPage'));
 const ArchivesPage = lazy(() => import('./pages/user/archives/ArchivesPage'));
@@ -186,6 +191,9 @@ function App() {
                 <Route path="/user/quotes/mrp" element={<NewRisquesDiversQuotePage key="mrp" produit={7} />} />
                 <Route path="/user/quotes/tous-dommages" element={<NewTousDommagesQuotePage />} />
                 <Route path="/user/quotes/afa" element={<NewAfaQuotePage />} />
+                <Route path="/user/quotes/oreole-sante" element={<OreoleAccueilPage />} />
+                <Route path="/user/quotes/oreole-sante/nouveau" element={<NewOreolePage />} />
+                <Route path="/user/quotes/oreole-sante/fichier" element={<OreoleFichierPage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/quotes/transport" element={<TransportAccueilPage />} />
                 <Route path="/user/quotes/transport/hors-guce" element={<NewTransportHorsGucePage />} />
@@ -215,6 +223,7 @@ function App() {
                 <Route path="/user/cash" element={<CashCollectionPage />} />
                 <Route path="/user/cheques" element={<ChequeManagementPage />} />
                 <Route path="/user/cash/etat" element={<EtatEncaissementsPage />} />
+                <Route path="/user/cash/recherche" element={<RechercheReglementPage />} />
 
                 {/* ===== MODULE H – SINISTRES DÉLÉGUÉS ===== */}
                 <Route path="/user/claims" element={<ClaimsListPage />} />
@@ -268,6 +277,7 @@ function App() {
                 <Route path="/admin/settings/branches/:module" element={<AdminRoute><ReglagesBranchePage /></AdminRoute>} />
                 <Route path="/admin/settings/dommages" element={<AdminRoute><ParametrageDommagesPage /></AdminRoute>} />
                 <Route path="/admin/settings/sante" element={<AdminRoute><ParametrageSantePage /></AdminRoute>} />
+                <Route path="/admin/settings/oreole-sante" element={<AdminRoute><ParametrageOreolePage /></AdminRoute>} />
                 <Route path="/admin/settings/depreciation" element={<AdminRoute><ParametrageDepreciationPage /></AdminRoute>} />
                 <Route path="/admin/settings/pool-tpv" element={<AdminRoute><ParametragePoolTpvPage /></AdminRoute>} />
                 <Route path="/admin/settings/tarifs-directs" element={<AdminRoute><ParametrageTarifsDirectsPage /></AdminRoute>} />

@@ -254,8 +254,11 @@ REGLES = [
     # ---- devis : transformation en contrat, archivage
     R("POST", r"confirmationdevis/?$", "devis.validate", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis,
       auteur=auteur_devis),
-    R("POST", r"(archivagedevis|annulationsaisiedevis|desarchivagedevis)/?$", "devis.cancel", objet="devis",
+    R("POST", r"(archivagedevis|annulationsaisiedevis)/?$", "devis.cancel", objet="devis",
       cles=CLES_DEVIS, instantane=instantane_devis),
+    # Restauration d'un élément archivé : un droit à part, accordé dans Administration > Rôles
+    R("POST", r"desarchivagedevis/?$", "archives.restore", objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST", r"archives/(?P<type_objet>\w+)/(?P<pk>\d+)/restauration/?$", "archives.restore", objet="archive", cles=("pk",)),
     R("DELETE", r"mrh/devis/(?P<devis_id>\d+)/$", "devis.delete", objet="devis", cles=("devis_id", "pk"),
       instantane=instantane_devis),
     # ---- devis : saisie (création ou modification selon le devis désigné)
@@ -282,6 +285,8 @@ REGLES = [
     R("POST", r"devissante/importation/", "imports.excel", objet="import"),
     # Aperçu des primes Santé : calcul sans écriture (point de sauvegarde annulé)
     R("POST", r"devissante/apercu/?$", "devis.view", lecture=True),
+    # Un collègue continue la saisie d'un autre : la saisie change de propriétaire, droit explicite (avant la règle générale)
+    R("POST", r"devissante/(?P<iddevis>\d+)/continuer/?$", "devis.update", objet="devis", cles=("iddevis",), instantane=instantane_devis),
     R("POST", r"(devisia/enregistrement/|devisvoyage/enregistrement/|dommages/devis/$|devissante/|garantiesvehiculeflotte/|"
               r"creer-devis-ia-minene/|transformer-sante-en-ia/|consolidationdevis/)",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
@@ -294,6 +299,13 @@ REGLES = [
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
     R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
     R("POST", r"afa/import/analyse/?$", "imports.excel", lecture=True),
+    # Oreole Santé : calcul et lecture du classeur sans écriture, devis liés, émission groupée
+    R("POST", r"oreole/apercu/?$", "devis.view", lecture=True),
+    R("POST", r"oreole/import/analyse/?$", "imports.excel", lecture=True),
+    R("POST", r"oreole/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
+    R("POST", r"oreole/devis/(?P<iddevis>\d+)/emission/?$", "devis.validate", objet="devis", cles=("iddevis",), instantane=instantane_devis),
+    R("POST", r"oreole/contrat/(?P<idcontrat>\d+)/emission/?$", "devis.validate", objet="contrat", cles=("idcontrat",), instantane=instantane_contrat),
+    R("POST", r"oreole/devis/(?P<iddevis>\d+)/encaissement/?$", "encaissements.create", objet="encaissement", cles=("iddevis",)),
     R("POST", r"afa/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
     # Transport hors GUCE : décompte sans écriture, devis, voyages déclarés et ressortie d'une police d'abonnement
@@ -322,6 +334,9 @@ REGLES = [
     R("GET", r"incorporation/\d+/?$", "contrats.view"),
     R("GET", r"incorporation/devis/\d+/?$", "devis.view"),
     R("GET", r"afa/", "devis.view"),
+    R("GET", r"oreole/caisse/?$", "encaissements.view"),
+    R("GET", r"oreole/contrat/", "contrats.view"),
+    R("GET", r"oreole/", "devis.view"),
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
     R("GET", r"minene/(ia|rc)/apercu/?$", "devis.view"),
     R("GET", r"minene/police/?$", "devis.view"),
@@ -414,7 +429,7 @@ REGLES = [
     R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
     R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
     # ---- tarifs et barèmes
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/auto/|parametrage/transport/|parametrage/ia/|parametrage/mrh/|grillesvoyage/)", "tarifs.update", objet="bareme",
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/oreole/|parametrage/auto/|parametrage/transport/|parametrage/ia/|parametrage/mrh/|grillesvoyage/)", "tarifs.update", objet="bareme",
       cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition", "code")),
     # Valeur vénale d'après le tableau de dépréciation, primes d'un tarif à lecture directe (calculs sans écriture,
     # écrans de devis)

@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { cashApi, contractApi, settingsApi } from '../../../api/endpoints';
+import { cashApi, contractApi, oreoleApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { CreditCard, Check, Receipt, FileSpreadsheet, FileText, ListChecks, Search, X } from 'lucide-react';
 import { formatDate } from '../../../utils/dateUtils';
-import { exportToExcel, exportToPdf, printRecuEncaissement } from '../../../utils/exportUtils';
+import { exportToExcel, exportToPdf, printRecuEncaissement, printRecuReglementCommun } from '../../../utils/exportUtils';
 import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
 import { correspondRecherche } from '../../../utils/financeUtils';
 import { resteAEncaisser as resteQuittance } from '../../../utils/resteEncaissement';
@@ -15,6 +15,7 @@ import {
   actionReglement,
   ChampsReglement,
   champsReglementApi,
+  modeSansPlafond,
   modesProposes,
   natureMode,
   reglementVide,
@@ -33,8 +34,31 @@ const dateEmission = (contract) => contract?.raw
   ? contract.raw.dateemission || contract.raw.date_emission || ''
   : contract?.date_emission || '';
 const montantFormate = (montant) => Math.round(Number(montant) || 0).toLocaleString('fr-FR');
+// Prime due : celle de la quittance, que le serveur contrôle (le contrat peut en différer de quelques francs, arrondi d'origine)
+const primeDue = (contract) => Number(contract?.raw?.idquittance?.primettc ?? contract?.prime_totale) || 0;
 // Reliquat de moins de 5 F compté comme nul (utils/resteEncaissement.js)
-const resteAEncaisser = (contract) => resteQuittance(contract?.prime_totale, contract?.montant_encaisse);
+const resteAEncaisser = (contract) => resteQuittance(primeDue(contract), contract?.montant_encaisse);
+
+// Oreole Santé : le client paie une seule prime. Les quittances du package (une par compagnie, pour les reversements)
+// sont réunies sur une ligne, et le serveur répartit le règlement entre elles.
+const LIBELLES_PACKAGE = { Sante: 'Santé', IA: 'Individuelle Accidents', AFA: 'Assistance funéraire' };
+const lignePackage = (p) => ({
+  id: `oreole-${p.IdDevis}`,
+  numeropolice: p.NumeroPolice,
+  client_nom: p.Client,
+  compagnie: p.Quittances.map((q) => q.Compagnie).join(', '),
+  produit: 'Oreole Santé',
+  prime_totale: p.PrimeTtc,
+  montant_encaisse: p.Encaisse,
+  statut_encaissement: 'À Encaisser',
+  date_emission: p.DateEmission,
+  raw: { dateemission: p.DateEmission, idquittance: { numeroquittance: p.NumeroQuittance } },
+  oreole: p,
+});
+const reunirPackages = (contrats, packages) => {
+  const dansUnPackage = new Set(packages.flatMap((p) => p.Quittances.map((q) => q.NumeroQuittance)));
+  return [...packages.map(lignePackage), ...contrats.filter((c) => !dansUnPackage.has(numeroQuittance(c)))];
+};
 
 // Aperçu du reçu ouvert au clic, rempli une fois l'encaissement enregistré
 const ouvrirFenetreRecu = (message) => {
@@ -63,13 +87,22 @@ export const CashCollectionPage = () => {
   const [banques, setBanques] = useState([]);
   const [filtres, setFiltres] = useState({ du: '', au: '', compagnie: '', statut: '', recherche: '' });
   const { success, error: toastError } = useToast();
+  // Lien « Encaisser » de la fiche d'un contrat Oreole Santé : ouvre directement le règlement du package
+  const [parametres, setParametres] = useSearchParams();
+  const packageDemande = useRef(parametres.get('oreole'));
 
   const loadContracts = async () => {
     try {
       // Contrats dont la quittance reste à encaisser, derniers confirmés en tête
-      const data = await contractApi.getContracts({ a_encaisser: 1 });
+      const [data, oreole] = await Promise.all([
+        contractApi.getContracts({ a_encaisser: 1 }),
+        oreoleApi.caisse().catch((err) => {
+          console.error('Packages Oreole Santé indisponibles :', err);
+          return { Packages: [] };
+        }),
+      ]);
       if (Array.isArray(data)) {
-        setContracts(data);
+        setContracts(reunirPackages(data, oreole.Packages || []));
       }
     } catch (err) {
       console.error('Erreur chargement contrats caisse Django:', err);
@@ -92,7 +125,11 @@ export const CashCollectionPage = () => {
   const [enregistrement, setEnregistrement] = useState(false);
   const changerReglement = (champ, valeur) => setReglement((prev) => ({ ...prev, [champ]: valeur }));
   // Titre et bouton du formulaire selon le mode choisi (décaissement, annulation, compensation…)
-  const action = actionReglement(modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode)));
+  const modeChoisi = modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode));
+  const action = actionReglement(modeChoisi);
+  // Jamais au-delà de ce qui reste dû (le serveur le contrôle aussi)
+  const plafond = selectedContract && !modeSansPlafond(modeChoisi) ? resteAEncaisser(selectedContract) : null;
+  const depassement = plafond !== null && Number(montantEncaisse) > plafond;
 
   const handleOpenPayment = (contract) => {
     setSelectedContract(contract);
@@ -106,9 +143,21 @@ export const CashCollectionPage = () => {
     setIsModalOpen(true);
   };
 
+  useEffect(() => {
+    if (!packageDemande.current || !modes.length || !contracts.length) return;
+    const ligne = contracts.find((c) => String(c.oreole?.IdDevis) === String(packageDemande.current));
+    packageDemande.current = null;
+    setParametres({}, { replace: true });
+    if (ligne) handleOpenPayment(ligne);
+  }, [contracts, modes]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Réimpression du reçu du dernier règlement de la quittance
   const handleShowQuittance = async (contract) => {
     const fenetre = ouvrirFenetreRecu('Préparation de la quittance…');
+    if (contract.oreole) {
+      await printRecuReglementCommun(contract.oreole.DernierEncaissement, fenetre);
+      return;
+    }
     try {
       const reglement = await cashApi.getDernierReglementQuittance(numeroQuittance(contract));
       await printRecuEncaissement(reglement?.iddetailencaissement, fenetre);
@@ -127,6 +176,10 @@ export const CashCollectionPage = () => {
       toastError("Ce contrat n'a pas de quittance : encaissement impossible.");
       return;
     }
+    if (depassement) {
+      toastError(`Le montant dépasse le reste dû de ${montantFormate(plafond)} F.`);
+      return;
+    }
 
     const fenetre = ouvrirFenetreRecu("Enregistrement de l'encaissement…");
     setEnregistrement(true);
@@ -134,17 +187,26 @@ export const CashCollectionPage = () => {
       // Date de saisie : toujours la date du jour (non modifiable, imposée aussi par le serveur)
       const [annee, mois, jour] = aujourdhui().split('-');
       const mode = modes.find((m) => String(m.idmodeencaissement) === String(reglement.idMode));
-      const res = await cashApi.collectPremium({
+      const charge = {
         ...champsReglementApi(reglement, mode),
         date_encaissement: `${jour}-${mois}-${annee}`,
         montant_total: Number(montantEncaisse),
-        liste_quittance: [{ numero_quittance: quittance, montant_encaissement: Number(montantEncaisse) }],
-      });
+      };
+      const res = selectedContract.oreole
+        ? await oreoleApi.encaisser(selectedContract.oreole.IdDevis, charge)
+        : await cashApi.collectPremium({
+          ...charge,
+          liste_quittance: [{ numero_quittance: quittance, montant_encaissement: Number(montantEncaisse) }],
+        });
       setIsModalOpen(false);
       loadContracts();
       success(res.data?.message || `Règlement de ${Number(montantEncaisse).toLocaleString('fr-FR')} FCFA enregistré.`);
-      const [ligne] = await cashApi.getDetailsEncaissement(res.data?.id_encaissement);
-      await printRecuEncaissement(ligne?.iddetailencaissement, fenetre);
+      if (selectedContract.oreole) {
+        await printRecuReglementCommun(res.data?.id_encaissement, fenetre);
+      } else {
+        const [ligne] = await cashApi.getDetailsEncaissement(res.data?.id_encaissement);
+        await printRecuEncaissement(ligne?.iddetailencaissement, fenetre);
+      }
     } catch (err) {
       console.error('Erreur encaissement :', err.response?.data || err);
       if (fenetre) fenetre.close();
@@ -155,7 +217,7 @@ export const CashCollectionPage = () => {
   };
 
   const compagnies = useMemo(
-    () => [...new Set(contracts.map((contract) => contract.compagnie).filter(Boolean))]
+    () => [...new Set(contracts.flatMap((contract) => (contract.oreole ? contract.oreole.Quittances.map((q) => q.Compagnie) : [contract.compagnie])).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'fr')),
     [contracts],
   );
@@ -163,17 +225,18 @@ export const CashCollectionPage = () => {
     const emission = String(dateEmission(contract)).slice(0, 10);
     if (filtres.du && (!emission || emission < filtres.du)) return false;
     if (filtres.au && (!emission || emission > filtres.au)) return false;
-    if (filtres.compagnie && contract.compagnie !== filtres.compagnie) return false;
+    if (filtres.compagnie && !(contract.oreole ? contract.oreole.Quittances.some((q) => q.Compagnie === filtres.compagnie) : contract.compagnie === filtres.compagnie)) return false;
     if (filtres.statut && contract.statut_encaissement !== filtres.statut) return false;
     return correspondRecherche(filtres.recherche, [
       contract.numeropolice, contract.client_nom, contract.compagnie, contract.produit,
       contract.statut_encaissement, dateEmission(contract), numeroQuittance(contract),
-      contract.prime_totale, contract.montant_encaisse,
+      primeDue(contract), contract.montant_encaisse,
+      ...(contract.oreole ? contract.oreole.Quittances.flatMap((q) => [q.NumeroPolice, q.NumeroQuittance]) : []),
     ]);
   }), [contracts, filtres]);
 
   const exporterEtat = (format) => {
-    const totalPrimes = contratsFiltres.reduce((total, contract) => total + (Number(contract.prime_totale) || 0), 0);
+    const totalPrimes = contratsFiltres.reduce((total, contract) => total + primeDue(contract), 0);
     const totalEncaisse = contratsFiltres.reduce((total, contract) => total + (Number(contract.montant_encaisse) || 0), 0);
     const totalRestant = contratsFiltres.reduce(
       (total, contract) => total + resteAEncaisser(contract),
@@ -200,7 +263,7 @@ export const CashCollectionPage = () => {
         contract.compagnie,
         dateEmission(contract) ? formatDate(dateEmission(contract)) : '',
         numeroQuittance(contract),
-        `${montantFormate(contract.prime_totale)} F`,
+        `${montantFormate(primeDue(contract))} F`,
         `${montantFormate(contract.montant_encaisse)} F`,
         `${montantFormate(resteAEncaisser(contract))} F`,
         contract.statut_encaissement,
@@ -218,7 +281,12 @@ export const CashCollectionPage = () => {
     {
       header: 'N° Police',
       accessor: 'numeropolice',
-      render: (row) => <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>,
+      render: (row) => (
+        <>
+          <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>
+          {row.oreole && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Package Oreole Santé : {row.oreole.Quittances.length} polices</div>}
+        </>
+      ),
     },
     { header: 'Souscripteur', accessor: 'client_nom' },
     { header: 'Compagnie', accessor: 'compagnie' },
@@ -229,7 +297,7 @@ export const CashCollectionPage = () => {
     },
     {
       header: 'Prime Totale',
-      render: (row) => <span>{row.prime_totale.toLocaleString('fr-FR')} F</span>,
+      render: (row) => <span>{primeDue(row).toLocaleString('fr-FR')} F</span>,
     },
     {
       header: 'Déjà Encaissé',
@@ -378,6 +446,9 @@ export const CashCollectionPage = () => {
             <Link to="/user/cash/etat" className="btn btn-primary" title="Consulter l'état détaillé des encaissements">
               <ListChecks size={15} /> États
             </Link>
+            <Link to="/user/cash/recherche" className="btn btn-secondary" title="Retrouver à quoi a servi un chèque ou un autre règlement">
+              <Search size={15} /> Rechercher un règlement
+            </Link>
           </div>
         </div>
         <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
@@ -401,11 +472,22 @@ export const CashCollectionPage = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', marginTop: '0.35rem' }}>
                 <span>Quittance: <strong>{numeroQuittance(selectedContract) || '-'}</strong></span>
-                <span>Prime globale: {selectedContract.prime_totale.toLocaleString('fr-FR')} F</span>
+                <span>Prime globale: {primeDue(selectedContract).toLocaleString('fr-FR')} F</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: '0.875rem', marginTop: '0.35rem' }}>
                 <span>Reste dû: <strong style={{ color: '#fb7185' }}>{resteAEncaisser(selectedContract).toLocaleString('fr-FR')} F</strong></span>
               </div>
+              {selectedContract.oreole && (
+                <div style={{ marginTop: '0.6rem', paddingTop: '0.55rem', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem' }}>
+                  <div style={{ marginBottom: '0.3rem' }}>Un seul règlement pour le package, réparti automatiquement entre les compagnies :</div>
+                  {selectedContract.oreole.Quittances.map((q) => (
+                    <div key={q.NumeroQuittance} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      <span>{LIBELLES_PACKAGE[q.Produit] || q.Produit} - {q.Compagnie}</span>
+                      <strong>{Math.round(q.Reste).toLocaleString('fr-FR')} F</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="responsive-form-row">
@@ -416,9 +498,17 @@ export const CashCollectionPage = () => {
                   className="form-control"
                   required
                   min="1"
+                  step="any"
+                  max={plafond ?? undefined}
+                  aria-invalid={depassement}
                   value={montantEncaisse}
                   onChange={(e) => setMontantEncaisse(parseInt(e.target.value) || 0)}
                 />
+                {depassement && (
+                  <div role="alert" style={{ marginTop: '0.35rem', fontSize: '0.8rem', fontWeight: 600, color: '#fb7185' }}>
+                    Le montant dépasse le reste dû de {montantFormate(plafond)} F.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -432,7 +522,7 @@ export const CashCollectionPage = () => {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={enregistrement}
+                disabled={enregistrement || depassement}
                 style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}
               >
                 <Check size={18} /> {enregistrement ? 'Enregistrement…' : action.bouton}

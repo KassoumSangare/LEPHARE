@@ -47,7 +47,9 @@ from .views_finance import (
     ZERO,
     EcrituresAdministrateur,
     ErreurFinance,
+    SQL_ACC_COURTIER,
     SQL_LIGNES_ENCAISSEMENT,
+    SQL_PART_COMPAGNIE,
     _date,
     _entier,
     _erreur,
@@ -58,6 +60,7 @@ from .views_finance import (
     _restes_nets,
     controle_paiement_cabinet,
     debut_reversements,
+    part_compagnie,
 )
 
 REVERSEMENT = BordereauReversement.NATURE_REVERSEMENT
@@ -158,7 +161,7 @@ SQL_QUITTANCES = """
            NULLIF(TRIM(ct.numeroavenantcompagnie), '') AS avenantcompagnie,
            COALESCE(ct.taux_commission, q.taux_commission, 0) AS taux,
            COALESCE(ct.commissionintermediaire, 0) AS commission,
-           COALESCE(ct.accessoireintermediaire, 0) AS acccourtier,
+           """ + SQL_ACC_COURTIER.format(ct="ct") + """ AS acccourtier, """ + SQL_PART_COMPAGNIE.format(ct="ct") + """ AS partcompagnie,
            public.fn_lephare_prime_ht(COALESCE(ct.primenette, q.primenette), COALESCE(ct.accessoire, q.accessoire),
                                       COALESCE(ct.taxe, q.taxe), ct.fga, ct.cedeao, COALESCE(ct.primettc, q.primettc),
                                       ct.primeimposee) AS primeht
@@ -200,7 +203,7 @@ def _infos_quittance(q):
         "DateEffet": _iso(q["dateeffet"]),
         "DateExpiration": _iso(q["dateexpiration"]),
         "PrimeHT": _nombre(round(q["primeht"] or 0)),
-        "PrimeTtc": _nombre(q["primettc"]),
+        "PrimeTtc": _nombre(part_compagnie(q["primettc"], q["partcompagnie"])),
         "AccCourtier": _nombre(q["acccourtier"]),
         "Taux": _nombre(q["taux"]),
         "Commission": _nombre(q["commission"]),
@@ -259,8 +262,10 @@ SQL_REGLEMENTS = """
     SELECT e.idencaissement, e.idmodepaiement, UPPER(TRIM(COALESCE(m.abregereglement, ''))) AS abrege,
            m.libellemodepaiement AS mode, e.dateencaissement::date AS dateencaissement, e.datecheque,
            -- Espèces : transmises directement à la compagnie (réclamation de commission), sans reversement par le
-           -- cabinet (demande du 2026-10-20), quel que soit l'ordre saisi auparavant
-           CASE WHEN e.idmodepaiement = %s OR e.ordrereglement = 'COMPAGNIE'
+           -- cabinet (demande du 2026-10-20), quel que soit l'ordre saisi auparavant. Package Oreole Santé : l'argent reste au
+           -- cabinet, qui garde ses frais courtiers et reverse à chaque compagnie sa part, quel que soit le mode (décision du 2026-11-05)
+           CASE WHEN pk.package THEN 'CABINET'
+                WHEN e.idmodepaiement = %s OR e.ordrereglement = 'COMPAGNIE'
                      OR UPPER(TRIM(COALESCE(m.abregereglement, ''))) = 'ESP' THEN 'COMPAGNIE' ELSE 'CABINET' END AS ordre,
            NULLIF(TRIM(e.numerocheque), '') AS numerocheque, NULLIF(TRIM(e.numerobordereau), '') AS numerobordereau,
            NULLIF(TRIM(e.numerorecuoperateur), '') AS recu, NULLIF(TRIM(e.compte_compensation), '') AS compensation,
@@ -272,6 +277,10 @@ SQL_REGLEMENTS = """
     LEFT JOIN stdbanque b ON b.idbanque = e.idbanque
     LEFT JOIN LATERAL (SELECT c.montantinitial FROM stdchequeoperation op JOIN stdcheque c ON c.idcheque = op.idcheque
                        WHERE op.idencaissement = e.idencaissement ORDER BY op.idoperation LIMIT 1) ch ON TRUE
+    CROSS JOIN LATERAL (SELECT EXISTS (SELECT 1 FROM stddetailencaissement dx JOIN stdquittance qx ON qx.numeroquittance = dx.numeroquittance
+                                       JOIN stdcontrat cx ON cx.idquittance = qx.idquittance
+                                       JOIN lephare_oreole_package px ON cx.iddevis IN (px.iddevis_sante, px.iddevis_ia, px.iddevis_afa)
+                                       WHERE dx.idencaissement = e.idencaissement) AS package) pk
     WHERE e.idencaissement = ANY(%s)
 """
 
@@ -384,7 +393,7 @@ def a_transmettre(request):
             "Montant": _nombre(l["montant_encaissement"]),
             "ResteAReverser": _nombre(reste),
             "CumulEncaisse": _nombre(p["Cumul"] if p else cumul_total),
-            "Arriere": _nombre(max((q["primettc"] or ZERO) - cumul_total, ZERO)),
+            "Arriere": _nombre(part_compagnie(max((q["primettc"] or ZERO) - cumul_total, ZERO), q["partcompagnie"])),
             "StatutPaiement": p["Code"] if p else "",
             "LibelleStatutPaiement": _libelle_paiement(p["Code"], p["Rang"]) if p else "",
         })
@@ -503,11 +512,11 @@ def lire_bordereau(id_reversement):
         lignes.append({
             **_infos_quittance(q),
             "Avenant": _avenant(q),
-            "Encaissement": _nombre(p["Cumul"]),
+            "Encaissement": _nombre(part_compagnie(p["Cumul"], q["partcompagnie"])),
             "FraisGestion": 0.0, "ComDeduite": 0.0, "AccDeduits": 0.0,
             "MontantReverse": _nombre(sum((d["montantreverse"] for d in siens), ZERO)),
             "Soldee": reste <= 0,
-            "ResteDu": _nombre(reste),
+            "ResteDu": _nombre(part_compagnie(reste, q["partcompagnie"])),
             "StatutPaiement": p["Code"],
             "RangPaiement": p["Rang"],
             "LibelleStatutPaiement": _libelle_paiement(p["Code"], p["Rang"]),
@@ -960,7 +969,7 @@ def tableau_reversement(id_compagnie, du, au):
             banque = f"{c['banque']} " if c["banque"] else ""
             cheques_commission[c["id"]] = (f"{'CHQ' if c['mode_paiement'] == 'CHQ' else 'VIR'} {banque}N°{c['reference_paiement']} "
                                            f"du {_jma(c['date_paiement'])} de FCFA {_f(c['montant_total'])}")
-        ttc = q["primettc"] or ZERO
+        ttc = part_compagnie(q["primettc"] or ZERO, q["partcompagnie"])
         reste = reste_a_encaisser(ttc, reverse)
         observations = []
         if reste > 0:

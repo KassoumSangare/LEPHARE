@@ -3177,6 +3177,24 @@ def creer_ayant_droit_ia(request):
     )
 
 
+def _confirmation_oreole(donnees):
+    """Devis d'un package Oreole Santé confirmé depuis le registre : les trois polices sortent ensemble, avec leur lien."""
+    from sante.oreole import ErreurOreole, emettre, package_du_devis
+
+    id_devis = int(donnees.get("IdDevis") or 0)
+    with connection.cursor() as cursor:
+        package = package_du_devis(cursor, id_devis)
+    if not package:
+        return None
+    try:
+        resultat = emettre(package["iddevis_sante"])
+    except ErreurOreole as erreur:
+        return JsonResponse([{"ObjectId": 0, "OutputMessage": str(erreur)}], status=status.HTTP_400_BAD_REQUEST, safe=False)
+    produit = next((p for p in resultat["Produits"].values() if p and p["IdDevis"] == id_devis), resultat["Produits"]["Sante"])
+    return JsonResponse([{"ObjectId": produit["IdContrat"], "OutputMessage": f"Polices émises : {', '.join(resultat['Emis']) or 'déjà émises'}."}],
+                        status=status.HTTP_201_CREATED, safe=False)
+
+
 # Change quotation into contract
 @api_view(["POST"])
 @authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
@@ -3188,6 +3206,9 @@ def create_contract(request):
         data=confirmationdevis_data
     )
     if confirmationdevis_serializer.is_valid():
+        reponse_oreole = _confirmation_oreole(confirmationdevis_data)
+        if reponse_oreole is not None:
+            return reponse_oreole
         (err, qryset) = save_contract(confirmationdevis_data)
         data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
         st = status.HTTP_201_CREATED
@@ -3785,13 +3806,8 @@ class GarantieSouscriteDevisView(GarantieSouscriteView):
         return self.get_garantie(iddevis, "DEV")
 
 
-# Save Premium collection
-@api_view(["POST"])
-@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
-@permission_classes([permissions.IsAuthenticated])
-def collect_premium(request):
-    enregistrementencaissement_data = JSONParser().parse(request)
-    print("JSON de la requête:", enregistrementencaissement_data)
+# Contrôle et enregistre un encaissement : caisse (collect_premium) et règlement commun d'un package Oreole Santé
+def enregistrer_encaissement(user, enregistrementencaissement_data):
     enregistrementencaissement_serializer = (
         EncaissementGroupeQuittanceSerializer(
             data=enregistrementencaissement_data
@@ -3801,7 +3817,7 @@ def collect_premium(request):
     try:
 
         result_data = save_premium_collection(
-            request.user, enregistrementencaissement_data
+            user, enregistrementencaissement_data
         )
         # 3. Réponse de succès utilisant notre structure définie
         output_serializer = EncaissementResponseSerializer(result_data)
@@ -3832,6 +3848,16 @@ def collect_premium(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+# Save Premium collection
+@api_view(["POST"])
+@authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
+@permission_classes([permissions.IsAuthenticated])
+def collect_premium(request):
+    enregistrementencaissement_data = JSONParser().parse(request)
+    print("JSON de la requête:", enregistrementencaissement_data)
+    return enregistrer_encaissement(request.user, enregistrementencaissement_data)
 
 
 # Cancel Premium collection

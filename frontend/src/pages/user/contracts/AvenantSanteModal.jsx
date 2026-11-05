@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { aLeDroit } from '../../../utils/droits';
 import { ArrowRight, FilePlus2, PencilLine, Repeat, UserPlus, Users } from 'lucide-react';
 import { Modal } from '../../../components/common/Modal';
 import { santeApi } from '../../../api/endpoints';
@@ -108,6 +109,20 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const joursRestants = contrat ? jours(dateEffet, contrat.DateExpiration) : 0;
   const joursPeriode = contrat ? jours(contrat.DateEffet, contrat.DateExpiration) : 0;
   const enCours = donnees?.EnCours?.[0];
+  // Avenant commencé par un collègue : il le continue d'un clic, la saisie passe à son nom
+  const avenantCollegue = Boolean(enCours && !enCours.MaSaisie && aLeDroit('devis.update'));
+  const ouvrirEnCours = async () => {
+    if (avenantCollegue) {
+      try {
+        await santeApi.continuerSaisie(enCours.IdDevis);
+      } catch (err) {
+        toastError(messageErreurApi(err));
+        return;
+      }
+    }
+    onClose();
+    navigate(`/user/quotes/sante?edit=${enCours.IdDevis}`);
+  };
   // Police MINENE : prime fixée par formule, l'écart annuel est dû en entier (sans prorata)
   const forfaitaire = Boolean(donnees?.Forfaitaire);
 
@@ -118,8 +133,16 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const ecartAnnuel = primesConnues ? Number(apres.PrimeBase) - Number(famille.PrimeBase) : 0;
   const estimation = joursPeriode > 0 ? Math.round((ecartAnnuel * Math.max(joursRestants, 0)) / joursPeriode) : 0;
   // Écart TTC au barème des deux formules (MINENE : 800 000 - 600 000 = 200 000 F)
-  const ttcAvant = famille ? famille.Formules.find((o) => o.IdOffre === famille.IdOffre)?.PrimeTtc : null;
+  const formuleAvant = famille?.Formules.find((o) => o.IdOffre === famille.IdOffre);
+  const ttcAvant = formuleAvant?.PrimeTtc ?? null;
   const ecartTtc = changeFormule && ttcAvant != null && apres.PrimeTtc != null ? Number(apres.PrimeTtc) - Number(ttcAvant) : null;
+  // Détail de l'avenant, calculé par le serveur comme le fera le devis : l'accessoire du barème est pris dans l'écart
+  const detailEcart = changeFormule && forfaitaire ? famille.Ecarts?.[apres.IdOffre] : null;
+  const decomposition = detailEcart ? {
+    primeNette: Number(detailEcart.PrimeNette),
+    accessoire: Number(detailEcart.Accessoire),
+    taxe: Number(detailEcart.Taxe),
+  } : null;
   const age = ageAu(membre.DateNaissance, dateEffet);
   const certificatPropose = membre.Lien === 'E' && age !== null && age > Number(surprimes.ageMaxEnfant);
   const affectionsMax = Math.max(0, Number(surprimes.affectionsMax) || 0);
@@ -184,10 +207,11 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
           {enCours ? (
             <div style={{ padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.45)', background: 'rgba(245, 158, 11, 0.08)' }}>
               Un avenant est déjà en cours de saisie : devis <strong>{enCours.NumeroDevis}</strong>, effet le {formatDate(enCours.DateEffet)}.
+              {!enCours.MaSaisie && enCours.Operateur && <> Commencé par <strong>{enCours.Operateur}</strong>.</>}
               <div style={{ marginTop: '0.6rem' }}>
-                <button type="button" className="btn btn-primary" onClick={() => { onClose(); navigate(`/user/quotes/sante?edit=${enCours.IdDevis}`); }}
+                <button type="button" className="btn btn-primary" onClick={ouvrirEnCours}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <ArrowRight size={14} /> Ouvrir l'avenant en cours
+                  <ArrowRight size={14} /> {avenantCollegue ? 'Continuer cet avenant' : "Ouvrir l'avenant en cours"}
                 </button>
               </div>
             </div>
@@ -298,11 +322,19 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                             {' '}est complète, elle passe en <strong style={{ color: 'var(--text-primary)' }}>{apres.Option || apres.Formule}</strong>.
                           </span>
                           {forfaitaire && ecartTtc != null ? (
-                            <span>
-                              Prime de la nouvelle personne : écart entre les deux formules, {fcfa(apres.PrimeTtc)} − {fcfa(ttcAvant)} ={' '}
-                              <strong style={{ color: 'var(--text-primary)' }}>{fcfa(ecartTtc)} F TTC</strong> (prime nette {fcfa(ecartAnnuel)} F),
-                              dû en entier : tarif forfaitaire, sans prorata.
-                            </span>
+                            <>
+                              <span>
+                                Prime de la nouvelle personne : écart entre les deux formules, {fcfa(apres.PrimeTtc)} − {fcfa(ttcAvant)} ={' '}
+                                <strong style={{ color: 'var(--text-primary)' }}>{fcfa(ecartTtc)} F TTC</strong>,
+                                dû en entier : tarif forfaitaire, sans prorata.
+                              </span>
+                              {decomposition && (
+                                <span>
+                                  Détail : prime nette {fcfa(decomposition.primeNette)} F + accessoire {fcfa(decomposition.accessoire)} F
+                                  {' '}+ taxes {fcfa(decomposition.taxe)} F. Surprime d'âge éventuelle en plus.
+                                </span>
+                              )}
+                            </>
                           ) : primesConnues ? (
                             <span>
                               Prime de la nouvelle personne : écart entre les deux formules, {fcfa(apres.PrimeBase)} − {fcfa(famille.PrimeBase)} ={' '}

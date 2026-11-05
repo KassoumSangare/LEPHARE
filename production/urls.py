@@ -30,6 +30,7 @@ from . import renouvellement as renouvellement_views
 from . import minene_connexes
 from . import incorporation as incorporation_views
 from . import suppression as suppression_views
+from . import views_archives
 from . import periode_contrat as periode_contrat_views
 from . import afa as afa_views
 from .views_transport_guce import (
@@ -348,7 +349,9 @@ urlpatterns = [
     path("reprise/devis/<int:id_devis>/attente/", views_reprise.devis_attente, name="reprise_devis_attente"),
     path("reprise/contrat/<int:id_contrat>/", views_reprise.reprise_du_contrat, name="reprise_contrat"),
     path("reprise/<int:pk>/", views_reprise.reprise, name="reprise_detail"),
+    path("archives/<str:type_objet>/<int:pk>/restauration/", views_archives.restauration, name="archives_restauration"),
     path("finance/encaissements/", views_finance.etat_encaissements, name="finance_etat_encaissements"),
+    path("finance/encaissements/recherche/", views_finance.recherche_reglements, name="finance_recherche_reglements"),
     # Bordereau récapitulatif des encaissements d'une période (Excel ; impression dans l'application)
     path("finance/encaissements/recapitulatif/excel/", views_bordereaux.recapitulatif_encaissements_excel, name="finance_recapitulatif_encaissements_excel"),
     path("finance/reversements/a-reverser/", views_finance.lignes_a_reverser, name="finance_a_reverser"),

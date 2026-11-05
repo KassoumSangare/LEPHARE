@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { redirigerSiOreole } from './oreole/oreoleCommun';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { Modal } from '../../../components/common/Modal';
 import { confirmer } from '../../../utils/dialogue';
@@ -81,6 +82,8 @@ export const ViewQuoteModal = ({
     setQuoteAJour(null);
     setImposition(false);
   }, [quoteInitial?.iddevis, isOpen]);
+  // Devis d'un package Oreole Santé : il se consulte dans la branche, avec ses trois polices et ses documents
+  useEffect(() => (isOpen ? redirigerSiOreole(quoteInitial?.iddevis, navigate) : undefined), [isOpen, quoteInitial?.iddevis]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Détail lu en base : assurés d'un devis IA (assureiainfo), saisie d'un devis Santé (couvertures,
   // adhérents, affiliés), voyage d'un devis Voyage (destination, voyageur, garanties enregistrées)

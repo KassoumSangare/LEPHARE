@@ -34,11 +34,13 @@ export const personneDepuisClient = (c) => {
 
 export const Champ = ({ label, requis, aide, erreur, children, large }) => (
   <div className={`form-group${erreur ? ' champ-en-erreur' : ''}`} style={{ margin: 0, ...(large ? { gridColumn: '1 / -1' } : {}) }}>
-    <label className="form-label">
-      {label}
-      {requis && <span style={{ color: 'var(--accent-rose)' }} aria-hidden="true"> *</span>}
-      {requis && <span className="visuellement-cache"> (obligatoire)</span>}
-    </label>
+    {label && (
+      <label className="form-label">
+        {label}
+        {requis && <span style={{ color: 'var(--accent-rose)' }} aria-hidden="true"> *</span>}
+        {requis && <span className="visuellement-cache"> (obligatoire)</span>}
+      </label>
+    )}
     {children}
     {erreur ? <div className="champ-message erreur" role="alert">{erreur}</div> : aide ? <div className="champ-message aide">{aide}</div> : null}
   </div>

@@ -159,11 +159,12 @@ export const exportToExcel = ({ filename, title, subtitle, metadata = {}, header
 };
 
 /**
- * Export PDF Officiel Certifié CIMA avec déclenchement direct d'impression PDF et téléchargement.
+ * Ouvre l'aperçu moderne d'un document destiné à l'impression ou à l'enregistrement en PDF.
  * enTete : bloc République / société / titre / sous-titre ; piedDePage : attestation et signatures ; paysage : A4 en
  * largeur (tableaux de nombreuses colonnes).
  */
 export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers, rows, totals, enTete = true, piedDePage = true, paysage = false }) => {
+  const titreDocument = title || String(filename || 'Export Officiel CIMA').replace(/\.pdf$/i, '');
   const metaHtml = Object.entries(metadata)
     .map(([k, v]) => `<div><span style="color:#64748b;font-weight:600;">${k} :</span> <strong>${v}</strong></div>`)
     .join('');
@@ -198,7 +199,7 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>${title || 'Export Officiel CIMA'}</title>
+  <title>${echapperHtml(titreDocument)}</title>
   <style>
     @page {
       size: A4 ${paysage ? 'landscape' : 'portrait'};
@@ -340,29 +341,17 @@ export const exportToPdf = ({ filename, title, subtitle, metadata = {}, headers,
     </div>
   </div>` : ''}
 
-  <script>
-    window.onload = function() {
-      setTimeout(function() {
-        window.print();
-      }, 350);
-    };
-  </script>
 </body>
 </html>
   `;
 
-  // 1. Open instant Print-to-PDF Window
+  // L'aperçu permet de vérifier le document avant de lancer l'impression ou l'enregistrement PDF.
   const printWindow = ouvrirApercuImpression();
   if (printWindow) {
     printWindow.document.open();
     printWindow.document.write(docHtml);
     printWindow.document.close();
   }
-
-  // 2. Also trigger a direct download of the official certified HTML file as fallback
-  const cleanName = filename.endsWith('.pdf') ? filename.replace(/\.pdf$/, '.html') : (filename.endsWith('.html') ? filename : `${filename}.html`);
-  const blob = new Blob([docHtml], { type: 'text/html;charset=utf-8;' });
-  downloadBlob(blob, cleanName);
 };
 
 // Texte inséré dans un document HTML : les caractères spéciaux sont neutralisés
@@ -3810,11 +3799,11 @@ const buildRecuEncaissement = (info) => {
       <colgroup><col style="width:17%"><col style="width:33%"><col style="width:17%"><col style="width:33%"></colgroup>
       <tr><td>Versement en cours</td><td>${montant(info.MontantEncaissement)}</td><td>Date de paiement</td><td>${formatFrDate(info.DateEncaissement)}</td></tr>
       <tr><td>Assuré(e)</td><td>${t([info.PrenomsAssure, info.NomAssure].filter(Boolean).join(' '))}</td><td>Tel.</td><td>${t(info.TelephoneAssure)}</td></tr>
-      <tr>
-        <td>Police(s) réglée(s)</td><td>Police Assurance ${t(info.LibelleProduit)} N°-${t(info.NumeroPolice)}</td>
-        <td>1 Avt ${t(info.NumeroAvenant)} / ${t(info.NomCompagnie)}</td>
-        <td>Date effet : ${formatFrDate(info.DateEffet)} | Date expiration : ${formatFrDate(info.DateExpiration)}</td>
-      </tr>
+      ${(info.Polices || [info]).map((p, i) => `<tr>
+        <td>${i === 0 ? 'Police(s) réglée(s)' : ''}</td><td>Police Assurance ${t(p.LibelleProduit)} N°-${t(p.NumeroPolice)}${info.Polices ? ` : ${montant(p.MontantEncaissement)} F` : ''}</td>
+        <td>1 Avt ${t(p.NumeroAvenant)} / ${t(p.NomCompagnie)}</td>
+        <td>Date effet : ${formatFrDate(p.DateEffet)} | Date expiration : ${formatFrDate(p.DateExpiration)}</td>
+      </tr>`).join('')}
       <tr><td>Montant</td><td>${montant(info.MontantEncaissement)}</td><td>Montant (Lettre)</td><td>${t(info.MontantEncaissementEnLettres)}</td></tr>
       <tr><td>Mode de paiement</td><td>${t(info.LibelleModePaiement)}${cheque}</td><td>Ref</td><td>${t(info.Reference)}</td></tr>
     </table>
@@ -3857,6 +3846,40 @@ export const printRecuEncaissement = async (iddetailencaissement, fenetre = null
     openPrintWindow(`Quittance ${info.NumeroRecu || ''}`.trim(), buildRecuEncaissement(info), fenetre);
   } catch (err) {
     console.error('Erreur quittance d\'encaissement :', err);
+    erreur('Impossible de charger le règlement pour la quittance. Veuillez réessayer.');
+  }
+};
+
+// Oreole Santé : un seul reçu pour tout le règlement du package, avec le détail police par police.
+export const printRecuReglementCommun = async (idencaissement, fenetre = null) => {
+  const erreur = (message) => {
+    if (!fenetre) return;
+    fenetre.document.open();
+    fenetre.document.write(`<p style="font-family:Arial;padding:20px;color:#b91c1c;">${message}</p>`);
+    fenetre.document.close();
+  };
+  try {
+    const details = idencaissement ? await cashApi.getDetailsEncaissement(idencaissement) : [];
+    const reponses = await Promise.all(details.map((d) => cashApi.getEncaissementInfo(d.iddetailencaissement)));
+    const infos = reponses.map((r) => (r?.data || [])[0]).filter(Boolean);
+    if (!infos.length) {
+      erreur('Aucun règlement enregistré pour cette quittance.');
+      return;
+    }
+    const somme = (cle) => infos.reduce((total, info) => total + (Number(info[cle]) || 0), 0);
+    const cumul = {
+      ...infos[0],
+      Polices: infos,
+      MontantEncaissement: somme('MontantEncaissement'),
+      MontantEncaissementEnLettres: numberToFrenchWords(Math.round(somme('MontantEncaissement'))),
+      PrimeTotale: somme('PrimeTotale'),
+      VersementAnterieur: somme('VersementAnterieur'),
+      TotalVersement: somme('TotalVersement'),
+      Solde: somme('Solde'),
+    };
+    openPrintWindow(`Quittance ${cumul.NumeroRecu || ''}`.trim(), buildRecuEncaissement(cumul), fenetre);
+  } catch (err) {
+    console.error('Erreur quittance du règlement commun :', err);
     erreur('Impossible de charger le règlement pour la quittance. Veuillez réessayer.');
   }
 };
@@ -3918,7 +3941,7 @@ const buildSimpleFacture = (quote) => {
     </div>
 
     <div class="bloc-signature-simple">
-      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(estAvenantIncorporation(quote) ? quote.raw?.dateeffet : new Date())}</strong>.</div>
+      <div>Fait à ${echapperHtml(villeSignature())}, le <strong>${formatFrDate(estAvenantIncorporation(quote) ? quote.raw?.dateeffet : (quote.raw?.dateemission || quote.date_emission || new Date()))}</strong>.</div>
       <div class="signatures-deux-colonnes">
         <div>LE SOUSCRIPTEUR</div>
         <div>LA COMPAGNIE</div>

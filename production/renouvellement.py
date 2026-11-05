@@ -225,6 +225,12 @@ def _devis_en_cours(cursor, base):
 @permission_classes([permissions.IsAuthenticated])
 def renouvellement(request, pk):
     try:
+        with connection.cursor() as curseur_oreole:
+            curseur_oreole.execute(
+                """SELECT 1 FROM stdcontrat c JOIN lephare_oreole_package p ON c.iddevis IN (p.iddevis_sante, p.iddevis_ia, p.iddevis_afa)
+                   WHERE c.idcontrat = %s""", [pk])
+            if curseur_oreole.fetchone():
+                raise ErreurRenouvellement("Police Oreole Santé : le renouvellement des polices liées se fait depuis le bloc Oreole Santé de la fiche du contrat.")
         if request.method == "GET":
             with connection.cursor() as cursor:
                 base = _contrat_base(cursor, pk)

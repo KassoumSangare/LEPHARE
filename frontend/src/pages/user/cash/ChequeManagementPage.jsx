@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { Receipt, Plus, Trash2, AlertTriangle, RotateCcw, Ban, BellRing } from 'lucide-react';
+import { Receipt, Plus, Trash2, AlertTriangle, RotateCcw, Ban, BellRing, Search } from 'lucide-react';
 import { cashApi, customerApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
@@ -350,6 +351,12 @@ export const ChequeManagementPage = () => {
       header: 'Actions',
       render: (row) => (
         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+          {Number(row.nombre_operations) > 0 && (
+            <Link to={`/user/cash/recherche?q=${encodeURIComponent(row.numero_cheque)}`} className="btn btn-secondary"
+              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem' }} title="Voir les polices et quittances payées par ce chèque">
+              <Search size={13} /> Utilisation
+            </Link>
+          )}
           {row.statut === 'ENCAISSE' && Number(row.nombre_operations) > 0 && (
             <button
               type="button"

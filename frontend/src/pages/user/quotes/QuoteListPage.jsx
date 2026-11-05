@@ -28,6 +28,7 @@ import {
 } from '../../../utils/attestationAuto';
 import {
   FileText,
+  HeartPulse,
   Plus,
   CheckCircle,
   Edit2,
@@ -587,7 +588,7 @@ export const QuoteListPage = () => {
             Gestion des Devis
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Centralisation, consultation et transformation des devis toutes branches (Auto, Voyage, Transport, MRH, Santé, IA, Dommages).
+            Centralisation, consultation et transformation des devis toutes branches (Auto, Voyage, Transport, MRH, Santé, Oreole Santé, IA, Dommages).
           </p>
         </div>
 
@@ -605,6 +606,15 @@ export const QuoteListPage = () => {
             <span>Imprimer la Liste</span>
           </button>
           <BoutonsNouveauDevis />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate('/user/quotes/oreole-sante')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+          >
+            <HeartPulse size={16} />
+            <span>Devis Oreole Santé</span>
+          </button>
         </div>
       </div>
 

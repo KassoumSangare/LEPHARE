@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { redirigerSiOreole } from './oreole/oreoleCommun';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
@@ -153,6 +154,8 @@ export const NewIaQuotePage = () => {
   // « Modifier » depuis le registre des devis : /user/quotes/ia?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
+  useEffect(() => redirigerSiOreole(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
   // Devis de renouvellement (page Renouvellement) : tous les assurés sont retarifés à l'enregistrement
   const renouvellementParam = searchParams.get('renouvellement') === '1';
   // Devis d'incorporation dans un contrat à plusieurs personnes (page Incorporation, ou devis rouvert du registre) : police

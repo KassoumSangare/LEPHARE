@@ -22,6 +22,7 @@ MODULES = [
     ("imports", "Imports de fichiers"),
     ("crm", "Suivi commercial"),
     ("documents", "Documents (GED)"),
+    ("archives", "Archives"),
     ("asaci", "Attestations ASACI"),
     ("reporting", "États et reporting"),
     ("tarifs", "Tarifs et barèmes"),
@@ -47,7 +48,7 @@ DROITS = [
     ("devis.create", "Créer un devis", "Toutes branches, brouillons compris.", False, False, False),
     ("devis.update", "Modifier un devis", "« Modifier », garanties, véhicules, assurés, pièces jointes.", False, False, False),
     ("devis.validate", "Transformer un devis en contrat", "Confirmation du devis : police et quittance émises.", True, False, True),
-    ("devis.cancel", "Archiver un devis", "Archivage, désarchivage et abandon d'une saisie.", True, False, False),
+    ("devis.cancel", "Archiver un devis", "Archivage et abandon d'une saisie. La restauration est un droit à part (Archives).", True, False, False),
     ("devis.delete", "Supprimer un devis", "Suppression définitive d'un devis non confirmé et de sa saisie.", True, True, False),
     ("devis.primes", "Imposer ou corriger les primes", "Primes imposées, correction des primes, répartition des garanties.", True, True, False),
     ("devis.derogation_age", "Déroger à la limite d'âge",
@@ -96,6 +97,8 @@ DROITS = [
 
     ("documents.view", "Consulter les documents", "", False, False, False),
     ("documents.update", "Classer ou retirer des documents", "", False, False, False),
+
+    ("archives.restore", "Restaurer un élément archivé", "Bouton « Restaurer » de la page Archives : clients, devis, contrats et sinistres.", True, False, False),
 
     ("asaci.attestations", "Gérer les attestations ASACI", "Demande, suivi et mise à jour des attestations.", False, False, False),
 

@@ -25,6 +25,7 @@ from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_bas
 
 ID_PRODUIT_AUTO = 1
 ID_PRODUIT_IA = 2
+OFFRE_IA_MINENE = 66
 MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia"}
 MODE_PRORATA = "prorata"
 MODE_FORFAIT = "forfait"
@@ -70,10 +71,16 @@ def _personnes(cursor, police):
     return cursor.fetchone()[0]
 
 
+def _ia_minene(cursor, id_devis):
+    """IA rattachée à une police Santé MINENE (offre 66) : contrat de groupe par nature, même à une seule personne."""
+    cursor.execute("SELECT 1 FROM stddevisdetail WHERE iddevis = %s AND idoffre = %s LIMIT 1", [id_devis, OFFRE_IA_MINENE])
+    return bool(cursor.fetchone())
+
+
 def _contrat_flottant(cursor, id_contrat):
     base = _contrat_base(cursor, id_contrat)
     if base["idproduit"] == ID_PRODUIT_IA:
-        if not base["flotte"] and _personnes(cursor, base["numeropolice"]) <= 1:
+        if not base["flotte"] and _personnes(cursor, base["numeropolice"]) <= 1 and not _ia_minene(cursor, base["iddevis"]):
             raise ErreurRenouvellement("Contrat individuel : l'incorporation est réservée aux contrats à plusieurs personnes.")
     elif base["idproduit"] != ID_PRODUIT_AUTO or not base["flotte"]:
         raise ErreurRenouvellement("L'incorporation est réservée aux flottes Automobile et aux contrats Individuelle Accidents à plusieurs personnes.")

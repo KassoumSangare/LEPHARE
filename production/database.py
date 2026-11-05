@@ -2709,6 +2709,44 @@ def get_quotation_counts(idproduit):
 
 #####################################################################
 # Save premium collection
+# Modes qui contre-passent ou sortent de l'argent d'une quittance : pas de plafond (décaissement, annulation, contrepartie)
+MODES_SANS_PLAFOND = {"DMA", "ANL", "CPA"}
+
+
+def _controler_reste_du(liste_quittance):
+    """Un règlement ne dépasse jamais ce qui reste dû sur sa quittance (demande du 2026-11-05). La procédure écrêtait la
+    quittance, gardait le montant entier sur la ligne, base du reversement, et mettait le surplus en avoir client. Les
+    quittances restent verrouillées jusqu'à la fin de l'enregistrement : deux caisses ne règlent pas le même reste."""
+    numeros = [str(ligne["numero_quittance"]) for ligne in liste_quittance]
+    if len(set(numeros)) != len(numeros):
+        raise ValidationError("Une même quittance figure deux fois dans ce règlement.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT numeroquittance, COALESCE(primettc, 0), COALESCE(mt_encaisse, 0) FROM stdquittance WHERE numeroquittance = ANY(%s) FOR UPDATE",
+            [numeros],
+        )
+        quittances = {numero: (ttc, encaisse) for numero, ttc, encaisse in cursor.fetchall()}
+    # Centimes affichés quand il y en a : « 4 684 163,34 F dépasse 4 684 163,33 F »
+    francs = lambda valeur: (f"{valeur:,.0f}" if valeur == valeur.to_integral_value() else f"{valeur:,.2f}").replace(",", " ").replace(".", ",")  # noqa: E731
+    for ligne, numero in zip(liste_quittance, numeros):
+        if numero not in quittances:
+            raise ValidationError(f"Quittance {numero} introuvable.")
+        ttc, encaisse = quittances[numero]
+        du = ttc - encaisse
+        montant = Decimal(str(ligne["montant_encaissement"]))
+        # Ristourne : la quittance est négative, et ce qui reste dû aussi
+        sens = -1 if ttc < 0 else 1
+        if du * sens <= 0:
+            raise ValidationError(f"La quittance {numero} est déjà soldée : aucun règlement n'est possible.")
+        if montant * sens < 0:
+            raise ValidationError(f"Quittance {numero} : le montant du règlement est invalide.")
+        if montant * sens > du * sens:
+            raise ValidationError(
+                f"Quittance {numero} : le règlement de {francs(montant)} F dépasse le reste dû de {francs(du)} F "
+                f"(prime {francs(ttc)} F, déjà encaissé {francs(encaisse)} F)."
+            )
+
+
 def save_premium_collection(user, input_data):
     def texte(cle):
         return str(input_data.get(cle) or "").strip()
@@ -2724,7 +2762,8 @@ def save_premium_collection(user, input_data):
     if input_data.get("banque"):
         banque = int(input_data["banque"])
 
-    montant_total = Decimal(input_data["montant_total"])
+    # str : un montant à centimes reçu en nombre flottant vaut exactement ce qui a été saisi, comme les lignes envoyées à la procédure
+    montant_total = Decimal(str(input_data["montant_total"]))
     # Tout chèque porte sa banque (demande du 2026-10-21) ; 1 = « NEANT »
     if abrege == "CHQ" and banque <= 1:
         raise ValidationError("La banque du chèque est à renseigner.")
@@ -2735,7 +2774,7 @@ def save_premium_collection(user, input_data):
     utilisation_cheque = abrege == "CHQ" and banque != 1 and numero_cheque != ""
     montant_initial_cheque = None
     if input_data.get("montant_initial_cheque"):
-        montant_initial_cheque = Decimal(input_data["montant_initial_cheque"])
+        montant_initial_cheque = Decimal(str(input_data["montant_initial_cheque"]))
 
     reference_encaissement = texte("reference_encaissement")
     # Paiement mobile saisi à la caisse : le reçu remis par l'opérateur tient lieu de
@@ -2814,6 +2853,9 @@ def save_premium_collection(user, input_data):
     cheque = None
 
     with transaction.atomic():
+        if abrege not in MODES_SANS_PLAFOND:
+            _controler_reste_du(liste_quittance)
+
         # Réencaissement d'un chèque impayé : ses références sont obligatoires
         cheque_impaye = None
         if id_cheque_impaye:
