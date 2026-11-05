@@ -11,7 +11,10 @@ affaire, chacun avec son taux.
 Commission d'une quittance = taux convenu x assiette, arrondie au franc :
 - COMMISSION : commission du cabinet (stdcontrat.commissionintermediaire), hors accessoires, assiette par défaut ;
 - PRIME_NETTE : prime nette du contrat ;
-- FORFAIT : montant convenu.
+- PAR_ASSURE : montant convenu x nombre d'assurés de la quittance (assurés principaux : adhérents en Santé, une personne par ligne en IA et
+  en Vie ; avenant : les assurés ajoutés). Le nombre se corrige sur une commission à payer quand la police n'a pas la liste des assurés ;
+- FORFAIT : montant convenu pour un devis (anciennes saisies Oreole).
+Un taux ou un montant par assuré, jamais les deux.
 Une ristourne donne une commission négative, déduite du prochain règlement.
 
 Les lignes de commission sont générées à la lecture (synchroniser), pour couvrir toutes les façons d'émettre une quittance (confirmation,
@@ -36,8 +39,11 @@ from .reste_encaissement import sql_reste
 logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
-ASSIETTES = {"COMMISSION": "Commission du cabinet", "PRIME_NETTE": "Prime nette", "FORFAIT": "Montant convenu"}
+ASSIETTES = {"COMMISSION": "Commission du cabinet", "PRIME_NETTE": "Prime nette", "PAR_ASSURE": "Montant par assuré", "FORFAIT": "Montant convenu"}
 ASSIETTES_AU_TAUX = ("COMMISSION", "PRIME_NETTE")
+ASSIETTES_SAISIES = ("COMMISSION", "PRIME_NETTE", "PAR_ASSURE")
+CODES_BASE = ("AFN", "REN", "RPP", "TRP")
+MONTANT_MAXIMUM = Decimal("100000000")
 STATUTS = {"A_PAYER": "À payer", "PAYEE": "Payée", "ANNULEE": "Annulée"}
 MODES = {"ESP": "Espèces", "CHQ": "Chèque", "VIR": "Virement", "MOB": "Mobile money"}
 CODES_ANNULATION = ("ANL", "ANP")
@@ -82,6 +88,62 @@ def _taux(valeur):
     return taux
 
 
+def _montant(valeur):
+    try:
+        montant = Decimal(str(valeur if valeur not in (None, "") else 0).replace(" ", "").replace(",", "."))
+    except InvalidOperation as erreur:
+        raise ErreurApporteur("Le montant par assuré n'est pas un nombre.") from erreur
+    if montant < 0 or montant > MONTANT_MAXIMUM:
+        raise ErreurApporteur("Le montant par assuré est positif et inférieur à 100 000 000 F.")
+    return _franc(montant)
+
+
+def convention(donnees, assiette_actuelle=None):
+    """Assiette, taux et montant par assuré d'un rattachement : un taux ou un montant par assuré, jamais les deux."""
+    assiette = _texte(donnees.get("Assiette")).upper() or assiette_actuelle or "COMMISSION"
+    if assiette not in ASSIETTES_SAISIES:
+        raise ErreurApporteur("Choisissez un taux ou un montant par assuré.")
+    taux, montant = _taux(donnees.get("Taux")), _montant(donnees.get("MontantParAssure"))
+    if taux > 0 and montant > 0:
+        raise ErreurApporteur("Saisissez un taux ou un montant par assuré, pas les deux.")
+    if assiette == "PAR_ASSURE":
+        if montant <= 0:
+            raise ErreurApporteur("Saisissez le montant convenu par assuré.")
+        return assiette, ZERO, montant
+    if taux <= 0:
+        raise ErreurApporteur("Saisissez le taux de commission convenu pour cet apporteur.")
+    return assiette, taux, ZERO
+
+
+def assures_par_mouvement(mouvements):
+    """
+    Assurés de chaque mouvement d'une police, pour une commission par assuré. Santé : adhérents (un assuré principal et ses ayants droit
+    comptent pour un) ; un avenant reprend toute la composition, seuls les adhérents en plus comptent. Autres branches : une ligne d'assuré
+    par personne ; un avenant sans prime n'ajoute personne.
+    """
+    resultat, precedent = {}, None
+    for m in mouvements:
+        if m["code"] in CODES_ANNULATION:
+            continue
+        adherents = m.get("adherents") or 0
+        if adherents:
+            nombre = adherents if (m["code"] in CODES_BASE or not precedent) else max(adherents - (precedent.get("adherents") or 0), 0)
+        else:
+            nombre = m.get("afa") or m.get("details") or 0
+            if m["code"] not in CODES_BASE and (m.get("primenette") or 0) <= 0:
+                nombre = 0
+        resultat[m["idcontrat"]] = nombre
+        precedent = m
+    return resultat
+
+
+def _assures_du_devis(cursor, id_devis):
+    cursor.execute("""SELECT (SELECT COUNT(*) FROM stdadherent WHERE iddevis = %(d)s), (SELECT COUNT(*) FROM lephare_afa_assure WHERE iddevis = %(d)s),
+                             (SELECT COUNT(*) FROM stddevisdetail WHERE iddevis = %(d)s)""", {"d": id_devis})
+    adherents, afa, details = cursor.fetchone()
+    return adherents or afa or details or 0
+
+
 def _date(valeur, champ):
     if not valeur:
         return None
@@ -117,7 +179,10 @@ def synchroniser(cursor, ids=None):
         for m in _lignes(cursor, """
                 SELECT c.idcontrat, c.iddevis, c.idquittance, c.numeropolice, c.primenette, c.commissionintermediaire, COALESCE(c.idcontratannulation, 0) AS annulation,
                        TRIM(a.codeavenant) AS code, TRIM(a.libelleavenant) AS mouvement, q.numeroquittance, q.dateemission::date AS dateemission,
-                       TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client
+                       TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client,
+                       (SELECT COUNT(*) FROM stdadherent h WHERE h.iddevis = c.iddevis) AS adherents,
+                       (SELECT COUNT(*) FROM lephare_afa_assure x WHERE x.iddevis = c.iddevis) AS afa,
+                       (SELECT COUNT(*) FROM stddevisdetail d WHERE d.iddevis = c.iddevis) AS details
                 FROM stdcontrat c
                 JOIN stdavenant a ON a.idavenant = c.idavenant
                 JOIN stdquittance q ON q.idquittance = c.idquittance
@@ -128,7 +193,7 @@ def synchroniser(cursor, ids=None):
             par_id[m["idcontrat"]] = m
             mouvements.setdefault(m["numeropolice"], []).append(m)
         existantes = {}
-        for ligne in _lignes(cursor, """SELECT idcommission, idrattachement, idcontrat, idquittance, assiettemontant, taux, montant, statut
+        for ligne in _lignes(cursor, """SELECT idcommission, idrattachement, idcontrat, idquittance, assiettemontant, taux, montant, montantunitaire, assuresmanuel, statut
                                         FROM lephare_commission_apporteur WHERE idrattachement = ANY(%s)""", [[l["idrattachement"] for l in liens]]):
             existantes[(ligne["idrattachement"], ligne["idquittance"])] = ligne
         # Apporteur retiré puis rattaché de nouveau : une quittance déjà payée ne repart pas une seconde fois
@@ -141,30 +206,34 @@ def synchroniser(cursor, ids=None):
                       WHERE c.statut = 'A_PAYER' AND NOT EXISTS (SELECT 1 FROM stdquittance q WHERE q.idquittance = c.idquittance)""")
 
 
-def _ecrire_ligne(cursor, lien, m, ligne, assiette, montant, deja_payees):
+def _ecrire_ligne(cursor, lien, m, ligne, assiette, montant, deja_payees, unitaire=ZERO):
     """Crée la commission d'une quittance, ou remet à jour celle qui reste à payer. Payée ou annulée : on n'y touche plus."""
     if ligne is None:
         if montant and (lien["idapporteur"], m["idquittance"]) not in deja_payees:
             cursor.execute(
                 """INSERT INTO lephare_commission_apporteur (idrattachement, idapporteur, idcontrat, idquittance, numeropolice, numeroquittance, mouvement, client, dateemission,
-                       assiette, assiettemontant, taux, montant)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       assiette, assiettemontant, taux, montant, montantunitaire)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (idrattachement, idquittance) DO NOTHING""",
                 [lien["idrattachement"], lien["idapporteur"], m["idcontrat"], m["idquittance"], lien["numeropolice"], m["numeroquittance"], (m["mouvement"] or "")[:60], (m["client"] or "")[:250],
-                 m["dateemission"], lien["assiette"], assiette, lien["taux"], montant],
+                 m["dateemission"], lien["assiette"], assiette, lien["taux"], montant, unitaire],
             )
     elif ligne["statut"] == "A_PAYER":
-        if not montant:
+        # Nombre d'assurés corrigé à la main : la ligne reste, même à zéro, pour garder la correction
+        if not montant and ligne.get("assuresmanuel") is None:
             cursor.execute("DELETE FROM lephare_commission_apporteur WHERE idcommission = %s", [ligne["idcommission"]])
-        elif ligne["montant"] != montant or ligne["taux"] != lien["taux"] or ligne["assiettemontant"] != assiette:
-            cursor.execute("""UPDATE lephare_commission_apporteur SET assiette = %s, assiettemontant = %s, taux = %s, montant = %s, datemodification = now()
-                              WHERE idcommission = %s""", [lien["assiette"], assiette, lien["taux"], montant, ligne["idcommission"]])
+        elif (ligne["montant"] != montant or ligne["taux"] != lien["taux"] or ligne["assiettemontant"] != assiette
+              or (ligne.get("montantunitaire") or ZERO) != unitaire):
+            cursor.execute("""UPDATE lephare_commission_apporteur SET assiette = %s, assiettemontant = %s, taux = %s, montant = %s, montantunitaire = %s, datemodification = now()
+                              WHERE idcommission = %s""", [lien["assiette"], assiette, lien["taux"], montant, unitaire, ligne["idcommission"]])
 
 
 def _synchroniser_lien(cursor, lien, mouvements, par_id, existantes, deja_payees):
     forfait = lien["assiette"] == "FORFAIT"
+    par_assure = lien["assiette"] == "PAR_ASSURE"
     cle = lien["idrattachement"]
     couverts = [m for m in mouvements if m["idcontrat"] >= lien["idbase"] and (not forfait or m["iddevis"] == lien["iddevis"])]
+    assures = assures_par_mouvement(mouvements) if par_assure else {}
     paye_par_annulation = {}
     for m in couverts:
         if m["code"] in CODES_ANNULATION:
@@ -177,6 +246,10 @@ def _synchroniser_lien(cursor, lien, mouvements, par_id, existantes, deja_payees
                 ligne["statut"] = "ANNULEE"
             elif ligne and ligne["statut"] == "PAYEE":
                 paye_par_annulation[m["annulation"]] = paye_par_annulation.get(m["annulation"], ZERO) + ligne["montant"]
+            continue
+        if par_assure:
+            nombre = ligne["assuresmanuel"] if ligne and ligne.get("assuresmanuel") is not None else assures.get(m["idcontrat"], 0)
+            _ecrire_ligne(cursor, lien, m, ligne, Decimal(nombre), _franc(Decimal(nombre) * lien["montantforfait"]), deja_payees, lien["montantforfait"])
             continue
         if forfait:
             assiette, montant = lien["montantforfait"], _franc(lien["montantforfait"])
@@ -249,7 +322,8 @@ def _etat_reglement(emis, payee, a_payer, annulee):
 def _lignes_commission(cursor, condition, parametres):
     return _lignes(cursor, f"""
         SELECT c.idcommission, c.idrattachement, c.idapporteur, c.idcontrat, c.idquittance, c.numeropolice, c.numeroquittance, c.mouvement, c.client, c.dateemission, c.assiette,
-               c.assiettemontant, c.taux, c.montant, c.statut, c.motifannulation, c.dateannulation, c.annulepar, a.code, TRIM(a.nom || ' ' || COALESCE(a.prenoms, '')) AS apporteur,
+               c.assiettemontant, c.taux, c.montant, c.montantunitaire, c.assuresmanuel, c.statut, c.motifannulation, c.dateannulation, c.annulepar, a.code,
+               TRIM(a.nom || ' ' || COALESCE(a.prenoms, '')) AS apporteur,
                q.primettc, COALESCE(q.mt_encaisse, 0) AS encaisse, {sql_reste("q")} AS reste, r.idreglement, r.numero AS numeroreglement, r.datereglement
         FROM lephare_commission_apporteur c
         JOIN stdapporteur a ON a.idapporteur = c.idapporteur
@@ -267,6 +341,8 @@ def _json_commission(c):
         "IdContrat": c["idcontrat"], "NumeroPolice": (c["numeropolice"] or "").strip(), "NumeroQuittance": (c["numeroquittance"] or "").strip(), "Mouvement": c["mouvement"], "Client": c["client"],
         "DateEmission": _iso(c["dateemission"]), "Assiette": c["assiette"], "LibelleAssiette": ASSIETTES.get(c["assiette"], c["assiette"]), "AssietteMontant": _nombre(c["assiettemontant"]),
         "Taux": _nombre(c["taux"]), "Montant": _nombre(c["montant"]), "Statut": c["statut"], "LibelleStatut": STATUTS.get(c["statut"], c["statut"]),
+        "MontantUnitaire": _nombre(c["montantunitaire"]), "Assures": int(c["assiettemontant"] or 0) if c["assiette"] == "PAR_ASSURE" else None,
+        "AssuresCorriges": c["assuresmanuel"] is not None,
         "MotifAnnulation": c["motifannulation"], "DateAnnulation": _iso(c["dateannulation"]), "AnnulePar": c["annulepar"],
         "PrimeTtc": _nombre(c["primettc"]), "Encaisse": _nombre(c["encaisse"]), "Reste": _nombre(reste), "PrimeSoldee": c["primettc"] is not None and not reste,
         "IdReglement": c["idreglement"], "NumeroReglement": c["numeroreglement"] or "", "DateReglement": _iso(c["datereglement"]),
@@ -278,7 +354,7 @@ def _bloc_affaire(cursor, affaire):
     devis = {affaire["iddevis"], *_devis_de_la_police(cursor, affaire["police"])}
     liens = _lignes(cursor, """
         SELECT l.idrattachement, l.idapporteur, l.iddevis, l.numerodevis, l.taux, l.assiette, l.montantforfait, l.origine, l.observation, l.actif, l.motifretrait, l.dateretrait, l.retirepar,
-               l.operateur, l.datecreation, a.code, TRIM(a.nom || ' ' || COALESCE(a.prenoms, '')) AS apporteur, a.actif AS apporteuractif, a.tauxretrocession,
+               l.operateur, l.datecreation, a.code, TRIM(a.nom || ' ' || COALESCE(a.prenoms, '')) AS apporteur, a.actif AS apporteuractif, a.tauxretrocession, a.montantparassure,
                EXISTS (SELECT 1 FROM stdcontrat c WHERE c.iddevis = l.iddevis) AS emis
         FROM lephare_affaire_apporteur l JOIN stdapporteur a ON a.idapporteur = l.idapporteur
         WHERE l.iddevis = ANY(%s) ORDER BY l.actif DESC, l.idrattachement""", [list(devis)])
@@ -292,14 +368,19 @@ def _bloc_affaire(cursor, affaire):
         code, libelle = _etat_reglement(lien["emis"], bool(payee), bool(a_payer), bool(annulee))
         prevu = ZERO
         if lien["actif"] and not lien["emis"]:
-            base = affaire["commissionintermediaire"] if lien["assiette"] == "COMMISSION" else affaire["primenette"]
-            prevu = montant_commission(base, lien["taux"], lien["montantforfait"] if lien["assiette"] == "FORFAIT" else ZERO)
+            if lien["assiette"] == "PAR_ASSURE":
+                prevu = _franc(_assures_du_devis(cursor, lien["iddevis"]) * lien["montantforfait"])
+            else:
+                base = affaire["commissionintermediaire"] if lien["assiette"] == "COMMISSION" else affaire["primenette"]
+                prevu = montant_commission(base, lien["taux"], lien["montantforfait"] if lien["assiette"] == "FORFAIT" else ZERO)
         total_genere += payee + a_payer
         total_prevu += prevu
         resultat.append({
             "IdRattachement": lien["idrattachement"], "IdApporteur": lien["idapporteur"], "Code": lien["code"], "Apporteur": lien["apporteur"], "ApporteurActif": lien["apporteuractif"],
             "IdDevis": lien["iddevis"], "NumeroDevis": lien["numerodevis"], "Taux": _nombre(lien["taux"]), "TauxGeneral": None if lien["tauxretrocession"] is None else _nombre(lien["tauxretrocession"]),
             "Assiette": lien["assiette"], "LibelleAssiette": ASSIETTES.get(lien["assiette"], lien["assiette"]), "MontantForfait": _nombre(lien["montantforfait"]),
+            "MontantUnitaire": _nombre(lien["montantforfait"]) if lien["assiette"] == "PAR_ASSURE" else None,
+            "MontantGeneral": None if lien["montantparassure"] is None else _nombre(lien["montantparassure"]),
             "Origine": lien["origine"], "Observation": lien["observation"], "Actif": lien["actif"], "MotifRetrait": lien["motifretrait"], "DateRetrait": _iso(lien["dateretrait"]),
             "RetirePar": lien["retirepar"], "Operateur": lien["operateur"], "DateCreation": _iso(lien["datecreation"]), "Emis": lien["emis"],
             "CommissionPrevue": _nombre(prevu), "CommissionGeneree": _nombre(payee + a_payer), "Payee": _nombre(payee), "APayer": _nombre(a_payer), "Annulee": _nombre(annulee),
@@ -347,21 +428,17 @@ def rattacher(cursor, donnees, user):
         raise ErreurApporteur(f"L'apporteur {apporteurs[0]['code']} est désactivé : réactivez-le pour lui rattacher une affaire.")
     if affaire["archive"]:
         raise ErreurApporteur("Ce devis est archivé.")
-    assiette = _texte(donnees.get("Assiette")).upper() or "COMMISSION"
-    if assiette not in ASSIETTES_AU_TAUX:
-        raise ErreurApporteur("Choisissez l'assiette de la commission.")
-    taux = _taux(donnees.get("Taux"))
-    if taux <= 0:
-        raise ErreurApporteur("Saisissez le taux de commission convenu pour cet apporteur.")
+    assiette, taux, montant = convention(donnees)
     devis = {affaire["iddevis"], *_devis_de_la_police(cursor, affaire["police"])}
     cursor.execute("SELECT 1 FROM lephare_affaire_apporteur WHERE iddevis = ANY(%s) AND idapporteur = %s AND actif LIMIT 1", [list(devis), id_apporteur])
     if cursor.fetchone():
         raise ErreurApporteur(f"{apporteurs[0]['code']} - {apporteurs[0]['nom']} est déjà rattaché à cette affaire : modifiez son taux.")
     _controler_taux_cumules(cursor, devis, assiette, taux)
     cursor.execute(
-        """INSERT INTO lephare_affaire_apporteur (idapporteur, iddevis, numerodevis, taux, assiette, observation, idoperateur, operateur)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING idrattachement""",
-        [id_apporteur, affaire["iddevis"], affaire["numerodevis"] or "", taux, assiette, _texte(donnees.get("Observation")), getattr(user, "id", None), _nom_utilisateur(user)],
+        """INSERT INTO lephare_affaire_apporteur (idapporteur, iddevis, numerodevis, taux, assiette, montantforfait, observation, idoperateur, operateur)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING idrattachement""",
+        [id_apporteur, affaire["iddevis"], affaire["numerodevis"] or "", taux, assiette, montant, _texte(donnees.get("Observation")), getattr(user, "id", None),
+         _nom_utilisateur(user)],
     )
     return affaire
 
@@ -374,20 +451,44 @@ def _lien(cursor, id_rattachement, verrou=True):
 
 
 def modifier_rattachement(cursor, id_rattachement, donnees):
-    """Taux convenu corrigé : les commissions à payer suivent, les commissions déjà payées gardent leur taux."""
+    """Taux ou montant par assuré corrigé : les commissions à payer suivent, les commissions déjà payées gardent leurs montants."""
     lien = _lien(cursor, id_rattachement)
     if not lien["actif"]:
         raise ErreurApporteur("Cet apporteur a été retiré de l'affaire.")
     affaire = _affaire(cursor, lien["iddevis"])
-    assiette = _texte(donnees.get("Assiette")).upper() or lien["assiette"]
-    if lien["assiette"] == "FORFAIT" or assiette not in ASSIETTES_AU_TAUX:
-        raise ErreurApporteur("Un montant convenu ne se change pas en taux : retirez l'apporteur et rattachez-le de nouveau.")
-    taux = _taux(donnees.get("Taux"))
-    if taux <= 0:
-        raise ErreurApporteur("Saisissez le taux de commission convenu pour cet apporteur.")
+    if lien["assiette"] == "FORFAIT":
+        raise ErreurApporteur("Un montant convenu pour un devis ne se modifie pas : retirez l'apporteur et rattachez-le de nouveau.")
+    assiette, taux, montant = convention(donnees, lien["assiette"])
     _controler_taux_cumules(cursor, {lien["iddevis"], *_devis_de_la_police(cursor, affaire["police"])}, assiette, taux, sauf=id_rattachement)
-    cursor.execute("UPDATE lephare_affaire_apporteur SET taux = %s, assiette = %s, datemodification = now() WHERE idrattachement = %s", [taux, assiette, id_rattachement])
+    cursor.execute("UPDATE lephare_affaire_apporteur SET taux = %s, assiette = %s, montantforfait = %s, datemodification = now() WHERE idrattachement = %s",
+                   [taux, assiette, montant, id_rattachement])
     return affaire
+
+
+def corriger_assures(cursor, id_commission, nombre):
+    """Nombre d'assurés d'une commission à payer, quand la police n'a pas la liste des assurés. Vide : nombre compté sur la police."""
+    lignes = _lignes(cursor, "SELECT idrattachement, assiette, statut, montantunitaire FROM lephare_commission_apporteur WHERE idcommission = %s FOR UPDATE", [id_commission])
+    if not lignes:
+        raise ErreurApporteur("Commission introuvable.")
+    ligne = lignes[0]
+    if ligne["assiette"] != "PAR_ASSURE":
+        raise ErreurApporteur("Seule une commission par assuré se corrige par le nombre d'assurés.")
+    if ligne["statut"] != "A_PAYER":
+        raise ErreurApporteur("Seule une commission à payer se corrige.")
+    if nombre in (None, ""):
+        cursor.execute("UPDATE lephare_commission_apporteur SET assuresmanuel = NULL, datemodification = now() WHERE idcommission = %s", [id_commission])
+    else:
+        try:
+            nombre = int(str(nombre).strip())
+        except ValueError as erreur:
+            raise ErreurApporteur("Le nombre d'assurés est un nombre entier.") from erreur
+        if not 0 <= nombre <= 100000:
+            raise ErreurApporteur("Le nombre d'assurés est compris entre 0 et 100 000.")
+        cursor.execute("""UPDATE lephare_commission_apporteur SET assuresmanuel = %s, assiettemontant = %s, montant = %s, datemodification = now()
+                          WHERE idcommission = %s""", [nombre, nombre, _franc(nombre * (ligne["montantunitaire"] or ZERO)), id_commission])
+    synchroniser(cursor, [ligne["idrattachement"]])
+    cursor.execute("SELECT iddevis FROM lephare_affaire_apporteur WHERE idrattachement = %s", [ligne["idrattachement"]])
+    return _affaire(cursor, cursor.fetchone()[0])
 
 
 def retirer(cursor, id_rattachement, motif, user):
@@ -410,8 +511,9 @@ def retirer(cursor, id_rattachement, motif, user):
 
 def rattacher_apporteur_package(cursor, id_devis, id_apporteur, mode, valeur, familles, id_utilisateur):
     """
-    Oreole Santé : l'apporteur choisi dans le parcours devient un rattachement. Convention au taux = taux sur la prime nette (prime HT), au
-    montant par famille = montant convenu pour ce devis ; sans convention, l'apporteur est noté sans commission.
+    Oreole Santé : l'apporteur choisi dans le parcours devient un rattachement. Convention au taux = taux sur la prime nette (prime HT) ; au
+    montant par assuré = ce montant par adhérent de la police, avenants et renouvellements compris ; sans convention, l'apporteur est noté sans
+    commission.
     """
     cursor.execute("SELECT idrattachement, idapporteur FROM lephare_affaire_apporteur WHERE iddevis = %s AND origine = 'OREOLE' AND actif", [id_devis])
     for id_lien, apporteur in cursor.fetchall():
@@ -423,19 +525,16 @@ def rattacher_apporteur_package(cursor, id_devis, id_apporteur, mode, valeur, fa
     if not id_apporteur:
         return
     valeur = Decimal(str(valeur or 0))
-    forfait = mode == "FAMILLE" and valeur > 0
-    assiette = "FORFAIT" if forfait else "PRIME_NETTE"
-    taux, montant = (ZERO, valeur * familles) if forfait else ((valeur if mode != "FAMILLE" else ZERO), ZERO)
-    if forfait and not familles:
-        return
+    par_assure = mode == "FAMILLE" and valeur > 0
+    assiette = "PAR_ASSURE" if par_assure else "PRIME_NETTE"
+    taux, montant = (ZERO, _franc(valeur)) if par_assure else ((valeur if mode != "FAMILLE" else ZERO), ZERO)
     affaire = _affaire(cursor, id_devis)
-    if not forfait:
-        # Au taux, le rattachement existant couvre déjà les mouvements suivants de la police
-        devis = {id_devis, *_devis_de_la_police(cursor, affaire["police"])}
-        cursor.execute("SELECT idrattachement FROM lephare_affaire_apporteur WHERE iddevis = ANY(%s) AND idapporteur = %s AND actif AND iddevis <> %s LIMIT 1",
-                       [list(devis), id_apporteur, id_devis])
-        if cursor.fetchone():
-            return
+    # Le rattachement existant sur la police couvre déjà les mouvements suivants (avenant, renouvellement)
+    devis = {id_devis, *_devis_de_la_police(cursor, affaire["police"])}
+    cursor.execute("SELECT idrattachement FROM lephare_affaire_apporteur WHERE iddevis = ANY(%s) AND idapporteur = %s AND actif AND iddevis <> %s LIMIT 1",
+                   [list(devis), id_apporteur, id_devis])
+    if cursor.fetchone():
+        return
     cursor.execute("SELECT idrattachement FROM lephare_affaire_apporteur WHERE iddevis = %s AND idapporteur = %s AND actif", [id_devis, id_apporteur])
     existant = cursor.fetchone()
     if existant:
@@ -633,6 +732,7 @@ def liste_affaires(cursor, parametres):
             "IdRattachement": l["idrattachement"], "IdApporteur": l["idapporteur"], "Code": l["code"], "Apporteur": l["apporteur"], "IdDevis": l["iddevis"], "NumeroDevis": l["numerodevis"],
             "IdContrat": l["idcontrat"], "NumeroPolice": (l["numeropolice"] or "").strip(), "Client": l["client"], "Branche": l["branche"] or "", "Taux": _nombre(l["taux"]),
             "Assiette": l["assiette"], "LibelleAssiette": ASSIETTES.get(l["assiette"], l["assiette"]), "MontantForfait": _nombre(l["montantforfait"]), "Actif": l["actif"],
+            "MontantUnitaire": _nombre(l["montantforfait"]) if l["assiette"] == "PAR_ASSURE" else None,
             "DateCreation": _iso(l["datecreation"]), "Operateur": l["operateur"], "CommissionGeneree": _nombre(l["payee"] + l["apayer"]), "Payee": _nombre(l["payee"]),
             "APayer": _nombre(l["apayer"]), "Annulee": _nombre(l["annulee"]), "EtatReglement": code, "LibelleEtat": libelle,
         })
@@ -753,6 +853,14 @@ def vue_synthese(request):
 @permission_classes([permissions.IsAuthenticated])
 def vue_commissions(request):
     return _executer(lambda c: liste_commissions(c, request.query_params))
+
+
+@api_view(["PATCH"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def vue_commission(request, id_commission):
+    """Nombre d'assurés corrigé sur une commission par assuré à payer : renvoie l'affaire à jour."""
+    return _executer(lambda c: _bloc_affaire(c, corriger_assures(c, id_commission, request.data.get("Assures"))))
 
 
 @api_view(["POST"])

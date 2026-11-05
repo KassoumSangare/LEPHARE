@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Ban, Banknote, Briefcase, CheckCircle2, ChevronDown, ChevronRight, Coins, Edit2, Eye, FileSpreadsheet, Handshake, Loader2, Plus, RefreshCw, Save, Search, Users, Wallet } from 'lucide-react';
 import { apporteurApi, settingsApi } from '../../../api/endpoints';
-import BlocApporteursAffaire, { COULEURS_ETAT, COULEURS_STATUT } from '../../../components/apporteurs/BlocApporteursAffaire';
+import BlocApporteursAffaire, { COULEURS_ETAT, COULEURS_STATUT, baseAffichee, conventionAffichee, tarifAffiche } from '../../../components/apporteurs/BlocApporteursAffaire';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
@@ -19,7 +19,13 @@ const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFract
 const nomComplet = (a) => `${a.Nom || ''} ${a.Prenoms || ''}`.trim();
 const OPTIONS_STATUT = [['', 'Tous les états'], ['A_PAYER', 'À payer'], ['PAYEE', 'Payées'], ['ANNULEE', 'Annulées']];
 const OPTIONS_MODE = [['VIR', 'Virement'], ['CHQ', 'Chèque'], ['MOB', 'Mobile money'], ['ESP', 'Espèces']];
-const FICHE_VIDE = { Nom: '', Prenoms: '', TypePersonne: 'P', PieceIdentite: '', Telephone: '', Telephone2: '', Email: '', Adresse: '', TauxRetrocession: '', CompteReglement: '', Observations: '', Actif: true };
+const FICHE_VIDE = { Nom: '', Prenoms: '', TypePersonne: 'P', PieceIdentite: '', Telephone: '', Telephone2: '', Email: '', Adresse: '', ModeGeneral: 'TAUX', TauxRetrocession: '', MontantParAssure: '', CompteReglement: '', Observations: '', Actif: true };
+const vide = (v) => v === null || v === undefined || v === '';
+// Commission générale de l'apporteur : un taux ou un montant par assuré, jamais les deux
+const commissionGenerale = (a) => {
+  if (Number(a.MontantParAssure) > 0) return `${fcfa(a.MontantParAssure)} F par assuré`;
+  return vide(a.TauxRetrocession) ? '-' : pourcent(a.TauxRetrocession);
+};
 const messageFiche = (err) => {
   const d = err?.response?.data;
   return Array.isArray(d?.non_field_errors) ? d.non_field_errors[0] : messageErreurApi(err);
@@ -81,7 +87,12 @@ const OngletApporteurs = ({ apporteurs, synthese, onRecharger, onVoir }) => {
   const enregistrer = async (e) => {
     e.preventDefault();
     setEnvoi(true);
-    const corps = { ...edition, TauxRetrocession: edition.TauxRetrocession === '' ? null : edition.TauxRetrocession };
+    const { ModeGeneral, ...fiche } = edition;
+    const corps = {
+      ...fiche,
+      TauxRetrocession: ModeGeneral === 'TAUX' && !vide(edition.TauxRetrocession) ? edition.TauxRetrocession : null,
+      MontantParAssure: ModeGeneral === 'MONTANT' && !vide(edition.MontantParAssure) ? edition.MontantParAssure : null,
+    };
     try {
       const r = edition.IdApporteur ? await apporteurApi.modifier(edition.IdApporteur, corps) : await apporteurApi.creer(corps);
       success(`Apporteur ${r.Code} - ${nomComplet(r)} enregistré.`);
@@ -128,7 +139,7 @@ const OngletApporteurs = ({ apporteurs, synthese, onRecharger, onVoir }) => {
       <div className="glass-panel table-wrapper">
         <table className="data-table">
           <thead>
-            <tr><th>Code</th><th>Nom et prénoms</th><th>Type</th><th>Contacts</th><th style={DROITE}>Taux général</th><th style={DROITE}>Affaires</th><th style={DROITE}>À payer</th><th style={DROITE}>Payées</th><th>Statut</th><th aria-label="Actions" /></tr>
+            <tr><th>Code</th><th>Nom et prénoms</th><th>Type</th><th>Contacts</th><th style={DROITE}>Commission générale</th><th style={DROITE}>Affaires</th><th style={DROITE}>À payer</th><th style={DROITE}>Payées</th><th>Statut</th><th aria-label="Actions" /></tr>
           </thead>
           <tbody>
             {visibles.map((a) => {
@@ -139,14 +150,14 @@ const OngletApporteurs = ({ apporteurs, synthese, onRecharger, onVoir }) => {
                   <td style={{ fontWeight: 700 }}>{nomComplet(a)}</td>
                   <td>{a.TypePersonne === 'M' ? 'Personne morale' : 'Personne physique'}</td>
                   <td>{a.Telephone}{a.Email && <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{a.Email}</div>}</td>
-                  <td style={DROITE}>{a.TauxRetrocession !== null && a.TauxRetrocession !== '' ? pourcent(a.TauxRetrocession) : '-'}</td>
+                  <td style={DROITE}>{commissionGenerale(a)}</td>
                   <td style={DROITE}>{s.Affaires || 0}</td>
                   <td style={{ ...DROITE, fontWeight: 700, color: s.APayer ? 'var(--accent-amber)' : undefined }}>{fcfa(s.APayer)} F</td>
                   <td style={DROITE}>{fcfa(s.Payee)} F</td>
                   <td><StatusBadge label={a.Actif ? 'Actif' : 'Désactivé'} color={a.Actif ? 'emerald' : 'rose'} /></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.45rem', marginRight: '0.25rem' }} title="Consulter" aria-label={`Consulter ${nomComplet(a)}`} onClick={() => onVoir(a)}><Eye size={14} /></button>
-                    {peutGerer && <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.45rem', marginRight: '0.25rem' }} title="Modifier" aria-label={`Modifier ${nomComplet(a)}`} onClick={() => setEdition({ ...FICHE_VIDE, ...a, TauxRetrocession: a.TauxRetrocession ?? '' })}><Edit2 size={14} /></button>}
+                    {peutGerer && <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.45rem', marginRight: '0.25rem' }} title="Modifier" aria-label={`Modifier ${nomComplet(a)}`} onClick={() => setEdition({ ...FICHE_VIDE, ...a, ModeGeneral: Number(a.MontantParAssure) > 0 ? 'MONTANT' : 'TAUX', TauxRetrocession: a.TauxRetrocession ?? '', MontantParAssure: a.MontantParAssure ?? '' })}><Edit2 size={14} /></button>}
                     {peutGerer && <button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.45rem' }} title={a.Actif ? 'Désactiver' : 'Réactiver'} aria-label={`${a.Actif ? 'Désactiver' : 'Réactiver'} ${nomComplet(a)}`} onClick={() => changerEtat(a)}>{a.Actif ? <Ban size={14} /> : <CheckCircle2 size={14} />}</button>}
                   </td>
                 </tr>
@@ -171,12 +182,20 @@ const OngletApporteurs = ({ apporteurs, synthese, onRecharger, onVoir }) => {
             <Champ id="fa-tel" libelle="Téléphone"><input id="fa-tel" className="form-control" maxLength={30} value={edition.Telephone} onChange={champ('Telephone')} /></Champ>
             <Champ id="fa-tel2" libelle="Second téléphone"><input id="fa-tel2" className="form-control" maxLength={30} value={edition.Telephone2} onChange={champ('Telephone2')} /></Champ>
             <Champ id="fa-mail" libelle="Email"><input id="fa-mail" type="email" className="form-control" value={edition.Email} onChange={champ('Email')} /></Champ>
-            <Champ id="fa-taux" libelle="Taux général, en %"><input id="fa-taux" type="number" className="form-control" min={0} max={100} step="0.01" value={edition.TauxRetrocession} onChange={champ('TauxRetrocession')} placeholder="Facultatif" /></Champ>
+            <Champ id="fa-mode" libelle="Commission générale">
+              <select id="fa-mode" className="form-control" value={edition.ModeGeneral} onChange={(e) => setEdition((a) => ({ ...a, ModeGeneral: e.target.value, TauxRetrocession: '', MontantParAssure: '' }))}>
+                <option value="TAUX">Un taux</option>
+                <option value="MONTANT">Un montant par assuré</option>
+              </select>
+            </Champ>
+            {edition.ModeGeneral === 'MONTANT'
+              ? <Champ id="fa-montant" libelle="Montant par assuré, en F"><input id="fa-montant" type="number" className="form-control" min={0} step="1" value={edition.MontantParAssure} onChange={champ('MontantParAssure')} placeholder="Facultatif" /></Champ>
+              : <Champ id="fa-taux" libelle="Taux, en %"><input id="fa-taux" type="number" className="form-control" min={0} max={100} step="0.01" value={edition.TauxRetrocession} onChange={champ('TauxRetrocession')} placeholder="Facultatif" /></Champ>}
             <Champ id="fa-adr" libelle="Adresse" large><input id="fa-adr" className="form-control" maxLength={200} value={edition.Adresse} onChange={champ('Adresse')} /></Champ>
             <Champ id="fa-compte" libelle="Compte bancaire ou mobile money" large><input id="fa-compte" className="form-control" maxLength={100} value={edition.CompteReglement} onChange={champ('CompteReglement')} /></Champ>
             <Champ id="fa-obs" libelle="Observations" large><input id="fa-obs" className="form-control" maxLength={300} value={edition.Observations} onChange={champ('Observations')} /></Champ>
             <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Le taux général est seulement proposé au rattachement. Le taux convenu reste propre à chaque affaire : le changer ici ne modifie pas les affaires existantes.
+              La commission générale est seulement proposée au rattachement. Celle convenue reste propre à chaque affaire : la changer ici ne modifie pas les affaires existantes.
             </p>
             <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setEdition(null)}>Annuler</button>
@@ -286,7 +305,7 @@ const OngletAffaires = ({ apporteurs, filtreApporteur, onRecharger }) => {
       <div className="glass-panel table-wrapper">
         <table className="data-table" style={{ fontSize: '0.84rem' }}>
           <thead>
-            <tr><th>Affaire</th><th>Client</th><th>Branche</th><th>Apporteur</th><th style={DROITE}>Taux convenu</th><th>Assiette</th><th style={DROITE}>Générée</th><th style={DROITE}>Payée</th><th style={DROITE}>À payer</th><th>État</th><th aria-label="Ouvrir" /></tr>
+            <tr><th>Affaire</th><th>Client</th><th>Branche</th><th>Apporteur</th><th style={DROITE}>Taux ou montant convenu</th><th>Assiette</th><th style={DROITE}>Générée</th><th style={DROITE}>Payée</th><th style={DROITE}>À payer</th><th>État</th><th aria-label="Ouvrir" /></tr>
           </thead>
           <tbody>
             {lignes.map((l) => (
@@ -294,7 +313,7 @@ const OngletAffaires = ({ apporteurs, filtreApporteur, onRecharger }) => {
                 <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{l.NumeroPolice || l.NumeroDevis}<div style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>{l.IdContrat ? 'Contrat' : 'Devis'}</div></td>
                 <td>{l.Client}</td><td>{l.Branche}</td>
                 <td><b>{l.Apporteur}</b><div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{l.Code}</div></td>
-                <td style={DROITE}>{l.Assiette === 'FORFAIT' ? `${fcfa(l.MontantForfait)} F` : pourcent(l.Taux)}</td>
+                <td style={DROITE}>{conventionAffichee(l)}</td>
                 <td>{l.LibelleAssiette}</td>
                 <td style={{ ...DROITE, fontWeight: 700 }}>{fcfa(l.CommissionGeneree)} F</td>
                 <td style={DROITE}>{fcfa(l.Payee)} F</td>
@@ -423,8 +442,8 @@ const OngletCommissions = ({ apporteurs, banques, filtreApporteur, onRecharger }
 
   const exporter = () => exportToExcel({
     filename: `commissions_apporteurs_${aujourdhui()}`, title: "Commissions des apporteurs d'affaires", subtitle: filtres.du || filtres.au ? `Émission du ${dateFr(filtres.du) || 'début'} au ${dateFr(filtres.au) || aujourdhui()}` : 'Toutes les périodes',
-    headers: ['Émission', 'Code', 'Apporteur', 'Police', 'Quittance', 'Mouvement', 'Client', 'Assiette', 'Base', 'Taux', 'Commission', 'État', 'Règlement', 'Prime du client'],
-    rows: donnees.Lignes.map((l) => [dateFr(l.DateEmission), l.Code, l.Apporteur, l.NumeroPolice, l.NumeroQuittance, l.Mouvement, l.Client, l.LibelleAssiette, l.AssietteMontant, l.Assiette === 'FORFAIT' ? '' : l.Taux, l.Montant, l.LibelleStatut, l.NumeroReglement, l.PrimeSoldee ? 'Soldée' : `Reste ${fcfa(l.Reste)} F`]),
+    headers: ['Émission', 'Code', 'Apporteur', 'Police', 'Quittance', 'Mouvement', 'Client', 'Assiette', 'Base', 'Taux ou montant', 'Commission', 'État', 'Règlement', 'Prime du client'],
+    rows: donnees.Lignes.map((l) => [dateFr(l.DateEmission), l.Code, l.Apporteur, l.NumeroPolice, l.NumeroQuittance, l.Mouvement, l.Client, l.LibelleAssiette, baseAffichee(l), tarifAffiche(l), l.Montant, l.LibelleStatut, l.NumeroReglement, l.PrimeSoldee ? 'Soldée' : `Reste ${fcfa(l.Reste)} F`]),
   });
 
   const T = donnees.Totaux || {};
@@ -461,7 +480,7 @@ const OngletCommissions = ({ apporteurs, banques, filtreApporteur, onRecharger }
           <thead>
             <tr>
               {peutPayer && <th aria-label="Choisir" />}
-              <th>Émission</th><th>Apporteur</th><th>Police et quittance</th><th>Client</th><th>Assiette</th><th style={DROITE}>Base</th><th style={DROITE}>Taux</th><th style={DROITE}>Commission</th><th>Prime du client</th><th>État</th>
+              <th>Émission</th><th>Apporteur</th><th>Police et quittance</th><th>Client</th><th>Assiette</th><th style={DROITE}>Base</th><th style={DROITE}>Taux ou montant</th><th style={DROITE}>Commission</th><th>Prime du client</th><th>État</th>
               {peutAnnuler && <th aria-label="Actions" />}
             </tr>
           </thead>
@@ -474,8 +493,8 @@ const OngletCommissions = ({ apporteurs, banques, filtreApporteur, onRecharger }
                 <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.76rem' }}>{l.NumeroPolice}<div style={{ color: 'var(--text-muted)' }}>{l.NumeroQuittance}</div></td>
                 <td>{l.Client}<div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{l.Mouvement}</div></td>
                 <td>{l.LibelleAssiette}</td>
-                <td style={DROITE}>{fcfa(l.AssietteMontant)} F</td>
-                <td style={DROITE}>{l.Assiette === 'FORFAIT' ? '-' : pourcent(l.Taux)}</td>
+                <td style={DROITE}>{baseAffichee(l)}</td>
+                <td style={DROITE}>{tarifAffiche(l)}</td>
                 <td style={{ ...DROITE, fontWeight: 800 }}>{fcfa(l.Montant)} F</td>
                 <td style={{ color: l.PrimeSoldee ? 'var(--accent-emerald)' : 'var(--accent-amber)', fontSize: '0.78rem' }}>{l.PrimeSoldee ? 'Soldée' : `Reste ${fcfa(l.Reste)} F`}</td>
                 <td>
@@ -588,7 +607,7 @@ const FicheModal = ({ apporteur, synthese, onClose, onAller }) => {
   const lignes = [
     ['Code', apporteur.Code], ['Type', apporteur.TypePersonne === 'M' ? 'Personne morale' : 'Personne physique'], ['Pièce', apporteur.PieceIdentite], ['Téléphone', apporteur.Telephone],
     ['Second téléphone', apporteur.Telephone2], ['Email', apporteur.Email], ['Adresse', apporteur.Adresse], ['Compte de règlement', apporteur.CompteReglement],
-    ['Taux général', apporteur.TauxRetrocession !== null && apporteur.TauxRetrocession !== '' ? pourcent(apporteur.TauxRetrocession) : ''], ['Observations', apporteur.Observations],
+    ['Commission générale', commissionGenerale(apporteur) === '-' ? '' : commissionGenerale(apporteur)], ['Observations', apporteur.Observations],
   ].filter(([, v]) => v);
   return (
     <Modal isOpen onClose={onClose} size="medium" title={nomComplet(apporteur)}>

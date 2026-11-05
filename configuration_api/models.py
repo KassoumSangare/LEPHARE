@@ -1025,6 +1025,11 @@ class Apporteur(models.Model):
         max_digits=5, decimal_places=2, null=True, blank=True,
         verbose_name="Taux général de commission (%)", db_column="tauxretrocession",
     )
+    # Ou bien un montant par assuré (jamais les deux), proposé de même au rattachement
+    MontantParAssure = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True,
+        verbose_name="Montant général par assuré (F)", db_column="montantparassure",
+    )
     CompteReglement = models.CharField(
         max_length=100, blank=True, default="", verbose_name="Compte bancaire ou mobile money", db_column="comptereglement"
     )

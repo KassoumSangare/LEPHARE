@@ -155,11 +155,11 @@ const documentCotisations = (d) => documentHtml('État des cotisations Oreole Sa
   <h1>ÉTAT DES COTISATIONS : OREOLE SANTÉ</h1>
   ${enTete(d)}
   <table style="margin-top:8px">
-    <tr><th>N°</th><th>Matricule</th><th>Noms et prénoms</th><th>Naissance</th><th class="m">Cotisation</th><th class="m">Part Santé</th><th class="m">IA</th><th class="m">AFA</th><th class="m">Prime HT</th><th class="m">Accessoires</th><th class="m">Frais courtiers</th></tr>
+    <tr><th>N°</th><th>Matricule</th><th>Noms et prénoms</th><th>Naissance</th><th class="m">Cotisation</th><th class="m">Part Santé</th><th class="m">IA</th><th class="m">AFA</th><th class="m">Prime HT</th><th class="m">Accessoires</th><th class="m">Chargement sinistres</th></tr>
     ${d.Adherents.map((a, i) => `<tr><td>${i + 1}</td><td>${echapper(a.Matricule)}</td><td>${echapper(`${a.Nom} ${a.Prenoms}`.trim())}</td><td>${dateFr(a.DateNaissance)}</td><td class="m">${montant(a.Cotisation)}</td><td class="m">${montant(a.PartSante)}</td><td class="m">${montant(a.PartIA)}</td><td class="m">${montant(a.PartAFA)}</td><td class="m">${montant(a.PrimeHt)}</td><td class="m">${montant(a.Accessoires)}</td><td class="m">${montant(a.FraisCourtiers)}</td></tr>`).join('')}
     <tr class="total"><td colspan="4">Total : ${d.Adherents.length} familles</td>${['Cotisation', 'PartSante', 'PartIA', 'PartAFA', 'PrimeHt', 'Accessoires', 'FraisCourtiers'].map((c) => `<td class="m">${montant(d.Adherents.reduce((t, a) => t + (a[c] || 0), 0))}</td>`).join('')}</tr>
   </table>
-  <p style="margin-top:8px">Part de MCI : prime HT + accessoires = <b>${montant(d.Totaux.PartMCI)} F</b>. Honoraires OREOLE ${d.TauxHonoraires.Cabinet} % : <b>${montant(d.Totaux.HonoraireCabinet)} F</b>. Honoraires MCI ${d.TauxHonoraires.Gestionnaire} % : <b>${montant(d.Totaux.HonoraireGestionnaire)} F</b>.</p>
+  <p style="margin-top:8px">Part de MCI : <b>${montant(d.Totaux.PartMCI)} F</b>. Honoraires OREOLE ${d.TauxHonoraires.Cabinet} % : <b>${montant(d.Totaux.HonoraireCabinet)} F</b>. Honoraires MCI ${d.TauxHonoraires.Gestionnaire} % : <b>${montant(d.Totaux.HonoraireGestionnaire)} F</b>.</p>
 `, PAYSAGE);
 
 const GENERATEURS = { cp: documentCP, bareme: documentBareme, liste: documentListe, facture: documentFacture, quittance: documentQuittance, cotisations: documentCotisations };

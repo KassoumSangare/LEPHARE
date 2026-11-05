@@ -541,7 +541,7 @@ export default function NewOreolePage() {
               )}
               {!particulier && (
                 <div style={{ ...grille, marginTop: '1rem' }}>
-                  <Champ label="Cotisation négociée par famille" aide={`Vide : ${offre ? fcfa(offre.Cotisation) : 'prix de l\'offre'} F. La majoration va aux frais courtiers, la part de MCI ne change pas.`}>
+                  <Champ label="Cotisation négociée par famille" aide={`Vide : ${offre ? fcfa(offre.Cotisation) : 'prix de l\'offre'} F. La majoration va au chargement pour sinistres à payer, la part de MCI ne change pas.`}>
                     <AmountInput value={prixFamille} disabled={lectureSeule} onChange={(v) => setPrixFamille(v)} placeholder={offre ? fcfa(offre.Cotisation) : ''} />
                   </Champ>
                 </div>
@@ -779,7 +779,7 @@ export default function NewOreolePage() {
                 <div style={grille}>
                   <div>
                     {[
-                      ['Prime HT, reversée à MCI', totaux.PrimeHt], ['Accessoires, reversés à MCI', totaux.Accessoires], ['Frais courtiers, chiffre d\'affaires', totaux.FraisCourtiers],
+                      ['Prime HT, reversée à MCI', totaux.PrimeHt], ...(totaux.Accessoires ? [['Accessoires, reversés à MCI', totaux.Accessoires]] : []), ['Chargement pour sinistres à payer', totaux.FraisCourtiers],
                       ['Part Santé', totaux.PartSante], [`Honoraires OREOLE ${reglages?.HonoraireCabinet} %`, totaux.HonoraireCabinet], [`Honoraires MCI ${reglages?.HonoraireGestionnaire} %`, totaux.HonoraireGestionnaire],
                     ].map(([l, v]) => <div key={l} style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>{l}</span><b>{fcfa(v)} F</b></div>)}
                   </div>
@@ -824,11 +824,11 @@ export default function NewOreolePage() {
                       <div style={grille}>
                         <Champ label="Mode de rémunération">
                           <select className="form-control" value={apporteurMode} disabled={lectureSeule} onChange={(e) => setApporteurMode(e.target.value)}>
-                            <option value="FAMILLE">Montant par famille</option>
+                            <option value="FAMILLE">Montant par assuré</option>
                             <option value="TAUX">Taux sur la prime HT</option>
                           </select>
                         </Champ>
-                        <Champ label={apporteurMode === 'FAMILLE' ? 'Montant par famille' : 'Taux en %'} aide={apercu?.Apporteur ? `Soit ${fcfa(apercu.Apporteur)} F sur ce contrat.` : undefined}>
+                        <Champ label={apporteurMode === 'FAMILLE' ? 'Montant par assuré, en F' : 'Taux en %'} aide={apercu?.Apporteur ? `Soit ${fcfa(apercu.Apporteur)} F sur ce contrat${apporteurMode === 'FAMILLE' ? ', un assuré et ses ayants droit comptant pour un' : ''}.` : undefined}>
                           <input type="number" min="0" className="form-control" value={apporteurValeur} disabled={lectureSeule} onChange={(e) => setApporteurValeur(e.target.value)} />
                         </Champ>
                       </div>

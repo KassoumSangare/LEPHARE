@@ -466,6 +466,8 @@ class ApporteurSerializer(serializers.ModelSerializer):
     def validate(self, donnees):
         """Pas de doublon : même pièce, même téléphone, même email, ou même nom sans pièce différente qui les distingue."""
         valeur = lambda champ: donnees.get(champ, getattr(self.instance, champ, "") if self.instance else "")  # noqa: E731
+        if (valeur("TauxRetrocession") or 0) > 0 and (valeur("MontantParAssure") or 0) > 0:
+            raise serializers.ValidationError({"non_field_errors": "Saisissez un taux ou un montant par assuré, pas les deux."})
         if not _sans_accent(valeur("Nom")):
             raise serializers.ValidationError({"Nom": "Saisissez le nom de l'apporteur."})
         nom = (_sans_accent(valeur("Nom")), _sans_accent(valeur("Prenoms")))
@@ -492,6 +494,11 @@ class ApporteurSerializer(serializers.ModelSerializer):
         valeur = (valeur or "").strip().upper()
         if valeur and Apporteur.objects.filter(Code=valeur).exclude(pk=getattr(self.instance, "pk", None)).exists():
             raise serializers.ValidationError("Ce code est déjà attribué à un autre apporteur.")
+        return valeur
+
+    def validate_MontantParAssure(self, valeur):
+        if valeur is not None and valeur < 0:
+            raise serializers.ValidationError("Le montant par assuré est positif.")
         return valeur
 
     def validate_TauxRetrocession(self, valeur):

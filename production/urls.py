@@ -375,6 +375,7 @@ urlpatterns = [
     path("finance/apporteurs/rattachements/<int:id_rattachement>/", apporteurs.vue_rattachement, name="apporteurs_rattachement"),
     path("finance/apporteurs/rattachements/<int:id_rattachement>/retrait/", apporteurs.vue_retrait, name="apporteurs_retrait"),
     path("finance/apporteurs/commissions/", apporteurs.vue_commissions, name="apporteurs_commissions"),
+    path("finance/apporteurs/commissions/<int:id_commission>/", apporteurs.vue_commission, name="apporteurs_commission"),
     path("finance/apporteurs/commissions/<int:id_commission>/annulation/", apporteurs.vue_annulation_commission, name="apporteurs_annulation_commission"),
     path("finance/apporteurs/reglements/", apporteurs.vue_reglements, name="apporteurs_reglements"),
     path("finance/apporteurs/reglements/<int:id_reglement>/annulation/", apporteurs.vue_annulation_reglement, name="apporteurs_annulation_reglement"),

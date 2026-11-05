@@ -8,7 +8,8 @@ Une cotisation réunit trois polices liées, saisies une seule fois :
 
 Règles données par OREOLE :
 - Cotisation sans taxe (« il s'agit de cotisations et non de prime ») sur la part Santé. L'IA reste taxée par son offre.
-- Décomposition de la part Santé : prime HT + accessoires (reversés à MCI) + frais courtiers (gardés, chiffre d'affaires).
+- Décomposition de la part Santé : prime HT (reversée à MCI) + chargement pour sinistres à payer (frais courtiers dans le code, gardés).
+  Les accessoires de 10 000 F sont passés au chargement le 2026-11-05 (migration 0211) : le champ reste, à 0.
   Honoraires 7 % OREOLE (à réclamer) et 11 % MCI, calculés sur la prime HT.
 - Enregistrement : prime HT en prime nette, accessoires en accessoirecompagnie, frais courtiers en accessoireintermediaire,
   7 % en commissionintermediaire, 11 % en commissiongestionnaire, taxe 0.

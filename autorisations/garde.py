@@ -396,6 +396,7 @@ REGLES = [
     R("POST", r"finance/apporteurs/reglements/$", "apporteurs.payer", objet="reglement_apporteur", cles=("IdApporteur",)),
     R("POST", r"finance/apporteurs/reglements/(?P<id_reglement>\d+)/annulation/", "apporteurs.cancel", objet="reglement_apporteur", cles=("id_reglement",)),
     R("POST", r"finance/apporteurs/commissions/(?P<id_commission>\d+)/annulation/", "apporteurs.cancel", objet="commission_apporteur", cles=("id_commission",)),
+    R("PATCH", r"finance/apporteurs/commissions/(?P<id_commission>\d+)/$", "apporteurs.rattacher", objet="commission_apporteur", cles=("id_commission",)),
     R("GET", r"finance/apporteurs/", "apporteurs.view"),
     # ---- commissions
     R("POST", r"commissions/(affaires-commission/rechercher_pour_paiement|details-paiement-commission/verifier_selection|"

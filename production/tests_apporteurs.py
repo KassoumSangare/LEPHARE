@@ -7,7 +7,7 @@ from django.test import SimpleTestCase
 
 from configuration_api.serializers import _sans_accent
 
-from .apporteurs import _etat_reglement, _synchroniser_lien, montant_commission
+from .apporteurs import ErreurApporteur, _etat_reglement, _synchroniser_lien, assures_par_mouvement, convention, montant_commission
 
 
 class CurseurEspion:
@@ -72,12 +72,12 @@ class Generation(SimpleTestCase):
     def test_commission_du_cabinet_au_taux_convenu(self):
         c = self.appliquer(lien(), [mouvement()])
         self.assertEqual(len(c.insertions), 1)
-        self.assertEqual(c.insertions[0][-1], 2469)
-        self.assertEqual(c.insertions[0][-2], D("20"))
+        self.assertEqual(c.insertions[0][-2], 2469)
+        self.assertEqual(c.insertions[0][-3], D("20"))
 
     def test_prime_nette(self):
         c = self.appliquer(lien(assiette="PRIME_NETTE", taux=D("2.5")), [mouvement()])
-        self.assertEqual(c.insertions[0][-1], 2500)
+        self.assertEqual(c.insertions[0][-2], 2500)
 
     def test_mouvement_anterieur_au_rattachement_exclu(self):
         c = self.appliquer(lien(idbase=20), [mouvement(idcontrat=10), mouvement(idcontrat=20, idquittance=501)])
@@ -89,7 +89,7 @@ class Generation(SimpleTestCase):
 
     def test_montant_convenu_seulement_sur_son_devis(self):
         c = self.appliquer(lien(assiette="FORFAIT", montantforfait=D(4000), taux=D(0)), [mouvement(), mouvement(idcontrat=11, idquittance=501, iddevis=101, code="MOD")])
-        self.assertEqual([(p[3], p[-1]) for p in c.insertions], [(500, 4000)])
+        self.assertEqual([(p[3], p[-2]) for p in c.insertions], [(500, 4000)])
 
     def test_commission_nulle_pas_de_ligne(self):
         self.assertEqual(self.appliquer(lien(), [mouvement(commission=D(0))]).insertions, [])
@@ -105,7 +105,7 @@ class Generation(SimpleTestCase):
         annulant = {**mouvement(idcontrat=99, idquittance=900, code="ANL"), "numeropolice": "AUTRE"}
         c = self.appliquer(lien(), [mouvement(annulation=99)], {(1, 500): ligne}, par_id={99: annulant})
         self.assertEqual(len(c.insertions), 1)
-        self.assertEqual((c.insertions[0][3], c.insertions[0][-1]), (900, D(-2469)))
+        self.assertEqual((c.insertions[0][3], c.insertions[0][-2]), (900, D(-2469)))
         self.assertEqual(c.insertions[0][4], "P1")
 
     def test_annulation_sans_paiement_pas_de_reprise(self):
@@ -121,7 +121,7 @@ class Generation(SimpleTestCase):
 
     def test_ristourne_negative_a_deduire(self):
         c = self.appliquer(lien(), [mouvement(idcontrat=11, idquittance=501, commission=D(-1000), code="MOD")])
-        self.assertEqual(c.insertions[0][-1], -200)
+        self.assertEqual(c.insertions[0][-2], -200)
 
     def test_quittance_deja_payee_sous_un_ancien_rattachement(self):
         self.assertEqual(self.appliquer(lien(), [mouvement()], deja=[(7, 500)]).insertions, [])
@@ -139,3 +139,55 @@ class Generation(SimpleTestCase):
 class Doublons(SimpleTestCase):
     def test_noms_comparables(self):
         self.assertEqual(_sans_accent("Koné-Essai "), _sans_accent("KONE  ESSAI"))
+
+
+class TauxOuMontant(SimpleTestCase):
+    def test_taux(self):
+        self.assertEqual(convention({"Assiette": "COMMISSION", "Taux": "20"}), ("COMMISSION", D("20"), D(0)))
+
+    def test_montant_par_assure(self):
+        self.assertEqual(convention({"Assiette": "PAR_ASSURE", "MontantParAssure": "15 000"}), ("PAR_ASSURE", D(0), D(15000)))
+
+    def test_jamais_les_deux(self):
+        with self.assertRaisesMessage(ErreurApporteur, "pas les deux"):
+            convention({"Assiette": "PAR_ASSURE", "Taux": "10", "MontantParAssure": "15000"})
+        with self.assertRaisesMessage(ErreurApporteur, "pas les deux"):
+            convention({"Assiette": "COMMISSION", "Taux": "10", "MontantParAssure": "15000"})
+
+    def test_montant_obligatoire_par_assure(self):
+        with self.assertRaisesMessage(ErreurApporteur, "montant convenu par assuré"):
+            convention({"Assiette": "PAR_ASSURE"})
+
+    def test_mode_actuel_garde_a_la_modification(self):
+        self.assertEqual(convention({"MontantParAssure": 5000}, "PAR_ASSURE")[0], "PAR_ASSURE")
+
+
+def assures(idcontrat, code, adherents=0, afa=0, details=0, prime=D(1000)):
+    return {**mouvement(idcontrat=idcontrat, idquittance=idcontrat + 400, code=code, prime=prime), "adherents": adherents, "afa": afa, "details": details}
+
+
+class ParAssure(SimpleTestCase):
+    def test_sante_affaire_puis_incorporation(self):
+        n = assures_par_mouvement([assures(10, "AFN", adherents=72), assures(11, "MOD", adherents=75), assures(12, "MOD", adherents=74), assures(13, "REN", adherents=74)])
+        self.assertEqual(n, {10: 72, 11: 3, 12: 0, 13: 74})
+
+    def test_ia_une_ligne_par_assure(self):
+        n = assures_par_mouvement([assures(10, "AFN", details=72), assures(11, "INC", details=2), assures(12, "MOD", details=72, prime=D(0))])
+        self.assertEqual(n, {10: 72, 11: 2, 12: 0})
+
+    def test_vie(self):
+        self.assertEqual(assures_par_mouvement([assures(10, "AFN", afa=18, details=1)]), {10: 18})
+
+    def test_commission(self):
+        c = CurseurEspion()
+        le_lien = lien(assiette="PAR_ASSURE", taux=D(0), montantforfait=D(15000))
+        mouvements = [assures(10, "AFN", details=72), assures(11, "INC", details=2)]
+        _synchroniser_lien(c, le_lien, mouvements, {m["idcontrat"]: m for m in mouvements}, {}, set())
+        self.assertEqual([(p[10], p[-2], p[-1]) for p in c.insertions], [(D(72), D(1080000), D(15000)), (D(2), D(30000), D(15000))])
+
+    def test_nombre_corrige_a_la_main(self):
+        c = CurseurEspion()
+        ligne = {"idcommission": 9, "statut": "A_PAYER", "montant": D(15000), "taux": D(0), "assiettemontant": D(1), "montantunitaire": D(15000), "assuresmanuel": 2}
+        mouvements = [assures(10, "AFN", details=1)]
+        _synchroniser_lien(c, lien(assiette="PAR_ASSURE", taux=D(0), montantforfait=D(15000)), mouvements, {10: mouvements[0]}, {(1, 410): ligne}, set())
+        self.assertEqual(c.ecritures[0][1][:4], ["PAR_ASSURE", D(2), D(0), D(30000)])

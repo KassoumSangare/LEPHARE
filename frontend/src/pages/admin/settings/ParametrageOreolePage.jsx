@@ -91,10 +91,10 @@ export default function ParametrageOreolePage() {
       </div>
       {!donnees && <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}><Loader2 size={24} className="spin" /></div>}
       {donnees && (onglet === 'offres' || onglet === 'bareme') && (
-        <SectionParametrage titre={onglet === 'offres' ? 'Offres' : 'Barème de soins par offre'} description={onglet === 'offres' ? 'Les frais courtiers sont ce qui reste de la cotisation après la prime HT, les accessoires et les parts IA et AFA.' : 'Montants en F CFA, imprimés sur les conditions particulières et le barème.'}>
+        <SectionParametrage titre={onglet === 'offres' ? 'Offres' : 'Barème de soins par offre'} description={onglet === 'offres' ? 'Le chargement pour sinistres à payer est ce qui reste de la cotisation après la prime HT, les accessoires et les parts IA et AFA.' : 'Montants en F CFA, imprimés sur les conditions particulières et le barème.'}>
           <div className="tableau-defilant" style={{ overflowX: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 10 }}>
             <table className="data-table" style={{ fontSize: '0.8rem', minWidth: onglet === 'offres' ? 980 : 1700 }}>
-              <thead><tr><th>Offre</th>{(onglet === 'offres' ? COLONNES_OFFRES : COLONNES_BAREME).map(([c, l]) => <th key={c}>{l}</th>)}{onglet === 'offres' && <th style={{ textAlign: 'right' }}>Frais courtiers</th>}<th>Active</th><th aria-label="Enregistrer" /></tr></thead>
+              <thead><tr><th>Offre</th>{(onglet === 'offres' ? COLONNES_OFFRES : COLONNES_BAREME).map(([c, l]) => <th key={c}>{l}</th>)}{onglet === 'offres' && <th style={{ textAlign: 'right' }}>Chargement pour sinistres à payer</th>}<th>Active</th><th aria-label="Enregistrer" /></tr></thead>
               <tbody>{donnees.Offres.map((o) => <LigneOffre key={o.IdOffre} offre={o} colonnes={onglet === 'offres' ? COLONNES_OFFRES : COLONNES_BAREME} onEnregistre={remplacerOffre} />)}</tbody>
             </table>
           </div>
@@ -107,7 +107,7 @@ export default function ParametrageOreolePage() {
       )}
       {donnees && onglet === 'surprimes' && (
         <>
-          <SectionParametrage titre="Surprimes et âges" description="L'affection se calcule sur la cotisation totale, l'âge sur la part Santé. L'IA et l'AFA ne changent pas. Le supplément va aux frais courtiers.">
+          <SectionParametrage titre="Surprimes et âges" description="L'affection se calcule sur la cotisation totale, l'âge sur la part Santé. L'IA et l'AFA ne changent pas. Le supplément va au chargement pour sinistres à payer.">
             {parametres((p) => /surprime|affections|age_max/.test(p.Cle)).map(ligneParametre)}
           </SectionParametrage>
           <SectionParametrage titre="Carences et alertes" description="Imprimées sur les conditions particulières et le barème.">

@@ -13,15 +13,52 @@ import { dateFr, fcfa, messageErreurApi } from '../../utils/financeUtils';
    ========================================================================= */
 export const COULEURS_ETAT = { A_PAYER: 'amber', PARTIELLE: 'amber', PAYEE: 'emerald', ANNULEE: 'rose', EN_ATTENTE: 'blue', AUCUNE: 'blue' };
 export const COULEURS_STATUT = { A_PAYER: 'amber', PAYEE: 'emerald', ANNULEE: 'rose' };
-export const OPTIONS_ASSIETTE = [['COMMISSION', 'Commission du cabinet'], ['PRIME_NETTE', 'Prime nette']];
+// Un taux ou un montant par assuré, jamais les deux : le mode choisi décide du seul champ affiché
+export const OPTIONS_ASSIETTE = [['COMMISSION', 'Taux de la commission du cabinet'], ['PRIME_NETTE', 'Taux de la prime nette'], ['PAR_ASSURE', 'Montant par assuré']];
+export const conventionAffichee = (a) => {
+  if (a.Assiette === 'PAR_ASSURE') return `${fcfa(a.MontantUnitaire ?? a.MontantForfait)} F par assuré`;
+  if (a.Assiette === 'FORFAIT') return `${fcfa(a.MontantForfait)} F`;
+  return `${Number(a.Taux || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %`;
+};
+const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+// Corps envoyé au serveur : seul le champ du mode choisi
+const corpsConvention = (s) => (s.Assiette === 'PAR_ASSURE' ? { Assiette: 'PAR_ASSURE', MontantParAssure: s.MontantParAssure } : { Assiette: s.Assiette, Taux: s.Taux });
 const DROITE = { textAlign: 'right' };
 const pourcent = (v) => `${Number(v || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %`;
 const nomApporteur = (a) => `${a.Nom || ''} ${a.Prenoms || ''}`.trim();
 
-const LignesQuittances = ({ lignes }) => (
+// Base d'une ligne : nombre d'assurés pour un montant par assuré, montant sinon
+export const baseAffichee = (c) => (c.Assiette === 'PAR_ASSURE' ? pluriel(c.Assures ?? 0, 'assuré') : `${fcfa(c.AssietteMontant)} F`);
+export const tarifAffiche = (c) => {
+  if (c.Assiette === 'PAR_ASSURE') return `${fcfa(c.MontantUnitaire)} F par assuré`;
+  return c.Assiette === 'FORFAIT' ? '-' : pourcent(c.Taux);
+};
+
+const NombreAssures = ({ ligne, peutCorriger, onCorriger }) => {
+  const [saisie, setSaisie] = useState(null);
+  if (saisie !== null) {
+    return (
+      <span style={{ display: 'inline-flex', gap: '0.25rem', alignItems: 'center' }}>
+        <input type="number" min="0" step="1" className="form-control" aria-label="Nombre d'assurés" style={{ width: 76, padding: '0.15rem 0.3rem' }} value={saisie} onChange={(e) => setSaisie(e.target.value)} />
+        <button type="button" className="btn btn-primary" style={{ padding: '0.15rem 0.35rem' }} aria-label="Enregistrer le nombre d'assurés" onClick={async () => { if (await onCorriger(ligne, saisie)) setSaisie(null); }}><Save size={13} /></button>
+        <button type="button" className="btn btn-secondary" style={{ padding: '0.15rem 0.35rem' }} aria-label="Annuler" onClick={() => setSaisie(null)}><X size={13} /></button>
+      </span>
+    );
+  }
+  return (
+    <span>
+      {baseAffichee(ligne)}{ligne.AssuresCorriges && <span title="Nombre corrigé à la main"> (corrigé)</span>}
+      {peutCorriger && ligne.Statut === 'A_PAYER' && (
+        <button type="button" className="btn btn-secondary" style={{ padding: '0.1rem 0.3rem', marginLeft: '0.3rem' }} title="Corriger le nombre d'assurés" aria-label={`Corriger le nombre d'assurés de la quittance ${ligne.NumeroQuittance}`} onClick={() => setSaisie(String(ligne.Assures ?? 0))}><Edit2 size={12} /></button>
+      )}
+    </span>
+  );
+};
+
+const LignesQuittances = ({ lignes, peutCorriger, onCorriger }) => (
   <table className="data-table" style={{ fontSize: '0.78rem' }}>
     <thead>
-      <tr><th>Quittance</th><th>Mouvement</th><th>Émission</th><th>Assiette</th><th style={DROITE}>Base</th><th style={DROITE}>Taux</th><th style={DROITE}>Commission</th><th>Prime du client</th><th>État</th></tr>
+      <tr><th>Quittance</th><th>Mouvement</th><th>Émission</th><th>Assiette</th><th style={DROITE}>Base</th><th style={DROITE}>Taux ou montant</th><th style={DROITE}>Commission</th><th>Prime du client</th><th>État</th></tr>
     </thead>
     <tbody>
       {lignes.map((c) => (
@@ -30,8 +67,8 @@ const LignesQuittances = ({ lignes }) => (
           <td>{c.Mouvement}</td>
           <td>{dateFr(c.DateEmission)}</td>
           <td>{c.LibelleAssiette}</td>
-          <td style={DROITE}>{fcfa(c.AssietteMontant)} F</td>
-          <td style={DROITE}>{c.Assiette === 'FORFAIT' ? '-' : pourcent(c.Taux)}</td>
+          <td style={DROITE}>{c.Assiette === 'PAR_ASSURE' ? <NombreAssures ligne={c} peutCorriger={peutCorriger} onCorriger={onCorriger} /> : baseAffichee(c)}</td>
+          <td style={DROITE}>{tarifAffiche(c)}</td>
           <td style={{ ...DROITE, fontWeight: 700 }}>{fcfa(c.Montant)} F</td>
           <td style={{ color: c.PrimeSoldee ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>{c.PrimeSoldee ? 'Soldée' : `Reste ${fcfa(c.Reste)} F`}</td>
           <td>
@@ -78,7 +115,7 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
   if (!peutLire || (!idDevis && !idContrat)) return null;
 
   const ouvrirAjout = async () => {
-    setAjout({ IdApporteur: '', Taux: '', Assiette: 'COMMISSION' });
+    setAjout({ IdApporteur: '', Taux: '', MontantParAssure: '', Assiette: 'COMMISSION' });
     if (catalogue.length) return;
     try {
       const liste = await apporteurApi.liste();
@@ -90,7 +127,15 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
 
   const choisirApporteur = (valeur) => {
     const a = catalogue.find((x) => String(x.IdApporteur) === String(valeur));
-    setAjout((avant) => ({ ...avant, IdApporteur: valeur, Taux: a && a.TauxRetrocession !== null && a.TauxRetrocession !== undefined ? a.TauxRetrocession : avant.Taux }));
+    // Convention générale de l'apporteur proposée : son montant par assuré, sinon son taux
+    const montant = Number(a?.MontantParAssure) > 0 ? a.MontantParAssure : '';
+    const taux = a && a.TauxRetrocession !== null && a.TauxRetrocession !== undefined ? a.TauxRetrocession : '';
+    // Sans convention générale : mode gardé, valeurs vidées (rien ne reste de l'apporteur choisi avant)
+    setAjout((avant) => {
+      if (montant) return { ...avant, IdApporteur: valeur, Assiette: 'PAR_ASSURE', MontantParAssure: montant, Taux: '' };
+      if (taux !== '') return { ...avant, IdApporteur: valeur, Assiette: avant.Assiette === 'PAR_ASSURE' ? 'COMMISSION' : avant.Assiette, Taux: taux, MontantParAssure: '' };
+      return { ...avant, IdApporteur: valeur, Taux: '', MontantParAssure: '' };
+    });
   };
 
   const appliquer = (resultat, message) => {
@@ -104,7 +149,7 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
     setEnvoi(true);
     try {
       const r = await apporteurApi.rattacher({
-        IdDevis: idDevis || undefined, IdContrat: idContrat || undefined, IdApporteur: Number(ajout.IdApporteur), Taux: ajout.Taux, Assiette: ajout.Assiette,
+        IdDevis: idDevis || undefined, IdContrat: idContrat || undefined, IdApporteur: Number(ajout.IdApporteur), ...corpsConvention(ajout),
       });
       appliquer(r, "Apporteur rattaché à l'affaire.");
       setAjout(null);
@@ -119,12 +164,22 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
     e.preventDefault();
     setEnvoi(true);
     try {
-      appliquer(await apporteurApi.modifierRattachement(edition.IdRattachement, { Taux: edition.Taux, Assiette: edition.Assiette }), 'Taux convenu enregistré. Les commissions déjà payées gardent leur taux.');
+      appliquer(await apporteurApi.modifierRattachement(edition.IdRattachement, corpsConvention(edition)), 'Convention enregistrée. Les commissions déjà payées gardent leur montant.');
       setEdition(null);
     } catch (err) {
       toastError(`Taux non enregistré : ${messageErreurApi(err)}`);
     } finally {
       setEnvoi(false);
+    }
+  };
+
+  const corriger = async (ligne, valeur) => {
+    try {
+      appliquer(await apporteurApi.corrigerAssures(ligne.IdCommission, valeur === '' ? null : Number(valeur)), `Quittance ${ligne.NumeroQuittance} : nombre d'assurés enregistré.`);
+      return true;
+    } catch (err) {
+      toastError(`Nombre d'assurés non enregistré : ${messageErreurApi(err)}`);
+      return false;
     }
   };
 
@@ -172,7 +227,7 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
           <table className="data-table" style={{ fontSize: '0.82rem' }}>
             <thead>
               <tr>
-                <th aria-label="Détail" /><th>Apporteur</th><th style={DROITE}>Taux convenu</th><th>Assiette</th><th style={DROITE}>Commission générée</th><th style={DROITE}>Payée</th><th style={DROITE}>À payer</th><th>État de règlement</th>
+                <th aria-label="Détail" /><th>Apporteur</th><th style={DROITE}>Taux ou montant convenu</th><th>Assiette</th><th style={DROITE}>Commission générée</th><th style={DROITE}>Payée</th><th style={DROITE}>À payer</th><th>État de règlement</th>
                 {peutRattacher && <th aria-label="Actions" />}
               </tr>
             </thead>
@@ -193,12 +248,14 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
                     </td>
                     <td style={DROITE}>
                       {edition?.IdRattachement === a.IdRattachement ? (
-                        <input type="number" min="0.01" max="100" step="0.01" className="form-control" aria-label="Taux convenu" style={{ width: 86, display: 'inline-block', padding: '0.2rem 0.35rem' }} value={edition.Taux} onChange={(e) => setEdition({ ...edition, Taux: e.target.value })} />
-                      ) : (a.Assiette === 'FORFAIT' ? `${fcfa(a.MontantForfait)} F` : pourcent(a.Taux))}
+                        edition.Assiette === 'PAR_ASSURE'
+                          ? <input type="number" min="1" step="1" className="form-control" aria-label="Montant par assuré" style={{ width: 110, display: 'inline-block', padding: '0.2rem 0.35rem' }} value={edition.MontantParAssure} onChange={(e) => setEdition({ ...edition, MontantParAssure: e.target.value })} />
+                          : <input type="number" min="0.01" max="100" step="0.01" className="form-control" aria-label="Taux convenu" style={{ width: 86, display: 'inline-block', padding: '0.2rem 0.35rem' }} value={edition.Taux} onChange={(e) => setEdition({ ...edition, Taux: e.target.value })} />
+                      ) : conventionAffichee(a)}
                     </td>
                     <td>
                       {edition?.IdRattachement === a.IdRattachement ? (
-                        <select className="form-control" aria-label="Assiette" style={{ padding: '0.2rem 0.35rem' }} value={edition.Assiette} onChange={(e) => setEdition({ ...edition, Assiette: e.target.value })}>
+                        <select className="form-control" aria-label="Assiette" style={{ padding: '0.2rem 0.35rem' }} value={edition.Assiette} onChange={(e) => setEdition({ ...edition, Assiette: e.target.value, Taux: '', MontantParAssure: '' })}>
                           {OPTIONS_ASSIETTE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                         </select>
                       ) : a.LibelleAssiette}
@@ -222,7 +279,7 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
                         )}
                         {a.Actif && edition?.IdRattachement !== a.IdRattachement && (
                           <>
-                            {a.Assiette !== 'FORFAIT' && <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.4rem', marginRight: '0.25rem' }} title="Modifier le taux convenu" aria-label={`Modifier le taux de ${a.Apporteur}`} onClick={() => setEdition({ IdRattachement: a.IdRattachement, Taux: a.Taux, Assiette: a.Assiette })}><Edit2 size={14} /></button>}
+                            {a.Assiette !== 'FORFAIT' && <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.4rem', marginRight: '0.25rem' }} title="Modifier la convention" aria-label={`Modifier le taux ou le montant de ${a.Apporteur}`} onClick={() => setEdition({ IdRattachement: a.IdRattachement, Taux: a.Assiette === 'PAR_ASSURE' ? '' : a.Taux, MontantParAssure: a.Assiette === 'PAR_ASSURE' ? a.MontantUnitaire : '', Assiette: a.Assiette })}><Edit2 size={14} /></button>}
                             <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.4rem' }} title="Retirer de l'affaire" aria-label={`Retirer ${a.Apporteur}`} onClick={() => retirer(a)}><UserMinus size={14} /></button>
                           </>
                         )}
@@ -230,7 +287,7 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
                     )}
                   </tr>
                   {ouvert === a.IdRattachement && (
-                    <tr><td colSpan={peutRattacher ? 9 : 8} style={{ padding: '0.4rem 0.5rem' }}><LignesQuittances lignes={a.Lignes} /></td></tr>
+                    <tr><td colSpan={peutRattacher ? 9 : 8} style={{ padding: '0.4rem 0.5rem' }}><LignesQuittances lignes={a.Lignes} peutCorriger={peutRattacher} onCorriger={corriger} /></td></tr>
                   )}
                 </React.Fragment>
               ))}
@@ -249,15 +306,22 @@ export default function BlocApporteursAffaire({ idDevis = 0, idContrat = 0, sans
             </select>
           </div>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" htmlFor="ba-taux">Taux convenu pour cette affaire, en %</label>
-            <input id="ba-taux" type="number" min="0.01" max="100" step="0.01" required className="form-control" value={ajout.Taux} onChange={(e) => setAjout({ ...ajout, Taux: e.target.value })} />
-          </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" htmlFor="ba-assiette">Assiette</label>
-            <select id="ba-assiette" className="form-control" value={ajout.Assiette} onChange={(e) => setAjout({ ...ajout, Assiette: e.target.value })}>
+            <label className="form-label" htmlFor="ba-assiette">Commission</label>
+            <select id="ba-assiette" className="form-control" value={ajout.Assiette} onChange={(e) => setAjout({ ...ajout, Assiette: e.target.value, Taux: '', MontantParAssure: '' })}>
               {OPTIONS_ASSIETTE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
+          {ajout.Assiette === 'PAR_ASSURE' ? (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ba-montant">Montant par assuré, en F</label>
+              <input id="ba-montant" type="number" min="1" step="1" required className="form-control" value={ajout.MontantParAssure} onChange={(e) => setAjout({ ...ajout, MontantParAssure: e.target.value })} />
+            </div>
+          ) : (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label" htmlFor="ba-taux">Taux convenu pour cette affaire, en %</label>
+              <input id="ba-taux" type="number" min="0.01" max="100" step="0.01" required className="form-control" value={ajout.Taux} onChange={(e) => setAjout({ ...ajout, Taux: e.target.value })} />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             <button type="submit" className="btn btn-primary" disabled={envoi} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>{envoi ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Rattacher</button>
             <button type="button" className="btn btn-secondary" onClick={() => setAjout(null)}>Annuler</button>

@@ -2034,6 +2034,8 @@ export const apporteurApi = {
   reglements: async (params) => (await apiClient.get('/finance/apporteurs/reglements/', { params })).data,
   regler: async (donnees) => (await apiClient.post('/finance/apporteurs/reglements/', donnees)).data,
   // Motif saisi dans la boîte : envoyé d'emblée (en-tête X-Motif de la garde)
+  // Commission par assuré à payer : nombre d'assurés corrigé (vide : compté sur la police)
+  corrigerAssures: async (id, assures) => (await apiClient.patch(`/finance/apporteurs/commissions/${id}/`, { Assures: assures })).data,
   annulerCommission: async (id, motif) => (await apiClient.post(`/finance/apporteurs/commissions/${id}/annulation/`, { Motif: motif }, { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true })).data,
   annulerReglement: async (id, motif) => (await apiClient.post(`/finance/apporteurs/reglements/${id}/annulation/`, { Motif: motif }, { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true })).data,
 };

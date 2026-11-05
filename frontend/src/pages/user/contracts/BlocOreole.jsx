@@ -106,8 +106,8 @@ export default function BlocOreole({ idContrat, onDetection }) {
           <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Cotisation des polices émises</span><b>{fcfa(totaux.Cotisation)} F</b></div>
           <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Déjà encaissé</span><b>{fcfa(encaisse)} F</b></div>
           <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Reste à encaisser</span><b style={{ color: totaux.ResteAEncaisser > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>{fcfa(totaux.ResteAEncaisser)} F</b></div>
-          <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Part de MCI, prime HT et accessoires</span><b>{fcfa(totaux.PartMCI)} F</b></div>
-          <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Frais courtiers, chiffre d'affaires</span><b>{fcfa(totaux.FraisCourtiers)} F</b></div>
+          <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Part de MCI</span><b>{fcfa(totaux.PartMCI)} F</b></div>
+          <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>Chargement pour sinistres à payer</span><b>{fcfa(totaux.FraisCourtiers)} F</b></div>
           <div style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>{`Honoraires OREOLE ${donnees.TauxHonoraires.Cabinet} %, MCI ${donnees.TauxHonoraires.Gestionnaire} %`}</span><b>{fcfa(totaux.HonoraireCabinet)} F, {fcfa(totaux.HonoraireGestionnaire)} F</b></div>
           {aLeDroit('encaissements.create') && totaux.ResteAEncaisser > 0 && (
             <button type="button" className="btn btn-primary" style={{ marginTop: '0.6rem', fontSize: '0.8rem' }} onClick={() => navigate(`/user/cash?oreole=${donnees.IdDevis}`)}>Encaisser le package</button>
