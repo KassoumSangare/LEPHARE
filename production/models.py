@@ -46,6 +46,7 @@ class Brouillon(models.Model):
 
     TYPES = [
         ("DEVIS_AUTO", "Devis automobile"),
+        ("DEVIS_IA", "Devis Individuelle Accidents"),
         ("AVENANT", "Modification de contrat"),
     ]
 

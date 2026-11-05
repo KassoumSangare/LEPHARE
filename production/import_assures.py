@@ -53,8 +53,9 @@ OFFRE_SPECIFIQUE_GROUPE = 174
 OFFRE_STANDARD_PARTICULIER = 6
 OFFRE_STANDARD_GROUPE = 7
 
-# Intitulés possibles de la colonne prime TTC (le modèle 2 d'OREOLE écrit « PRIME TTC ») : sans
+# Intitulés possibles des colonnes de prime (le modèle 2 d'OREOLE écrit « PRIMES HT/TTC ») : sans
 # elle, l'offre CGA (capital + prime) n'était pas reconnue et l'offre de l'écran était appliquée
+ALIAS_PRIME_HT = ["Prime HT", "PRIME HT", "PRIMES HT", "Primes HT"]
 ALIAS_PRIME_TTC = ["Prime TTC", "PRIME TTC", "PRIMES TTC", "Primes TTC"]
 # Colonnes d'en-tête du contrat (modèle 2), contrôlées contre la saisie de l'écran
 COLONNES_ENTETE_FICHIER = {
@@ -634,13 +635,12 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
                 "CapitalInfirmite": valider_monetaire(row.get("IPT"), "IPT"),
                 "CapitalTraitement": Decimal("0.00"),
                 "PrimeHT": valider_monetaire(
-                    row.get("PRIME HT", 0.0), "PRIME HT"
-                ),  # valider_monetaire(row.get("PRIME HT"), "PRIME HT"),
+                    get_col_value(row, ALIAS_PRIME_HT) or 0.0, "PRIME HT"
+                ),
                 "Accessoire": Decimal("0.00"),
                 "PrimeTTC": valider_monetaire(
-                    row.get("PRIMES TTC", row.get("PRIME TTC", 0.0)),
-                    "PRIMES TTC",
-                ),  # valider_monetaire(row.get("PRIMES TTC"), "PRIMES TTC"),
+                    get_col_value(row, ALIAS_PRIME_TTC) or 0.0, "PRIME TTC"
+                ),
                 "Offre": row.get("Offre", 0),
                 "Beneficiaires": [],
                 # En-tête du contrat porté par le fichier (contrôlé contre l'écran à l'import)

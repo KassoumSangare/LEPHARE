@@ -105,6 +105,9 @@ export default function NewOreolePage() {
   const [comparer, setComparer] = useState(false);
   const [prixFamille, setPrixFamille] = useState('');
   const [carteAssurance, setCarteAssurance] = useState(false);
+  // Personnes dont la carte déjà facturée est refacturée pour perte, et résultat de la vérification de l'historique au serveur
+  const [cartesPerte, setCartesPerte] = useState([]);
+  const [verifCartes, setVerifCartes] = useState(null);
   const [avecIA, setAvecIA] = useState(true);
   const [avecAFA, setAvecAFA] = useState(true);
   const [idApporteur, setIdApporteur] = useState('');
@@ -163,6 +166,7 @@ export default function NewOreolePage() {
           setIdOffre(d.IdOffre);
           setPrixFamille(d.PrixFamille || '');
           setCarteAssurance(d.Carte);
+          setCartesPerte(d.CartesPerte || []);
           setIdApporteur(d.IdApporteur || '');
           setApporteurMode(d.ApporteurMode || 'FAMILLE');
           setApporteurValeur(d.ApporteurValeur || 0);
@@ -239,7 +243,7 @@ export default function NewOreolePage() {
 
   // ------------------------------------------------------------------ calcul
   const charge = useMemo(() => ({
-    Cible: cible, DateEffet: dateEffet, DateExpiration: dateExpiration, IdOffre: Number(idOffre) || 0, PrixFamille: prixFamille || null, Carte: carteAssurance, AvecIA: avecIA, AvecAFA: avecAFA,
+    Cible: cible, DateEffet: dateEffet, DateExpiration: dateExpiration, IdOffre: Number(idOffre) || 0, PrixFamille: prixFamille || null, Carte: carteAssurance, CartesPerte: carteAssurance ? cartesPerte : [], AvecIA: avecIA, AvecAFA: avecAFA,
     IdApporteur: Number(idApporteur) || null, ApporteurMode: apporteurMode, ApporteurValeur: Number(apporteurValeur) || 0, NumeroPoliceCompagnie: policeCompagnie,
     Adherents: lignesServeur.map((l) => ({
       IdClient: l.IdClient || 0, IdAdherentBase: l.IdAdherentBase || 0, Matricule: l.Matricule, Nom: l.Nom, Prenoms: l.Prenoms, DateNaissance: l.DateNaissance, Sexe: l.Sexe,
@@ -250,7 +254,7 @@ export default function NewOreolePage() {
       Beneficiaires: l.Beneficiaires,
       ...(l.IdAdherentBase ? { AvecIA: false, AvecAFA: false } : {}),
     })),
-  }), [cible, dateEffet, dateExpiration, idOffre, prixFamille, carteAssurance, avecIA, avecAFA, idApporteur, apporteurMode, apporteurValeur, policeCompagnie, lignesServeur]);
+  }), [cible, dateEffet, dateExpiration, idOffre, prixFamille, carteAssurance, cartesPerte, avecIA, avecAFA, idApporteur, apporteurMode, apporteurValeur, policeCompagnie, lignesServeur]);
 
   useEffect(() => {
     if (lectureSeule || !dateEffet || !charge.Adherents.length) { setApercu(null); setApercuErreur(''); return undefined; }
@@ -265,6 +269,26 @@ export default function NewOreolePage() {
     return () => { actif = false; clearTimeout(minuterie); };
   }, [charge, dateEffet, lectureSeule]);
 
+  // Carte demandée : le serveur vérifie l'historique de chaque personne, familles existantes comprises
+  useEffect(() => {
+    if (lectureSeule || !carteAssurance || !dateEffet) { setVerifCartes(null); return undefined; }
+    const completes = charge.Adherents.filter((a) => a.Nom && a.DateNaissance && a.IdOffre);
+    if (!completes.length) { setVerifCartes(null); return undefined; }
+    let actif = true;
+    const minuterie = setTimeout(() => {
+      oreoleApi.verifierCartes({ ...charge, Adherents: completes })
+        .then((r) => { if (actif) setVerifCartes(r); })
+        .catch(() => { if (actif) setVerifCartes(null); });
+    }, 300);
+    return () => { actif = false; clearTimeout(minuterie); };
+  }, [charge, carteAssurance, dateEffet, lectureSeule]);
+
+  // Alerte dès qu'une tentative vise une carte déjà facturée
+  const alerteCartes = verifCartes?.Alerte || '';
+  useEffect(() => { if (alerteCartes) warning(alerteCartes); }, [alerteCartes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const basculerPerte = (cle, perte) => setCartesPerte((avant) => (perte ? [...new Set([...avant, cle])] : avant.filter((c) => c !== cle)));
+
   const tarifDe = (ligne) => {
     if (!apercu) return null;
     const cleLigne = `${String(ligne.Nom).trim()} ${String(ligne.Prenoms).trim()}`.trim();
@@ -275,8 +299,9 @@ export default function NewOreolePage() {
   const complementsFamille = useMemo(() => lignes.filter((l) => l.IdAdherentBase).reduce((total, l) => {
     const o = offresParId[l.IdOffre];
     const ajoutes = (l.Ayants || []).filter((a) => String(a.Nom).trim() || String(a.Prenoms).trim()).length;
-    return total + (Number(l.EnfantsEnPlus) || 0) * (o?.EnfantSupplementaire || 0) + (carteAssurance ? ajoutes * (reglages?.Carte || 0) : 0);
-  }, 0), [lignes, offresParId, carteAssurance, reglages]);
+    // Cartes : le serveur retire les personnes déjà facturées (verifCartes.MontantAjouts, ajouté une seule fois ci-dessous)
+    return total + (Number(l.EnfantsEnPlus) || 0) * (o?.EnfantSupplementaire || 0) + (carteAssurance && !verifCartes ? ajoutes * (reglages?.Carte || 0) : 0);
+  }, carteAssurance ? (verifCartes?.MontantAjouts || 0) : 0), [lignes, offresParId, carteAssurance, reglages, verifCartes]);
 
   const totaux = useMemo(() => {
     if (lectureSeule && devisLu) return devisLu.Totaux;
@@ -761,9 +786,28 @@ export default function NewOreolePage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                     <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', fontSize: '0.84rem' }}>
                       <input type="checkbox" checked={carteAssurance} disabled={lectureSeule} onChange={(e) => setCarteAssurance(e.target.checked)} style={{ marginTop: 3 }} />
-                      <span>Facturer la carte d'assurance : {fcfa(reglages?.Carte)} F par personne{totaux.MontantCartes ? `, soit ${fcfa(totaux.MontantCartes)} F` : ''}</span>
+                      <span>Facturer la carte d'assurance : {fcfa(reglages?.Carte)} F par personne{verifCartes ? `, soit ${fcfa(verifCartes.MontantTotal)} F pour ${verifCartes.AFacturer} personne${verifCartes.AFacturer > 1 ? 's' : ''}` : (totaux.MontantCartes ? `, soit ${fcfa(totaux.MontantCartes)} F` : '')}</span>
                     </label>
-                    <Champ label="Apporteur" aide={apporteurs.length ? undefined : 'Aucun apporteur enregistré : Administration > Apporteurs.'}>
+                    {verifCartes && (verifCartes.DejaFacturees.length > 0 || verifCartes.Pertes.length > 0) && (
+                      <div style={{ ...noteInfo('var(--accent-amber)'), display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem' }}>
+                        {verifCartes.Alerte && <div role="alert" style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start', fontWeight: 600 }}><AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} /> <span>{verifCartes.Alerte}</span></div>}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: 240, overflow: 'auto' }}>
+                          {[...verifCartes.DejaFacturees, ...verifCartes.Pertes].map((p) => (
+                            <div key={p.Cle} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(150px, auto)', gap: '0.5rem', alignItems: 'center' }}>
+                              <div>
+                                <b>{p.Personne}</b>
+                                {p.Derniere && <div style={{ color: 'var(--text-secondary)', fontSize: '0.74rem' }}>Facturée le {dateFr(p.Derniere.Date)}, {fcfa(p.Derniere.Montant)} F{p.Derniere.Utilisateur ? `, par ${p.Derniere.Utilisateur}` : ''}{p.Derniere.NumeroPolice ? `, police ${p.Derniere.NumeroPolice}` : ''}</div>}
+                              </div>
+                              <select className="form-control" aria-label={`Carte de ${p.Personne}`} disabled={lectureSeule} style={{ padding: '0.25rem 0.4rem', fontSize: '0.78rem' }} value={p.Etat === 'PERTE' ? 'PERTE' : 'NON'} onChange={(e) => basculerPerte(p.Cle, e.target.value === 'PERTE')}>
+                                <option value="NON">Ne pas refacturer</option>
+                                <option value="PERTE">Renouvellement pour perte</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <Champ label="Apporteur" aide={apporteurs.length ? undefined : "Aucun apporteur enregistré : Administration, Apporteurs d'affaires."}>
                       <select className="form-control" value={idApporteur} disabled={lectureSeule} onChange={(e) => setIdApporteur(e.target.value)}>
                         <option value="">Sans apporteur</option>
                         {apporteurs.map((a) => <option key={a.IdApporteur} value={a.IdApporteur}>{a.Nom}</option>)}

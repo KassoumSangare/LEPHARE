@@ -46,6 +46,7 @@ import {
   Table2,
   Link2,
   LayoutGrid,
+  Handshake,
 } from 'lucide-react';
 import { BRANCHES, adresseBranche } from '../../utils/branchesProduction';
 
@@ -84,7 +85,8 @@ export const ADMIN_MENU = [
     description: "Ce que le cabinet reverse, ce qu'il perçoit et ce qui attend l'accord de la direction.",
     items: [
       { to: '/admin/remittances', droit: 'reversements.view', label: 'Reversements aux compagnies', icon: Building2, description: 'Primes encaissées reversées entières aux compagnies (Code CIMA : commission non déduite), bordereaux et paiements.' },
-      { to: '/admin/commissions', droit: 'commissions.view', label: 'Commissions & apporteurs', icon: Coins, description: 'Réclamation des commissions sur les primes reversées, encaissement par chèque ou virement, états payées / non payées, apporteurs.' },
+      { to: '/admin/commissions', droit: 'commissions.view', label: 'Commissions du cabinet', icon: Coins, description: 'Réclamation des commissions sur les primes reversées, encaissement par chèque ou virement, états payées / non payées.' },
+      { to: '/admin/apporteurs', droit: 'apporteurs.view', label: "Apporteurs d'affaires", icon: Handshake, description: 'Fiches des apporteurs, rattachement aux affaires avec un taux par affaire, commissions à payer, payées et annulées, règlements.' },
       { to: '/admin/approvals', droit: 'approbations.view', label: 'Demandes à valider', icon: CheckCheck, description: "Remises commerciales, annulations de quittances et autres dérogations qui attendent votre accord." },
     ],
   },

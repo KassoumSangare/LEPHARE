@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
 import { joursInclusifs } from '../../../utils/dateUtils';
-import { quoteApi, customerApi, settingsApi, contractApi, iaApi } from '../../../api/endpoints';
+import { quoteApi, customerApi, settingsApi, contractApi, iaApi, brouillonApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import {
   UserPlus,
@@ -19,6 +19,7 @@ import {
   Upload,
   ChevronDown,
   ChevronRight,
+  Save,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
@@ -154,6 +155,10 @@ export const NewIaQuotePage = () => {
   // « Modifier » depuis le registre des devis : /user/quotes/ia?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  const brouillonParam = searchParams.get('brouillon');
+  const [brouillonId, setBrouillonId] = useState(null);
+  const [enregistrementBrouillon, setEnregistrementBrouillon] = useState(false);
+  const [chargementBrouillon, setChargementBrouillon] = useState(Boolean(brouillonParam));
   // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
   useEffect(() => redirigerSiOreole(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
   // Devis de renouvellement (page Renouvellement) : tous les assurés sont retarifés à l'enregistrement
@@ -260,6 +265,79 @@ export const NewIaQuotePage = () => {
   const [listeAssureOuverte, setListeAssureOuverte] = useState(false);
   const [ayantEnCours, setAyantEnCours] = useState({ IdQualiteAyantDroit: 1, Nom: '', Prenoms: '', Part: '' });
 
+  const champsBrouillon = {
+    compagnieId: [compagnieId, setCompagnieId],
+    idTarif: [idTarif, setIdTarif],
+    idOffre: [idOffre, setIdOffre],
+    tarifGroupe: [tarifGroupe, setTarifGroupe],
+    personnalise: [personnalise, setPersonnalise],
+    tauxTaxe: [tauxTaxe, setTauxTaxe],
+    dureeId: [dureeId, setDureeId],
+    termeId: [termeId, setTermeId],
+    termeOrigine: [termeOrigine, setTermeOrigine],
+    dateEffet: [dateEffet, setDateEffet],
+    expirationPersonnalisee: [expirationPersonnalisee, setExpirationPersonnalisee],
+    reduction: [reduction, setReduction],
+    numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie],
+    numeroPoliceConnexe: [numeroPoliceConnexe, setNumeroPoliceConnexe],
+    souscripteurId: [souscripteurId, setSouscripteurId],
+    rechercheSouscripteur: [rechercheSouscripteur, setRechercheSouscripteur],
+    assures: [assures, setAssures],
+    assureEnCours: [assureEnCours, setAssureEnCours],
+    cleEnEdition: [cleEnEdition, setCleEnEdition],
+    modeAssure: [modeAssure, setModeAssure],
+    ayantEnCours: [ayantEnCours, setAyantEnCours],
+    idDevisEdite: [idDevisEdite, setIdDevisEdite],
+    numeroDevisEdite: [numeroDevisEdite, setNumeroDevisEdite],
+    primeImposee: [primeImposee, setPrimeImposee],
+    enteteOrigine: [enteteOrigine, setEnteteOrigine],
+    totauxEnregistres: [totauxEnregistres, setTotauxEnregistres],
+  };
+
+  const enregistrerBrouillon = async () => {
+    setEnregistrementBrouillon(true);
+    const donnees = Object.fromEntries(Object.entries(champsBrouillon).map(([cle, [valeur]]) => [cle, valeur]));
+    const client = clients.find((c) => String(c.id) === String(souscripteurId));
+    const libelle = [client?.nomcomplet || rechercheSouscripteur, `${assures.length} assuré${assures.length > 1 ? 's' : ''}`]
+      .filter(Boolean)
+      .join(' - ') || 'Devis IA sans souscripteur';
+    const charge = { type_brouillon: 'DEVIS_IA', libelle, etape: step, donnees, iddevis: idDevisEdite || null };
+    try {
+      const res = brouillonId ? await brouillonApi.update(brouillonId, charge) : await brouillonApi.create(charge);
+      setBrouillonId(res.data.id);
+      success('Brouillon IA enregistré : vous pourrez le reprendre depuis le registre des devis.');
+    } catch (err) {
+      console.error("Enregistrement du brouillon IA impossible", err);
+      toastError(`Le brouillon n'a pas été enregistré : ${err?.response?.data?.detail || err.message}.`);
+    } finally {
+      setEnregistrementBrouillon(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!brouillonParam) return undefined;
+    let actif = true;
+    brouillonApi.get(brouillonParam)
+      .then((brouillon) => {
+        if (!actif || !brouillon) return;
+        Object.entries(champsBrouillon).forEach(([cle, [, setter]]) => {
+          if (Object.prototype.hasOwnProperty.call(brouillon.donnees || {}, cle)) setter(brouillon.donnees[cle]);
+        });
+        setBrouillonId(brouillon.id);
+        setStep(Number(brouillon.etape) || 1);
+        info(`Brouillon « ${brouillon.libelle || brouillon.id} » repris.`);
+      })
+      .catch((err) => {
+        if (actif) {
+          console.error('Reprise du brouillon IA impossible', err);
+          toastError('Impossible de reprendre le brouillon IA.');
+        }
+      })
+      .finally(() => { if (actif) setChargementBrouillon(false); });
+    return () => { actif = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brouillonParam]);
+
   const professionsTriees = useMemo(() => trierParLibelle(professions, (p) => p.libelle_profession), [professions]);
   const qualitesTriees = useMemo(() => trierParLibelle(qualites, (q) => q.libelle_qualite_ayant_droit), [qualites]);
   const codeActivite = (idProfession) => professions.find((p) => Number(p.id) === Number(idProfession))?.code_classe_assure || '01';
@@ -304,7 +382,7 @@ export const NewIaQuotePage = () => {
   // Offres et nature (individuelle / groupe, tarif personnalisé) de la catégorie choisie
   useEffect(() => {
     let actif = true;
-    if (!idTarif) return undefined;
+    if (!idTarif || chargementBrouillon) return undefined;
     Promise.all([
       iaApi.getOffres(idTarif).catch(() => []),
       iaApi.estTarifGroupe(idTarif).catch(() => false),
@@ -319,7 +397,7 @@ export const NewIaQuotePage = () => {
         : Number(liste?.[0]?.IdOffre) || 0));
     });
     return () => { actif = false; };
-  }, [idTarif]);
+  }, [idTarif, chargementBrouillon]);
 
   // Création depuis le contrat Santé MINENE (?minene=<police>&effet=&expiration=) : catégorie MINENE, police
   // connexe et période de la police Santé, sans ressaisie
@@ -879,6 +957,15 @@ export const NewIaQuotePage = () => {
           ? `Devis Individuelle Accidents N° ${res.numero_devis} modifié.`
           : `Devis Individuelle Accidents N° ${res.numero_devis} enregistré.`
       );
+      if (brouillonId) {
+        try {
+          await brouillonApi.remove(brouillonId);
+          setBrouillonId(null);
+        } catch (err) {
+          console.error('Suppression du brouillon IA après enregistrement impossible', err);
+          toastError('Le devis est enregistré, mais le brouillon n’a pas pu être supprimé.');
+        }
+      }
       setCreatedQuote(devisEnregistre || saved);
     } catch (err) {
       toastError(`Erreur lors de l'enregistrement du devis IA : ${messageErreurApi(err)}`);
@@ -1057,7 +1144,7 @@ export const NewIaQuotePage = () => {
             <UserPlus size={26} color="#8b5cf6" />
             {enIncorporation
               ? `Incorporation${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
-              : editIddevisParam
+              : editIddevisParam || idDevisEdite
               ? `Modifier le Devis Individuelle Accident${numeroDevisEdite ? ` [${numeroDevisEdite}]` : ''}`
               : 'Nouveau Devis Individuelle Accident (IA)'}
           </h1>
@@ -1101,6 +1188,19 @@ export const NewIaQuotePage = () => {
               {e.label}
             </button>
           ))}
+          {!creationMinene && !estMinene && !enIncorporation && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={enregistrerBrouillon}
+              disabled={enregistrementBrouillon || chargementBrouillon || isLoadingEdit}
+              title="Enregistrer la saisie en cours pour la reprendre depuis le registre des devis"
+              style={{ padding: '0.5rem 0.95rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <Save size={14} />
+              {enregistrementBrouillon ? 'Enregistrement…' : (brouillonId ? 'Mettre à jour le brouillon' : 'Enregistrer le brouillon')}
+            </button>
+          )}
         </div>
       </div>
 

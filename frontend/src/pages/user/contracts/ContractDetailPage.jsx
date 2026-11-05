@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BlocOreole from './BlocOreole';
+import BlocApporteursAffaire from '../../../components/apporteurs/BlocApporteursAffaire';
 import { imprimerOreole } from '../../../utils/impressionsOreole';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cashApi, contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
@@ -277,6 +278,8 @@ export const ContractDetailPage = () => {
       </div>
 
       {id && <BlocOreole idContrat={id} onDetection={(oui, idDevis) => { setContratOreole(oui); setDevisOreole(oui ? idDevis : 0); }} />}
+
+      {id && <BlocApporteursAffaire idContrat={Number(id)} />}
 
       {reprise && (
         <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', borderLeft: '4px solid var(--accent-amber)' }}>

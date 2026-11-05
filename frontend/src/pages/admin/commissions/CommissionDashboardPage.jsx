@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { saisirTexte } from '../../../utils/dialogue';
-import { Ban, CheckCircle2, ClipboardList, Coins, Edit2, FileSpreadsheet, FileText, Loader2, Mail, Plus, Printer, RefreshCw, Save, Send, Users, Wallet } from 'lucide-react';
-import { apporteurApi, financeApi, settingsApi } from '../../../api/endpoints';
+import { Ban, CheckCircle2, ClipboardList, Coins, FileSpreadsheet, FileText, Loader2, Mail, Printer, RefreshCw, Send, Wallet } from 'lucide-react';
+import { financeApi, settingsApi } from '../../../api/endpoints';
 import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
@@ -16,7 +16,7 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 // récapitulatif (en général mensuel) qui réclame la commission ; l'assureur la règle par chèque
 // ou virement (encaissement imputé sur les lignes du bordereau). États des commissions payées et
 // non payées, état récapitulatif (payées / en attente de paiement, par compagnie et par mois, imprimable
-// et en Excel) ; référentiel des apporteurs auxquels le cabinet peut verser des commissions.
+// et en Excel). Les apporteurs ont leur module : pages/admin/apporteurs/ApporteursPage.jsx.
 const COULEURS = { A_RECLAMER: 'blue', RECLAMEE: 'amber', PARTIELLE: 'amber', PAYEE: 'emerald', EMISE: 'amber', ANNULEE: 'rose' };
 const FILTRES_STATUT = [
   ['A_RECLAMER', 'À réclamer'], ['NON_PAYEES', 'Non payées'], ['PAYEES', 'Payées'], ['', 'Toutes les quittances reversées'],
@@ -312,110 +312,6 @@ const ReclamationModal = ({ reclamation, onClose, onRegler, onAnnuler }) => (
   </Modal>
 );
 
-// ------------------------------------------------------------------ apporteurs
-const APPORTEUR_VIDE = { Nom: '', TypePersonne: 'P', PieceIdentite: '', Telephone: '', Email: '', Adresse: '', TauxRetrocession: '', Actif: true };
-
-const Apporteurs = () => {
-  const { success, error: toastError } = useToast();
-  const [apporteurs, setApporteurs] = useState([]);
-  const [edition, setEdition] = useState(null);
-  const [envoi, setEnvoi] = useState(false);
-  const charger = () => apporteurApi.liste().then((l) => setApporteurs(Array.isArray(l) ? l : [])).catch((err) => toastError(messageErreurApi(err)));
-  useEffect(() => { charger(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const champ = (cle) => (e) => setEdition((a) => ({ ...a, [cle]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
-
-  const enregistrer = async (e) => {
-    e.preventDefault();
-    setEnvoi(true);
-    const corps = { ...edition, TauxRetrocession: edition.TauxRetrocession === '' ? null : edition.TauxRetrocession };
-    try {
-      const resultat = edition.IdApporteur ? await apporteurApi.modifier(edition.IdApporteur, corps) : await apporteurApi.creer(corps);
-      success(`Apporteur ${resultat.Code} - ${resultat.Nom} enregistré.`);
-      setEdition(null);
-      charger();
-    } catch (err) {
-      toastError(`Apporteur non enregistré : ${messageErreurApi(err)}`);
-    } finally {
-      setEnvoi(false);
-    }
-  };
-
-  return (
-    <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', flex: 1 }}>
-          Apporteurs d'affaires auxquels le cabinet peut verser des commissions. Le code (APP-0001…) est attribué à la création ;
-          un apporteur ne se supprime pas, il se désactive.
-        </p>
-        <button type="button" className="btn btn-primary" onClick={() => setEdition({ ...APPORTEUR_VIDE })} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Plus size={15} /> Nouvel apporteur</button>
-      </div>
-      <div className="table-wrapper">
-        <table className="data-table">
-          <thead><tr><th>Code</th><th>Nom</th><th>Type</th><th>CNI / RCCM</th><th>Téléphone</th><th>Email</th><th style={{ textAlign: 'right' }}>Rétrocession</th><th>Statut</th><th aria-label="Actions" /></tr></thead>
-          <tbody>
-            {apporteurs.map((a) => (
-              <tr key={a.IdApporteur}>
-                <td style={{ fontFamily: 'var(--font-mono)' }}>{a.Code}</td><td style={{ fontWeight: 700 }}>{a.Nom}</td>
-                <td>{a.TypePersonne === 'M' ? 'Personne morale' : 'Personne physique'}</td><td>{a.PieceIdentite}</td><td>{a.Telephone}</td><td>{a.Email}</td>
-                <td style={{ textAlign: 'right' }}>{a.TauxRetrocession !== null && a.TauxRetrocession !== '' ? `${Number(a.TauxRetrocession).toLocaleString('fr-FR')} %` : '-'}</td>
-                <td><StatusBadge label={a.Actif ? 'Actif' : 'Inactif'} /></td>
-                <td><button type="button" className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem' }} onClick={() => setEdition({ ...a, TauxRetrocession: a.TauxRetrocession ?? '' })} aria-label="Modifier"><Edit2 size={14} /></button></td>
-              </tr>
-            ))}
-            {!apporteurs.length && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>Aucun apporteur codifié.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      <Modal isOpen={Boolean(edition)} onClose={() => setEdition(null)} size="medium" title={edition?.IdApporteur ? `Apporteur ${edition.Code}` : 'Nouvel apporteur'}>
-        {edition && (
-          <form onSubmit={enregistrer} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.8rem' }}>
-            <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
-              <label className="form-label" htmlFor="ap-nom">Nom ou raison sociale</label>
-              <input id="ap-nom" className="form-control" required maxLength={150} value={edition.Nom} onChange={champ('Nom')} />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="ap-type">Type</label>
-              <select id="ap-type" className="form-control" value={edition.TypePersonne} onChange={champ('TypePersonne')}>
-                <option value="P">Personne physique</option>
-                <option value="M">Personne morale</option>
-              </select>
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="ap-piece">{edition.TypePersonne === 'M' ? 'N° RCCM' : 'N° CNI / passeport'}</label>
-              <input id="ap-piece" className="form-control" maxLength={50} value={edition.PieceIdentite} onChange={champ('PieceIdentite')} />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="ap-tel">Téléphone</label>
-              <input id="ap-tel" className="form-control" maxLength={30} value={edition.Telephone} onChange={champ('Telephone')} />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="ap-mail">Email</label>
-              <input id="ap-mail" type="email" className="form-control" value={edition.Email} onChange={champ('Email')} />
-            </div>
-            <div className="form-group" style={{ margin: 0, gridColumn: '1 / -1' }}>
-              <label className="form-label" htmlFor="ap-adr">Adresse</label>
-              <input id="ap-adr" className="form-control" maxLength={200} value={edition.Adresse} onChange={champ('Adresse')} />
-            </div>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label" htmlFor="ap-taux">Taux de rétrocession (%)</label>
-              <input id="ap-taux" type="number" className="form-control" min={0} max={100} step="0.01" value={edition.TauxRetrocession} onChange={champ('TauxRetrocession')} placeholder="Facultatif" />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', alignSelf: 'end', paddingBottom: '0.5rem' }}>
-              <input type="checkbox" checked={edition.Actif} onChange={champ('Actif')} /> Actif
-            </label>
-            <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setEdition(null)}>Annuler</button>
-              <button type="submit" className="btn btn-primary" disabled={envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                {envoi ? <Loader2 size={15} className="spin" /> : <Save size={15} />} Enregistrer
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
-    </div>
-  );
-};
-
 // ------------------------------------------------------------------ page
 export const CommissionDashboardPage = () => {
   const { success, error: toastError } = useToast();
@@ -556,7 +452,7 @@ export const CommissionDashboardPage = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', paddingBottom: '2rem' }}>
       <div>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0 }}>
-          <Coins size={26} style={{ color: 'var(--primary-500)' }} /> Commissions & apporteurs
+          <Coins size={26} style={{ color: 'var(--primary-500)' }} /> Commissions du cabinet
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0', maxWidth: 920 }}>
           Le chiffre d'affaires du cabinet est le montant de ses commissions. Elles sont réclamées à chaque compagnie par un bordereau
@@ -568,7 +464,6 @@ export const CommissionDashboardPage = () => {
         <Onglet actif={onglet === 'etat'} onClick={() => setOnglet('etat')} icone={Coins}>État des commissions</Onglet>
         <Onglet actif={onglet === 'recapitulatif'} onClick={() => { setOnglet('recapitulatif'); chargerRecap(); }} icone={ClipboardList}>État récapitulatif (payées / en attente)</Onglet>
         <Onglet actif={onglet === 'bordereaux'} onClick={() => setOnglet('bordereaux')} icone={FileText}>Bordereaux de réclamation ({reclamations.length})</Onglet>
-        <Onglet actif={onglet === 'apporteurs'} onClick={() => setOnglet('apporteurs')} icone={Users}>Apporteurs</Onglet>
       </div>
 
       {onglet === 'etat' && (
@@ -756,7 +651,6 @@ export const CommissionDashboardPage = () => {
         </div>
       )}
 
-      {onglet === 'apporteurs' && <Apporteurs />}
 
       <ReclamationModal reclamation={detail} onClose={() => setDetail(null)} onRegler={(r) => { setDetail(null); setARegler(r); }} onAnnuler={annuler} />
       <ReglementModal reclamation={aRegler} banques={banques} onClose={() => setARegler(null)}

@@ -1,3 +1,4 @@
+import re
 import unicodedata
 
 from django_celery_beat.models import (
@@ -450,6 +451,10 @@ class QualiteSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+def _sans_accent(texte):
+    return re.sub(r"[^A-Z0-9]+", " ", unicodedata.normalize("NFKD", str(texte or "")).encode("ascii", "ignore").decode("ascii").upper()).strip()
+
+
 class ApporteurSerializer(serializers.ModelSerializer):
     # Code attribué à la création (APP-0001…) s'il n'est pas saisi
     Code = serializers.CharField(max_length=20, required=False, allow_blank=True)
@@ -457,6 +462,31 @@ class ApporteurSerializer(serializers.ModelSerializer):
     class Meta:
         model = Apporteur
         fields = "__all__"
+
+    def validate(self, donnees):
+        """Pas de doublon : même pièce, même téléphone, même email, ou même nom sans pièce différente qui les distingue."""
+        valeur = lambda champ: donnees.get(champ, getattr(self.instance, champ, "") if self.instance else "")  # noqa: E731
+        if not _sans_accent(valeur("Nom")):
+            raise serializers.ValidationError({"Nom": "Saisissez le nom de l'apporteur."})
+        nom = (_sans_accent(valeur("Nom")), _sans_accent(valeur("Prenoms")))
+        piece = _sans_accent(valeur("PieceIdentite"))
+        telephones = {re.sub(r"\D", "", valeur(c) or "")[-8:] for c in ("Telephone", "Telephone2")} - {""}
+        email = (valeur("Email") or "").strip().lower()
+        for autre in Apporteur.objects.exclude(pk=getattr(self.instance, "pk", None)):
+            piece_autre = _sans_accent(autre.PieceIdentite)
+            raison = ""
+            if piece and piece == piece_autre:
+                raison = "même pièce d'identité"
+            elif telephones & ({re.sub(r"\D", "", t or "")[-8:] for t in (autre.Telephone, autre.Telephone2)} - {""}):
+                raison = "même téléphone"
+            elif email and email == (autre.Email or "").strip().lower():
+                raison = "même email"
+            elif nom == (_sans_accent(autre.Nom), _sans_accent(autre.Prenoms)) and not (piece and piece_autre):
+                raison = "même nom"
+            if raison:
+                etat = "" if autre.Actif else ", désactivé : réactivez-le"
+                raise serializers.ValidationError({"non_field_errors": f"Cet apporteur existe déjà : {autre.Code} - {autre.Nom} {autre.Prenoms}".strip() + f" ({raison}{etat})."})
+        return donnees
 
     def validate_Code(self, valeur):
         valeur = (valeur or "").strip().upper()
@@ -466,7 +496,7 @@ class ApporteurSerializer(serializers.ModelSerializer):
 
     def validate_TauxRetrocession(self, valeur):
         if valeur is not None and not (0 <= valeur <= 100):
-            raise serializers.ValidationError("Le taux de rétrocession est compris entre 0 et 100 %.")
+            raise serializers.ValidationError("Le taux général de commission est compris entre 0 et 100 %.")
         return valeur
 
 

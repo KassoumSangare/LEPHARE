@@ -22,6 +22,9 @@ from rest_framework.response import Response
 
 from autorisations.rbac import a_le_droit
 
+from sante import cartes as registre_cartes
+
+from .apporteurs import commission_payee_du_contrat, retirer_du_devis
 from .renouvellement import AUTHENTIFICATION, _lignes
 from .reprise import COMPLEMENTS_CONTRAT
 from .views_cockpit import _franc
@@ -103,6 +106,8 @@ def _retirer_du_package_oreole(cursor, id_devis):
 
 def _supprimer_devis(cursor, id_devis):
     _retirer_du_package_oreole(cursor, id_devis)
+    retirer_du_devis(cursor, id_devis)
+    registre_cartes.annuler_du_devis(cursor, id_devis, "Devis supprimé")
     for table in TABLES_DEVIS:
         cursor.execute(f"DELETE FROM {table} WHERE iddevis = %s", [id_devis])
     # Fichier importé de nouveau : plus d'avertissement « déjà importé » pour un devis qui n'existe plus
@@ -160,6 +165,9 @@ def _blocages_contrat(cursor, c):
         if _existe(cursor, """SELECT 1 FROM std_detail_reclamation_commission WHERE quittance_id = %(q)s
                               UNION ALL SELECT 1 FROM std_detail_paiement_commission WHERE quittance_id = %(q)s LIMIT 1""", {"q": id_quittance}):
             blocages.append("La commission de cette quittance a été réclamée ou payée.")
+        apporteur = commission_payee_du_contrat(cursor, id_quittance)
+        if apporteur:
+            blocages.append(f"La commission de l'apporteur {apporteur} sur cette quittance a été payée : annulez d'abord son règlement.")
         if _existe(cursor, """SELECT 1 FROM stdcontrat WHERE idquittance = %(q)s AND idcontrat <> %(c)s
                               UNION ALL SELECT 1 FROM stdquittance WHERE idquittannul = %(q)s LIMIT 1""", {"q": id_quittance, "c": id_contrat}):
             blocages.append("Cette quittance est liée à un autre contrat ou à une annulation.")

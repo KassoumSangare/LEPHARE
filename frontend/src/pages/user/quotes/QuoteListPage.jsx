@@ -93,11 +93,13 @@ export const QuoteListPage = () => {
   const navigate = useNavigate();
   const { success, error: toastError } = useToast();
 
-  // Devis auto non terminés, enregistrés en brouillon (table lephare_brouillon)
+  // Devis Auto et IA non terminés, enregistrés en brouillon (table lephare_brouillon)
   const [brouillons, setBrouillons] = useState([]);
   useEffect(() => {
-    brouillonApi.list({ type_brouillon: 'DEVIS_AUTO' })
-      .then((liste) => setBrouillons(Array.isArray(liste) ? liste : []))
+    brouillonApi.list()
+      .then((liste) => setBrouillons(Array.isArray(liste)
+        ? liste.filter((b) => ['DEVIS_AUTO', 'DEVIS_IA'].includes(b.type_brouillon))
+        : []))
       .catch((e) => console.warn('Chargement des brouillons impossible', e));
   }, []);
   const supprimerBrouillon = async (brouillon) => {
@@ -115,7 +117,10 @@ export const QuoteListPage = () => {
       toastError("Le brouillon n'a pas pu être supprimé.");
     }
   };
-  const ETAPES_DEVIS_AUTO = { 1: '1. Contrat', 2: '2. Véhicule', 3: '3. Offre & décompte', 4: '4. Client / conducteur' };
+  const ETAPES_BROUILLON = {
+    DEVIS_AUTO: { 1: '1. Contrat', 2: '2. Véhicule', 3: '3. Offre & décompte', 4: '4. Client / conducteur' },
+    DEVIS_IA: { 1: '1. Contrat', 2: '2. Souscripteur & assurés', 3: '3. Récapitulatif' },
+  };
 
   const isEligibleForConsolidation = (q) =>
     !q.flotte && !q.confirme && !q.archive && !q.devis_consolide;
@@ -656,7 +661,7 @@ export const QuoteListPage = () => {
             data={brouillons}
             columns={[
               { header: 'Brouillon', accessor: 'libelle', render: (b) => <strong>{b.libelle || `Brouillon n°${b.id}`}</strong> },
-              { header: 'Étape atteinte', accessor: 'etape', render: (b) => ETAPES_DEVIS_AUTO[b.etape] || b.etape },
+              { header: 'Étape atteinte', accessor: 'etape', render: (b) => ETAPES_BROUILLON[b.type_brouillon]?.[b.etape] || b.etape },
               { header: 'Devis modifié', accessor: 'iddevis', render: (b) => (b.iddevis ? `Devis n°${b.iddevis}` : 'Nouveau devis') },
               { header: 'Par', accessor: 'utilisateur_nom' },
               { header: 'Dernière modification', accessor: 'date_modification', render: (b) => new Date(b.date_modification).toLocaleString('fr-FR') },
@@ -664,7 +669,7 @@ export const QuoteListPage = () => {
                 header: 'Actions',
                 render: (b) => (
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => navigate(`/user/quotes/auto?brouillon=${b.id}`)}>
+                    <button type="button" className="btn btn-primary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem' }} onClick={() => navigate(`/user/quotes/${b.type_brouillon === 'DEVIS_IA' ? 'ia' : 'auto'}?brouillon=${b.id}`)}>
                       Reprendre
                     </button>
                     <button type="button" className="btn btn-secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.8rem', color: '#ef4444' }} onClick={() => supprimerBrouillon(b)}>

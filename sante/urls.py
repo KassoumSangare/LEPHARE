@@ -156,6 +156,9 @@ urlpatterns = [
     path(r"oreole/contrat/<int:idcontrat>/", oreole.contrat, name="oreole-contrat"),
     path(r"oreole/contrat/<int:idcontrat>/emission/", oreole.contrat_emission, name="oreole-contrat-emission"),
     path(r"oreole/contrat/<int:idcontrat>/preparation/", oreole.contrat_preparation, name="oreole-contrat-preparation"),
+    path(r"oreole/cartes/", oreole.cartes_registre, name="oreole-cartes-registre"),
+    path(r"oreole/cartes/verification/", oreole.cartes_verification, name="oreole-cartes-verification"),
+    path(r"oreole/contrat/<int:idcontrat>/cartes/", oreole.contrat_cartes, name="oreole-contrat-cartes"),
     path(r"oreole/import/analyse/", oreole.analyse_import, name="oreole-import-analyse"),
     path(r"oreole/modele/", oreole.modele, name="oreole-modele"),
 

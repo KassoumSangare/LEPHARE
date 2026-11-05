@@ -16,7 +16,8 @@ MODULES = [
     ("contrats", "Contrats et avenants"),
     ("encaissements", "Caisse et encaissements"),
     ("reversements", "Reversements aux compagnies"),
-    ("commissions", "Commissions et apporteurs"),
+    ("commissions", "Commissions du cabinet"),
+    ("apporteurs", "Apporteurs d'affaires"),
     ("sinistres", "Sinistres"),
     ("approbations", "Dérogations et approbations"),
     ("imports", "Imports de fichiers"),
@@ -80,6 +81,12 @@ DROITS = [
     ("commissions.validate", "Encaisser une commission", "Encaissement et validation des paiements de commission.", True, False, False),
     ("commissions.cancel", "Annuler une commission", "", True, True, False),
 
+    ("apporteurs.view", "Consulter les apporteurs et leurs commissions", "Fiches, apporteurs d'une affaire, commissions et règlements.", False, False, False),
+    ("apporteurs.update", "Gérer les apporteurs", "Création, modification, désactivation d'un apporteur.", False, False, False),
+    ("apporteurs.rattacher", "Rattacher un apporteur à une affaire", "Ajout d'un apporteur sur un devis ou un contrat, taux convenu, retrait.", False, False, False),
+    ("apporteurs.payer", "Régler les commissions d'apporteurs", "Enregistrement d'un règlement versé à un apporteur.", True, False, False),
+    ("apporteurs.cancel", "Annuler une commission ou un règlement d'apporteur", "", True, True, False),
+
     ("sinistres.view", "Consulter les sinistres", "", False, False, False),
     ("sinistres.create", "Déclarer un sinistre", "", False, False, False),
     ("sinistres.update", "Instruire un sinistre", "Pièces, demande d'accord, suivi du dossier.", False, False, False),
@@ -107,7 +114,7 @@ DROITS = [
     ("tarifs.view", "Consulter les tarifs et barèmes", "Écrans d'administration des barèmes.", False, False, False),
     ("tarifs.update", "Modifier les tarifs et barèmes", "Offres, garanties, taxes, accessoires, commissions, réductions, grilles, réglages Dommages.", True, False, False),
 
-    ("parametrage.update", "Paramétrage général", "Cabinet, compagnies, produits, règles de gestion, listes de référence, apporteurs, conventions.", True, False, False),
+    ("parametrage.update", "Paramétrage général", "Cabinet, compagnies, produits, règles de gestion, listes de référence, conventions.", True, False, False),
     ("parametrage.technique", "Paramétrage technique", "Tables internes, numérotation, tâches planifiées et menus de l'application.", True, False, False),
 
     ("users.view", "Consulter les utilisateurs", "", False, False, False),
@@ -125,7 +132,7 @@ DROITS = [
 
 TOUS = [d[0] for d in DROITS]
 _VUES_METIER = [
-    "clients.view", "devis.view", "contrats.view", "encaissements.view", "reversements.view", "commissions.view",
+    "clients.view", "devis.view", "contrats.view", "encaissements.view", "reversements.view", "commissions.view", "apporteurs.view",
     "sinistres.view", "approbations.view", "crm.view", "documents.view", "reporting.view",
 ]
 
@@ -140,7 +147,8 @@ ROLES_INITIAUX = [
      _VUES_METIER + [
          "devis.validate", "devis.cancel", "devis.primes", "contrats.update", "contrats.avenant", "contrats.cancel",
          "encaissements.cancel", "reversements.create", "reversements.validate", "commissions.validate",
-         "commissions.cancel", "sinistres.settle", "approbations.decider", "crm.update", "documents.update",
+         "commissions.cancel", "apporteurs.rattacher", "apporteurs.payer", "apporteurs.cancel", "sinistres.settle",
+         "approbations.decider", "crm.update", "documents.update",
          "audit.view", "tarifs.view",
      ]),
     ("GESTIONNAIRE", "Gestionnaire", "Production complète (clients, devis, contrats, caisse, sinistres, imports) "
@@ -148,7 +156,7 @@ ROLES_INITIAUX = [
      _VUES_METIER + [
          "clients.create", "clients.update", "devis.create", "devis.update", "devis.validate", "devis.cancel",
          "devis.primes", "contrats.update", "contrats.avenant", "encaissements.create", "reversements.create",
-         "commissions.create", "sinistres.create", "sinistres.update", "imports.excel", "imports.guce",
+         "commissions.create", "apporteurs.rattacher", "sinistres.create", "sinistres.update", "imports.excel", "imports.guce",
          "crm.update", "documents.update", "asaci.attestations",
      ]),
     ("AGENT_SAISIE", "Agent de saisie", "Saisie des clients et des devis ; ne valide pas et ne touche pas aux primes.",

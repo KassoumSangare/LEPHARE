@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, FileSpreadsheet, HeartPulse, Loader2, Plus, RefreshCw, Search, User, Users } from 'lucide-react';
+import { ArrowRight, FileSpreadsheet, HeartPulse, Loader2, Plus, RefreshCw, Search, User, Users, CreditCard } from 'lucide-react';
 import { oreoleApi } from '../../../../api/endpoints';
 import { useToast } from '../../../../context/ToastContext';
 import { aLeDroit } from '../../../../utils/droits';
@@ -59,11 +59,16 @@ export default function OreoleAccueilPage() {
             Un seul parcours pour la Santé MCI, l'Individuelle Accidents NSIA et l'Assistance funéraire ALLIANZ CI VIE : on saisit une fois, les trois polices sortent ensemble.
           </p>
         </div>
-        {aLeDroit('devis.create') && (
-          <button type="button" className="btn btn-primary" onClick={() => navigate('/user/quotes/oreole-sante/nouveau')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-            <Plus size={16} /> Nouvelle souscription
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate('/user/quotes/oreole-sante/cartes')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            <CreditCard size={16} /> Cartes facturées
           </button>
-        )}
+          {aLeDroit('devis.create') && (
+            <button type="button" className="btn btn-primary" onClick={() => navigate('/user/quotes/oreole-sante/nouveau')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Plus size={16} /> Nouvelle souscription
+            </button>
+          )}
+        </div>
       </header>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '0.8rem' }}>

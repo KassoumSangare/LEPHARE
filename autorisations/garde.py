@@ -301,6 +301,9 @@ REGLES = [
     R("POST", r"afa/import/analyse/?$", "imports.excel", lecture=True),
     # Oreole Santé : calcul et lecture du classeur sans écriture, devis liés, émission groupée
     R("POST", r"oreole/apercu/?$", "devis.view", lecture=True),
+    # Cartes d'assurance : vérification de l'historique sans écriture ; carte facturée sur une police émise : l'avenant sort aussitôt
+    R("POST", r"oreole/cartes/verification/?$", "devis.view", lecture=True),
+    R("POST", r"oreole/contrat/(?P<idcontrat>\d+)/cartes/?$", "devis.validate", objet="contrat", cles=("idcontrat",), instantane=instantane_contrat),
     R("POST", r"oreole/import/analyse/?$", "imports.excel", lecture=True),
     R("POST", r"oreole/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"oreole/devis/(?P<iddevis>\d+)/emission/?$", "devis.validate", objet="devis", cles=("iddevis",), instantane=instantane_devis),
@@ -385,6 +388,15 @@ REGLES = [
       "reversements.create", objet="reversement"),
     R("GET", r"(reversement|reversementnonvalide|inforeversement|listedetailreversement|contratpourreversement|"
              r"finance/reversements|reversements-cima)(/|$)", "reversements.view"),
+    # ---- apporteurs d'affaires (production/apporteurs.py) ; la fiche : configuration_api, route apporteurs/
+    R("POST,PUT,PATCH", r"apporteurs(/|$)", "apporteurs.update", objet="apporteur", cles=("pk",)),
+    R("POST", r"finance/apporteurs/rattachements/$", "apporteurs.rattacher", objet="affaire_apporteur", cles=("IdDevis", "IdContrat")),
+    R("PATCH", r"finance/apporteurs/rattachements/(?P<id_rattachement>\d+)/$", "apporteurs.rattacher", objet="affaire_apporteur", cles=("id_rattachement",)),
+    R("POST", r"finance/apporteurs/rattachements/(?P<id_rattachement>\d+)/retrait/", "apporteurs.rattacher", objet="affaire_apporteur", cles=("id_rattachement",)),
+    R("POST", r"finance/apporteurs/reglements/$", "apporteurs.payer", objet="reglement_apporteur", cles=("IdApporteur",)),
+    R("POST", r"finance/apporteurs/reglements/(?P<id_reglement>\d+)/annulation/", "apporteurs.cancel", objet="reglement_apporteur", cles=("id_reglement",)),
+    R("POST", r"finance/apporteurs/commissions/(?P<id_commission>\d+)/annulation/", "apporteurs.cancel", objet="commission_apporteur", cles=("id_commission",)),
+    R("GET", r"finance/apporteurs/", "apporteurs.view"),
     # ---- commissions
     R("POST", r"commissions/(affaires-commission/rechercher_pour_paiement|details-paiement-commission/verifier_selection|"
               r"notifications/marquer_toutes_lues|dashboard/invalider_cache)", "commissions.view", lecture=True),
@@ -440,7 +452,7 @@ REGLES = [
                                r"collegesante|zonevoyage|zonecouverturesante|zonecouvertureoffre|typereduction|typecontratsante|"
                                r"risque|filialesante|delaiavisecheance)(/|$)", "tarifs.update", objet="bareme", cles=("pk",)),
     # ---- paramétrage
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/|apporteurs|conventions)", "parametrage.update", objet="parametre",
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/|conventions)", "parametrage.update", objet="parametre",
       cles=("pk", "cle", "id_compagnie", "id_produit")),
     R("POST,PUT,PATCH,DELETE", r"(menu|menuparent|utilisateur|groupeutilisateur|numero|parametresite|intermediaire|"
                                r"periodictaskschedule|crontabschedule|intervalschedule|solarschedule|clockedschedule|"

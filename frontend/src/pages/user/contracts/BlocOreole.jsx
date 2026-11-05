@@ -7,6 +7,7 @@ import { aLeDroit } from '../../../utils/droits';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { imprimerOreole } from '../../../utils/impressionsOreole';
 import { BarreRepartition, LegendeRepartition, PRODUITS, RESEAUX, RESEAU_PHARMACIES, dateFr, fcfa, ligneDetail } from '../quotes/oreole/oreoleCommun';
+import BlocCartesOreole from './BlocCartesOreole';
 
 /* =========================================================================
    Fiche contrat : bloc Oreole Santé (remplace le cadre MINENE pour cette branche). Les trois polices liées, ce qui reste
@@ -123,6 +124,7 @@ export default function BlocOreole({ idContrat, onDetection }) {
           </div>
         </div>
       </div>
+      <BlocCartesOreole idContrat={idContrat} idDevisPackage={donnees.IdDevis} />
     </div>
   );
 }

@@ -1280,6 +1280,11 @@ export const oreoleApi = {
   contrat: async (idContrat) => (await apiClient.get(`/oreole/contrat/${idContrat}/`)).data,
   emettreLie: async (idContrat, produit) => (await apiClient.post(`/oreole/contrat/${idContrat}/emission/`, { Produit: produit }, { timeout: 300000 })).data,
   preparation: async (idContrat, acte) => (await apiClient.get(`/oreole/contrat/${idContrat}/preparation/`, { params: { acte } })).data,
+  // Cartes d'assurance : historique des personnes saisies (sans écriture), cartes d'une police, facturation après émission, registre complet
+  verifierCartes: async (donnees) => (await apiClient.post('/oreole/cartes/verification/', donnees)).data,
+  cartesContrat: async (idContrat) => (await apiClient.get(`/oreole/contrat/${idContrat}/cartes/`)).data,
+  facturerCartes: async (idContrat, donnees) => (await apiClient.post(`/oreole/contrat/${idContrat}/cartes/`, donnees, { timeout: 300000 })).data,
+  registreCartes: async (q) => (await apiClient.get('/oreole/cartes/', { params: { q: q || undefined } })).data,
   analyserImport: async (fichier) => {
     const formulaire = new FormData();
     formulaire.append('fichier', fichier);
@@ -2016,6 +2021,21 @@ export const apporteurApi = {
   liste: async () => extractData(await apiClient.get('/apporteurs/', { params: { page_size: 1000 } })),
   creer: async (apporteur) => (await apiClient.post('/apporteurs/', apporteur)).data,
   modifier: async (id, apporteur) => (await apiClient.put(`/apporteurs/${id}/`, apporteur)).data,
+  changerEtat: async (id, actif) => (await apiClient.patch(`/apporteurs/${id}/`, { Actif: actif })).data,
+  synthese: async () => (await apiClient.get('/finance/apporteurs/synthese/')).data,
+  // Affaire : apporteurs, taux convenus, commissions générées et état de règlement. params : { devis } ou { contrat }
+  affaire: async (params) => (await apiClient.get('/finance/apporteurs/affaire/', { params })).data,
+  affaires: async (params) => (await apiClient.get('/finance/apporteurs/affaires/', { params })).data,
+  rechercherAffaires: async (q) => (await apiClient.get('/finance/apporteurs/affaires/recherche/', { params: { q } })).data,
+  rattacher: async (donnees) => (await apiClient.post('/finance/apporteurs/rattachements/', donnees)).data,
+  modifierRattachement: async (id, donnees) => (await apiClient.patch(`/finance/apporteurs/rattachements/${id}/`, donnees)).data,
+  retirerRattachement: async (id, motif) => (await apiClient.post(`/finance/apporteurs/rattachements/${id}/retrait/`, { Motif: motif })).data,
+  commissions: async (params) => (await apiClient.get('/finance/apporteurs/commissions/', { params })).data,
+  reglements: async (params) => (await apiClient.get('/finance/apporteurs/reglements/', { params })).data,
+  regler: async (donnees) => (await apiClient.post('/finance/apporteurs/reglements/', donnees)).data,
+  // Motif saisi dans la boîte : envoyé d'emblée (en-tête X-Motif de la garde)
+  annulerCommission: async (id, motif) => (await apiClient.post(`/finance/apporteurs/commissions/${id}/annulation/`, { Motif: motif }, { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true })).data,
+  annulerReglement: async (id, motif) => (await apiClient.post(`/finance/apporteurs/reglements/${id}/annulation/`, { Motif: motif }, { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true })).data,
 };
 
 export const commissionApi = {

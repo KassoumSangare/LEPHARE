@@ -35,6 +35,7 @@ const RepriseAffairesPage = lazy(() => import('./pages/user/reprises/RepriseAffa
 const OreoleAccueilPage = lazy(() => import('./pages/user/quotes/oreole/OreoleAccueilPage'));
 const NewOreolePage = lazy(() => import('./pages/user/quotes/oreole/NewOreolePage'));
 const OreoleFichierPage = lazy(() => import('./pages/user/quotes/oreole/OreoleFichierPage'));
+const OreoleCartesPage = lazy(() => import('./pages/user/quotes/oreole/OreoleCartesPage'));
 const ParametrageOreolePage = lazy(() => import('./pages/admin/settings/ParametrageOreolePage'));
 const CashCollectionPage = lazy(() => import('./pages/user/cash/CashCollectionPage'));
 const ChequeManagementPage = lazy(() => import('./pages/user/cash/ChequeManagementPage'));
@@ -51,6 +52,7 @@ const DecisionalStatesPage = lazy(() => import('./pages/admin/reporting/Decision
 const ApprovalCenterPage = lazy(() => import('./pages/admin/approvals/ApprovalCenterPage'));
 const CompanyRemittancePage = lazy(() => import('./pages/admin/remittances/CompanyRemittancePage'));
 const CommissionDashboardPage = lazy(() => import('./pages/admin/commissions/CommissionDashboardPage'));
+const ApporteursPage = lazy(() => import('./pages/admin/apporteurs/ApporteursPage'));
 const UserManagementPage = lazy(() => import('./pages/admin/users/UserManagementPage'));
 const ProfileManagementPage = lazy(() => import('./pages/admin/users/ProfileManagementPage'));
 const RolesPermissionsPage = lazy(() => import('./pages/admin/users/RolesPermissionsPage'));
@@ -194,6 +196,7 @@ function App() {
                 <Route path="/user/quotes/oreole-sante" element={<OreoleAccueilPage />} />
                 <Route path="/user/quotes/oreole-sante/nouveau" element={<NewOreolePage />} />
                 <Route path="/user/quotes/oreole-sante/fichier" element={<OreoleFichierPage />} />
+                <Route path="/user/quotes/oreole-sante/cartes" element={<OreoleCartesPage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/quotes/transport" element={<TransportAccueilPage />} />
                 <Route path="/user/quotes/transport/hors-guce" element={<NewTransportHorsGucePage />} />
@@ -248,6 +251,7 @@ function App() {
                 <Route path="/admin/approvals" element={<AdminRoute><ApprovalCenterPage /></AdminRoute>} />
                 <Route path="/admin/remittances" element={<AdminRoute><CompanyRemittancePage /></AdminRoute>} />
                 <Route path="/admin/commissions" element={<AdminRoute><CommissionDashboardPage /></AdminRoute>} />
+                <Route path="/admin/apporteurs" element={<AdminRoute><ApporteursPage /></AdminRoute>} />
                 <Route path="/admin/users" element={<AdminRoute><UserManagementPage /></AdminRoute>} />
                 <Route path="/admin/profiles" element={<AdminRoute><ProfileManagementPage /></AdminRoute>} />
                 <Route path="/admin/roles-permissions" element={<AdminRoute><RolesPermissionsPage /></AdminRoute>} />

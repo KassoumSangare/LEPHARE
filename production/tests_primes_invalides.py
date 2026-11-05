@@ -1,8 +1,9 @@
 from decimal import Decimal
 
+import pandas as pd
 from django.test import SimpleTestCase
 
-from .import_assures import ValidationError, valider_monetaire
+from .import_assures import ValidationError, extraire_modele_2, valider_monetaire
 from .views_cockpit import _franc
 
 
@@ -22,6 +23,26 @@ class CelluleVideTests(SimpleTestCase):
         for valeur in ("inf", "abc"):
             with self.subTest(valeur=valeur), self.assertRaises(ValidationError):
                 valider_monetaire(valeur, "PRIME HT")
+
+    def test_import_primes_ht_et_ttc_au_singulier_ou_pluriel(self):
+        for colonne_ht in ("PRIME HT", "PRIMES HT"):
+            for colonne_ttc in ("PRIME TTC", "PRIMES TTC"):
+                with self.subTest(colonne_ht=colonne_ht, colonne_ttc=colonne_ttc):
+                    fichier = pd.DataFrame([{
+                        "NOMS ET PRENOMS": "ASSURE TEST",
+                        "DATE DE NAISSANCE": "01/01/1990",
+                        "FONCTION": "EMPLOYE",
+                        "CAPITAL DECES": 1_500_000,
+                        "IPT": 1_500_000,
+                        "BENEFICIAIRES": "",
+                        colonne_ht: 12_278,
+                        colonne_ttc: 14_693,
+                    }])
+
+                    assure = extraire_modele_2(fichier)[0]
+
+                    self.assertEqual(assure["PrimeHT"], Decimal("12278"))
+                    self.assertEqual(assure["PrimeTTC"], Decimal("14693"))
 
 
 class TotauxTests(SimpleTestCase):

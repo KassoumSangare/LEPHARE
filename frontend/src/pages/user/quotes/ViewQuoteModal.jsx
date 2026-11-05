@@ -22,6 +22,7 @@ import { imprimerDocumentSante } from '../../../utils/impressionsSante';
 import { formatDate } from '../../../utils/dateUtils';
 import { aLeDroit } from '../../../utils/droits';
 import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
+import BlocApporteursAffaire from '../../../components/apporteurs/BlocApporteursAffaire';
 import { ImpositionPrimes } from './ImpositionPrimes';
 import { ImpositionGaranties } from './ImpositionGaranties';
 import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
@@ -425,10 +426,12 @@ export const ViewQuoteModal = ({
           </div>
 
           <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', borderTop: '1px dashed var(--border-subtle)', paddingTop: '0.75rem' }}>
-            <span style={{ color: 'var(--text-muted)' }}>Commission Apporteur :</span>{' '}
+            <span style={{ color: 'var(--text-muted)' }}>Commission du cabinet :</span>{' '}
             <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString('fr-FR')} FCFA</strong>
           </div>
         </div>
+
+        <BlocApporteursAffaire idDevis={idDevisBase} />
 
         {/* Branch Specific Technical Details (IA, Santé, Voyage et Transport : détail lu en base) */}
         {(Object.keys(details).length > 0 || ['IA', 'Santé', 'Voyage', 'Transport', 'MRH', 'Tous Dommages'].includes(quote.branche)) && (

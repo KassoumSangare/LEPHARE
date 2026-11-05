@@ -52,9 +52,12 @@ from rest_framework.response import Response
 from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from production import afa as module_afa
+from production.apporteurs import rattacher_apporteur_package
 from production.database import save_contract
 from production.renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _lignes
 from production.reste_encaissement import reste_a_encaisser
+
+from . import cartes as module_cartes
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +246,11 @@ def tarifer_adherent(offre, ligne, regles, prix_famille=None, carte=False):
     if imposee > 0:
         surprime_affection, surprime_age = imposee, ZERO
     enfants = Decimal(ligne.get("EnfantsEnPlus") or 0) * offre["enfantsupplementaire"]
-    cartes = (Decimal(ligne.get("Personnes") or 1) * regles["Carte"]) if carte else ZERO
+    # Cartes à facturer : le registre écarte les personnes déjà facturées (sante/cartes.py) ; sans contrôle préalable, toute la famille
+    nombre_cartes = ligne.get("CartesAFacturer")
+    if nombre_cartes is None:
+        nombre_cartes = ligne.get("Personnes") or 1
+    cartes = (Decimal(nombre_cartes) * regles["Carte"]) if carte else ZERO
 
     cotisation_imposee = ligne.get("CotisationImposee") or ZERO
     if cotisation_imposee > 0:
@@ -398,7 +405,7 @@ def _lire_saisie(cursor, donnees):
     offre_defaut = _entier(donnees.get("IdOffre"))
     carte = donnees.get("Carte") in (True, "true", "1", 1)
 
-    lignes, erreurs, avertissements = [], [], []
+    lignes, valides, erreurs, avertissements = [], [], [], []
     for rang, brut in enumerate(donnees.get("Adherents") or [], 1):
         if isinstance(brut, dict):
             brut = {**brut}
@@ -410,11 +417,16 @@ def _lire_saisie(cursor, donnees):
         erreurs += refus
         avertissements += alertes
         if not refus and ligne["IdOffre"] in offres:
-            tarif = tarifer_adherent(offres[ligne["IdOffre"]], ligne, regles, prix_famille=prix_famille, carte=carte)
-            if tarif["FraisCourtiers"] < 0:
-                erreurs.append(f"{ligne['Libelle']} : cotisation de {tarif['Cotisation']} F inférieure à la part de MCI")
-            ligne["Tarif"] = tarif
+            valides.append(ligne)
         lignes.append(ligne)
+    # Carte déjà facturée à une personne : pas de nouvelle facturation, sauf renouvellement pour perte choisi pour cette personne
+    if carte:
+        module_cartes.preparer_lignes(cursor, valides, _entier(donnees.get("IdDevis")), donnees.get("CartesPerte") or ())
+    for ligne in valides:
+        tarif = tarifer_adherent(offres[ligne["IdOffre"]], ligne, regles, prix_famille=prix_famille, carte=carte)
+        if tarif["FraisCourtiers"] < 0:
+            erreurs.append(f"{ligne['Libelle']} : cotisation de {tarif['Cotisation']} F inférieure à la part de MCI")
+        ligne["Tarif"] = tarif
     if not lignes:
         erreurs.append("Ajoutez au moins un adhérent.")
     cles = Counter((l["Nom"].upper(), l["Prenoms"].upper(), l["DateNaissance"]) for l in lignes if l["Nom"])
@@ -460,6 +472,13 @@ def apercu(donnees):
         "Totaux": _nombres(totaux), "Avertissements": avertissements,
         "Apporteur": _nombre(_remuneration_apporteur(entete, totaux)),
     }
+
+
+def verifier_cartes(donnees):
+    """Historique des personnes saisies, familles existantes comprises : qui serait facturé, qui l'est déjà. N'écrit rien."""
+    with connection.cursor() as cursor:
+        entete, lignes, _avertissements = _lire_saisie(cursor, {**donnees, "Carte": True})
+    return module_cartes.synthese(lignes, entete["Regles"]["Carte"])
 
 
 def _remuneration_apporteur(entete, totaux):
@@ -771,7 +790,18 @@ def _enregistrer_annuel(cursor, entete, lignes, id_utilisateur):
     _ecrire_lignes_sante(cursor, entete, id_devis, offre_principale, id_tarif, totaux, totaux,
                          TYPE_PARTICULIER if entete["Cible"] == "P" else TYPE_SOCIETE, regles["Gestionnaire"])
     _ecrire_package(cursor, entete, id_devis, id_ia, id_afa, acte, id_base, id_utilisateur)
+    rattacher_apporteur_package(cursor, id_devis, entete["IdApporteur"], entete["ApporteurMode"], entete["ApporteurValeur"], len(lignes), id_utilisateur)
+    _noter_cartes(cursor, entete, id_devis, lignes, id_utilisateur)
     return id_devis
+
+
+def _noter_cartes(cursor, entete, id_devis, lignes, id_utilisateur):
+    """Registre des cartes de ce devis, réécrit à chaque enregistrement tant qu'il n'est pas confirmé."""
+    module_cartes.effacer_du_devis(cursor, id_devis)
+    if not entete["Carte"]:
+        return
+    for ligne in lignes:
+        module_cartes.ecrire(cursor, id_devis, ligne.get("Cartes") or [], entete["Regles"]["Carte"], id_utilisateur, entete.get("ObservationCarte") or "")
 
 
 def _ecrire_package(cursor, entete, id_devis, id_ia, id_afa, acte, id_base, id_utilisateur):
@@ -913,6 +943,8 @@ def _enregistrer_incorporation(cursor, entete, lignes, id_utilisateur):
     entete["Cible"] = package["cible"]
     entete["PrixFamille"] = package["prixfamille"]
     _ecrire_package(cursor, entete, id_devis, id_ia, id_afa, "INC", base["idcontrat"], id_utilisateur)
+    rattacher_apporteur_package(cursor, id_devis, entete["IdApporteur"], entete["ApporteurMode"], entete["ApporteurValeur"], len(nouveaux), id_utilisateur)
+    _noter_cartes(cursor, entete, id_devis, lignes, id_utilisateur)
     return id_devis
 
 
@@ -963,16 +995,21 @@ def _ajouter_a_famille(cursor, entete, id_devis, ligne, id_utilisateur):
         _ecrire_affilie(cursor, entete, id_devis, famille["idadherent"], id_utilisateur, ayant["Lien"], ayant["Nom"], ayant["Prenoms"], ayant["DateNaissance"],
                         ayant["Sexe"], "", ZERO, 0, ZERO)
     enfants_apres = enfants_avant + sum(1 for a in ligne["Ayants"] if a["Lien"] == "E")
-    supplement_enfants = max(max(enfants_apres - ENFANTS_COMPRIS, 0), ligne["EnfantsEnPlus"] + famille["enfantsenplus"]) - famille["enfantsenplus"]
-    supplement_enfants = max(supplement_enfants, 0)
+    # Carte remplacée sans ajout de personne : seule la carte est due, la composition de la famille ne change pas
+    supplement_enfants = 0
+    if not ligne.get("CartesSeules"):
+        supplement_enfants = max(max(enfants_apres - ENFANTS_COMPRIS, 0), ligne["EnfantsEnPlus"] + famille["enfantsenplus"]) - famille["enfantsenplus"]
+        supplement_enfants = max(supplement_enfants, 0)
     complement = Decimal(supplement_enfants) * famille["enfantsupplementaire"]
     personnes_ajoutees = len(ligne["Ayants"])
+    montant_cartes = ZERO
     if entete["Carte"]:
-        complement += Decimal(personnes_ajoutees) * entete["Regles"]["Carte"]
+        montant_cartes = Decimal(ligne.get("CartesAFacturer", personnes_ajoutees)) * entete["Regles"]["Carte"]
+        complement += montant_cartes
     cursor.execute(
         """UPDATE lephare_oreole_adherent SET enfantsenplus = enfantsenplus + %s, personnes = personnes + %s, cotisation = cotisation + %s,
-               partsante = partsante + %s, fraiscourtiers = fraiscourtiers + %s, complement = %s WHERE idadherent = %s""",
-        [supplement_enfants, personnes_ajoutees, complement, complement, complement, complement, famille["idadherent"]],
+               partsante = partsante + %s, fraiscourtiers = fraiscourtiers + %s, montantcartes = montantcartes + %s, complement = %s WHERE idadherent = %s""",
+        [supplement_enfants, personnes_ajoutees, complement, complement, complement, montant_cartes, complement, famille["idadherent"]],
     )
     return {"PrimeHt": ZERO, "Accessoires": ZERO, "FraisCourtiers": complement, "PartSante": complement}
 
@@ -1079,7 +1116,7 @@ def lire(cursor, id_devis):
         "IdOffre": e["idoffre"], "PrixFamille": None if package["prixfamille"] is None else _nombre(package["prixfamille"]), "Carte": package["carte"],
         "MontantCarte": _nombre(package["montantcarte"]), "IdApporteur": package["idapporteur"], "ApporteurMode": package["apporteurmode"],
         "ApporteurValeur": _nombre(package["apporteurvaleur"]), "IdContratBase": package["idcontratbase"], "NumeroPoliceCompagnie": e["numeropolicecompagnie"] or "",
-        "Confirme": e["confirme"], "Adherents": lignes,
+        "Confirme": e["confirme"], "Adherents": lignes, "CartesPerte": module_cartes.pertes_du_devis(cursor, id_devis),
         "Produits": {"Sante": sante, "IA": ia, "AFA": afa},
         "Totaux": {
             "Familles": len(lignes), "Cotisation": sum(p["PrimeTtc"] for p in produits),
@@ -1192,6 +1229,10 @@ def emettre(id_devis, produits=None):
         police = etat["NumeroPolice"]
         emis = []
         if not etat["Confirme"]:
+            try:
+                module_cartes.controler_emission(cursor, id_devis)
+            except module_cartes.CarteDejaFacturee as erreur:
+                raise ErreurOreole(str(erreur)) from erreur
             _idc, police = _confirmer(cursor, id_devis)
             emis.append("Santé")
         for cle, id_lie, libelle in (("IA", package["iddevis_ia"], "IA"), ("AFA", package["iddevis_afa"], "AFA")):
@@ -1508,6 +1549,74 @@ def preparation(id_contrat, acte):
         return retour
 
 
+# ------------------------------------------------------------------ cartes d'assurance d'une police émise
+def _composition_cartes(cursor, package):
+    """Familles de la composition en vigueur, chacune avec l'état de ses personnes au registre."""
+    composition = lire(cursor, package["iddevis_sante"])["Adherents"]
+    familles = [{
+        "Rang": rang, "IdAdherentBase": 0, "IdAdherent": a["IdAdherent"], "Nom": a["Nom"], "Prenoms": a["Prenoms"], "DateNaissance": a["DateNaissance"],
+        "Personnes": a["Personnes"], "Ayants": a["Ayants"], "IdOffre": a["IdOffre"],
+    } for rang, a in enumerate(composition, 1)]
+    module_cartes.preparer_lignes(cursor, familles)
+    return familles
+
+
+def cartes_du_contrat(id_contrat):
+    with connection.cursor() as cursor:
+        package = package_du_contrat(cursor, id_contrat)
+        if not package:
+            raise ErreurOreole("Ce contrat n'est pas une police Oreole Santé.")
+        familles = _composition_cartes(cursor, package)
+    personnes = []
+    for famille in familles:
+        libelle = f"{famille['Nom']} {famille['Prenoms']}".strip()
+        for etat in famille["Cartes"]:
+            personnes.append({**module_cartes.json_personne(etat), "Famille": libelle})
+    return {"Montant": _nombre(reglages()["Carte"]), "Personnes": personnes, "Facturees": sum(1 for p in personnes if p["Historique"])}
+
+
+def facturer_cartes(id_contrat, donnees, id_utilisateur):
+    """
+    Carte demandée après l'émission : avenant à la police, quittance du montant des cartes (frais courtiers, rien à reverser).
+    Une carte déjà facturée est refusée sans le motif « Renouvellement pour perte ».
+    """
+    motif = _texte(donnees.get("Motif")).upper()
+    choisies = {str(c) for c in donnees.get("Personnes") or []}
+    if not choisies:
+        raise ErreurOreole("Choisissez au moins une personne.")
+    if motif not in (module_cartes.MOTIF_PREMIERE, module_cartes.MOTIF_PERTE):
+        raise ErreurOreole("Précisez le motif de la facturation.")
+    with transaction.atomic(), connection.cursor() as cursor:
+        base, package = _base_sante(cursor, id_contrat)
+        # Période pas encore commencée (renouvellement émis à l'avance) : l'avenant prend effet à son début
+        jour = max(date_emission_du_jour(), base["dateeffet"])
+        if jour > base["dateexpiration"]:
+            raise ErreurOreole(f"La période de ce contrat s'est terminée le {base['dateexpiration']:%d/%m/%Y} : facturez la carte sur la police en cours.")
+        lignes, trouvees = [], set()
+        for famille in _composition_cartes(cursor, package):
+            demandes = [e for e in famille["Cartes"] if e["Cle"] in choisies]
+            trouvees |= {e["Cle"] for e in demandes}
+            for etat in demandes:
+                if etat["Historique"] and motif != module_cartes.MOTIF_PERTE:
+                    raise ErreurOreole(module_cartes.json_personne(etat)["Alerte"])
+                # Perte d'une carte facturée avant ce registre : le motif reste celui que l'utilisateur a choisi
+                etat["Etat"] = module_cartes.PERTE if motif == module_cartes.MOTIF_PERTE else module_cartes.A_FACTURER
+            if demandes:
+                lignes.append({**famille, "IdAdherentBase": famille["IdAdherent"], "Libelle": f"{famille['Nom']} {famille['Prenoms']}".strip(), "Ayants": [], "EnfantsEnPlus": 0,
+                               "PartIA": ZERO, "PartAFA": ZERO, "CartesSeules": True, "Cartes": demandes, "CartesAFacturer": len(demandes)})
+        if choisies - trouvees:
+            raise ErreurOreole("Une personne choisie n'est plus dans la composition de cette police.")
+        entete = {
+            "Cible": package["cible"], "IdClient": base["idclient"], "DateEffet": jour, "DateExpiration": base["dateexpiration"], "PrixFamille": package["prixfamille"],
+            "Carte": True, "IdDevis": 0, "NumeroPoliceCompagnie": None, "IdApporteur": None, "ApporteurMode": "", "ApporteurValeur": ZERO, "Acte": "INC",
+            "IdContratBase": base["idcontrat"], "Regles": reglages(), "ObservationCarte": _texte(donnees.get("Observation")),
+        }
+        id_devis = _enregistrer_incorporation(cursor, entete, lignes, id_utilisateur)
+        resultat = emettre(id_devis)
+        resultat["CartesFacturees"] = sum(l["CartesAFacturer"] for l in lignes)
+        return resultat
+
+
 # ------------------------------------------------------------------ routes
 def _utilisateur(request):
     return getattr(request.user, "id", 0) or 0
@@ -1544,6 +1653,32 @@ def referentiels(request):
 @permission_classes([permissions.IsAuthenticated])
 def calcul(request):
     return _reponse(apercu, request.data)
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def cartes_verification(request):
+    return _reponse(verifier_cartes, request.data)
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def cartes_registre(request):
+    def lire_registre():
+        with connection.cursor() as cursor:
+            return {"Lignes": module_cartes.registre(cursor, _texte(request.query_params.get("q")))}
+    return _reponse(lire_registre)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def contrat_cartes(request, idcontrat):
+    if request.method == "GET":
+        return _reponse(cartes_du_contrat, idcontrat)
+    return _reponse(facturer_cartes, idcontrat, request.data, _utilisateur(request), code=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])

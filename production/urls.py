@@ -23,7 +23,7 @@ from .views_devis_voyage import (
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
 )
-from . import views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
+from . import apporteurs, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
@@ -366,6 +366,18 @@ urlpatterns = [
     path("finance/bordereaux/<int:id_reversement>/annuler/", views_bordereaux.annuler_bordereau, name="finance_bordereau_annuler"),
     path("finance/tableau-reversement/", views_bordereaux.tableau, name="finance_tableau_reversement"),
     path("finance/tableau-reversement/excel/", views_bordereaux.tableau_excel, name="finance_tableau_reversement_excel"),
+    # Apporteurs d'affaires : rattachement aux affaires, commissions, règlements (production/apporteurs.py)
+    path("finance/apporteurs/affaire/", apporteurs.vue_affaire, name="apporteurs_affaire"),
+    path("finance/apporteurs/affaires/", apporteurs.vue_affaires, name="apporteurs_affaires"),
+    path("finance/apporteurs/affaires/recherche/", apporteurs.vue_recherche_affaires, name="apporteurs_recherche_affaires"),
+    path("finance/apporteurs/synthese/", apporteurs.vue_synthese, name="apporteurs_synthese"),
+    path("finance/apporteurs/rattachements/", apporteurs.vue_rattachements, name="apporteurs_rattachements"),
+    path("finance/apporteurs/rattachements/<int:id_rattachement>/", apporteurs.vue_rattachement, name="apporteurs_rattachement"),
+    path("finance/apporteurs/rattachements/<int:id_rattachement>/retrait/", apporteurs.vue_retrait, name="apporteurs_retrait"),
+    path("finance/apporteurs/commissions/", apporteurs.vue_commissions, name="apporteurs_commissions"),
+    path("finance/apporteurs/commissions/<int:id_commission>/annulation/", apporteurs.vue_annulation_commission, name="apporteurs_annulation_commission"),
+    path("finance/apporteurs/reglements/", apporteurs.vue_reglements, name="apporteurs_reglements"),
+    path("finance/apporteurs/reglements/<int:id_reglement>/annulation/", apporteurs.vue_annulation_reglement, name="apporteurs_annulation_reglement"),
     path("finance/commissions/", views_finance.etat_commissions, name="finance_commissions"),
     # État récapitulatif des commissions payées et en attente de paiement (écran, impression, Excel 4 feuilles)
     path("finance/commissions/recapitulatif/", views_finance.etat_recapitulatif_commissions, name="finance_commissions_recapitulatif"),
