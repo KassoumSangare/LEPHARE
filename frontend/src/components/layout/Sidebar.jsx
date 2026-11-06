@@ -48,7 +48,7 @@ import {
   UserPlus,
   Wallet,
   Archive,
-  ListChecks, SearchCheck,
+  ListChecks, SearchCheck, HeartPulse,
 } from 'lucide-react';
 
 // Repère d'un menu déroulant : nombre de pages et chevron dans une pastille, qui se teinte et pivote à l'ouverture
@@ -339,6 +339,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
             {peut('sinistres.view') && <NavLink to="/user/claims" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <AlertTriangle size={16} className="nav-icon" />
               <span>Suivi des sinistres</span>
+            </NavLink>}
+
+            {peut('consommations.view') && <NavLink to="/user/sante/consommations" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <HeartPulse size={16} className="nav-icon" />
+              <span>Consommations santé</span>
             </NavLink>}
 
             {peut('documents.view') && <NavLink to="/user/documents" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>

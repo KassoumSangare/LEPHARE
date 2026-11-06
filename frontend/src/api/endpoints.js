@@ -1293,6 +1293,29 @@ export const oreoleApi = {
   modele: async () => (await apiClient.get('/oreole/modele/', { responseType: 'blob' })).data,
 };
 
+// Suivi des consommations santé (sante/consommations.py) : relevés du gestionnaire, droits et soldes, statistiques, contrôles, fraude
+const fichierConsommations = (fichier, champs = {}) => {
+  const formulaire = new FormData();
+  formulaire.append('fichier', fichier);
+  Object.entries(champs).forEach(([cle, valeur]) => { if (valeur) formulaire.append(cle, valeur); });
+  return formulaire;
+};
+const sansVide = (params) => Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
+
+export const consommationsApi = {
+  analyser: async (fichier) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
+  importer: async (fichier, situation) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
+  synthese: async (params) => (await apiClient.get('/consommations/synthese/', { params: sansVide(params) })).data,
+  rechercher: async (q) => (await apiClient.get('/consommations/recherche/', { params: { q } })).data,
+  famille: async (matricule) => (await apiClient.get(`/consommations/famille/${matricule}/`)).data,
+  entreprises: async (params) => (await apiClient.get('/consommations/entreprises/', { params: sansVide(params) })).data,
+  plafonds: async (params) => (await apiClient.get('/consommations/plafonds/', { params: sansVide(params) })).data,
+  controles: async (code) => (await apiClient.get('/consommations/controles/', { params: sansVide({ code }) })).data,
+  fraude: async (params) => (await apiClient.get('/consommations/fraude/', { params: sansVide(params) })).data,
+  fraudeBeneficiaire: async (matricule) => (await apiClient.get(`/consommations/fraude/${matricule}/`)).data,
+  instruire: async (matricule, donnees) => (await apiClient.post(`/consommations/fraude/${matricule}/instruction/`, donnees)).data,
+};
+
 export const dommagesApi = {
   // GET /api/dommages/catalogue/?compagnie= : catégories ouvertes, garanties et taxes de la compagnie
   getCatalogue: async (idCompagnie) => (await apiClient.get('/dommages/catalogue/', { params: { compagnie: idCompagnie || undefined } })).data,

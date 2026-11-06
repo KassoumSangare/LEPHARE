@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import oreole
+from . import consommations, oreole
 
 # from django_api_admin.sites import site
 
@@ -161,6 +161,18 @@ urlpatterns = [
     path(r"oreole/contrat/<int:idcontrat>/cartes/", oreole.contrat_cartes, name="oreole-contrat-cartes"),
     path(r"oreole/import/analyse/", oreole.analyse_import, name="oreole-import-analyse"),
     path(r"oreole/modele/", oreole.modele, name="oreole-modele"),
+    # Suivi des consommations santé : relevés du gestionnaire, droits et soldes, statistiques, contrôles, fraude (sante/consommations.py)
+    path(r"consommations/import/analyse/", consommations.vue_analyse, name="consommations-analyse"),
+    path(r"consommations/import/", consommations.vue_import, name="consommations-import"),
+    path(r"consommations/synthese/", consommations.vue_synthese, name="consommations-synthese"),
+    path(r"consommations/recherche/", consommations.vue_recherche, name="consommations-recherche"),
+    path(r"consommations/famille/<int:matricule>/", consommations.vue_famille, name="consommations-famille"),
+    path(r"consommations/entreprises/", consommations.vue_entreprises, name="consommations-entreprises"),
+    path(r"consommations/plafonds/", consommations.vue_plafonds, name="consommations-plafonds"),
+    path(r"consommations/controles/", consommations.vue_controles, name="consommations-controles"),
+    path(r"consommations/fraude/", consommations.vue_fraude, name="consommations-fraude"),
+    path(r"consommations/fraude/<int:matricule>/", consommations.vue_fraude_beneficiaire, name="consommations-fraude-beneficiaire"),
+    path(r"consommations/fraude/<int:matricule>/instruction/", consommations.vue_instruction, name="consommations-instruction"),
 
 ]
 urlpatterns += router.urls

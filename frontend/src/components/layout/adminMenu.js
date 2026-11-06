@@ -154,6 +154,7 @@ export const ADMIN_MENU = [
       { to: '/admin/reporting/etats-decisionnels', droit: 'reporting.view', label: 'États de gestion', icon: BarChart3, description: 'Tableaux de suivi : émissions, commissions, encaissements.' },
       { to: '/admin/compliance', droit: 'audit.view', label: 'Conformité & audit', icon: BadgeCheck, description: "Agrément, garantie financière de 50 M FCFA et journal de toutes les opérations." },
       { to: '/user/claims', droit: 'sinistres.view', label: 'Suivi des sinistres', icon: AlertTriangle, description: 'Sinistres déclarés et gérés pour le compte des compagnies.' },
+      { to: '/user/sante/consommations', droit: 'consommations.view', label: 'Consommations santé', icon: HeartPulse, description: "Droits, prestations, plafonds et soldes de chaque assuré d'après les relevés du gestionnaire ; statistiques, contrôles et détection de fraude." },
       { to: '/user/documents', droit: 'documents.view', label: 'Documents (GED)', icon: FolderOpen, description: 'Pièces justificatives classées par client et par contrat.' },
       { to: '/user/archives', droit: 'devis.view', label: 'Archives', icon: Archive, description: 'Devis et contrats archivés.' },
     ],

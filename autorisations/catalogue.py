@@ -19,6 +19,7 @@ MODULES = [
     ("commissions", "Commissions du cabinet"),
     ("apporteurs", "Apporteurs d'affaires"),
     ("sinistres", "Sinistres"),
+    ("consommations", "Consommations santé"),
     ("approbations", "Dérogations et approbations"),
     ("imports", "Imports de fichiers"),
     ("crm", "Suivi commercial"),
@@ -92,6 +93,14 @@ DROITS = [
     ("sinistres.update", "Instruire un sinistre", "Pièces, demande d'accord, suivi du dossier.", False, False, False),
     ("sinistres.settle", "Régler un sinistre", "Règlement sous plafond de délégation et émission de la quittance subrogative.",
      True, False, False),
+
+    ("consommations.view", "Consulter les consommations santé",
+     "Relevés du gestionnaire santé : droits, prestations, plafonds et soldes par assuré, statistiques par entreprise. Données de santé.",
+     True, False, False),
+    ("consommations.import", "Importer les relevés du gestionnaire santé", "Relevés de prestations et effectifs reçus du gestionnaire (MCI CARE).",
+     True, False, False),
+    ("consommations.fraude", "Détecter et instruire les cas de fraude santé",
+     "Signaux de fraude par bénéficiaire et décision d'instruction ; aucune décision n'est automatique.", True, False, False),
 
     ("approbations.view", "Consulter les demandes d'autorisation", "", False, False, False),
     ("approbations.decider", "Approuver ou rejeter une demande", "Décisions sur les demandes et dérogations accordées.", True, False, True),

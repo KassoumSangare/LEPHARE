@@ -309,6 +309,12 @@ REGLES = [
     R("POST", r"oreole/devis/(?P<iddevis>\d+)/emission/?$", "devis.validate", objet="devis", cles=("iddevis",), instantane=instantane_devis),
     R("POST", r"oreole/contrat/(?P<idcontrat>\d+)/emission/?$", "devis.validate", objet="contrat", cles=("idcontrat",), instantane=instantane_contrat),
     R("POST", r"oreole/devis/(?P<iddevis>\d+)/encaissement/?$", "encaissements.create", objet="encaissement", cles=("iddevis",)),
+    # Consommations santé (sante/consommations.py) : données de santé, droits dédiés ; l'analyse d'un relevé n'écrit rien
+    R("POST", r"consommations/import/analyse/?$", "consommations.import", lecture=True),
+    R("POST", r"consommations/import/?$", "consommations.import", objet="releve_sante"),
+    R("POST", r"consommations/fraude/(?P<matricule>\d+)/instruction/?$", "consommations.fraude", objet="suspicion_fraude", cles=("matricule",)),
+    R("GET", r"consommations/fraude", "consommations.fraude"),
+    R("GET", r"consommations/", "consommations.view"),
     R("POST", r"afa/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
     # Transport hors GUCE : décompte sans écriture, devis, voyages déclarés et ressortie d'une police d'abonnement

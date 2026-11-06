@@ -36,6 +36,7 @@ const OreoleAccueilPage = lazy(() => import('./pages/user/quotes/oreole/OreoleAc
 const NewOreolePage = lazy(() => import('./pages/user/quotes/oreole/NewOreolePage'));
 const OreoleFichierPage = lazy(() => import('./pages/user/quotes/oreole/OreoleFichierPage'));
 const OreoleCartesPage = lazy(() => import('./pages/user/quotes/oreole/OreoleCartesPage'));
+const ConsommationsSantePage = lazy(() => import('./pages/user/sante/ConsommationsSantePage'));
 const ParametrageOreolePage = lazy(() => import('./pages/admin/settings/ParametrageOreolePage'));
 const CashCollectionPage = lazy(() => import('./pages/user/cash/CashCollectionPage'));
 const ChequeManagementPage = lazy(() => import('./pages/user/cash/ChequeManagementPage'));
@@ -197,6 +198,7 @@ function App() {
                 <Route path="/user/quotes/oreole-sante/nouveau" element={<NewOreolePage />} />
                 <Route path="/user/quotes/oreole-sante/fichier" element={<OreoleFichierPage />} />
                 <Route path="/user/quotes/oreole-sante/cartes" element={<OreoleCartesPage />} />
+                <Route path="/user/sante/consommations" element={<ConsommationsSantePage />} />
                 <Route path="/user/quotes/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/quotes/transport" element={<TransportAccueilPage />} />
                 <Route path="/user/quotes/transport/hors-guce" element={<NewTransportHorsGucePage />} />
