@@ -163,7 +163,7 @@ def _controler_entete(entete_fichier, request_post_data, rapport):
 def _garder_montants_fichier(id_devis, assures_inscrits, rapport):
     """PRIME HT et PRIME TTC du fichier gardées pour chaque assuré (production/ia_montants_imposes.py) : réappliquées exactement après chaque
     calcul du devis, quelle que soit l'offre. Renvoie les assurés concernés."""
-    from ..ia_montants_imposes import MESSAGE_MIGRATION, appliquer, decomposer, enregistrer, table_presente, taux_taxe
+    from ..ia_montants_imposes import MESSAGE_MIGRATION, OFFRES_HORS_MONTANTS_GARDES, appliquer, decomposer, enregistrer, table_presente, taux_taxe
 
     imposes, incomplets, a_garder = set(), 0, []
     with connection.cursor() as cursor:
@@ -180,6 +180,8 @@ def _garder_montants_fichier(id_devis, assures_inscrits, rapport):
             if id_client not in lignes:
                 continue
             matricule, offre = lignes[id_client]
+            if offre in OFFRES_HORS_MONTANTS_GARDES:
+                continue  # IA MINENE : tarif fixe de la formule
             if offre not in taux:
                 taux[offre] = taux_taxe(cursor, id_compagnie, offre, date_effet)
             montants = decomposer(assure_data.get("PrimeHT"), assure_data.get("PrimeTTC"), taux[offre])

@@ -25,6 +25,9 @@ from .imposition_garanties import _taxe_garantie
 ID_PRODUIT_IA = 2
 # Tarifs CGA et CI-ENERGIES : accessoire du barème par assuré (sp_finalisation_devis)
 TARIFS_ACCESSOIRE_PAR_ASSURE = (145, 76)
+# IA MINENE (66) : tarif fixe par formule, frais de gestion et prime multipliée par les adhérents propres à la finalisation ; recalculée à
+# l'identique, elle reste hors de ce mécanisme (demande du 2026-11-06, police 1186118263203U : la taxe absorbait les frais de gestion)
+OFFRES_HORS_MONTANTS_GARDES = (66,)
 UN_FRANC = Decimal("1")
 CENTIME = Decimal("0.01")
 
@@ -145,15 +148,18 @@ def appliquer(cursor, id_devis):
 
 def _appliquer(cursor, id_devis):
     cursor.execute("""SELECT numerodevis, idproduit, idcompagnie, dateeffet::date, dateemission::date, COALESCE(confirme, FALSE), idclient, idassure,
-                             COALESCE(flotte, FALSE), primenette, commissionintermediaire
+                             COALESCE(flotte, FALSE), primenette, COALESCE(accessoiregestionnaire, 0)
                       FROM stddevis WHERE iddevis = %s""", [id_devis])
     devis = cursor.fetchone()
     if not devis or devis[1] != ID_PRODUIT_IA or devis[5]:
         return 0
+    cursor.execute("SELECT 1 FROM stddevisdetail WHERE iddevis = %s AND idoffre = ANY(%s) LIMIT 1", [id_devis, list(OFFRES_HORS_MONTANTS_GARDES)])
+    if cursor.fetchone():
+        return 0
     montants = gardes(cursor, id_devis)
     if not montants:
         return 0
-    numero, _p, id_compagnie, date_effet, date_emission, _c, id_client, id_assure, flotte, _pn, _com = devis
+    numero, _p, id_compagnie, date_effet, date_emission, _c, _client, _assure, _flotte, _pn, frais_gestion = devis
     cursor.execute("SELECT iddevisdetail, TRIM(matricule) FROM stddevisdetail WHERE iddevis = %s ORDER BY iddevisdetail", [id_devis])
     lignes = cursor.fetchall()
     concernees = []
@@ -192,7 +198,8 @@ def _appliquer(cursor, id_devis):
     pn = sum((c[0] for c in contributions.values()), Decimal("0"))
     accessoire = sum((c[2] for c in contributions.values()), Decimal("0"))
     ttc = sum((c[3] for c in contributions.values()), Decimal("0"))
-    taxe = ttc - pn - accessoire
+    # Frais de gestion du devis comptés à part : la taxe n'est que le reste de la TTC
+    taxe = ttc - pn - accessoire - _decimal(frais_gestion)
     pa = sum((c[1] for c in contributions.values()), Decimal("0"))
     # Montants convenus : pas d'arrondi automatique de la TTC à 5 F (exception de session, limitée à cette écriture)
     cursor.execute("SELECT set_config('lephare.reprise', 'on', true)")
@@ -263,9 +270,14 @@ def montants_du_contrat(cursor, objets):
                        [id_contrat])
         id_devis, pn_contrat, acc_contrat, ttc_contrat = cursor.fetchone()
         connus = gardes(cursor, id_devis)
-        cursor.execute("SELECT idcontratdetail, TRIM(matricule), COALESCE(primenette, 0), COALESCE(primeannuelle, 0) FROM stdcontratdetail WHERE idcontrat = %s",
-                       [id_contrat])
+        cursor.execute("""SELECT idcontratdetail, TRIM(matricule), COALESCE(primenette, 0), COALESCE(primeannuelle, 0) FROM stdcontratdetail
+                          WHERE idcontrat = %s AND NOT (COALESCE(idoffre, 0) = ANY(%s))""", [id_contrat, list(OFFRES_HORS_MONTANTS_GARDES)])
         lignes = cursor.fetchall()
+        if not lignes:
+            continue
+        # Frais de gestion hors de la part des assurés : la TTC répartie est celle du contrat sans eux
+        cursor.execute("SELECT COALESCE(accessoiregestionnaire, 0) FROM stdcontrat WHERE idcontrat = %s", [id_contrat])
+        ttc_contrat = ttc_contrat - (cursor.fetchone() or [0])[0]
         pns = [l[2] for l in lignes]
         accessoires = repartir(acc_contrat, pns)
         ttcs = repartir(ttc_contrat, pns)

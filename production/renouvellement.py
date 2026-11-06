@@ -221,7 +221,7 @@ def _devis_en_cours(cursor, base):
 
 
 def _reconduire_montants_ia(cursor, base, id_devis):
-    from .ia_montants_imposes import appliquer, enregistrer, montants_du_contrat
+    from .ia_montants_imposes import OFFRES_HORS_MONTANTS_GARDES, appliquer, enregistrer, montants_du_contrat
 
     objets = [{"Matricule": l["matricule"], "IdContrat": l["idcontrat"]} for l in _lignes(cursor, "SELECT matricule, idcontrat FROM fn_liste_objets_assures(%s)",
                                                                                          [base["numeropolice"]])]
@@ -233,7 +233,7 @@ def _reconduire_montants_ia(cursor, base, id_devis):
         FROM stddevisdetail dd WHERE dd.iddevis = %s""", [id_devis])
     a_garder = [{"Matricule": l["matricule"], "PrimeNette": montants[l["matricule"]][0], "Accessoire": montants[l["matricule"]][1],
                  "PrimeTtc": montants[l["matricule"]][2], "CapitalDeces": l["deces"], "CapitalInfirmite": l["infirmite"], "IdOffre": l["idoffre"]}
-                for l in lignes if l["matricule"] in montants]
+                for l in lignes if l["matricule"] in montants and l["idoffre"] not in OFFRES_HORS_MONTANTS_GARDES]
     # Sans la migration 0214 : renouvellement comme avant (devis recalculé par l'écran)
     if not a_garder or not enregistrer(cursor, id_devis, a_garder, "RENOUVELLEMENT"):
         return
@@ -358,6 +358,14 @@ def renouvellement(request, pk):
             if base["idproduit"] == 1:
                 cursor.execute("UPDATE stddevis SET primeimposee = FALSE WHERE iddevis = %s", [id_devis])
                 cursor.execute("UPDATE stddevisdetail SET primeimposee = FALSE WHERE iddevis = %s", [id_devis])
+            # Police connexe (IA et RC MINENE : police Santé liée) reprise du contrat : sp_avenant_initiation ne la recopie pas, et sans elle
+            # le recalcul d'une IA MINENE est refusé (« Le numéro de police MINENE n'a pas été renseigné »)
+            cursor.execute(
+                """UPDATE stddevis d SET numeropoliceconnexe = c.numeropoliceconnexe FROM stdcontrat c
+                   WHERE d.iddevis = %s AND c.idcontrat = %s AND COALESCE(TRIM(d.numeropoliceconnexe), '') = ''
+                     AND COALESCE(TRIM(c.numeropoliceconnexe), '') <> ''""",
+                [id_devis, base["idcontrat"]],
+            )
             # Individuelle Accidents : chaque assuré garde ses montants du contrat renouvelé (ceux du fichier importé s'ils sont connus),
             # sans nouveau calcul au tarif ; une ligne dont les capitaux ou l'offre changent repart au tarif (production/ia_montants_imposes.py)
             if base["idproduit"] == 2:
