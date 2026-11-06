@@ -78,23 +78,23 @@ def controler_saisie(motif, date_decaissement, date_encaissement, aujourd_hui=No
     """Motif et date du décaissement : motif d'au moins 5 caractères ; date ni future, ni antérieure au règlement."""
     motif = " ".join(str(motif or "").split())
     if len(motif) < MOTIF_MINIMUM:
-        raise ErreurDecaissement("Précisez le motif du décaissement (5 caractères au moins).")
+        raise ErreurDecaissement("Précisez le motif de l'annulation (5 caractères au moins).")
     jour = _date(date_decaissement, aujourd_hui or date.today())
     if jour > (aujourd_hui or date.today()):
-        raise ErreurDecaissement("La date du décaissement ne peut pas être postérieure à aujourd'hui.")
+        raise ErreurDecaissement("La date de l'annulation ne peut pas être postérieure à aujourd'hui.")
     if date_encaissement and jour < date_encaissement:
-        raise ErreurDecaissement(f"La date du décaissement précède celle du règlement ({date_encaissement:%d/%m/%Y}).")
+        raise ErreurDecaissement(f"La date de l'annulation précède celle du règlement ({date_encaissement:%d/%m/%Y}).")
     return motif[:230], jour
 
 
 def refus_decaissement(reglement):
     """Raison pour laquelle ce règlement ne se décaisse pas, ou chaîne vide."""
     if reglement.get("annule"):
-        return "Ce règlement est déjà annulé ou décaissé."
+        return "Ce règlement est déjà annulé."
     if (reglement.get("montant") or 0) <= 0:
-        return "Ce mouvement est une contre-passation : il ne se décaisse pas."
+        return "Ce mouvement est une contre-passation : il ne s'annule pas."
     if (reglement.get("code_mode") or "") in MODES_EXCLUS:
-        return "Ce mode (annulation, contrepartie, décaissement de prime mal affectée) ne se décaisse pas."
+        return "Ce mode (annulation, contrepartie, décaissement de prime mal affectée) ne s'annule pas."
     if reglement.get("cheque"):
         return "Ce règlement est un chèque du portefeuille : déclarez-le impayé dans l'onglet Chèques."
     if reglement.get("reverse"):
@@ -191,7 +191,7 @@ def decaissements(parametres):
         if l["iddecaissementorigine"] or l["idchequeorigine"]:
             # Réencaissement décaissé : la somme se réencaisse depuis son origine, qui redevient à réencaisser
             reste, code = 0.0, "REPORTE"
-            libelle = (f"Reporté sur le décaissement n° {l['iddecaissementorigine']}" if l["iddecaissementorigine"]
+            libelle = (f"Reporté sur l'annulation n° {l['iddecaissementorigine']}" if l["iddecaissementorigine"]
                        else "Reporté sur le chèque impayé")
         if statut and statut != code:
             continue
@@ -221,10 +221,10 @@ def decaisser(user, id_encaissement, motif, date_decaissement):
         origine = origine[0] if origine else None
         cursor.execute("SELECT idchequeimpaye FROM stdencaissement WHERE idencaissement = %s", [id_encaissement])
         cheque_origine = cursor.fetchone()[0]
-        cursor.execute("CALL sp_annulation_encaissement(%s, %s, %s, %s, %s, %s);", [id_encaissement, user.id, jour, f"Décaissement : {motif}"[:255], 0, ""])
+        cursor.execute("CALL sp_annulation_encaissement(%s, %s, %s, %s, %s, %s);", [id_encaissement, user.id, jour, f"Annulation : {motif}"[:255], 0, ""])
         ligne = cursor.fetchone()
         if not ligne or not ligne[0]:
-            raise ErreurDecaissement((ligne[1] if ligne and ligne[1] else "Le décaissement n'a pas pu être enregistré.").split("\n")[0])
+            raise ErreurDecaissement((ligne[1] if ligne and ligne[1] else "L'annulation n'a pas pu être enregistrée.").split("\n")[0])
         cursor.execute(
             """INSERT INTO lephare_decaissement (idencaissement, idencaissementannulation, numeropiece, idmodepaiement, mode, reference, montant, motif,
                                                  datedecaissement, quittances, clients, iddecaissementorigine, idchequeorigine, idoperateur, operateur)
@@ -242,7 +242,7 @@ def decaisser(user, id_encaissement, motif, date_decaissement):
                            [cheque_origine])
     montant = f"{reglement['montant']:,.0f}".replace(",", " ")
     return {"IdDecaissement": id_decaissement, "IdEncaissementAnnulation": ligne[0], "Montant": _nombre(reglement["montant"]),
-            "Message": f"Règlement {reglement['mode'].lower()} de {montant} F décaissé : ses quittances sont de nouveau à encaisser."}
+            "Message": f"Règlement {reglement['mode'].lower()} de {montant} F annulé : ses quittances sont de nouveau à encaisser."}
 
 
 def verrouiller_pour_reencaissement(cursor, id_decaissement):
@@ -250,11 +250,11 @@ def verrouiller_pour_reencaissement(cursor, id_decaissement):
     cursor.execute("SELECT iddecaissement, montant FROM lephare_decaissement WHERE iddecaissement = %s FOR UPDATE", [id_decaissement])
     ligne = cursor.fetchone()
     if not ligne:
-        raise ErreurDecaissement("Décaissement introuvable.")
+        raise ErreurDecaissement("Annulation introuvable.")
     cursor.execute("""SELECT COALESCE(SUM(e.montantencaissement), 0) FROM lephare_decaissement_reencaissement r JOIN stdencaissement e ON e.idencaissement = r.idencaissement
                       WHERE r.iddecaissement = %s AND NOT COALESCE(e.piece_annulee, FALSE) AND e.montantencaissement > 0""", [id_decaissement])
     if cursor.fetchone()[0] >= ligne[1]:
-        raise ErreurDecaissement("Ce décaissement est déjà entièrement réencaissé.")
+        raise ErreurDecaissement("Cette annulation est déjà entièrement réencaissée.")
 
 
 def lier_reencaissement(cursor, id_decaissement, id_encaissement):

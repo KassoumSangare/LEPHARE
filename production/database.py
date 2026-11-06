@@ -1461,6 +1461,11 @@ def quotation_completion(input_data):
             )
             connection.commit()
             row = cursor.fetchone()
+            # IA : montants exacts gardés (fichier importé, contrat renouvelé) réappliqués après le calcul
+            from .ia_montants_imposes import appliquer as appliquer_montants_ia
+
+            if appliquer_montants_ia(cursor, IdDevis):
+                connection.commit()
             sql_output = DataInsertionResult(
                 ObjectId=IdDevis,
                 OutputMessage=row[0],
@@ -2883,7 +2888,7 @@ def save_premium_collection(user, input_data):
                 with connection.cursor() as cursor:
                     verrouiller_pour_reencaissement(cursor, int(id_decaissement))
             except (ErreurDecaissement, ValueError) as erreur:
-                raise ValidationError(str(erreur) or "Décaissement introuvable.")
+                raise ValidationError(str(erreur) or "Annulation introuvable.")
 
         # 1. Tentative de récupération ou création du chèque
         # On verrouille la ligne pour éviter les accès concurrents (select_for_update)

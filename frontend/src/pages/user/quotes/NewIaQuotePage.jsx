@@ -161,7 +161,8 @@ export const NewIaQuotePage = () => {
   const [chargementBrouillon, setChargementBrouillon] = useState(Boolean(brouillonParam));
   // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
   useEffect(() => redirigerSiOreole(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Devis de renouvellement (page Renouvellement) : tous les assurés sont retarifés à l'enregistrement
+  // Devis de renouvellement (page Renouvellement) : les assurés sont renvoyés à l'enregistrement, puis le serveur leur rend les montants du
+  // contrat renouvelé (production/ia_montants_imposes.py) ; seul un assuré dont les capitaux ou l'offre changent repart au tarif
   const renouvellementParam = searchParams.get('renouvellement') === '1';
   // Devis d'incorporation dans un contrat à plusieurs personnes (page Incorporation, ou devis rouvert du registre) : police
   // reprise d'office, date d'incorporation au choix, échéance du contrat figée

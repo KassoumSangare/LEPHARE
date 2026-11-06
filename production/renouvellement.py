@@ -220,6 +220,30 @@ def _devis_en_cours(cursor, base):
     """, [base["iddevis"]])
 
 
+def _reconduire_montants_ia(cursor, base, id_devis):
+    from .ia_montants_imposes import appliquer, enregistrer, montants_du_contrat
+
+    objets = [{"Matricule": l["matricule"], "IdContrat": l["idcontrat"]} for l in _lignes(cursor, "SELECT matricule, idcontrat FROM fn_liste_objets_assures(%s)",
+                                                                                         [base["numeropolice"]])]
+    montants = montants_du_contrat(cursor, objets)
+    lignes = _lignes(cursor, """
+        SELECT TRIM(dd.matricule) AS matricule, dd.idoffre,
+               (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 19 LIMIT 1) AS deces,
+               (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 17 LIMIT 1) AS infirmite
+        FROM stddevisdetail dd WHERE dd.iddevis = %s""", [id_devis])
+    a_garder = [{"Matricule": l["matricule"], "PrimeNette": montants[l["matricule"]][0], "Accessoire": montants[l["matricule"]][1],
+                 "PrimeTtc": montants[l["matricule"]][2], "CapitalDeces": l["deces"], "CapitalInfirmite": l["infirmite"], "IdOffre": l["idoffre"]}
+                for l in lignes if l["matricule"] in montants]
+    # Sans la migration 0214 : renouvellement comme avant (devis recalculé par l'écran)
+    if not a_garder or not enregistrer(cursor, id_devis, a_garder, "RENOUVELLEMENT"):
+        return
+    cursor.execute("SELECT idclient, COALESCE(idassure, idclient), COALESCE(flotte, FALSE) FROM stddevis WHERE iddevis = %s", [id_devis])
+    id_client, id_assure, flotte = cursor.fetchone()
+    cursor.execute("CALL sp_finalisation_devis(%s, %s, %s, %s, %s)", [id_devis, id_client, id_assure, flotte, ""])
+    cursor.fetchone()
+    appliquer(cursor, id_devis)
+
+
 @api_view(["GET", "POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
@@ -334,6 +358,10 @@ def renouvellement(request, pk):
             if base["idproduit"] == 1:
                 cursor.execute("UPDATE stddevis SET primeimposee = FALSE WHERE iddevis = %s", [id_devis])
                 cursor.execute("UPDATE stddevisdetail SET primeimposee = FALSE WHERE iddevis = %s", [id_devis])
+            # Individuelle Accidents : chaque assuré garde ses montants du contrat renouvelé (ceux du fichier importé s'ils sont connus),
+            # sans nouveau calcul au tarif ; une ligne dont les capitaux ou l'offre changent repart au tarif (production/ia_montants_imposes.py)
+            if base["idproduit"] == 2:
+                _reconduire_montants_ia(cursor, base, id_devis)
             cursor.execute("SELECT numerodevis FROM stddevis WHERE iddevis = %s", [id_devis])
             numero = cursor.fetchone()[0]
         return Response({

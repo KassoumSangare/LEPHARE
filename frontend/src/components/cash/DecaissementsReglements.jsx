@@ -37,19 +37,19 @@ const messageErreur = (err, defaut) => {
   return defaut;
 };
 
-// Bon de décaissement : pièce de caisse à faire signer, surtout quand des espèces sortent de la caisse
+// Bon d'annulation : pièce de caisse à faire signer, surtout quand des espèces sortent de la caisse
 const imprimerBon = (d) => {
   const fenetre = ouvrirApercuImpression();
   if (!fenetre) return;
   const lignes = d.Quittances.map((q) => `<tr><td>${echapper(q.Numero)}</td><td>${echapper(q.Police)}</td><td>${echapper(q.Client)}</td><td class="d">${fcfa(q.Montant)}</td></tr>`).join('');
-  fenetre.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bon de décaissement ${echapper(d.NumeroPiece)}</title>
+  fenetre.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Bon d'annulation ${echapper(d.NumeroPiece)}</title>
     <style>body{font-family:Arial,sans-serif;color:#111;margin:24px;font-size:13px}h1{font-size:20px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin:14px 0}
     th,td{border:1px solid #999;padding:6px 8px;text-align:left}th{background:#eee}.d{text-align:right}.grille{display:grid;grid-template-columns:180px 1fr;gap:4px 12px;margin-top:14px}
     .signatures{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:40px}.signatures div{border-top:1px solid #111;padding-top:6px;height:70px}</style></head><body>
-    <h1>Bon de décaissement</h1><div>Pièce d'origine ${echapper(d.NumeroPiece)}, décaissement n° ${d.IdDecaissement}</div>
-    <div class="grille"><strong>Date du décaissement</strong><span>${dateFr(d.Date)}</span><strong>Mode du règlement</strong><span>${echapper(d.Mode)}</span>
+    <h1>Bon d'annulation de règlement</h1><div>Pièce d'origine ${echapper(d.NumeroPiece)}, annulation n° ${d.IdDecaissement}</div>
+    <div class="grille"><strong>Date de l'annulation</strong><span>${dateFr(d.Date)}</span><strong>Mode du règlement</strong><span>${echapper(d.Mode)}</span>
     <strong>Référence</strong><span>${echapper(d.Reference) || '-'}</span><strong>Client</strong><span>${echapper(d.Clients) || '-'}</span>
-    <strong>Montant décaissé</strong><span><strong>${fcfa(d.Montant)}</strong></span><strong>Motif</strong><span>${echapper(d.Motif)}</span>
+    <strong>Montant annulé</strong><span><strong>${fcfa(d.Montant)}</strong></span><strong>Motif</strong><span>${echapper(d.Motif)}</span>
     <strong>Enregistré par</strong><span>${echapper(d.Operateur)}</span></div>
     <table><thead><tr><th>Quittance</th><th>Police</th><th>Client</th><th class="d">Montant</th></tr></thead><tbody>${lignes}</tbody></table>
     <p>Les quittances ci-dessus sont de nouveau à encaisser.</p>
@@ -87,12 +87,12 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
     setEnvoi(true);
     try {
       const res = await cashApi.decaisserReglement(decaissement.reglement.IdEncaissement, { motif: decaissement.motif.trim(), date_decaissement: decaissement.date });
-      success(res.data?.Message || 'Règlement décaissé.');
+      success(res.data?.Message || 'Règlement annulé.');
       setDecaissement(null);
       charger();
       onDecaisse?.();
     } catch (err) {
-      toastError(messageErreur(err, "Le décaissement n'a pas pu être enregistré."));
+      toastError(messageErreur(err, "L'annulation n'a pas pu être enregistrée."));
     } finally {
       setEnvoi(false);
     }
@@ -102,9 +102,9 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
   return (
     <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
-        Espèces, virement, paiement mobile, carte, traite ou compensation : un règlement se décaisse avec son motif (fonds rendus au client, virement rejeté,
-        erreur de caisse…). Son encaissement est contre-passé et ses quittances redeviennent à encaisser. Un chèque du portefeuille se décaisse depuis l'onglet Chèques ;
-        un règlement déjà reversé à la compagnie ne se décaisse pas.
+        Espèces, virement, paiement mobile, carte, traite ou compensation : un règlement s'annule avec son motif (fonds rendus au client, virement rejeté,
+        erreur de caisse…). Son encaissement est contre-passé et ses quittances redeviennent à encaisser. Un chèque du portefeuille se traite depuis l'onglet Chèques
+        (Impayé) ; un règlement déjà reversé à la compagnie ne s'annule pas.
       </p>
       <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 240px' }}>
@@ -144,7 +144,7 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
                       <button type="button" className="btn btn-secondary" style={{ ...PETIT, color: r.Decaissable ? '#f87171' : undefined }} disabled={!r.Decaissable}
                         title={r.Decaissable ? 'Annule cet encaissement : ses quittances redeviennent à encaisser' : r.Refus}
                         onClick={() => setDecaissement({ reglement: r, motif: '', date: aujourdhui() })}>
-                        <Ban size={13} /> Décaisser
+                        <Ban size={13} /> Annuler
                       </button>
                     )}
                   </div>
@@ -161,7 +161,7 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
       </div>
       {donnees.Tronque && <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>Seuls les 300 règlements les plus récents sont affichés : précisez la recherche ou la période.</p>}
 
-      <Modal isOpen={Boolean(decaissement)} onClose={() => setDecaissement(null)} title="Décaissement d'un règlement">
+      <Modal isOpen={Boolean(decaissement)} onClose={() => setDecaissement(null)} title="Annulation d'un règlement">
         {decaissement && (
           <form onSubmit={enregistrer}>
             <div style={{ padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(30, 41, 59, 0.6)', marginBottom: '1rem', fontSize: '0.85rem' }}>
@@ -171,19 +171,19 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
               {' '}L'encaissement est annulé : les quittances {decaissement.reglement.Quittances || ''} redeviennent à encaisser.
             </div>
             <div className="form-group">
-              <label className="form-label" htmlFor="dec-motif">Motif du décaissement (* requis)</label>
+              <label className="form-label" htmlFor="dec-motif">Motif de l'annulation (* requis)</label>
               <textarea id="dec-motif" className="form-control" rows={3} required minLength={5} maxLength={230} value={decaissement.motif}
                 placeholder="Ex. : espèces rendues au client, virement rejeté par la banque, erreur de caisse"
                 onChange={(e) => setDecaissement((d) => ({ ...d, motif: e.target.value }))} />
             </div>
             <div className="form-group">
-              <label className="form-label" htmlFor="dec-date">Date du décaissement</label>
+              <label className="form-label" htmlFor="dec-date">Date de l'annulation</label>
               <input id="dec-date" type="date" className="form-control" required value={decaissement.date} max={aujourdhui()} min={String(decaissement.reglement.Date).slice(0, 10)}
                 onChange={(e) => setDecaissement((d) => ({ ...d, date: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setDecaissement(null)}>Annuler</button>
-              <button type="submit" className="btn btn-primary" disabled={envoi || decaissement.motif.trim().length < 5}>{envoi ? 'Enregistrement…' : 'Décaisser le règlement'}</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setDecaissement(null)}>Fermer</button>
+              <button type="submit" className="btn btn-primary" disabled={envoi || decaissement.motif.trim().length < 5}>{envoi ? 'Enregistrement…' : 'Annuler le règlement'}</button>
             </div>
           </form>
         )}
@@ -207,7 +207,7 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
     try {
       setLignes((await cashApi.getDecaissements(statut ? { statut } : {})).Decaissements);
     } catch (err) {
-      toastError(messageErreur(err, 'Décaissements non lus.'));
+      toastError(messageErreur(err, 'Annulations non lues.'));
     } finally {
       setChargement(false);
     }
@@ -269,10 +269,10 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
             onClick={() => setStatut(code)}>{libelle}</button>
         ))}
       </div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>Règlements décaissés hors chèques ; les chèques impayés restent suivis dans l'onglet Chèques.</p>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>Règlements annulés hors chèques ; les chèques impayés restent suivis dans l'onglet Chèques.</p>
       <div className="table-wrapper">
         <table className="data-table" style={{ fontSize: '0.83rem' }}>
-          <thead><tr><th>Décaissé le</th><th>Pièce</th><th>Mode</th><th>Client</th><th>Quittance(s)</th><th style={{ textAlign: 'right' }}>Montant</th><th style={{ textAlign: 'right' }}>Réencaissé</th><th>Statut</th><th>Motif</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Annulé le</th><th>Pièce</th><th>Mode</th><th>Client</th><th>Quittance(s)</th><th style={{ textAlign: 'right' }}>Montant</th><th style={{ textAlign: 'right' }}>Réencaissé</th><th>Statut</th><th>Motif</th><th>Actions</th></tr></thead>
           <tbody>
             {lignes.map((d) => (
               <tr key={d.IdDecaissement}>
@@ -287,7 +287,7 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
                 <td style={{ maxWidth: 260 }}>{d.Motif}</td>
                 <td>
                   <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                    <button type="button" className="btn btn-secondary" style={PETIT} onClick={() => imprimerBon(d)} title="Bon de décaissement à faire signer"><Printer size={13} /> Bon</button>
+                    <button type="button" className="btn btn-secondary" style={PETIT} onClick={() => imprimerBon(d)} title="Bon d'annulation à faire signer"><Printer size={13} /> Bon</button>
                     {peutEncaisser && d.Statut === 'A_REENCAISSER' && (
                       <button type="button" className="btn btn-primary" style={PETIT} onClick={() => ouvrir(d)} title="Réencaisser les quittances de ce règlement"><RotateCcw size={13} /> Réencaisser</button>
                     )}
@@ -297,19 +297,19 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
             ))}
             {!lignes.length && (
               <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.4rem' }}>
-                {chargement ? <><Loader2 size={14} className="spin" /> Lecture…</> : 'Aucun décaissement.'}
+                {chargement ? <><Loader2 size={14} className="spin" /> Lecture…</> : 'Aucune annulation.'}
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <Modal isOpen={Boolean(reencaissement)} onClose={() => setReencaissement(null)} title="Réencaissement d'un règlement décaissé" size="large">
+      <Modal isOpen={Boolean(reencaissement)} onClose={() => setReencaissement(null)} title="Réencaissement d'un règlement annulé" size="large">
         {reencaissement && (
           <form onSubmit={enregistrer}>
             <div style={{ padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(30, 41, 59, 0.6)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-              Règlement {reencaissement.decaissement.Mode.toLowerCase()} décaissé le {dateFr(reencaissement.decaissement.Date)} : « {reencaissement.decaissement.Motif} ».
-              {' '}Montant décaissé : <strong>{fcfa(reencaissement.decaissement.Montant)}</strong>
+              Règlement {reencaissement.decaissement.Mode.toLowerCase()} annulé le {dateFr(reencaissement.decaissement.Date)} : « {reencaissement.decaissement.Motif} ».
+              {' '}Montant annulé : <strong>{fcfa(reencaissement.decaissement.Montant)}</strong>
               {reencaissement.decaissement.Reencaisse > 0 && <>, déjà réencaissé : {fcfa(reencaissement.decaissement.Reencaisse)}</>}.
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginBottom: '1rem' }}>

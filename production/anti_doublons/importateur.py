@@ -160,7 +160,45 @@ def _controler_entete(entete_fichier, request_post_data, rapport):
         rapport.avertissements.append(f"Le fichier indique « {acte} » : le devis est créé en affaire nouvelle.")
 
 
-def _controler_primes(id_devis, assures_inscrits, rapport):
+def _garder_montants_fichier(id_devis, assures_inscrits, rapport):
+    """PRIME HT et PRIME TTC du fichier gardées pour chaque assuré (production/ia_montants_imposes.py) : réappliquées exactement après chaque
+    calcul du devis, quelle que soit l'offre. Renvoie les assurés concernés."""
+    from ..ia_montants_imposes import MESSAGE_MIGRATION, appliquer, decomposer, enregistrer, table_presente, taux_taxe
+
+    imposes, incomplets, a_garder = set(), 0, []
+    with connection.cursor() as cursor:
+        if not table_presente(cursor):
+            if any(_montant(a.get("PrimeHT")) > 0 for _n, _i, a in assures_inscrits):
+                rapport.avertissements.append(MESSAGE_MIGRATION)
+            return imposes
+        cursor.execute("SELECT idcompagnie, dateeffet::date FROM stddevis WHERE iddevis = %s", [id_devis])
+        id_compagnie, date_effet = cursor.fetchone()
+        cursor.execute("SELECT CAST(matricule AS bigint), TRIM(matricule), idoffre FROM stddevisdetail WHERE iddevis = %s AND matricule ~ '^[0-9]+$'", [id_devis])
+        lignes = {id_client: (matricule, offre) for id_client, matricule, offre in cursor.fetchall()}
+        taux = {}
+        for _numero, id_client, assure_data in assures_inscrits:
+            if id_client not in lignes:
+                continue
+            matricule, offre = lignes[id_client]
+            if offre not in taux:
+                taux[offre] = taux_taxe(cursor, id_compagnie, offre, date_effet)
+            montants = decomposer(assure_data.get("PrimeHT"), assure_data.get("PrimeTTC"), taux[offre])
+            if not montants:
+                incomplets += int(_montant(assure_data.get("PrimeHT")) > 0 or _montant(assure_data.get("PrimeTTC")) > 0)
+                continue
+            prime_nette, accessoire, prime_ttc = montants
+            a_garder.append({"Matricule": matricule, "PrimeNette": prime_nette, "Accessoire": accessoire, "PrimeTtc": prime_ttc,
+                             "CapitalDeces": assure_data.get("CapitalDeces"), "CapitalInfirmite": assure_data.get("CapitalInfirmite"), "IdOffre": offre})
+            imposes.add(id_client)
+        if a_garder:
+            enregistrer(cursor, id_devis, a_garder, "FICHIER")
+            appliquer(cursor, id_devis)
+    if incomplets:
+        rapport.avertissements.append(f"{incomplets} assuré(s) avec une seule des deux primes (HT ou TTC) dans le fichier : tarif de l'offre appliqué pour eux.")
+    return imposes
+
+
+def _controler_primes(id_devis, assures_inscrits, rapport, imposes=()):
     """Prime nette de chaque assuré inscrit au devis comparée à la « PRIME HT » du fichier : une
     prime nulle alors que le fichier en indique une refuse tout l'import (offre sans tarif pour
     ces capitaux) ; un autre écart est signalé. Renvoie les totaux du fichier."""
@@ -177,7 +215,8 @@ def _controler_primes(id_devis, assures_inscrits, rapport):
         totaux["prime_ht"] += prime_fichier
         totaux["prime_ttc"] += _montant(assure_data.get("PrimeTTC"))
         totaux["assures"] += 1
-        if prime_fichier <= 0 or id_client not in lignes:
+        # Montants du fichier imposés à cet assuré : ni refus ni écart possibles
+        if prime_fichier <= 0 or id_client not in lignes or id_client in imposes:
             continue
         prime_devis, offre = lignes[id_client]
         nom = f"{assure_data['Nom']} {assure_data.get('Prenoms', '')}".strip()
@@ -475,7 +514,8 @@ def traiter_assures(assures, request_post_data, config, rapport):
         # Contrôles du fichier contre le devis obtenu : primes de chaque assuré (une prime nulle
         # refuse tout l'import), puis acte, période et souscripteur (avertissements)
         if id_devis and assures_inscrits:
-            rapport.totaux_fichier = _controler_primes(id_devis, assures_inscrits, rapport)
+            imposes = _garder_montants_fichier(id_devis, assures_inscrits, rapport)
+            rapport.totaux_fichier = _controler_primes(id_devis, assures_inscrits, rapport, imposes)
             _controler_entete(assures_inscrits[0][2].get("EnteteFichier") or {}, request_post_data, rapport)
 
     return id_devis

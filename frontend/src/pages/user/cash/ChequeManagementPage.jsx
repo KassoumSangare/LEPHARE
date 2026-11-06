@@ -408,7 +408,7 @@ export const ChequeManagementPage = () => {
             Portefeuille des règlements
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Chèques reçus en caisse, échéanciers de chèques à déposer, décaissement de tout règlement (chèque impayé, espèces, virement, paiement mobile…) et réencaissement.
+            Chèques reçus en caisse, échéanciers de chèques à déposer, chèques impayés, annulation de tout autre règlement (espèces, virement, paiement mobile…) et réencaissement.
           </p>
         </div>
         {vue === 'cheques' && (
@@ -419,7 +419,7 @@ export const ChequeManagementPage = () => {
       </div>
 
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
-        {[['cheques', 'Chèques'], ['reglements', 'Autres règlements'], ['decaissements', 'Décaissements']].map(([code, libelle]) => (
+        {[['cheques', 'Chèques'], ['reglements', 'Autres règlements'], ['decaissements', 'Annulations']].map(([code, libelle]) => (
           <button key={code} type="button" role="tab" aria-selected={vue === code} className={`btn ${vue === code ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVue(code)}>
             {libelle}
           </button>

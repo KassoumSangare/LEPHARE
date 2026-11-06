@@ -57,6 +57,7 @@ OFFRE_STANDARD_GROUPE = 7
 # elle, l'offre CGA (capital + prime) n'était pas reconnue et l'offre de l'écran était appliquée
 ALIAS_PRIME_HT = ["Prime HT", "PRIME HT", "PRIMES HT", "Primes HT"]
 ALIAS_PRIME_TTC = ["Prime TTC", "PRIME TTC", "PRIMES TTC", "Primes TTC"]
+ALIAS_FRAIS_MEDICAUX = ["FRAIS MEDICAUX", "Frais médicaux", "FRAIS MÉDICAUX", "FRAIS DE TRAITEMENT", "Frais de traitement"]
 # Colonnes d'en-tête du contrat (modèle 2), contrôlées contre la saisie de l'écran
 COLONNES_ENTETE_FICHIER = {
     "Acte": "ACTE",
@@ -125,6 +126,15 @@ def valider_monetaire(valeur, champ: str) -> Decimal:
     if not montant.is_finite():
         raise ValidationError(f"Valeur non numérique pour {champ}: '{valeur}'")
     return montant
+
+
+def montant_facultatif(row, aliases, champ: str) -> Decimal:
+    """Colonne lue en complément (primes des modèles 1 et 3, frais médicaux) : une cellule non numérique compte pour 0 au lieu de refuser
+    tout l'import, comme avant que ces colonnes soient lues."""
+    try:
+        return valider_monetaire(get_col_value(row, aliases) or 0.0, champ)
+    except ValidationError:
+        return Decimal("0.00")
 
 
 def valider_entier(valeur, champ: str, defaut: int = 0) -> int:
@@ -525,9 +535,10 @@ def extraire_modele_1(df: pd.DataFrame) -> List[Dict]:
                     "Fonction": nettoyer_chaine(
                         get_col_value(row, ["Fonction", "FONCTION", "fonction"]) or ""
                     ),
-                    "PrimeHT": Decimal("0.00"),
+                    # Primes du fichier quand il en porte (gardées puis réappliquées exactement, production/ia_montants_imposes.py)
+                    "PrimeHT": montant_facultatif(row, ALIAS_PRIME_HT, "PRIME HT"),
                     "Accessoire": Decimal("0.00"),
-                    "PrimeTTC": Decimal("0.00"),
+                    "PrimeTTC": montant_facultatif(row, ALIAS_PRIME_TTC, "PRIME TTC"),
                     "Beneficiaires": [],
                 }
 
@@ -633,7 +644,7 @@ def extraire_modele_2(df: pd.DataFrame) -> List[Dict]:
                     row.get("CAPITAL DECES"), "CAPITAL DECES"
                 ),
                 "CapitalInfirmite": valider_monetaire(row.get("IPT"), "IPT"),
-                "CapitalTraitement": Decimal("0.00"),
+                "CapitalTraitement": montant_facultatif(row, ALIAS_FRAIS_MEDICAUX, "FRAIS MEDICAUX"),
                 "PrimeHT": valider_monetaire(
                     get_col_value(row, ALIAS_PRIME_HT) or 0.0, "PRIME HT"
                 ),
@@ -722,11 +733,10 @@ def extraire_modele_3(df: pd.DataFrame) -> List[Dict]:
                     row.get("Capitaux IPT"), "Capitaux IPT"
                 ),
                 "CapitalTraitement": Decimal("0.00"),
-                "PrimeHT": Decimal(
-                    "0.00"
-                ),  # Pas d'indication de prime dans ce modèle
+                # Primes lues si le fichier en porte (souvent absentes de ce modèle : forfait de la catégorie)
+                "PrimeHT": montant_facultatif(row, ALIAS_PRIME_HT, "PRIME HT"),
                 "Accessoire": Decimal("0.00"),
-                "PrimeTTC": Decimal("0.00"),
+                "PrimeTTC": montant_facultatif(row, ALIAS_PRIME_TTC, "PRIME TTC"),
                 "Offre": row.get("Offre", 0),
                 "Beneficiaires": [],
             }

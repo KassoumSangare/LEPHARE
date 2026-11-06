@@ -29,6 +29,8 @@ from rest_framework.decorators import (
 )
 from rest_framework.response import Response
 
+from .ia_montants_imposes import appliquer as appliquer_montants_ia, oublier_si_change, ttc_par_ligne
+
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 
 from .incorporation import _verifier_periode_devis, controler_assure_incorpore
@@ -175,10 +177,14 @@ def completer_assures_devis_ia(iddevis, lignes):
             [list(TARIFS_ACCESSOIRE_PAR_ASSURE), id_compagnie, date_effet, iddevis],
         )
         frais_lignes = {r[0]: (r[1], r[2]) for r in cursor.fetchall()}
+        # Montants gardés du fichier ou du contrat renouvelé : la TTC de chaque assuré est exactement la sienne
+        ttc_gardees = ttc_par_ligne(cursor, iddevis, lignes)
 
     primes_nettes = [_montant(l.get("prime_nette")) for l in lignes]
     ttc = None
-    if all(frais_lignes.get(l.get("id_devis_detail"), (0, None))[0] in TARIFS_ACCESSOIRE_PAR_ASSURE for l in lignes):
+    if ttc_gardees:
+        ttc = [ttc_gardees[l["id_devis_detail"]].quantize(Decimal("0.01"), ROUND_HALF_UP) for l in lignes]
+    elif all(frais_lignes.get(l.get("id_devis_detail"), (0, None))[0] in TARIFS_ACCESSOIRE_PAR_ASSURE for l in lignes):
         ttc = [
             (prime_nette + _montant(ligne.get("taxe")) + Decimal(str(frais_lignes[ligne["id_devis_detail"]][1] or 0)))
             .quantize(Decimal("1"), ROUND_HALF_UP)
@@ -334,6 +340,13 @@ def _enregistrer(data):
             id_devis_detail = int(assure.get("IdDevisDetail") or 0)
             if id_devis and id_devis_detail and not assure.get("Recalculer", True):
                 continue  # ligne inchangée : primes conservées
+            # Montant gardé (fichier, renouvellement) : il tombe si les capitaux, l'offre changent ou si une autre prime est saisie
+            if id_devis and id_devis_detail:
+                cursor.execute("SELECT TRIM(matricule) FROM stddevisdetail WHERE iddevisdetail = %s", [id_devis_detail])
+                ligne_matricule = cursor.fetchone()
+                if ligne_matricule:
+                    oublier_si_change(cursor, id_devis, ligne_matricule[0], _montant(assure.get("CapitalDeces")), _montant(assure.get("CapitalIpp")),
+                                      id_offre, _montant(assure.get("PrimeNette")))
 
             # Tarif personnalisé : primes de l'assuré saisies (0 = primes du barème)
             prime_nette = _montant(assure.get("PrimeNette"))
@@ -397,6 +410,9 @@ def _enregistrer(data):
                 "CALL sp_finalisation_devis(%s, %s, %s, %s, %s);",
                 [id_devis, id_client, id_client, True, ""],
             )
+        # Montants exacts gardés (fichier importé, contrat renouvelé) réappliqués après le calcul
+        if lignes_calculees or lignes_retirees:
+            appliquer_montants_ia(cursor, id_devis)
 
     # sp_creation_devis_ia n'a pas de paramètre terme : posé sur le devis après création
     enregistrer_terme_devis(id_devis, data.get("IdTerme"))
