@@ -2787,6 +2787,8 @@ def save_premium_collection(user, input_data):
     motif_compensation = texte("motif_compensation") if compensation else ""
     reference_reencaissement = texte("reference_reencaissement")
     id_cheque_impaye = input_data.get("id_cheque_impaye")
+    # Réencaissement d'un règlement décaissé, autre qu'un chèque (production/decaissements.py)
+    id_decaissement = input_data.get("id_decaissement")
     # Ordre du règlement (titre du bordereau remis à la compagnie, production/views_bordereaux.py) : un chèque ou un
     # virement à l'ordre de la compagnie lui est transmis tel quel ; mode URANUS « A la compagnie » : toujours ;
     # espèces : toujours, directement au bordereau de réclamation de commission (demande du 2026-10-20)
@@ -2872,6 +2874,16 @@ def save_premium_collection(user, input_data):
                 raise ValidationError(
                     "Les références du réencaissement doivent être renseignées."
                 )
+        if id_decaissement:
+            from .decaissements import ErreurDecaissement, verrouiller_pour_reencaissement
+
+            if not reference_reencaissement:
+                raise ValidationError("Les références du réencaissement doivent être renseignées.")
+            try:
+                with connection.cursor() as cursor:
+                    verrouiller_pour_reencaissement(cursor, int(id_decaissement))
+            except (ErreurDecaissement, ValueError) as erreur:
+                raise ValidationError(str(erreur) or "Décaissement introuvable.")
 
         # 1. Tentative de récupération ou création du chèque
         # On verrouille la ligne pour éviter les accès concurrents (select_for_update)
@@ -2969,6 +2981,12 @@ def save_premium_collection(user, input_data):
                 montant_operation=montant_total,
                 date_operation=date_encaissement,
             )
+
+        if id_decaissement:
+            from .decaissements import lier_reencaissement
+
+            with connection.cursor() as cursor:
+                lier_reencaissement(cursor, int(id_decaissement), id_enc_genere)
 
         # 5. Chèque impayé entièrement réencaissé
         if cheque_impaye:

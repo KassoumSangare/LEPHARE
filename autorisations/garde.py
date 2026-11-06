@@ -366,6 +366,9 @@ REGLES = [
     R("POST", r"(contratpourencaissement/|encaissementrecherche/)", "encaissements.view", lecture=True),
     R("POST", r"(encaissement/(?P<pk>\d+)/annuler/|cheques/(?P<id_cheque>\d+)/decaissement/)", "encaissements.cancel",
       objet="encaissement", cles=("pk", "id_cheque")),
+    # Décaissement de tout autre règlement : même droit et même motif que le chèque impayé
+    R("POST", r"caisse/reglements/(?P<id_encaissement>\d+)/decaissement/?$", "encaissements.cancel", objet="encaissement", cles=("id_encaissement",)),
+    R("GET", r"caisse/(reglements|decaissements)/?$", "encaissements.view"),
     R("DELETE", r"cheques/(?P<id_cheque>\d+)/", "encaissements.cancel", objet="cheque", cles=("id_cheque",)),
     R("PUT,PATCH,DELETE", r"encaissement/(?P<pk>\d+)", "encaissements.cancel", objet="encaissement", cles=("pk",)),
     R("POST", r"(enregistrementencaissement|cheques/echeancier/|initiationpaiementmobile|quittances-cima/$|encaissement/$|"

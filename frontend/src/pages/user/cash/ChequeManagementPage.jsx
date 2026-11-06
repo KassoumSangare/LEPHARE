@@ -19,6 +19,7 @@ import {
   reglementVide,
 } from '../../../components/cash/ChampsReglement';
 import { ChoixBanque } from '../../../components/cash/BanqueModal';
+import { HistoriqueDecaissements, ReglementsDecaissables } from '../../../components/cash/DecaissementsReglements';
 
 const fcfa = (v) => `${Math.round(Number(v) || 0).toLocaleString('fr-FR')} F`;
 // Nom comparé sans majuscules, accents ni espaces en trop
@@ -74,6 +75,9 @@ export const ChequeManagementPage = () => {
   const [banques, setBanques] = useState([]);
   const [modes, setModes] = useState([]);
   const [envoi, setEnvoi] = useState(false);
+  // Onglets : chèques du portefeuille, autres règlements à décaisser, historique des décaissements
+  const [vue, setVue] = useState('cheques');
+  const [versionDecaissements, setVersionDecaissements] = useState(0);
 
   const chargerCheques = async () => {
     setIsLoading(true);
@@ -401,18 +405,34 @@ export const ChequeManagementPage = () => {
         <div>
           <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <Receipt size={26} color="#fbbf24" />
-            Portefeuille des Chèques
+            Portefeuille des règlements
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Chèques reçus en caisse, échéanciers de chèques à déposer et suivi des chèques impayés.
+            Chèques reçus en caisse, échéanciers de chèques à déposer, décaissement de tout règlement (chèque impayé, espèces, virement, paiement mobile…) et réencaissement.
           </p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={ouvrirEcheancier}>
-          <Plus size={16} /> Nouvel échéancier
-        </button>
+        {vue === 'cheques' && (
+          <button type="button" className="btn btn-primary" onClick={ouvrirEcheancier}>
+            <Plus size={16} /> Nouvel échéancier
+          </button>
+        )}
       </div>
 
-      {alertes.length > 0 && (
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
+        {[['cheques', 'Chèques'], ['reglements', 'Autres règlements'], ['decaissements', 'Décaissements']].map(([code, libelle]) => (
+          <button key={code} type="button" role="tab" aria-selected={vue === code} className={`btn ${vue === code ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setVue(code)}>
+            {libelle}
+          </button>
+        ))}
+      </div>
+
+      {vue === 'reglements' && <ReglementsDecaissables onDecaisse={() => setVersionDecaissements((v) => v + 1)} />}
+      {vue === 'decaissements' && (
+        <HistoriqueDecaissements modes={modes} banques={banques} version={versionDecaissements}
+          onBanqueCreee={(banque) => setBanques((liste) => [...liste, banque])} />
+      )}
+
+      {vue === 'cheques' && alertes.length > 0 && (
         <div className="glass-panel" style={{ padding: '1rem 1.25rem', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, marginBottom: '0.6rem', color: '#fbbf24' }}>
             <BellRing size={18} /> {alertes.length} chèque{alertes.length > 1 ? 's' : ''} à déposer
@@ -431,7 +451,7 @@ export const ChequeManagementPage = () => {
         </div>
       )}
 
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
+      {vue === 'cheques' && <div className="glass-panel" style={{ padding: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
           {[{ code: 'TOUS', libelle: 'Tous' }, ...STATUTS].map((s) => {
             const nombre = s.code === 'TOUS' ? cheques.length : cheques.filter((c) => c.statut === s.code).length;
@@ -455,7 +475,7 @@ export const ChequeManagementPage = () => {
           </p>
         )}
         <DataTable columns={columns} data={chequesAffiches} loading={isLoading} searchPlaceholder="Rechercher par client ou n° de chèque..." />
-      </div>
+      </div>}
 
       {/* Échéancier de chèques d'un client */}
       <Modal isOpen={echeancierOuvert} onClose={() => setEcheancierOuvert(false)} title="Nouvel échéancier de chèques" size="large">

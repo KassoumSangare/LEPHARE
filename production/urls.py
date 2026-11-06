@@ -23,7 +23,7 @@ from .views_devis_voyage import (
     ligne_tarif_voyage_vue,
     lire_devis_voyage,
 )
-from . import apporteurs, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
+from . import apporteurs, decaissements, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
@@ -871,6 +871,10 @@ urlpatterns = [
     path("cheques/echeancier/", ChequeEcheancierView.as_view(), name="cheque-echeancier"),
     # Chèque à déposer retiré de l'échéancier (DELETE)
     path("cheques/<int:id_cheque>/", ChequeSuppressionView.as_view(), name="cheque-suppression"),
+    # Tout autre règlement (espèces, virement, paiement mobile...) : décaissement, puis réencaissement (production/decaissements.py)
+    path("caisse/reglements/", decaissements.vue_reglements, name="caisse-reglements"),
+    path("caisse/reglements/<int:id_encaissement>/decaissement/", decaissements.vue_decaissement, name="caisse-reglement-decaissement"),
+    path("caisse/decaissements/", decaissements.vue_decaissements, name="caisse-decaissements"),
     # Chèque impayé : décaissement, puis quittances à réencaisser
     path(
         "cheques/<int:id_cheque>/decaissement/",

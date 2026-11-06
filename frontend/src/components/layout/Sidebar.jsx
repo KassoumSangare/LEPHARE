@@ -317,7 +317,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   </NavLink>
                   <NavLink to="/user/cheques" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <Banknote size={14} className="nav-icon" />
-                    <span>Portefeuille Chèques</span>
+                    <span>Portefeuille des règlements</span>
                   </NavLink>
                   <NavLink to="/user/cash/etat" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <ListChecks size={14} className="nav-icon" />

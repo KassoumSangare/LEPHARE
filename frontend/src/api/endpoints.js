@@ -1873,6 +1873,12 @@ export const cashApi = {
   supprimerCheque: (id) => apiClient.delete(`/cheques/${id}/`),
   // POST /api/cheques/:id/decaissement/ : chèque impayé, ses encaissements sont annulés
   decaisserCheque: (id, data) => apiClient.post(`/cheques/${id}/decaissement/`, data),
+  // Tout autre règlement : liste des règlements décaissables, décaissement (motif envoyé une fois), historique et quittances à réencaisser
+  getReglementsDecaissables: async (params) => (await apiClient.get('/caisse/reglements/', { params })).data,
+  decaisserReglement: (id, data) => apiClient.post(`/caisse/reglements/${id}/decaissement/`, data, {
+    headers: { 'X-Motif': encodeURIComponent(data.motif) }, motifEnvoye: true,
+  }),
+  getDecaissements: async (params) => (await apiClient.get('/caisse/decaissements/', { params })).data,
   // GET /api/cheques/:id/quittances/ : quittances réglées par le chèque (à réencaisser)
   getQuittancesCheque: async (id) => extractData(await apiClient.get(`/cheques/${id}/quittances/`)),
 };
