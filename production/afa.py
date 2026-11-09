@@ -12,6 +12,9 @@ de détail par assuré (matricule = n° de client sur 20 chiffres comme l'IA, no
 datemec, capital dans valeurvenale), garantie 231 « DÉCÈS TOUTES CAUSES ». Qualité, bénéficiaires et acte de chaque
 assuré : lephare_afa_assure. Confirmation par sp_confirmation_devis (contrat, quittance) comme les autres branches ;
 renouvellement d'une police Vie existante : devis REN de sp_avenant_creation_devis_initial, même numéro de police.
+Incorporation (2026-11-09) : devis INC créé depuis la fiche du contrat (production/incorporation.py), puis complété ici avec
+les seules personnes ajoutées ; souscripteur, compagnie et échéance restent ceux de la police, la date d'incorporation est au
+choix dans la période, une personne déjà assurée sous la police est refusée, les primes sont reprises sans prorata.
 
 GET  /api/afa/referentiels/?client=<id>   compagnies, polices Vie du souscripteur
 POST /api/afa/import/analyse/              fichier lu et contrôlé, rien n'est enregistré
@@ -42,6 +45,7 @@ from configuration_api.parametrage import compagnie_par_defaut
 from core.date_parser import date_emission_du_jour
 
 from .import_assures import insert_new_assure, traiter_ayants_droit
+from .incorporation import _devis_incorporation, _verifier_periode_devis, controler_assure_incorpore
 from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _lignes
 
 logger = logging.getLogger(__name__)
@@ -593,11 +597,42 @@ def _devis_renouvellement(cursor, entete, id_utilisateur):
     return id_devis
 
 
+def _entete_incorporation(cursor, id_devis, entete, incorporation):
+    """Devis d'incorporation : échéance de la police, date d'incorporation dans sa période, souscripteur et compagnie
+    de la police (repris d'office, l'écran les affiche sans les laisser changer)."""
+    try:
+        _verifier_periode_devis("INC", incorporation["debut"], incorporation["dateexpiration"], entete["DateEffet"], entete["DateExpiration"])
+    except ValueError as erreur:
+        raise ErreurAfa(str(erreur)) from erreur
+    cursor.execute("SELECT idclient, idcompagnie FROM stddevis WHERE iddevis = %s", [id_devis])
+    entete["IdClient"], entete["IdCompagnie"] = cursor.fetchone()
+    entete["IdContratRenouvele"] = 0
+
+
+def _controler_incorpores(cursor, id_devis, assures):
+    """Personnes ajoutées seulement : un assuré déjà couvert par la police (période en cours, incorporations comprises)
+    est refusé ; acte « Incorporation » par défaut."""
+    for assure in assures:
+        try:
+            controler_assure_incorpore(cursor, id_devis, assure["IdClient"], f"{assure['Nom']} {assure['Prenoms']}".strip())
+        except ValueError as erreur:
+            raise ErreurAfa(f"Assuré {assure['Rang']} : {erreur}") from erreur
+        assure["Acte"] = assure["Acte"] or ACTES["INC"]
+
+
 def enregistrer(donnees, id_utilisateur):
     entete = _entete_saisie(donnees)
     assures = _assures_saisis(donnees, entete["DateEffet"])
     with transaction.atomic(), connection.cursor() as cursor:
-        if entete["IdCompagnie"] not in {c["IdCompagnie"] for c in _compagnies(cursor)}:
+        id_devis = entete["IdDevis"]
+        incorporation = None
+        if id_devis:
+            _verifier_devis(cursor, id_devis)
+            incorporation = _devis_incorporation(cursor, id_devis)
+            if incorporation:
+                _entete_incorporation(cursor, id_devis, entete, incorporation)
+        # Incorporation : compagnie de la police, même si elle n'est plus proposée pour les affaires nouvelles
+        if not incorporation and entete["IdCompagnie"] not in {c["IdCompagnie"] for c in _compagnies(cursor)}:
             raise ErreurAfa("Compagnie non rattachée au cabinet.")
         cursor.execute("SELECT 1 FROM stdclient WHERE idclient = %s", [entete["IdClient"]])
         if not cursor.fetchone():
@@ -610,13 +645,13 @@ def enregistrer(donnees, id_utilisateur):
                 raise ErreurAfa(f"{assure['Libelle']} : même client que l'assuré {vus[assure['IdClient']]}.")
             vus[assure["IdClient"]] = assure["Rang"]
 
-        id_devis = entete["IdDevis"]
-        if id_devis:
-            _verifier_devis(cursor, id_devis)
-        elif entete["IdContratRenouvele"]:
-            id_devis = _devis_renouvellement(cursor, entete, id_utilisateur)
-        else:
-            id_devis = _devis_affaire_nouvelle(cursor, entete, id_utilisateur)
+        if incorporation:
+            _controler_incorpores(cursor, id_devis, assures)
+        elif not id_devis:
+            if entete["IdContratRenouvele"]:
+                id_devis = _devis_renouvellement(cursor, entete, id_utilisateur)
+            else:
+                id_devis = _devis_affaire_nouvelle(cursor, entete, id_utilisateur)
 
         cursor.execute(
             """

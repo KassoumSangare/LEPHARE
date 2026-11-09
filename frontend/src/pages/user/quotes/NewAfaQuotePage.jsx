@@ -21,6 +21,8 @@ import { messageErreurApi } from '../../../utils/financeUtils';
    d'un fichier Excel au modèle d'OREOLE ou se saisit à l'écran. Primes reprises telles quelles (affaire forfaitaire,
    aucun prorata), pas de taxe en Vie. Affaire nouvelle, ou renouvellement d'une police Vie du souscripteur chez la
    même compagnie (même numéro de police à la confirmation).
+   Incorporation (devis INC créé depuis la fiche du contrat, IncorporationFlottePage) : seules les personnes ajoutées,
+   compagnie, souscripteur et échéance de la police figés, date d'incorporation au choix dans la période.
    ========================================================================= */
 
 const COULEUR = '#7c3aed';
@@ -85,6 +87,8 @@ export const NewAfaQuotePage = () => {
   const [enregistrement, setEnregistrement] = useState(false);
   const [chargement, setChargement] = useState(Boolean(idDevisEdite));
   const [devisLu, setDevisLu] = useState(null);
+  // Devis d'incorporation : police, période du contrat et nombre de personnes déjà assurées
+  const [incorporation, setIncorporation] = useState(null);
   const [devisEnregistre, setDevisEnregistre] = useState(null);
   const [nouveauClient, setNouveauClient] = useState(false);
   const [capitalTous, setCapitalTous] = useState('');
@@ -109,9 +113,11 @@ export const NewAfaQuotePage = () => {
   useEffect(() => {
     if (!idDevisEdite) return undefined;
     let actif = true;
-    afaApi.lire(idDevisEdite)
-      .then((d) => {
+    Promise.all([afaApi.lire(idDevisEdite), contractApi.lireDevisIncorporation(idDevisEdite).catch(() => null)])
+      .then(([d, lectureIncorporation]) => {
         if (!actif) return;
+        const devisIncorporation = d.Mouvement === 'INC' && lectureIncorporation?.Incorporation ? lectureIncorporation : null;
+        setIncorporation(devisIncorporation);
         setDevisLu(d);
         setIdCompagnie(String(d.IdCompagnie || ''));
         setSouscripteur(d.IdClient ? { IdClient: d.IdClient, Nom: d.Client || `Client n° ${d.IdClient}` } : null);
@@ -121,7 +127,10 @@ export const NewAfaQuotePage = () => {
         setDateExpiration(d.DateExpiration || '');
         setPoliceCompagnie(d.NumeroPoliceCompagnie || '');
         setAccessoire(Number(d.Accessoire) || 0);
-        setAssures((d.Assures || []).map((a) => ligneVide({ ...a, Capital: a.Capital ?? '', PrimeTtc: a.PrimeTtc ?? '' })));
+        const lignes = (d.Assures || []).map((a) => ligneVide({ ...a, Capital: a.Capital ?? '', PrimeTtc: a.PrimeTtc ?? '' }));
+        setAssures(lignes.length ? lignes : [ligneVide(d.Mouvement === 'INC' ? { Acte: 'Incorporation' } : {})]);
+        // Incorporation encore sans personne : directement à la saisie des assurés
+        if (d.Mouvement === 'INC' && !lignes.length) setEtape(2);
       })
       .catch((err) => { if (actif) toastError(`Devis AFA non chargé : ${messageErreurApi(err)}`); })
       .finally(() => { if (actif) setChargement(false); });
@@ -131,6 +140,8 @@ export const NewAfaQuotePage = () => {
   const policesCompagnie = polices.filter((p) => String(p.IdCompagnie) === String(idCompagnie));
   const policeRenouvelee = polices.find((p) => String(p.IdContrat) === String(idContratRenouvele));
   const enModification = Boolean(idDevisEdite);
+  const enIncorporation = devisLu?.Mouvement === 'INC';
+  const policeIncorporation = incorporation?.NumeroPolice || '';
   const lectureSeule = Boolean(devisLu?.Confirme);
   const compagnie = compagnies.find((c) => String(c.IdCompagnie) === String(idCompagnie));
 
@@ -195,13 +206,17 @@ export const NewAfaQuotePage = () => {
     if (!import_) return;
     const lignes = import_.Lignes.map((l) => ligneVide({
       IdClient: l.IdClient, Nom: l.Nom, Prenoms: l.Prenoms, DateNaissance: l.DateNaissance || '', Qualite: l.Qualite,
-      Capital: l.Capital ?? '', PrimeTtc: l.PrimeTtc ?? '', Beneficiaires: l.Beneficiaires, Acte: l.Acte,
+      Capital: l.Capital ?? '', PrimeTtc: l.PrimeTtc ?? '', Beneficiaires: l.Beneficiaires,
+      Acte: l.Acte || (enIncorporation ? 'Incorporation' : ''),
       ClientConnu: l.ClientConnu, Proposition: l.Proposition, Avertissements: [...(l.Erreurs || []), ...(l.Avertissements || [])],
     }));
     setAssures((liste) => (remplacer || !lignesSaisies.length ? lignes : [...liste.filter((l) => lignesSaisies.includes(l)), ...lignes]));
-    if (import_.DateEffet && (!dateEffet || remplacer)) setDateEffet(import_.DateEffet);
-    if (import_.DateExpiration && (!dateExpiration || remplacer)) setDateExpiration(import_.DateExpiration);
-    if (import_.Souscripteur?.IdClient && !souscripteur) {
+    // Incorporation : période et souscripteur de la police, jamais ceux du fichier
+    if (!enIncorporation) {
+      if (import_.DateEffet && (!dateEffet || remplacer)) setDateEffet(import_.DateEffet);
+      if (import_.DateExpiration && (!dateExpiration || remplacer)) setDateExpiration(import_.DateExpiration);
+    }
+    if (import_.Souscripteur?.IdClient && !souscripteur && !enIncorporation) {
       setSouscripteur({ IdClient: import_.Souscripteur.IdClient, Nom: import_.Souscripteur.Nom });
     }
     setImport(null);
@@ -227,6 +242,9 @@ export const NewAfaQuotePage = () => {
     if (!souscripteur?.IdClient) return 'Choisissez le souscripteur dans la liste des clients.';
     if (!dateEffet || !dateExpiration) return "Saisissez les dates d'effet et d'échéance.";
     if (dateExpiration < dateEffet) return "La date d'échéance précède la date d'effet.";
+    if (enIncorporation && incorporation?.DateEffetContrat && (dateEffet < incorporation.DateEffetContrat || dateEffet > dateExpiration)) {
+      return `La date d'incorporation doit être comprise dans la période du contrat, du ${dateFr(incorporation.DateEffetContrat)} au ${dateFr(dateExpiration)}.`;
+    }
     if (mouvement === 'REN' && !enModification && !idContratRenouvele) return 'Choisissez la police à renouveler.';
     return '';
   };
@@ -262,7 +280,9 @@ export const NewAfaQuotePage = () => {
           Capital: Number(l.Capital), PrimeTtc: Number(l.PrimeTtc), Beneficiaires: l.Beneficiaires, Acte: l.Acte,
         })),
       });
-      success(`Devis AFA N° ${devis.NumeroDevis} ${enModification ? 'modifié' : 'enregistré'} : ${devis.Assures.length} assurés, ${fcfa(devis.PrimeTtc)} F.`);
+      success(enIncorporation
+        ? `Incorporation N° ${devis.NumeroDevis} enregistrée : ${devis.Assures.length} personne${devis.Assures.length > 1 ? 's' : ''} ajoutée${devis.Assures.length > 1 ? 's' : ''}, ${fcfa(devis.PrimeTtc)} F. Confirmez-la pour l'ajouter à la police ${policeIncorporation}.`
+        : `Devis AFA N° ${devis.NumeroDevis} ${enModification ? 'modifié' : 'enregistré'} : ${devis.Assures.length} assurés, ${fcfa(devis.PrimeTtc)} F.`);
       let fiche = null;
       try { fiche = await quoteApi.getQuote(devis.IdDevis); } catch { /* fiche indisponible : retour au registre */ }
       if (fiche) setDevisEnregistre(fiche);
@@ -308,12 +328,22 @@ export const NewAfaQuotePage = () => {
           style={{ color: '#ef4444', fontWeight: 600, padding: 0, marginBottom: '0.5rem' }}>← Annuler</button>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <HeartHandshake size={26} color={COULEUR} />
-          {enModification ? `Modifier le devis AFA ${devisLu?.NumeroDevis || ''}` : 'Nouveau devis Vie - AFA'}
+          {enIncorporation
+            ? `Incorporation AFA ${devisLu?.NumeroDevis || ''}`
+            : (enModification ? `Modifier le devis AFA ${devisLu?.NumeroDevis || ''}` : 'Nouveau devis Vie - AFA')}
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', maxWidth: 820, lineHeight: 1.6 }}>
           Contrat de groupe : un assuré par ligne, avec son capital, sa prime et ses bénéficiaires. Importez la liste Excel
           de la compagnie ou saisissez-la. Les primes sont reprises telles quelles, sans prorata ; la Vie ne porte pas de taxe.
         </p>
+        {enIncorporation && (
+          <p role="note" style={{ padding: '0.65rem 0.85rem', borderRadius: 8, background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.35)', fontSize: '0.86rem', lineHeight: 1.55, maxWidth: 820 }}>
+            <strong>Incorporation dans la police {policeIncorporation || devisLu?.NumeroDevis}</strong>
+            {incorporation ? `, qui compte ${incorporation.Personnes} personne${incorporation.Personnes > 1 ? 's' : ''}` : ''}
+            {` : du ${dateFr(dateEffet)} à l'échéance inchangée du ${dateFr(dateExpiration)}. `}
+            Saisissez ou importez seulement les personnes ajoutées ; une personne déjà assurée sous la police est refusée.
+          </p>
+        )}
         {!lectureSeule && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginTop: '0.75rem' }}>
             <input ref={fichierRef} type="file" accept=".xlsx,.xlsm" hidden onChange={(e) => lireFichier(e.target.files?.[0])} />
@@ -342,22 +372,36 @@ export const NewAfaQuotePage = () => {
             <section className="glass-panel" style={carte}>
               <h2 style={titreCarte}><FileText size={18} color={COULEUR} /> Contrat</h2>
               <div style={grille}>
-                <Champ label="Compagnie" requis aide="SANLAM gère la Vie : elle est proposée d'office.">
-                  <select className="form-control" value={idCompagnie} disabled={lectureSeule || (enModification && devisLu?.Mouvement === 'REN')}
+                <Champ label="Compagnie" requis aide={enIncorporation ? 'Compagnie de la police, non modifiable.' : "SANLAM gère la Vie : elle est proposée d'office."}>
+                  <select className="form-control" value={idCompagnie} disabled={lectureSeule || (enModification && ['REN', 'INC'].includes(devisLu?.Mouvement))}
                     onChange={(e) => { setIdCompagnie(e.target.value); setIdContratRenouvele(''); setMouvement('AFN'); }}>
                     <option value="">Choisir…</option>
+                    {/* Incorporation : compagnie de la police, même si elle n'est plus proposée pour les affaires nouvelles */}
+                    {enIncorporation && devisLu?.IdCompagnie && !compagnies.some((c) => String(c.IdCompagnie) === String(devisLu.IdCompagnie)) && (
+                      <option value={devisLu.IdCompagnie}>{devisLu.Compagnie || `Compagnie n° ${devisLu.IdCompagnie}`}</option>
+                    )}
                     {compagnies.map((c) => <option key={c.IdCompagnie} value={c.IdCompagnie}>{c.Libelle}</option>)}
                   </select>
                 </Champ>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <RechercheClient label="Souscripteur (client)" personne={souscripteur} onChoisir={choisirSouscripteur}
-                    onNouveau={() => setNouveauClient(true)} />
-                  {souscripteur && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={souscripteur} /></div>}
+                  {enIncorporation ? (
+                    <Champ label="Souscripteur de la police" aide="Repris de la police, non modifiable.">
+                      {souscripteur ? <FichePersonne personne={souscripteur} /> : <div className="form-control" aria-readonly="true">-</div>}
+                    </Champ>
+                  ) : (
+                    <>
+                      <RechercheClient label="Souscripteur (client)" personne={souscripteur} onChoisir={choisirSouscripteur}
+                        onNouveau={() => setNouveauClient(true)} />
+                      {souscripteur && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={souscripteur} /></div>}
+                    </>
+                  )}
                 </div>
                 <Champ label="Mouvement" requis large>
                   {enModification ? (
                     <div className="form-control" aria-readonly="true">
-                      {devisLu?.Mouvement === 'REN' ? `Renouvellement de la police ${devisLu.PoliceRenouvelee}` : devisLu?.LibelleMouvement || 'Affaire nouvelle'}
+                      {devisLu?.Mouvement === 'REN' ? `Renouvellement de la police ${devisLu.PoliceRenouvelee}`
+                        : enIncorporation ? `Incorporation dans la police ${policeIncorporation}`
+                          : devisLu?.LibelleMouvement || 'Affaire nouvelle'}
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -386,11 +430,13 @@ export const NewAfaQuotePage = () => {
                     </div>
                   )}
                 </Champ>
-                <Champ label="Date d'effet" requis>
-                  <input type="date" className="form-control" value={dateEffet} disabled={lectureSeule} onChange={(e) => setDateEffet(e.target.value)} />
+                <Champ label={enIncorporation ? "Date d'incorporation" : "Date d'effet"} requis
+                  aide={enIncorporation && incorporation?.DateEffetContrat ? `Au choix dans la période du contrat, à partir du ${dateFr(incorporation.DateEffetContrat)}.` : undefined}>
+                  <input type="date" className="form-control" value={dateEffet} disabled={lectureSeule} onChange={(e) => setDateEffet(e.target.value)}
+                    min={enIncorporation ? incorporation?.DateEffetContrat : undefined} max={enIncorporation ? dateExpiration : undefined} />
                 </Champ>
-                <Champ label="Date d'échéance" requis>
-                  <input type="date" className="form-control" value={dateExpiration} min={dateEffet || undefined} disabled={lectureSeule}
+                <Champ label={enIncorporation ? "Date d'échéance du contrat" : "Date d'échéance"} requis aide={enIncorporation ? 'Fin du contrat, non modifiable.' : undefined}>
+                  <input type="date" className="form-control" value={dateExpiration} min={dateEffet || undefined} disabled={lectureSeule || enIncorporation}
                     onChange={(e) => setDateExpiration(e.target.value)} />
                 </Champ>
                 <Champ label="N° de police compagnie">
@@ -410,8 +456,8 @@ export const NewAfaQuotePage = () => {
               <h2 style={titreCarte}><Users size={18} color={COULEUR} /> Assurés · {lignesSaisies.length}</h2>
               {!lectureSeule && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginBottom: '1rem' }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setAssures((l) => [...l, ligneVide()])} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Plus size={15} /> Ajouter un assuré
+                  <button type="button" className="btn btn-secondary" onClick={() => setAssures((l) => [...l, ligneVide(enIncorporation ? { Acte: 'Incorporation' } : {})])} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Plus size={15} /> {enIncorporation ? 'Ajouter une personne' : 'Ajouter un assuré'}
                   </button>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Pour tous :</span>
@@ -512,9 +558,10 @@ export const NewAfaQuotePage = () => {
                   ['Compagnie', compagnie?.Libelle],
                   ['Souscripteur', souscripteur?.Nom],
                   ['Mouvement', enModification
-                    ? (devisLu?.Mouvement === 'REN' ? `Renouvellement de ${devisLu.PoliceRenouvelee}` : 'Affaire nouvelle')
+                    ? (devisLu?.Mouvement === 'REN' ? `Renouvellement de ${devisLu.PoliceRenouvelee}`
+                      : enIncorporation ? `Incorporation dans ${policeIncorporation}` : 'Affaire nouvelle')
                     : (mouvement === 'REN' ? `Renouvellement de ${policeRenouvelee?.NumeroPolice || ''}` : 'Affaire nouvelle')],
-                  ['Période', `du ${dateFr(dateEffet)} au ${dateFr(dateExpiration)}`],
+                  ['Période', `du ${dateFr(dateEffet)} au ${dateFr(dateExpiration)}${enIncorporation ? ', échéance du contrat' : ''}`],
                   ['Assurés', `${lignesSaisies.length} dont ${lignesSaisies.filter((l) => !l.IdClient).length} nouvelle(s) fiche(s) client`],
                   ['Capitaux assurés', `${fcfa(totalCapitaux)} F`],
                 ].map(([libelle, valeur]) => (
@@ -536,7 +583,7 @@ export const NewAfaQuotePage = () => {
                   <button key="enr" type="button" className="btn btn-primary" onClick={enregistrer} disabled={enregistrement}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: COULEUR, borderColor: COULEUR }} aria-busy={enregistrement}>
                     {enregistrement ? <Loader2 size={15} className="spin" /> : <Check size={15} />}
-                    {enModification ? 'Enregistrer les modifications' : 'Enregistrer le devis'}
+                    {enIncorporation ? "Enregistrer l'incorporation" : (enModification ? 'Enregistrer les modifications' : 'Enregistrer le devis')}
                   </button>
                 ),
               )}

@@ -118,13 +118,14 @@ export const ContractDetailPage = () => {
   const [contratOreole, setContratOreole] = useState(false);
   const [devisOreole, setDevisOreole] = useState(0);
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
-  // IA : incorporation proposée quand le contrat porte plusieurs personnes (le serveur en décide)
+  // IA : incorporation proposée quand le contrat porte plusieurs personnes ; Vie AFA : toujours, hors package Oreole Santé
+  // (le serveur en décide)
   const idProduitContrat = Number(contract?.raw?.idproduit?.id_produit ?? contract?.raw?.idproduit?.IdProduit ?? contract?.raw?.idproduit) || 0;
   const [incorporationIa, setIncorporationIa] = useState(false);
   useEffect(() => {
     let actif = true;
     setIncorporationIa(false);
-    if (id && idProduitContrat === 2 && aLeDroit('contrats.avenant')) {
+    if (id && (idProduitContrat === 2 || idProduitContrat === 10) && aLeDroit('contrats.avenant')) {
       contractApi.preparerIncorporation(id).then(() => { if (actif) setIncorporationIa(true); }).catch(() => {});
     }
     return () => { actif = false; };

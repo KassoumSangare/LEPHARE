@@ -49,9 +49,11 @@ export const IncorporationFlottePage = () => {
   const prorata = Math.min(1, restant / annee);
   const enCours = donnees?.DevisEnCours?.[0];
   // Individuelle Accidents : une personne s'ajoute, sa prime est le tarif de l'offre (ni prorata à choisir ni fichier forfaitaire)
-  const ia = contrat?.Module === 'ia';
+  // Vie AFA : une personne s'ajoute, sa prime est saisie ou importée telle quelle, sans prorata
+  const afa = contrat?.Module === 'afa';
+  const ia = contrat?.Module === 'ia' || afa;
   const Icone = ia ? UserPlus : Car;
-  const ecran = ia ? 'ia' : 'auto';
+  const ecran = contrat?.Module === 'ia' || afa ? contrat.Module : 'auto';
 
   const creer = async () => {
     if (!dateEffet) {
@@ -61,7 +63,8 @@ export const IncorporationFlottePage = () => {
     setEnvoi(true);
     try {
       const devis = await contractApi.creerIncorporation(id, { DateEffet: dateEffet, Forfaitaire: forfaitaire });
-      if (ia) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Ajoutez la ou les personnes puis enregistrez pour calculer la prime.`);
+      if (afa) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Saisissez ou importez la ou les personnes avec leur prime, puis enregistrez.`);
+      else if (ia) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Ajoutez la ou les personnes puis enregistrez pour calculer la prime.`);
       else {
         success(forfaitaire
           ? `Devis d'incorporation ${devis.NumeroDevis} créé (affaire forfaitaire). Importez le fichier Excel ou ajoutez le véhicule, puis enregistrez.`
@@ -128,7 +131,12 @@ export const IncorporationFlottePage = () => {
                   <span style={aide}>Fin du contrat, non modifiable.</span>
                 </label>
               </div>
-              {ia ? (
+              {afa ? (
+                <p style={{ color: 'var(--text-secondary)', margin: '0 0 1rem' }}>
+                  Compagnie et souscripteur sont repris de la police. La prime de chaque personne est celle saisie ou celle de la
+                  liste Excel importée, reprise telle quelle, sans prorata.
+                </p>
+              ) : ia ? (
                 <p style={{ color: 'var(--text-secondary)', margin: '0 0 1rem' }}>
                   Catégorie, offre et souscripteur sont repris de la police. La prime de chaque personne est le tarif de l’offre,
                   calculé à l’enregistrement.

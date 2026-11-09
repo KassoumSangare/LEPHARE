@@ -1,8 +1,10 @@
 """Incorporation d'un véhicule dans une police Automobile flotte, ou d'une personne dans un contrat Individuelle Accidents
-à plusieurs personnes (demande du 2026-11-03).
+à plusieurs personnes (demande du 2026-11-03) ou dans un contrat Vie AFA (demande du 2026-11-09).
 
 IA : la personne se saisit dans l'écran IA, sa prime est le tarif de l'offre (fn_garantie_offre_ia), comme les incorporations
 IA d'URANUS ; le Prorata et le mode forfaitaire ci-dessous ne concernent que l'Automobile.
+Vie AFA : la personne se saisit ou s'importe dans l'écran AFA (production/afa.py), sa prime est reprise telle quelle,
+sans prorata (tarif forfaitaire). La police AFA du package Oreole Santé s'incorpore depuis la branche Oreole Santé.
 
 Le devis d'incorporation (avenant INC) garde l'échéance du contrat principal ; sa date d'effet est la date
 d'incorporation. Prime du véhicule : prime annuelle au prorata des jours couverts jusqu'à l'échéance
@@ -25,8 +27,10 @@ from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_bas
 
 ID_PRODUIT_AUTO = 1
 ID_PRODUIT_IA = 2
+ID_PRODUIT_VIE = 10
+PRODUITS_INCORPORATION = (ID_PRODUIT_AUTO, ID_PRODUIT_IA, ID_PRODUIT_VIE)
 OFFRE_IA_MINENE = 66
-MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia"}
+MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia", ID_PRODUIT_VIE: "afa"}
 MODE_PRORATA = "prorata"
 MODE_FORFAIT = "forfait"
 logger = logging.getLogger(__name__)
@@ -77,13 +81,36 @@ def _ia_minene(cursor, id_devis):
     return bool(cursor.fetchone())
 
 
+def _afa_oreole(cursor, police):
+    """Police AFA du package Oreole Santé : la branche Oreole Santé incorpore dans ses trois polices à la fois."""
+    cursor.execute("SELECT to_regclass('lephare_oreole_package') IS NOT NULL")
+    if not cursor.fetchone()[0]:
+        return False
+    cursor.execute(
+        """SELECT 1 FROM lephare_oreole_package p JOIN stdcontrat c ON c.iddevis = p.iddevis_afa
+           WHERE c.numeropolice = %s LIMIT 1""",
+        [police],
+    )
+    return bool(cursor.fetchone())
+
+
 def _contrat_flottant(cursor, id_contrat):
     base = _contrat_base(cursor, id_contrat)
     if base["idproduit"] == ID_PRODUIT_IA:
         if not base["flotte"] and _personnes(cursor, base["numeropolice"]) <= 1 and not _ia_minene(cursor, base["iddevis"]):
             raise ErreurRenouvellement("Contrat individuel : l'incorporation est réservée aux contrats à plusieurs personnes.")
+    elif base["idproduit"] == ID_PRODUIT_VIE:
+        # AFA : contrat de groupe par nature, même à une seule personne
+        if _afa_oreole(cursor, base["numeropolice"]):
+            raise ErreurRenouvellement(
+                "Police AFA du package Oreole Santé : incorporez la personne depuis le bloc Oreole Santé du contrat Santé, "
+                "qui ajoute aussi sa part Santé et IA."
+            )
     elif base["idproduit"] != ID_PRODUIT_AUTO or not base["flotte"]:
-        raise ErreurRenouvellement("L'incorporation est réservée aux flottes Automobile et aux contrats Individuelle Accidents à plusieurs personnes.")
+        raise ErreurRenouvellement(
+            "L'incorporation est réservée aux flottes Automobile, aux contrats Individuelle Accidents à plusieurs personnes "
+            "et aux contrats Vie AFA."
+        )
     return base
 
 
@@ -102,7 +129,7 @@ def _devis_en_cours(cursor, id_devis_base):
 
 
 def _devis_incorporation(cursor, id_devis):
-    """Devis d'incorporation Automobile ou IA (None pour tout autre devis) : période, mode et police du contrat."""
+    """Devis d'incorporation Automobile, IA ou Vie (None pour tout autre devis) : période, mode et police du contrat."""
     lignes = _lignes(cursor, """
         SELECT d.iddevis, d.dateeffet::date AS dateeffet, d.dateexpiration::date AS dateexpiration, d.idoldhist,
                COALESCE(i.forfaitaire, FALSE) AS forfaitaire, d.idproduit,
@@ -112,8 +139,8 @@ def _devis_incorporation(cursor, id_devis):
         FROM stddevis d
         JOIN stdavenant a ON a.idavenant = d.idavenant
         LEFT JOIN lephare_incorporation i ON i.iddevis = d.iddevis
-        WHERE d.iddevis = %s AND a.codeavenant = 'INC' AND d.idproduit IN (1, 2)
-    """, [id_devis])
+        WHERE d.iddevis = %s AND a.codeavenant = 'INC' AND d.idproduit = ANY(%s)
+    """, [id_devis, list(PRODUITS_INCORPORATION)])
     return lignes[0] if lignes else None
 
 
@@ -259,6 +286,13 @@ def incorporation(request, pk):
                    FROM stddevis b WHERE d.iddevis = %s AND b.iddevis = d.idoldhist""",
                 [id_devis],
             )
+            if base["idproduit"] == ID_PRODUIT_VIE:
+                # AFA : le devis ne porte que les personnes ajoutées, saisies ou importées ensuite dans l'écran AFA
+                cursor.execute(
+                    "DELETE FROM stddevisdetgarantie WHERE iddevisdet IN (SELECT iddevisdetail FROM stddevisdetail WHERE iddevis = %s)",
+                    [id_devis],
+                )
+                cursor.execute("DELETE FROM stddevisdetail WHERE iddevis = %s", [id_devis])
             cursor.execute(
                 "INSERT INTO lephare_incorporation (iddevis, idcontrat, forfaitaire, idutilisateur) VALUES (%s, %s, %s, %s)",
                 [id_devis, base["idcontrat"], forfaitaire, request.user.id],

@@ -6,8 +6,9 @@ from unittest import mock
 from django.test import SimpleTestCase
 from openpyxl import Workbook
 
-from .afa import ErreurAfa, _acte, _date, _montant, lire_fichier
+from .afa import ErreurAfa, _acte, _controler_incorpores, _date, _entete_incorporation, _montant, lire_fichier
 from .database import verifier_categorie_police
+from .incorporation import ErreurRenouvellement, _contrat_flottant
 
 
 def classeur_afa(lignes, total=True):
@@ -113,3 +114,63 @@ class ConfirmationDevisAfaTests(SimpleTestCase):
 
         with self.assertRaisesRegex(ValueError, "aucune ligne de détail"):
             verifier_categorie_police(curseur, 123)
+
+
+class IncorporationAfaTests(SimpleTestCase):
+    """Incorporation dans un contrat Vie AFA (2026-11-09) : police reprise, période contrôlée, personnes ajoutées seulement."""
+
+    POLICE = {"debut": date(2026, 1, 1), "dateexpiration": date(2026, 12, 31)}
+
+    def entete(self, effet, echeance=date(2026, 12, 31)):
+        return {"IdClient": 999, "IdCompagnie": 888, "IdContratRenouvele": 5, "DateEffet": effet, "DateExpiration": echeance}
+
+    def test_souscripteur_et_compagnie_repris_de_la_police(self):
+        curseur = mock.Mock()
+        curseur.fetchone.return_value = (353, 7)
+        entete = self.entete(date(2026, 6, 15))
+        _entete_incorporation(curseur, 1, entete, self.POLICE)
+        self.assertEqual((entete["IdClient"], entete["IdCompagnie"], entete["IdContratRenouvele"]), (353, 7, 0))
+
+    def test_date_d_incorporation_dans_la_periode(self):
+        for effet in (date(2025, 12, 31), date(2027, 1, 1)):
+            with self.assertRaisesRegex(ErreurAfa, "période du contrat"):
+                _entete_incorporation(mock.Mock(), 1, self.entete(effet), self.POLICE)
+
+    def test_echeance_de_la_police_figee(self):
+        with self.assertRaisesRegex(ErreurAfa, "échéance"):
+            _entete_incorporation(mock.Mock(), 1, self.entete(date(2026, 6, 15), date(2027, 6, 14)), self.POLICE)
+
+    def test_acte_incorporation_par_defaut(self):
+        assures = [{"Rang": 1, "IdClient": 10, "Nom": "A", "Prenoms": "B", "Acte": ""},
+                   {"Rang": 2, "IdClient": 11, "Nom": "C", "Prenoms": "D", "Acte": "Affaire nouvelle"}]
+        with mock.patch("production.afa.controler_assure_incorpore") as controle:
+            _controler_incorpores(mock.Mock(), 1, assures)
+        self.assertEqual(controle.call_count, 2)
+        self.assertEqual([a["Acte"] for a in assures], ["Incorporation", "Affaire nouvelle"])
+
+    def test_personne_deja_assuree_refusee(self):
+        assures = [{"Rang": 3, "IdClient": 10, "Nom": "A", "Prenoms": "B", "Acte": ""}]
+        with mock.patch("production.afa.controler_assure_incorpore", side_effect=ValueError("A B est déjà assuré(e) dans la police P.")):
+            with self.assertRaisesRegex(ErreurAfa, "Assuré 3 : A B est déjà assuré"):
+                _controler_incorpores(mock.Mock(), 1, assures)
+
+
+class ContratVieIncorporableTests(SimpleTestCase):
+    def base(self, produit, flotte=True):
+        return {"idproduit": produit, "flotte": flotte, "numeropolice": "P", "iddevis": 1}
+
+    def test_contrat_vie_incorporable_meme_a_une_personne(self):
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(10, flotte=False)), \
+                mock.patch("production.incorporation._afa_oreole", return_value=False):
+            self.assertEqual(_contrat_flottant(mock.Mock(), 1)["idproduit"], 10)
+
+    def test_police_afa_oreole_renvoyee_a_la_branche(self):
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(10)), \
+                mock.patch("production.incorporation._afa_oreole", return_value=True):
+            with self.assertRaisesRegex(ErreurRenouvellement, "Oreole Santé"):
+                _contrat_flottant(mock.Mock(), 1)
+
+    def test_autres_produits_toujours_refuses(self):
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(4)):
+            with self.assertRaisesRegex(ErreurRenouvellement, "Vie AFA"):
+                _contrat_flottant(mock.Mock(), 1)
