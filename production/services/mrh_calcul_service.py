@@ -1053,6 +1053,7 @@ class MRHCalculService:
         adresse: Optional[str] = None,
         description: Optional[str] = None,
         repartition_manuelle: Optional[Dict[str, Decimal]] = None,
+        mettre_a_jour_totaux: bool = True,
     ) -> Dict:
         """
         Méthode combinée : calcule la prime d'une maison ET l'enregistre dans le devis.
@@ -1069,6 +1070,7 @@ class MRHCalculService:
             sous_garanties_optionnelles: Liste des codes de sous-garanties optionnelles
             adresse: Adresse de la maison
             description: Description
+            mettre_a_jour_totaux: Recalculer les totaux du devis après l'enregistrement
 
         Returns:
             Dict contenant:
@@ -1102,12 +1104,14 @@ class MRHCalculService:
         )
 
         # 3. Mettre à jour les totaux du devis (avec accessoires)
-        totaux_devis = self.mettre_a_jour_totaux_devis(
-            id_devis=id_devis,
-            id_produit=id_produit,
-            id_compagnie=id_compagnie,
-            inclure_accessoires=True,
-        )
+        totaux_devis = None
+        if mettre_a_jour_totaux:
+            totaux_devis = self.mettre_a_jour_totaux_devis(
+                id_devis=id_devis,
+                id_produit=id_produit,
+                id_compagnie=id_compagnie,
+                inclure_accessoires=True,
+            )
 
         # 4. Retourner le résultat complet
         return {

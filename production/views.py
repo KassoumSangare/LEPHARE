@@ -4600,13 +4600,12 @@ def _enregistrer_maisons_mrh(devis, maisons, id_tarif=None):
     Retourne les totaux du devis mis à jour.
     """
     service = MRHCalculService()
-    totaux = None
     for maison in maisons:
         code_usage = maison.get("code_usage")
         usage = UsageHabitation.objects.filter(code=code_usage).first()
         if not usage or not usage.offre_id:
             raise ValueError(f"Usage habitation inconnu ou sans offre : {code_usage}")
-        resultat = service.calculer_et_enregistrer_maison(
+        service.calculer_et_enregistrer_maison(
             id_devis=devis.iddevis,
             id_produit=devis.produit_id,
             id_compagnie=devis.compagnie_id,
@@ -4622,9 +4621,16 @@ def _enregistrer_maisons_mrh(devis, maisons, id_tarif=None):
                 maison.get("sous_garanties_optionnelles"), "code_sous_garantie"
             ),
             adresse=maison.get("adresse") or "",
+            mettre_a_jour_totaux=False,
         )
-        totaux = resultat["totaux_devis"]
-    return totaux
+    if maisons:
+        return service.mettre_a_jour_totaux_devis(
+            id_devis=devis.iddevis,
+            id_produit=devis.produit_id,
+            id_compagnie=devis.compagnie_id,
+            inclure_accessoires=True,
+        )
+    return None
 
 
 def _totaux_devis_mrh(devis):

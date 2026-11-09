@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import consommations, oreole
+from . import consommations, consommations_pilotage, consommations_rapport, oreole
 
 # from django_api_admin.sites import site
 
@@ -165,6 +165,9 @@ urlpatterns = [
     path(r"consommations/import/analyse/", consommations.vue_analyse, name="consommations-analyse"),
     path(r"consommations/import/", consommations.vue_import, name="consommations-import"),
     path(r"consommations/synthese/", consommations.vue_synthese, name="consommations-synthese"),
+    path(r"consommations/tableau-de-bord/", consommations_pilotage.vue_tableau_de_bord, name="consommations-tableau-de-bord"),
+    path(r"consommations/entreprises/lien/", consommations_pilotage.vue_lien, name="consommations-lien"),
+    path(r"consommations/rapport/", consommations_rapport.vue_rapport, name="consommations-rapport"),
     path(r"consommations/recherche/", consommations.vue_recherche, name="consommations-recherche"),
     path(r"consommations/famille/<int:matricule>/", consommations.vue_famille, name="consommations-famille"),
     path(r"consommations/entreprises/", consommations.vue_entreprises, name="consommations-entreprises"),

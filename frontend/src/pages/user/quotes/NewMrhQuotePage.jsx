@@ -774,9 +774,6 @@ export const NewMrhQuotePage = () => {
                 <Champ label="Durée du contrat">
                   <DureeContratSelect value={dureeId} onChange={setDureeId} terme={termeId} />
                 </Champ>
-                <Champ label="Date d'émission" aide="Date du jour">
-                  <input type="date" className="form-control" value={dateEmission} readOnly disabled />
-                </Champ>
                 <Champ label="Date d'effet" requis erreur={erreurs.dateEffet}>
                   <input type="date" className="form-control" value={dateEffet} onChange={(e) => setDateEffet(e.target.value)} />
                 </Champ>

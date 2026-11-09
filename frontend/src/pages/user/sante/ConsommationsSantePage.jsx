@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Building2, FileSpreadsheet, Gauge, HeartPulse, ListChecks, Loader2, RefreshCw, Save, Search, ShieldAlert, Upload, UserSearch } from 'lucide-react';
+import { BarChart3, Building2, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, RefreshCw, Save, Search, ShieldAlert, Upload, UserSearch } from 'lucide-react';
 import { consommationsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
 import { confirmer } from '../../../utils/dialogue';
 import { aLeDroit } from '../../../utils/droits';
-import { exportToExcel } from '../../../utils/exportUtils';
+import { downloadBlob } from '../../../utils/exportUtils';
 import { dateFr, fcfa, messageErreurApi } from '../../../utils/financeUtils';
 
 /* =========================================================================
@@ -22,9 +22,6 @@ const COULEUR_NIVEAU = { Élevé: 'rose', Moyen: 'amber', Faible: 'blue' };
 const COULEUR_GRAVITE = { Élevée: 'rose', Moyenne: 'amber', Faible: 'slate' };
 const COULEUR_INSTRUCTION = { A_INSTRUIRE: 'blue', JUSTIFIE: 'emerald', FRAUDE: 'rose', SANS_SUITE: 'slate' };
 const DECISIONS = [['A_INSTRUIRE', 'À instruire'], ['JUSTIFIE', 'Justifié'], ['FRAUDE', 'Fraude avérée'], ['SANS_SUITE', 'Sans suite']];
-
-// Export Excel : colonnes = [[en-tête, valeur(ligne)], ...]
-const exporter = (filename, title, colonnes, lignes) => exportToExcel({ filename, title, headers: colonnes.map(([h]) => h), rows: lignes.map((l) => colonnes.map(([, v]) => v(l))) });
 
 const Onglet = ({ actif, onClick, icone: Icone, children }) => (
   <button type="button" role="tab" aria-selected={actif} className={`btn ${actif ? 'btn-primary' : 'btn-secondary'}`} onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -83,6 +80,187 @@ const useLecture = (lire, dependances) => {
   }, dependances);
   useEffect(() => { recharger(); }, [recharger]);
   return [donnees, chargement, recharger];
+};
+
+// ------------------------------------------------------------------ tableau de bord
+const NATURES = { PRESTATIONS: 'Prestations', EFFECTIF: 'Effectif', COTISATIONS: 'État des cotisations' };
+const COULEUR_PROVISION = { Normal: 'emerald', Alerte: 'amber', 'Provision dépassée': 'rose', 'Sans provision': 'slate', 'Sans état de cotisation': 'blue' };
+const MOIS_COURTS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
+
+const OngletTableauDeBord = () => {
+  const { success, error: toastError } = useToast();
+  const [filtres, setFiltres] = useState({ exercice: '', du: '', au: '', garant: '' });
+  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.tableauDeBord(filtres), [filtres]);
+  const [exportEnCours, setExportEnCours] = useState(false);
+  const [moisParMois, setMoisParMois] = useState(false);
+  const peutLier = aLeDroit('consommations.import');
+  const champ = (cle) => (e) => setFiltres((f) => ({ ...f, [cle]: e.target.value }));
+  const t = donnees?.Totaux || {};
+  const ind = donnees?.Indicateurs || {};
+
+  const exporterRapport = async () => {
+    setExportEnCours(true);
+    try {
+      const reponse = await consommationsApi.rapport(filtres);
+      const entete = reponse.headers?.['content-disposition'] || '';
+      const nom = decodeURIComponent((entete.match(/filename="?([^";]+)"?/) || [])[1] || `rapport-consommations-${donnees?.Exercice || ''}.docx`);
+      downloadBlob(reponse.data, nom);
+      success('Rapport exporté.');
+    } catch (err) {
+      let message = messageErreurApi(err);
+      if (err?.response?.data instanceof Blob) {
+        try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* message par défaut */ }
+      }
+      toastError(`Rapport non produit : ${message}`);
+    } finally {
+      setExportEnCours(false);
+    }
+  };
+
+  const lier = async (entreprise, police) => {
+    try {
+      success((await consommationsApi.lier(entreprise, police)).Message);
+      recharger();
+    } catch (err) {
+      toastError(messageErreurApi(err));
+    }
+  };
+
+  if (chargement && !donnees) return <Panneau><span><Loader2 size={14} className="spin" /> Lecture…</span></Panneau>;
+  const controle = donnees?.Controle || [];
+  const mois = Array.from(new Set(controle.flatMap((l) => Object.keys(l.Mois || {}).map(Number)))).sort((a, b) => a - b);
+  return (
+    <>
+      <Panneau actions={(
+        <button type="button" className="btn btn-primary" disabled={exportEnCours} onClick={exporterRapport} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+          {exportEnCours ? <Loader2 size={14} className="spin" /> : <FileText size={14} />} Exporter le rapport
+        </button>
+      )}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <Champ id="tb-exercice" libelle="Exercice">
+            <select id="tb-exercice" className="form-control" value={filtres.exercice || donnees?.Exercice || ''} onChange={champ('exercice')}>
+              {(donnees?.Exercices?.length ? donnees.Exercices : [donnees?.Exercice]).filter(Boolean).map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </Champ>
+          <Champ id="tb-du" libelle="Clôtures du"><input id="tb-du" type="date" className="form-control" value={filtres.du} onChange={champ('du')} /></Champ>
+          <Champ id="tb-au" libelle="au"><input id="tb-au" type="date" className="form-control" value={filtres.au} onChange={champ('au')} /></Champ>
+          <Champ id="tb-garant" libelle="Garant">
+            <select id="tb-garant" className="form-control" value={filtres.garant} onChange={champ('garant')}>
+              <option value="">Tous les garants</option>
+              {(donnees?.Garants || []).map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </Champ>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          Période {dateFr(donnees?.Du)} au {dateFr(donnees?.Au)}, selon la date de clôture des relevés. Le rapport Word reprend le plan du rapport d'analyse d'OREOLE :
+          effectifs, dépenses, entreprises à risque et contrôle de gestion. C'est le seul export de ce suivi.
+        </p>
+      </Panneau>
+
+      {!donnees?.CotisationsImportees && (
+        <Panneau><p style={{ margin: 0, color: '#d97706', fontSize: '0.85rem' }}>
+          Aucun état des cotisations pour {donnees?.Exercice} : importez le fichier ETAT (feuille des données par entreprise) dans l'onglet Imports pour suivre les provisions.
+        </p></Panneau>
+      )}
+
+      <Grille>
+        <Tuile libelle="Provisions pour paiement" valeur={montant(t.Provision)} detail={`${fcfa(t.Entreprises)} entreprises à l'état`} />
+        <Tuile libelle="Consommation" valeur={montant(t.Consommation)} couleur="var(--primary-500)" detail={`${pourcent(t.Taux)} des provisions`} />
+        <Tuile libelle="Reste sur les provisions" valeur={montant(t.Reste)} couleur={t.Reste < 0 ? '#e11d48' : undefined} />
+        <Tuile libelle="Entreprises à surveiller" valeur={fcfa((t.EnDepassement || 0) + (t.EnAlerte || 0))} couleur={(t.EnDepassement || 0) ? '#e11d48' : undefined}
+          detail={`${fcfa(t.EnDepassement || 0)} en dépassement, ${fcfa(t.EnAlerte || 0)} au-delà de 80 %`} />
+        <Tuile libelle="Primes HT" valeur={montant(t.PrimeHt)} detail={`cotisations santé pure ${montant(t.CotisationPure)}`} />
+        <Tuile libelle="Honoraires et commissions" valeur={montant((t.Honoraires || 0) + (t.Commissions || 0))} detail={`apporteurs ${montant(t.Apporteurs)}`} />
+        <Tuile libelle="Bénéficiaires consommants" valeur={fcfa(ind.Consommants)} detail={`recours ${pourcent(ind.TauxRecours)}, ${fcfa(ind.Actes)} actes`} />
+        <Tuile libelle="Coût moyen" valeur={montant(ind.CoutParBeneficiaire)} detail={`par bénéficiaire ; ${montant(ind.CoutParActe)} par acte`} />
+      </Grille>
+
+      <Panneau titre="Contrôle de gestion par entreprise" actions={(
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
+          <input type="checkbox" checked={moisParMois} onChange={(e) => setMoisParMois(e.target.checked)} /> Consommation mois par mois
+        </label>
+      )}>
+        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          Provision de l'état des cotisations face à la consommation des relevés. Le lien entre l'entreprise de l'état et la police du gestionnaire est proposé d'après les noms ;
+          {peutLier ? ' confirmez-le ou corrigez-le dans la liste.' : ' un gestionnaire habilité le confirme.'}
+        </p>
+        <div className="table-wrapper" style={{ maxHeight: 620, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
+          <thead><tr>
+            <th>Entreprise</th><th>Police du gestionnaire</th><th style={DROITE}>Provision</th>
+            {moisParMois ? mois.map((m) => <th key={m} style={DROITE}>{MOIS_COURTS[m - 1]}</th>) : null}
+            <th style={DROITE}>Consommation</th><th style={DROITE}>Reste</th><th style={DROITE}>Taux</th><th>Situation</th>
+          </tr></thead>
+          <tbody>
+            {controle.map((l) => (
+              <tr key={`${l.Entreprise}|${l.Police}`}>
+                <td style={{ fontWeight: 600 }}>{l.Entreprise || <span style={{ color: 'var(--text-muted)' }}>Hors état</span>}</td>
+                <td>
+                  {peutLier && l.Entreprise ? (
+                    <select aria-label={`Police de ${l.Entreprise}`} className="form-control" style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem', minWidth: 200 }}
+                      value={l.Police || ''} onChange={(e) => lier(l.Entreprise, e.target.value)}>
+                      <option value="">Aucune police</option>
+                      {(donnees?.Polices || []).map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  ) : (l.Police || '-')}
+                  {l.LienPropose && <div style={{ fontSize: '0.7rem', color: '#d97706' }}>proposé d'après le nom</div>}
+                </td>
+                <td style={DROITE}>{l.Provision ? fcfa(l.Provision) : '-'}</td>
+                {moisParMois ? mois.map((m) => <td key={m} style={DROITE}>{l.Mois?.[m] ? fcfa(l.Mois[m]) : '-'}</td>) : null}
+                <td style={{ ...DROITE, fontWeight: 600 }}>{fcfa(l.Consommation)}</td>
+                <td style={{ ...DROITE, color: l.Reste < 0 ? '#e11d48' : undefined }}>{fcfa(l.Reste)}</td>
+                <td style={DROITE}>{pourcent(l.Taux)}</td>
+                <td><StatusBadge label={l.Situation} color={COULEUR_PROVISION[l.Situation]} /></td>
+              </tr>
+            ))}
+            {!controle.length && <Vide colonnes={7} chargement={chargement} texte="Aucune donnée : importez les relevés et l'état des cotisations." />}
+          </tbody>
+        </table></div>
+      </Panneau>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '0.75rem' }}>
+        <Panneau titre="Dépenses mensuelles">
+          <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
+            <thead><tr><th>Mois</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Actes</th><th style={DROITE}>Coût / acte</th></tr></thead>
+            <tbody>{(donnees?.Mensuel || []).map((m) => <tr key={m.Mois}><td>{m.Mois}</td><td style={DROITE}>{fcfa(m.Depenses)}</td><td style={DROITE}>{pourcent(m.Part)}</td><td style={DROITE}>{fcfa(m.Actes)}</td><td style={DROITE}>{fcfa(m.CoutParActe)}</td></tr>)}</tbody>
+          </table></div>
+        </Panneau>
+        <Panneau titre="Familles de prestation">
+          <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
+            <thead><tr><th>Famille</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Actes</th><th style={DROITE}>Coût / acte</th></tr></thead>
+            <tbody>{(donnees?.Familles || []).map((f) => <tr key={f.Libelle}><td>{f.Libelle}</td><td style={DROITE}>{fcfa(f.Depenses)}</td><td style={DROITE}>{pourcent(f.Part)}</td><td style={DROITE}>{fcfa(f.Actes)}</td><td style={DROITE}>{fcfa(f.CoutParActe)}</td></tr>)}</tbody>
+          </table></div>
+        </Panneau>
+      </div>
+
+      <Panneau titre="Entreprises à risque">
+        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          Score : moyenne des rapports à la moyenne du portefeuille du coût par bénéficiaire, des actes par bénéficiaire et du coût par acte. Critique dès que le score atteint 1,
+          trop d'actes au-delà de 10 par bénéficiaire, coût par acte élevé au-delà de 30 % de la moyenne. Formule proposée, à valider.
+        </p>
+        <div className="table-wrapper" style={{ maxHeight: 460, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
+          <thead><tr><th>Entreprise</th><th style={DROITE}>Bénéficiaires</th><th style={DROITE}>Actes</th><th style={DROITE}>Dépenses</th><th style={DROITE}>Coût / bénéf.</th><th style={DROITE}>Actes / bénéf.</th><th style={DROITE}>Coût / acte</th><th style={DROITE}>Score</th><th>Alertes</th></tr></thead>
+          <tbody>
+            {(donnees?.Risque || []).map((l) => (
+              <tr key={l.Police}>
+                <td style={{ fontWeight: 600 }}>{l.Police}</td><td style={DROITE}>{fcfa(l.Beneficiaires)}</td><td style={DROITE}>{fcfa(l.Actes)}</td><td style={DROITE}>{fcfa(l.Depenses)}</td>
+                <td style={DROITE}>{fcfa(l.CoutParBeneficiaire)}</td><td style={DROITE}>{l.ActesParBeneficiaire == null ? '-' : l.ActesParBeneficiaire.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</td>
+                <td style={DROITE}>{fcfa(l.CoutParActe)}</td><td style={{ ...DROITE, fontWeight: 700 }}>{l.Score.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
+                <td>{l.Alertes.length ? l.Alertes.map((a) => <StatusBadge key={a} label={a} color={a === 'Critique' ? 'rose' : 'amber'} />) : '-'}</td>
+              </tr>
+            ))}
+            {!(donnees?.Risque || []).length && <Vide colonnes={9} chargement={chargement} texte="Aucune dépense sur la période." />}
+          </tbody>
+        </table></div>
+      </Panneau>
+
+      <Panneau titre="Prestataires les plus sollicités">
+        <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
+          <thead><tr><th>Centre exécutant</th><th style={DROITE}>Bénéficiaires</th><th style={DROITE}>Actes</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Coût / acte</th></tr></thead>
+          <tbody>{(donnees?.Executants || []).map((c) => <tr key={c.Libelle}><td>{c.Libelle}</td><td style={DROITE}>{fcfa(c.Beneficiaires)}</td><td style={DROITE}>{fcfa(c.Actes)}</td><td style={DROITE}>{fcfa(c.Depenses)}</td><td style={DROITE}>{pourcent(c.Part)}</td><td style={DROITE}>{fcfa(c.CoutParActe)}</td></tr>)}</tbody>
+        </table></div>
+      </Panneau>
+    </>
+  );
 };
 
 // ------------------------------------------------------------------ synthèse
@@ -225,15 +403,7 @@ const FicheFamille = ({ fiche }) => {
           <TableSignaux signaux={signaux} />
         </Panneau>
       )}
-      <Panneau titre="Historique des prestations" actions={(
-        <button type="button" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-          onClick={() => exporter(`prestations-${fiche.MatriculeAssure}`, `Prestations de la famille ${fiche.MatriculeAssure}`, [
-            ['Numéro', (p) => p.Numero], ['Date de soins', (p) => dateFr(p.DateSoins)], ['Bénéficiaire', (p) => p.Beneficiaire], ['Famille', (p) => p.Famille], ['Acte', (p) => p.Acte],
-            ['Centre', (p) => p.Centre], ['Réclamé', (p) => p.Reclame], ['Base', (p) => p.Base], ['Ticket modérateur', (p) => p.TicketModerateur], ['Exclusion', (p) => p.Exclusion],
-            ['Dépassement', (p) => p.Depassement], ['Remboursé', (p) => p.Rembourse], ['Type', (p) => p.Type]], fiche.Prestations)}>
-          <FileSpreadsheet size={14} /> Excel
-        </button>
-      )}>
+      <Panneau titre="Historique des prestations">
         <div className="table-wrapper" style={{ maxHeight: 460, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
           <thead><tr><th>Soins</th><th>Bénéficiaire</th><th>Famille</th><th>Acte</th><th>Centre</th><th style={DROITE}>Réclamé</th><th style={DROITE}>Base</th><th style={DROITE}>TM</th><th style={DROITE}>Remboursé</th><th>Type</th></tr></thead>
           <tbody>
@@ -341,15 +511,7 @@ const OngletEntreprises = () => {
   const [donnees, chargement] = useLecture(() => consommationsApi.entreprises({}), []);
   const lignes = donnees?.Lignes || [];
   return (
-    <Panneau titre="Consommation par entreprise" actions={(
-      <button type="button" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-        onClick={() => exporter('consommations-entreprises', 'Consommation santé par entreprise', [
-          ['Police', (l) => l.Police], ['Garant', (l) => l.Garant], ['Effectif', (l) => l.Effectif], ['Assurés', (l) => l.Assures], ['Conjoints', (l) => l.Conjoints], ['Enfants', (l) => l.Enfants],
-          ['Consommants', (l) => l.Consommants], ['Taux de recours', (l) => pourcent(l.TauxRecours)], ['Prestations', (l) => l.Prestations], ['Réclamé', (l) => Math.round(l.Reclame)],
-          ['Remboursé', (l) => Math.round(l.Rembourse)], ['Coût par consommant', (l) => (l.CoutParConsommant === null ? '' : Math.round(l.CoutParConsommant))], ['Part', (l) => pourcent(l.Part)]], lignes)}>
-        <FileSpreadsheet size={14} /> Excel
-      </button>
-    )}>
+    <Panneau titre="Consommation par entreprise">
       <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
         <thead><tr><th>Police</th><th>Garant</th><th style={DROITE}>Effectif</th><th style={DROITE}>A / C / E</th><th style={DROITE}>Consommants</th><th style={DROITE}>Recours</th><th style={DROITE}>Prestations</th><th style={DROITE}>Remboursé</th><th style={DROITE}>Par consommant</th><th style={DROITE}>Part</th></tr></thead>
         <tbody>
@@ -542,6 +704,7 @@ const OngletImports = () => {
   const { success, error: toastError } = useToast();
   const [fichier, setFichier] = useState(null);
   const [situation, setSituation] = useState('');
+  const [exercice, setExercice] = useState('');
   const [analyse, setAnalyse] = useState(null);
   const [envoi, setEnvoi] = useState(false);
   const [donnees, chargement, recharger] = useLecture(() => consommationsApi.synthese({}), []);
@@ -549,14 +712,18 @@ const OngletImports = () => {
   const choisir = (e) => { setFichier(e.target.files?.[0] || null); setAnalyse(null); };
   const analyser = async () => {
     setEnvoi(true);
-    try { setAnalyse(await consommationsApi.analyser(fichier)); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
+    try { setAnalyse(await consommationsApi.analyser(fichier, exercice)); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
   };
   const importer = async () => {
-    if (!(await confirmer({ titre: 'Importer le relevé', message: `${fcfa(analyse.Nouvelles)} prestations nouvelles et ${fcfa(analyse.Effectif)} bénéficiaires d'effectif seront enregistrés. Les prestations déjà connues ne sont pas réécrites.`, confirmer: 'Importer' }))) return;
+    const message = analyse.Cotisations
+      ? `L'état des cotisations ${analyse.Exercice} (${fcfa(analyse.Cotisations)} entreprises) remplacera celui de cet exercice.`
+      : `${fcfa(analyse.Nouvelles)} prestations nouvelles et ${fcfa(analyse.Effectif)} bénéficiaires d'effectif seront enregistrés. Les prestations déjà connues ne sont pas réécrites.`;
+    if (!(await confirmer({ titre: 'Importer le fichier', message, confirmer: 'Importer' }))) return;
     setEnvoi(true);
     try {
-      const r = await consommationsApi.importer(fichier, situation);
-      success(`Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}.`);
+      const r = await consommationsApi.importer(fichier, situation, exercice);
+      success(r.Cotisations ? `État des cotisations ${r.Exercice} importé : ${fcfa(r.Cotisations)} entreprises.`
+        : `Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}.`);
       setAnalyse(null);
       setFichier(null);
       recharger();
@@ -571,12 +738,14 @@ const OngletImports = () => {
     <>
       <Panneau titre="Importer un fichier du gestionnaire">
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-          Relevé de prestations (colonne NUMERO_PREST) ou effectif (colonne MATBENEF) au format Excel, toutes feuilles lues. Les relevés sont cumulatifs :
+          Relevé de prestations (colonne NUMERO_PREST), effectif (colonne MATBENEF) ou état des cotisations (fichier ETAT, feuille des données par entreprise),
+          au format Excel, toutes feuilles lues. Les relevés sont cumulatifs :
           une prestation déjà importée n'est jamais réécrite et un montant changé est signalé. Une date de soins postérieure à la clôture, jour et mois inversés, est corrigée et la date du relevé conservée.
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Champ id="imp-fichier" libelle="Fichier Excel"><input id="imp-fichier" type="file" accept=".xlsx" className="form-control" onChange={choisir} /></Champ>
           <Champ id="imp-situation" libelle="Effectif à jour au"><input id="imp-situation" type="date" className="form-control" value={situation} onChange={(e) => setSituation(e.target.value)} /></Champ>
+          <Champ id="imp-exercice" libelle="Exercice de l'état"><input id="imp-exercice" type="number" min="2000" max="2100" className="form-control" style={{ maxWidth: 120 }} placeholder="d'après le nom" value={exercice} onChange={(e) => setExercice(e.target.value)} /></Champ>
           <button type="button" className="btn btn-secondary" disabled={!fichier || envoi} onClick={analyser} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             {envoi && !analyse ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Analyser
           </button>
@@ -584,7 +753,8 @@ const OngletImports = () => {
             {envoi ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} Importer
           </button>}
         </div>
-        <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>La date de l'effectif date la sortie des bénéficiaires absents du nouvel effectif ; laissée vide, la date du jour est retenue.</p>
+        <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>La date de l'effectif date la sortie des bénéficiaires absents du nouvel effectif ; laissée vide, la date du jour est retenue.
+          L'exercice d'un état des cotisations se lit dans le nom du fichier (ETAT 2026) ; saisissez-le s'il n'y figure pas.</p>
         {analyse && (
           <Grille min={170}>
             <Tuile libelle="Prestations lues" valeur={fcfa(analyse.Prestations)} detail={analyse.ClotureDu ? `clôtures du ${dateFr(analyse.ClotureDu)} au ${dateFr(analyse.ClotureAu)}` : ''} />
@@ -593,12 +763,13 @@ const OngletImports = () => {
             <Tuile libelle="Dates corrigées" valeur={fcfa(analyse.DatesCorrigees)} detail="jour et mois inversés" />
             <Tuile libelle="Effectif lu" valeur={fcfa(analyse.Effectif)} detail={analyse.Garants.join(', ')} />
             <Tuile libelle="Remboursé du fichier" valeur={montant(analyse.Rembourse)} />
+            {analyse.Cotisations > 0 && <Tuile libelle={`État des cotisations ${analyse.Exercice}`} valeur={`${fcfa(analyse.Cotisations)} entreprises`} detail={`provisions ${montant(analyse.Provisions)}`} />}
           </Grille>
         )}
         {analyse && (
           <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.8rem' }}>
             <thead><tr><th>Feuille</th><th>Nature</th><th style={DROITE}>Lignes</th></tr></thead>
-            <tbody>{analyse.Feuilles.map((f) => <tr key={f.Feuille}><td>{f.Feuille}</td><td>{f.Nature === 'EFFECTIF' ? 'Effectif' : 'Prestations'}</td><td style={DROITE}>{fcfa(f.Lignes)}</td></tr>)}</tbody>
+            <tbody>{analyse.Feuilles.map((f) => <tr key={f.Feuille}><td>{f.Feuille}</td><td>{NATURES[f.Nature] || f.Nature}</td><td style={DROITE}>{fcfa(f.Lignes)}</td></tr>)}</tbody>
           </table></div>
         )}
         {analyse?.ColonnesManquantes?.length > 0 && <p style={{ margin: 0, color: '#d97706', fontSize: '0.8rem' }}>Feuilles écartées, colonnes absentes : {analyse.ColonnesManquantes.join(' ; ')}</p>}
@@ -609,7 +780,7 @@ const OngletImports = () => {
           <tbody>
             {releves.map((r) => (
               <tr key={r.Id}>
-                <td>{dateFr(r.Date)}</td><td>{r.Fichier}</td><td>{r.Nature === 'EFFECTIF' ? 'Effectif' : 'Prestations'}</td><td>{r.Garants}</td>
+                <td>{dateFr(r.Date)}</td><td>{r.Fichier}</td><td>{NATURES[r.Nature] || r.Nature}</td><td>{r.Garants}</td>
                 <td>{r.ClotureDu ? `${dateFr(r.ClotureDu)} au ${dateFr(r.ClotureAu)}` : '-'}</td><td style={DROITE}>{fcfa(r.Lignes)}</td><td style={DROITE}>{fcfa(r.Nouvelles)}</td><td style={DROITE}>{fcfa(r.Modifiees)}</td><td>{r.Operateur}</td>
               </tr>
             ))}
@@ -623,7 +794,7 @@ const OngletImports = () => {
 
 // ------------------------------------------------------------------ page
 export default function ConsommationsSantePage() {
-  const [onglet, setOnglet] = useState('synthese');
+  const [onglet, setOnglet] = useState('tableau');
   const [matricule, setMatricule] = useState(null);
   const voirFraude = aLeDroit('consommations.fraude');
   const importer = aLeDroit('consommations.import');
@@ -639,6 +810,7 @@ export default function ConsommationsSantePage() {
         </p>
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
+        <Onglet actif={onglet === 'tableau'} onClick={() => changer('tableau')} icone={LayoutDashboard}>Tableau de bord</Onglet>
         <Onglet actif={onglet === 'synthese'} onClick={() => changer('synthese')} icone={BarChart3}>Synthèse</Onglet>
         <Onglet actif={onglet === 'fiche'} onClick={() => changer('fiche')} icone={UserSearch}>Fiche assuré</Onglet>
         <Onglet actif={onglet === 'plafonds'} onClick={() => changer('plafonds')} icone={Gauge}>Plafonds</Onglet>
@@ -647,6 +819,7 @@ export default function ConsommationsSantePage() {
         {voirFraude && <Onglet actif={onglet === 'fraude'} onClick={() => changer('fraude')} icone={ShieldAlert}>Fraude</Onglet>}
         {importer && <Onglet actif={onglet === 'imports'} onClick={() => changer('imports')} icone={Upload}>Imports</Onglet>}
       </div>
+      {onglet === 'tableau' && <OngletTableauDeBord />}
       {onglet === 'synthese' && <OngletSynthese />}
       {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} />}
       {onglet === 'plafonds' && <OngletPlafonds onOuvrir={ouvrirFiche} />}

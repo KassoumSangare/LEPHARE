@@ -1303,8 +1303,12 @@ const fichierConsommations = (fichier, champs = {}) => {
 const sansVide = (params) => Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
 
 export const consommationsApi = {
-  analyser: async (fichier) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
-  importer: async (fichier, situation) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
+  analyser: async (fichier, exercice) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier, { exercice }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
+  importer: async (fichier, situation, exercice) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation, exercice }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
+  // Tableau de bord (contrôle de gestion, dépenses, entreprises à risque), lien entreprise de l'état / police du gestionnaire, rapport Word (seul export)
+  tableauDeBord: async (params) => (await apiClient.get('/consommations/tableau-de-bord/', { params: sansVide(params), timeout: 120000 })).data,
+  lier: async (entreprise, police) => (await apiClient.post('/consommations/entreprises/lien/', { Entreprise: entreprise, Police: police })).data,
+  rapport: async (params) => apiClient.get('/consommations/rapport/', { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
   synthese: async (params) => (await apiClient.get('/consommations/synthese/', { params: sansVide(params) })).data,
   rechercher: async (q) => (await apiClient.get('/consommations/recherche/', { params: { q } })).data,
   famille: async (matricule) => (await apiClient.get(`/consommations/famille/${matricule}/`)).data,
@@ -1350,13 +1354,13 @@ export const mrhApi = {
   // POST /api/mrh/calcul/maison/
   calculerPrimeMaison: async (data) => (await apiClient.post('/mrh/calcul/maison/', data)).data,
   // POST /api/mrh/devis/
-  creerDevis: async (data) => (await apiClient.post('/mrh/devis/', data)).data,
+  creerDevis: async (data) => (await apiClient.post('/mrh/devis/', data, { timeout: 300000 })).data,
   // GET /api/mrh/devis/:id/
   getDevis: async (id) => (await apiClient.get(`/mrh/devis/${id}/`)).data,
   // PATCH /api/mrh/devis/:id/
   updateDevis: async (id, data) => (await apiClient.patch(`/mrh/devis/${id}/`, data)).data,
   // PUT /api/mrh/devis/:id/ - « Modifier » : en-tête + toutes les maisons recalculées d'un bloc
-  modifierDevis: async (id, data) => (await apiClient.put(`/mrh/devis/${id}/`, data)).data,
+  modifierDevis: async (id, data) => (await apiClient.put(`/mrh/devis/${id}/`, data, { timeout: 300000 })).data,
   // GET /api/mrh/devis/:id/maisons/ - maisons enregistrées (valeurs, options, garanties choisies)
   getMaisons: async (idDevis) => (await apiClient.get(`/mrh/devis/${idDevis}/maisons/`)).data,
   // POST /api/mrh/devis/accessoire/ - accessoire du barème pour une prime nette totale
