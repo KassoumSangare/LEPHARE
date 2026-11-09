@@ -89,6 +89,48 @@ class LectureDesRelevés(SimpleTestCase):
         with self.assertRaises(ErreurConsommation):
             lire_fichier(contenu)
 
+    def test_base_de_travail_avec_periode_lue_en_deux_effectifs(self):
+        """Base unifiée d'OREOLE : EXERCICE PRECEDENT = effectif de référence, EXERCICE ACTUEL = effectif courant ; DATE SORTIE au 02/01/1900 = vide."""
+        entete = ["SOURCE"] + ENTETE_EFFECTIF + ["DATE SORTIE", "PERIODE"]
+
+        def ligne(source, matricule, periode):
+            return [source, "OREOLE", "POLICE X", "OPTION 1", matricule, "N", "P", matricule, "N", "P", "A", dt.datetime(2020, 1, 1), dt.datetime(1990, 1, 1), "F",
+                    dt.datetime(1900, 1, 2), periode]
+        contenu = classeur([("BASE UNIFIEE", [entete, ligne("BASE EFFECTIF", 1, "EXERCICE PRECEDENT"), ligne("BASE EFFECTIF", 2, "EXERCICE PRECEDENT"),
+                                               ligne("OREOLE ET CGA", 2, "EXERCICE ACTUEL"), ligne("OREOLE ET CGA", 3, "EXERCICE ACTUEL"), ligne("AUTRE", 4, "")])])
+        from .consommations import _lire
+        _prestations, effectif, feuilles, _manquantes, _cotisations, precedent = _lire(contenu)
+        self.assertEqual(sorted(precedent), [1, 2])
+        self.assertEqual(sorted(effectif), [2, 3])
+        self.assertIsNone(effectif[3]["date_sortie"])
+        self.assertEqual(feuilles[0]["Nature"], "EFFECTIF_PERIODES")
+
+    def test_classeur_analyse_des_sortants(self):
+        """Classeur ANALYSE DES SORTANT d'OREOLE : BASE EFFECTIF PRECEDENT (en-têtes MATRICULE_BENEFICIAIRE / MATRICULE_ASSURE) = référence,
+        BASE EFFECTIF ACTUEL = effectif courant, tableau croisé TCD écarté."""
+        precedent = ["GARANT", "POLICE", "MATRICULE_ASSURE", "MATRICULE_BENEFICIAIRE", "NOM BENEFICIARE", "STATUT", "DATE EFFET", "DATE NAIS", "GENRE", "PERIODE"]
+        actuel = ["GARANT", "POLICE", "MATASSURE", "MATBENEF", "NOM BENEFICIARE", "STATUT", "DATE EFFET", "DATE NAIS", "GENRE", "DATE SORTIE", "PERIODE"]
+        contenu = classeur([
+            ("BASE EFFECTIF PRECEDENT", [precedent, ["OREOLE", "P1", 1, 1, "N", "A", None, None, "F", "EXERCICE PRECEDENT"],
+                                         ["OREOLE", "P1", 1, 2, "N", "E", None, None, "M", "EXERCICE PRECEDENT"]]),
+            ("BASE EFFECTIF ACTUEL", [actuel, ["OREOLE", "P1", 1, 1, "N", "A", None, None, "F", dt.datetime(1900, 1, 2), "EXERCICE ACTUEL"],
+                                      ["OREOLE", "P1", 1, 3, "N", "E", None, None, "F", dt.datetime(1900, 1, 2), "EXERCICE ACTUEL"]]),
+            ("TCD", [[None], [None], [None], ["POLICE", "MATBENEF", "STATUT", "EXERCICE ACTUEL", "EXERCICE PRECEDENT"], ["P1", 1, "A", 1, 1]]),
+        ])
+        from .consommations import _lire
+        _prestations, effectif, feuilles, manquantes, _cotisations, reference = _lire(contenu)
+        self.assertEqual(sorted(reference), [1, 2])
+        self.assertEqual(reference[2]["matricule_assure"], 1)
+        self.assertEqual(sorted(effectif), [1, 3])
+        self.assertTrue(all(e["date_sortie"] is None for e in effectif.values()))
+        self.assertEqual([m.split(" :")[0] for m in manquantes], ["TCD"])
+
+    def test_feuille_d_effectif_precedent_sans_colonne_periode(self):
+        contenu = classeur([("EFFECTIF PRECEDENT", [ENTETE_EFFECTIF, ["OREOLE", "P1", "OPTION 1", 5, "N", "P", 5, "N", "P", "A", None, None, "F"]])])
+        from .consommations import _lire
+        resultat = _lire(contenu)
+        self.assertEqual((list(resultat[1]), list(resultat[5]), resultat[2][0]["Nature"]), ([], [5], "EFFECTIF_PRECEDENT"))
+
     def test_colonne_obligatoire_absente_signalee(self):
         entete = [c for c in ENTETE_PRESTATIONS if c != "MT_REMBOURSE"]
         with self.assertRaisesRegex(ErreurConsommation, "MT_REMBOURSE"):

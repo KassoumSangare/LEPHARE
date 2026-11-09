@@ -57,7 +57,10 @@ COLONNES_PRESTATIONS = {
     "DEPASSEMENT": ("depassement", False), "MT_REMBOURSE": ("mt_rembourse", True),
 }
 COLONNES_EFFECTIF = {
-    "MATBENEF": ("matricule_beneficiaire", True), "MATASSURE": ("matricule_assure", True), "GARANT": ("garant", False), "POLICE": ("police", False),
+    "MATBENEF": ("matricule_beneficiaire", True), "MATASSURE": ("matricule_assure", True),
+    # en-têtes des relevés repris dans les effectifs d'OREOLE (ANALYSE DES SORTANT, feuille BASE EFFECTIF PRECEDENT)
+    "MATRICULE_BENEFICIAIRE": ("matricule_beneficiaire", False), "MATRICULE_ASSURE": ("matricule_assure", False),
+    "GARANT": ("garant", False), "POLICE": ("police", False),
     "COLLEGE": ("college", False), "NOM BENEFICIARE": ("nom", False), "NOM BENEFICIAIRE": ("nom", False), "PRENOM BENEFICIAIRE": ("prenoms", False),
     "STATUT": ("statut", True), "GENRE": ("genre", False), "DATE NAIS": ("date_naissance", False), "DATE EFFET": ("date_effet", False),
     "DATE SORTIE": ("date_sortie", False),
@@ -166,7 +169,7 @@ def _feuilles(contenu):
             except StopIteration:
                 break
             noms = [normaliser(v) for v in ligne]
-            if "NUMERO_PREST" in noms or "MATBENEF" in noms or _est_cotisations(noms):
+            if "NUMERO_PREST" in noms or "MATBENEF" in noms or "MATRICULE_BENEFICIAIRE" in noms or _est_cotisations(noms):
                 tete = noms
                 break
         if not tete:
@@ -174,9 +177,17 @@ def _feuilles(contenu):
         if _est_cotisations(tete):
             yield feuille.title, "COTISATIONS", tete, lignes
             continue
-        # Bases de travail d'OREOLE (BASE UNIFIEE, SORTIS) : colonne SOURCE ajoutée, plusieurs périodes mêlées et sorties non datées ;
-        # ce ne sont pas des effectifs du gestionnaire, elles sont ignorées
-        nature = "PRESTATIONS" if "NUMERO_PREST" in tete else ("EFFECTIF" if "SOURCE" not in tete else None)
+        # Effectifs des analyses d'OREOLE (BASE UNIFIEE, BASE EFFECTIF PRECEDENT / ACTUEL de l'ANALYSE DES SORTANT) : avec la colonne PERIODE,
+        # les lignes EXERCICE PRECEDENT forment l'effectif de référence des mouvements et les lignes EXERCICE ACTUEL l'effectif courant ; une
+        # feuille d'effectif nommée « ... PRECEDENT » est l'effectif de référence ; une base de travail (colonne SOURCE) sans PERIODE est ignorée
+        if "NUMERO_PREST" in tete:
+            nature = "PRESTATIONS"
+        elif "PERIODE" in tete:
+            nature = "EFFECTIF_PERIODES"
+        elif "SOURCE" in tete:
+            nature = None
+        else:
+            nature = "EFFECTIF_PRECEDENT" if "PRECEDENT" in normaliser(feuille.title) else "EFFECTIF"
         if nature:
             yield feuille.title, nature, tete, lignes
 
@@ -221,7 +232,9 @@ def _convertir(tete, ligne, colonnes):
     sortie = {}
     for cle, valeur in brut.items():
         if cle in DATES:
-            sortie[cle] = lire_date(valeur)
+            # 1900 et avant : cellule vide ou zéro d'Excel (DATE SORTIE au 02/01/1900 des bases d'OREOLE), pas une date
+            jour = lire_date(valeur)
+            sortie[cle] = jour if jour and jour.year > 1900 else None
         elif cle in MONTANTS:
             sortie[cle] = lire_montant(valeur)
         elif cle in ENTIERS:
@@ -237,8 +250,8 @@ def lire_fichier(contenu):
 
 
 def _lire(contenu):
-    """Prestations, effectif, feuilles, colonnes manquantes et état des cotisations du classeur ; aucune écriture."""
-    prestations, effectif, feuilles, manquantes, cotisations = {}, {}, [], [], []
+    """Prestations, effectif, feuilles, colonnes manquantes, état des cotisations et effectif de l'exercice précédent du classeur ; aucune écriture."""
+    prestations, effectif, feuilles, manquantes, cotisations, precedent = {}, {}, [], [], [], {}
     for titre, nature, tete, lignes in _feuilles(contenu):
         if nature == "COTISATIONS":
             lues = _lire_cotisations(tete, lignes)
@@ -250,11 +263,14 @@ def _lire(contenu):
             feuilles.append({"Feuille": titre, "Nature": nature, "Lignes": len(lues)})
             continue
         colonnes = COLONNES_PRESTATIONS if nature == "PRESTATIONS" else COLONNES_EFFECTIF
-        absentes = [nom for nom, (_c, obligatoire) in colonnes.items() if obligatoire and nom not in tete]
+        # colonne obligatoire : présente sous l'un de ses noms (MATBENEF ou MATRICULE_BENEFICIAIRE...)
+        absentes = [nom for nom, (champ, obligatoire) in colonnes.items()
+                    if obligatoire and not any(autre in tete for autre, (champ_autre, _o) in colonnes.items() if champ_autre == champ)]
         if absentes:
             manquantes.append(f"{titre} : {', '.join(absentes)}")
             continue
         nombre = 0
+        periode = tete.index("PERIODE") if nature == "EFFECTIF_PERIODES" else None
         for ligne in lignes:
             l = _convertir(tete, ligne, colonnes)
             if nature == "PRESTATIONS":
@@ -267,14 +283,20 @@ def _lire(contenu):
             else:
                 if not l.get("matricule_beneficiaire"):
                     continue
-                effectif.setdefault(l["matricule_beneficiaire"], l)
+                cible = precedent if nature == "EFFECTIF_PRECEDENT" else effectif
+                if periode is not None:
+                    exercice_ligne = normaliser(ligne[periode] if periode < len(ligne) else "")
+                    cible = precedent if "PRECEDENT" in exercice_ligne else effectif if "ACTUEL" in exercice_ligne else None
+                    if cible is None:
+                        continue
+                cible.setdefault(l["matricule_beneficiaire"], l)
             nombre += 1
         feuilles.append({"Feuille": titre, "Nature": nature, "Lignes": nombre})
     if not feuilles:
         raise ErreurConsommation("Aucune feuille reconnue : il faut un relevé de prestations (colonne NUMERO_PREST), un effectif du gestionnaire "
                                  "(colonne MATBENEF) ou l'état des cotisations (colonnes ENTREPRISES, COTISATIONS SANTE PURE, PROVISIONS POUR PAIEMENT)."
                                  + (f" Colonnes obligatoires absentes : {' ; '.join(manquantes)}." if manquantes else ""))
-    return prestations, effectif, feuilles, manquantes, cotisations
+    return prestations, effectif, feuilles, manquantes, cotisations, precedent
 
 
 def exercice_du_fichier(nom_fichier, prestations=None):
@@ -287,7 +309,7 @@ def exercice_du_fichier(nom_fichier, prestations=None):
 
 
 def analyser(contenu, cursor, nom_fichier="", exercice=None):
-    prestations, effectif, feuilles, manquantes, cotisations = _lire(contenu)
+    prestations, effectif, feuilles, manquantes, cotisations, precedent = _lire(contenu)
     connues, ecarts = set(), 0
     if prestations:
         cursor.execute("SELECT numero_prest, mt_reclame, mt_rembourse FROM lephare_sante_prestation WHERE numero_prest = ANY(%s)", [list(prestations)])
@@ -300,12 +322,13 @@ def analyser(contenu, cursor, nom_fichier="", exercice=None):
     return {
         "Feuilles": feuilles, "ColonnesManquantes": manquantes, "Prestations": len(prestations), "Nouvelles": len(prestations) - len(connues), "Connues": len(connues),
         "MontantsChanges": ecarts, "DatesCorrigees": sum(1 for p in prestations.values() if p.get("date_soins_retenue") != p.get("date_soins")),
-        "Effectif": len(effectif), "SortisDates": sum(1 for e in effectif.values() if e.get("date_sortie")), "Garants": sorted({p.get("garant", "") for p in prestations.values()} | {e.get("garant", "") for e in effectif.values()} - {""}),
+        "Effectif": len(effectif), "SortisDates": sum(1 for e in effectif.values() if e.get("date_sortie")), "EffectifPrecedent": len(precedent),
+        "Garants": sorted({p.get("garant", "") for p in prestations.values()} | {e.get("garant", "") for e in (*effectif.values(), *precedent.values())} - {""}),
         "ClotureDu": _iso(min(clotures)) if clotures else None, "ClotureAu": _iso(max(clotures)) if clotures else None,
         "Rembourse": _nombre(sum((p.get("mt_rembourse", ZERO) for p in prestations.values()), ZERO)),
         "Cotisations": len(cotisations), "Exercice": int(exercice or exercice_du_fichier(nom_fichier, prestations)),
         "Provisions": _nombre(sum((c["provision"] for c in cotisations), ZERO)),
-    }, prestations, effectif, cotisations
+    }, prestations, effectif, cotisations, precedent
 
 
 CHAMPS_PRESTATION = ["numero_prest", "date_cloture", "numero_garant", "garant", "souscripteur", "npol", "police", "college", "matricule_beneficiaire", "beneficiaire",
@@ -325,20 +348,57 @@ def _valeur(l, champ):
     return v
 
 
+def _situations_disponibles(cursor):
+    """Migration production 0216 appliquée : effectifs gardés à leur date de situation (mouvements de l'effectif)."""
+    cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
+    return bool(cursor.fetchone()[0])
+
+
+def _nouveau_releve(cursor, user, nature, fichier, garants, lignes, resume=None, situation=None):
+    resume = resume or {}
+    colonnes = ["nature", "fichier", "garants", "lignes", "nouvelles", "connues", "modifiees", "dates_corrigees", "cloture_du", "cloture_au", "idoperateur", "operateur"]
+    operateur = ((user.get_full_name() if hasattr(user, "get_full_name") else "") or getattr(user, "email", "") or "")[:150]
+    valeurs = [nature, (fichier or "")[:255], ", ".join(garants)[:150], lignes, resume.get("Nouvelles", 0), resume.get("Connues", 0), resume.get("MontantsChanges", 0),
+               resume.get("DatesCorrigees", 0), resume.get("ClotureDu"), resume.get("ClotureAu"), getattr(user, "id", None), operateur]
+    if situation:
+        colonnes.append("situation")
+        valeurs.append(situation)
+    cursor.execute(f"INSERT INTO lephare_sante_releve ({', '.join(colonnes)}) VALUES ({', '.join(['%s'] * len(colonnes))}) RETURNING idreleve", valeurs)
+    return cursor.fetchone()[0]
+
+
+def _photographier(cursor, id_releve, effectif):
+    """Bénéficiaires d'un effectif importé, gardés à sa date de situation : effectif de référence des mouvements d'une période."""
+    cursor.executemany(
+        """INSERT INTO lephare_sante_effectif_situation (idreleve, matricule_beneficiaire, matricule_assure, garant, police, statut)
+           VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+        [[id_releve, m, e.get("matricule_assure"), _valeur(e, "garant"), _valeur(e, "police"), _valeur(e, "statut")] for m, e in effectif.items()])
+
+
 def importer(contenu, nom_fichier, user, situation=None, exercice=None):
     """Import idempotent : prestation connue jamais réécrite (écart noté), effectif mis à jour. situation : date de l'effectif, datant les sorties.
-    État des cotisations : il remplace celui de son exercice."""
+    Chaque effectif est aussi gardé à sa date de situation (mouvements de l'effectif du rapport) ; un effectif plus ancien que l'effectif courant
+    ne le modifie pas, il sert seulement de référence. Effectif de l'exercice précédent d'une base de travail d'OREOLE : situé au 31/12 de l'année
+    précédente. État des cotisations : il remplace celui de son exercice."""
+    situation = situation or dt.date.today()
     with transaction.atomic(), connection.cursor() as cursor:
-        resume, prestations, effectif, cotisations = analyser(contenu, cursor, nom_fichier, exercice)
-        nature = "PRESTATIONS" if prestations else ("EFFECTIF" if effectif else "COTISATIONS")
-        operateur = ((user.get_full_name() if hasattr(user, "get_full_name") else "") or getattr(user, "email", "") or "")[:150]
-        cursor.execute(
-            """INSERT INTO lephare_sante_releve (nature, fichier, garants, lignes, nouvelles, connues, modifiees, dates_corrigees, cloture_du, cloture_au, idoperateur, operateur)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING idreleve""",
-            [nature, (nom_fichier or "")[:255], ", ".join(resume["Garants"])[:150], resume["Prestations"] or resume["Effectif"] or resume["Cotisations"], resume["Nouvelles"], resume["Connues"],
-             resume["MontantsChanges"], resume["DatesCorrigees"], resume["ClotureDu"], resume["ClotureAu"], getattr(user, "id", None), operateur],
-        )
-        id_releve = cursor.fetchone()[0]
+        resume, prestations, effectif, cotisations, precedent = analyser(contenu, cursor, nom_fichier, exercice)
+        avec_situations = _situations_disponibles(cursor)
+        if (effectif or precedent) and not avec_situations:
+            raise ErreurConsommation("Base de données à mettre à jour avant d'importer un effectif : migration production 0216 (mouvements de l'effectif).")
+        nature = "PRESTATIONS" if prestations else ("EFFECTIF" if effectif or precedent else "COTISATIONS")
+        date_precedent = dt.date(situation.year - 1, 12, 31)
+        seul_precedent = bool(precedent) and not (prestations or effectif or cotisations)
+        id_releve = _nouveau_releve(
+            cursor, user, nature, f"{nom_fichier or ''} - exercice précédent" if seul_precedent else nom_fichier, resume["Garants"],
+            len(precedent) if seul_precedent else resume["Prestations"] or resume["Effectif"] or resume["Cotisations"], resume,
+            date_precedent if seul_precedent else situation if effectif else None)
+        if precedent:
+            garants = sorted({e.get("garant", "") for e in precedent.values()} - {""})
+            id_precedent = id_releve if seul_precedent else _nouveau_releve(cursor, user, "EFFECTIF", f"{nom_fichier or ''} - exercice précédent", garants,
+                                                                            len(precedent), situation=date_precedent)
+            _photographier(cursor, id_precedent, precedent)
+            resume["EffectifPrecedent"], resume["SituationPrecedent"] = len(precedent), _iso(date_precedent)
         if prestations:
             cursor.execute("SELECT numero_prest, mt_reclame, mt_rembourse, base_decomptee FROM lephare_sante_prestation WHERE numero_prest = ANY(%s)", [list(prestations)])
             for num, reclame, rembourse, base in cursor.fetchall():
@@ -351,6 +411,16 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
             marques = ", ".join(["%s"] * (len(CHAMPS_PRESTATION) + 1))
             cursor.executemany(f"INSERT INTO lephare_sante_prestation ({colonnes}) VALUES ({marques}) ON CONFLICT (numero_prest) DO NOTHING",
                                [[_valeur(p, c) for c in CHAMPS_PRESTATION] + [id_releve] for p in prestations.values()])
+        if effectif:
+            _photographier(cursor, id_releve, effectif)
+            cursor.execute("""SELECT max(COALESCE(r.situation, r.dateimport::date)) FROM lephare_sante_effectif e
+                              JOIN lephare_sante_releve r ON r.idreleve = e.idreleve WHERE e.garant = ANY(%s)""",
+                           [sorted({_valeur(e, "garant") for e in effectif.values()})])
+            courant = cursor.fetchone()[0]
+            if courant and situation < courant:
+                # Effectif plus ancien que l'effectif courant (exercice précédent importé après coup) : référence des mouvements seulement
+                resume["Sorties"], resume["Anterieur"] = 0, _iso(courant)
+                effectif = {}
         if effectif:
             # Une ligne portant une DATE SORTIE est un bénéficiaire sorti à cette date ; les autres sont actifs
             colonnes = ", ".join(CHAMPS_EFFECTIF + ["actif", "date_sortie", "idreleve"])
@@ -369,7 +439,7 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
                 absents = list(actifs - presents)
                 if absents and len(presents & actifs) >= len(actifs) / 2:
                     cursor.execute("UPDATE lephare_sante_effectif SET actif = FALSE, date_sortie = %s, datemaj = now() WHERE matricule_beneficiaire = ANY(%s)",
-                                   [situation or dt.date.today(), absents])
+                                   [situation, absents])
                     sorties += len(absents)
             resume["Sorties"] = sorties
         if cotisations:
@@ -746,7 +816,7 @@ def synthese(params):
                        for k, v in sorted(par_police.items(), key=lambda kv: -kv[1]["montant"])[:10]],
         "Releves": [{"Id": r["idreleve"], "Nature": r["nature"], "Fichier": r["fichier"], "Garants": r["garants"], "Lignes": r["lignes"], "Nouvelles": r["nouvelles"],
                      "Connues": r["connues"], "Modifiees": r["modifiees"], "DatesCorrigees": r["dates_corrigees"], "ClotureDu": _iso(r["cloture_du"]), "ClotureAu": _iso(r["cloture_au"]),
-                     "Operateur": r["operateur"], "Date": _iso(r["dateimport"])} for r in releves],
+                     "Operateur": r["operateur"], "Date": _iso(r["dateimport"]), "Situation": _iso(r.get("situation"))} for r in releves],
     }
 
 

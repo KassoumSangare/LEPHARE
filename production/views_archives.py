@@ -24,20 +24,31 @@ def _erreur(message, code=status.HTTP_400_BAD_REQUEST):
 
 
 def _restaurer_client(pk):
+    """Le client restauré revient dans la liste des clients (statut autre que « A ») : avec son statut d'avant l'archivage s'il est connu,
+    sinon « V ». Sa clé anti-doublon est recalculée par trg_clients_cle_unique ; si une autre fiche porte déjà la même identité (même CNI,
+    ou mêmes nom, prénoms et naissance), la fiche restaurée reçoit une clé propre à son identifiant, comme à l'émission d'un contrat sur une
+    fiche archivée (customer 0017), au lieu d'être refusée (demande du 2026-11-09 : « les clients restaurés vont dans la liste »)."""
     with connection.cursor() as cursor:
-        cursor.execute("SELECT statut FROM stdclient WHERE idclient = %s", [pk])
+        cursor.execute("""SELECT c.statut, n.statut_avant FROM stdclient c LEFT JOIN lephare_client_nettoyage n ON n.idclient = c.idclient
+                          WHERE c.idclient = %s""", [pk])
         ligne = cursor.fetchone()
         if not ligne:
             return _erreur("Client introuvable.", status.HTTP_404_NOT_FOUND)
         if (ligne[0] or "").strip() != STATUT_CLIENT_ARCHIVE:
             return _erreur("Ce client n'est pas archivé.")
+        statut = (ligne[1] or "").strip()
+        statut = statut if statut and statut != STATUT_CLIENT_ARCHIVE else STATUT_CLIENT_ACTIF
+        message = "Il figure de nouveau dans la liste des clients."
         try:
-            # Point de sauvegarde : un doublon refusé par la base n'interrompt pas la transaction de la requête
+            # Point de sauvegarde : une clé déjà prise n'interrompt pas la transaction de la requête
             with transaction.atomic():
-                cursor.execute("UPDATE stdclient SET statut = %s WHERE idclient = %s", [STATUT_CLIENT_ACTIF, pk])
+                cursor.execute("UPDATE stdclient SET statut = %s WHERE idclient = %s", [statut, pk])
         except IntegrityError:
-            return _erreur("Une fiche active existe déjà pour ce client : celle-ci ne peut pas être restaurée en double.", status.HTTP_409_CONFLICT)
-    return Response({"Type": "client", "Id": pk, "Message": "Client restauré."})
+            with transaction.atomic():
+                cursor.execute("UPDATE stdclient SET statut = %s, cle_unique = 'CLIENT-' || idclient WHERE idclient = %s", [statut, pk])
+            message += (" Une autre fiche porte la même identité (CNI, ou nom, prénoms et date de naissance) : vérifiez s'il s'agit de la même "
+                        "personne avant d'établir un devis.")
+    return Response({"Type": "client", "Id": pk, "Message": message})
 
 
 def _restaurer_sinistre(pk):

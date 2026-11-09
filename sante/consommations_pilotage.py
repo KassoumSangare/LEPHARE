@@ -31,7 +31,7 @@ from .consommations import ErreurConsommation, SEUIL_ALERTE_PROVISION, _iso, _no
 ZERO = Decimal("0")
 MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 TRANCHES = [(0, 7, "0-7 ans"), (8, 11, "8-11 ans"), (12, 15, "12-15 ans"), (16, 18, "16-18 ans"), (19, 21, "19-21 ans"), (22, 25, "22-25 ans"),
-            (26, 30, "26-30 ans"), (31, 40, "31-40 ans"), (41, 55, "41-55 ans"), (56, 200, "56 et plus")]
+            (26, 30, "26-30 ans"), (31, 40, "31-40 ans"), (41, 55, "41-55 ans"), (56, 200, "56 ans et plus")]
 STATUTS = {"A": "Assuré principal", "C": "Conjoint", "E": "Enfant"}
 GENRES = {"M": "Masculin", "F": "Féminin"}
 GENERIQUES = {"POUR", "COMPTE", "SARL", "SA", "ET", "DE", "DU", "LES", "LA", "LE", "DES", "EN"}
@@ -51,6 +51,13 @@ def tranche(age):
     if age is None:
         return "Non renseigné"
     return next((libelle for bas, haut, libelle in TRANCHES if bas <= age <= haut), "Non renseigné")
+
+
+def ordre_des_tranches(groupes):
+    """Répartition par tranche d'âge dans l'ordre croissant des âges (0-7 ans d'abord), « Non renseigné » en dernier (critique d'OREOLE du
+    2026-11-09 : ordre chronologique, pas l'ordre des dépenses)."""
+    ordre = [t[2] for t in TRANCHES] + ["Non renseigné"]
+    return sorted(groupes, key=lambda g: ordre.index(g["Libelle"]) if g["Libelle"] in ordre else len(ordre))
 
 
 def _div(a, b):
@@ -122,6 +129,69 @@ def charger(cursor, du, au, garant=""):
         cond_eff, val_eff = "garant = %s", [garant]
     effectif = _lignes(cursor, f"SELECT * FROM lephare_sante_effectif WHERE {cond_eff}", val_eff)
     return prestations, effectif
+
+
+def effectif_de_reference(cursor, du, garant=""):
+    """Effectif de référence des mouvements d'une période : pour chaque garant, le dernier effectif importé dont la date de situation précède le
+    début de la période (l'effectif de l'exercice précédent pour un exercice entier). Renvoie ({matricule: ligne}, date de situation), ou
+    (None, None) sans effectif antérieur ou avant la migration production 0216."""
+    cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
+    if not cursor.fetchone()[0]:
+        return None, None
+    condition, valeurs = "r.situation < %s", [du]
+    if garant:
+        condition += " AND s.garant = %s"
+        valeurs.append(garant)
+    lignes = _lignes(cursor, f"""
+        WITH dernier AS (
+            SELECT DISTINCT ON (s.garant) s.garant, s.idreleve, r.situation
+            FROM lephare_sante_effectif_situation s JOIN lephare_sante_releve r ON r.idreleve = s.idreleve
+            WHERE {condition}
+            ORDER BY s.garant, r.situation DESC, s.idreleve DESC)
+        SELECT s.matricule_beneficiaire, s.garant, s.police, s.statut, d.situation
+        FROM dernier d JOIN lephare_sante_effectif_situation s ON s.idreleve = d.idreleve AND s.garant = d.garant""", valeurs)
+    if not lignes:
+        return None, None
+    return {l["matricule_beneficiaire"]: l for l in lignes}, max(l["situation"] for l in lignes)
+
+
+def date_effectif(cursor):
+    """Date de situation de l'effectif courant : la plus récente des imports qui l'ont mis à jour (date d'import avant la migration 0216)."""
+    cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
+    situation = "COALESCE(r.situation, r.dateimport::date)" if cursor.fetchone()[0] else "r.dateimport::date"
+    cursor.execute(f"""SELECT max({situation}) FROM lephare_sante_releve r
+                       WHERE r.idreleve IN (SELECT DISTINCT idreleve FROM lephare_sante_effectif WHERE actif)""")
+    return cursor.fetchone()[0]
+
+
+def mouvements_effectif(effectif, reference, du, au):
+    """Mouvements de l'effectif par police : effectif de référence, sortants, maintenus, nouveaux entrants, effectif actuel.
+    Avec un effectif de référence, comparaison des deux effectifs comme l'analyse d'OREOLE du premier semestre 2026 : sortant = dans la
+    référence et plus actif, nouvel entrant = actif absent de la référence, maintenu = dans les deux. Sans référence : date d'effet dans la
+    période = nouvel entrant, sortie datée dans la période = sortant."""
+    actifs = {e["matricule_beneficiaire"]: e for e in effectif if e["actif"]}
+    par_police = defaultdict(lambda: {"Reference": 0, "Sortants": 0, "Maintenus": 0, "Nouveaux": 0, "Effectif": 0})
+    if reference is not None:
+        for matricule, e in actifs.items():
+            x = par_police[e["police"]]
+            x["Effectif"] += 1
+            x["Maintenus" if matricule in reference else "Nouveaux"] += 1
+        for matricule, r in reference.items():
+            x = par_police[r["police"]]
+            x["Reference"] += 1
+            if matricule not in actifs:
+                x["Sortants"] += 1
+    else:
+        for e in effectif:
+            x = par_police[e["police"]]
+            if e["actif"]:
+                x["Effectif"] += 1
+                x["Nouveaux" if e.get("date_effet") and e["date_effet"] >= du else "Maintenus"] += 1
+            elif e.get("date_sortie") and du <= e["date_sortie"] <= au:
+                x["Sortants"] += 1
+        for x in par_police.values():
+            x["Reference"] = x["Maintenus"] + x["Sortants"]
+    return {police: x for police, x in par_police.items() if any(x.values())}
 
 
 def repartition(prestations, cle):

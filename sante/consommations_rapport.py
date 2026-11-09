@@ -3,20 +3,34 @@ Rapport d'analyse des dépenses santé (Word), seul export du suivi des consomma
 puisse être exporté » ; modèle : RAPPORT OREOLE SANTE 2026.docx). Gabarit : sante/modeles/rapport_consommations.docx (en-tête, logo et pied de
 page du modèle, corps vidé). Plan du modèle : I. effectifs, II. dépenses, III. entreprises à risque et leurs fiches ; IV. contrôle de gestion
 (provision face à la consommation, feuille CONTRÔLE DE GESTION de l'ETAT) quand l'état des cotisations est importé.
+
+Critiques d'OREOLE du 2026-11-09 :
+- mise en forme : Arial Narrow 12 points dans tout le corps du document (en-tête et pied de page du gabarit inchangés), informations des
+  tableaux centrées, espace entre les tableaux, titres, en-têtes et totaux des tableaux en gras sur le bleu ciel du modèle d'OREOLE (DCE6F1) ;
+  toutes les pages en portrait (consigne de l'utilisateur du 2026-11-09) : un tableau trop large pour la page est coupé en tableaux successifs,
+  première colonne répétée, sous le même numéro (« suite ») ;
+- souscripteur des familles : colonne SOUSCRIPTEUR du relevé, et non la police ; police des particuliers : l'assuré principal ;
+- tranches d'âge dans l'ordre des âges, 0-7 ans en premier, toujours suivies de « ans » (tableau 14 compris) ;
+- effectif consolidé : sortants, maintenus et nouveaux entrants comptés par comparaison avec l'effectif de l'exercice précédent.
+Deuxième envoi du 2026-11-09 (avec le classeur ANALYSE DES SORTANT et le modèle Word) : intitulés des tableaux sur une ligne à part, sans
+fond ; statuts désignés par « Assuré », « Conjoint(e) », « Enfant », jamais par les lettres ; tableau 2 aux colonnes du modèle (maintenus,
+sortants, nouveaux, effectif de l'exercice) ; libellés des répartitions et « Total général » du modèle ; tableau croisé famille de prestation
+par tranche d'âge, dépenses et actes, aussi dans chaque fiche d'entreprise.
 Calculs : consommations_pilotage.py. Données de santé : réservé au droit consommations.view, chaque export est inscrit au journal d'audit.
 """
 
 import io
 import os
+import re
 from collections import defaultdict
 from decimal import Decimal
 
 from docx import Document
-from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Twips
 
 from django.db import connection
 from django.http import HttpResponse
@@ -26,113 +40,365 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from autorisations.journal import journaliser
 from production.renouvellement import AUTHENTIFICATION
 
-from .consommations import ErreurConsommation, _reponse
-from .consommations_pilotage import (MOIS, STATUTS, GENRES, TRANCHES, _age, _div, _periode, charger, entreprises_a_risque,
-                                     indicateurs, repartition, tableau_de_bord, tranche)
+from .consommations import ErreurConsommation, _reponse, normaliser
+from .consommations_pilotage import (MOIS, GENRES, TRANCHES, _age, _div, _periode, charger, date_effectif, effectif_de_reference,
+                                     entreprises_a_risque, indicateurs, mouvements_effectif, ordre_des_tranches, repartition, tableau_de_bord, tranche)
 
 GABARIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modeles", "rapport_consommations.docx")
 ZERO = Decimal("0")
-BLEU = RGBColor(0x1F, 0x3A, 0x68)
+POLICE = "Arial Narrow"
+TAILLE = Pt(12)
+BLEU_CIEL = "DCE6F1"                          # en-têtes et totaux des tableaux du modèle RAPPORT OREOLE SANTE 2026
+BLEU_TITRE = RGBColor(0x36, 0x5F, 0x91)       # titres des parties du modèle
+BLEU_SOUS_TITRE = RGBColor(0x4F, 0x81, 0xBD)  # sous-titres du modèle
+INSECABLE = " "
+MARGE_CELLULE = 40                            # marge gauche et droite du texte d'une cellule (twips, 0,7 mm)
+LARGEUR_SOUHAITEE_MAX = 4800                  # largeur souhaitée au plus pour une colonne de texte long (twips, 8,5 cm)
 FICHES_MAX = 5
+# Polices du gestionnaire qui regroupent des contrats individuels (ETAT des cotisations : « OREOLE SANTE/ PARTICULIERS ») : le relevé y donne le
+# nom de la police comme souscripteur
+POLICES_PARTICULIERS = {"OREOLE SANTE", "OREOLE SANTE PLUS"}
+TOTAL = "Total général"  # libellé des lignes de total du modèle
+# Une seule désignation des statuts dans tout le rapport, les appellations et jamais les lettres A, C, E (critique d'OREOLE du 2026-11-09,
+# 2e envoi : « retenir une seule méthode de désignation... sans utiliser les deux simultanément »)
+STATUTS_RAPPORT = {"A": "Assuré", "C": "Conjoint(e)", "E": "Enfant"}
+ORDRE_STATUTS = ["Assuré", "Conjoint(e)", "Enfant", "Non renseigné"]
+
+
+def _statut(code):
+    return STATUTS_RAPPORT.get((code or "").strip().upper(), "Non renseigné")
+
+
+def _ordre_statuts(groupes):
+    return sorted(groupes, key=lambda g: ORDRE_STATUTS.index(g["Libelle"]) if g["Libelle"] in ORDRE_STATUTS else len(ORDRE_STATUTS))
 
 
 def _f(v):
+    """Montant ou nombre, milliers séparés par une espace ; la largeur des colonnes garde chaque nombre sur une ligne (_mots)."""
     if v is None:
         return "-"
     return f"{round(float(v)):,}".replace(",", " ")
 
 
 def _p(v):
-    return "-" if v is None else f"{float(v) * 100:.2f} %".replace(".", ",")
+    return "-" if v is None else f"{float(v) * 100:.2f}{INSECABLE}%".replace(".", ",")
+
+
+def _ans(v):
+    return "-" if v is None else f"{round(v)}{INSECABLE}ans"
 
 
 def _d(jour):
     return jour.strftime("%d/%m/%Y") if jour else ""
 
 
+def _moyenne(valeurs):
+    return sum(valeurs) / len(valeurs) if valeurs else None
+
+
+# Chasses d'Arial Narrow, normal et gras, en millièmes de cadratin (ARIALN.TTF et ARIALNB.TTF de Windows, arrondies au-dessus). En gras,
+# l'espace insécable est deux fois plus large que l'espace : un total « 14 113 772 » à espaces insécables déborderait d'une colonne calculée
+# avec l'espace ordinaire (relevé du 2026-11-09)
+_CARACTERES = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~ àâäçéèêëîïôöùûüÿœÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŒ°«»’–"
+_NORMAL = [228, 228, 291, 456, 456, 729, 547, 157, 273, 273, 319, 479, 228, 273, 228, 228, 456, 456, 456, 456, 456, 456, 456, 456, 456, 456, 228, 228, 479, 479, 479,
+           456, 832, 547, 547, 592, 592, 547, 501, 638, 592, 228, 410, 547, 456, 683, 592, 638, 547, 638, 592, 547, 501, 592, 547, 774, 547, 547, 501, 228, 228,
+           228, 385, 456, 273, 456, 456, 410, 456, 456, 228, 456, 456, 182, 182, 410, 182, 683, 456, 456, 456, 456, 273, 410, 228, 456, 410, 592, 410, 410, 410,
+           274, 213, 274, 479, 228, 456, 456, 456, 410, 456, 456, 456, 456, 228, 228, 456, 456, 456, 456, 456, 410, 774, 547, 547, 547, 592, 547, 547, 547, 547,
+           228, 228, 638, 638, 592, 592, 592, 820, 400, 456, 456, 182, 456]
+_GRAS = [228, 273, 389, 456, 456, 729, 592, 195, 273, 273, 319, 479, 228, 273, 228, 228, 456, 456, 456, 456, 456, 456, 456, 456, 456, 456, 273, 273, 479, 479, 479,
+         501, 800, 592, 592, 592, 592, 547, 501, 638, 592, 228, 456, 592, 501, 683, 592, 638, 547, 638, 592, 547, 501, 592, 547, 774, 547, 547, 501, 273, 228,
+         273, 479, 456, 273, 456, 501, 456, 501, 456, 273, 501, 501, 228, 228, 456, 228, 729, 501, 501, 501, 501, 319, 456, 273, 501, 456, 638, 456, 456, 410,
+         319, 230, 319, 479, 456, 456, 456, 456, 456, 456, 456, 456, 456, 228, 228, 501, 501, 501, 501, 501, 456, 774, 592, 592, 592, 592, 547, 547, 547, 547,
+         228, 228, 638, 638, 592, 592, 592, 820, 400, 456, 456, 228, 456]
+CHASSES = {c: (n, g) for c, n, g in zip(_CARACTERES, _NORMAL, _GRAS)}
+CHASSE_INCONNUE = 840  # caractère hors table : un peu plus que le plus large de la police
+
+
+def _chasse(texte, gras=False):
+    """Largeur d'un texte en Arial Narrow 12 points, en twips (cadratin de 12 points = 240 twips)."""
+    return -(-sum(CHASSES.get(c, (CHASSE_INCONNUE, CHASSE_INCONNUE))[1 if gras else 0] for c in texte) * 240 // 1000)
+
+
+def _mots(texte):
+    """Morceaux d'un texte que Word ne coupe pas : un nombre avec ses milliers (« 14 113 772 »), un mot, ou un mot jusqu'à son tiret."""
+    return re.findall(r"\d{1,3}(?: \d{3})+(?:,\d+)?|[^ ]+?-(?=[^ ])|[^ ]+", texte) or [""]
+
+
+def _repartir(mini, souhaite, disponible):
+    """Largeurs des colonnes (twips) sur toute la largeur du texte : chaque colonne reçoit au moins son mot le plus long (un nombre ne se coupe
+    pas), le reste est partagé selon la largeur souhaitée (texte entier)."""
+    if sum(souhaite) <= disponible:
+        return [int(s * disponible / sum(souhaite)) for s in souhaite]
+    if sum(mini) >= disponible:
+        return [int(m * disponible / sum(mini)) for m in mini]
+    reste, ecarts = disponible - sum(mini), [s - m for s, m in zip(souhaite, mini)]
+    return [int(m + reste * e / sum(ecarts)) for m, e in zip(mini, ecarts)]
+
+
+def _decouper(mini, disponible):
+    """Colonnes de chaque tableau successif, pour tenir dans la largeur d'une page en portrait : la première colonne (libellé) est répétée
+    dans chacun et les autres sont partagées en parts égales, à une près. Un seul tableau quand tout tient."""
+    autres = list(range(1, len(mini)))
+    if sum(mini) <= disponible or len(autres) < 2:
+        return [[0] + autres]
+    for nombre in range(2, len(autres) + 1):
+        taille = -(-len(autres) // nombre)
+        paquets = [autres[i:i + taille] for i in range(0, len(autres), taille)]
+        if all(mini[0] + sum(mini[j] for j in paquet) <= disponible for paquet in paquets):
+            return [[0] + paquet for paquet in paquets]
+    return [[0, j] for j in autres]
+
+
+def _ombre(parent, couleur):
+    ombre = OxmlElement("w:shd")
+    ombre.set(qn("w:val"), "clear")
+    ombre.set(qn("w:color"), "auto")
+    ombre.set(qn("w:fill"), couleur)
+    parent.append(ombre)
+
+
 class Rapport:
     def __init__(self):
         self.doc = Document(GABARIT) if os.path.exists(GABARIT) else Document()
         style = self.doc.styles["Normal"]
-        style.font.name = "Times New Roman"
-        style.font.size = Pt(10)
+        style.font.name = POLICE
+        style.font.size = TAILLE
+        polices = style.element.get_or_add_rPr().get_or_add_rFonts()
+        for attribut in ("w:eastAsia", "w:cs"):
+            polices.set(qn(attribut), POLICE)
+        section = self.doc.sections[0]
+        # largeur du texte d'une page A4 en portrait, en twips (1 twip = 635 EMU)
+        self.largeur = int((min(section.page_width, section.page_height) - section.left_margin - section.right_margin) / 635)
         self.numero = 0
 
+    # ---- texte
+    @staticmethod
+    def _texte(p, texte, gras=False, italique=False, couleur=None):
+        r = p.add_run(texte)
+        r.bold, r.italic = gras, italique
+        r.font.name, r.font.size = POLICE, TAILLE
+        polices = r._element.get_or_add_rPr().get_or_add_rFonts()
+        for attribut in ("w:eastAsia", "w:cs"):
+            polices.set(qn(attribut), POLICE)
+        if couleur is not None:
+            r.font.color.rgb = couleur
+        return r
+
     def titre(self, texte, niveau=1):
+        """Titre de partie (niveaux 0 et 1) ou de sous-partie (2 et 3)."""
         p = self.doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(14 if niveau == 1 else 8)
+        p.paragraph_format.space_before = Pt(18 if niveau <= 1 else 12)
         p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.keep_with_next = True
-        r = p.add_run(texte)
-        r.bold = True
-        r.font.size = Pt({0: 16, 1: 13, 2: 11.5, 3: 10.5}[niveau])
-        r.font.color.rgb = BLEU
         if niveau == 0:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        return p
+        self._texte(p, texte, gras=True, couleur=BLEU_TITRE if niveau <= 1 else BLEU_SOUS_TITRE)
 
-    def para(self, texte, italique=False, taille=10):
+    def para(self, texte, italique=False, centre=False):
         p = self.doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(4)
-        r = p.add_run(texte)
-        r.italic = italique
-        r.font.size = Pt(taille)
-        return p
+        p.paragraph_format.space_after = Pt(6)
+        p.paragraph_format.keep_with_next = True
+        if centre:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        self._texte(p, texte, italique=italique)
 
-    def tableau(self, legende, entetes, lignes, droite=(), taille=8.5, total=None):
+    # ---- tableaux
+    def tableau(self, legende, entetes, lignes, total=None, marques=()):
+        """Tableau numéroté. total : ligne de total ajoutée en bas ; marques : rangs des sous-totaux dans lignes (même présentation que le total).
+        Trop large pour une page en portrait : coupé en tableaux successifs sous le même numéro, première colonne répétée."""
+        entetes = [str(e) for e in entetes]
+        lignes = [["" if v is None else str(v) for v in ligne] for ligne in lignes]
+        marques = set(marques)
+        if total:
+            marques.add(len(lignes))
+            lignes.append(["" if v is None else str(v) for v in total])
+        colonnes = len(entetes)
+        mini, souhaite = [], []
+        bord = 2 * MARGE_CELLULE + 20
+        for j in range(colonnes):
+            textes = [(entetes[j], True)] + [(ligne[j] if j < len(ligne) else "", i in marques) for i, ligne in enumerate(lignes)]
+            # Word passe à la ligne après une espace ou un tiret ; la colonne garde chaque nombre entier sur une ligne
+            mini.append(max(_chasse(mot, gras) for texte, gras in textes for mot in _mots(texte)) + bord)
+            # largeur souhaitée : celle des valeurs ; l'en-tête peut passer à la ligne
+            souhaite.append(max(mini[j], min(LARGEUR_SOUHAITEE_MAX, max((_chasse(texte, gras) for texte, gras in textes[1:]), default=0) + bord)))
         self.numero += 1
-        legende_p = self.doc.add_paragraph()
-        legende_p.paragraph_format.keep_with_next = True
-        r = legende_p.add_run(f"Tableau {self.numero} - {legende}")
-        r.bold = True
-        r.font.size = Pt(9.5)
-        lignes = list(lignes) + ([total] if total else [])
+        for rang_partie, partie in enumerate(_decouper(mini, self.largeur)):
+            self._legende(f"Tableau {self.numero} - {legende}" + (", suite" if rang_partie else ""))
+            self._grille([entetes[j] for j in partie], [[ligne[j] if j < len(ligne) else "" for j in partie] for ligne in lignes], marques,
+                         _repartir([mini[j] for j in partie], [souhaite[j] for j in partie], self.largeur))
+
+    def _legende(self, texte):
+        """Intitulé du tableau, distinct de son contenu (critique d'OREOLE du 2026-11-09, 2e envoi : « les intitulés ne doivent pas être
+        fusionnés avec les tableaux ») : une ligne en gras au-dessus du tableau, sans fond, séparée de lui, comme dans le modèle."""
+        p = self.doc.add_paragraph()
+        p.paragraph_format.keep_with_next = True
+        p.paragraph_format.space_before = Pt(12)
+        p.paragraph_format.space_after = Pt(6)
+        self._texte(p, texte, gras=True)
+
+    def _grille(self, entetes, lignes, marques, largeurs):
         t = self.doc.add_table(rows=1 + len(lignes), cols=len(entetes))
         t.style = "Table Grid"
         t.alignment = WD_TABLE_ALIGNMENT.CENTER
-        for j, e in enumerate(entetes):
-            self._cellule(t.cell(0, j), e, gras=True, fond="1F3A68", couleur=RGBColor(0xFF, 0xFF, 0xFF), taille=taille, droite=j in droite)
-        for i, ligne in enumerate(lignes, start=1):
-            gras = bool(total) and i == len(lignes)
-            for j, v in enumerate(ligne):
-                self._cellule(t.cell(i, j), v, gras=gras, fond="EAF0F8" if gras else None, taille=taille, droite=j in droite)
-        self.doc.add_paragraph().paragraph_format.space_after = Pt(2)
-        return t
+        t.autofit = False
+        self._marges(t)
+        for j, largeur in enumerate(largeurs):
+            t.columns[j].width = Twips(largeur)
+        for i, ligne in enumerate([entetes] + lignes):
+            rang = t.rows[i]
+            proprietes = rang._tr.get_or_add_trPr()
+            proprietes.append(OxmlElement("w:cantSplit"))
+            if i == 0:
+                proprietes.append(OxmlElement("w:tblHeader"))  # en-tête répété en haut de chaque page
+            fort = i == 0 or (i - 1) in marques
+            for j, cellule in enumerate(rang.cells):
+                self._cellule(cellule, ligne[j], largeurs[j], fort)
+        espace = self.doc.add_paragraph()
+        espace.paragraph_format.space_before = Pt(0)
+        espace.paragraph_format.space_after = Pt(6)
 
     @staticmethod
-    def _cellule(cellule, texte, gras=False, fond=None, couleur=None, taille=8.5, droite=False):
-        cellule.text = ""
-        p = cellule.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT if droite else WD_ALIGN_PARAGRAPH.LEFT
-        r = p.add_run("" if texte is None else str(texte))
-        r.bold = gras
-        r.font.size = Pt(taille)
-        if couleur:
-            r.font.color.rgb = couleur
-        if fond:
-            tc = cellule._tc.get_or_add_tcPr()
-            ombre = OxmlElement("w:shd")
-            ombre.set(qn("w:val"), "clear")
-            ombre.set(qn("w:color"), "auto")
-            ombre.set(qn("w:fill"), fond)
-            tc.append(ombre)
-
-    def repartition(self, legende, colonne, groupes, beneficiaires=False, limite=None):
-        groupes = groupes[:limite] if limite else groupes
-        if beneficiaires:
-            entetes = [colonne, "Bénéficiaires", "Dépenses", "%", "Actes", "% actes", "Coût moyen / acte"]
-            lignes = [(g["Libelle"], _f(g["Beneficiaires"]), _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _p(g["PartActes"]), _f(g["CoutParActe"])) for g in groupes]
-            droite = (1, 2, 3, 4, 5, 6)
+    def _marges(t):
+        marges = OxmlElement("w:tblCellMar")
+        for cote in ("left", "right"):
+            marge = OxmlElement(f"w:{cote}")
+            marge.set(qn("w:w"), str(MARGE_CELLULE))
+            marge.set(qn("w:type"), "dxa")
+            marges.append(marge)
+        proprietes = t._tbl.tblPr
+        apparence = proprietes.find(qn("w:tblLook"))
+        if apparence is not None:
+            apparence.addprevious(marges)
         else:
-            entetes = [colonne, "Dépenses", "%", "Actes", "% actes", "Coût moyen / acte"]
+            proprietes.append(marges)
+
+    def tableau_croise(self, legende, libelle_lignes, titre_groupes, groupes, sous_colonnes, lignes, total, groupes_hors_titre=()):
+        """Tableau à en-tête sur trois lignes (modèle OREOLE « Répartition des dépenses par prestation et tranche d'âge ») : le titre des
+        groupes sur toute leur largeur, chaque groupe (tranche d'âge) subdivisé en sous-colonnes (Dépenses, NB Actes), le libellé des lignes
+        à gauche. lignes et total : [libellé, valeurs du groupe 1..., valeurs du groupe 2...]. groupes_hors_titre (Total général) : groupes
+        hors du titre commun, leur libellé sur les deux premières lignes. Trop large pour la page : coupé par groupes entiers, même numéro."""
+        n = len(sous_colonnes)
+        bord = 2 * MARGE_CELLULE + 20
+        corps = lignes + [total]
+
+        def mini(j):
+            textes = [(ligne[j], i == len(corps) - 1) for i, ligne in enumerate(corps)] + [(sous_colonnes[(j - 1) % n], True)]
+            return max(_chasse(mot, gras) for texte, gras in textes for mot in _mots(texte)) + bord
+
+        largeurs_mini = [max(_chasse(mot, gras) for texte, gras in [(l[0], False) for l in lignes] + [(total[0], True), (libelle_lignes, True)]
+                             for mot in _mots(texte)) + bord] + [mini(j) for j in range(1, 1 + n * len(groupes))]
+        # chaque groupe garde la place de son libellé
+        for k, groupe in enumerate(groupes):
+            colonnes = range(1 + k * n, 1 + (k + 1) * n)
+            manque = max(_chasse(mot, True) for mot in _mots(groupe)) + bord - sum(largeurs_mini[j] for j in colonnes)
+            if manque > 0:
+                for j in colonnes:
+                    largeurs_mini[j] += -(-manque // n)
+        largeur_groupe = [sum(largeurs_mini[1 + k * n:1 + (k + 1) * n]) for k in range(len(groupes))]
+        par_tableau = len(groupes)
+        while par_tableau > 1 and largeurs_mini[0] + max(sum(largeur_groupe[i:i + par_tableau]) for i in range(0, len(groupes), par_tableau)) > self.largeur:
+            par_tableau -= 1
+        nombre = -(-len(groupes) // par_tableau)
+        taille = -(-len(groupes) // nombre)  # parts égales, à une près
+        self.numero += 1
+        for rang_partie, debut in enumerate(range(0, len(groupes), taille)):
+            partie = list(range(debut, min(debut + taille, len(groupes))))
+            colonnes = [0] + [1 + k * n + s for k in partie for s in range(n)]
+            utiles = [largeurs_mini[j] for j in colonnes]
+            largeurs = _repartir(utiles, utiles, self.largeur)
+            self._legende(f"Tableau {self.numero} - {legende}" + (", suite" if rang_partie else ""))
+            t = self.doc.add_table(rows=3 + len(corps), cols=len(colonnes))
+            t.style = "Table Grid"
+            t.alignment = WD_TABLE_ALIGNMENT.CENTER
+            t.autofit = False
+            self._marges(t)
+            for j, largeur in enumerate(largeurs):
+                t.columns[j].width = Twips(largeur)
+            for i, rang in enumerate(t.rows):
+                proprietes = rang._tr.get_or_add_trPr()
+                proprietes.append(OxmlElement("w:cantSplit"))
+                if i < 3:
+                    proprietes.append(OxmlElement("w:tblHeader"))  # en-tête répété en haut de chaque page
+                fort = i < 3 or i == len(t.rows) - 1
+                for j, cellule in enumerate(rang.cells):
+                    self._habiller(cellule, largeurs[j], fort)
+            # fusions : coin (deux premières lignes), titre commun, libellé de chaque groupe sur ses sous-colonnes
+            t.cell(0, 0).merge(t.cell(1, 0))
+            sous_titre = [k for k in partie if groupes[k] not in groupes_hors_titre]
+            if sous_titre:
+                premiere = 1 + partie.index(sous_titre[0]) * n
+                derniere = 1 + (partie.index(sous_titre[-1]) + 1) * n - 1
+                self._remplir(t.cell(0, premiere).merge(t.cell(0, derniere)), titre_groupes, True)
+            for position, k in enumerate(partie):
+                gauche, droite = 1 + position * n, 1 + (position + 1) * n - 1
+                if groupes[k] in groupes_hors_titre:
+                    self._remplir(t.cell(0, gauche).merge(t.cell(1, droite)), groupes[k], True)
+                else:
+                    self._remplir(t.cell(1, gauche).merge(t.cell(1, droite)), groupes[k], True)
+                for s in range(n):
+                    self._remplir(t.cell(2, gauche + s), sous_colonnes[s], True)
+            self._remplir(t.cell(2, 0), libelle_lignes, True)
+            for i, ligne in enumerate(corps):
+                for j, colonne in enumerate(colonnes):
+                    self._remplir(t.cell(3 + i, j), ligne[colonne], i == len(corps) - 1)
+            espace = self.doc.add_paragraph()
+            espace.paragraph_format.space_before = Pt(0)
+            espace.paragraph_format.space_after = Pt(6)
+
+    def _cellule(self, cellule, texte, largeur, fort):
+        self._habiller(cellule, largeur, fort)
+        self._remplir(cellule, texte, fort)
+
+    @staticmethod
+    def _habiller(cellule, largeur, fort):
+        cellule.width = Twips(largeur)
+        if fort:
+            _ombre(cellule._tc.get_or_add_tcPr(), BLEU_CIEL)
+        cellule.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+    def _remplir(self, cellule, texte, fort):
+        p = cellule.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1
+        self._texte(p, texte, gras=fort)
+
+    def repartition(self, legende, colonne, groupes, beneficiaires=False, limite=None, total=False):
+        groupes = groupes[:limite] if limite else groupes
+        # colonnes du modèle d'OREOLE (« Répartition des dépenses par type de prestation ») : dépenses, leur part, actes, leur part, coût moyen
+        if beneficiaires:
+            entetes = [colonne, "Bénéficiaires", "Dépenses", "% des dépenses", "Nombre d'actes", "% des actes", "Coût moyen par acte"]
+            lignes = [(g["Libelle"], _f(g["Beneficiaires"]), _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _p(g["PartActes"]), _f(g["CoutParActe"])) for g in groupes]
+        else:
+            entetes = [colonne, "Dépenses", "% des dépenses", "Nombre d'actes", "% des actes", "Coût moyen par acte"]
             lignes = [(g["Libelle"], _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _p(g["PartActes"]), _f(g["CoutParActe"])) for g in groupes]
-            droite = (1, 2, 3, 4, 5)
-        self.tableau(legende, entetes, lignes, droite)
+        ligne_totale = None
+        if total and groupes and not beneficiaires:
+            depenses, actes = sum(g["Depenses"] for g in groupes), sum(g["Actes"] for g in groupes)
+            ligne_totale = (TOTAL, _f(depenses), _p(1), _f(actes), _p(1), _f(_div(depenses, actes)))
+        self.tableau(legende, entetes, lignes, total=ligne_totale)
 
     def octets(self):
         tampon = io.BytesIO()
         self.doc.save(tampon)
         return tampon.getvalue()
+
+
+# ------------------------------------------------------------------ contenus
+def _particuliers(police):
+    nom = normaliser(police)
+    return nom in POLICES_PARTICULIERS or "PARTICULIER" in nom
+
+
+def _souscripteur(p):
+    """Souscripteur d'une famille : colonne SOUSCRIPTEUR du relevé (la police n'est pas le souscripteur). Contrats des particuliers, où le
+    relevé donne le produit comme souscripteur (OREOLE SANTE, y compris pour la police OREOLE SANTE PLUS) : chaque famille souscrit pour
+    elle-même, le souscripteur est l'assuré principal (critique d'OREOLE du 2026-11-09 sur le tableau 28)."""
+    souscripteur = (p.get("souscripteur") or "").strip() or p.get("police") or ""
+    if _particuliers(souscripteur):
+        return (p.get("assure") or "").strip() or souscripteur
+    return souscripteur
 
 
 def _indicateurs_tableau(r, legende, ind, effectif_libelle="Effectif total de bénéficiaires"):
@@ -142,87 +408,124 @@ def _indicateurs_tableau(r, legende, ind, effectif_libelle="Effectif total de b�
         ("Taux de recours", _p(ind["TauxRecours"])), ("Montant total réclamé", _f(ind["Reclame"])), ("Montant total remboursé", _f(ind["Rembourse"])),
         ("Coût moyen par bénéficiaire", _f(ind["CoutParBeneficiaire"])), ("Coût moyen par acte", _f(ind["CoutParActe"])),
         ("Fréquence moyenne d'actes", "-" if ind["Frequence"] is None else f"{ind['Frequence']:.1f}".replace(".", ",")),
-        ("Âge moyen", "-" if ind["AgeMoyen"] is None else f"{ind['AgeMoyen']} ans"),
-    ], droite=(1,))
+        ("Âge moyen", _ans(ind["AgeMoyen"])),
+    ])
 
 
 def _famille_tranche(r, legende, prestations, au):
+    """Dépenses et nombre d'actes par famille de prestation et tranche d'âge, présentés comme le tableau 7 du modèle d'OREOLE (demande du
+    2026-11-09) : familles par ordre alphabétique, chaque tranche subdivisée en Dépenses et NB Actes, case vide sans dépense, Total général."""
     tranches = [t[2] for t in TRANCHES]
-    cumul = defaultdict(lambda: defaultdict(lambda: ZERO))
+    depenses = defaultdict(lambda: defaultdict(lambda: ZERO))
+    actes = defaultdict(lambda: defaultdict(int))
     for p in prestations:
-        cumul[p["famille"] or "Non renseigné"][tranche(_age(p["date_naissance"], au))] += p["mt_rembourse"]
-    familles = sorted(cumul, key=lambda f: -sum(cumul[f].values()))
-    lignes = [[f] + [_f(cumul[f].get(t)) if cumul[f].get(t) else "-" for t in tranches] + [_f(sum(cumul[f].values()))] for f in familles]
-    total = ["Total"] + [_f(sum((cumul[f].get(t, ZERO) for f in familles), ZERO)) for t in tranches] + [_f(sum((sum(cumul[f].values()) for f in familles), ZERO))]
-    r.tableau(legende, ["Famille"] + [t.replace(" ans", "") for t in tranches] + ["Total"], lignes, droite=tuple(range(1, len(tranches) + 2)), taille=6.5, total=total)
+        famille, groupe = p["famille"] or "Non renseigné", tranche(_age(p["date_naissance"], au))
+        depenses[famille][groupe] += p["mt_rembourse"]
+        actes[famille][groupe] += 1
+    groupes = tranches + (["Non renseigné"] if any("Non renseigné" in v for v in actes.values()) else [])
+    familles = sorted(depenses, key=normaliser)
+
+    def valeurs(montant, nombre):
+        return [_f(montant), _f(nombre)] if nombre else ["", ""]
+
+    lignes = [[f] + [v for g in groupes for v in valeurs(depenses[f][g], actes[f][g])]
+              + valeurs(sum(depenses[f].values(), ZERO), sum(actes[f].values())) for f in familles]
+    total = ["Total général"] + [v for g in groupes for v in valeurs(sum((depenses[f][g] for f in familles), ZERO), sum(actes[f][g] for f in familles))] \
+        + valeurs(sum((sum(depenses[f].values(), ZERO) for f in familles), ZERO), sum(sum(actes[f].values()) for f in familles))
+    r.tableau_croise(legende, "Famille de prestation", "Tranche d'âge", groupes + ["Total général"], ["Dépenses", "NB Actes"], lignes, total,
+                     groupes_hors_titre=("Total général",))
 
 
 def _familles_depensieres(r, legende, prestations, seuil=None, limite=None):
-    """Familles (assuré principal) les plus dépensières, avec leurs bénéficiaires et familles de prestation (comme le modèle)."""
+    """Familles (assuré principal) les plus dépensières, avec leurs bénéficiaires, leur souscripteur et leurs familles de prestation, et le total
+    de chaque famille (comme le modèle)."""
     par_assure = defaultdict(lambda: ZERO)
     for p in prestations:
         par_assure[p["matricule_assure"]] += p["mt_rembourse"]
     retenus = [m for m, v in sorted(par_assure.items(), key=lambda kv: -kv[1]) if seuil is None or v > seuil][:limite]
+    if not retenus:
+        r.para("Aucune famille ne dépasse ce seuil sur la période.", italique=True)
+        return
+    garder = set(retenus)
     detail = defaultdict(lambda: [ZERO, 0])
-    noms = {}
+    noms, souscripteurs = {}, {}
     for p in prestations:
-        if p["matricule_assure"] in retenus:
-            d = detail[(p["matricule_assure"], p["beneficiaire"], p["police"], p["famille"])]
+        m = p["matricule_assure"]
+        if m in garder:
+            d = detail[(m, p["beneficiaire"], p["famille"])]
             d[0] += p["mt_rembourse"]
             d[1] += 1
-            noms[p["matricule_assure"]] = p["assure"]
-    lignes = []
+            noms.setdefault(m, p["assure"])
+            souscripteurs.setdefault(m, _souscripteur(p))
+    lignes, marques = [], []
     for m in retenus:
-        for (ma, benef, police, famille), (dep, actes) in sorted(((k, v) for k, v in detail.items() if k[0] == m), key=lambda kv: -kv[1][0]):
-            lignes.append((f"{noms.get(m, '')} ({m})", benef, police, famille, _f(dep), _f(actes)))
-    if lignes:
-        r.tableau(legende, ["Assuré principal", "Bénéficiaire", "Souscripteur", "Famille de prestation", "Dépenses", "Actes"], lignes, droite=(4, 5), taille=7.5)
-    else:
-        r.para("Aucune famille ne dépasse ce seuil sur la période.", italique=True)
+        siennes = sorted(((k, v) for k, v in detail.items() if k[0] == m), key=lambda kv: -kv[1][0])
+        for (_m, benef, famille), (dep, actes) in siennes:
+            lignes.append((f"{noms.get(m, '')} ({m})", benef, souscripteurs.get(m, ""), famille, _f(dep), _f(actes)))
+        marques.append(len(lignes))
+        lignes.append((f"Total {noms.get(m, '')}".strip(), "", "", "", _f(sum((v[0] for _k, v in siennes), ZERO)), _f(sum(v[1] for _k, v in siennes))))
+    r.tableau(legende, ["Nom de l'assuré", "Nom du bénéficiaire", "Souscripteur", "Famille de prestation", "Dépenses", "Nombre d'actes"], lignes, marques=marques)
 
 
 def _top(r, legende, prestations, cle, colonne, limite=20):
     r.repartition(legende, colonne, repartition(prestations, cle), beneficiaires=True, limite=limite)
 
 
-def _effectifs(r, effectif, du, au):
+def _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice):
     actifs = [e for e in effectif if e["actif"]]
     statuts = defaultdict(list)
     for e in actifs:
         statuts[e["statut"]].append(e)
+    noms = STATUTS_RAPPORT
     ages = [a for a in (_age(e["date_naissance"], au) for e in actifs) if a is not None]
+    mouvements = mouvements_effectif(effectif, reference, du, au)
+
+    def somme(cle):
+        return sum(x[cle] for x in mouvements.values())
+
+    # sans effectif de référence importé, l'effectif de début de période est estimé (maintenus + sortants datés)
+    libelle_reference = f"Effectif de référence au {_d(date_reference)}" if reference is not None else "Effectif en début de période, estimé"
     r.titre("I.1. Description de la population assurée", 2)
     r.tableau("Indicateurs clés de l'effectif", ["Indicateur", "Valeur"], [
-        ("Effectif total", _f(len(actifs))), ("Nombre d'assurés principaux", _f(len(statuts["A"]))), ("Nombre de conjoints", _f(len(statuts["C"]))),
-        ("Nombre d'enfants", _f(len(statuts["E"]))), ("Âge moyen de l'effectif", f"{round(sum(ages) / len(ages))} ans" if ages else "-"),
-    ], droite=(1,))
-    par_police = defaultdict(lambda: {"Maintenus": 0, "Sortis": 0, "Nouveaux": 0, "Effectif": 0, "A": 0, "C": 0, "E": 0, "Ages": []})
-    for e in effectif:
+        ("Effectif total" + (f" au {_d(situation)}" if situation else ""), _f(len(actifs))), ("Nombre d'assurés", _f(len(statuts["A"]))),
+        ("Nombre de conjoint(e)s", _f(len(statuts["C"]))), ("Nombre d'enfants", _f(len(statuts["E"]))), ("Âge moyen de l'effectif", _ans(_moyenne(ages))),
+        (libelle_reference, _f(somme("Reference"))),
+        ("Effectifs sortants", _f(somme("Sortants"))), ("Effectifs maintenus", _f(somme("Maintenus"))), ("Nouveaux entrants", _f(somme("Nouveaux"))),
+    ])
+    if reference is not None:
+        r.para(f"Mouvements de l'effectif : l'effectif au {_d(situation)} est comparé à l'effectif de référence au {_d(date_reference)}. Une personne de "
+               "la référence absente de l'effectif actuel est sortante, une personne de l'effectif actuel absente de la référence est un nouvel entrant ; "
+               "effectif total = effectifs maintenus + nouveaux entrants.")
+    else:
+        r.para(f"Aucun effectif antérieur au {_d(du)} n'est importé : les nouveaux entrants sont comptés d'après leur date d'effet et les sortants d'après "
+               "les sorties datées dans la période. Pour compter tous les sortants, importez l'effectif de l'exercice précédent avec sa date de situation.",
+               italique=True)
+    # colonnes du modèle (« Effectif global consolidé par entreprise ») et du tableau croisé de l'ANALYSE DES SORTANT : maintenus, sortis,
+    # nouveaux, effectif de l'exercice ; entreprises par ordre alphabétique, celles entièrement sorties comprises (effectif 0)
+    maintenus = f"Maintenus {date_reference.year}-{exercice}" if reference is not None and date_reference else "Maintenus"
+    r.tableau("Effectif consolidé par entreprise", ["Entreprise", maintenus, "Sortants", "Nouveaux entrants", f"Effectif {exercice}"],
+              [(p or "Non renseigné", _f(mouvements[p]["Maintenus"]), _f(mouvements[p]["Sortants"]), _f(mouvements[p]["Nouveaux"]), _f(mouvements[p]["Effectif"]))
+               for p in sorted(mouvements, key=normaliser)],
+              total=(TOTAL, _f(somme("Maintenus")), _f(somme("Sortants")), _f(somme("Nouveaux")), _f(somme("Effectif"))))
+
+    par_police = defaultdict(lambda: {"A": 0, "C": 0, "E": 0, "Ages": []})
+    for e in actifs:
         x = par_police[e["police"]]
-        if not e["actif"]:
-            x["Sortis"] += 1
-            continue
-        x["Effectif"] += 1
-        x["Nouveaux" if e["date_effet"] and e["date_effet"] >= du else "Maintenus"] += 1
         x[e["statut"] if e["statut"] in ("A", "C", "E") else "E"] += 1
         a = _age(e["date_naissance"], au)
         if a is not None:
             x["Ages"].append(a)
-    polices = sorted(par_police, key=lambda p: -par_police[p]["Effectif"])
-    r.tableau("Effectif consolidé par entreprise", ["Entreprise", "Maintenus", "Sortis", "Nouveaux", "Effectif"],
-              [(p, _f(par_police[p]["Maintenus"]), _f(par_police[p]["Sortis"]), _f(par_police[p]["Nouveaux"]), _f(par_police[p]["Effectif"])) for p in polices],
-              droite=(1, 2, 3, 4), total=("Total", _f(sum(x["Maintenus"] for x in par_police.values())), _f(sum(x["Sortis"] for x in par_police.values())),
-                                         _f(sum(x["Nouveaux"] for x in par_police.values())), _f(len(actifs))))
-    r.tableau("Répartition des effectifs par statut et par entreprise", ["Entreprise", "A", "C", "E", "Total", "Âge moyen"],
-              [(p, _f(par_police[p]["A"]), _f(par_police[p]["C"]), _f(par_police[p]["E"]), _f(par_police[p]["Effectif"]),
-                f"{round(sum(par_police[p]['Ages']) / len(par_police[p]['Ages']))}" if par_police[p]["Ages"] else "-") for p in polices if par_police[p]["Effectif"]],
-              droite=(1, 2, 3, 4, 5))
+    effectif_de = {p: sum(x[s] for s in "ACE") for p, x in par_police.items()}
+    r.tableau("Répartition des effectifs par statut et par entreprise", ["Entreprise", noms["A"], noms["C"], noms["E"], "Total", "Âge moyen"],
+              [(p or "Non renseigné", _f(par_police[p]["A"]), _f(par_police[p]["C"]), _f(par_police[p]["E"]), _f(effectif_de[p]), _ans(_moyenne(par_police[p]["Ages"])))
+               for p in sorted(par_police, key=lambda p: (-effectif_de[p], p))],
+              total=(TOTAL, _f(len(statuts["A"])), _f(len(statuts["C"])), _f(len(statuts["E"])), _f(len(actifs)), _ans(_moyenne(ages))))
     lignes = []
     for s in ("A", "C", "E"):
         a = [x for x in (_age(e["date_naissance"], au) for e in statuts[s]) if x is not None]
-        lignes.append((f"{s} - {STATUTS[s]}", _f(len(statuts[s])), _p(_div(len(statuts[s]), len(actifs))), f"{round(sum(a) / len(a))} ans" if a else "-"))
-    r.tableau("Répartition des effectifs par statut", ["Statut", "Bénéficiaires", "%", "Âge moyen"], lignes, droite=(1, 2, 3),
-              total=("Total", _f(len(actifs)), "100 %", f"{round(sum(ages) / len(ages))} ans" if ages else "-"))
+        lignes.append((noms[s], _f(len(statuts[s])), _p(_div(len(statuts[s]), len(actifs))), _ans(_moyenne(a))))
+    r.tableau("Répartition des effectifs par statut", ["Statut", "Bénéficiaires", "% des bénéficiaires", "Âge moyen"], lignes,
+              total=(TOTAL, _f(len(actifs)), _p(1), _ans(_moyenne(ages))))
     par_tranche = defaultdict(lambda: {"A": 0, "C": 0, "E": 0, "Ages": []})
     for e in actifs:
         a = _age(e["date_naissance"], au)
@@ -230,18 +533,17 @@ def _effectifs(r, effectif, du, au):
         x[e["statut"] if e["statut"] in ("A", "C", "E") else "E"] += 1
         if a is not None:
             x["Ages"].append(a)
-    ordre = [t[2] for t in TRANCHES] + ["Non renseigné"]
-    presentes = [t for t in ordre if t in par_tranche]
-    r.tableau("Répartition des effectifs par tranche d'âge", ["Tranche d'âge", "Bénéficiaires", "%", "Âge moyen"],
-              [(t, _f(sum(par_tranche[t][s] for s in "ACE")), _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs))),
-                f"{round(sum(par_tranche[t]['Ages']) / len(par_tranche[t]['Ages']))} ans" if par_tranche[t]["Ages"] else "-") for t in presentes], droite=(1, 2, 3),
-              total=("Total", _f(len(actifs)), "100 %", ""))
-    r.tableau("Répartition des effectifs par tranche d'âge et par statut", ["Tranche d'âge", "A", "C", "E", "Total", "%"],
+    presentes = [t for t in [t[2] for t in TRANCHES] + ["Non renseigné"] if t in par_tranche]
+    r.tableau("Répartition des effectifs par tranche d'âge", ["Tranche d'âge", "Bénéficiaires", "% des bénéficiaires", "Âge moyen"],
+              [(t, _f(sum(par_tranche[t][s] for s in "ACE")), _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs))), _ans(_moyenne(par_tranche[t]["Ages"])))
+               for t in presentes], total=(TOTAL, _f(len(actifs)), _p(1), _ans(_moyenne(ages))))
+    r.tableau("Répartition des effectifs par tranche d'âge et par statut", ["Tranche d'âge", noms["A"], noms["C"], noms["E"], "Total", "% des bénéficiaires"],
               [(t, _f(par_tranche[t]["A"]), _f(par_tranche[t]["C"]), _f(par_tranche[t]["E"]), _f(sum(par_tranche[t][s] for s in "ACE")),
-                _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs)))) for t in presentes], droite=(1, 2, 3, 4, 5))
+                _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs)))) for t in presentes],
+              total=(TOTAL, _f(len(statuts["A"])), _f(len(statuts["C"])), _f(len(statuts["E"])), _f(len(actifs)), _p(1)))
     # Contrôle de cohérence (même liste que le modèle)
     r.titre("I.2. Contrôle de cohérence et anomalies", 2)
-    r.para("Contrôles réalisés sur l'effectif avant exploitation : unicité des personnes, âges plausibles, statuts cohérents avec l'assuré principal.")
+    r.para("Contrôles réalisés sur l'effectif avant exploitation : unicité des personnes, âges plausibles, conjoint(e)s et enfants rattachés à un assuré.")
     identites = defaultdict(set)
     for e in actifs:
         if e["nom"] and e["date_naissance"]:
@@ -252,21 +554,27 @@ def _effectifs(r, effectif, du, au):
     statuts_errones = sum(1 for e in actifs if e["statut"] not in ("A", "C", "E") or (e["statut"] == "A" and e["matricule_beneficiaire"] != e["matricule_assure"])
                           or (e["statut"] in ("C", "E") and e["matricule_assure"] not in principaux))
     r.tableau("Anomalies de l'effectif", ["Type d'anomalie", "Nombre de cas", "Statut"], [
-        ("Doublon d'identité (même nom, prénoms et naissance)", _f(doublons), "Conforme" if not doublons else "À vérifier"),
-        ("Âge incohérent (négatif, plus de 100 ans, assuré ou conjoint de moins de 16 ans)", _f(ages_incoherents), "Conforme" if not ages_incoherents else "À vérifier"),
-        ("Statut erroné (hors A, C, E ou sans assuré principal)", _f(statuts_errones), "Conforme" if not statuts_errones else "À vérifier"),
-    ], droite=(1,))
+        ("Doublon d'identité : même nom, prénoms et naissance", _f(doublons), "Conforme" if not doublons else "À vérifier"),
+        ("Âge incohérent : négatif, plus de 100 ans, assuré ou conjoint(e) de moins de 16 ans", _f(ages_incoherents), "Conforme" if not ages_incoherents else "À vérifier"),
+        ("Statut erroné : statut inconnu, ou conjoint(e) ou enfant sans assuré de rattachement", _f(statuts_errones),
+         "Conforme" if not statuts_errones else "À vérifier"),
+    ])
 
 
 def _fiche(r, police, prestations, effectif, au):
     ps = [p for p in prestations if p["police"] == police]
     beneficiaires = [e for e in effectif if e["police"] == police and e["actif"]]
     r.titre(f"Fiche d'entreprise : {police}", 3)
+    if _particuliers(police):
+        r.para("Police des particuliers : chaque famille souscrit pour elle-même, le souscripteur indiqué est l'assuré.", italique=True)
     _indicateurs_tableau(r, "Indicateurs clés de l'entreprise", indicateurs(ps, beneficiaires, au))
-    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(ps, lambda p: p["famille"]))
-    r.repartition("Répartition des dépenses par statut", "Statut", repartition(ps, lambda p: f"{p['statut']} - {STATUTS.get(p['statut'], 'Non renseigné')}"))
-    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge", repartition(ps, lambda p: tranche(_age(p["date_naissance"], au))))
-    r.repartition("Répartition des dépenses par genre", "Genre", repartition(ps, lambda p: GENRES.get(p["genre"], "Non renseigné")))
+    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(ps, lambda p: p["famille"]), total=True)
+    r.repartition("Répartition des dépenses par statut", "Statut", _ordre_statuts(repartition(ps, lambda p: _statut(p["statut"]))), total=True)
+    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge",
+                  ordre_des_tranches(repartition(ps, lambda p: tranche(_age(p["date_naissance"], au)))), total=True)
+    # comme les fiches du modèle : dépenses et actes de chaque famille de prestation par tranche d'âge
+    _famille_tranche(r, "Répartition des dépenses par tranche d'âge et par famille de prestation", ps, au)
+    r.repartition("Répartition des dépenses par genre", "Genre", repartition(ps, lambda p: GENRES.get(p["genre"], "Non renseigné")), total=True)
     _top(r, "Top 10 des centres prescripteurs", ps, lambda p: p["centre_prescripteur"], "Centre prescripteur", 10)
     _top(r, "Top 10 des centres exécutants", ps, lambda p: p["centre_executant"], "Centre exécutant", 10)
     _familles_depensieres(r, "Top 10 des familles les plus dépensières", ps, limite=10)
@@ -278,18 +586,19 @@ def produire(params):
         exercice, du, au, _exercices = _periode(cursor, params)
         garant = str(params.get("garant") or "").strip()
         prestations, effectif = charger(cursor, du, au, garant)
+        reference, date_reference = effectif_de_reference(cursor, du, garant)
+        situation = date_effectif(cursor)
     if not prestations and not effectif:
         raise ErreurConsommation("Aucune donnée sur cette période : importez d'abord les relevés du gestionnaire.")
     bord = tableau_de_bord(params)
     r = Rapport()
     r.titre(f"ANALYSE DES DÉPENSES SANTÉ {exercice} OREOLE SANTÉ", 0)
-    sous = r.para(f"Du {_d(du)} au {_d(au)}" + (f" - garant {garant}" if garant else ""))
-    sous.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r.para(f"Du {_d(du)} au {_d(au)}" + (f" - garant {garant}" if garant else ""), centre=True)
     r.para("Source : relevés de prestations et effectif du gestionnaire importés dans LE PHARE ; mois et période selon la date de clôture du relevé ; "
-           "âges à la fin de la période. Document contenant des données de santé : diffusion restreinte.", italique=True, taille=8.5)
+           "âges à la fin de la période. Document contenant des données de santé : diffusion restreinte.", italique=True)
 
     r.titre("I. ANALYSE DES EFFECTIFS", 1)
-    _effectifs(r, effectif, du, au)
+    _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice)
 
     r.titre("II. ANALYSE GLOBALE DES DÉPENSES SANTÉ", 1)
     portefeuille = indicateurs(prestations, [e for e in effectif if e["actif"]], au)
@@ -300,26 +609,28 @@ def produire(params):
         m[0] += p["mt_rembourse"]
         m[1] += 1
     total = sum((v[0] for v in mensuel.values()), ZERO)
-    r.tableau(f"Dépenses mensuelles {exercice}", ["Mois", "Dépenses", "%", "Actes", "% actes", "Coût moyen / acte"],
+    r.tableau(f"Dépenses mensuelles {exercice}", ["Mois", "Dépenses", "% des dépenses", "Nombre d'actes", "% des actes", "Coût moyen par acte"],
               [(f"{MOIS[m - 1]} {a}", _f(v[0]), _p(_div(v[0], total)), _f(v[1]), _p(_div(v[1], len(prestations))), _f(_div(v[0], v[1])))
-               for (a, m), v in sorted(mensuel.items())], droite=(1, 2, 3, 4, 5),
-              total=("Total", _f(total), "100 %", _f(len(prestations)), "100 %", _f(_div(total, len(prestations)))))
+               for (a, m), v in sorted(mensuel.items())],
+              total=(TOTAL, _f(total), _p(1), _f(len(prestations)), _p(1), _f(_div(total, len(prestations)))))
     par_entreprise = repartition(prestations, lambda p: p["police"])
-    r.tableau("Répartition des dépenses par entreprise", ["Entreprise", "Bénéficiaires", "Dépenses", "%", "Actes", "Coût moyen / bénéficiaire", "Coût moyen / acte"],
+    r.tableau("Répartition des dépenses par entreprise", ["Entreprise", "Bénéficiaires", "Dépenses", "% des dépenses", "Nombre d'actes", "Coût moyen par bénéficiaire", "Coût moyen par acte"],
               [(g["Libelle"], _f(g["Beneficiaires"]), _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(_div(g["Depenses"], g["Beneficiaires"])), _f(g["CoutParActe"]))
-               for g in par_entreprise], droite=(1, 2, 3, 4, 5, 6), taille=7.5)
-    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(prestations, lambda p: p["famille"]))
-    r.repartition("Répartition des dépenses par statut", "Statut", repartition(prestations, lambda p: f"{p['statut']} - {STATUTS.get(p['statut'], 'Non renseigné')}"))
-    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge", repartition(prestations, lambda p: tranche(_age(p["date_naissance"], au))))
-    _famille_tranche(r, "Dépenses par famille de prestation et tranche d'âge", prestations, au)
+               for g in par_entreprise],
+              total=(TOTAL, _f(portefeuille["Consommants"]), _f(total), _p(1), _f(len(prestations)), _f(portefeuille["CoutParBeneficiaire"]), _f(portefeuille["CoutParActe"])))
+    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(prestations, lambda p: p["famille"]), total=True)
+    r.repartition("Répartition des dépenses par statut", "Statut", _ordre_statuts(repartition(prestations, lambda p: _statut(p["statut"]))), total=True)
+    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge",
+                  ordre_des_tranches(repartition(prestations, lambda p: tranche(_age(p["date_naissance"], au)))), total=True)
+    _famille_tranche(r, "Répartition des dépenses par tranche d'âge et par famille de prestation", prestations, au)
     _top(r, "Top 20 des centres prescripteurs", prestations, lambda p: p["centre_prescripteur"], "Centre prescripteur")
     _top(r, "Top 20 des centres exécutants", prestations, lambda p: p["centre_executant"], "Centre exécutant")
     _familles_depensieres(r, "Familles dont le montant remboursé dépasse 1 000 000 F", prestations, seuil=Decimal("1000000"))
     _top(r, "Top 20 des médecins les plus coûteux", prestations, lambda p: p["medecin"], "Médecin")
     couples = repartition([p for p in prestations if p["centre_prescripteur"] and p["centre_prescripteur"] != p["centre_executant"]],
                           lambda p: f"{p['centre_prescripteur']} > {p['centre_executant']}")[:20]
-    r.tableau("Dépenses prescrites par un centre et exécutées par un autre (20 premiers couples)", ["Prescripteur > exécutant", "Dépenses", "%", "Actes", "Coût moyen / acte"],
-              [(g["Libelle"], _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(g["CoutParActe"])) for g in couples], droite=(1, 2, 3, 4), taille=7.5)
+    r.tableau("Dépenses prescrites par un centre et exécutées par un autre, 20 premiers couples", ["Prescripteur > exécutant", "Dépenses", "% des dépenses", "Nombre d'actes", "Coût moyen par acte"],
+              [(g["Libelle"], _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(g["CoutParActe"])) for g in couples])
 
     r.titre("III. ANALYSE CIBLÉE DES ENTREPRISES À RISQUE", 1)
     r.titre("III.1. Sélection des entreprises à risque", 2)
@@ -330,7 +641,7 @@ def produire(params):
     r.tableau("Indicateurs et score par entreprise", ["Entreprise", "Bénéf.", "Actes", "Dépenses", "Âge moyen", "Coût / bénéf.", "Actes / bénéf.", "Coût / acte", "Alerte", "Score"],
               [(l["Police"], _f(l["Beneficiaires"]), _f(l["Actes"]), _f(l["Depenses"]), _f(l["AgeMoyen"]), _f(l["CoutParBeneficiaire"]),
                 "-" if l["ActesParBeneficiaire"] is None else f"{l['ActesParBeneficiaire']:.1f}".replace(".", ","), _f(l["CoutParActe"]), ", ".join(l["Alertes"]),
-                f"{l['Score']:.2f}".replace(".", ",")) for l in risque], droite=(1, 2, 3, 4, 5, 6, 7, 9), taille=7)
+                f"{l['Score']:.2f}".replace(".", ",")) for l in risque])
     a_risque = [l["Police"] for l in risque if l["Alertes"]][:FICHES_MAX]
     r.titre("III.2. Analyse des entreprises à risque", 2)
     if not a_risque:
@@ -347,10 +658,12 @@ def produire(params):
             ("Commissions", _f(t["Commissions"])), ("Apporteurs d'affaires", _f(t["Apporteurs"])), ("Provisions pour paiement des dépenses", _f(t["Provision"])),
             ("Consommation", _f(t["Consommation"])), ("Reste sur les provisions", _f(t["Reste"])), ("Taux de consommation des provisions", _p(t["Taux"])),
             ("Entreprises", _f(t["Entreprises"])),
-        ], droite=(1,))
-        r.tableau("Contrôle de gestion par entreprise", ["Entreprise", "Police du gestionnaire", "Provision", "Consommation", "Reste", "Taux", "Situation"],
+        ])
+        # en-têtes courts : le tableau tient sur la largeur d'une page en portrait (dépenses = consommation des relevés)
+        r.tableau("Contrôle de gestion par entreprise", ["Entreprise", "Police du gestionnaire", "Provision", "Dépenses", "Reste", "Taux", "État"],
                   [(l["Entreprise"] or "-", l["Police"] or "-", _f(l["Provision"]), _f(l["Consommation"]), _f(l["Reste"]), _p(l["Taux"]), l["Situation"])
-                   for l in bord["Controle"]], droite=(2, 3, 4, 5), taille=7)
+                   for l in bord["Controle"]],
+                  total=(TOTAL, "", _f(t["Provision"]), _f(t["Consommation"]), _f(t["Reste"]), _p(t["Taux"]), ""))
     return r.octets(), f"RAPPORT CONSOMMATIONS SANTE {exercice} du {du:%d-%m-%Y} au {au:%d-%m-%Y}.docx", {"Exercice": exercice, "Du": du, "Au": au,
                                                                                                        "Prestations": len(prestations)}
 

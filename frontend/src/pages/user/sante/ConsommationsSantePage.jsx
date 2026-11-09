@@ -83,7 +83,10 @@ const useLecture = (lire, dependances) => {
 };
 
 // ------------------------------------------------------------------ tableau de bord
-const NATURES = { PRESTATIONS: 'Prestations', EFFECTIF: 'Effectif', COTISATIONS: 'État des cotisations' };
+const NATURES = {
+  PRESTATIONS: 'Prestations', EFFECTIF: 'Effectif', EFFECTIF_PERIODES: 'Effectif, exercice précédent et actuel',
+  EFFECTIF_PRECEDENT: "Effectif de l'exercice précédent", COTISATIONS: 'État des cotisations',
+};
 const COULEUR_PROVISION = { Normal: 'emerald', Alerte: 'amber', 'Provision dépassée': 'rose', 'Sans provision': 'slate', 'Sans état de cotisation': 'blue' };
 const MOIS_COURTS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
 
@@ -717,13 +720,18 @@ const OngletImports = () => {
   const importer = async () => {
     const message = analyse.Cotisations
       ? `L'état des cotisations ${analyse.Exercice} (${fcfa(analyse.Cotisations)} entreprises) remplacera celui de cet exercice.`
-      : `${fcfa(analyse.Nouvelles)} prestations nouvelles et ${fcfa(analyse.Effectif)} bénéficiaires d'effectif seront enregistrés. Les prestations déjà connues ne sont pas réécrites.`;
+      : `${fcfa(analyse.Nouvelles)} prestations nouvelles et ${fcfa(analyse.Effectif)} bénéficiaires d'effectif seront enregistrés`
+        + (analyse.EffectifPrecedent ? `, ainsi que ${fcfa(analyse.EffectifPrecedent)} bénéficiaires de l'exercice précédent comme effectif de référence` : '')
+        + '. Les prestations déjà connues ne sont pas réécrites.';
     if (!(await confirmer({ titre: 'Importer le fichier', message, confirmer: 'Importer' }))) return;
     setEnvoi(true);
     try {
       const r = await consommationsApi.importer(fichier, situation, exercice);
       success(r.Cotisations ? `État des cotisations ${r.Exercice} importé : ${fcfa(r.Cotisations)} entreprises.`
-        : `Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}.`);
+        : `Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}`
+          + (r.EffectifPrecedent ? `, effectif de référence au ${dateFr(r.SituationPrecedent)} : ${fcfa(r.EffectifPrecedent)} bénéficiaires` : '')
+          + (r.Anterieur ? `. Effectif plus ancien que l'effectif courant du ${dateFr(r.Anterieur)} : gardé comme effectif de référence, l'effectif courant n'est pas modifié` : '')
+          + '.');
       setAnalyse(null);
       setFichier(null);
       recharger();
@@ -754,6 +762,9 @@ const OngletImports = () => {
           </button>}
         </div>
         <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>La date de l'effectif date la sortie des bénéficiaires absents du nouvel effectif ; laissée vide, la date du jour est retenue.
+          Chaque effectif est gardé à sa date : pour compter les sortants et les nouveaux entrants du rapport, importez aussi l'effectif de l'exercice précédent,
+          daté par exemple du 31/12 ; plus ancien que l'effectif courant, il sert de référence sans le modifier. Dans les classeurs d'analyse d'OREOLE (ANALYSE DES SORTANT, base unifiée),
+          les lignes de PERIODE « EXERCICE PRECEDENT » et la feuille BASE EFFECTIF PRECEDENT forment cet effectif de référence, daté du 31/12 de l'année précédente.
           L'exercice d'un état des cotisations se lit dans le nom du fichier (ETAT 2026) ; saisissez-le s'il n'y figure pas.</p>
         {analyse && (
           <Grille min={170}>
@@ -762,6 +773,7 @@ const OngletImports = () => {
             <Tuile libelle="Montants changés" valeur={fcfa(analyse.MontantsChanges)} detail="signalés, non réécrits" />
             <Tuile libelle="Dates corrigées" valeur={fcfa(analyse.DatesCorrigees)} detail="jour et mois inversés" />
             <Tuile libelle="Effectif lu" valeur={fcfa(analyse.Effectif)} detail={analyse.Garants.join(', ')} />
+            {analyse.EffectifPrecedent > 0 && <Tuile libelle="Effectif de l'exercice précédent" valeur={fcfa(analyse.EffectifPrecedent)} detail="référence des sortants et des nouveaux entrants" />}
             <Tuile libelle="Remboursé du fichier" valeur={montant(analyse.Rembourse)} />
             {analyse.Cotisations > 0 && <Tuile libelle={`État des cotisations ${analyse.Exercice}`} valeur={`${fcfa(analyse.Cotisations)} entreprises`} detail={`provisions ${montant(analyse.Provisions)}`} />}
           </Grille>
@@ -781,7 +793,7 @@ const OngletImports = () => {
             {releves.map((r) => (
               <tr key={r.Id}>
                 <td>{dateFr(r.Date)}</td><td>{r.Fichier}</td><td>{NATURES[r.Nature] || r.Nature}</td><td>{r.Garants}</td>
-                <td>{r.ClotureDu ? `${dateFr(r.ClotureDu)} au ${dateFr(r.ClotureAu)}` : '-'}</td><td style={DROITE}>{fcfa(r.Lignes)}</td><td style={DROITE}>{fcfa(r.Nouvelles)}</td><td style={DROITE}>{fcfa(r.Modifiees)}</td><td>{r.Operateur}</td>
+                <td>{r.ClotureDu ? `${dateFr(r.ClotureDu)} au ${dateFr(r.ClotureAu)}` : r.Situation ? `effectif au ${dateFr(r.Situation)}` : '-'}</td><td style={DROITE}>{fcfa(r.Lignes)}</td><td style={DROITE}>{fcfa(r.Nouvelles)}</td><td style={DROITE}>{fcfa(r.Modifiees)}</td><td>{r.Operateur}</td>
               </tr>
             ))}
             {!releves.length && <Vide colonnes={9} chargement={chargement} texte="Aucun fichier importé." />}

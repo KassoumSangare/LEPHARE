@@ -165,15 +165,17 @@ export const ArchivesPage = () => {
 
   const handleRestore = async (row) => {
     try {
+      let message = '';
       if (row.type === 'devis') {
         await quoteApi.unarchiveQuote(row.id);
       } else if (row.type === 'contrat') {
         // Contrats : pas d'archivage en base, il reste propre au navigateur (voir loadArchives)
         dataStore.unarchiveContract(row.id);
       } else {
-        await archivesApi.restaurer(row.type, row.id);
+        // Client : de retour dans la liste des clients ; le serveur signale une autre fiche de même identité
+        message = (await archivesApi.restaurer(row.type, row.id))?.data?.Message || '';
       }
-      success(`${TYPE_META[row.type].label} « ${row.nom} » (${row.reference}) a été restauré avec succès.`);
+      success(`${TYPE_META[row.type].label} « ${row.nom} » (${row.reference}) a été restauré avec succès.${message && row.type === 'client' ? ` ${message}` : ''}`);
       loadArchives();
     } catch (err) {
       toastError(`Restauration impossible : ${messageErreurApi(err)}`);
