@@ -292,7 +292,7 @@ export const AdminDashboard = () => {
                         <td className="nombre montant">{francs(b.PrimeTtc)}</td>
                         <td className="nombre montant">
                           {francs(b.Commission)}
-                          {b.TauxCommission !== null && <span className="secondaire">{pourcent(b.TauxCommission)} de la prime nette</span>}
+                          {b.TauxCommission !== null && <span className="secondaire">{pourcent(b.TauxCommission)} {b.LibelleBase || 'de la prime nette'}</span>}
                         </td>
                         <td className="nombre montant">
                           {francs(b.EncaisseExercice + b.EncaisseAnterieur)}

@@ -20,6 +20,7 @@ MODULES = [
     ("apporteurs", "Apporteurs d'affaires"),
     ("sinistres", "Sinistres"),
     ("consommations", "Consommations santé"),
+    ("rafas", "RAFAS - Régime autofinancé d'assurance santé"),
     ("approbations", "Dérogations et approbations"),
     ("imports", "Imports de fichiers"),
     ("crm", "Suivi commercial"),
@@ -101,6 +102,12 @@ DROITS = [
      True, False, False),
     ("consommations.fraude", "Détecter et instruire les cas de fraude santé",
      "Signaux de fraude par bénéficiaire et décision d'instruction ; aucune décision n'est automatique.", True, False, False),
+
+    ("rafas.view", "Consulter le RAFAS",
+     "Conventions des régimes autofinancés, fonds, effectifs, dépenses de santé et contrôles du gestionnaire. Données de santé.", True, False, False),
+    ("rafas.manage", "Gérer les conventions RAFAS et leur fonds",
+     "Conventions, exercices et collèges, appels de fonds, versements du souscripteur, honoraires et commission.", True, False, False),
+    ("rafas.import", "Importer les fichiers du gestionnaire RAFAS", "Effectifs et relevés de prestations (VITALIS SANTE).", True, False, False),
 
     ("approbations.view", "Consulter les demandes d'autorisation", "", False, False, False),
     ("approbations.decider", "Approuver ou rejeter une demande", "Décisions sur les demandes et dérogations accordées.", True, False, True),

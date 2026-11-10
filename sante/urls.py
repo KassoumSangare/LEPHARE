@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import consommations, consommations_analyse, consommations_pilotage, consommations_rapport, consommations_souscriptions, oreole
+from . import consommations, consommations_analyse, consommations_pilotage, consommations_rapport, consommations_souscriptions, oreole, rafas, rafas_rapport
 
 # from django_api_admin.sites import site
 
@@ -180,6 +180,27 @@ urlpatterns = [
     path(r"consommations/fraude/", consommations.vue_fraude, name="consommations-fraude"),
     path(r"consommations/fraude/<int:matricule>/", consommations.vue_fraude_beneficiaire, name="consommations-fraude-beneficiaire"),
     path(r"consommations/fraude/<int:matricule>/instruction/", consommations.vue_instruction, name="consommations-instruction"),
+    # Branche RAFAS, régime autofinancé d'assurance santé (sante/rafas.py) : conventions, exercices et collèges, fonds, fichiers du gestionnaire,
+    # analyse de la période, effectif, fiche famille, rapport Word
+    path(r"rafas/conventions/", rafas.vue_conventions, name="rafas-conventions"),
+    path(r"rafas/conventions/<int:idconvention>/", rafas.vue_convention, name="rafas-convention"),
+    path(r"rafas/conventions/<int:idconvention>/exercices/", rafas.vue_exercices, name="rafas-exercices"),
+    path(r"rafas/conventions/<int:idconvention>/exercices/<int:idexercice>/", rafas.vue_exercice, name="rafas-exercice"),
+    path(r"rafas/conventions/<int:idconvention>/colleges-gestionnaire/", rafas.vue_liens, name="rafas-liens"),
+    path(r"rafas/conventions/<int:idconvention>/import/analyse/", rafas.vue_import_analyse, name="rafas-import-analyse"),
+    path(r"rafas/conventions/<int:idconvention>/import/", rafas.vue_import, name="rafas-import"),
+    path(r"rafas/conventions/<int:idconvention>/imports/<int:idimport>/", rafas.vue_supprimer_import, name="rafas-import-suppression"),
+    path(r"rafas/conventions/<int:idconvention>/analyse/", rafas.vue_analyse, name="rafas-analyse"),
+    path(r"rafas/conventions/<int:idconvention>/effectif/", rafas.vue_effectif, name="rafas-effectif"),
+    path(r"rafas/conventions/<int:idconvention>/famille/<int:matricule>/", rafas.vue_famille, name="rafas-famille"),
+    path(r"rafas/conventions/<int:idconvention>/fonds/", rafas.vue_fonds, name="rafas-fonds"),
+    path(r"rafas/conventions/<int:idconvention>/rapport/", rafas_rapport.vue_rapport, name="rafas-rapport"),
+    path(r"rafas/exercices/<int:idexercice>/appels/", rafas.vue_appels, name="rafas-appels"),
+    path(r"rafas/appels/<int:idappel>/", rafas.vue_appel, name="rafas-appel"),
+    path(r"rafas/exercices/<int:idexercice>/versements/", rafas.vue_versements, name="rafas-versements"),
+    path(r"rafas/versements/<int:idversement>/", rafas.vue_versement, name="rafas-versement"),
+    path(r"rafas/exercices/<int:idexercice>/honoraires/", rafas.vue_honoraires, name="rafas-honoraires"),
+    path(r"rafas/honoraires/<int:idhonoraire>/", rafas.vue_honoraire, name="rafas-honoraire"),
 
 ]
 urlpatterns += router.urls

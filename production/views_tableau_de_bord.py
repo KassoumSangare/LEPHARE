@@ -333,6 +333,20 @@ def tableau_de_bord(request):
             "ParCompagnie": _par_compagnie(cursor, p),
         }
         situation = _situation(cursor, jour)
+        # Régimes autofinancés (RAFAS) : la commission du courtier sur les cotisations fait partie du chiffre d'affaires du cabinet
+        # (demande du 2026-11-10) ; elle n'a pas de prime d'assurance ni d'encaissement de prime
+        from sante.rafas import commissions_rafas
+        rafas = commissions_rafas(cursor, p["debut"], au, p["debut_n1"], p["au_n1"])
+    if rafas["Commission"] or rafas["Percue"] or rafas["CommissionN1"]:
+        branches.append({
+            "IdProduit": None, "Branche": "RAFAS - Régime autofinancé", "CategorieCima": "Assurance des personnes", "Nombre": rafas["Nombre"],
+            "PrimeTtc": 0.0, "PrimeNette": 0.0, "Commission": float(rafas["Commission"]), "EncaisseExercice": 0.0, "EncaisseAnterieur": 0.0,
+            "PrimeEmiseQuittancee": 0.0, "EncaisseSurEmissions": 0.0, "ResteAEncaisser": 0.0, "QuittancesImpayees": 0,
+            "CommissionPercue": float(rafas["Percue"]), "CommissionReprise": 0.0, "TauxRecouvrement": None,
+            "TauxCommission": _taux(rafas["Commission"], rafas["Base"]), "BaseCommission": float(rafas["Base"]),
+            "LibelleBase": "des cotisations du régime",
+        })
+        resultat["ParBranche"] = branches
 
     somme = lambda cle: sum(b[cle] for b in branches)  # noqa: E731
     emis_quittance = somme("PrimeEmiseQuittancee")
@@ -344,11 +358,12 @@ def tableau_de_bord(request):
         "TauxRecouvrement": _taux(somme("EncaisseSurEmissions"), emis_quittance),
     }
     resultat["Resultats"] = {
-        "CommissionsAcquises": production["Commission"],
-        "CommissionsAcquisesPrecedent": production["Precedent"]["Commission"],
+        "CommissionsAcquises": production["Commission"] + rafas["Commission"],
+        "CommissionsAcquisesPrecedent": production["Precedent"]["Commission"] + rafas["CommissionN1"],
         "TauxMoyen": _taux(production["Commission"], production["PrimeNette"]),
         "CommissionsPercues": somme("CommissionPercue") + somme("CommissionReprise"),
         "PercuesReglements": somme("CommissionPercue"), "PercuesReprises": somme("CommissionReprise"),
+        "CommissionsRafas": rafas["Commission"], "PercuesRafas": rafas["Percue"],
     }
     resultat["Situation"] = situation
     resultat["Alertes"] = _alertes(situation)

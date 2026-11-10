@@ -318,6 +318,12 @@ REGLES = [
     R("POST", r"consommations/fraude/(?P<matricule>\d+)/instruction/?$", "consommations.fraude", objet="suspicion_fraude", cles=("matricule",)),
     R("GET", r"consommations/fraude", "consommations.fraude"),
     R("GET", r"consommations/", "consommations.view"),
+    # Branche RAFAS (sante/rafas.py) : données de santé et fonds du souscripteur, droits dédiés ; l'analyse d'un fichier n'écrit rien
+    R("POST", r"rafas/conventions/(?P<idconvention>\d+)/import/analyse/?$", "rafas.import", lecture=True),
+    R("POST", r"rafas/conventions/(?P<idconvention>\d+)/import/?$", "rafas.import", objet="releve_rafas", cles=("idconvention",)),
+    R("DELETE", r"rafas/conventions/(?P<idconvention>\d+)/imports/(?P<idimport>\d+)/?$", "rafas.import", objet="releve_rafas", cles=("idimport",)),
+    R("POST,PUT,PATCH,DELETE", r"rafas/", "rafas.manage", objet="rafas"),
+    R("GET", r"rafas/", "rafas.view"),
     R("POST", r"afa/devis/?$", _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),
     R("POST", r"(importationassureia/|importationaffilie)", "imports.excel", objet="import"),
     # Transport hors GUCE : décompte sans écriture, devis, voyages déclarés et ressortie d'une police d'abonnement
