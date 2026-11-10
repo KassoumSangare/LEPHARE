@@ -33,6 +33,7 @@ from . import suppression as suppression_views
 from . import views_archives
 from . import periode_contrat as periode_contrat_views
 from . import afa as afa_views
+from . import vie_retraite as vie_retraite_views
 from .views_transport_guce import (
     analyser_bordereau,
     certificats_transport,
@@ -672,6 +673,10 @@ urlpatterns = [
     path("afa/referentiels/", afa_views.referentiels, name="afa-referentiels"),
     path("afa/import/analyse/", afa_views.analyse_import, name="afa-import-analyse"),
     path("afa/modele/", afa_views.modele, name="afa-modele"),
+    # Vie, offre Retraite complémentaire : état mensuel des cotisations (analyse sans écriture), dernier état du souscripteur, modèle
+    path("afa/retraite/analyse/", vie_retraite_views.analyse_import, name="vie-retraite-analyse"),
+    path("afa/retraite/etat-precedent/", vie_retraite_views.precedent, name="vie-retraite-precedent"),
+    path("afa/retraite/modele/", vie_retraite_views.modele, name="vie-retraite-modele"),
     # MRH : import Excel des maisons d'un devis ou d'une incorporation (lecture et contrôle sans écriture), modèle vierge
     path("mrh/import/analyse/", import_mrh.analyse_import, name="mrh-import-analyse"),
     path("mrh/import/modele/", import_mrh.modele, name="mrh-import-modele"),

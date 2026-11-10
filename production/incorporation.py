@@ -26,6 +26,7 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
+from . import vie_offres
 from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _date, _iso, _lignes
 
 ID_PRODUIT_AUTO = 1
@@ -104,7 +105,13 @@ def _contrat_flottant(cursor, id_contrat):
         if not base["flotte"] and _personnes(cursor, base["numeropolice"]) <= 1 and not _ia_minene(cursor, base["iddevis"]):
             raise ErreurRenouvellement("Contrat individuel : l'incorporation est réservée aux contrats à plusieurs personnes.")
     elif base["idproduit"] == ID_PRODUIT_VIE:
-        # AFA : contrat de groupe par nature, même à une seule personne
+        # AFA : contrat de groupe par nature, même à une seule personne ; Retraite complémentaire : les entrants figurent
+        # dans l'état des cotisations du mois suivant (production/vie_retraite.py), pas d'incorporation
+        offre = vie_offres.offre_du_devis(cursor, base["iddevis"])
+        if offre["Saisie"] == vie_offres.SAISIE_COTISATION:
+            raise ErreurRenouvellement(
+                f"{offre['Libelle']} : un salarié entrant s'ajoute à l'état des cotisations du mois suivant, pas par une incorporation."
+            )
         if _afa_oreole(cursor, base["numeropolice"]):
             raise ErreurRenouvellement(
                 "Police AFA du package Oreole Santé : incorporez la personne depuis le bloc Oreole Santé du contrat Santé, "

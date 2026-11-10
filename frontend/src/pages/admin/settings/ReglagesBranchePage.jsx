@@ -17,12 +17,13 @@ import { SectionTransport } from './branches/SectionTransport';
 import { SectionIa } from './branches/SectionIa';
 import { SectionMrh } from './branches/SectionMrh';
 import { SectionRc } from './branches/SectionRc';
+import { SectionVie } from './branches/SectionVie';
 
 // Réglages d'une branche de production, au même endroit (demande du 2026-10-21 : « le paramétrage pour toutes les
 // branches de production actives, ce qui évitera la confusion ») : production (saisie, compagnie proposée), règles de
-// la branche, réglages propres (Transport, IA, MRH, RC), écrans détaillés et tables communes filtrées sur la branche.
+// la branche, réglages propres (Transport, IA, MRH, RC, offres commerciales Vie), écrans détaillés et tables communes.
 
-const SECTIONS = { transport: SectionTransport, ia: SectionIa, mrh: SectionMrh, rc: SectionRc };
+const SECTIONS = { transport: SectionTransport, ia: SectionIa, mrh: SectionMrh, rc: SectionRc, vie: SectionVie };
 const ECRANS = ADMIN_MENU.flatMap((g) => g.items);
 
 // Tables communes à toutes les branches, ouvertes filtrées sur la branche

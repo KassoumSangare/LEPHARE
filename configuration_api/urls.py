@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 
-from . import parametrage, parametrage_auto, parametrage_dommages, parametrage_ia, parametrage_mrh, parametrage_oreole, parametrage_sante, parametrage_transport, views_grilles_voyage
+from . import parametrage, parametrage_auto, parametrage_dommages, parametrage_ia, parametrage_mrh, parametrage_oreole, parametrage_sante, parametrage_transport, parametrage_vie, views_grilles_voyage
 from .views import (
     AccessoireCourtierParCompagnieViewSet,
     AccessoireViewSet,
@@ -186,6 +186,9 @@ urlpatterns = [
     path("parametrage/ia/classes/<str:classe>/", parametrage_ia.classe, name="parametrage-ia-classe"),
     path("parametrage/ia/tranches/", parametrage_ia.tranches, name="parametrage-ia-tranches"),
     path("parametrage/ia/offres/", parametrage_ia.offres, name="parametrage-ia-offres"),
+    # Réglages Vie : offres commerciales de la liste déroulante du devis Vie (AFA, Retraite complémentaire, Temporaire décès…)
+    path("parametrage/vie/offres/", parametrage_vie.offres, name="parametrage-vie-offres"),
+    path("parametrage/vie/offres/<int:id_offre>/", parametrage_vie.offre, name="parametrage-vie-offre"),
     path("parametrage/ia/reglages/<str:cle>/", parametrage_ia.reglage, name="parametrage-ia-reglage"),
     path("parametrage/mrh/", parametrage_mrh.mrh, name="parametrage-mrh"),
     path("parametrage/mrh/usages/<str:code>/", parametrage_mrh.usage, name="parametrage-mrh-usage"),

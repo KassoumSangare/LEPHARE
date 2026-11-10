@@ -119,6 +119,37 @@ def _reprendre_assure_existant(assure_existant, assure_data, numero_ligne, rappo
         )
 
 
+def donnees_avec_avenant(request_post_data, id_avenant_devis, police_connexe_devis=""):
+    """Données de l'écran avec l'avenant du devis existant à la place de celui envoyé. L'écran IA envoyait l'avenant 1
+    (affaire nouvelle) en important dans un devis de renouvellement : sp_creation_devis_ia le réécrivait sur le devis,
+    qui sortait de la page Renouvellement (devis REN seuls) et aurait pris une nouvelle police à la confirmation.
+    La police Santé connexe du devis (IA MINENE) complète aussi une saisie vide, que la base refuse pour l'offre MINENE."""
+    changer_avenant = bool(id_avenant_devis) and str(request_post_data.get("IdAvenant") or "") != str(id_avenant_devis)
+    police = str(police_connexe_devis or "").strip()
+    changer_police = bool(police) and not str(request_post_data.get("NumeroPoliceConnexe") or "").strip()
+    if not (changer_avenant or changer_police):
+        return request_post_data
+    donnees = request_post_data.copy()
+    if changer_avenant:
+        donnees["IdAvenant"] = str(id_avenant_devis)
+    if changer_police:
+        donnees["NumeroPoliceConnexe"] = police
+    return donnees
+
+
+def _avec_avenant_du_devis(request_post_data):
+    """Import dans un devis existant (renouvellement, incorporation, modification) : son avenant est gardé."""
+    id_devis = int(request_post_data.get("IdDevis") or 0)
+    if not id_devis:
+        return request_post_data
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT idavenant, numeropoliceconnexe FROM stddevis WHERE iddevis = %s", [id_devis])
+        ligne = cursor.fetchone()
+    if not ligne:
+        return request_post_data
+    return donnees_avec_avenant(request_post_data, ligne[0], ligne[1])
+
+
 def _controler_entete(entete_fichier, request_post_data, rapport):
     """Acte, période et souscripteur du fichier comparés à la saisie de l'écran (avertissements)."""
     from ..iautils import convert_to_date
@@ -278,6 +309,13 @@ def traiter_assures(assures, request_post_data, config, rapport):
     
     id_devis = 0
 
+    # Lignes déjà au devis avant l'import (renouvellement : assurés du contrat), par matricule : un assuré connu du fichier y est mis à jour
+    lignes_existantes = {}
+    if id_devis_initial:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT TRIM(matricule), iddevisdetail FROM stddevisdetail WHERE iddevis = %s", [id_devis_initial])
+            lignes_existantes = dict(cursor.fetchall())
+
     # ✅ AMÉLIORATION 1 : Cache local des clés uniques traitées dans ce fichier
     cles_traitees_fichier = set()
     # Assurés inscrits au devis (ligne, client, données du fichier) : contrôle des primes
@@ -336,7 +374,7 @@ def traiter_assures(assures, request_post_data, config, rapport):
                                     int(request_post_data.get("IdClient") or 0),
                                 )
                             cles_traitees_fichier.add(cle_unique)
-                            id_devis = enregistrer_devis_ia(entete_devis, assure_data, assure_existant.IdClient)
+                            id_devis = enregistrer_devis_ia(entete_devis, assure_data, assure_existant.IdClient, lignes_existantes)
                             entete_devis["IdDevis"] = id_devis
                             assures_inscrits.append((idx, assure_existant.IdClient, assure_data))
                             rapport.assures_mis_a_jour.append(AssureResultat(
@@ -599,6 +637,7 @@ def importer_assures_anti_doublons(
         # ÉTAPE 3: Extraire les assurés du fichier
         # ─────────────────────────────────────────────────────────────
         logger.info("→ Extraction des assurés...")
+        request_post_data = _avec_avenant_du_devis(request_post_data)
         # Offre de l'écran transmise : imposée pour les offres standard et spécifiques (6, 7, 173,
         # 174), sinon l'offre est déduite des capitaux et de la prime du fichier (CGA, CI-ENERGIES)
         assures = extraire_assures(filepath, int(request_post_data.get("IdOffre") or 0))

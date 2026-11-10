@@ -226,10 +226,14 @@ def _reconduire_montants_ia(cursor, base, id_devis):
     objets = [{"Matricule": l["matricule"], "IdContrat": l["idcontrat"]} for l in _lignes(cursor, "SELECT matricule, idcontrat FROM fn_liste_objets_assures(%s)",
                                                                                          [base["numeropolice"]])]
     montants = montants_du_contrat(cursor, objets)
+    # Capitaux lus là où l'écran les lit (fn_assure_ia_info : valeur vénale = décès, valeur à neuf = infirmité). Le capital des garanties 19 et 17
+    # vaut 0 pour les tarifs CGA : l'enregistrement de l'écran y voyait des capitaux changés et effaçait les montants reconduits (devis à l'accessoire seul)
     lignes = _lignes(cursor, """
         SELECT TRIM(dd.matricule) AS matricule, dd.idoffre,
-               (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 19 LIMIT 1) AS deces,
-               (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 17 LIMIT 1) AS infirmite
+               COALESCE(NULLIF(dd.valeurvenale, 0),
+                        (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 19 LIMIT 1)) AS deces,
+               COALESCE(NULLIF(dd.valeurneuve, 0),
+                        (SELECT g.capital FROM stddevisdetgarantie g WHERE g.iddevisdet = dd.iddevisdetail AND g.idgarantie = 17 LIMIT 1)) AS infirmite
         FROM stddevisdetail dd WHERE dd.iddevis = %s""", [id_devis])
     a_garder = [{"Matricule": l["matricule"], "PrimeNette": montants[l["matricule"]][0], "Accessoire": montants[l["matricule"]][1],
                  "PrimeTtc": montants[l["matricule"]][2], "CapitalDeces": l["deces"], "CapitalInfirmite": l["infirmite"], "IdOffre": l["idoffre"]}

@@ -156,18 +156,31 @@ class IncorporationAfaTests(SimpleTestCase):
 
 
 class ContratVieIncorporableTests(SimpleTestCase):
+    # Offre commerciale de la police (production/vie_offres.py, 2026-11-10) : AFA par défaut
+    OFFRE_AFA = {"Code": "AFA", "Libelle": "AFA", "Saisie": "CAPITAL"}
+
     def base(self, produit, flotte=True):
         return {"idproduit": produit, "flotte": flotte, "numeropolice": "P", "iddevis": 1}
 
     def test_contrat_vie_incorporable_meme_a_une_personne(self):
         with mock.patch("production.incorporation._contrat_base", return_value=self.base(10, flotte=False)), \
+                mock.patch("production.incorporation.vie_offres.offre_du_devis", return_value=self.OFFRE_AFA), \
                 mock.patch("production.incorporation._afa_oreole", return_value=False):
             self.assertEqual(_contrat_flottant(mock.Mock(), 1)["idproduit"], 10)
 
     def test_police_afa_oreole_renvoyee_a_la_branche(self):
         with mock.patch("production.incorporation._contrat_base", return_value=self.base(10)), \
+                mock.patch("production.incorporation.vie_offres.offre_du_devis", return_value=self.OFFRE_AFA), \
                 mock.patch("production.incorporation._afa_oreole", return_value=True):
             with self.assertRaisesRegex(ErreurRenouvellement, "Oreole Santé"):
+                _contrat_flottant(mock.Mock(), 1)
+
+    def test_retraite_complementaire_sans_incorporation(self):
+        # Les entrants figurent dans l'état des cotisations du mois suivant
+        retraite = {"Code": "RETRAITE", "Libelle": "Retraite complémentaire", "Saisie": "COTISATION"}
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(10)), \
+                mock.patch("production.incorporation.vie_offres.offre_du_devis", return_value=retraite):
+            with self.assertRaisesRegex(ErreurRenouvellement, "état des cotisations"):
                 _contrat_flottant(mock.Mock(), 1)
 
     def test_autres_produits_toujours_refuses(self):

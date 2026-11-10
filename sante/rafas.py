@@ -302,6 +302,36 @@ def situation_fonds(cursor, convention, exercice, liens=None, jour=None):
     }
 
 
+CONDITIONS = ("gestionnaire", "nature_risque", "taux_soins", "taux_hospitalisation", "territoire", "composition_famille", "enfants_max", "age_adulte",
+              "age_enfant", "age_etudiant", "preavis_mois", "delai_remboursement_mois", "delai_contestation_jours")
+CONDITIONS_EXERCICE = ("taux_honoraires", "taux_commission", "mois_provision", "seuil_alerte_mois")
+
+
+def modeles_proposes(cursor):
+    """Valeurs d'une nouvelle convention (demande du 2026-11-10 : « il y a des valeurs qui n'ont pas besoin d'être saisies ») : conditions de la
+    dernière convention enregistrée (gestionnaire, couverture, règles de la famille, préavis et délais ; honoraires, commission et fonds de son
+    dernier exercice ; plafond et barème de son dernier collège de chaque catégorie), à défaut celles de la convention RAFAS EXAT."""
+    m = modeles()
+    m["Source"] = None
+    if not _tables_presentes(cursor):
+        return m
+    derniere = _une(cursor, f"""SELECT idconvention, souscripteur, {', '.join(CONDITIONS)} FROM lephare_rafas_convention
+                                ORDER BY date_creation DESC, idconvention DESC LIMIT 1""")
+    if not derniere:
+        return m
+    m["Source"] = derniere["souscripteur"]
+    m["Convention"] = {**m["Convention"], **{k: derniere[k] for k in CONDITIONS if derniere[k] not in (None, "")}}
+    exercice = _une(cursor, f"SELECT idexercice, {', '.join(CONDITIONS_EXERCICE)} FROM lephare_rafas_exercice WHERE idconvention = %s ORDER BY date_effet DESC LIMIT 1",
+                    [derniere["idconvention"]])
+    if exercice:
+        m["Exercice"] = {**m["Exercice"], **{k: exercice[k] for k in CONDITIONS_EXERCICE if exercice[k] is not None}}
+        for c in _lignes(cursor, "SELECT categorie, plafond_famille, bareme FROM lephare_rafas_college WHERE idexercice = %s ORDER BY ordre DESC", [exercice["idexercice"]]):
+            bareme = c["bareme"] if isinstance(c["bareme"], list) else json.loads(c["bareme"] or "[]")
+            if c["categorie"] in m["Colleges"] and bareme:
+                m["Colleges"][c["categorie"]] = {**m["Colleges"][c["categorie"]], "plafond_famille": c["plafond_famille"], "bareme": bareme}
+    return m
+
+
 def liste_conventions():
     with connection.cursor() as cursor:
         if not _tables_presentes(cursor):
@@ -309,6 +339,7 @@ def liste_conventions():
         conventions = _lignes(cursor, "SELECT * FROM lephare_rafas_convention ORDER BY statut, souscripteur")
         resultat = []
         jour = dt.date.today()
+        proposes = modeles_proposes(cursor)
         for c in conventions:
             exercices = _exercices(cursor, c["idconvention"])
             e = exercice_du_jour(exercices, jour)
@@ -326,7 +357,7 @@ def liste_conventions():
                 SELECT idimport FROM lephare_rafas_import WHERE idconvention = %s AND nature = 'EFFECTIF' AND situation IS NOT NULL
                 ORDER BY situation DESC LIMIT 1)""", [c["idconvention"]]) or {}).get("n")
             resultat.append(ligne)
-    return _json({"Conventions": resultat, "Modeles": modeles()})
+    return _json({"Conventions": resultat, "Modeles": proposes})
 
 
 def lire_convention(idconvention):
@@ -344,12 +375,13 @@ def lire_convention(idconvention):
             client = _une(cursor, "SELECT idclient, TRIM(CONCAT_WS(' ', nom, prenoms)) AS nom FROM stdclient WHERE idclient = %s", [c["idclient"]])
         e = exercice_du_jour(exercices, dt.date.today())
         fonds = situation_fonds(cursor, c, e, liens) if e else None
+        proposes = modeles_proposes(cursor)
     effectifs = [i for i in imports if i["nature"] == "EFFECTIF"]
     return _json({"Convention": c, "Client": client, "Exercices": exercices, "ExerciceCourant": e["idexercice"] if e else None,
                   "Liens": list(liens.values()), "Imports": imports, "MoisDisponibles": mois,
                   "Situations": sorted(({"IdImport": i["idimport"], "Situation": i["situation"], "Lignes": i["lignes"], "Feuille": i["feuille"]} for i in effectifs
                                         if i["situation"]), key=lambda x: x["Situation"]),
-                  "Fonds": fonds, "Modeles": modeles()})
+                  "Fonds": fonds, "Modeles": proposes})
 
 
 # ------------------------------------------------------------------ écritures : convention, exercices, collèges
@@ -493,7 +525,22 @@ def enregistrer_convention(donnees, user, idconvention=None):
                            [*complet.values(), getattr(user, "id", None)])
             idconvention = cursor.fetchone()[0]
             _ecrire_exercice(cursor, idconvention, donnees["Exercice"])
+            _liens_proposes(cursor, idconvention, donnees.get("Liens") or [])
     return lire_convention(idconvention)
+
+
+def _liens_proposes(cursor, idconvention, liens):
+    """Collèges du gestionnaire rattachés dès la création (proposition d'après le fichier) : collège désigné par son libellé dans la convention."""
+    codes = _codes_convention(cursor, idconvention)
+    for l in liens:
+        code = _entier(l.get("code_college"), "Code du collège du gestionnaire", mini=None)
+        if code is None:
+            continue
+        cursor.execute("""INSERT INTO lephare_rafas_college_gestionnaire (idconvention, code_college, libelle, police, idpolice, college, categorie, zone)
+                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+                       [idconvention, code, str(l.get("libelle") or "")[:150], str(l.get("police") or "")[:150], _entier(l.get("idpolice"), "Police", mini=None),
+                        codes.get(normaliser(l.get("college_libelle")), ""), l.get("categorie") if l.get("categorie") in PLAFONDS_FAMILLE else "",
+                        str(l.get("zone") or "").strip().upper()[:60]])
 
 
 def enregistrer_exercice(idconvention, donnees, idexercice=None):
@@ -606,9 +653,8 @@ def _garant(convention, lecture):
     return code, garants
 
 
-def analyser_import(idconvention, contenu, nom):
-    lecture, convention, exercices, liens = _lire(idconvention, contenu, nom)
-    code, garants = _garant(convention, lecture)
+def _resume_feuilles(lecture, code):
+    """Feuilles reconnues d'un classeur : mois et montants des relevés (feuilles recopiées non cochées), effectifs (situation, familles)."""
     retenus = repartir_sinistres(lecture["Sinistres"])
     feuilles = []
     for f in lecture["Sinistres"]:
@@ -628,10 +674,17 @@ def analyser_import(idconvention, contenu, nom):
         autres = [b for b in f["Lignes"] if code and b.get("code_garant") and b["code_garant"].upper() != code]
         propose, doublons = effectif_propose(f)
         feuilles.append({"Feuille": f["Feuille"], "Nature": "EFFECTIF", "Lignes": len(f["Lignes"]), "SansMatricule": f["SansMatricule"], "AutreGarant": len(autres),
-                         "Doublons": doublons, "Situation": f["Situation"], "Proposee": propose,
+                         "Doublons": doublons, "Situation": f["Situation"], "Proposee": propose, "Beneficiaires": len({b["matricule"] for b in f["Lignes"]}),
                          "Motif": "" if propose else f"{doublons} matricules en double : feuille de travail qui réunit plusieurs périodes, à ne pas importer comme effectif.",
                          "Familles": len({b.get("matricule_adherent") or b["matricule"] for b in f["Lignes"]}),
                          "Liens": dict(Counter(b["lien"] or "?" for b in f["Lignes"])), "Sorties": sum(1 for b in f["Lignes"] if b.get("date_sortie"))})
+    return feuilles
+
+
+def analyser_import(idconvention, contenu, nom):
+    lecture, convention, exercices, liens = _lire(idconvention, contenu, nom)
+    code, garants = _garant(convention, lecture)
+    feuilles = _resume_feuilles(lecture, code)
     toutes = [x for f in lecture["Sinistres"] + lecture["Effectifs"] for x in f["Lignes"]]
     mois_existants = []
     with connection.cursor() as cursor:
@@ -735,6 +788,149 @@ def importer(idconvention, contenu, nom, choix, user):
         cursor.execute("""DELETE FROM lephare_rafas_import i WHERE i.idconvention = %s AND i.nature = 'SINISTRES'
                           AND NOT EXISTS (SELECT 1 FROM lephare_rafas_prestation p WHERE p.idimport = i.idimport)""", [idconvention])
     return _json({**compte, "Convention": lire_convention(idconvention)})
+
+
+# ------------------------------------------------------------------ nouvelle convention d'après un fichier du gestionnaire
+def nom_police(police):
+    """Nom de l'entreprise d'une police du gestionnaire : « SOCIETE EXAT AGRICULTURE AM/O » -> EXAT AGRICULTURE ;
+    « CLUB SAINT MICHEL S/C EXAT AGRICULTURE » -> CLUB SAINT MICHEL."""
+    n = re.split(r"\s+S/C\s+", normaliser(police))[0]
+    n = re.sub(r"[\s(-]*(AM/?O|AM-O|CADRES?)\)?$", "", n).strip(" -")
+    return re.sub(r"^SOCIETE\s+", "", n) or "COLLEGE"
+
+
+def _frequent(valeurs):
+    compte = Counter(v for v in valeurs if v not in (None, ""))
+    return compte.most_common(1)[0][0] if compte else None
+
+
+def periode_proposee(beneficiaires):
+    """Période de la police d'après l'effectif (dateEffetPolice, sinon dateEcheance - 1 an + 1 jour) ; rang de l'avenant = années depuis la
+    première entrée du même jour et du même mois que l'effet (début de la convention)."""
+    effet = _frequent(b.get("date_effet_police") for b in beneficiaires)
+    echeance = _frequent(b.get("date_echeance") for b in beneficiaires)
+    if not effet and echeance:
+        effet = moins_un_an(echeance) + dt.timedelta(days=1)
+    if not effet:
+        return None
+    if not echeance or echeance <= effet:
+        try:
+            echeance = effet.replace(year=effet.year + 1) - dt.timedelta(days=1)
+        except ValueError:
+            echeance = dt.date(effet.year + 1, 2, 28)
+    entrees = [b["date_entree"] for b in beneficiaires if b.get("date_entree") and b["date_entree"] <= effet
+               and (b["date_entree"].month, b["date_entree"].day) == (effet.month, effet.day)]
+    debut = min(entrees) if entrees else effet
+    return {"date_effet": effet, "date_echeance": echeance, "rang": effet.year - debut.year, "debut_convention": debut}
+
+
+def colleges_proposes(beneficiaires, prestations, situation=None):
+    """Collèges de la convention d'après les collèges du gestionnaire : un par entreprise et par catégorie (EXAT AGRICULTURE - CADRES...),
+    familles = adhérents distincts de l'effectif (sortis exclus), bénéficiaires ; rattachement de chaque collège du gestionnaire et sa zone."""
+    sources = beneficiaires or prestations
+    par_code, zones = {}, defaultdict(Counter)
+    for x in sources:
+        if x.get("code_college") is None:
+            continue
+        par_code.setdefault(x["code_college"], x)
+        if x.get("zone"):
+            zones[x["code_college"]][normaliser(x["zone"])] += 1
+    groupes, liens = {}, []
+    for code, x in sorted(par_code.items()):
+        categorie = categorie_depuis_college(x.get("college"), x.get("police"))
+        entreprise = nom_police(x.get("police") or x.get("college"))
+        libelle = f"{entreprise} - {categorie}"
+        g = groupes.setdefault(libelle, {"libelle": libelle, "entreprise": entreprise, "categorie": categorie, "codes": [], "familles": set(),
+                                         "beneficiaires": 0, "lignes": 0})
+        g["codes"].append(code)
+        liens.append({"code_college": code, "libelle": (x.get("college") or "")[:150], "police": (x.get("police") or "")[:150], "idpolice": x.get("idpolice"),
+                      "college_libelle": libelle, "categorie": categorie,
+                      "zone": (zones[code].most_common(1)[0][0] if zones[code] else zone_depuis_college(x.get("college")))[:60]})
+    groupe_de = {code: g for g in groupes.values() for code in g["codes"]}
+    for b in beneficiaires:
+        g = groupe_de.get(b.get("code_college"))
+        if g and not (b.get("date_sortie") and situation and b["date_sortie"] <= situation):
+            g["familles"].add(b.get("matricule_adherent") or b["matricule"])
+            g["beneficiaires"] += 1
+    for p in prestations:
+        g = groupe_de.get(p.get("code_college"))
+        if g:
+            g["lignes"] += 1
+    poids = Counter()
+    for g in groupes.values():
+        poids[g["entreprise"]] += g["beneficiaires"] or g["lignes"]
+    ordre = sorted(groupes.values(), key=lambda g: (-poids[g["entreprise"]], g["entreprise"], g["categorie"] != "CADRES"))
+    return [{"libelle": g["libelle"], "categorie": g["categorie"], "familles": len(g["familles"]), "beneficiaires": g["beneficiaires"],
+             "codes": g["codes"]} for g in ordre], liens
+
+
+SANS_ACCENT_CLIENT = "UPPER(translate(CONCAT_WS(' ', nom, prenoms), 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ', 'aaaeeeeiioouuucAAAEEEEIIOOUUUC'))"
+SANS_ACCENT_SOUSCRIPTEUR = "UPPER(translate(TRIM(souscripteur), 'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ', 'aaaeeeeiioouuucAAAEEEEIIOOUUUC'))"
+
+
+def _client_du_portefeuille(cursor, nom):
+    mots = [m for m in re.split(r"[^A-Z0-9]+", normaliser(nom)) if len(m) > 2 and m not in {"SOCIETE", "SARL", "LES", "DES", "COLLEGE"}]
+    if not mots:
+        return None
+    lignes = _lignes(cursor, f"""SELECT idclient, TRIM(CONCAT_WS(' ', nom, prenoms)) AS nom, COALESCE(adresse1, '') AS adresse,
+                                        COALESCE(NULLIF(TRIM(telephone), ''), NULLIF(TRIM(mobile), ''), '') AS telephone
+                                 FROM stdclient WHERE COALESCE(statut, '') <> 'A' AND {' AND '.join([f'{SANS_ACCENT_CLIENT} LIKE %s'] * len(mots))}
+                                 ORDER BY idclient DESC LIMIT 3""", [f"%{m}%" for m in mots])
+    return lignes[0] if lignes else None
+
+
+def proposer_convention(contenu, nom):
+    """Nouvelle convention d'après un fichier du gestionnaire (effectif et, ou, relevé de prestations) : souscripteur, code, n° client, polices,
+    période, rang de l'avenant, collèges avec leurs familles, rattachements et zones ; conditions types ; client du portefeuille ; convention
+    existante du même souscripteur. Aucune écriture : la création suit, puis l'import du même fichier."""
+    lecture = lire_classeur(contenu, nom)
+    effectifs = [f for f in lecture["Effectifs"] if effectif_propose(f)[0] and f["Lignes"]]
+    sinistres = [f for f in lecture["Sinistres"] if f["Lignes"]]
+    if not effectifs and not sinistres:
+        raise ErreurRafas("Ce classeur ne contient ni effectif ni relevé de prestations du gestionnaire : choisissez le fichier VITALIS (effectif ou détail des sinistres).")
+    effectif = max(effectifs, key=lambda f: (f["Situation"] or dt.date.min, len(f["Lignes"]))) if effectifs else None
+    # un matricule en double dans l'effectif compte une fois, comme à l'import (la dernière ligne l'emporte)
+    beneficiaires = list({b["matricule"]: b for b in effectif["Lignes"]}.values()) if effectif else []
+    retenus = repartir_sinistres(sinistres)
+    prestations = [p for f in sinistres for p in f["Lignes"] if (p["mois"], cle_police(p)) in retenus.get(f["Feuille"], set())]
+    toutes = beneficiaires + prestations
+    code = (_frequent(x.get("code_garant") for x in toutes) or "").upper()
+    polices = {}
+    for x in toutes:
+        cle = x.get("idpolice") if x.get("idpolice") is not None else normaliser(x.get("police"))
+        police = polices.setdefault(cle, {"Numero": None, "Libelle": x.get("police") or "", "Beneficiaires": 0, "Prestations": 0})
+        police["Numero"] = police["Numero"] or x.get("numero_police")
+        police["Beneficiaires" if "lien" in x else "Prestations"] += 1
+    polices = sorted(polices.values(), key=lambda p: (str(p["Numero"] or ""), p["Libelle"]))
+    libelle = _frequent(x.get("garant_libelle") for x in toutes)
+    souscripteur = (re.sub(r"^SOCIETE\s+", "", normaliser(libelle)) if libelle
+                    else nom_police(max(polices, key=lambda p: p["Beneficiaires"] + p["Prestations"])["Libelle"]))
+    situation = effectif["Situation"] if effectif else None
+    colleges, liens = colleges_proposes(beneficiaires, prestations, situation)
+    periode = periode_proposee(beneficiaires)
+    with connection.cursor() as cursor:
+        m = modeles_proposes(cursor)
+        existante = None
+        if _tables_presentes(cursor):
+            existante = _une(cursor, f"""SELECT idconvention, souscripteur, CASE WHEN %s <> '' AND UPPER(code_garant) = %s THEN 'code' ELSE 'nom' END AS motif
+                                         FROM lephare_rafas_convention
+                                         WHERE (%s <> '' AND UPPER(code_garant) = %s) OR {SANS_ACCENT_SOUSCRIPTEUR} = %s ORDER BY idconvention LIMIT 1""",
+                             [code, code, code, code, souscripteur])
+        client = _client_du_portefeuille(cursor, souscripteur)
+    for c in colleges:
+        c.update(cotisation="", plafond_famille=m["Colleges"][c["categorie"]]["plafond_famille"], bareme=m["Colleges"][c["categorie"]]["bareme"])
+    mois = sorted({p["mois"] for p in prestations})
+    return _json({
+        "Fichier": nom, "Feuilles": _resume_feuilles(lecture, code), "Ignorees": lecture["Ignorees"],
+        "Convention": {**m["Convention"], "souscripteur": souscripteur, "code_garant": code,
+                       "numero_client": str(_frequent(p.get("numero_client") for p in prestations) or ""),
+                       "polices": "/".join(str(p["Numero"]) for p in polices if p["Numero"]),
+                       "adresse": (client or {}).get("adresse", ""), "contact": (client or {}).get("telephone", ""), "idclient": (client or {}).get("idclient")},
+        "Exercice": {**m["Exercice"], **(periode or {})}, "Colleges": colleges, "Liens": liens, "Polices": polices,
+        "Situation": situation, "Beneficiaires": len(beneficiaires), "Familles": len({b.get("matricule_adherent") or b["matricule"] for b in beneficiaires}),
+        "Prestations": len(prestations), "MoisReleves": [libelle_mois(x) for x in (mois[0], mois[-1])] if mois else [],
+        "Client": client, "Existante": existante, "Modeles": m,
+    })
 
 
 def supprimer_import(idconvention, idimport):
@@ -1105,6 +1301,18 @@ def vue_conventions(request):
     if request.method == "POST":
         return _reponse(enregistrer_convention, request.data, request.user, code=status.HTTP_201_CREATED)
     return _reponse(liste_conventions)
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def vue_proposition(request):
+    """POST /api/rafas/conventions/proposition/ : nouvelle convention proposée d'après un fichier du gestionnaire, sans écriture."""
+    def executer():
+        contenu, nom = _fichier(request)
+        return proposer_convention(contenu, nom)
+    return _reponse(executer)
 
 
 @api_view(["GET", "PUT"])

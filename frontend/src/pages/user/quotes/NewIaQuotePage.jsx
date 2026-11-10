@@ -171,6 +171,8 @@ export const NewIaQuotePage = () => {
   const enIncorporation = incorporationParam || Boolean(incorporation);
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [idDevisEdite, setIdDevisEdite] = useState(null);
+  // Avenant du devis rouvert (REN, INC...) : renvoyé tel quel à l'import, sinon le renouvellement redevenait une affaire nouvelle
+  const [idAvenantDevis, setIdAvenantDevis] = useState(null);
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
   const [primeImposee, setPrimeImposee] = useState(false);
   const [enteteOrigine, setEnteteOrigine] = useState(null);
@@ -508,6 +510,7 @@ export const NewIaQuotePage = () => {
           souscripteurId: Number(raw.client?.IdClient ?? raw.client) || 0,
         };
         setIdDevisEdite(Number(editIddevisParam));
+        setIdAvenantDevis(Number(raw.avenant?.IdAvenant ?? raw.avenant) || null);
         setNumeroDevisEdite(raw.numerodevis || '');
         setPrimeImposee(Boolean(raw.prime_imposee));
         setTotauxEnregistres({
@@ -1052,7 +1055,7 @@ export const NewIaQuotePage = () => {
     donnees.append('IdCompagnie', Number(compagnieId));
     donnees.append('IdIntermediaire', 1);
     donnees.append('IdOffre', Number(idOffre));
-    donnees.append('IdAvenant', incorporation?.IdAvenant || 1);
+    donnees.append('IdAvenant', incorporation?.IdAvenant || (idDevisEdite && idAvenantDevis) || 1);
     donnees.append('IdClient', Number(souscripteurId));
     donnees.append('DateEffet', dateTiret(dateEffet));
     donnees.append('DateExpiration', dateTiret(dateExpiration));
@@ -1062,7 +1065,8 @@ export const NewIaQuotePage = () => {
     // Incorporation : durée déduite des dates par la base
     donnees.append('IdDuree', incorporation ? 0 : Number(dureeId));
     donnees.append('IdDevis', idDevisEdite || 0);
-    donnees.append('NumeroPoliceConnexe', '');
+    // Police Santé connexe (IA MINENE) : sans elle la base refuse l'import, et un devis rouvert la perdait
+    donnees.append('NumeroPoliceConnexe', numeroPoliceConnexe || '');
     donnees.append('NumeroPoliceCompagnie', numeroPoliceCompagnie || '');
     // Assuré déjà connu (renouvellement) : repris dans le devis, fonction et ayants droit du fichier
     donnees.append('ModeImport', 'mettre_a_jour');

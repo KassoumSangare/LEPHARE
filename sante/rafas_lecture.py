@@ -50,6 +50,8 @@ COLONNES_SINISTRES = {
     "DATECONSULTATION": "date_consultation", "DATEDESOINS": "date_soins", "TYPEAFFECTION": "affection", "CODEAFFECTION": "code_affection",
     "TYPEPRESTATION": "type_prestation", "RECLAME": "reclame", "TM": "tm", "MONTANTEXCLUS": "exclus", "DEPASSEMENT": "depassement",
     "REMBOURSE": "rembourse", "PARTPATIENT": "part_patient",
+    # en-tête de la convention : n° client du souscripteur chez le gestionnaire (« Numero »), libellé du souscripteur
+    "NUMERO": "numero_client", "GARANT": "garant_libelle",
 }
 OBLIGATOIRES_SINISTRES = ("mois", "matricule", "rembourse")
 COLONNES_EFFECTIF = {
@@ -59,11 +61,13 @@ COLONNES_EFFECTIF = {
     "DATENAISSANCE": "date_naissance", "CODELIENPARENTE": "lien", "SEXE": "sexe", "DATEEFFET": "date_effet", "DATEENTREE": "date_entree",
     "DATESORTIE": "date_sortie", "MOTIFSORTIE": "motif_sortie", "ETATBENEFICIAIRE": "etat", "ETATBENEFICIAIRE2": "etat2",
     "CODEETATBENEFICIAIRE": "etat3", "ZONECONCENTRATION": "zone",
+    # en-tête de la convention : n° de police, période de la police
+    "NUMEROPOLICE": "numero_police", "DATEEFFETPOLICE": "date_effet_police", "DATEECHEANCE": "date_echeance", "DATEECHEANCEPOLICE": "date_echeance",
 }
 OBLIGATOIRES_EFFECTIF = ("matricule", "lien")
-DATES = {"date_naissance", "date_soins", "date_effet", "date_entree", "date_sortie"}
+DATES = {"date_naissance", "date_soins", "date_effet", "date_entree", "date_sortie", "date_effet_police", "date_echeance"}
 MONTANTS = {"reclame", "exclus", "depassement", "rembourse", "part_patient"}
-ENTIERS = {"idpolice", "code_college", "matricule", "matricule_adherent", "code_affection"}
+ENTIERS = {"idpolice", "code_college", "matricule", "matricule_adherent", "code_affection", "numero_police", "numero_client"}
 TEXTES_COURTS = {"sexe": 1, "statut": 1, "lien": 1}
 TAILLE_MAX = 30 * 1024 * 1024
 
@@ -333,6 +337,8 @@ def _effectif_propre(d):
         "college": (d.get("college") or "")[:150], "date_effet": d.get("date_effet"), "date_entree": d.get("date_entree"),
         "date_sortie": d.get("date_sortie"), "motif_sortie": (d.get("motif_sortie") or "")[:120], "etat": etat[:40],
         "code_garant": garant, "zone": d.get("zone") or "",
+        "garant_libelle": d.get("garant") if d.get("garant") and d.get("garant") != garant else "",
+        "numero_police": d.get("numero_police"), "date_effet_police": d.get("date_effet_police"), "date_echeance": d.get("date_echeance"),
     }
 
 
@@ -355,6 +361,8 @@ def _prestation_propre(d):
         p[c] = p[c] or 0
     p["tm"] = p["tm"] or 0
     p["code_garant"] = d.get("code_garant") or ""
+    p["garant_libelle"] = d.get("garant_libelle") or ""
+    p["numero_client"] = d.get("numero_client")
     return p
 
 

@@ -15,10 +15,13 @@ renouvellement d'une police Vie existante : devis REN de sp_avenant_creation_dev
 Incorporation (2026-11-09) : devis INC créé depuis la fiche du contrat (production/incorporation.py), puis complété ici avec
 les seules personnes ajoutées ; souscripteur, compagnie et échéance restent ceux de la police, la date d'incorporation est au
 choix dans la période, une personne déjà assurée sous la police est refusée, les primes sont reprises sans prorata.
+Offres commerciales (2026-11-10, production/vie_offres.py) : la branche est la Vie, AFA en est une offre ; chaque devis
+porte l'offre choisie (IdOffreVie). Offres « capital » (AFA, Temporaire décès) : ce formulaire, sous-garantie de l'offre ;
+offre « cotisations » (Retraite complémentaire) : état mensuel des salariés, production/vie_retraite.py.
 
-GET  /api/afa/referentiels/?client=<id>   compagnies, polices Vie du souscripteur
+GET  /api/afa/referentiels/?client=<id>   compagnies, offres commerciales, polices Vie du souscripteur
 POST /api/afa/import/analyse/              fichier lu et contrôlé, rien n'est enregistré
-POST /api/afa/devis/                       devis AFA (IdDevis > 0 : modification)
+POST /api/afa/devis/                       devis Vie de l'offre choisie (IdDevis > 0 : modification)
 GET  /api/afa/devis/<iddevis>/             devis AFA tel qu'enregistré
 GET  /api/afa/modele/                      modèle Excel vierge
 """
@@ -44,6 +47,7 @@ from rest_framework.response import Response
 from configuration_api.parametrage import compagnie_par_defaut
 from core.date_parser import date_emission_du_jour
 
+from . import vie_offres
 from .import_assures import insert_new_assure, traiter_ayants_droit
 from .incorporation import _devis_incorporation, _verifier_periode_devis, controler_assure_incorpore
 from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_base, _lignes
@@ -565,8 +569,9 @@ def _devis_affaire_nouvelle(cursor, entete, id_utilisateur):
     return cursor.fetchone()[0]
 
 
-def _devis_renouvellement(cursor, entete, id_utilisateur):
-    """Devis REN de la police (même numéro de police à la confirmation), ses lignes reprises remplacées ensuite."""
+def _devis_renouvellement(cursor, entete, id_utilisateur, mensuel=False):
+    """Devis REN de la police (même numéro de police à la confirmation), ses lignes reprises remplacées ensuite.
+    mensuel : état de cotisations, un renouvellement par mois comme dans URANUS."""
     try:
         base = _contrat_base(cursor, entete["IdContratRenouvele"])
     except ErreurRenouvellement as erreur:
@@ -578,6 +583,9 @@ def _devis_renouvellement(cursor, entete, id_utilisateur):
     if base["idcompagnie"] != entete["IdCompagnie"]:
         raise ErreurAfa(f"La police {base['numeropolice']} est chez {base['compagnie']} : choisissez cette compagnie pour la renouveler.")
     if entete["DateEffet"] <= base["dateeffet"]:
+        if mensuel:
+            raise ErreurAfa(f"La police {base['numeropolice']} couvre déjà le mois du {base['dateeffet']:%d/%m/%Y} : "
+                            "l'état à enregistrer est celui d'un mois suivant.")
         raise ErreurAfa(f"Le renouvellement doit prendre effet après le {base['dateeffet']:%d/%m/%Y}, début de la période en cours.")
     en_cours = _lignes(
         cursor,
@@ -586,6 +594,9 @@ def _devis_renouvellement(cursor, entete, id_utilisateur):
         [base["iddevis"]],
     )
     if en_cours:
+        if mensuel:
+            raise ErreurAfa(f"L'état précédent de la police {base['numeropolice']} (devis {en_cours[0]['numerodevis']}) n'est pas encore "
+                            "confirmé : confirmez-le d'abord, chaque mois renouvelle la police.")
         raise ErreurAfa(f"Un devis de renouvellement de cette police est déjà en cours ({en_cours[0]['numerodevis']}) : modifiez-le.")
     cursor.execute(
         "CALL sp_avenant_creation_devis_initial(%s, %s, %s, %s, %s, %s, '', 0, '')",
@@ -620,9 +631,32 @@ def _controler_incorpores(cursor, id_devis, assures):
         assure["Acte"] = assure["Acte"] or ACTES["INC"]
 
 
+def _offre_saisie(cursor, id_offre, id_devis, incorporation):
+    """Offre commerciale du devis : celle de la police pour une incorporation, sinon celle choisie à l'écran (aucune
+    transmise : celle du devis modifié, sinon AFA, comme pour le package Oreole Santé)."""
+    if incorporation:
+        offre = vie_offres.offre_du_devis(cursor, id_devis)
+        if offre["Saisie"] == vie_offres.SAISIE_COTISATION:
+            raise ErreurAfa(f"{offre['Libelle']} : un salarié entrant figure dans l'état des cotisations du mois, pas dans une incorporation.")
+        return offre
+    if not id_offre and id_devis:
+        return vie_offres.offre_du_devis(cursor, id_devis)
+    offre = vie_offres.offre_par_id(cursor, id_offre)
+    if not offre:
+        raise ErreurAfa("Offre commerciale inconnue : choisissez-la dans la liste.")
+    if not offre["Actif"] and (not id_devis or vie_offres.offre_du_devis(cursor, id_devis)["IdOffre"] != offre["IdOffre"]):
+        raise ErreurAfa(f"L'offre « {offre['Libelle']} » n'est plus proposée (Réglages Vie).")
+    return offre
+
+
 def enregistrer(donnees, id_utilisateur):
+    from . import vie_retraite  # import local : vie_retraite reprend les outils de ce module
+
     entete = _entete_saisie(donnees)
-    assures = _assures_saisis(donnees, entete["DateEffet"])
+    try:
+        id_offre = int(donnees.get("IdOffreVie") or 0)
+    except (TypeError, ValueError) as erreur:
+        raise ErreurAfa("Offre commerciale illisible.") from erreur
     with transaction.atomic(), connection.cursor() as cursor:
         id_devis = entete["IdDevis"]
         incorporation = None
@@ -631,12 +665,27 @@ def enregistrer(donnees, id_utilisateur):
             incorporation = _devis_incorporation(cursor, id_devis)
             if incorporation:
                 _entete_incorporation(cursor, id_devis, entete, incorporation)
+        offre = _offre_saisie(cursor, id_offre, id_devis, incorporation)
+        cotisations = offre["Saisie"] == vie_offres.SAISIE_COTISATION
+        if cotisations:
+            if not vie_offres.tables_presentes(cursor):
+                raise ErreurAfa(f"{offre['Libelle']} indisponible : la migration {vie_offres.MIGRATION} n'est pas appliquée sur cette base.")
+            vie_retraite.controler_periode(offre, entete)
+            cotisants = vie_retraite.cotisants_saisis(donnees)
+            assures = []
+        else:
+            assures, cotisants = _assures_saisis(donnees, entete["DateEffet"]), []
         # Incorporation : compagnie de la police, même si elle n'est plus proposée pour les affaires nouvelles
         if not incorporation and entete["IdCompagnie"] not in {c["IdCompagnie"] for c in _compagnies(cursor)}:
             raise ErreurAfa("Compagnie non rattachée au cabinet.")
         cursor.execute("SELECT 1 FROM stdclient WHERE idclient = %s", [entete["IdClient"]])
         if not cursor.fetchone():
             raise ErreurAfa(f"Souscripteur n° {entete['IdClient']} introuvable.")
+        if cotisations:
+            doublon = vie_retraite.mois_deja_enregistre(cursor, entete["IdClient"], entete["DateEffet"], id_devis)
+            if doublon:
+                raise ErreurAfa(f"L'état de {vie_retraite.libelle_mois(entete['DateEffet'])} de ce souscripteur est déjà enregistré "
+                                f"(devis {doublon['NumeroDevis']}) : modifiez ce devis.")
         for assure in assures:
             assure["IdClient"] = _client_assure(cursor, assure)
         vus = {}
@@ -649,7 +698,7 @@ def enregistrer(donnees, id_utilisateur):
             _controler_incorpores(cursor, id_devis, assures)
         elif not id_devis:
             if entete["IdContratRenouvele"]:
-                id_devis = _devis_renouvellement(cursor, entete, id_utilisateur)
+                id_devis = _devis_renouvellement(cursor, entete, id_utilisateur, mensuel=cotisations and offre["Periodicite"] == "MENSUELLE")
             else:
                 id_devis = _devis_affaire_nouvelle(cursor, entete, id_utilisateur)
 
@@ -669,6 +718,11 @@ def enregistrer(donnees, id_utilisateur):
         cursor.execute("DELETE FROM stddevisdetgarantie WHERE iddevisdet IN (SELECT iddevisdetail FROM stddevisdetail WHERE iddevis = %s)", [id_devis])
         cursor.execute("DELETE FROM stddevisdetail WHERE iddevis = %s", [id_devis])
         cursor.execute("DELETE FROM lephare_afa_assure WHERE iddevis = %s", [id_devis])
+        if vie_offres.tables_presentes(cursor):
+            cursor.execute("DELETE FROM lephare_vie_cotisant WHERE iddevis = %s", [id_devis])
+        prime_nette = sum((a["Prime"] for a in assures), Decimal(0))
+        if cotisations:
+            prime_nette = vie_retraite.ecrire_cotisants(cursor, id_devis, offre, cotisants, ID_OFFRE_VIE, ID_TARIF_VIE)
         for assure in assures:
             nom = f"{assure['Nom']} {assure['Prenoms']}".strip()[:100]
             cursor.execute(
@@ -691,14 +745,14 @@ def enregistrer(donnees, id_utilisateur):
                     maxfranchise, franchise, textefranchise, primeannuelle, primenette, old_acquise, old_primenette)
                 VALUES (%s, %s, TRUE, 0, %s, 0, 0, 0, 0, 'NEANT', %s, %s, '1', %s)
                 """,
-                [id_detail, ID_GARANTIE_DECES, assure["Capital"], assure["Prime"], assure["Prime"], assure["Prime"]],
+                [id_detail, offre["IdGarantie"], assure["Capital"], assure["Prime"], assure["Prime"], assure["Prime"]],
             )
             cursor.execute(
                 """INSERT INTO lephare_afa_assure (iddevis, idclient, ordre, qualite, beneficiaires, acte)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
                 [id_devis, assure["IdClient"], assure["Rang"], assure["Qualite"], assure["Beneficiaires"], assure["Acte"]],
             )
-        prime_nette = sum((a["Prime"] for a in assures), Decimal(0))
+        vie_offres.lier_devis(cursor, id_devis, offre, str(donnees.get("Fichier") or "").strip())
         cursor.execute("SELECT COALESCE(fn_get_taux_commission(%s, %s, %s), 0)", [ID_PRODUIT_VIE, entete["IdCompagnie"], date_emission_du_jour()])
         taux_commission = Decimal(str(cursor.fetchone()[0] or 0))
         cursor.execute(
@@ -737,8 +791,12 @@ def lire(cursor, id_devis):
     )
     if not entetes or entetes[0]["idproduit"] != ID_PRODUIT_VIE:
         return None
+    from . import vie_retraite  # import local : vie_retraite reprend les outils de ce module
+
     e = entetes[0]
-    lignes = _lignes(
+    offre = vie_offres.offre_du_devis(cursor, id_devis)
+    cotisations = offre["Saisie"] == vie_offres.SAISIE_COTISATION
+    lignes = [] if cotisations else _lignes(
         cursor,
         """
         SELECT dd.iddevisdetail, dd.conducteur, dd.datemec::date AS datemec, dd.valeurvenale, dd.primenette, dd.sexe, dd.observation,
@@ -751,7 +809,7 @@ def lire(cursor, id_devis):
         WHERE dd.iddevis = %s
         ORDER BY x.ordre NULLS LAST, dd.iddevisdetail
         """,
-        [ID_GARANTIE_DECES, id_devis],
+        [offre["IdGarantie"], id_devis],
     )
     assures = []
     for l in lignes:
@@ -775,6 +833,9 @@ def lire(cursor, id_devis):
         "IdContratRenouvele": e["idcontratrenouvele"] if e["codeavenant"] == "REN" else None,
         "PoliceRenouvelee": e["policerenouvelee"] if e["codeavenant"] == "REN" else "",
         "Assures": assures,
+        "IdOffreVie": offre["IdOffre"], "Offre": offre,
+        "Cotisants": vie_retraite.lire_cotisants(cursor, id_devis) if cotisations else [],
+        "LibelleMois": vie_retraite.libelle_mois(e["dateeffet"]) if cotisations else "",
     }
 
 
@@ -820,11 +881,16 @@ def referentiels(request):
         id_client = int(request.query_params.get("client") or 0)
     except ValueError:
         id_client = 0
+    from . import vie_retraite  # import local : vie_retraite reprend les outils de ce module
+
     with connection.cursor() as cursor:
         return Response({
             "Compagnies": _compagnies(cursor),
             "IdCompagnieDefaut": compagnie_par_defaut(ID_PRODUIT_VIE),
-            "Polices": _polices_vie(cursor, id_client),
+            "Polices": vie_retraite.polices_annotees(cursor, id_client),
+            # Offres commerciales de la liste déroulante ; sans la migration 0219 : AFA seule
+            "Offres": vie_offres.offres(cursor),
+            "OffresReglables": vie_offres.tables_presentes(cursor),
         })
 
 

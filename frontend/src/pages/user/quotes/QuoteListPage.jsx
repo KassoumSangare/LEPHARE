@@ -29,6 +29,7 @@ import {
 import {
   FileText,
   HeartPulse,
+  HeartHandshake,
   Plus,
   CheckCircle,
   Edit2,
@@ -620,6 +621,18 @@ export const QuoteListPage = () => {
             <HeartPulse size={16} />
             <span>Devis Oreole Santé</span>
           </button>
+          {aLeDroit('rafas.view') && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => navigate('/user/rafas')}
+              title="Régimes autofinancés d'assurance santé : conventions, fonds et dépenses du gestionnaire"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}
+            >
+              <HeartHandshake size={16} />
+              <span>RAFAS</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -48,7 +48,7 @@ import {
   UserPlus,
   Wallet,
   Archive,
-  ListChecks, SearchCheck, HeartPulse,
+  ListChecks, SearchCheck, HeartPulse, HeartHandshake,
 } from 'lucide-react';
 
 // Repère d'un menu déroulant : nombre de pages et chevron dans une pastille, qui se teinte et pivote à l'ouverture
@@ -286,6 +286,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
             {peut('contrats.view') && <NavLink to="/user/reprises" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <History size={16} className="nav-icon" />
               <span>Affaires antérieures</span>
+            </NavLink>}
+
+            {/* Régimes autofinancés d'assurance santé : conventions, fonds, dépenses du gestionnaire */}
+            {peut('rafas.view') && <NavLink to="/user/rafas" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
+              <HeartHandshake size={16} className="nav-icon" />
+              <span>RAFAS</span>
             </NavLink>}
 
             {/* Grisé en attendant l'ouverture des e-attestations */}

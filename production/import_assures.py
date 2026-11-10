@@ -1062,7 +1062,7 @@ def get_entete_devis(request_post_data: dict, flotte: bool = True) -> dict:
 
 
 def enregistrer_devis_ia(
-    entete_devis: dict, assure: dict, id_assure: int
+    entete_devis: dict, assure: dict, id_assure: int, lignes_existantes: dict = None
 ) -> int:
     """
     Enregistre le devis en Individuelle Accidents.
@@ -1098,6 +1098,19 @@ def enregistrer_devis_ia(
 
         if assure["Offre"] != 0:
             donnee_devis["IdOffre"] = assure["Offre"]
+
+        # Assuré déjà inscrit au devis avant l'import (renouvellement : lignes recopiées du contrat ; même fichier importé deux fois) : sa ligne
+        # est mise à jour, sp_enregistrement_assure_ia refusant une seconde ligne (« Cet assuré est déjà enregistré dans ce devis ! »). Ligne
+        # reprise une seule fois : une personne en double dans le fichier reste refusée.
+        matricule = str(id_assure).zfill(20)
+        if lignes_existantes and matricule in lignes_existantes:
+            from .ia_montants_imposes import _decimal, oublier_si_change
+
+            donnee_devis["IdDevisDetail"] = lignes_existantes.pop(matricule)
+            # Montant reconduit du contrat : il tombe si le fichier change les capitaux, l'offre ou la prime
+            with connection.cursor() as cursor:
+                oublier_si_change(cursor, int(donnee_devis["IdDevis"]), matricule, _decimal(assure["CapitalDeces"]),
+                                  _decimal(assure["CapitalInfirmite"]), int(donnee_devis.get("IdOffre") or 0), assure.get("PrimeHT"))
 
         save_quotation_arg = unpack_ia_quotation_post_data(donnee_devis)
 

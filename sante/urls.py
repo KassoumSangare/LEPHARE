@@ -183,6 +183,7 @@ urlpatterns = [
     # Branche RAFAS, régime autofinancé d'assurance santé (sante/rafas.py) : conventions, exercices et collèges, fonds, fichiers du gestionnaire,
     # analyse de la période, effectif, fiche famille, rapport Word
     path(r"rafas/conventions/", rafas.vue_conventions, name="rafas-conventions"),
+    path(r"rafas/conventions/proposition/", rafas.vue_proposition, name="rafas-proposition"),
     path(r"rafas/conventions/<int:idconvention>/", rafas.vue_convention, name="rafas-convention"),
     path(r"rafas/conventions/<int:idconvention>/exercices/", rafas.vue_exercices, name="rafas-exercices"),
     path(r"rafas/conventions/<int:idconvention>/exercices/<int:idexercice>/", rafas.vue_exercice, name="rafas-exercice"),

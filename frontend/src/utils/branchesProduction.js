@@ -51,7 +51,8 @@ export const BRANCHES = [
   },
   {
     module: 'afa', idProduit: 10, libelle: 'Vie', icone: HeartHandshake,
-    description: "Contrats AFA de groupe : assurés avec capital, prime et bénéficiaires, import de la liste Excel ; compagnie proposée (SANLAM), commissions et accessoires de la branche.",
+    description: "Offres commerciales du devis Vie : AFA et Temporaire décès, assurés avec capital, prime et bénéficiaires ; Retraite complémentaire, état mensuel des cotisations salarié et employeur. Compagnie proposée (SANLAM), commissions et accessoires de la branche.",
+    section: 'vie',
   },
   {
     module: 'ia', idProduit: 2, libelle: 'Individuelle Accidents', icone: UserPlus, brancheCima: '100',

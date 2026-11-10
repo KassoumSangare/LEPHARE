@@ -17,7 +17,8 @@ export const BRANCHES_DEVIS = [
   ['transport', Ship, 'Devis Transport'],
   ['mrh', Home, 'Devis MRH'],
   ['sante', HeartPulse, 'Devis Santé'],
-  ['afa', HeartHandshake, 'Devis AFA'],
+  // Branche Vie : AFA, Retraite complémentaire, Temporaire décès… choisis dans la liste des offres commerciales du devis
+  ['afa', HeartHandshake, 'Devis Vie'],
   ['ia', UserPlus, 'Devis IA'],
   ['rc', Shield, 'Devis RC'],
   ['mrp', Building2, 'Devis MRP'],

@@ -64,7 +64,7 @@ const MODULES_SOUSCRIPTION = [
   ['transport', Ship, 'Transport'],
   ['mrh', Home, 'Habitation (MRH)'],
   ['sante', HeartPulse, 'Santé'],
-  ['afa', HeartHandshake, 'Vie - AFA'],
+  ['afa', HeartHandshake, 'Vie'],
   ['ia', UserPlus, 'Individuelle Accidents'],
   ['rc', Shield, 'Responsabilité Civile'],
   ['mrp', Building2, 'Multirisque Pro.'],

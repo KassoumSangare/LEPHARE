@@ -3983,3 +3983,244 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .cs-constats.en-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0.55rem; }
 .cs-plus { align-self: flex-start; }
 .cs-barres-ligne.entete .cs-nombre { white-space: normal; line-height: 1.2; }
+
+/* =========================================================================
+   RAFAS : régimes autofinancés d'assurance santé (pages/user/rafas). Reprend la palette et les briques des consommations santé (cs-*) ;
+   compléments : portefeuille des conventions, assistant, fonds, contrôles, fichiers du gestionnaire.
+   ========================================================================= */
+.rafas-page { --rafas-accent: var(--cs-viz-3); }
+.rafas-actions, .rafas-actions-ligne { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
+.rafas-actions-ligne { gap: 0.2rem; flex-wrap: nowrap; justify-content: flex-end; }
+.rafas-bouton { display: inline-flex; align-items: center; gap: 0.4rem; }
+.rafas-retour { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0; font-weight: 600; }
+.rafas-lien { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0; font-weight: 600; font-size: 0.82rem; }
+.rafas-icone-bouton { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+.rafas-icone-bouton:hover:not(:disabled) { background: var(--bg-surface-hover); color: var(--text-primary); border-color: var(--border-subtle); }
+.rafas-icone-bouton.danger:hover:not(:disabled) { color: var(--cs-statut-critique); }
+.rafas-icone-bouton:disabled { opacity: 0.4; cursor: not-allowed; }
+.rafas-icone-bouton:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.rafas-negatif { color: var(--cs-statut-critique) !important; }
+.rafas-erreur { display: flex; align-items: center; gap: 0.35rem; margin: 0.25rem 0; font-size: 0.8rem; color: var(--cs-statut-critique); }
+.rafas-chargement { display: flex; align-items: center; justify-content: center; gap: 0.6rem; padding: 2.5rem; color: var(--text-muted); }
+.rafas-vide { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 2.5rem 1.5rem; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-medium); border-radius: var(--radius-lg); background: var(--bg-surface); }
+.rafas-vide p { margin: 0; max-width: 560px; line-height: 1.5; }
+.rafas-vide > svg { color: var(--primary-500); }
+.rafas-sous-titre { margin: 0.6rem 0 0.2rem; font-size: 0.86rem; font-weight: 800; color: var(--text-primary); }
+.rafas-bloc + .rafas-bloc { margin-top: 0.4rem; }
+.cs-tuile.rafas-tuile-accent { border-color: color-mix(in srgb, var(--rafas-accent, var(--cs-viz-3)) 45%, var(--border-subtle)); background: color-mix(in srgb, var(--rafas-accent, var(--cs-viz-3)) 8%, var(--bg-surface)); }
+.cs-tuile.rafas-tuile-critique { border-color: color-mix(in srgb, var(--cs-statut-critique) 50%, var(--border-subtle)); }
+.cs-tuile.rafas-tuile-critique .cs-tuile-valeur { color: var(--cs-statut-critique); }
+
+/* parcours de la branche */
+.rafas-parcours { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
+.rafas-parcours-etape { display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.85rem 1rem; border-radius: var(--radius-lg); background: var(--bg-surface); border: 1px solid var(--border-subtle); animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-parcours-etape:nth-child(2) { animation-delay: 60ms; }
+.rafas-parcours-etape:nth-child(3) { animation-delay: 120ms; }
+.rafas-parcours-etape > svg { flex: none; color: var(--primary-500); margin-top: 0.1rem; }
+.rafas-parcours-etape strong { font-size: 0.86rem; color: var(--text-primary); }
+.rafas-parcours-etape p { margin: 0.2rem 0 0; font-size: 0.78rem; line-height: 1.45; color: var(--text-secondary); }
+@media (max-width: 900px) { .rafas-parcours { grid-template-columns: minmax(0, 1fr); } }
+
+/* portefeuille des conventions */
+.rafas-conventions { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 1rem; }
+.rafas-convention { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 0.75rem; padding: 1.05rem 1.15rem; cursor: pointer; border-radius: var(--radius-lg); transition: transform var(--mouvement-normal) var(--courbe-entree), box-shadow 0.2s ease, border-color 0.2s ease; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-convention:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--border-medium); }
+.rafas-convention:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.rafas-convention-tete { display: flex; align-items: center; gap: 0.75rem; }
+.rafas-convention-tete > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rafas-convention-tete strong { font-size: 1.05rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rafas-convention-tete span { font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rafas-pastille { display: grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: var(--radius-lg); color: #fff; background: linear-gradient(135deg, var(--primary-500), var(--primary-700, var(--primary-600))); }
+.rafas-convention-fleche { color: var(--text-muted); transition: transform var(--mouvement-normal) var(--courbe-entree); }
+.rafas-convention:hover .rafas-convention-fleche { transform: translateX(3px); color: var(--primary-500); }
+.rafas-convention-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+.rafas-convention-periode { margin: 0; font-size: 0.8rem; color: var(--text-secondary); }
+.rafas-convention-chiffres { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; margin: 0; }
+.rafas-convention-chiffres div { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.rafas-convention-chiffres dt { font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.rafas-convention-chiffres dd { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rafas-convention-jauge { display: flex; flex-direction: column; gap: 0.3rem; }
+.rafas-convention-jauge > div:first-child { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); }
+.rafas-convention-jauge small { font-size: 0.72rem; color: var(--text-muted); }
+@media (max-width: 520px) { .rafas-convention-chiffres { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* assistant et formulaires */
+.rafas-etapes { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; list-style: none; margin: 0 0 1rem; padding: 0; }
+.rafas-etapes li { display: flex; align-items: center; gap: 0.45rem; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+.rafas-etapes li span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; background: var(--bg-surface-elevated); border: 1px solid var(--border-medium); transition: all var(--mouvement-normal) var(--courbe-entree); }
+.rafas-etapes li.actif { color: var(--text-primary); }
+.rafas-etapes li.actif span { background: var(--primary-600); border-color: var(--primary-600); color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-500) 22%, transparent); }
+.rafas-etapes li.fait span { background: color-mix(in srgb, var(--cs-statut-bon) 22%, transparent); border-color: var(--cs-statut-bon); color: var(--text-primary); }
+.rafas-etape { animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; display: flex; flex-direction: column; gap: 0.6rem; }
+.rafas-pied-assistant { display: flex; justify-content: space-between; gap: 0.6rem; margin-top: 1.1rem; padding-top: 0.9rem; border-top: 1px solid var(--border-subtle); }
+.rafas-grille-2, .rafas-grille-4 { display: grid; gap: 0.7rem 0.9rem; }
+.rafas-grille-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rafas-grille-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 860px) { .rafas-grille-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .rafas-grille-2, .rafas-grille-4 { grid-template-columns: minmax(0, 1fr); } }
+.rafas-champ { margin: 0; display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.rafas-champ.large { grid-column: 1 / -1; }
+.rafas-champ .form-label { margin: 0; }
+.rafas-nombre { text-align: right; font-variant-numeric: tabular-nums; }
+.rafas-colleges { display: flex; flex-direction: column; gap: 0.7rem; }
+.rafas-college { padding: 0.85rem 0.95rem; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); display: flex; flex-direction: column; gap: 0.6rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-college-tete { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 0.7rem; align-items: end; }
+.rafas-college-budget { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.15rem; font-size: 0.76rem; color: var(--text-muted); }
+.rafas-college-budget strong { font-size: 1rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .rafas-college-tete { grid-template-columns: minmax(0, 1fr) auto; } .rafas-college-tete > :nth-child(2) { grid-column: 1; } }
+.rafas-recap { display: flex; flex-direction: column; gap: 0.9rem; }
+.rafas-recap-ligne { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; margin-top: 0.8rem; padding: 0.6rem 0.8rem; border-radius: var(--radius-md); background: var(--bg-surface); border: 1px solid var(--border-subtle); font-size: 0.82rem; color: var(--text-secondary); }
+.rafas-recap-ligne strong { color: var(--text-primary); }
+.rafas-fiche { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+/* filtres, puces, listes */
+.rafas-puces { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.rafas-puce { padding: 0.32rem 0.7rem; border-radius: 999px; border: 1px solid var(--border-medium); background: transparent; color: var(--text-secondary); font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+.rafas-puce:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
+.rafas-puce.active { background: color-mix(in srgb, var(--primary-500) 16%, transparent); border-color: color-mix(in srgb, var(--primary-500) 55%, transparent); color: var(--text-primary); }
+.rafas-puce:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.rafas-filtres-liste { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.rafas-filtres-liste .form-control { width: auto; min-width: 160px; flex: 1 1 160px; }
+.rafas-recherche { position: relative; display: flex; align-items: center; flex: 2 1 260px; }
+.rafas-recherche svg { position: absolute; left: 0.65rem; color: var(--text-muted); pointer-events: none; }
+.rafas-recherche .form-control { padding-left: 2rem; width: 100%; }
+.rafas-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); }
+.rafas-tableau.compact .data-table th, .rafas-tableau.compact .data-table td { padding: 0.42rem 0.6rem; font-size: 0.8rem; }
+.rafas-tableau .data-table tfoot td { font-weight: 800; border-top: 2px solid var(--border-medium); }
+.rafas-tableau .form-control { padding: 0.3rem 0.45rem; font-size: 0.8rem; min-width: 70px; }
+.rafas-cliquable { cursor: pointer; }
+.rafas-cliquable:hover td { background: var(--cs-survol); }
+.rafas-cliquable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.rafas-ligne-alerte td { background: color-mix(in srgb, var(--cs-statut-attention) 9%, transparent); }
+.rafas-tiroir-large.cs-tiroir { width: min(1080px, 100vw); }
+.rafas-liste-courte { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.rafas-liste-courte li { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; color: var(--text-secondary); padding: 0.3rem 0; border-bottom: 1px solid var(--border-subtle); }
+.rafas-liste-courte strong { color: var(--text-primary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rafas-compteurs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.rafas-compteurs > div { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.65rem 0.75rem; border-radius: var(--radius-md); background: color-mix(in srgb, var(--cs-ton) 9%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--cs-ton) 30%, var(--border-subtle)); }
+.rafas-compteurs svg { color: var(--cs-ton); }
+.rafas-compteurs strong { font-size: 1.4rem; font-weight: 800; color: var(--text-primary); line-height: 1.1; }
+.rafas-compteurs span { font-size: 0.72rem; color: var(--text-secondary); }
+
+/* fonds */
+.rafas-alerte { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.75rem 0.85rem; border-radius: var(--radius-md); background: color-mix(in srgb, var(--cs-statut-critique) 10%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--cs-statut-critique) 35%, var(--border-subtle)); animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-alerte > svg { color: var(--cs-statut-critique); flex: none; }
+.rafas-alerte > div { flex: 1 1 240px; }
+.rafas-alerte strong { color: var(--text-primary); font-size: 0.92rem; }
+.rafas-alerte p { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45; }
+.rafas-voile { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; background: rgba(2, 6, 23, 0.25); color: var(--text-primary); }
+
+/* frise des exercices */
+.rafas-frise { list-style: none; margin: 0; padding: 0 0 0 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; border-left: 2px solid var(--border-subtle); }
+.rafas-frise li { position: relative; display: flex; flex-direction: column; gap: 0.5rem; padding: 0.8rem 0.9rem; border-radius: var(--radius-lg); background: var(--bg-surface); border: 1px solid var(--border-subtle); animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-frise li::before { content: ""; position: absolute; left: calc(-1.1rem - 7px); top: 1.05rem; width: 12px; height: 12px; border-radius: 999px; background: var(--bg-surface-elevated); border: 2px solid var(--border-medium); }
+.rafas-frise li.courant { border-color: color-mix(in srgb, var(--primary-500) 45%, var(--border-subtle)); }
+.rafas-frise li.courant::before { background: var(--primary-500); border-color: var(--primary-500); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-500) 22%, transparent); }
+.rafas-frise-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+.rafas-frise-tete > div:first-child { display: flex; flex-direction: column; }
+.rafas-frise-tete strong { color: var(--text-primary); }
+.rafas-frise-tete span { font-size: 0.8rem; color: var(--text-muted); }
+.rafas-frise-chiffres { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.8rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* contrôles */
+.rafas-controle { padding: 0; overflow: hidden; border-left: 4px solid var(--cs-ton); animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-controle-tete { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 0.8rem; padding: 0.85rem 1rem; cursor: pointer; }
+.rafas-controle-tete:hover { background: var(--cs-survol); }
+.rafas-controle-tete:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.rafas-controle-tete > svg:first-child { color: var(--cs-ton); flex: none; }
+.rafas-controle-titre { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.rafas-controle-titre strong { color: var(--text-primary); font-size: 0.92rem; }
+.rafas-controle-titre span { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.4; }
+.rafas-controle-chiffres { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.rafas-controle-chiffres strong { font-size: 1.25rem; font-weight: 800; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rafas-controle-chiffres span { font-size: 0.74rem; color: var(--text-muted); }
+.rafas-controle-chevron { color: var(--text-muted); flex: none; transition: transform var(--mouvement-normal) var(--courbe-entree); }
+.rafas-controle.ouvert .rafas-controle-chevron { transform: rotate(180deg); }
+.rafas-controle-corps { padding: 0 1rem 1rem; display: flex; flex-direction: column; gap: 0.6rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-action { margin: 0; font-size: 0.82rem; color: var(--text-secondary); }
+.rafas-action strong { color: var(--text-primary); }
+
+/* fichiers du gestionnaire */
+.rafas-depot { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem; min-height: 170px; padding: 1.5rem; border: 2px dashed var(--border-medium); border-radius: var(--radius-lg); text-align: center; color: var(--text-secondary); transition: border-color 0.2s ease, background 0.2s ease; }
+.rafas-depot.survol { border-color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 8%, transparent); }
+.rafas-depot > svg { color: var(--primary-500); }
+.rafas-depot p { margin: 0; }
+.rafas-analyse-fichier { display: flex; flex-direction: column; gap: 0.65rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-analyse-tete { display: flex; align-items: center; gap: 0.7rem; }
+.rafas-analyse-tete > svg { color: var(--cs-viz-3); flex: none; }
+.rafas-analyse-tete > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.rafas-analyse-tete strong { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rafas-analyse-tete span { font-size: 0.78rem; color: var(--text-muted); }
+.rafas-avertissement { display: flex; align-items: center; gap: 0.45rem; margin: 0; padding: 0.5rem 0.7rem; border-radius: var(--radius-md); font-size: 0.8rem; color: var(--text-secondary); background: color-mix(in srgb, var(--cs-statut-attention) 10%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--cs-statut-attention) 35%, var(--border-subtle)); }
+.rafas-avertissement > svg { color: var(--cs-statut-attention); flex: none; }
+.rafas-avertissement.info { background: color-mix(in srgb, var(--cs-viz-1) 9%, var(--bg-surface)); border-color: color-mix(in srgb, var(--cs-viz-1) 30%, var(--border-subtle)); }
+.rafas-avertissement.info > svg { color: var(--cs-viz-1); }
+.rafas-feuille { border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); opacity: 0.7; transition: opacity 0.2s ease, border-color 0.2s ease; }
+.rafas-feuille.cochee { opacity: 1; border-color: color-mix(in srgb, var(--primary-500) 40%, var(--border-subtle)); }
+.rafas-feuille-tete { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; padding: 0.65rem 0.85rem; cursor: pointer; }
+.rafas-feuille-tete > svg { color: var(--primary-500); }
+.rafas-feuille-tete strong { color: var(--text-primary); }
+.rafas-feuille-compte { margin-left: auto; font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rafas-feuille-corps { padding: 0 0.85rem 0.75rem 2.6rem; display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.8rem; color: var(--text-secondary); }
+.rafas-feuille-corps p { margin: 0; }
+.rafas-mois { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.rafas-mois-puce { padding: 0.18rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: color-mix(in srgb, var(--cs-viz-1) 12%, transparent); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rafas-mois-puce.ecarte { background: transparent; border: 1px dashed var(--border-medium); color: var(--text-muted); text-decoration: line-through; }
+.rafas-feuille-situation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+.rafas-feuille-situation label { display: flex; align-items: center; gap: 0.45rem; font-weight: 600; }
+.rafas-feuille-situation .form-control { width: auto; padding: 0.3rem 0.5rem; }
+.rafas-ignorees { font-size: 0.8rem; color: var(--text-muted); }
+.rafas-ignorees summary { cursor: pointer; font-weight: 600; }
+.rafas-ignorees ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+/* RAFAS : factures sur deux lignes (numéro et date, montant et base) */
+.rafas-facture { display: inline-flex; flex-direction: column; gap: 0.05rem; white-space: nowrap; }
+.rafas-facture.droite { align-items: flex-end; }
+.rafas-facture > span { font-size: 0.72rem; color: var(--text-muted); }
+/* RAFAS : création d'une convention d'après le fichier du gestionnaire (AssistantConvention.jsx) */
+.rafas-depart { display: flex; flex-direction: column; gap: 0.6rem; }
+.rafas-depart .rafas-lien { align-self: center; }
+.rafas-repris { display: inline-flex; align-items: center; gap: 0.2rem; margin-left: 0.35rem; padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.64rem; font-weight: 700; vertical-align: 1px; color: var(--text-primary); background: color-mix(in srgb, var(--cs-statut-bon) 16%, transparent); }
+.rafas-repris svg { color: var(--cs-statut-bon); }
+.rafas-repris-liste { display: flex; flex-direction: column; gap: 0.7rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-repris-liste ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.rafas-repris-liste li { display: grid; grid-template-columns: 18px 10rem minmax(0, 1fr); gap: 0.6rem; align-items: baseline; padding: 0.55rem 0.8rem; font-size: 0.84rem; border-bottom: 1px solid var(--border-subtle); animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-repris-liste li:last-child { border-bottom: 0; }
+.rafas-repris-liste li:nth-child(2) { animation-delay: 40ms; }
+.rafas-repris-liste li:nth-child(3) { animation-delay: 80ms; }
+.rafas-repris-liste li:nth-child(4) { animation-delay: 120ms; }
+.rafas-repris-liste li:nth-child(n+5) { animation-delay: 160ms; }
+.rafas-repris-liste li > svg { color: var(--cs-statut-bon); align-self: center; }
+.rafas-repris-liste li.manque > svg { color: var(--cs-statut-attention); }
+.rafas-repris-liste li > span { color: var(--text-muted); font-weight: 600; }
+.rafas-repris-liste li > strong { color: var(--text-primary); font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .rafas-repris-liste li { grid-template-columns: 18px minmax(0, 1fr); } .rafas-repris-liste li > strong { grid-column: 2; } }
+.rafas-avertissement .rafas-bouton { margin-left: auto; }
+.rafas-consigne { margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--radius-md); font-size: 0.82rem; line-height: 1.5; color: var(--text-secondary); background: color-mix(in srgb, var(--primary-500) 7%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--primary-500) 22%, var(--border-subtle)); }
+.form-control.rafas-a-saisir { border-color: var(--cs-statut-attention); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-statut-attention) 20%, transparent); }
+.rafas-conditions { border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); overflow: hidden; }
+.rafas-conditions-tete { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: flex-start; gap: 0.7rem; padding: 0.75rem 0.9rem; cursor: pointer; }
+.rafas-conditions-tete:hover { background: var(--cs-survol); }
+.rafas-conditions-tete:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.rafas-conditions-tete > svg:first-child { color: var(--primary-500); flex: none; margin-top: 0.1rem; }
+.rafas-conditions-tete > span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.rafas-conditions-tete strong { color: var(--text-primary); font-size: 0.86rem; }
+.rafas-conditions-tete > span > span { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.45; }
+.rafas-conditions.ouvert .rafas-controle-chevron { transform: rotate(180deg); }
+.rafas-conditions-corps { padding: 0 0.9rem 0.9rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.rafas-importer-aussi { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-lg); cursor: pointer; border: 1px solid color-mix(in srgb, var(--cs-viz-3) 40%, var(--border-subtle)); background: color-mix(in srgb, var(--cs-viz-3) 7%, var(--bg-surface)); }
+.rafas-importer-aussi input { margin-top: 0.2rem; }
+.rafas-importer-aussi > span { display: flex; flex-direction: column; gap: 0.15rem; }
+.rafas-importer-aussi strong { color: var(--text-primary); font-size: 0.86rem; }
+.rafas-importer-aussi > span > span { font-size: 0.78rem; color: var(--text-secondary); }
+/* RAFAS : un collège par ligne (collège, catégorie, familles, cotisation, plafond, cotisations du collège, barème) */
+.rafas-college { display: grid; grid-template-columns: minmax(11rem, 2.2fr) 7.4rem 6.5rem minmax(8.5rem, 1.25fr) minmax(8rem, 1.1fr) minmax(8rem, 1fr) auto; gap: 0.55rem; align-items: start; padding: 0.7rem 0.85rem; }
+.rafas-college.a-saisir { border-color: color-mix(in srgb, var(--cs-statut-attention) 45%, var(--border-subtle)); }
+.rafas-college .rafas-college-budget { justify-content: flex-start; gap: 0.1rem; padding-top: 0.1rem; }
+.rafas-college .champ-message { font-size: 0.7rem; }
+.rafas-college-retirer { margin-top: 1.45rem; }
+@media (max-width: 1100px) {
+  .rafas-college { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rafas-college > .rafas-champ:first-child { grid-column: 1 / -1; }
+  .rafas-college-retirer { margin-top: 0; justify-self: end; }
+}
+@media (max-width: 560px) { .rafas-college { grid-template-columns: minmax(0, 1fr); } }

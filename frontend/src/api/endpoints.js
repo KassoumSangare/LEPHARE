@@ -1263,6 +1263,24 @@ export const afaApi = {
   modele: async () => (await apiClient.get('/afa/modele/', { responseType: 'blob' })).data,
   enregistrer: async (donnees) => (await apiClient.post('/afa/devis/', donnees, { timeout: 120000 })).data,
   lire: async (idDevis) => (await apiClient.get(`/afa/devis/${idDevis}/`)).data,
+  // Offre Retraite complémentaire (production/vie_retraite.py) : état mensuel des cotisations, dernier état du souscripteur, modèle
+  analyserRetraite: async (fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier_excel', fichier);
+    return (await apiClient.post('/afa/retraite/analyse/', formulaire, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })).data;
+  },
+  etatPrecedent: async (idClient, avant, idDevis) => (await apiClient.get('/afa/retraite/etat-precedent/', {
+    params: { client: idClient, avant: avant || undefined, devis: idDevis || undefined },
+  })).data,
+  modeleRetraite: async () => (await apiClient.get('/afa/retraite/modele/', { responseType: 'blob' })).data,
+};
+
+// Réglages Vie (configuration_api/parametrage_vie.py) : offres commerciales de la liste déroulante du devis Vie
+export const vieOffresApi = {
+  lister: async () => (await apiClient.get('/parametrage/vie/offres/')).data,
+  creer: async (offre) => (await apiClient.post('/parametrage/vie/offres/', offre)).data,
+  modifier: async (idOffre, offre) => (await apiClient.put(`/parametrage/vie/offres/${idOffre}/`, offre)).data,
+  supprimer: async (idOffre) => (await apiClient.delete(`/parametrage/vie/offres/${idOffre}/`)).data,
 };
 
 // Branche Oreole Santé (sante/oreole.py) : package Santé + IA + AFA, classeur des effectifs
@@ -1323,6 +1341,39 @@ export const consommationsApi = {
   fraude: async (params) => (await apiClient.get('/consommations/fraude/', { params: sansVide(params) })).data,
   fraudeBeneficiaire: async (matricule) => (await apiClient.get(`/consommations/fraude/${matricule}/`)).data,
   instruire: async (matricule, donnees) => (await apiClient.post(`/consommations/fraude/${matricule}/instruction/`, donnees)).data,
+};
+
+// Branche RAFAS, régime autofinancé d'assurance santé (sante/rafas.py) : conventions, exercices, collèges, fichiers du gestionnaire, analyse, fonds
+const multipartRafas = { headers: { 'Content-Type': 'multipart/form-data' } };
+export const rafasApi = {
+  conventions: async () => (await apiClient.get('/rafas/conventions/', { timeout: 120000 })).data,
+  creer: async (donnees) => (await apiClient.post('/rafas/conventions/', donnees)).data,
+  // Nouvelle convention proposée d'après un fichier du gestionnaire (souscripteur, polices, période, collèges, familles), sans écriture
+  proposerConvention: async (fichier) => (await apiClient.post('/rafas/conventions/proposition/', fichierConsommations(fichier), { ...multipartRafas, timeout: 300000 })).data,
+  lire: async (id) => (await apiClient.get(`/rafas/conventions/${id}/`, { timeout: 120000 })).data,
+  modifier: async (id, convention) => (await apiClient.put(`/rafas/conventions/${id}/`, { Convention: convention })).data,
+  ajouterExercice: async (id, exercice) => (await apiClient.post(`/rafas/conventions/${id}/exercices/`, exercice)).data,
+  renouveler: async (id, familles) => (await apiClient.post(`/rafas/conventions/${id}/exercices/`, { renouvellement: true, familles })).data,
+  modifierExercice: async (id, idExercice, exercice) => (await apiClient.put(`/rafas/conventions/${id}/exercices/${idExercice}/`, exercice)).data,
+  supprimerExercice: async (id, idExercice) => (await apiClient.delete(`/rafas/conventions/${id}/exercices/${idExercice}/`)).data,
+  enregistrerLiens: async (id, liens) => (await apiClient.put(`/rafas/conventions/${id}/colleges-gestionnaire/`, { Liens: liens })).data,
+  // Fichier du gestionnaire : lecture sans écriture, puis import des feuilles choisies (relevés et effectifs)
+  analyserFichier: async (id, fichier) => (await apiClient.post(`/rafas/conventions/${id}/import/analyse/`, fichierConsommations(fichier), { ...multipartRafas, timeout: 300000 })).data,
+  importer: async (id, fichier, choix) => (await apiClient.post(`/rafas/conventions/${id}/import/`, fichierConsommations(fichier, { choix: JSON.stringify(choix) }), { ...multipartRafas, timeout: 600000 })).data,
+  supprimerImport: async (id, idImport) => (await apiClient.delete(`/rafas/conventions/${id}/imports/${idImport}/`)).data,
+  analyse: async (id, params) => (await apiClient.get(`/rafas/conventions/${id}/analyse/`, { params: sansVide(params), timeout: 180000 })).data,
+  effectif: async (id, params) => (await apiClient.get(`/rafas/conventions/${id}/effectif/`, { params: sansVide(params), timeout: 120000 })).data,
+  famille: async (id, matricule) => (await apiClient.get(`/rafas/conventions/${id}/famille/${matricule}/`)).data,
+  fonds: async (id, exercice) => (await apiClient.get(`/rafas/conventions/${id}/fonds/`, { params: sansVide({ exercice }), timeout: 120000 })).data,
+  creerAppel: async (idExercice, appel) => (await apiClient.post(`/rafas/exercices/${idExercice}/appels/`, appel)).data,
+  supprimerAppel: async (idAppel) => (await apiClient.delete(`/rafas/appels/${idAppel}/`)).data,
+  creerVersement: async (idExercice, versement) => (await apiClient.post(`/rafas/exercices/${idExercice}/versements/`, versement)).data,
+  supprimerVersement: async (idVersement) => (await apiClient.delete(`/rafas/versements/${idVersement}/`)).data,
+  creerHonoraire: async (idExercice, facture) => (await apiClient.post(`/rafas/exercices/${idExercice}/honoraires/`, facture)).data,
+  reglerHonoraire: async (idHonoraire, reglement) => (await apiClient.put(`/rafas/honoraires/${idHonoraire}/`, reglement)).data,
+  supprimerHonoraire: async (idHonoraire) => (await apiClient.delete(`/rafas/honoraires/${idHonoraire}/`)).data,
+  // Rapport Word de la période (seul export, journalisé)
+  rapport: async (id, params) => apiClient.get(`/rafas/conventions/${id}/rapport/`, { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
 };
 
 export const dommagesApi = {

@@ -46,6 +46,7 @@ const DROITS_ECRANS_PRODUCTION = [
   ['/user/cheques', 'encaissements.view'],
   ['/user/claims', 'sinistres.view'],
   ['/user/sante/consommations', 'consommations.view'],
+  ['/user/rafas', 'rafas.view'],
   ['/user/documents', 'documents.view'],
   ['/user/archives', 'devis.view'],
 ];

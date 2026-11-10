@@ -715,27 +715,34 @@ def _f(v):
     return f"{round(v):,}".replace(",", " ") + " F"
 
 
+def _n(v):
+    return f"{round(v):,}".replace(",", " ")
+
+
 def constats(synthese, effectifs, depenses, comparatif, liste_controles):
     c = []
     if effectifs["TotalRef"]:
         ecart = effectifs["Total"] - effectifs["TotalRef"]
-        c.append({"Titre": "Effectif", "Ton": "info", "Texte": f"{effectifs['Total']:,} bénéficiaires contre {effectifs['TotalRef']:,} un an plus tôt "
-                  f"({'+' if ecart >= 0 else ''}{ecart:,}, {_pct(div(ecart, effectifs['TotalRef']))}).".replace(",", " ")})
-    if synthese["TauxRecours"] is not None:
-        c.append({"Titre": "Recours aux soins", "Ton": "info", "Texte": f"{synthese['Consommants']:,} bénéficiaires sur {synthese['Effectif']:,} ont exposé des frais, "
-                  f"soit un taux de recours de {_pct(synthese['TauxRecours'])}, pour {synthese['Actes']:,} actes.".replace(",", " ")})
-    if depenses["Familles"]:
+        c.append({"Titre": "Effectif", "Ton": "info", "Texte": f"{_n(effectifs['Total'])} bénéficiaires contre {_n(effectifs['TotalRef'])} un an plus tôt "
+                  f"({'+' if ecart >= 0 else '-'}{_n(abs(ecart))}, {_pct(div(ecart, effectifs['TotalRef']))})."})
+    if synthese["TauxRecours"] is not None and synthese["Actes"]:
+        c.append({"Titre": "Recours aux soins", "Ton": "info", "Texte": f"{_n(synthese['Consommants'])} bénéficiaires sur {_n(synthese['Effectif'])} ont exposé des frais, "
+                  f"soit un taux de recours de {_pct(synthese['TauxRecours'])}, pour {_n(synthese['Actes'])} actes."})
+    if not synthese["Actes"]:
+        c.append({"Titre": "Aucune prestation", "Ton": "attention", "Texte": "Aucune prestation des collèges choisis n'est clôturée sur ces mois : importez le relevé du "
+                  "gestionnaire ou élargissez la période."})
+    if depenses["Familles"] and synthese["Depenses"]:
         f = depenses["Familles"][0]
         c.append({"Titre": "Premier poste", "Ton": "info", "Texte": f"{f['Libelle'].capitalize()} : {_pct(f['Part'])} des dépenses pour {_pct(f['PartActes'])} des actes."})
-    if depenses["Zones"]:
+    if depenses["Zones"] and depenses["Zones"][0]["Depenses"]:
         z = depenses["Zones"][0]
         c.append({"Titre": "Zone la plus consommatrice", "Ton": "info", "Texte": f"{z['Libelle']} : {_f(z['Depenses'])}, {_pct(z['Part'])} des dépenses, "
                   f"taux de recours {_pct(z['TauxRecours'])}."})
-    if comparatif.get("Disponible") and comparatif["Global"]["Total"]["DepensesRef"]:
+    if comparatif.get("Disponible") and comparatif["Global"]["Total"]["DepensesRef"] and synthese["Actes"]:
         t = comparatif["Global"]["Total"]
         hausse = t["Ecart"] > 0
         c.append({"Titre": "Comparaison avec l'année précédente", "Ton": "attention" if hausse and (t["Evolution"] or 0) > 0.1 else "info",
-                  "Texte": f"Dépenses {'en hausse' if hausse else 'en baisse'} de {_pct(abs(t['Evolution'] or 0))} ({_f(t['Ecart'])}), "
+                  "Texte": f"Dépenses {'en hausse' if hausse else 'en baisse'} de {_pct(abs(t['Evolution'] or 0))} ({'+' if hausse else '-'}{_f(abs(t['Ecart']))}), "
                            f"actes {'en hausse' if t['EcartActes'] > 0 else 'en baisse'} de {_pct(abs(t['EvolutionActes'] or 0))}."})
     seuil = depenses["FamillesSeuil"]
     if seuil["Familles"]:

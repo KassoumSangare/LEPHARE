@@ -298,7 +298,8 @@ REGLES = [
     # ---- imports
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
     R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
-    R("POST", r"afa/import/analyse/?$", "imports.excel", lecture=True),
+    # Vie : liste AFA ou état des cotisations Retraite complémentaire, lus et contrôlés sans écriture
+    R("POST", r"afa/(import|retraite)/analyse/?$", "imports.excel", lecture=True),
     R("POST", r"mrh/import/analyse/?$", "imports.excel", lecture=True),
     # Oreole Santé : calcul et lecture du classeur sans écriture, devis liés, émission groupée
     R("POST", r"oreole/apercu/?$", "devis.view", lecture=True),
@@ -460,7 +461,7 @@ REGLES = [
     R("GET", r"(cimaetate1|cimaetate2|etatdecisionnel|bordereaurecapemission)", "reporting.view"),
     R("POST,PUT,PATCH,DELETE", r"etatdecisionnel", "reporting.view", objet="etat", cles=("pk",)),
     # ---- tarifs et barèmes
-    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/oreole/|parametrage/auto/|parametrage/transport/|parametrage/ia/|parametrage/mrh/|grillesvoyage/)", "tarifs.update", objet="bareme",
+    R("POST,PUT,PATCH,DELETE", r"(parametrage/dommages/|parametrage/sante/|parametrage/oreole/|parametrage/auto/|parametrage/transport/|parametrage/ia/|parametrage/mrh/|parametrage/vie/|grillesvoyage/)", "tarifs.update", objet="bareme",
       cles=("id_tarif", "id_compagnie", "id_ligne", "id_offre", "id_pays", "cle", "id_repartition", "code")),
     # Valeur vénale d'après le tableau de dépréciation, primes d'un tarif à lecture directe (calculs sans écriture,
     # écrans de devis)
