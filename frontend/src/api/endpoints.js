@@ -1307,6 +1307,8 @@ export const consommationsApi = {
   importer: async (fichier, situation, exercice) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation, exercice }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
   // Tableau de bord (contrôle de gestion, dépenses, entreprises à risque), lien entreprise de l'état / police du gestionnaire, rapport Word (seul export)
   tableauDeBord: async (params) => (await apiClient.get('/consommations/tableau-de-bord/', { params: sansVide(params), timeout: 120000 })).data,
+  // Analyse complète d'une période (sante/consommations_analyse.py) : synthèse, projection, compagnies, entreprises, familles, profil, foyers, prestataires, délais
+  analyse: async (params) => (await apiClient.get('/consommations/analyse/', { params: sansVide(params), timeout: 120000 })).data,
   lier: async (entreprise, police) => (await apiClient.post('/consommations/entreprises/lien/', { Entreprise: entreprise, Police: police })).data,
   rapport: async (params) => apiClient.get('/consommations/rapport/', { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
   synthese: async (params) => (await apiClient.get('/consommations/synthese/', { params: sansVide(params) })).data,
@@ -1365,6 +1367,14 @@ export const mrhApi = {
   getMaisons: async (idDevis) => (await apiClient.get(`/mrh/devis/${idDevis}/maisons/`)).data,
   // POST /api/mrh/devis/accessoire/ - accessoire du barème pour une prime nette totale
   getAccessoire: async (data) => (await apiClient.post('/mrh/devis/accessoire/', data)).data,
+  // POST /api/mrh/import/analyse/ - maisons d'un fichier Excel lues et contrôlées par le moteur, rien n'est enregistré
+  analyserImport: async (fichier) => {
+    const formulaire = new FormData();
+    formulaire.append('fichier_excel', fichier);
+    return (await apiClient.post('/mrh/import/analyse/', formulaire, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data;
+  },
+  // GET /api/mrh/import/modele/ - modèle vierge (liste déroulante des usages, feuille Usages)
+  modeleImport: async () => (await apiClient.get('/mrh/import/modele/', { responseType: 'blob' })).data,
   // DELETE /api/mrh/devis/:id/
   supprimerDevis: async (id) => (await apiClient.delete(`/mrh/devis/${id}/`)).data,
   // POST /api/mrh/devis/:id/maisons/

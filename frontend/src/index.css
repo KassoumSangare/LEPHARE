@@ -3617,3 +3617,369 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
     grid-template-areas: "case nom nom" ". capital fmin" ". fmax taux";
   }
 }
+
+/* ==========================================================================
+   CONSOMMATIONS SANTÉ (pages/user/sante/ConsommationsSantePage.jsx et consommations/)
+   Palette de référence du skill dataviz, validée par validate_palette.js contre les surfaces de l'application
+   (panneau sombre #17212f, panneau clair #ffffff) : catégories 1 à 4 conformes dans les deux modes ; en clair,
+   l'aqua et le jaune passent sous 3:1, d'où les valeurs imprimées et la vue en chiffres de chaque graphique.
+   Statuts (bon, attention, sérieux, critique) réservés aux états, toujours avec icône et libellé.
+   ========================================================================== */
+.cs-page, .cs-tiroir-fond {
+  --cs-viz-1: #3987e5; --cs-viz-2: #d95926; --cs-viz-3: #199e70; --cs-viz-4: #c98500;
+  --cs-seg-1: var(--cs-viz-1); --cs-seg-2: var(--cs-viz-2); --cs-seg-3: var(--cs-viz-3); --cs-seg-4: var(--cs-viz-4); --cs-seg-texte-4: #ffffff;
+  --cs-attenue: #898781; --cs-rouge: #e66767;
+  --cs-grille: rgba(255, 255, 255, 0.07); --cs-axe: rgba(255, 255, 255, 0.22); --cs-surface: #17212f; --cs-survol: rgba(255, 255, 255, 0.045);
+  --cs-statut-bon: #0ca30c; --cs-statut-attention: #fab219; --cs-statut-serieux: #ec835a; --cs-statut-critique: #d03b3b;
+  /* rampe séquentielle bleue, du plus faible (proche de la surface) au plus fort */
+  --cs-seq-1: #0d366b; --cs-seq-2: #104281; --cs-seq-3: #184f95; --cs-seq-4: #1c5cab; --cs-seq-5: #3987e5; --cs-seq-6: #6da7ec; --cs-seq-7: #9ec5f4;
+  --cs-seq-clair: #f8fafc; --cs-seq-fonce: #0b1120;
+  --cs-jauge: var(--cs-viz-1);
+}
+[data-theme="light"] .cs-page, [data-theme="light"] .cs-tiroir-fond {
+  --cs-viz-1: #2a78d6; --cs-viz-2: #eb6834; --cs-viz-3: #1baf7a; --cs-viz-4: #eda100; --cs-seg-texte-4: #0b0b0b;
+  --cs-rouge: #e34948;
+  --cs-grille: #e5e7eb; --cs-axe: #cbd5e1; --cs-surface: #ffffff; --cs-survol: rgba(15, 23, 42, 0.04);
+  --cs-seq-1: #cde2fb; --cs-seq-2: #9ec5f4; --cs-seq-3: #6da7ec; --cs-seq-4: #3987e5; --cs-seq-5: #256abf; --cs-seq-6: #184f95; --cs-seq-7: #0d366b;
+  --cs-seq-clair: #ffffff; --cs-seq-fonce: #0f172a;
+}
+
+/* ---- page, en-tête, onglets groupés */
+.cs-page { display: flex; flex-direction: column; gap: 1.1rem; padding-bottom: 2rem; min-width: 0; }
+.cs-entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.cs-entete h1 { display: flex; align-items: center; gap: 0.65rem; margin: 0; }
+.cs-entete h1 svg { color: var(--primary-500); }
+.cs-entete p { color: var(--text-secondary); font-size: 0.875rem; margin: 0.3rem 0 0; max-width: 940px; line-height: 1.5; }
+.cs-export { display: inline-flex; align-items: center; gap: 0.4rem; }
+.cs-onglets { display: flex; flex-wrap: wrap; gap: 0.9rem 1.4rem; align-items: flex-end; }
+.cs-onglets-groupe { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.cs-onglets-titre { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding-left: 0.25rem; }
+.cs-onglets-boutons {
+  display: flex; flex-wrap: wrap; gap: 0.2rem; padding: 0.22rem; border-radius: var(--radius-lg);
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle);
+}
+.cs-onglet {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border: 0; border-radius: var(--radius-md);
+  background: transparent; color: var(--text-secondary); font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  transition: background-color var(--mouvement-rapide), color var(--mouvement-rapide), box-shadow var(--mouvement-rapide);
+}
+.cs-onglet:hover { color: var(--text-primary); background: var(--bg-surface-hover); }
+.cs-onglet:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.cs-onglet.actif { background: var(--primary-600); color: #ffffff; box-shadow: var(--shadow-sm); }
+.cs-contenu { animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; min-width: 0; }
+.cs-rechargement { opacity: 0.55; transition: opacity 0.2s ease; }
+
+/* ---- barre de filtres : une seule, au-dessus de tous les onglets d'analyse */
+.cs-filtres {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.65rem 0.85rem; padding: 0.75rem 0.95rem;
+  position: sticky; top: 0; z-index: 6; backdrop-filter: blur(10px);
+}
+.cs-filtre { display: flex; flex-direction: column; gap: 0.25rem; min-width: 140px; font-size: 0.74rem; font-weight: 600; color: var(--text-secondary); }
+.cs-filtre.large { flex: 1 1 240px; max-width: 380px; }
+.cs-filtre.en-ligne { flex-direction: row; align-items: center; gap: 0.45rem; min-width: 0; white-space: nowrap; }
+.cs-filtre .form-control { padding: 0.42rem 0.6rem; font-size: 0.85rem; }
+.cs-filtre-bouton { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.45rem 0.75rem; }
+.cs-filtres-note { flex-basis: 100%; margin: 0; font-size: 0.74rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.35rem; min-height: 1rem; }
+
+/* ---- mises en page */
+.cs-pile { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.cs-une { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr); gap: 1rem; align-items: stretch; }
+.cs-deux { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: start; }
+.cs-deux.larges { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+@media (max-width: 1150px) { .cs-une, .cs-deux, .cs-deux.larges { grid-template-columns: minmax(0, 1fr); } }
+.cs-carte { padding: 1.05rem 1.15rem; display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.cs-carte-entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.8rem; flex-wrap: wrap; }
+.cs-carte-entete h2 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-primary); }
+.cs-carte-entete p { margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+.cs-note { margin: 0; font-size: 0.74rem; color: var(--text-muted); line-height: 1.5; }
+.cs-muet { color: var(--text-muted); }
+.cs-vide { margin: 0; padding: 1.2rem; text-align: center; color: var(--text-muted); }
+.cs-sous-texte { display: block; font-size: 0.72rem; font-weight: 400; color: var(--text-muted); margin-top: 0.1rem; }
+.cs-texte-attention { color: var(--text-secondary); font-style: italic; }
+.cs-nombre { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- chiffre principal et jauge des provisions */
+.cs-heros { justify-content: flex-start; gap: 0.45rem; }
+.cs-heros-libelle { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.cs-heros-valeur { font-size: 3.6rem; font-weight: 800; line-height: 1.02; letter-spacing: -0.02em; color: var(--text-primary); }
+.cs-heros-detail { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem; font-size: 0.82rem; color: var(--text-secondary); }
+.cs-heros-provision { display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.5rem; padding-top: 0.9rem; border-top: 1px solid var(--border-subtle); }
+.cs-heros-ligne { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; font-size: 0.85rem; color: var(--text-secondary); }
+.cs-heros-ligne strong { font-size: 1.2rem; color: var(--text-primary); margin-right: 0.2rem; }
+.cs-heros-cles { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; font-size: 0.75rem; color: var(--text-secondary); }
+.cs-heros-cles li { display: flex; align-items: center; gap: 0.4rem; }
+.ton-normal { --cs-jauge: var(--cs-viz-1); }
+.ton-attention { --cs-jauge: var(--cs-statut-attention); }
+.ton-critique { --cs-jauge: var(--cs-statut-critique); }
+.cs-jauge { position: relative; height: 12px; border-radius: 999px; background: color-mix(in srgb, var(--cs-jauge) 16%, var(--cs-surface)); }
+.cs-jauge.fine { height: 7px; margin-top: 0.15rem; }
+.cs-jauge-rempli, .cs-jauge-projete { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; transition: width var(--mouvement-lent) var(--courbe-entree); }
+.cs-jauge-rempli { background: var(--cs-jauge); animation: cs-jauge-remplit var(--mouvement-lent) var(--courbe-entree) backwards; transform-origin: left; }
+.cs-jauge-projete { background: color-mix(in srgb, var(--cs-jauge) 40%, var(--cs-surface)); }
+.cs-jauge-repere { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text-primary); }
+@keyframes cs-jauge-remplit { from { transform: scaleX(0); } }
+
+/* ---- légendes */
+.cs-legende { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.78rem; color: var(--text-secondary); }
+.cs-legende li { display: flex; align-items: center; gap: 0.45rem; }
+.cs-cle { display: inline-block; flex: none; background: var(--cs-cle); }
+.cs-cle-barre { width: 12px; height: 12px; border-radius: 3px; }
+.cs-cle-barre.leger { background: color-mix(in srgb, var(--cs-cle) 40%, var(--cs-surface)); }
+.cs-cle-ligne, .cs-cle-repere { width: 16px; height: 2px; border-radius: 1px; }
+.cs-cle-tirets { width: 16px; height: 0; background: none; border-top: 2px dashed var(--cs-cle); }
+.cs-cle-trait { width: 2px; height: 12px; border-radius: 1px; background: var(--text-primary); }
+
+/* ---- tuiles d'indicateurs */
+.cs-tuiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; align-content: start; }
+.cs-tuiles.larges { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.cs-tuiles.compactes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .cs-tuiles, .cs-tuiles.compactes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 460px) { .cs-tuiles, .cs-tuiles.compactes { grid-template-columns: minmax(0, 1fr); } .cs-heros-valeur { font-size: 2.8rem; } }
+.cs-tuile {
+  display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; padding: 0.85rem 0.95rem; border-radius: var(--radius-lg);
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  animation: mouvement-apparait var(--mouvement-lent) var(--courbe-entree) backwards; transition: border-color var(--mouvement-rapide);
+}
+.cs-tuile:hover { border-color: var(--border-medium); }
+.cs-tuile:nth-child(2) { animation-delay: 40ms; }
+.cs-tuile:nth-child(3) { animation-delay: 80ms; }
+.cs-tuile:nth-child(4) { animation-delay: 120ms; }
+.cs-tuile:nth-child(n+5) { animation-delay: 160ms; }
+.cs-tuile-libelle { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.cs-tuile-corps { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.5rem; min-width: 0; }
+.cs-tuile-valeur { font-size: 1.45rem; font-weight: 800; line-height: 1.15; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-tuile-detail { font-size: 0.76rem; line-height: 1.4; color: var(--text-secondary); }
+.cs-sparkline { flex: none; overflow: visible; }
+.cs-sparkline path { fill: none; stroke: var(--cs-attenue); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.cs-sparkline circle { fill: var(--cs-viz-1); stroke: var(--cs-surface); stroke-width: 1.5; }
+.cs-evolution { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--text-muted); }
+.cs-evolution strong { font-weight: 700; color: var(--text-primary); }
+.cs-evolution.mauvais svg { color: var(--cs-statut-critique); }
+.cs-evolution.bon svg { color: var(--cs-statut-bon); }
+
+/* ---- constats « À retenir » */
+.cs-constats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.cs-constats li {
+  display: flex; align-items: flex-start; gap: 0.65rem; padding: 0.6rem 0.75rem; border-radius: var(--radius-md);
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); border-left: 3px solid var(--cs-ton);
+  animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards;
+}
+.cs-constats li:nth-child(2) { animation-delay: 30ms; }
+.cs-constats li:nth-child(3) { animation-delay: 60ms; }
+.cs-constats li:nth-child(n+4) { animation-delay: 90ms; }
+.cs-constats li > svg { flex: none; margin-top: 0.1rem; color: var(--cs-ton); }
+.cs-constats strong { display: block; font-size: 0.8rem; color: var(--text-primary); }
+.cs-constats p { margin: 0.1rem 0 0; font-size: 0.8rem; line-height: 1.45; color: var(--text-secondary); }
+.ton-critique { --cs-ton: var(--cs-statut-critique); }
+.ton-serieux { --cs-ton: var(--cs-statut-serieux); }
+.ton-attention { --cs-ton: var(--cs-statut-attention); }
+.ton-info { --cs-ton: var(--cs-viz-1); }
+.ton-bon { --cs-ton: var(--cs-statut-bon); }
+.ton-neutre { --cs-ton: var(--cs-attenue); }
+
+/* ---- états (situations) et score */
+.cs-etat {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.18rem 0.55rem; border-radius: 999px; white-space: nowrap;
+  font-size: 0.72rem; font-weight: 700; color: var(--text-primary);
+  background: color-mix(in srgb, var(--cs-ton) 15%, transparent); border: 1px solid color-mix(in srgb, var(--cs-ton) 38%, transparent);
+}
+.cs-etat svg { color: var(--cs-ton); flex: none; }
+.cs-score { display: inline-block; padding: 0.12rem 0.45rem; border-radius: var(--radius-sm); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); background: var(--bg-surface-elevated); }
+.cs-score.critique { background: color-mix(in srgb, var(--cs-statut-critique) 18%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cs-statut-critique) 45%, transparent); }
+
+/* ---- graphiques : cadre, axes, marques, bulle */
+.cs-graphique { margin: 0; display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.cs-graphique-entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap; }
+.cs-graphique-titre { margin: 0; font-size: 0.88rem; font-weight: 700; color: var(--text-primary); }
+.cs-graphique-sous-titre { margin: 0.15rem 0 0; font-size: 0.75rem; color: var(--text-muted); }
+.cs-graphique-outils { display: flex; gap: 0.4rem; margin-left: auto; }
+.cs-graphique-note { margin: 0; font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; }
+.cs-bouton-chiffres {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.28rem 0.6rem; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-medium); background: transparent; color: var(--text-secondary); font: inherit; font-size: 0.72rem; font-weight: 600;
+}
+.cs-bouton-chiffres:hover, .cs-bouton-chiffres[aria-pressed="true"] { color: var(--text-primary); background: var(--bg-surface-hover); }
+.cs-bouton-chiffres:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.cs-chiffres { max-height: 340px; overflow: auto; animation: mouvement-descend var(--mouvement-normal) var(--courbe-entree) backwards; }
+.cs-zone { position: relative; width: 100%; min-width: 0; }
+.cs-zone svg { display: block; overflow: visible; }
+.cs-grille { stroke: var(--cs-grille); stroke-width: 1; }
+.cs-axe { stroke: var(--cs-axe); stroke-width: 1; }
+.cs-graduation { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cs-etiquette { fill: var(--text-primary); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cs-etiquette-secondaire { fill: var(--text-muted); font-size: 10.5px; }
+.cs-colonne { fill: var(--cs-viz-1); transition: filter var(--mouvement-rapide); }
+.cs-colonne.attenue { fill: var(--cs-attenue); }
+.cs-colonne.active { filter: brightness(1.15); }
+.cs-survol { fill: var(--cs-survol); }
+.cs-cible { fill: transparent; outline: none; }
+.cs-cible:focus-visible { stroke: var(--border-focus); stroke-width: 2; }
+.cs-ligne { fill: none; stroke: var(--cs-serie); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cs-ligne.tirets { stroke-dasharray: 6 5; }
+.cs-ligne.repere { stroke-width: 1.5; }
+.cs-aire { fill: var(--cs-serie); opacity: 0.1; stroke: none; }
+.cs-point { fill: var(--cs-serie); stroke: var(--cs-surface); stroke-width: 2; }
+.cs-point.creux { fill: var(--cs-surface); stroke: var(--cs-serie); stroke-width: 2; }
+.cs-reticule { stroke: var(--text-muted); stroke-width: 1; }
+.cs-diagonale { stroke: var(--cs-attenue); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.cs-bulle {
+  position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 3; min-width: 200px; max-width: 340px; padding: 0.55rem 0.7rem;
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-medium); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md); font-size: 0.78rem; animation: graphique-bulle 0.12s ease-out;
+}
+.cs-bulle-titre { font-weight: 700; color: var(--text-primary); margin-bottom: 0.3rem; }
+.cs-bulle-ligne { display: flex; align-items: center; gap: 0.45rem; line-height: 1.6; }
+.cs-bulle-ligne strong { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cs-bulle-ligne span:last-child { color: var(--text-muted); white-space: nowrap; }
+.cs-bulle-cle { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+
+/* ---- barres classées : une teinte, valeur au bout de la barre, annexes alignées */
+.cs-barres { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; overflow-x: auto; }
+.cs-barres-ligne {
+  display: grid; grid-template-columns: var(--cs-barres-grille); gap: 0.75rem; align-items: center; width: 100%; min-width: 0;
+  padding: 0.4rem 0.45rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; font: inherit; text-align: left;
+  transition: background-color var(--mouvement-rapide);
+}
+.cs-barres-ligne.entete { padding-top: 0; padding-bottom: 0.15rem; font-size: 0.66rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.cs-barres.cliquables .cs-barres-ligne:not(.entete) { cursor: pointer; }
+.cs-barres.cliquables .cs-barres-ligne:not(.entete):hover { background: var(--bg-surface-hover); }
+.cs-barres-ligne:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.cs-barres-libelle { display: flex; flex-direction: column; min-width: 0; }
+.cs-barres-nom { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-barres-detail { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-barres-piste { display: flex; align-items: center; min-width: 0; padding-right: 8.6rem; }
+.cs-barres-barre {
+  flex: none; height: 10px; border-radius: 0 4px 4px 0; background: var(--cs-viz-1);
+  animation: cs-barre-pousse var(--mouvement-lent) var(--courbe-entree) backwards; transform-origin: left;
+}
+.cs-barres-ligne.attenue .cs-barres-barre { background: var(--cs-attenue); }
+.cs-barres-valeur { flex: none; margin-left: 0.45rem; margin-right: -8.6rem; font-size: 0.78rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cs-barres-annexe { font-size: 0.8rem; color: var(--text-secondary); }
+@keyframes cs-barre-pousse { from { transform: scaleX(0); } }
+
+/* ---- barre segmentée haute */
+.cs-segmentee { display: flex; flex-direction: column; gap: 0.6rem; }
+.cs-segmentee-barre { position: relative; height: 28px; }
+.cs-segment {
+  position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding-left: 0.5rem; border-radius: 4px; outline: none; cursor: default;
+  font-size: 0.75rem; font-weight: 700; color: #ffffff; white-space: nowrap; transition: filter var(--mouvement-rapide);
+}
+.cs-segment:hover, .cs-segment.actif { filter: brightness(1.12); }
+.cs-segment:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+.cs-seg-1 { background: var(--cs-seg-1); }
+.cs-seg-2 { background: var(--cs-seg-2); }
+.cs-seg-3 { background: var(--cs-seg-3); }
+.cs-seg-4 { background: var(--cs-seg-4); color: var(--cs-seg-texte-4); }
+.cs-chiffres-cles { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.2rem; }
+.cs-chiffres-cles div { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-subtle); font-size: 0.8rem; }
+.cs-chiffres-cles dt { color: var(--text-secondary); }
+.cs-chiffres-cles dd { margin: 0; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 560px) { .cs-chiffres-cles { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- tableau de chaleur (familles x mois) */
+.cs-chaleur .data-table th[scope="row"] { text-align: left; font-weight: 600; white-space: nowrap; }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-0 { color: var(--text-muted); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-total { font-weight: 700; }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-1, .cs-echelle-pas.cs-chaleur-1 { background: var(--cs-seq-1); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-2, .cs-echelle-pas.cs-chaleur-2 { background: var(--cs-seq-2); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-3, .cs-echelle-pas.cs-chaleur-3 { background: var(--cs-seq-3); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-4, .cs-echelle-pas.cs-chaleur-4 { background: var(--cs-seq-4); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-5, .cs-echelle-pas.cs-chaleur-5 { background: var(--cs-seq-5); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-6, .cs-echelle-pas.cs-chaleur-6 { background: var(--cs-seq-6); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-7, .cs-echelle-pas.cs-chaleur-7 { background: var(--cs-seq-7); }
+/* encre lisible sur chaque pas : en sombre, claire sur les pas 1 à 4 et foncée sur 5 à 7 ; en clair, l'inverse */
+.cs-page .cs-chaleur .data-table td.cs-chaleur-1, .cs-page .cs-chaleur .data-table td.cs-chaleur-2, .cs-page .cs-chaleur .data-table td.cs-chaleur-3,
+.cs-page .cs-chaleur .data-table td.cs-chaleur-4 { color: var(--cs-seq-clair); }
+.cs-page .cs-chaleur .data-table td.cs-chaleur-5, .cs-page .cs-chaleur .data-table td.cs-chaleur-6, .cs-page .cs-chaleur .data-table td.cs-chaleur-7 { color: var(--cs-seq-fonce); font-weight: 600; }
+[data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-1, [data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-2,
+[data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-3, [data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-4 { color: var(--cs-seq-fonce); }
+[data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-5, [data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-6,
+[data-theme="light"] .cs-page .cs-chaleur .data-table td.cs-chaleur-7 { color: var(--cs-seq-clair); }
+.cs-echelle { display: flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
+.cs-echelle span:first-child { margin-right: 0.3rem; }
+.cs-echelle span:last-child { margin-left: 0.3rem; }
+.cs-echelle-pas { display: inline-block; width: 16px; height: 10px; border-radius: 2px; }
+
+/* ---- pyramide des âges */
+.cs-pyramide { display: flex; flex-direction: column; gap: 0.32rem; }
+.cs-pyramide .cs-legende { justify-content: center; margin-bottom: 0.3rem; }
+.cs-pyramide-ligne { display: grid; grid-template-columns: minmax(0, 1fr) 6.6rem minmax(0, 1fr); align-items: center; gap: 0.5rem; }
+.cs-pyramide-cote { display: grid; align-items: center; gap: 0.4rem; min-width: 0; }
+.cs-pyramide-cote.gauche { grid-template-columns: 2.4rem minmax(0, 1fr); }
+.cs-pyramide-cote.droite { grid-template-columns: minmax(0, 1fr) 2.4rem; }
+.cs-pyramide-rail { display: flex; min-width: 0; }
+.cs-pyramide-cote.gauche .cs-pyramide-rail { justify-content: flex-end; }
+.cs-pyramide-barre { height: 12px; background: var(--cs-serie); animation: cs-barre-pousse var(--mouvement-lent) var(--courbe-entree) backwards; transform-origin: left; }
+.cs-pyramide-cote.gauche .cs-pyramide-barre { border-radius: 4px 0 0 4px; transform-origin: right; }
+.cs-pyramide-cote.droite .cs-pyramide-barre { border-radius: 0 4px 4px 0; }
+.cs-pyramide-libelle { text-align: center; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
+.cs-pyramide-valeur { font-size: 0.74rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.cs-pyramide-cote.gauche .cs-pyramide-valeur { text-align: right; }
+
+/* ---- indice de coût (divergent autour de 100) */
+.cs-indice { display: inline-flex; align-items: center; gap: 0.55rem; }
+.cs-indice-piste { position: relative; display: inline-block; width: 112px; height: 10px; }
+.cs-indice-piste::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--cs-attenue); }
+.cs-indice-barre { position: absolute; top: 1px; bottom: 1px; }
+.cs-indice-barre.haut { background: var(--cs-rouge); border-radius: 0 4px 4px 0; }
+.cs-indice-barre.bas { background: var(--cs-viz-1); border-radius: 4px 0 0 4px; }
+.cs-indice strong { min-width: 2rem; font-size: 0.82rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+/* ---- liste des entreprises : pastilles de situation, recherche, tableau */
+.cs-outils { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.cs-outils-droite { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; }
+.cs-pastilles { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.cs-pastille {
+  display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.65rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-medium); background: transparent; color: var(--text-secondary); font: inherit; font-size: 0.76rem; font-weight: 600;
+  transition: background-color var(--mouvement-rapide), border-color var(--mouvement-rapide), color var(--mouvement-rapide);
+}
+.cs-pastille svg { color: var(--cs-ton, var(--text-muted)); }
+.cs-pastille span { font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cs-pastille:hover { color: var(--text-primary); border-color: var(--border-focus); }
+.cs-pastille.active { color: var(--text-primary); background: color-mix(in srgb, var(--cs-ton, var(--primary-500)) 16%, transparent); border-color: color-mix(in srgb, var(--cs-ton, var(--primary-500)) 55%, transparent); }
+.cs-pastille:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+.cs-recherche { position: relative; display: flex; align-items: center; }
+.cs-recherche svg { position: absolute; left: 0.6rem; color: var(--text-muted); pointer-events: none; }
+.cs-recherche .form-control { padding: 0.42rem 0.6rem 0.42rem 2rem; min-width: 240px; font-size: 0.85rem; }
+.cs-table-entreprises { max-height: 660px; overflow: auto; }
+.cs-table-entreprises td { vertical-align: middle; }
+.cs-ligne-cliquable { cursor: pointer; }
+.cs-lien-ligne { padding: 0; border: 0; background: none; font: inherit; font-weight: 700; color: var(--text-primary); text-align: left; cursor: pointer; }
+.cs-lien-ligne:hover { color: var(--primary-500); text-decoration: underline; }
+.cs-lien-ligne:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; border-radius: 2px; }
+.cs-depenses-cellule { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; }
+.cs-depenses-cellule > span { display: flex; flex-direction: column; align-items: flex-end; }
+.cs-cellule-jauge { min-width: 190px; }
+
+/* ---- fiche d'une entreprise (panneau latéral) */
+.cs-tiroir-fond {
+  position: fixed; inset: 0; z-index: 1000; display: flex; justify-content: flex-end;
+  background: rgba(2, 6, 23, 0.5); backdrop-filter: blur(2px); animation: mouvement-fondu var(--mouvement-normal) ease-out;
+}
+.cs-tiroir {
+  width: min(740px, 100vw); height: 100%; display: flex; flex-direction: column; background: var(--bg-main);
+  border-left: 1px solid var(--border-medium); box-shadow: var(--shadow-lg); animation: cs-tiroir-entre var(--mouvement-lent) var(--courbe-entree);
+}
+@keyframes cs-tiroir-entre { from { opacity: 0; transform: translateX(32px); } }
+.cs-tiroir-entete { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1rem 1.2rem; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); }
+.cs-tiroir-entete h2 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 1.1rem; font-weight: 800; color: var(--text-primary); }
+.cs-tiroir-entete h2 svg { color: var(--primary-500); flex: none; }
+.cs-tiroir-entete p { margin: 0.25rem 0 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.45; }
+.cs-tiroir-fermer { flex: none; padding: 0.35rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.cs-tiroir-fermer:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
+.cs-tiroir-fermer:focus-visible { outline: 2px solid var(--border-focus); }
+.cs-tiroir-corps { flex: 1; overflow: auto; padding: 1rem 1.2rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+.cs-tiroir-situation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.cs-tiroir-bloc { display: flex; flex-direction: column; gap: 0.55rem; padding: 0.85rem 0.95rem; border-radius: var(--radius-lg); background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+.cs-tiroir-bloc h3 { margin: 0; font-size: 0.88rem; font-weight: 700; color: var(--text-primary); }
+.cs-tiroir .cs-graphique { padding: 0.85rem 0.95rem; border-radius: var(--radius-lg); background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+@media (max-width: 760px) {
+  .cs-filtres { position: static; }
+  .cs-filtre, .cs-filtre.large { flex: 1 1 100%; max-width: none; }
+  .cs-recherche .form-control { min-width: 0; width: 100%; }
+}
+/* constats en grille (vue d'ensemble), bouton pour déplier les autres, en-têtes d'annexes sur deux lignes au besoin */
+.cs-constats.en-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0.55rem; }
+.cs-plus { align-self: flex-start; }
+.cs-barres-ligne.entete .cs-nombre { white-space: normal; line-height: 1.2; }

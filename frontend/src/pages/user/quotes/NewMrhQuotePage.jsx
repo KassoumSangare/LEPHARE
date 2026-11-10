@@ -5,7 +5,7 @@ import { quoteApi, mrhApi, customerApi, settingsApi, contractApi, piecesJointesA
 import { useToast } from '../../../context/ToastContext';
 import {
   Home, ChevronLeft, ChevronRight, Plus, Trash2, Edit3, CheckCircle2, AlertTriangle, Loader2,
-  FileText, Users, ShieldCheck, Calculator, FileCheck, Building, Eye, ChevronDown, Info, Scale, X,
+  FileText, Users, ShieldCheck, Calculator, FileCheck, Building, Eye, ChevronDown, Info, Scale, X, Download, FileSpreadsheet,
 } from 'lucide-react';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { BoutonPieceJointe, PieceJointe } from '../../../components/common/PieceJointe';
@@ -160,6 +160,9 @@ export const NewMrhQuotePage = () => {
   // « Modifier » depuis le registre des devis : /user/quotes/mrh?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  // Incorporation d'une maison dans un contrat en cours (page Incorporation, ou devis INC rouvert du registre) : date
+  // d'incorporation au choix dans la période du contrat ; échéance, compagnie, souscripteur et assuré de la police
+  const [incorporation, setIncorporation] = useState(null);
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');
   const [avertissementReprise, setAvertissementReprise] = useState('');
@@ -189,6 +192,7 @@ export const NewMrhQuotePage = () => {
   const [dateEffet, setDateEffet] = useState(todayStr);
   const [customExpiration, setCustomExpiration] = useState('');
   const calculatedDateExpiration = useMemo(() => {
+    if (incorporation?.DateExpiration) return incorporation.DateExpiration;
     if (!dateEffet) return '';
     if (Number(dureeId) === 5) return customExpiration || '';
     const mois = { 1: 1, 2: 3, 3: 6, 4: 12 }[Number(dureeId)] || 12;
@@ -196,7 +200,7 @@ export const NewMrhQuotePage = () => {
     d.setMonth(d.getMonth() + mois);
     d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
-  }, [dateEffet, dureeId, customExpiration]);
+  }, [dateEffet, dureeId, customExpiration, incorporation]);
 
   // Étape 2 : maisons
   const [maisons, setMaisons] = useState([]);
@@ -377,6 +381,80 @@ export const NewMrhQuotePage = () => {
     setFormulaireMaison(false);
   };
 
+  // Import Excel des maisons (devis neuf, « Modifier » ou incorporation, demande du 2026-11-10) : fichier lu et contrôlé par le
+  // moteur MRH du serveur, rien n'est enregistré avant « Enregistrer » ; une seule ligne en erreur et aucune maison n'est ajoutée
+  const [fichierMaisons, setFichierMaisons] = useState(null);
+  const [cleFichierMaisons, setCleFichierMaisons] = useState(0);
+  const [importMaisons, setImportMaisons] = useState({ enCours: false, erreurs: [], resume: '' });
+  const telechargerModeleMaisons = async () => {
+    try {
+      const blob = await mrhApi.modeleImport();
+      const url = URL.createObjectURL(blob);
+      const lien = document.createElement('a');
+      lien.href = url;
+      lien.download = 'modele_maisons_mrh.xlsx';
+      document.body.appendChild(lien);
+      lien.click();
+      lien.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toastError(`Modèle non téléchargé : ${messageErreurApi(err)}`);
+    }
+  };
+  const importerMaisons = async () => {
+    if (!fichierMaisons) { toastError('Choisissez le fichier Excel des maisons.'); return; }
+    setImportMaisons({ enCours: true, erreurs: [], resume: '' });
+    try {
+      const res = await mrhApi.analyserImport(fichierMaisons);
+      if (res.Erreurs?.length) {
+        setImportMaisons({ enCours: false, erreurs: res.Erreurs, resume: '' });
+        toastError(`Aucune maison importée : ${res.Erreurs.length} ligne${res.Erreurs.length > 1 ? 's' : ''} à corriger dans le fichier.`);
+        return;
+      }
+      const base = Date.now();
+      const nouvelles = (res.Maisons || []).map((m, i) => {
+        const primeNetteCalc = Math.round(Number(m.calcul?.prime_nette_totale) || 0);
+        const taxeCalc = Math.round(Number(m.calcul?.taxe_totale) || 0);
+        return {
+          id: base + i,
+          code_usage: m.code_usage,
+          usage_libelle: m.usage_libelle || m.code_usage,
+          adresse: m.adresse || '',
+          ...Object.fromEntries(CAPITAUX.map((c) => [c.cle, Number(m[c.cle]) || 0])),
+          options: m.options || [],
+          sous_garanties_optionnelles: m.sous_garanties_optionnelles || [],
+          prime_nette: primeNetteCalc,
+          taxe: taxeCalc,
+          prime_ttc: primeNetteCalc + taxeCalc,
+          garanties: garantiesDepuisCalcul(m.calcul?.sous_garanties),
+          options_appliquees: m.calcul?.options_appliquees || [],
+          prime_saisie: m.prime_nette_saisie,
+        };
+      });
+      setMaisons((prev) => [...prev, ...nouvelles]);
+      setPrimesParMaison((prev) => ({
+        ...prev,
+        ...Object.fromEntries(nouvelles.map((n) => [n.id, n.prime_saisie ? String(Math.round(n.prime_saisie)) : ''])),
+      }));
+      const t = res.Totaux || {};
+      // Taxe du fichier, quand chaque ligne la donne : ajoutée à la taxe du devis (somme des maisons)
+      if (t.Taxe !== null && t.Taxe !== undefined) setTaxeSaisie((v) => String(cleanNum(v) + Math.round(Number(t.Taxe) || 0)));
+      const resume = `${nouvelles.length} maison${nouvelles.length > 1 ? 's' : ''} importée${nouvelles.length > 1 ? 's' : ''} de la feuille « ${res.Feuille} »`
+        + ` : prime nette ${fcfa(t.PrimeNette)} F`
+        + (t.PrimesManquantes ? `, ${t.PrimesManquantes} prime${t.PrimesManquantes > 1 ? 's' : ''} à saisir à l'étape Tarification` : '')
+        + (t.Taxe !== null && t.Taxe !== undefined ? `, taxe ${fcfa(t.Taxe)} F ajoutée à celle du devis` : ', taxe à saisir à l\'étape Tarification')
+        + '. Vérifiez la liste puis enregistrez le devis.';
+      setImportMaisons({ enCours: false, erreurs: [], resume });
+      setFichierMaisons(null);
+      setCleFichierMaisons((k) => k + 1);
+      setFormulaireMaison(false);
+      success(resume);
+    } catch (err) {
+      setImportMaisons({ enCours: false, erreurs: [], resume: '' });
+      toastError(`Import impossible : ${messageErreurApi(err)}`);
+    }
+  };
+
   const handleEditMaison = (m) => {
     setEditingMaisonId(m.id);
     setFormulaireMaison(true);
@@ -405,7 +483,11 @@ export const NewMrhQuotePage = () => {
     (async () => {
       setIsLoadingEdit(true);
       try {
-        const [devis, detail] = await Promise.all([quoteApi.getQuote(editIddevisParam), mrhApi.getMaisons(editIddevisParam)]);
+        const [devis, detail, lectureIncorporation] = await Promise.all([
+          quoteApi.getQuote(editIddevisParam),
+          mrhApi.getMaisons(editIddevisParam),
+          contractApi.lireDevisIncorporation(editIddevisParam).catch(() => null),
+        ]);
         if (!actif) return;
         const raw = devis?.raw || {};
         if (raw.confirme) {
@@ -413,6 +495,7 @@ export const NewMrhQuotePage = () => {
           navigate('/user/quotes');
           return;
         }
+        setIncorporation(lectureIncorporation?.Incorporation ? lectureIncorporation : null);
         setIdDevisActuel(Number(editIddevisParam));
         setNumeroDevisEdite(raw.numerodevis || '');
         setNumeroPoliceCompagnie(raw.numero_police_compagnie || '');
@@ -504,7 +587,10 @@ export const NewMrhQuotePage = () => {
     const e = {};
     if (n === 1) {
       if (!compagnieId) e.compagnie = 'Choisissez la compagnie.';
-      if (!dateEffet) e.dateEffet = 'Saisissez la date d\'effet.';
+      if (!dateEffet) e.dateEffet = incorporation ? 'Saisissez la date d\'incorporation.' : 'Saisissez la date d\'effet.';
+      else if (incorporation && (dateEffet < incorporation.DateEffetContrat || dateEffet > incorporation.DateExpiration)) {
+        e.dateEffet = `La date d'incorporation doit être comprise entre le ${dateFr(incorporation.DateEffetContrat)} et le ${dateFr(incorporation.DateExpiration)}.`;
+      }
       if (!calculatedDateExpiration) e.dateExpiration = 'Saisissez la date d\'expiration.';
       else if (calculatedDateExpiration <= dateEffet) e.dateExpiration = 'La date d\'expiration doit suivre la date d\'effet.';
     }
@@ -729,7 +815,8 @@ export const NewMrhQuotePage = () => {
         </button>
         <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
           <Home size={26} style={{ color: 'var(--primary-500)' }} />
-          {step === 6 ? 'Devis Multirisques Habitation enregistré' : idDevisActuel ? 'Modification du devis Multirisques Habitation' : 'Nouveau devis Multirisques Habitation'}
+          {incorporation ? `Incorporation de maisons dans la police ${incorporation.NumeroPolice}`
+            : step === 6 ? 'Devis Multirisques Habitation enregistré' : idDevisActuel ? 'Modification du devis Multirisques Habitation' : 'Nouveau devis Multirisques Habitation'}
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0' }}>
           {numeroDevisEdite
@@ -741,6 +828,13 @@ export const NewMrhQuotePage = () => {
       {/* ÉTAPES */}
       {step <= 5 && <EtapesDevis etapes={ETAPES} etape={step} onAller={allerA} />}
 
+      {incorporation && (
+        <Alerte couleur="var(--primary-500)">
+          {`Avenant d'incorporation : la police compte aujourd'hui ${incorporation.Personnes} maison${incorporation.Personnes > 1 ? 's' : ''}. `
+            + `Les maisons de ce devis s'y ajoutent du ${dateFr(dateEffet)} à l'échéance inchangée du ${dateFr(incorporation.DateExpiration)}. `
+            + 'Saisissez les primes dues pour cette période.'}
+        </Alerte>
+      )}
       {avertissementReprise && step <= 5 && <Alerte couleur="var(--accent-amber)">{avertissementReprise}</Alerte>}
 
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -750,8 +844,8 @@ export const NewMrhQuotePage = () => {
             <>
               <h2 style={styles.titreCarte}><FileText size={18} style={{ color: 'var(--primary-500)' }} /> Informations générales du contrat</h2>
               <div style={styles.grille}>
-                <Champ label="Compagnie d'assurance" requis erreur={erreurs.compagnie}>
-                  <select className="form-control" value={compagnieId} onChange={(e) => setCompagnieId(Number(e.target.value))}>
+                <Champ label="Compagnie d'assurance" requis erreur={erreurs.compagnie} aide={incorporation ? 'Celle de la police' : undefined}>
+                  <select className="form-control" value={compagnieId} disabled={Boolean(incorporation)} onChange={(e) => setCompagnieId(Number(e.target.value))}>
                     {!companies.some((c) => c.id === Number(compagnieId)) && <option value={compagnieId}>Compagnie n° {compagnieId}</option>}
                     {trierParLibelle(companies, (c) => c.nom).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
                   </select>
@@ -767,6 +861,17 @@ export const NewMrhQuotePage = () => {
                 </Champ>
               </div>
               <div style={styles.sousTitre}>Période</div>
+              {incorporation ? (
+                <div style={styles.grille}>
+                  <Champ label="Date d'incorporation" requis erreur={erreurs.dateEffet} aide={`Au choix dans la période du contrat, du ${dateFr(incorporation.DateEffetContrat)} au ${dateFr(incorporation.DateExpiration)}`}>
+                    <input type="date" className="form-control" value={dateEffet} min={incorporation.DateEffetContrat} max={incorporation.DateExpiration}
+                      onChange={(e) => setDateEffet(e.target.value)} />
+                  </Champ>
+                  <Champ label="Date d'échéance" aide="Celle du contrat, non modifiable">
+                    <input type="date" className="form-control" value={incorporation.DateExpiration} readOnly disabled />
+                  </Champ>
+                </div>
+              ) : (
               <div style={styles.grille}>
                 <Champ label="Terme du contrat">
                   <TermeContratSelect value={termeId} onChange={(t) => { setTermeId(t); setDureeId((d) => dureeSelonTerme(t, d)); }} />
@@ -783,12 +888,50 @@ export const NewMrhQuotePage = () => {
                     : <input type="date" className="form-control" value={calculatedDateExpiration} readOnly disabled />}
                 </Champ>
               </div>
+              )}
             </>
           )}
 
           {/* ---------------------------------------------------------- ÉTAPE 2 : HABITATIONS */}
           {step === 2 && (
             <>
+              {/* Import Excel : plusieurs maisons d'un coup (incorporation ou devis à nombreuses maisons) */}
+              <div style={{ ...styles.bloc, marginBottom: '1.1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <FileSpreadsheet size={16} style={{ color: 'var(--primary-500)' }} /> Importer les maisons d'un fichier Excel
+                    </div>
+                    <div style={styles.aide}>Une ligne par maison : usage, adresse, valeurs assurées, prime nette et taxe si elles sont connues. Les maisons s'ajoutent à la liste.</div>
+                  </div>
+                  <button type="button" className="btn btn-secondary" onClick={telechargerModeleMaisons}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}>
+                    <Download size={14} /> Modèle vierge
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+                  <input key={cleFichierMaisons} type="file" accept=".xlsx,.xlsm" aria-label="Fichier Excel des maisons" className="form-control"
+                    style={{ flex: '1 1 260px', minWidth: 0 }} onChange={(e) => { setFichierMaisons(e.target.files?.[0] || null); setImportMaisons({ enCours: false, erreurs: [], resume: '' }); }} />
+                  <button type="button" className="btn btn-primary" onClick={importerMaisons} disabled={!fichierMaisons || importMaisons.enCours}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    {importMaisons.enCours ? <Loader2 size={15} className="spin" /> : <FileSpreadsheet size={15} />}
+                    {importMaisons.enCours ? 'Lecture du fichier…' : 'Importer les maisons'}
+                  </button>
+                </div>
+                {importMaisons.resume && <div style={{ marginTop: '0.75rem' }}><Alerte couleur="var(--accent-emerald)" icone={CheckCircle2}>{importMaisons.resume}</Alerte></div>}
+                {importMaisons.erreurs.length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }} role="alert">
+                    <Alerte couleur="var(--accent-rose)">
+                      <strong>Aucune maison importée, {importMaisons.erreurs.length} ligne{importMaisons.erreurs.length > 1 ? 's' : ''} à corriger :</strong>
+                      <ul style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem' }}>
+                        {importMaisons.erreurs.slice(0, 15).map((e) => <li key={e.Ligne}>{`Ligne ${e.Ligne} : ${e.Message}`}</li>)}
+                      </ul>
+                      {importMaisons.erreurs.length > 15 && <div style={{ marginTop: '0.25rem' }}>{`Et ${importMaisons.erreurs.length - 15} autres lignes.`}</div>}
+                    </Alerte>
+                  </div>
+                )}
+              </div>
+
               {/* Maisons déjà ajoutées en premier ; formulaire d'ajout ouvert d'office tant qu'il n'y en a aucune */}
               {erreurs.maisons && <div style={{ marginBottom: '0.9rem' }}><Alerte couleur="var(--accent-rose)">{erreurs.maisons}</Alerte></div>}
               {maisons.length > 0 && (
@@ -856,7 +999,7 @@ export const NewMrhQuotePage = () => {
                     </select>
                   </Champ>
                   <Champ label="Adresse de la maison" aide="Facultative">
-                    <input type="text" className="form-control" value={currentAdresse} onChange={(e) => setCurrentAdresse(e.target.value)} />
+                    <input type="text" className="form-control" maxLength={150} value={currentAdresse} onChange={(e) => setCurrentAdresse(e.target.value)} />
                   </Champ>
                 </div>
 
@@ -1000,6 +1143,14 @@ export const NewMrhQuotePage = () => {
           {step === 4 && (
             <>
               <h2 style={styles.titreCarte}><Users size={18} style={{ color: 'var(--primary-500)' }} /> Souscripteur & assuré</h2>
+              {incorporation ? (
+                <>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: 0 }}>Souscripteur et assuré de la police {incorporation.NumeroPolice}, non modifiables.</p>
+                  {souscripteur && <FichePersonne personne={souscripteur} />}
+                  {assureDifferent && assureChoisi && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={assureChoisi} /></div>}
+                </>
+              ) : (
+              <>
               <div style={styles.grille}>
                 <RechercheClient label="Souscripteur (client)" personne={souscripteur} erreur={erreurs.souscripteur}
                   onChoisir={(p) => { setSouscripteur(p); if (!assureDifferent) setTelephoneAssure(p?.Telephone || ''); }}
@@ -1020,6 +1171,8 @@ export const NewMrhQuotePage = () => {
                   </div>
                   {assureChoisi && <div style={{ marginTop: '0.75rem' }}><FichePersonne personne={assureChoisi} /></div>}
                 </>
+              )}
+              </>
               )}
               <div style={{ ...styles.grille, marginTop: '1rem' }}>
                 <Champ label="Téléphone de l'assuré" aide="Enregistré comme mobile de la fiche client de l'assuré (8 chiffres au moins)">

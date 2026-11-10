@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Building2, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, RefreshCw, Save, Search, ShieldAlert, Upload, UserSearch } from 'lucide-react';
+import {
+  Building2, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, Save, Search, ShieldAlert, Stethoscope, Upload, UserSearch, Users,
+} from 'lucide-react';
 import { consommationsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
@@ -7,10 +9,16 @@ import { confirmer } from '../../../utils/dialogue';
 import { aLeDroit } from '../../../utils/droits';
 import { downloadBlob } from '../../../utils/exportUtils';
 import { dateFr, fcfa, messageErreurApi } from '../../../utils/financeUtils';
+import { AnalyseConsommations, BarreFiltres, useAnalyse } from './consommations/AnalyseConsommations';
 
 /* =========================================================================
    Suivi des consommations santé : relevés du gestionnaire (MCI CARE) importés, droits, plafonds et soldes de chaque assuré et de ses
-   bénéficiaires, statistiques par entreprise, contrôles des données et détection des cas de fraude. Calculs au serveur : sante/consommations.py.
+   bénéficiaires, statistiques par entreprise, contrôles des données et détection des cas de fraude.
+   Trois groupes d'onglets (refonte du 2026-11-09) :
+   - Analyse : vue d'ensemble, entreprises, prestations, assurés et foyers, sur une seule lecture filtrée (consommations/AnalyseConsommations.jsx,
+     calculs sante/consommations_analyse.py) ;
+   - Suivi : fiche assuré, plafonds, contrôles, fraude (sante/consommations.py) ;
+   - Données : imports des relevés, effectifs et états des cotisations.
    Données de santé : chaque onglet suit son droit (consommations.view, consommations.fraude, consommations.import).
    ========================================================================= */
 const DROITE = { textAlign: 'right' };
@@ -22,12 +30,6 @@ const COULEUR_NIVEAU = { Élevé: 'rose', Moyen: 'amber', Faible: 'blue' };
 const COULEUR_GRAVITE = { Élevée: 'rose', Moyenne: 'amber', Faible: 'slate' };
 const COULEUR_INSTRUCTION = { A_INSTRUIRE: 'blue', JUSTIFIE: 'emerald', FRAUDE: 'rose', SANS_SUITE: 'slate' };
 const DECISIONS = [['A_INSTRUIRE', 'À instruire'], ['JUSTIFIE', 'Justifié'], ['FRAUDE', 'Fraude avérée'], ['SANS_SUITE', 'Sans suite']];
-
-const Onglet = ({ actif, onClick, icone: Icone, children }) => (
-  <button type="button" role="tab" aria-selected={actif} className={`btn ${actif ? 'btn-primary' : 'btn-secondary'}`} onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-    <Icone size={15} /> {children}
-  </button>
-);
 
 const Tuile = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => (
   <div className="glass-panel" style={{ padding: '0.9rem 1.05rem' }}>
@@ -82,255 +84,10 @@ const useLecture = (lire, dependances) => {
   return [donnees, chargement, recharger];
 };
 
-// ------------------------------------------------------------------ tableau de bord
+// Nature des fichiers importés (onglet Imports)
 const NATURES = {
   PRESTATIONS: 'Prestations', EFFECTIF: 'Effectif', EFFECTIF_PERIODES: 'Effectif, exercice précédent et actuel',
   EFFECTIF_PRECEDENT: "Effectif de l'exercice précédent", COTISATIONS: 'État des cotisations',
-};
-const COULEUR_PROVISION = { Normal: 'emerald', Alerte: 'amber', 'Provision dépassée': 'rose', 'Sans provision': 'slate', 'Sans état de cotisation': 'blue' };
-const MOIS_COURTS = ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'];
-
-const OngletTableauDeBord = () => {
-  const { success, error: toastError } = useToast();
-  const [filtres, setFiltres] = useState({ exercice: '', du: '', au: '', garant: '' });
-  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.tableauDeBord(filtres), [filtres]);
-  const [exportEnCours, setExportEnCours] = useState(false);
-  const [moisParMois, setMoisParMois] = useState(false);
-  const peutLier = aLeDroit('consommations.import');
-  const champ = (cle) => (e) => setFiltres((f) => ({ ...f, [cle]: e.target.value }));
-  const t = donnees?.Totaux || {};
-  const ind = donnees?.Indicateurs || {};
-
-  const exporterRapport = async () => {
-    setExportEnCours(true);
-    try {
-      const reponse = await consommationsApi.rapport(filtres);
-      const entete = reponse.headers?.['content-disposition'] || '';
-      const nom = decodeURIComponent((entete.match(/filename="?([^";]+)"?/) || [])[1] || `rapport-consommations-${donnees?.Exercice || ''}.docx`);
-      downloadBlob(reponse.data, nom);
-      success('Rapport exporté.');
-    } catch (err) {
-      let message = messageErreurApi(err);
-      if (err?.response?.data instanceof Blob) {
-        try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* message par défaut */ }
-      }
-      toastError(`Rapport non produit : ${message}`);
-    } finally {
-      setExportEnCours(false);
-    }
-  };
-
-  const lier = async (entreprise, police) => {
-    try {
-      success((await consommationsApi.lier(entreprise, police)).Message);
-      recharger();
-    } catch (err) {
-      toastError(messageErreurApi(err));
-    }
-  };
-
-  if (chargement && !donnees) return <Panneau><span><Loader2 size={14} className="spin" /> Lecture…</span></Panneau>;
-  const controle = donnees?.Controle || [];
-  const mois = Array.from(new Set(controle.flatMap((l) => Object.keys(l.Mois || {}).map(Number)))).sort((a, b) => a - b);
-  return (
-    <>
-      <Panneau actions={(
-        <button type="button" className="btn btn-primary" disabled={exportEnCours} onClick={exporterRapport} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-          {exportEnCours ? <Loader2 size={14} className="spin" /> : <FileText size={14} />} Exporter le rapport
-        </button>
-      )}>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <Champ id="tb-exercice" libelle="Exercice">
-            <select id="tb-exercice" className="form-control" value={filtres.exercice || donnees?.Exercice || ''} onChange={champ('exercice')}>
-              {(donnees?.Exercices?.length ? donnees.Exercices : [donnees?.Exercice]).filter(Boolean).map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </Champ>
-          <Champ id="tb-du" libelle="Clôtures du"><input id="tb-du" type="date" className="form-control" value={filtres.du} onChange={champ('du')} /></Champ>
-          <Champ id="tb-au" libelle="au"><input id="tb-au" type="date" className="form-control" value={filtres.au} onChange={champ('au')} /></Champ>
-          <Champ id="tb-garant" libelle="Garant">
-            <select id="tb-garant" className="form-control" value={filtres.garant} onChange={champ('garant')}>
-              <option value="">Tous les garants</option>
-              {(donnees?.Garants || []).map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </Champ>
-        </div>
-        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-          Période {dateFr(donnees?.Du)} au {dateFr(donnees?.Au)}, selon la date de clôture des relevés. Le rapport Word reprend le plan du rapport d'analyse d'OREOLE :
-          effectifs, dépenses, entreprises à risque et contrôle de gestion. C'est le seul export de ce suivi.
-        </p>
-      </Panneau>
-
-      {!donnees?.CotisationsImportees && (
-        <Panneau><p style={{ margin: 0, color: '#d97706', fontSize: '0.85rem' }}>
-          Aucun état des cotisations pour {donnees?.Exercice} : importez le fichier ETAT (feuille des données par entreprise) dans l'onglet Imports pour suivre les provisions.
-        </p></Panneau>
-      )}
-
-      <Grille>
-        <Tuile libelle="Provisions pour paiement" valeur={montant(t.Provision)} detail={`${fcfa(t.Entreprises)} entreprises à l'état`} />
-        <Tuile libelle="Consommation" valeur={montant(t.Consommation)} couleur="var(--primary-500)" detail={`${pourcent(t.Taux)} des provisions`} />
-        <Tuile libelle="Reste sur les provisions" valeur={montant(t.Reste)} couleur={t.Reste < 0 ? '#e11d48' : undefined} />
-        <Tuile libelle="Entreprises à surveiller" valeur={fcfa((t.EnDepassement || 0) + (t.EnAlerte || 0))} couleur={(t.EnDepassement || 0) ? '#e11d48' : undefined}
-          detail={`${fcfa(t.EnDepassement || 0)} en dépassement, ${fcfa(t.EnAlerte || 0)} au-delà de 80 %`} />
-        <Tuile libelle="Primes HT" valeur={montant(t.PrimeHt)} detail={`cotisations santé pure ${montant(t.CotisationPure)}`} />
-        <Tuile libelle="Honoraires et commissions" valeur={montant((t.Honoraires || 0) + (t.Commissions || 0))} detail={`apporteurs ${montant(t.Apporteurs)}`} />
-        <Tuile libelle="Bénéficiaires consommants" valeur={fcfa(ind.Consommants)} detail={`recours ${pourcent(ind.TauxRecours)}, ${fcfa(ind.Actes)} actes`} />
-        <Tuile libelle="Coût moyen" valeur={montant(ind.CoutParBeneficiaire)} detail={`par bénéficiaire ; ${montant(ind.CoutParActe)} par acte`} />
-      </Grille>
-
-      <Panneau titre="Contrôle de gestion par entreprise" actions={(
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.82rem' }}>
-          <input type="checkbox" checked={moisParMois} onChange={(e) => setMoisParMois(e.target.checked)} /> Consommation mois par mois
-        </label>
-      )}>
-        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-          Provision de l'état des cotisations face à la consommation des relevés. Le lien entre l'entreprise de l'état et la police du gestionnaire est proposé d'après les noms ;
-          {peutLier ? ' confirmez-le ou corrigez-le dans la liste.' : ' un gestionnaire habilité le confirme.'}
-        </p>
-        <div className="table-wrapper" style={{ maxHeight: 620, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
-          <thead><tr>
-            <th>Entreprise</th><th>Police du gestionnaire</th><th style={DROITE}>Provision</th>
-            {moisParMois ? mois.map((m) => <th key={m} style={DROITE}>{MOIS_COURTS[m - 1]}</th>) : null}
-            <th style={DROITE}>Consommation</th><th style={DROITE}>Reste</th><th style={DROITE}>Taux</th><th>Situation</th>
-          </tr></thead>
-          <tbody>
-            {controle.map((l) => (
-              <tr key={`${l.Entreprise}|${l.Police}`}>
-                <td style={{ fontWeight: 600 }}>{l.Entreprise || <span style={{ color: 'var(--text-muted)' }}>Hors état</span>}</td>
-                <td>
-                  {peutLier && l.Entreprise ? (
-                    <select aria-label={`Police de ${l.Entreprise}`} className="form-control" style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem', minWidth: 200 }}
-                      value={l.Police || ''} onChange={(e) => lier(l.Entreprise, e.target.value)}>
-                      <option value="">Aucune police</option>
-                      {(donnees?.Polices || []).map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  ) : (l.Police || '-')}
-                  {l.LienPropose && <div style={{ fontSize: '0.7rem', color: '#d97706' }}>proposé d'après le nom</div>}
-                </td>
-                <td style={DROITE}>{l.Provision ? fcfa(l.Provision) : '-'}</td>
-                {moisParMois ? mois.map((m) => <td key={m} style={DROITE}>{l.Mois?.[m] ? fcfa(l.Mois[m]) : '-'}</td>) : null}
-                <td style={{ ...DROITE, fontWeight: 600 }}>{fcfa(l.Consommation)}</td>
-                <td style={{ ...DROITE, color: l.Reste < 0 ? '#e11d48' : undefined }}>{fcfa(l.Reste)}</td>
-                <td style={DROITE}>{pourcent(l.Taux)}</td>
-                <td><StatusBadge label={l.Situation} color={COULEUR_PROVISION[l.Situation]} /></td>
-              </tr>
-            ))}
-            {!controle.length && <Vide colonnes={7} chargement={chargement} texte="Aucune donnée : importez les relevés et l'état des cotisations." />}
-          </tbody>
-        </table></div>
-      </Panneau>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '0.75rem' }}>
-        <Panneau titre="Dépenses mensuelles">
-          <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
-            <thead><tr><th>Mois</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Actes</th><th style={DROITE}>Coût / acte</th></tr></thead>
-            <tbody>{(donnees?.Mensuel || []).map((m) => <tr key={m.Mois}><td>{m.Mois}</td><td style={DROITE}>{fcfa(m.Depenses)}</td><td style={DROITE}>{pourcent(m.Part)}</td><td style={DROITE}>{fcfa(m.Actes)}</td><td style={DROITE}>{fcfa(m.CoutParActe)}</td></tr>)}</tbody>
-          </table></div>
-        </Panneau>
-        <Panneau titre="Familles de prestation">
-          <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
-            <thead><tr><th>Famille</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Actes</th><th style={DROITE}>Coût / acte</th></tr></thead>
-            <tbody>{(donnees?.Familles || []).map((f) => <tr key={f.Libelle}><td>{f.Libelle}</td><td style={DROITE}>{fcfa(f.Depenses)}</td><td style={DROITE}>{pourcent(f.Part)}</td><td style={DROITE}>{fcfa(f.Actes)}</td><td style={DROITE}>{fcfa(f.CoutParActe)}</td></tr>)}</tbody>
-          </table></div>
-        </Panneau>
-      </div>
-
-      <Panneau titre="Entreprises à risque">
-        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-          Score : moyenne des rapports à la moyenne du portefeuille du coût par bénéficiaire, des actes par bénéficiaire et du coût par acte. Critique dès que le score atteint 1,
-          trop d'actes au-delà de 10 par bénéficiaire, coût par acte élevé au-delà de 30 % de la moyenne. Formule proposée, à valider.
-        </p>
-        <div className="table-wrapper" style={{ maxHeight: 460, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
-          <thead><tr><th>Entreprise</th><th style={DROITE}>Bénéficiaires</th><th style={DROITE}>Actes</th><th style={DROITE}>Dépenses</th><th style={DROITE}>Coût / bénéf.</th><th style={DROITE}>Actes / bénéf.</th><th style={DROITE}>Coût / acte</th><th style={DROITE}>Score</th><th>Alertes</th></tr></thead>
-          <tbody>
-            {(donnees?.Risque || []).map((l) => (
-              <tr key={l.Police}>
-                <td style={{ fontWeight: 600 }}>{l.Police}</td><td style={DROITE}>{fcfa(l.Beneficiaires)}</td><td style={DROITE}>{fcfa(l.Actes)}</td><td style={DROITE}>{fcfa(l.Depenses)}</td>
-                <td style={DROITE}>{fcfa(l.CoutParBeneficiaire)}</td><td style={DROITE}>{l.ActesParBeneficiaire == null ? '-' : l.ActesParBeneficiaire.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}</td>
-                <td style={DROITE}>{fcfa(l.CoutParActe)}</td><td style={{ ...DROITE, fontWeight: 700 }}>{l.Score.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</td>
-                <td>{l.Alertes.length ? l.Alertes.map((a) => <StatusBadge key={a} label={a} color={a === 'Critique' ? 'rose' : 'amber'} />) : '-'}</td>
-              </tr>
-            ))}
-            {!(donnees?.Risque || []).length && <Vide colonnes={9} chargement={chargement} texte="Aucune dépense sur la période." />}
-          </tbody>
-        </table></div>
-      </Panneau>
-
-      <Panneau titre="Prestataires les plus sollicités">
-        <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
-          <thead><tr><th>Centre exécutant</th><th style={DROITE}>Bénéficiaires</th><th style={DROITE}>Actes</th><th style={DROITE}>Dépenses</th><th style={DROITE}>%</th><th style={DROITE}>Coût / acte</th></tr></thead>
-          <tbody>{(donnees?.Executants || []).map((c) => <tr key={c.Libelle}><td>{c.Libelle}</td><td style={DROITE}>{fcfa(c.Beneficiaires)}</td><td style={DROITE}>{fcfa(c.Actes)}</td><td style={DROITE}>{fcfa(c.Depenses)}</td><td style={DROITE}>{pourcent(c.Part)}</td><td style={DROITE}>{fcfa(c.CoutParActe)}</td></tr>)}</tbody>
-        </table></div>
-      </Panneau>
-    </>
-  );
-};
-
-// ------------------------------------------------------------------ synthèse
-const OngletSynthese = () => {
-  const [filtres, setFiltres] = useState({ garant: '', police: '', du: '', au: '' });
-  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.synthese(filtres), [filtres]);
-  const i = donnees?.Indicateurs || {};
-  const champ = (cle) => (e) => setFiltres((f) => ({ ...f, [cle]: e.target.value }));
-  return (
-    <>
-      <Panneau>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <Champ id="syn-garant" libelle="Garant">
-            <select id="syn-garant" className="form-control" value={filtres.garant} onChange={champ('garant')}>
-              <option value="">Tous les garants</option>
-              {(donnees?.Filtres?.Garants || []).map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </Champ>
-          <Champ id="syn-police" libelle="Police">
-            <select id="syn-police" className="form-control" value={filtres.police} onChange={champ('police')} style={{ maxWidth: 320 }}>
-              <option value="">Toutes les polices</option>
-              {(donnees?.Filtres?.Polices || []).map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Champ>
-          <Champ id="syn-du" libelle="Clôture du"><input id="syn-du" type="date" className="form-control" value={filtres.du} onChange={champ('du')} /></Champ>
-          <Champ id="syn-au" libelle="au"><input id="syn-au" type="date" className="form-control" value={filtres.au} onChange={champ('au')} /></Champ>
-          <button type="button" className="btn btn-secondary" onClick={recharger} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}><RefreshCw size={14} /> Actualiser</button>
-        </div>
-      </Panneau>
-      {chargement && !donnees ? <Panneau><Loader2 size={16} className="spin" /> Lecture…</Panneau> : !i.Prestations ? (
-        <Panneau><p style={{ margin: 0, color: 'var(--text-secondary)' }}>Aucune prestation : importez un relevé du gestionnaire dans l'onglet Imports.</p></Panneau>
-      ) : (
-        <>
-          <Grille>
-            <Tuile libelle="Assurés principaux" valeur={fcfa(i.AssuresPrincipaux)} detail={`${fcfa(i.Beneficiaires)} bénéficiaires actifs`} />
-            <Tuile libelle="Prestations" valeur={fcfa(i.Prestations)} detail={`${fcfa(i.Polices)} polices concernées`} />
-            <Tuile libelle="Consommants" valeur={fcfa(i.Consommants)} detail={`Taux de recours ${pourcent(i.TauxRecours)}`} />
-            <Tuile libelle="Montant réclamé" valeur={montant(i.Reclame)} detail={`Exclusions ${montant(i.Exclusions)}, dépassements ${montant(i.Depassements)}`} />
-            <Tuile libelle="Montant remboursé" valeur={montant(i.Rembourse)} couleur="var(--primary-500)" detail={`Prise en charge ${pourcent(i.TauxPriseEnCharge)}`} />
-            <Tuile libelle="Tiers payant" valeur={montant(i.TiersPayant)} detail={`Hors tiers payant ${montant(i.HorsTiersPayant)}`} />
-            <Tuile libelle="Reste à charge des assurés" valeur={montant(i.ResteACharge)} />
-            <Tuile libelle="Coût moyen" valeur={montant(i.CoutParConsommant)} detail={`par consommant ; ${montant(i.CoutParActe)} par acte`} />
-          </Grille>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '0.75rem' }}>
-            <Panneau titre="Par famille de prestations">
-              <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.83rem' }}>
-                <thead><tr><th>Famille</th><th style={DROITE}>Prestations</th><th style={DROITE}>Remboursé</th><th style={DROITE}>Part</th></tr></thead>
-                <tbody>{donnees.ParFamille.map((f) => <tr key={f.Famille}><td>{f.Famille}</td><td style={DROITE}>{fcfa(f.Prestations)}</td><td style={DROITE}>{montant(f.Rembourse)}</td><td style={DROITE}>{pourcent(f.Part)}</td></tr>)}</tbody>
-              </table></div>
-            </Panneau>
-            <Panneau titre="Par mois de clôture">
-              <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.83rem' }}>
-                <thead><tr><th>Mois</th><th style={DROITE}>Prestations</th><th style={DROITE}>Réclamé</th><th style={DROITE}>Remboursé</th></tr></thead>
-                <tbody>{donnees.ParMois.map((m) => <tr key={m.Mois}><td>{m.Mois.split('-').reverse().join('/')}</td><td style={DROITE}>{fcfa(m.Prestations)}</td><td style={DROITE}>{montant(m.Reclame)}</td><td style={DROITE}>{montant(m.Rembourse)}</td></tr>)}</tbody>
-              </table></div>
-            </Panneau>
-          </div>
-          <Panneau titre="Polices les plus consommatrices">
-            <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.83rem' }}>
-              <thead><tr><th>Police</th><th style={DROITE}>Prestations</th><th style={DROITE}>Consommants</th><th style={DROITE}>Remboursé</th></tr></thead>
-              <tbody>{donnees.TopPolices.map((p) => <tr key={p.Police}><td>{p.Police}</td><td style={DROITE}>{fcfa(p.Prestations)}</td><td style={DROITE}>{fcfa(p.Consommants)}</td><td style={DROITE}>{montant(p.Rembourse)}</td></tr>)}</tbody>
-            </table></div>
-          </Panneau>
-        </>
-      )}
-    </>
-  );
 };
 
 // ------------------------------------------------------------------ fiche assuré
@@ -503,29 +260,6 @@ const OngletPlafonds = ({ onOuvrir }) => {
             </tr>
           ))}
           {!lignes.length && <Vide colonnes={9} chargement={chargement} texte="Aucune consommation sur l'exercice." />}
-        </tbody>
-      </table></div>
-    </Panneau>
-  );
-};
-
-// ------------------------------------------------------------------ entreprises
-const OngletEntreprises = () => {
-  const [donnees, chargement] = useLecture(() => consommationsApi.entreprises({}), []);
-  const lignes = donnees?.Lignes || [];
-  return (
-    <Panneau titre="Consommation par entreprise">
-      <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
-        <thead><tr><th>Police</th><th>Garant</th><th style={DROITE}>Effectif</th><th style={DROITE}>A / C / E</th><th style={DROITE}>Consommants</th><th style={DROITE}>Recours</th><th style={DROITE}>Prestations</th><th style={DROITE}>Remboursé</th><th style={DROITE}>Par consommant</th><th style={DROITE}>Part</th></tr></thead>
-        <tbody>
-          {lignes.map((l) => (
-            <tr key={l.Police}>
-              <td style={{ fontWeight: 600 }}>{l.Police}</td><td>{l.Garant}</td><td style={DROITE}>{l.Effectif ? fcfa(l.Effectif) : <StatusBadge label="Sans effectif" color="amber" />}</td>
-              <td style={DROITE}>{`${l.Assures} / ${l.Conjoints} / ${l.Enfants}`}</td><td style={DROITE}>{fcfa(l.Consommants)}</td><td style={DROITE}>{pourcent(l.TauxRecours)}</td>
-              <td style={DROITE}>{fcfa(l.Prestations)}</td><td style={DROITE}>{montant(l.Rembourse)}</td><td style={DROITE}>{montant(l.CoutParConsommant)}</td><td style={DROITE}>{pourcent(l.Part)}</td>
-            </tr>
-          ))}
-          {!lignes.length && <Vide colonnes={10} chargement={chargement} texte="Aucune entreprise." />}
         </tbody>
       </table></div>
     </Panneau>
@@ -804,41 +538,107 @@ const OngletImports = () => {
   );
 };
 
+
 // ------------------------------------------------------------------ page
+const ONGLETS = [
+  { groupe: 'Analyse', cle: 'ensemble', libelle: "Vue d'ensemble", icone: LayoutDashboard },
+  { groupe: 'Analyse', cle: 'entreprises', libelle: 'Entreprises', icone: Building2 },
+  { groupe: 'Analyse', cle: 'prestations', libelle: 'Prestations', icone: Stethoscope },
+  { groupe: 'Analyse', cle: 'assures', libelle: 'Assurés et foyers', icone: Users },
+  { groupe: 'Suivi', cle: 'fiche', libelle: 'Fiche assuré', icone: UserSearch },
+  { groupe: 'Suivi', cle: 'plafonds', libelle: 'Plafonds', icone: Gauge },
+  { groupe: 'Suivi', cle: 'controles', libelle: 'Contrôles', icone: ListChecks },
+  { groupe: 'Suivi', cle: 'fraude', libelle: 'Fraude', icone: ShieldAlert, droit: 'consommations.fraude' },
+  { groupe: 'Données', cle: 'imports', libelle: 'Imports', icone: Upload, droit: 'consommations.import' },
+];
+const GROUPES = ['Analyse', 'Suivi', 'Données'];
+const ANALYSE = new Set(['ensemble', 'entreprises', 'prestations', 'assures']);
+const FILTRES_VIDES = { exercice: '', du: '', au: '', garant: '', police: '' };
+
 export default function ConsommationsSantePage() {
-  const [onglet, setOnglet] = useState('tableau');
+  const { success, error: toastError } = useToast();
+  const [onglet, setOnglet] = useState('ensemble');
   const [matricule, setMatricule] = useState(null);
-  const voirFraude = aLeDroit('consommations.fraude');
-  const importer = aLeDroit('consommations.import');
+  const [filtres, setFiltres] = useState(FILTRES_VIDES);
+  const [exportEnCours, setExportEnCours] = useState(false);
+  const enAnalyse = ANALYSE.has(onglet);
+  // Une seule lecture pour les quatre onglets d'analyse ; elle n'est faite qu'à l'ouverture de l'un d'eux
+  const [donnees, chargement, recharger] = useAnalyse(filtres, enAnalyse);
+  const visibles = ONGLETS.filter((o) => !o.droit || aLeDroit(o.droit));
   const ouvrirFiche = (m) => { setMatricule(m); setOnglet('fiche'); };
   const changer = (cle) => { setMatricule(null); setOnglet(cle); };
+
+  // Rapport Word, seul export du suivi : exercice, période et compagnie choisis (le filtre d'entreprise ne s'y applique pas)
+  const exporterRapport = async () => {
+    setExportEnCours(true);
+    try {
+      const { police: _police, ...parametres } = filtres;
+      const reponse = await consommationsApi.rapport(parametres);
+      const entete = reponse.headers?.['content-disposition'] || '';
+      const nom = decodeURIComponent((entete.match(/filename="?([^";]+)"?/) || [])[1] || `rapport-consommations-${donnees?.Exercice || ''}.docx`);
+      downloadBlob(reponse.data, nom);
+      success('Rapport exporté.');
+    } catch (err) {
+      let message = messageErreurApi(err);
+      if (err?.response?.data instanceof Blob) {
+        try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* message par défaut */ }
+      }
+      toastError(`Rapport non produit : ${message}`);
+    } finally {
+      setExportEnCours(false);
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem', paddingBottom: '2rem' }}>
-      <div>
-        <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0 }}><HeartPulse size={26} style={{ color: 'var(--primary-500)' }} /> Consommations santé</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0', maxWidth: 940 }}>
-          Pour chaque assuré : ses droits, les prestations consommées par lui et ses bénéficiaires, les montants engagés, les plafonds utilisés et les soldes disponibles.
-          Données des relevés du gestionnaire ; données de santé à ne pas diffuser.
-        </p>
+    <div className="cs-page">
+      <header className="cs-entete">
+        <div>
+          <h1 className="title-xl"><HeartPulse size={26} aria-hidden="true" /> Consommations santé</h1>
+          <p>
+            Dépenses de santé des relevés du gestionnaire, analysées par compagnie, entreprise, famille de prestations, profil des bénéficiaires et foyer ;
+            droits, plafonds et soldes de chaque assuré. Données de santé à ne pas diffuser.
+          </p>
+        </div>
+        <button type="button" className="btn btn-primary cs-export" disabled={exportEnCours} aria-busy={exportEnCours} onClick={exporterRapport}
+          title="Rapport Word de l'exercice, de la période et de la compagnie choisis">
+          {!exportEnCours && <FileText size={15} aria-hidden="true" />} Exporter le rapport
+        </button>
+      </header>
+
+      <nav className="cs-onglets" aria-label="Rubriques des consommations santé">
+        {GROUPES.map((g) => {
+          const siens = visibles.filter((o) => o.groupe === g);
+          if (!siens.length) return null;
+          return (
+            <div key={g} className="cs-onglets-groupe">
+              <span className="cs-onglets-titre">{g}</span>
+              <div className="cs-onglets-boutons" role="tablist" aria-label={g}>
+                {siens.map((o) => {
+                  const Icone = o.icone;
+                  return (
+                    <button key={o.cle} type="button" role="tab" aria-selected={onglet === o.cle} className={`cs-onglet${onglet === o.cle ? ' actif' : ''}`} onClick={() => changer(o.cle)}>
+                      <Icone size={15} aria-hidden="true" />{o.libelle}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </nav>
+
+      {enAnalyse && <BarreFiltres filtres={filtres} setFiltres={setFiltres} donnees={donnees} chargement={chargement} />}
+
+      <div key={onglet} className="cs-contenu" role="tabpanel">
+        {enAnalyse && (
+          <AnalyseConsommations onglet={onglet} donnees={donnees} chargement={chargement} filtres={filtres} onFiltrer={setFiltres} onRecharger={recharger} onOuvrirFiche={ouvrirFiche} />
+        )}
+        {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} />}
+        {onglet === 'plafonds' && <OngletPlafonds onOuvrir={ouvrirFiche} />}
+        {onglet === 'controles' && <OngletControles />}
+        {onglet === 'fraude' && aLeDroit('consommations.fraude') && <OngletFraude onOuvrir={ouvrirFiche} />}
+        {onglet === 'imports' && aLeDroit('consommations.import') && <OngletImports />}
       </div>
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }} role="tablist">
-        <Onglet actif={onglet === 'tableau'} onClick={() => changer('tableau')} icone={LayoutDashboard}>Tableau de bord</Onglet>
-        <Onglet actif={onglet === 'synthese'} onClick={() => changer('synthese')} icone={BarChart3}>Synthèse</Onglet>
-        <Onglet actif={onglet === 'fiche'} onClick={() => changer('fiche')} icone={UserSearch}>Fiche assuré</Onglet>
-        <Onglet actif={onglet === 'plafonds'} onClick={() => changer('plafonds')} icone={Gauge}>Plafonds</Onglet>
-        <Onglet actif={onglet === 'entreprises'} onClick={() => changer('entreprises')} icone={Building2}>Entreprises</Onglet>
-        <Onglet actif={onglet === 'controles'} onClick={() => changer('controles')} icone={ListChecks}>Contrôles</Onglet>
-        {voirFraude && <Onglet actif={onglet === 'fraude'} onClick={() => changer('fraude')} icone={ShieldAlert}>Fraude</Onglet>}
-        {importer && <Onglet actif={onglet === 'imports'} onClick={() => changer('imports')} icone={Upload}>Imports</Onglet>}
-      </div>
-      {onglet === 'tableau' && <OngletTableauDeBord />}
-      {onglet === 'synthese' && <OngletSynthese />}
-      {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} />}
-      {onglet === 'plafonds' && <OngletPlafonds onOuvrir={ouvrirFiche} />}
-      {onglet === 'entreprises' && <OngletEntreprises />}
-      {onglet === 'controles' && <OngletControles />}
-      {onglet === 'fraude' && voirFraude && <OngletFraude onOuvrir={ouvrirFiche} />}
-      {onglet === 'imports' && importer && <OngletImports />}
     </div>
   );
 }

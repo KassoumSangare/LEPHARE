@@ -9,7 +9,7 @@ from .views_devis_ia import (
 )
 from .views_devis_risques_divers import garanties_ajoutables, lire_devis_risques_divers, valeurs_usuelles
 from .import_flotte import analyser_import_flotte
-from . import documents_dommages, imposition_garanties
+from . import documents_dommages, import_mrh, imposition_garanties
 from .views_devis_dommages import (
     calcul_dommages,
     catalogue_dommages,
@@ -672,6 +672,9 @@ urlpatterns = [
     path("afa/referentiels/", afa_views.referentiels, name="afa-referentiels"),
     path("afa/import/analyse/", afa_views.analyse_import, name="afa-import-analyse"),
     path("afa/modele/", afa_views.modele, name="afa-modele"),
+    # MRH : import Excel des maisons d'un devis ou d'une incorporation (lecture et contrôle sans écriture), modèle vierge
+    path("mrh/import/analyse/", import_mrh.analyse_import, name="mrh-import-analyse"),
+    path("mrh/import/modele/", import_mrh.modele, name="mrh-import-modele"),
     path("afa/devis/", afa_views.devis, name="afa-devis"),
     path("afa/devis/<int:iddevis>/", afa_views.lecture, name="afa-devis-lecture"),
     # IA et RC MINENE rattachées à la police Santé MINENE d'un contrat

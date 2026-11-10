@@ -113,22 +113,36 @@ def _periode(cursor, params):
     return exercice, du, au, exercices
 
 
-def charger(cursor, du, au, garant=""):
+def charger(cursor, du, au, garant="", police=""):
     condition, valeurs = "p.date_cloture BETWEEN %s AND %s", [du, au]
-    if garant:
-        condition += " AND p.garant = %s"
-        valeurs.append(garant)
+    cond_eff, val_eff = ["TRUE"], []
+    for cle, v in (("garant", garant), ("police", police)):
+        if v:
+            condition += f" AND p.{cle} = %s"
+            valeurs.append(v)
+            cond_eff.append(f"{cle} = %s")
+            val_eff.append(v)
     prestations = _lignes(cursor, f"""
         SELECT p.numero_prest, p.date_cloture, p.garant, p.police, p.matricule_beneficiaire, p.beneficiaire, p.matricule_assure, p.assure, p.statut,
                COALESCE(p.date_naissance, e.date_naissance) AS date_naissance, COALESCE(NULLIF(e.genre, ''), '') AS genre, p.famille, p.acte,
-               p.centre_prescripteur, p.centre_executant, p.medecin, p.souscripteur, p.mt_reclame, p.mt_rembourse
+               p.centre_prescripteur, p.centre_executant, p.code_centre, p.medecin, p.souscripteur, p.college, p.type, p.date_soins_retenue,
+               p.mt_reclame, p.base_decomptee, p.exclusion, p.depassement, p.mt_rembourse
         FROM lephare_sante_prestation p LEFT JOIN lephare_sante_effectif e ON e.matricule_beneficiaire = p.matricule_beneficiaire
         WHERE {condition}""", valeurs)
-    cond_eff, val_eff = "TRUE", []
-    if garant:
-        cond_eff, val_eff = "garant = %s", [garant]
-    effectif = _lignes(cursor, f"SELECT * FROM lephare_sante_effectif WHERE {cond_eff}", val_eff)
+    effectif = _lignes(cursor, f"SELECT * FROM lephare_sante_effectif WHERE {' AND '.join(cond_eff)}", val_eff)
     return prestations, effectif
+
+
+def rapprochement(cursor, exercice):
+    """État des cotisations de l'exercice et police du gestionnaire de chaque entreprise : lien confirmé, sinon proposé d'après les noms.
+    Renvoie [(ligne de l'état, police ou "", lien confirmé)] et la liste des polices connues."""
+    cotisations = _lignes(cursor, "SELECT * FROM lephare_sante_cotisation WHERE exercice = %s ORDER BY entreprise", [exercice])
+    confirmes = {l["entreprise"]: l["police"] for l in _lignes(cursor, "SELECT entreprise, police FROM lephare_sante_entreprise_police")}
+    polices = sorted({l["police"] for l in _lignes(cursor, "SELECT DISTINCT police FROM lephare_sante_prestation UNION SELECT DISTINCT police FROM lephare_sante_effectif")
+                      if l["police"]})
+    propositions = proposer_liens([c["entreprise"] for c in cotisations], polices, confirmes)
+    liens = [(c, confirmes.get(c["entreprise"], propositions.get(c["entreprise"], "")) or "", c["entreprise"] in confirmes) for c in cotisations]
+    return liens, polices
 
 
 def effectif_de_reference(cursor, du, garant=""):
@@ -168,11 +182,30 @@ def mouvements_effectif(effectif, reference, du, au):
     """Mouvements de l'effectif par police : effectif de référence, sortants, maintenus, nouveaux entrants, effectif actuel.
     Avec un effectif de référence, comparaison des deux effectifs comme l'analyse d'OREOLE du premier semestre 2026 : sortant = dans la
     référence et plus actif, nouvel entrant = actif absent de la référence, maintenu = dans les deux. Sans référence : date d'effet dans la
-    période = nouvel entrant, sortie datée dans la période = sortant."""
+    période = nouvel entrant, sortie datée dans la période = sortant.
+    La comparaison se fait garant par garant : un garant absent de l'effectif de référence (OREOLE CGA, quand seul l'effectif OREOLE de
+    l'exercice précédent est importé) suit la règle des dates, et ses polices portent « SansReference » ; auparavant tous ses bénéficiaires
+    passaient pour nouveaux entrants et ses sortants s'affichaient à 0 au lieu d'être inconnus (constat du 2026-11-10)."""
     actifs = {e["matricule_beneficiaire"]: e for e in effectif if e["actif"]}
     par_police = defaultdict(lambda: {"Reference": 0, "Sortants": 0, "Maintenus": 0, "Nouveaux": 0, "Effectif": 0})
+    garants_compares = {r.get("garant") for r in reference.values()} if reference is not None else set()
+    sans_reference = set()
+    for e in effectif:
+        if reference is not None and e.get("garant") in garants_compares:
+            continue
+        x = par_police[e["police"]]
+        sans_reference.add(e["police"])
+        if e["actif"]:
+            x["Effectif"] += 1
+            x["Nouveaux" if e.get("date_effet") and e["date_effet"] >= du else "Maintenus"] += 1
+        elif e.get("date_sortie") and du <= e["date_sortie"] <= au:
+            x["Sortants"] += 1
+    for police in sans_reference:
+        par_police[police]["Reference"] = par_police[police]["Maintenus"] + par_police[police]["Sortants"]
     if reference is not None:
         for matricule, e in actifs.items():
+            if e.get("garant") not in garants_compares:
+                continue
             x = par_police[e["police"]]
             x["Effectif"] += 1
             x["Maintenus" if matricule in reference else "Nouveaux"] += 1
@@ -181,16 +214,8 @@ def mouvements_effectif(effectif, reference, du, au):
             x["Reference"] += 1
             if matricule not in actifs:
                 x["Sortants"] += 1
-    else:
-        for e in effectif:
-            x = par_police[e["police"]]
-            if e["actif"]:
-                x["Effectif"] += 1
-                x["Nouveaux" if e.get("date_effet") and e["date_effet"] >= du else "Maintenus"] += 1
-            elif e.get("date_sortie") and du <= e["date_sortie"] <= au:
-                x["Sortants"] += 1
-        for x in par_police.values():
-            x["Reference"] = x["Maintenus"] + x["Sortants"]
+        for police in sans_reference:
+            par_police[police]["SansReference"] = True
     return {police: x for police, x in par_police.items() if any(x.values())}
 
 
@@ -259,12 +284,9 @@ def tableau_de_bord(params):
         exercice, du, au, exercices = _periode(cursor, params)
         garant = str(params.get("garant") or "").strip()
         prestations, effectif = charger(cursor, du, au, garant)
-        cotisations = _lignes(cursor, "SELECT * FROM lephare_sante_cotisation WHERE exercice = %s ORDER BY entreprise", [exercice])
-        confirmes = {l["entreprise"]: l["police"] for l in _lignes(cursor, "SELECT entreprise, police FROM lephare_sante_entreprise_police")}
-        polices = sorted({l["police"] for l in _lignes(cursor, "SELECT DISTINCT police FROM lephare_sante_prestation UNION SELECT DISTINCT police FROM lephare_sante_effectif")
-                          if l["police"]})
+        liens, polices = rapprochement(cursor, exercice)
         garants = [l["garant"] for l in _lignes(cursor, "SELECT DISTINCT garant FROM lephare_sante_prestation ORDER BY 1") if l["garant"]]
-    propositions = proposer_liens([c["entreprise"] for c in cotisations], polices, confirmes)
+    cotisations = [c for c, _police, _confirme in liens]
     conso = defaultdict(lambda: {"Total": ZERO, "Mois": defaultdict(lambda: ZERO), "Actes": 0, "Beneficiaires": set()})
     for p in prestations:
         c = conso[p["police"]]
@@ -282,9 +304,7 @@ def tableau_de_bord(params):
         return "Alerte" if consommation >= SEUIL_ALERTE_PROVISION * provision else "Normal"
 
     controle, polices_liees = [], set()
-    for c in cotisations:
-        confirme = c["entreprise"] in confirmes
-        police = confirmes.get(c["entreprise"], propositions.get(c["entreprise"], "")) or ""
+    for c, police, confirme in liens:
         polices_liees.add(police)
         k = conso.get(police) if police else None
         consommation = k["Total"] if k else ZERO

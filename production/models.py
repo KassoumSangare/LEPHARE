@@ -618,8 +618,9 @@ class DevisDetail(models.Model):
     extincteur = models.BooleanField(default=False)
     idprofession = models.IntegerField(blank=True, null=True)
     conducteur = models.TextField(max_length=2048, blank=True, null=True)
+    # Adresse de la maison en MRH (150 caractères : 50 ne suffisaient pas à une adresse complète)
     adressecnd = models.CharField(
-        max_length=50, null=True, blank=True, default=""
+        max_length=150, null=True, blank=True, default=""
     )
     villecnd = models.IntegerField(blank=True, null=True)
     sexe = models.CharField(max_length=1, default="M")
@@ -647,7 +648,7 @@ class DevisDetail(models.Model):
     )
     modelevehicule = models.CharField(
         verbose_name="Modèle du véhicule",
-        max_length=30,
+        max_length=50,  # code de l'usage en MRH (proprietaire_non_occupant_meuble : 32 caractères)
         db_column="modelevehicule",
         default="",
     )
@@ -1251,7 +1252,7 @@ class ContratDetail(models.Model):
     )  # Field name made lowercase.
     adressecnd = models.CharField(
         db_column="adressecnd",
-        max_length=50,
+        max_length=150,
         default="",
         null=True,
         blank=True,
@@ -1298,7 +1299,7 @@ class ContratDetail(models.Model):
     )
     modelevehicule = models.CharField(
         verbose_name="Modèle du véhicule",
-        max_length=30,
+        max_length=50,  # code de l'usage en MRH (proprietaire_non_occupant_meuble : 32 caractères)
         db_column="modelevehicule",
         default="",
     )

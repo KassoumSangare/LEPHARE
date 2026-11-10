@@ -299,6 +299,7 @@ REGLES = [
     R("POST", r"verifier-fichier/", "imports.excel", lecture=True),
     R("POST", r"flotte/import/analyse/", "imports.excel", lecture=True),
     R("POST", r"afa/import/analyse/?$", "imports.excel", lecture=True),
+    R("POST", r"mrh/import/analyse/?$", "imports.excel", lecture=True),
     # Oreole Santé : calcul et lecture du classeur sans écriture, devis liés, émission groupée
     R("POST", r"oreole/apercu/?$", "devis.view", lecture=True),
     # Cartes d'assurance : vérification de l'historique sans écriture ; carte facturée sur une police émise : l'avenant sort aussitôt

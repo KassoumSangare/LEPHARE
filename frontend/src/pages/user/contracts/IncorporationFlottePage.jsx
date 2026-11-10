@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Car, CalendarRange, Loader2, AlertTriangle, UserPlus } from 'lucide-react';
+import { ArrowLeft, Car, CalendarRange, Loader2, AlertTriangle, UserPlus, Home } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { useToast } from '../../../context/ToastContext';
@@ -52,18 +52,22 @@ export const IncorporationFlottePage = () => {
   // Vie AFA : une personne s'ajoute, sa prime est saisie ou importée telle quelle, sans prorata
   const afa = contrat?.Module === 'afa';
   const ia = contrat?.Module === 'ia' || afa;
-  const Icone = ia ? UserPlus : Car;
-  const ecran = contrat?.Module === 'ia' || afa ? contrat.Module : 'auto';
+  // MRH : une maison s'ajoute, ses primes sont saisies à la main dans l'écran MRH (pas de barème), sans prorata calculé
+  const mrh = contrat?.Module === 'mrh';
+  const Icone = mrh ? Home : ia ? UserPlus : Car;
+  const ecran = ia || mrh ? contrat.Module : 'auto';
+  const objet = mrh ? 'la maison' : ia ? 'la personne' : 'le véhicule';
 
   const creer = async () => {
     if (!dateEffet) {
-      toastError(`Choisissez la date à laquelle ${ia ? 'la personne' : 'le véhicule'} doit être assuré${ia ? 'e' : ''}.`);
+      toastError(`Choisissez la date à laquelle ${objet} doit être assuré${ia || mrh ? 'e' : ''}.`);
       return;
     }
     setEnvoi(true);
     try {
       const devis = await contractApi.creerIncorporation(id, { DateEffet: dateEffet, Forfaitaire: forfaitaire });
-      if (afa) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Saisissez ou importez la ou les personnes avec leur prime, puis enregistrez.`);
+      if (mrh) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Ajoutez la ou les maisons, saisissez leurs primes, puis enregistrez.`);
+      else if (afa) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Saisissez ou importez la ou les personnes avec leur prime, puis enregistrez.`);
       else if (ia) success(`Devis d'incorporation ${devis.NumeroDevis} créé. Ajoutez la ou les personnes puis enregistrez pour calculer la prime.`);
       else {
         success(forfaitaire
@@ -85,7 +89,7 @@ export const IncorporationFlottePage = () => {
         <ArrowLeft size={15} /> Retour au contrat
       </button>
       <h1 className="title-xl" style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-        <Icone size={22} /> {ia ? 'Incorporer une personne au contrat' : 'Incorporer un véhicule à la flotte'}
+        <Icone size={22} /> {mrh ? 'Incorporer une maison au contrat' : ia ? 'Incorporer une personne au contrat' : 'Incorporer un véhicule à la flotte'}
       </h1>
       {chargement && <p role="status"><Loader2 size={15} className="spin" /> Lecture du contrat…</p>}
       {erreur && <div role="alert" style={{ color: 'var(--accent-rose)', display: 'flex', gap: '0.5rem' }}><AlertTriangle size={18} />{erreur}</div>}
@@ -98,7 +102,8 @@ export const IncorporationFlottePage = () => {
           </div>
 
           <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            {ia ? `La personne sera assurée à partir de la date d’incorporation choisie et jusqu’à l’échéance du contrat, qui compte aujourd’hui ${contrat.Personnes} personne${contrat.Personnes > 1 ? 's' : ''}.`
+            {mrh ? `La maison sera assurée à partir de la date d’incorporation choisie et jusqu’à l’échéance du contrat, qui compte aujourd’hui ${contrat.Personnes} maison${contrat.Personnes > 1 ? 's' : ''}.`
+              : ia ? `La personne sera assurée à partir de la date d’incorporation choisie et jusqu’à l’échéance du contrat, qui compte aujourd’hui ${contrat.Personnes} personne${contrat.Personnes > 1 ? 's' : ''}.`
               : 'Le véhicule sera assuré à partir de la date d’incorporation choisie et jusqu’à l’échéance initiale de la police.'}
             {' '}La période du contrat principal ne sera pas modifiée.
           </p>
@@ -106,7 +111,7 @@ export const IncorporationFlottePage = () => {
           {enCours ? (
             <div style={{ padding: '0.9rem', border: '1px solid rgba(245, 158, 11, 0.45)', borderRadius: 8, background: 'rgba(245, 158, 11, 0.08)' }}>
               Un devis d’incorporation est déjà en cours : <strong>{enCours.NumeroDevis}</strong>, du {dateFr(enCours.DateEffet)} au {dateFr(enCours.DateExpiration)}
-              {ia ? '.' : (enCours.Forfaitaire ? ' (affaire forfaitaire, sans prorata).' : ' (prime au prorata de la durée restante).')}
+              {ia || mrh ? '.' : (enCours.Forfaitaire ? ' (affaire forfaitaire, sans prorata).' : ' (prime au prorata de la durée restante).')}
               <div style={{ marginTop: '0.65rem' }}>
                 <Link className="btn btn-primary" to={`/user/quotes/${ecran}?edit=${enCours.IdDevis}&incorporation=1`}>Ouvrir le devis</Link>
               </div>
@@ -131,7 +136,12 @@ export const IncorporationFlottePage = () => {
                   <span style={aide}>Fin du contrat, non modifiable.</span>
                 </label>
               </div>
-              {afa ? (
+              {mrh ? (
+                <p style={{ color: 'var(--text-secondary)', margin: '0 0 1rem' }}>
+                  Compagnie, souscripteur et assuré sont repris de la police. Comme pour tout devis MRH, la prime nette de chaque
+                  maison, la taxe et l’accessoire sont saisis à la main : indiquez les montants dus pour la période d’incorporation.
+                </p>
+              ) : afa ? (
                 <p style={{ color: 'var(--text-secondary)', margin: '0 0 1rem' }}>
                   Compagnie et souscripteur sont repris de la police. La prime de chaque personne est celle saisie ou celle de la
                   liste Excel importée, reprise telle quelle, sans prorata.
@@ -171,7 +181,7 @@ export const IncorporationFlottePage = () => {
               <button type="button" className="btn btn-primary" disabled={envoi || !dateEffet || dateEffet < contrat.DateEffet || dateEffet > contrat.DateExpiration}
                 onClick={creer} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
                 {envoi ? <Loader2 size={15} className="spin" /> : <Icone size={15} />}
-                {envoi ? 'Création du devis…' : (ia ? 'Continuer et ajouter la personne' : 'Continuer et ajouter le véhicule')}
+                {envoi ? 'Création du devis…' : `Continuer et ajouter ${objet}`}
               </button>
             </>
           )}

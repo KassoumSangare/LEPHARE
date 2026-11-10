@@ -1330,23 +1330,25 @@ class MRHCalculService:
         # Année courante
         annee = datetime.now().year
 
-        # Compter les maisons MRH créées cette année
+        # Plus grand numéro déjà attribué cette année, devis et contrats compris. Le nombre de maisons de l'année
+        # (règle d'origine) baissait après une suppression ou une modification de devis et redonnait un matricule
+        # existant : deux maisons d'une même police se confondaient alors dans fn_liste_objets_assures
+        # (incorporation, renouvellement).
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT COUNT(*) 
-                FROM stddevisdetail dd
-                JOIN stddevis d ON dd.iddevis = d.iddevis
-                WHERE d.idproduit = 4  -- Produit MRH
-                AND EXTRACT(YEAR FROM d.dateemission) = %s
+                SELECT COALESCE(MAX(SUBSTRING(TRIM(matricule) FROM '^MRH-[0-9]{4}-([0-9]+)$')::int), 0)
+                FROM (SELECT matricule FROM stddevisdetail WHERE matricule LIKE %s
+                      UNION ALL
+                      SELECT matricule FROM stdcontratdetail WHERE matricule LIKE %s) AS m
             """,
-                [annee],
+                [f"MRH-{annee}-%", f"MRH-{annee}-%"],
             )
 
-            count = cursor.fetchone()[0] or 0
+            dernier = cursor.fetchone()[0] or 0
 
         # Numéro séquentiel (incrémenté)
-        numero = count + 1
+        numero = dernier + 1
 
         # Générer le matricule avec padding sur 5 chiffres
         matricule = f"MRH-{annee}-{numero:05d}"

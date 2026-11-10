@@ -23,6 +23,7 @@ from .incorporation import (
     controler_vehicule_incorpore,
     mode_incorporation,
     tarification_incorporation,
+    verifier_incorporation_non_vide,
 )
 from .models import (
     AssureIaInfo,
@@ -236,6 +237,7 @@ def save_contract(input_data):
         with transaction.atomic():
             with connection.cursor() as cursor:
                 verifier_categorie_police(cursor, IdDevis)
+                verifier_incorporation_non_vide(cursor, IdDevis)
                 cursor.execute(
                     "CALL sp_confirmation_devis(%s, %s, %s);",
                     (IdDevis, IdContrat, OutputMessage),

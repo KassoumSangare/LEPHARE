@@ -128,6 +128,15 @@ class MouvementsDeLEffectif(SimpleTestCase):
         self.assertEqual(total["Reference"] - total["Sortants"], total["Maintenus"])
         self.assertEqual(total["Maintenus"] + total["Nouveaux"], total["Effectif"])
 
+    def test_garant_absent_de_la_reference(self):
+        # constat du 2026-11-10 : l'effectif de référence ne porte que le garant OREOLE ; OREOLE CGA suit la règle des dates, sortants inconnus
+        reference = {1: {"police": "P1", "garant": "OREOLE"}, 2: {"police": "P1", "garant": "OREOLE"}}
+        effectif = [dict(personne(1), garant="OREOLE"), dict(personne(5, police="CGA"), garant="OREOLE CGA"),
+                    dict(personne(6, police="CGA", effet=dt.date(2026, 4, 1)), garant="OREOLE CGA")]
+        m = mouvements_effectif(effectif, reference, self.DU, self.AU)
+        self.assertEqual(m["P1"], {"Reference": 2, "Sortants": 1, "Maintenus": 1, "Nouveaux": 0, "Effectif": 1})
+        self.assertEqual(m["CGA"], {"Reference": 1, "Sortants": 0, "Maintenus": 1, "Nouveaux": 1, "Effectif": 2, "SansReference": True})
+
     def test_sans_reference_dates_d_effet_et_de_sortie(self):
         effectif = [personne(1), personne(2, effet=dt.date(2026, 3, 1)), personne(3, actif=False, sortie=dt.date(2026, 7, 31)),
                     personne(4, actif=False, sortie=dt.date(2025, 6, 30))]

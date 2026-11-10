@@ -201,6 +201,20 @@ def completer_assures_devis_ia(iddevis, lignes):
     return lignes
 
 
+def _client_existant(cursor, nom, prenoms, date_naissance):
+    """Fiche client aux mêmes nom, prénoms et date de naissance (clé unique posée par le déclencheur de stdclient,
+    trg_clients_cle_unique) : reprise plutôt que recréée. Sans cela une personne déjà connue (assuré Santé MINENE
+    incorporé en IA, ancien assuré, fiche archivée) faisait échouer l'enregistrement sur stdclient_cle_unique_key.
+    Les fiches portant une CNI ont une autre clé : une nouvelle fiche reste possible pour elles."""
+    cursor.execute(
+        "SELECT idclient FROM stdclient WHERE cle_unique = 'COMP-' || LOWER(TRIM(%s)) || '|' || LOWER(TRIM(%s)) || '|' || %s::date::text "
+        "ORDER BY idclient LIMIT 1",
+        [nom, prenoms, date_naissance],
+    )
+    ligne = cursor.fetchone()
+    return ligne[0] if ligne else 0
+
+
 def _enregistrer(data):
     assures = data.get("Assures") or []
     if not assures:
@@ -287,25 +301,28 @@ def _enregistrer(data):
             id_profession = int(assure.get("IdProfession") or 0)
             date_naissance = _date(assure.get("DateNaissance"), f"{libelle} : date de naissance")
 
-            # Assuré saisi par son nom : fiche client créée comme à l'import URANUS
+            # Assuré saisi par son nom : fiche existante reprise, sinon fiche client créée comme à l'import URANUS
             id_assure = int(assure.get("IdAssure") or 0)
             if not id_assure:
                 nom = str(assure.get("Nom") or "").strip().upper()
                 if not nom:
                     raise ErreurDevisIa(f"{libelle} : le nom est obligatoire.")
-                client = insert_new_assure(
-                    {
-                        "Nom": nom,
-                        "Prenoms": str(assure.get("Prenoms") or "").strip().upper(),
-                        "DateNaissance": date_naissance,
-                        "LieuNaissance": str(assure.get("LieuNaissance") or ""),
-                        "AdresseGeographique": str(assure.get("AdresseGeographique") or ""),
-                        "NumeroMobile": str(assure.get("Telephone") or ""),
-                        "Fonction": _libelle_profession(id_profession),
-                        "Sexe": str(assure.get("Sexe") or ""),
-                    }
-                )
-                id_assure = client.IdClient
+                prenoms = str(assure.get("Prenoms") or "").strip().upper()
+                id_assure = _client_existant(cursor, nom, prenoms, date_naissance)
+                if not id_assure:
+                    client = insert_new_assure(
+                        {
+                            "Nom": nom,
+                            "Prenoms": prenoms,
+                            "DateNaissance": date_naissance,
+                            "LieuNaissance": str(assure.get("LieuNaissance") or ""),
+                            "AdresseGeographique": str(assure.get("AdresseGeographique") or ""),
+                            "NumeroMobile": str(assure.get("Telephone") or ""),
+                            "Fonction": _libelle_profession(id_profession),
+                            "Sexe": str(assure.get("Sexe") or ""),
+                        }
+                    )
+                    id_assure = client.IdClient
             libelle = f"{libelle} ({assure.get('Nom') or id_assure})"
             if incorporation and not int(assure.get("IdDevisDetail") or 0):
                 try:

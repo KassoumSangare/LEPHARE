@@ -171,6 +171,11 @@ class ContratVieIncorporableTests(SimpleTestCase):
                 _contrat_flottant(mock.Mock(), 1)
 
     def test_autres_produits_toujours_refuses(self):
-        with mock.patch("production.incorporation._contrat_base", return_value=self.base(4)):
+        # RC (8) ; la MRH (4) s'incorpore depuis le 2026-11-10
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(8)):
             with self.assertRaisesRegex(ErreurRenouvellement, "Vie AFA"):
                 _contrat_flottant(mock.Mock(), 1)
+
+    def test_contrat_mrh_incorporable_meme_a_une_maison(self):
+        with mock.patch("production.incorporation._contrat_base", return_value=self.base(4, flotte=False)):
+            self.assertEqual(_contrat_flottant(mock.Mock(), 1)["idproduit"], 4)

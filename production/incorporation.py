@@ -1,10 +1,13 @@
 """Incorporation d'un véhicule dans une police Automobile flotte, ou d'une personne dans un contrat Individuelle Accidents
-à plusieurs personnes (demande du 2026-11-03) ou dans un contrat Vie AFA (demande du 2026-11-09).
+à plusieurs personnes (demande du 2026-11-03), dans un contrat Vie AFA (demande du 2026-11-09) ou d'une maison dans un
+contrat MRH (demande du 2026-11-10).
 
 IA : la personne se saisit dans l'écran IA, sa prime est le tarif de l'offre (fn_garantie_offre_ia), comme les incorporations
 IA d'URANUS ; le Prorata et le mode forfaitaire ci-dessous ne concernent que l'Automobile.
 Vie AFA : la personne se saisit ou s'importe dans l'écran AFA (production/afa.py), sa prime est reprise telle quelle,
 sans prorata (tarif forfaitaire). La police AFA du package Oreole Santé s'incorpore depuis la branche Oreole Santé.
+MRH : la maison se saisit dans l'écran MRH ; sa prime nette, la taxe et l'accessoire y sont saisis à la main comme pour
+tout devis MRH (pas de barème), donc sans prorata calculé ici.
 
 Le devis d'incorporation (avenant INC) garde l'échéance du contrat principal ; sa date d'effet est la date
 d'incorporation. Prime du véhicule : prime annuelle au prorata des jours couverts jusqu'à l'échéance
@@ -27,10 +30,11 @@ from .renouvellement import AUTHENTIFICATION, ErreurRenouvellement, _contrat_bas
 
 ID_PRODUIT_AUTO = 1
 ID_PRODUIT_IA = 2
+ID_PRODUIT_MRH = 4
 ID_PRODUIT_VIE = 10
-PRODUITS_INCORPORATION = (ID_PRODUIT_AUTO, ID_PRODUIT_IA, ID_PRODUIT_VIE)
+PRODUITS_INCORPORATION = (ID_PRODUIT_AUTO, ID_PRODUIT_IA, ID_PRODUIT_MRH, ID_PRODUIT_VIE)
 OFFRE_IA_MINENE = 66
-MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia", ID_PRODUIT_VIE: "afa"}
+MODULES = {ID_PRODUIT_AUTO: "auto", ID_PRODUIT_IA: "ia", ID_PRODUIT_MRH: "mrh", ID_PRODUIT_VIE: "afa"}
 MODE_PRORATA = "prorata"
 MODE_FORFAIT = "forfait"
 logger = logging.getLogger(__name__)
@@ -106,10 +110,12 @@ def _contrat_flottant(cursor, id_contrat):
                 "Police AFA du package Oreole Santé : incorporez la personne depuis le bloc Oreole Santé du contrat Santé, "
                 "qui ajoute aussi sa part Santé et IA."
             )
+    elif base["idproduit"] == ID_PRODUIT_MRH:
+        pass  # MRH : une maison s'ajoute à tout contrat en cours, même à une seule maison
     elif base["idproduit"] != ID_PRODUIT_AUTO or not base["flotte"]:
         raise ErreurRenouvellement(
-            "L'incorporation est réservée aux flottes Automobile, aux contrats Individuelle Accidents à plusieurs personnes "
-            "et aux contrats Vie AFA."
+            "L'incorporation est réservée aux flottes Automobile, aux contrats Individuelle Accidents à plusieurs personnes, "
+            "aux contrats MRH et aux contrats Vie AFA."
         )
     return base
 
@@ -129,7 +135,7 @@ def _devis_en_cours(cursor, id_devis_base):
 
 
 def _devis_incorporation(cursor, id_devis):
-    """Devis d'incorporation Automobile, IA ou Vie (None pour tout autre devis) : période, mode et police du contrat."""
+    """Devis d'incorporation Automobile, IA, MRH ou Vie (None pour tout autre devis) : période, mode et police du contrat."""
     lignes = _lignes(cursor, """
         SELECT d.iddevis, d.dateeffet::date AS dateeffet, d.dateexpiration::date AS dateexpiration, d.idoldhist,
                COALESCE(i.forfaitaire, FALSE) AS forfaitaire, d.idproduit,
@@ -210,6 +216,23 @@ def controler_assure_incorpore(cursor, id_devis, id_assure, nom):
         raise ValueError(f"{nom} est déjà assuré(e) dans la police {devis['police']} : cette personne ne peut pas être incorporée.")
 
 
+def verifier_incorporation_non_vide(cursor, id_devis):
+    """Un devis d'incorporation sans véhicule ni personne ne se confirme pas : sp_confirmation_devis en faisait un
+    avenant à 0 F avec sa quittance numérotée (constaté le 2026-11-10 après un import refusé). Les autres devis ne
+    sont pas concernés (un devis repris d'URANUS peut n'avoir que son en-tête)."""
+    cursor.execute(
+        """SELECT a.codeavenant = 'INC', EXISTS (SELECT 1 FROM stddevisdetail x WHERE x.iddevis = d.iddevis)
+           FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant WHERE d.iddevis = %s""",
+        [id_devis],
+    )
+    ligne = cursor.fetchone()
+    if ligne and ligne[0] and not ligne[1]:
+        raise ValueError(
+            "Ce devis d'incorporation ne contient encore aucune personne, aucun véhicule ni aucune maison : "
+            "ajoutez-les puis enregistrez le devis avant de le confirmer."
+        )
+
+
 def _id_avenant_incorporation():
     with connection.cursor() as cursor:
         cursor.execute("SELECT idavenant FROM stdavenant WHERE codeavenant = 'INC'")
@@ -280,14 +303,16 @@ def incorporation(request, pk):
             numero = devis[0]
             cursor.execute(SQL_ENTETE_A_ZERO, [id_devis])
             # IA : l'incorporation se saisit en groupe (sp_creation_devis_ia), même sous un contrat hors catégorie groupe ;
-            # police connexe reprise (obligatoire en MINENE, non recopiée par sp_avenant_creation_devis_initial)
+            # police connexe reprise (obligatoire en MINENE, non recopiée par sp_avenant_creation_devis_initial).
+            # MRH : le devis garde l'indicateur de la police (une maison ajoutée ne fait pas une flotte)
             cursor.execute(
-                """UPDATE stddevis d SET flotte = TRUE, numeropoliceconnexe = b.numeropoliceconnexe
+                """UPDATE stddevis d SET flotte = (d.idproduit <> 4 OR COALESCE(b.flotte, FALSE)),
+                          numeropoliceconnexe = b.numeropoliceconnexe
                    FROM stddevis b WHERE d.iddevis = %s AND b.iddevis = d.idoldhist""",
                 [id_devis],
             )
-            if base["idproduit"] == ID_PRODUIT_VIE:
-                # AFA : le devis ne porte que les personnes ajoutées, saisies ou importées ensuite dans l'écran AFA
+            if base["idproduit"] in (ID_PRODUIT_VIE, ID_PRODUIT_MRH):
+                # AFA, MRH : le devis ne porte que les personnes ou maisons ajoutées, saisies ensuite dans leur écran
                 cursor.execute(
                     "DELETE FROM stddevisdetgarantie WHERE iddevisdet IN (SELECT iddevisdetail FROM stddevisdetail WHERE iddevis = %s)",
                     [id_devis],

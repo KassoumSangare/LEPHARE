@@ -4854,15 +4854,30 @@ class DevisMRHViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        from .incorporation import _devis_incorporation, _verifier_periode_devis
+
+        with connection.cursor() as cursor:
+            incorporation = _devis_incorporation(cursor, devis.iddevis)
+
         try:
             with transaction.atomic():
-                idduree = data.get("idduree") or devis.idduree
-                dateexpiration = data.get("dateexpiration") or calculer_date_expiration(
-                    date_effet=data["dateeffet"], id_duree=idduree, nombre_jours=0
-                )
-                devis.compagnie_id = data["idcompagnie"]
-                devis.client_id = data["idclient"]
-                devis.assure_id = data.get("idassure") or data["idclient"]
+                if incorporation:
+                    # Incorporation d'une maison (avenant INC) : date d'incorporation au choix dans la période du contrat,
+                    # échéance, durée, compagnie, souscripteur et assuré de la police inchangés
+                    effet = data["dateeffet"]
+                    effet = effet.date() if hasattr(effet, "date") else effet
+                    _verifier_periode_devis("INC", incorporation["debut"], incorporation["dateexpiration"], effet,
+                                            incorporation["dateexpiration"])
+                    idduree = devis.idduree
+                    dateexpiration = devis.dateexpiration
+                else:
+                    idduree = data.get("idduree") or devis.idduree
+                    dateexpiration = data.get("dateexpiration") or calculer_date_expiration(
+                        date_effet=data["dateeffet"], id_duree=idduree, nombre_jours=0
+                    )
+                    devis.compagnie_id = data["idcompagnie"]
+                    devis.client_id = data["idclient"]
+                    devis.assure_id = data.get("idassure") or data["idclient"]
                 devis.dateeffet = data["dateeffet"]
                 devis.dateexpiration = dateexpiration
                 # Date d'émission imposée : celle du jour de la modification

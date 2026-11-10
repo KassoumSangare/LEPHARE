@@ -29,6 +29,7 @@ import {
   Users,
   Trash2,
   UserPlus,
+  Home,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
@@ -118,14 +119,14 @@ export const ContractDetailPage = () => {
   const [contratOreole, setContratOreole] = useState(false);
   const [devisOreole, setDevisOreole] = useState(0);
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
-  // IA : incorporation proposée quand le contrat porte plusieurs personnes ; Vie AFA : toujours, hors package Oreole Santé
-  // (le serveur en décide)
+  // IA : incorporation proposée quand le contrat porte plusieurs personnes ; Vie AFA : toujours, hors package Oreole Santé ;
+  // MRH : une maison s'ajoute à tout contrat en cours (le serveur en décide)
   const idProduitContrat = Number(contract?.raw?.idproduit?.id_produit ?? contract?.raw?.idproduit?.IdProduit ?? contract?.raw?.idproduit) || 0;
   const [incorporationIa, setIncorporationIa] = useState(false);
   useEffect(() => {
     let actif = true;
     setIncorporationIa(false);
-    if (id && (idProduitContrat === 2 || idProduitContrat === 10) && aLeDroit('contrats.avenant')) {
+    if (id && [2, 4, 10].includes(idProduitContrat) && aLeDroit('contrats.avenant')) {
       contractApi.preparerIncorporation(id).then(() => { if (actif) setIncorporationIa(true); }).catch(() => {});
     }
     return () => { actif = false; };
@@ -240,11 +241,11 @@ export const ContractDetailPage = () => {
             <button
               className="btn btn-secondary"
               onClick={() => navigate(`/user/contracts/${id}/incorporation`)}
-              title="Ajouter une personne à ce contrat jusqu'à son échéance"
+              title={idProduitContrat === 4 ? "Ajouter une maison à ce contrat jusqu'à son échéance" : "Ajouter une personne à ce contrat jusqu'à son échéance"}
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
             >
-              <UserPlus size={16} />
-              <span>Incorporer une personne</span>
+              {idProduitContrat === 4 ? <Home size={16} /> : <UserPlus size={16} />}
+              <span>{idProduitContrat === 4 ? 'Incorporer une maison' : 'Incorporer une personne'}</span>
             </button>
           )}
 

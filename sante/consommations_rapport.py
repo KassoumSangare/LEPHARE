@@ -41,6 +41,7 @@ from autorisations.journal import journaliser
 from production.renouvellement import AUTHENTIFICATION
 
 from .consommations import ErreurConsommation, _reponse, normaliser
+from .consommations_analyse import analyse as analyse_periode
 from .consommations_pilotage import (MOIS, GENRES, TRANCHES, _age, _div, _periode, charger, date_effectif, effectif_de_reference,
                                      entreprises_a_risque, indicateurs, mouvements_effectif, ordre_des_tranches, repartition, tableau_de_bord, tranche)
 
@@ -479,6 +480,12 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
     noms = STATUTS_RAPPORT
     ages = [a for a in (_age(e["date_naissance"], au) for e in actifs) if a is not None]
     mouvements = mouvements_effectif(effectif, reference, du, au)
+    # garants sans effectif de référence (OREOLE CGA quand seul l'effectif OREOLE précédent est importé) : sortants inconnus, « - » et non 0
+    polices_sans_reference = {p for p, x in mouvements.items() if x.get("SansReference")}
+    garants_sans_reference = sorted({e.get("garant") or "" for e in effectif if e["police"] in polices_sans_reference} - {""})
+
+    def sortants(x):
+        return _f(x["Sortants"]) if not x.get("SansReference") or x["Sortants"] else "-"
 
     def somme(cle):
         return sum(x[cle] for x in mouvements.values())
@@ -490,7 +497,8 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
         ("Effectif total" + (f" au {_d(situation)}" if situation else ""), _f(len(actifs))), ("Nombre d'assurés", _f(len(statuts["A"]))),
         ("Nombre de conjoint(e)s", _f(len(statuts["C"]))), ("Nombre d'enfants", _f(len(statuts["E"]))), ("Âge moyen de l'effectif", _ans(_moyenne(ages))),
         (libelle_reference, _f(somme("Reference"))),
-        ("Effectifs sortants", _f(somme("Sortants"))), ("Effectifs maintenus", _f(somme("Maintenus"))), ("Nouveaux entrants", _f(somme("Nouveaux"))),
+        ("Effectifs sortants" + (f", hors {', '.join(garants_sans_reference)}" if garants_sans_reference else ""), _f(somme("Sortants"))),
+        ("Effectifs maintenus", _f(somme("Maintenus"))), ("Nouveaux entrants", _f(somme("Nouveaux"))),
     ])
     if reference is not None:
         r.para(f"Mouvements de l'effectif : l'effectif au {_d(situation)} est comparé à l'effectif de référence au {_d(date_reference)}. Une personne de "
@@ -504,9 +512,19 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
     # nouveaux, effectif de l'exercice ; entreprises par ordre alphabétique, celles entièrement sorties comprises (effectif 0)
     maintenus = f"Maintenus {date_reference.year}-{exercice}" if reference is not None and date_reference else "Maintenus"
     r.tableau("Effectif consolidé par entreprise", ["Entreprise", maintenus, "Sortants", "Nouveaux entrants", f"Effectif {exercice}"],
-              [(p or "Non renseigné", _f(mouvements[p]["Maintenus"]), _f(mouvements[p]["Sortants"]), _f(mouvements[p]["Nouveaux"]), _f(mouvements[p]["Effectif"]))
+              [(p or "Non renseigné", _f(mouvements[p]["Maintenus"]), sortants(mouvements[p]), _f(mouvements[p]["Nouveaux"]), _f(mouvements[p]["Effectif"]))
                for p in sorted(mouvements, key=normaliser)],
               total=(TOTAL, _f(somme("Maintenus")), _f(somme("Sortants")), _f(somme("Nouveaux")), _f(somme("Effectif"))))
+    if reference is not None and garants_sans_reference:
+        noms = ", ".join(garants_sans_reference)
+        r.para(f"« - » dans la colonne Sortants : aucun effectif {noms} antérieur au {_d(du)} n'est importé. Les sortants de ces entreprises ne "
+               "peuvent pas être comptés, hors sorties datées, et leurs nouveaux entrants sont comptés d'après leur date d'effet. Importez l'effectif "
+               f"{noms} de l'exercice précédent avec sa date de situation pour les compter.", italique=True)
+    if reference is not None:
+        completes = sum(1 for x in mouvements.values() if not x.get("SansReference") and not x["Sortants"] and x["Effectif"])
+        if completes:
+            r.para(f"Sortants à 0 : {completes} entreprise{'s ont' if completes > 1 else ' a'} gardé tout {'leur' if completes > 1 else 'son'} "
+                   f"effectif du {_d(date_reference)}.", italique=True)
 
     par_police = defaultdict(lambda: {"A": 0, "C": 0, "E": 0, "Ages": []})
     for e in actifs:
@@ -579,6 +597,81 @@ def _fiche(r, police, prestations, effectif, au):
     _top(r, "Top 10 des centres exécutants", ps, lambda p: p["centre_executant"], "Centre exécutant", 10)
     _familles_depensieres(r, "Top 10 des familles les plus dépensières", ps, limite=10)
     _top(r, "Top 10 des médecins les plus coûteux", ps, lambda p: p["medecin"], "Médecin", 10)
+
+
+def _analyses_complementaires(r, a, numero):
+    """Partie « Analyses complémentaires » (demande du 2026-11-09 : pousser l'analyse plus loin) : les chiffres des onglets d'analyse de l'écran,
+    calculés par consommations_analyse.analyser, présentés avec les mêmes règles que le reste du rapport (portrait, Arial Narrow, bleu ciel)."""
+    s, f = a["Synthese"], a["Foyers"]
+    r.titre(f"{numero}. ANALYSES COMPLÉMENTAIRES", 1)
+    r.para("Chiffres identiques à ceux de l'écran Consommations santé de LE PHARE. Tous les mois du relevé comptent, le dernier avec tous ses actes ; "
+           "projection au rythme moyen de ces mois ; formules proposées, à valider.", italique=True)
+
+    r.titre(f"{numero}.1. Points à retenir", 2)
+    for c in a["Constats"]:
+        r.para(f"{c['Titre']} : {c['Texte']}")
+
+    r.titre(f"{numero}.2. Rythme de consommation et projection", 2)
+    lignes = [("Mois du relevé pris en compte", _f(s["MoisEcoules"])), ("Rythme mensuel moyen", _f(s["Rythme"])),
+              (f"Consommation à fin {(s['DernierMois'] or '').lower()}", _f(s["CumulDernierMois"])), ("Consommation de la période", _f(s["Depenses"])),
+              ("Projection en fin de période", _f(s["Projection"]))]
+    if s["Provision"]:
+        lignes += [("Provisions pour paiement", _f(s["Provision"])), ("Taux de consommation des provisions", _p(s["TauxProvision"])),
+                   ("Part de la période écoulée", _p(s["Attendu"])), ("Taux projeté en fin de période", _p(s["TauxProjete"]))]
+    r.tableau("Rythme de consommation et projection", ["Indicateur", "Valeur"], lignes)
+    suivies = sorted((l for l in a["Entreprises"] if l["Provision"]), key=lambda l: -(l["TauxProjete"] or 0))
+    if suivies:
+        r.tableau("Projection de fin de période par entreprise", ["Entreprise", "Provision", "Dépenses", "Taux", "Projection", "Taux projeté", "Situation"],
+                  [((l["Entreprises"][0] if l["Entreprises"] else l["Police"]) or "-", _f(l["Provision"]), _f(l["Depenses"]), _p(l["TauxProvision"]),
+                    _f(l["Projection"]), _p(l["TauxProjete"]), l["Situation"]) for l in suivies])
+
+    r.titre(f"{numero}.3. Dépenses par compagnie", 2)
+    r.tableau("Dépenses par compagnie (garant du relevé)", ["Compagnie", "Entreprises", "Bénéficiaires couverts", "Taux de recours", "Dépenses", "% des dépenses",
+                                                            "Coût par bénéficiaire"],
+              [(c["Garant"], _f(c["Polices"]), _f(c["Effectif"]), _p(c["TauxRecours"]), _f(c["Depenses"]), _p(c["Part"]), _f(c["CoutParBeneficiaire"]))
+               for c in a["Compagnies"]],
+              total=(TOTAL, _f(sum(c["Polices"] for c in a["Compagnies"])), _f(s["Effectif"]), _p(s["TauxRecours"]), _f(s["Depenses"]), _p(1),
+                     _f(s["CoutParBeneficiaire"])))
+
+    r.titre(f"{numero}.4. Coût par bénéficiaire selon l'âge", 2)
+    r.tableau("Bénéficiaires couverts et dépenses par tranche d'âge", ["Tranche d'âge", "Hommes", "Femmes", "Bénéficiaires couverts", "Taux de recours",
+                                                                       "Dépenses", "Coût par bénéficiaire"],
+              [(t["Tranche"], _f(t["Hommes"]), _f(t["Femmes"]), _f(t["Effectif"]), _p(t["TauxRecours"]), _f(t["Depenses"]), _f(t["CoutParBeneficiaire"]))
+               for t in a["Profil"]["Tranches"]],
+              total=(TOTAL, _f(sum(t["Hommes"] for t in a["Profil"]["Tranches"])), _f(sum(t["Femmes"] for t in a["Profil"]["Tranches"])), _f(s["Effectif"]),
+                     _p(s["TauxRecours"]), _f(s["Depenses"]), _f(s["CoutParBeneficiaire"])))
+
+    r.titre(f"{numero}.5. Concentration des dépenses par foyer", 2)
+    r.para(f"{_f(f['Total'])} foyers, dont {_f(f['Consommateurs'])} ont consommé sur la période. Les 10 % de foyers les plus consommateurs, soit "
+           f"{_f(f['Top10Pct']['Foyers'])}, font {_p(f['Top10Pct']['Part'])} des dépenses ; la consommation médiane d'un foyer est de {_f(f['Mediane'])} F.")
+    r.tableau("Foyers par niveau de consommation", ["Niveau de consommation", "Foyers", "% des foyers", "Dépenses", "% des dépenses"],
+              [(t["Libelle"], _f(t["Foyers"]), _p(t["PartFoyers"]), _f(t["Depenses"]), _p(t["PartDepenses"])) for t in f["Tranches"]],
+              total=(TOTAL, _f(f["Total"]), _p(1), _f(s["Depenses"]), _p(1)))
+
+    r.titre(f"{numero}.6. Du montant réclamé au montant remboursé", 2)
+    d = a["Decomposition"]
+    r.tableau("Décomposition du montant réclamé", ["Poste", "Montant", "% du réclamé"],
+              [(libelle, _f(d[cle]), _p(_div(d[cle], d["Reclame"]))) for libelle, cle in (
+                  ("Remboursé", "Rembourse"), ("Ticket modérateur et plafonds", "TicketEtPlafonds"), ("Dépassements", "Depassements"), ("Exclusions", "Exclusions"))],
+              total=("Montant réclamé", _f(d["Reclame"]), _p(1)))
+
+    r.titre(f"{numero}.7. Coût des prestataires à acte égal", 2)
+    r.para("Indice de coût : montant réclamé par le centre rapporté au montant médian des mêmes actes dans le portefeuille (100 = médiane), sur les actes vus "
+           "au moins 10 fois et pour les centres d'au moins 20 actes comparables. Au-delà de 130, le centre coûte nettement plus cher à acte égal : prix plus "
+           "élevés ou actes plus lourds, à vérifier avec le gestionnaire.")
+    centres = [c for c in a["Prestataires"]["Centres"] if c["Indice"]]
+    if centres:
+        r.tableau("Indice de coût des centres exécutants les plus sollicités", ["Centre exécutant", "Actes", "Dépenses", "Coût moyen par acte", "Indice de coût"],
+                  [(c["Centre"], _f(c["Actes"]), _f(c["Depenses"]), _f(c["CoutParActe"]), _f(c["Indice"])) for c in centres])
+
+    r.titre(f"{numero}.8. Délai entre les soins et leur paiement", 2)
+    dl = a["Delais"]
+    r.para(f"De la date de soins, corrigée de l'inversion jour/mois, à la clôture du relevé qui les paie : délai médian de {_f(dl['Mediane'])} jours, "
+           f"9 soins sur 10 payés en {_f(dl['P90'])} jours au plus. La date de réception des relevés n'est pas utilisée : elle est inversée ou postérieure "
+           "à la clôture sur la plupart des lignes du gestionnaire.")
+    r.tableau("Prestations par délai de paiement", ["Délai", "Prestations", "% des prestations", "Dépenses"],
+              [(t["Libelle"], _f(t["Actes"]), _p(t["Part"]), _f(t["Depenses"])) for t in dl["Tranches"]],
+              total=(TOTAL, _f(sum(t["Actes"] for t in dl["Tranches"])), _p(1), _f(sum(t["Depenses"] for t in dl["Tranches"]))))
 
 
 def produire(params):
@@ -664,6 +757,7 @@ def produire(params):
                   [(l["Entreprise"] or "-", l["Police"] or "-", _f(l["Provision"]), _f(l["Consommation"]), _f(l["Reste"]), _p(l["Taux"]), l["Situation"])
                    for l in bord["Controle"]],
                   total=(TOTAL, "", _f(t["Provision"]), _f(t["Consommation"]), _f(t["Reste"]), _p(t["Taux"]), ""))
+    _analyses_complementaires(r, analyse_periode(params), "V" if bord["CotisationsImportees"] else "IV")
     return r.octets(), f"RAPPORT CONSOMMATIONS SANTE {exercice} du {du:%d-%m-%Y} au {au:%d-%m-%Y}.docx", {"Exercice": exercice, "Du": du, "Au": au,
                                                                                                        "Prestations": len(prestations)}
 
