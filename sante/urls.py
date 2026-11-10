@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import consommations, consommations_analyse, consommations_pilotage, consommations_rapport, oreole
+from . import consommations, consommations_analyse, consommations_pilotage, consommations_rapport, consommations_souscriptions, oreole
 
 # from django_api_admin.sites import site
 
@@ -169,6 +169,8 @@ urlpatterns = [
     # Analyse approfondie : compagnies, entreprises, familles, profil, foyers, prestataires, délais, projection (sante/consommations_analyse.py)
     path(r"consommations/analyse/", consommations_analyse.vue_analyse, name="consommations-analyse-periode"),
     path(r"consommations/entreprises/lien/", consommations_pilotage.vue_lien, name="consommations-lien"),
+    # Effectif complété par les souscriptions Oreole Santé de LE PHARE : aperçu (GET), ajout (POST) (sante/consommations_souscriptions.py)
+    path(r"consommations/souscriptions/", consommations_souscriptions.vue_souscriptions, name="consommations-souscriptions"),
     path(r"consommations/rapport/", consommations_rapport.vue_rapport, name="consommations-rapport"),
     path(r"consommations/recherche/", consommations.vue_recherche, name="consommations-recherche"),
     path(r"consommations/famille/<int:matricule>/", consommations.vue_famille, name="consommations-famille"),

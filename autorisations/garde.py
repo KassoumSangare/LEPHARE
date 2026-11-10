@@ -314,6 +314,7 @@ REGLES = [
     R("POST", r"consommations/import/analyse/?$", "consommations.import", lecture=True),
     R("POST", r"consommations/import/?$", "consommations.import", objet="releve_sante"),
     R("POST", r"consommations/entreprises/lien/?$", "consommations.import", objet="lien_entreprise_police"),
+    R("POST", r"consommations/souscriptions/?$", "consommations.import", objet="effectif_sante"),
     R("POST", r"consommations/fraude/(?P<matricule>\d+)/instruction/?$", "consommations.fraude", objet="suspicion_fraude", cles=("matricule",)),
     R("GET", r"consommations/fraude", "consommations.fraude"),
     R("GET", r"consommations/", "consommations.view"),

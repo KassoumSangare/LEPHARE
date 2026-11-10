@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import cast
@@ -4563,8 +4564,17 @@ class CalculMaisonView(APIView):
 ID_TARIF_MRH = 81
 
 
+LONGUEUR_ADRESSE_MAISON = 150  # stddevisdetail.adressecnd (migration production 0217 ; 50 avant)
+
+
 def _message_erreur_mrh(exc):
     """Message lisible d'une erreur de calcul/enregistrement MRH."""
+    # Texte trop long pour une colonne (« valeur trop longue pour le type character varying(50) ») : la seule saisie libre
+    # d'une maison est son adresse ; constaté en production le 2026-11-09 avant l'élargissement de la migration 0217
+    longueur = re.search(r"(?:trop longue|too long) (?:pour le|for) type character varying\((\d+)\)", str(exc))
+    if longueur:
+        return (f"Une saisie dépasse la longueur admise par la base ({longueur.group(1)} caractères au plus), le plus souvent l'adresse "
+                "d'une maison : raccourcissez-la puis enregistrez à nouveau.")
     detail = getattr(exc, "detail", None)
     if detail is None:
         detail = getattr(exc, "message_dict", None) or getattr(exc, "messages", None)
@@ -4600,11 +4610,14 @@ def _enregistrer_maisons_mrh(devis, maisons, id_tarif=None):
     Retourne les totaux du devis mis à jour.
     """
     service = MRHCalculService()
-    for maison in maisons:
+    for rang, maison in enumerate(maisons, start=1):
         code_usage = maison.get("code_usage")
         usage = UsageHabitation.objects.filter(code=code_usage).first()
         if not usage or not usage.offre_id:
             raise ValueError(f"Usage habitation inconnu ou sans offre : {code_usage}")
+        adresse = str(maison.get("adresse") or "").strip()
+        if len(adresse) > LONGUEUR_ADRESSE_MAISON:
+            raise ValueError(f"Maison {rang} : l'adresse compte {len(adresse)} caractères, {LONGUEUR_ADRESSE_MAISON} au plus. Raccourcissez-la.")
         service.calculer_et_enregistrer_maison(
             id_devis=devis.iddevis,
             id_produit=devis.produit_id,

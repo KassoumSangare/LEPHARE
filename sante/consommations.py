@@ -334,6 +334,9 @@ def analyser(contenu, cursor, nom_fichier="", exercice=None):
 CHAMPS_PRESTATION = ["numero_prest", "date_cloture", "numero_garant", "garant", "souscripteur", "npol", "police", "college", "matricule_beneficiaire", "beneficiaire",
                      "statut", "date_naissance", "matricule_assure", "assure", "centre_prescripteur", "code_centre", "centre_executant", "famille", "acte", "medecin",
                      "date_soins", "date_soins_retenue", "date_reception", "type", "mt_reclame", "base_decomptee", "ticket_moderateur", "exclusion", "depassement", "mt_rembourse"]
+# Personnes ajoutées à l'effectif depuis les contrats Oreole Santé de LE PHARE (consommations_souscriptions.py) : import tracé sous ce nom de
+# fichier, sans date de situation ; il ne date pas l'effectif courant et un effectif du gestionnaire ne fait pas sortir ces personnes
+SOURCE_SOUSCRIPTIONS = "Souscriptions Oreole Santé - LE PHARE"
 CHAMPS_EFFECTIF = ["matricule_beneficiaire", "matricule_assure", "garant", "police", "college", "nom", "prenoms", "statut", "genre", "date_naissance", "date_effet"]
 LONGUEURS = {"garant": 60, "souscripteur": 150, "police": 150, "college": 80, "beneficiaire": 200, "statut": 1, "assure": 200, "centre_prescripteur": 200, "code_centre": 30,
              "centre_executant": 200, "famille": 80, "acte": 20, "medecin": 200, "type": 5, "nom": 100, "prenoms": 150, "genre": 1}
@@ -414,8 +417,8 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
         if effectif:
             _photographier(cursor, id_releve, effectif)
             cursor.execute("""SELECT max(COALESCE(r.situation, r.dateimport::date)) FROM lephare_sante_effectif e
-                              JOIN lephare_sante_releve r ON r.idreleve = e.idreleve WHERE e.garant = ANY(%s)""",
-                           [sorted({_valeur(e, "garant") for e in effectif.values()})])
+                              JOIN lephare_sante_releve r ON r.idreleve = e.idreleve WHERE e.garant = ANY(%s) AND r.fichier <> %s""",
+                           [sorted({_valeur(e, "garant") for e in effectif.values()}), SOURCE_SOUSCRIPTIONS])
             courant = cursor.fetchone()[0]
             if courant and situation < courant:
                 # Effectif plus ancien que l'effectif courant (exercice précédent importé après coup) : référence des mouvements seulement
@@ -430,10 +433,12 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
                                    ON CONFLICT (matricule_beneficiaire) DO UPDATE SET {maj}, datemaj = now()""",
                                [[_valeur(e, c) for c in CHAMPS_EFFECTIF] + [e.get("date_sortie") is None, e.get("date_sortie"), id_releve] for e in effectif.values()])
             # Effectif complet d'un garant : les bénéficiaires actifs absents du fichier sont sortis à la date de situation de l'effectif
-            # (seulement si le fichier reprend au moins la moitié des actifs connus de ce garant : un extrait partiel ne fait sortir personne)
+            # (seulement si le fichier reprend au moins la moitié des actifs connus de ce garant : un extrait partiel ne fait sortir personne) ;
+            # les personnes ajoutées depuis les souscriptions Oreole Santé de LE PHARE et que le gestionnaire ne liste pas encore restent couvertes
             sorties = 0
             for garant in {e.get("garant", "") for e in effectif.values()}:
-                cursor.execute("SELECT matricule_beneficiaire FROM lephare_sante_effectif WHERE garant = %s AND actif", [garant])
+                cursor.execute("""SELECT matricule_beneficiaire FROM lephare_sante_effectif WHERE garant = %s AND actif
+                                  AND idreleve NOT IN (SELECT idreleve FROM lephare_sante_releve WHERE fichier = %s)""", [garant, SOURCE_SOUSCRIPTIONS])
                 actifs = {m for (m,) in cursor.fetchall()}
                 presents = {m for m, e in effectif.items() if e.get("garant", "") == garant}
                 absents = list(actifs - presents)

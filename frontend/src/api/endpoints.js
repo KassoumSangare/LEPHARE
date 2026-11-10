@@ -1310,6 +1310,9 @@ export const consommationsApi = {
   // Analyse complète d'une période (sante/consommations_analyse.py) : synthèse, projection, compagnies, entreprises, familles, profil, foyers, prestataires, délais
   analyse: async (params) => (await apiClient.get('/consommations/analyse/', { params: sansVide(params), timeout: 120000 })).data,
   lier: async (entreprise, police) => (await apiClient.post('/consommations/entreprises/lien/', { Entreprise: entreprise, Police: police })).data,
+  // Effectif complété par les souscriptions Oreole Santé de LE PHARE : aperçu sans écriture, puis ajout
+  souscriptions: async () => (await apiClient.get('/consommations/souscriptions/', { timeout: 120000 })).data,
+  ajouterSouscriptions: async () => (await apiClient.post('/consommations/souscriptions/', {}, { timeout: 120000 })).data,
   rapport: async (params) => apiClient.get('/consommations/rapport/', { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
   synthese: async (params) => (await apiClient.get('/consommations/synthese/', { params: sansVide(params) })).data,
   rechercher: async (q) => (await apiClient.get('/consommations/recherche/', { params: { q } })).data,

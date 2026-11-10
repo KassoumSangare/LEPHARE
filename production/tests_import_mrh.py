@@ -66,6 +66,28 @@ class IncorporationVide(SimpleTestCase):
         verifier_incorporation_non_vide(self.curseur(None), 1)
 
 
+class AdresseTropLongue(SimpleTestCase):
+    """Erreur vue en production le 2026-11-09 : « valeur trop longue pour le type character varying(50) » (adresse d'une maison)."""
+
+    def test_message_lisible_a_la_place_de_l_erreur_de_la_base(self):
+        from .views import _message_erreur_mrh
+        message = _message_erreur_mrh(Exception("ERREUR: valeur trop longue pour le type character varying(50)"))
+        self.assertIn("50 caractères au plus", message)
+        self.assertIn("adresse", message)
+        self.assertIn("150 caractères", _message_erreur_mrh(Exception("value too long for type character varying(150)")))
+
+    @mock.patch("production.views.MRHCalculService")
+    @mock.patch("production.views.UsageHabitation.objects.filter")
+    def test_adresse_de_plus_de_150_caracteres_refusee_avant_la_base(self, filtre, service):
+        from types import SimpleNamespace
+
+        from .views import _enregistrer_maisons_mrh
+        filtre.return_value.first.return_value = SimpleNamespace(offre_id=10)
+        maisons = [{"code_usage": "locataire", "adresse": "Cocody"}, {"code_usage": "locataire", "adresse": "x" * 151}]
+        with self.assertRaisesRegex(ValueError, "Maison 2 : l'adresse compte 151 caractères, 150 au plus"):
+            _enregistrer_maisons_mrh(SimpleNamespace(iddevis=1, produit_id=4, compagnie_id=1), maisons)
+
+
 class ClasseurReel(SimpleTestCase):
     def test_lecture_d_un_classeur_enregistre(self):
         c = classeur(["Usage de l'habitation", "Adresse", "Valeur du contenu", "Loyer mensuel"], ["Location Totale", "Yopougon", 5000000, 200000])

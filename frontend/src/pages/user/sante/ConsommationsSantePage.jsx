@@ -437,6 +437,86 @@ const OngletFraude = ({ onOuvrir }) => {
 };
 
 // ------------------------------------------------------------------ imports
+// Effectif complété par les souscriptions Oreole Santé de LE PHARE (demande du 2026-11-10) : personnes des contrats Oreole Santé que
+// l'effectif du gestionnaire ne connaît pas encore, reconnues par leur matricule ; l'effectif du gestionnaire fait foi
+const LIBELLES_STATUT = { A: 'Assuré', C: 'Conjoint(e)', E: 'Enfant' };
+const PanneauSouscriptions = ({ onAjout }) => {
+  const { success, error: toastError } = useToast();
+  const [apercu, setApercu] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const verifier = async () => {
+    setEnvoi(true);
+    try { setApercu(await consommationsApi.souscriptions()); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
+  };
+  const aEcrire = apercu ? apercu.AAjouter.length + apercu.AMettreAJour + apercu.Retirees : 0;
+  const ajouter = async () => {
+    const message = `${fcfa(apercu.AAjouter.length)} personne${apercu.AAjouter.length > 1 ? 's' : ''} souscrite${apercu.AAjouter.length > 1 ? 's' : ''} à Oreole Santé seront ajoutées à l'effectif`
+      + (apercu.AMettreAJour ? `, ${fcfa(apercu.AMettreAJour)} mises à jour` : '') + (apercu.Retirees ? `, ${fcfa(apercu.Retirees)} sorties` : '')
+      + ". Les personnes que l'effectif du gestionnaire connaît déjà ne sont pas modifiées.";
+    if (!(await confirmer({ titre: "Compléter l'effectif", message, confirmer: 'Ajouter à l\'effectif' }))) return;
+    setEnvoi(true);
+    try {
+      const r = await consommationsApi.ajouterSouscriptions();
+      success(`Effectif complété : ${fcfa(r.Ajoutees)} personne${r.Ajoutees > 1 ? 's' : ''} ajoutée${r.Ajoutees > 1 ? 's' : ''}`
+        + (r.MisesAJour ? `, ${fcfa(r.MisesAJour)} mises à jour` : '') + (r.Sorties ? `, ${fcfa(r.Sorties)} sorties` : '') + '.');
+      setApercu(await consommationsApi.souscriptions());
+      onAjout?.();
+    } catch (err) {
+      toastError(messageErreurApi(err));
+    } finally {
+      setEnvoi(false);
+    }
+  };
+  const ligne = (p) => (
+    <tr key={`${p.PoliceLePhare}-${p.Matricule || `${p.Nom}-${p.Prenoms}`}`}>
+      <td>{p.Entreprise}</td><td>{p.PoliceLePhare}</td><td>{`${p.Nom} ${p.Prenoms}`.trim()}</td><td>{LIBELLES_STATUT[p.Statut] || p.Statut}</td>
+      <td>{p.Matricule || '-'}</td><td>{dateFr(p.DateEffet)}</td><td>{p.Actif ? 'Couvert' : `Sorti le ${dateFr(p.DateSortie)}`}</td>
+    </tr>
+  );
+  const entetes = <tr><th>Entreprise</th><th>Police LE PHARE</th><th>Nom et prénoms</th><th>Lien</th><th>Matricule</th><th>Adhésion</th><th>Situation</th></tr>;
+  return (
+    <Panneau titre="Compléter l'effectif avec les souscriptions Oreole Santé"
+      actions={<button type="button" className="btn btn-secondary" disabled={envoi} onClick={verifier} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        {envoi && !apercu ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Vérifier</button>}>
+      <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+        Les adhérents et ayants droit des contrats Oreole Santé de LE PHARE portent le matricule du gestionnaire. Ceux que l'effectif importé ne connaît
+        pas encore, une incorporation récente par exemple, y sont ajoutés avec l'entreprise, le garant et le collège des autres personnes de leur police.
+        L'effectif du gestionnaire fait foi : une personne qu'il connaît n'est pas modifiée, et son prochain fichier met à jour les personnes ajoutées ici.
+      </p>
+      {apercu && !apercu.Disponible && <p style={{ margin: 0, color: '#d97706', fontSize: '0.82rem' }}>{apercu.Message}</p>}
+      {apercu?.Disponible && (
+        <>
+          <Grille min={160}>
+            <Tuile libelle="Personnes souscrites" valeur={fcfa(apercu.Personnes)} detail={`${fcfa(apercu.Polices)} police${apercu.Polices > 1 ? 's' : ''} en cours`} />
+            <Tuile libelle="Déjà dans l'effectif" valeur={fcfa(apercu.DejaConnues)} detail="reconnues par leur matricule" />
+            <Tuile libelle="À ajouter" valeur={fcfa(apercu.AAjouter.length)} couleur="var(--primary-500)" detail={apercu.AMettreAJour || apercu.Retirees ? `${fcfa(apercu.AMettreAJour)} à mettre à jour, ${fcfa(apercu.Retirees)} sorties` : 'absentes de l\'effectif importé'} />
+            <Tuile libelle="Sans matricule" valeur={fcfa(apercu.SansMatricule.length)} couleur={apercu.SansMatricule.length ? '#d97706' : undefined} detail="à compléter dans le contrat" />
+          </Grille>
+          {apercu.AAjouter.length > 0 && (
+            <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.8rem' }}>
+              <thead>{entetes}</thead><tbody>{apercu.AAjouter.slice(0, 100).map(ligne)}</tbody>
+            </table></div>
+          )}
+          {apercu.AAjouter.length > 100 && <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>{`Et ${fcfa(apercu.AAjouter.length - 100)} autres personnes.`}</p>}
+          {apercu.SansMatricule.length > 0 && (
+            <>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#d97706' }}>Sans matricule du gestionnaire, ces personnes ne peuvent pas être rapprochées du relevé : saisissez leur matricule dans le contrat Oreole Santé.</p>
+              <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.8rem' }}>
+                <thead>{entetes}</thead><tbody>{apercu.SansMatricule.map(ligne)}</tbody>
+              </table></div>
+            </>
+          )}
+          <div>
+            <button type="button" className="btn btn-primary" disabled={envoi || !aEcrire} onClick={ajouter} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              {envoi ? <Loader2 size={14} className="spin" /> : <Users size={14} />} {aEcrire ? "Ajouter à l'effectif" : "L'effectif est à jour"}
+            </button>
+          </div>
+        </>
+      )}
+    </Panneau>
+  );
+};
+
 const OngletImports = () => {
   const { success, error: toastError } = useToast();
   const [fichier, setFichier] = useState(null);
@@ -520,6 +600,7 @@ const OngletImports = () => {
         )}
         {analyse?.ColonnesManquantes?.length > 0 && <p style={{ margin: 0, color: '#d97706', fontSize: '0.8rem' }}>Feuilles écartées, colonnes absentes : {analyse.ColonnesManquantes.join(' ; ')}</p>}
       </Panneau>
+      <PanneauSouscriptions onAjout={recharger} />
       <Panneau titre="Fichiers importés">
         <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
           <thead><tr><th>Date</th><th>Fichier</th><th>Nature</th><th>Garants</th><th>Clôtures</th><th style={DROITE}>Lignes</th><th style={DROITE}>Nouvelles</th><th style={DROITE}>Montants changés</th><th>Par</th></tr></thead>

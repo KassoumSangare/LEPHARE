@@ -26,7 +26,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 
 from production.renouvellement import AUTHENTIFICATION, _lignes
 
-from .consommations import ErreurConsommation, SEUIL_ALERTE_PROVISION, _iso, _nombre, _reponse, lire_date, normaliser
+from .consommations import ErreurConsommation, SEUIL_ALERTE_PROVISION, SOURCE_SOUSCRIPTIONS, _iso, _nombre, _reponse, lire_date, normaliser
 
 ZERO = Decimal("0")
 MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
@@ -173,8 +173,10 @@ def date_effectif(cursor):
     """Date de situation de l'effectif courant : la plus récente des imports qui l'ont mis à jour (date d'import avant la migration 0216)."""
     cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
     situation = "COALESCE(r.situation, r.dateimport::date)" if cursor.fetchone()[0] else "r.dateimport::date"
+    # les ajouts depuis les souscriptions Oreole Santé de LE PHARE ne datent pas l'effectif du gestionnaire
     cursor.execute(f"""SELECT max({situation}) FROM lephare_sante_releve r
-                       WHERE r.idreleve IN (SELECT DISTINCT idreleve FROM lephare_sante_effectif WHERE actif)""")
+                       WHERE r.idreleve IN (SELECT DISTINCT idreleve FROM lephare_sante_effectif WHERE actif) AND r.fichier <> %s""",
+                   [SOURCE_SOUSCRIPTIONS])
     return cursor.fetchone()[0]
 
 
