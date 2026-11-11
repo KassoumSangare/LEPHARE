@@ -96,7 +96,7 @@ def refus_decaissement(reglement):
     if (reglement.get("code_mode") or "") in MODES_EXCLUS:
         return "Ce mode (annulation, contrepartie, décaissement de prime mal affectée) ne s'annule pas."
     if reglement.get("cheque"):
-        return "Ce règlement est un chèque du portefeuille : déclarez-le impayé dans l'onglet Chèques."
+        return "Ce règlement est un chèque du portefeuille : annulez-le dans l'onglet Chèques (bouton Annuler)."
     if reglement.get("reverse"):
         return "Ce règlement est déjà reversé à la compagnie : annulez d'abord le bordereau de reversement."
     return ""
@@ -192,7 +192,7 @@ def decaissements(parametres):
             # Réencaissement décaissé : la somme se réencaisse depuis son origine, qui redevient à réencaisser
             reste, code = 0.0, "REPORTE"
             libelle = (f"Reporté sur l'annulation n° {l['iddecaissementorigine']}" if l["iddecaissementorigine"]
-                       else "Reporté sur le chèque impayé")
+                       else "Reporté sur le chèque annulé")
         if statut and statut != code:
             continue
         resultat.append({"IdDecaissement": l["iddecaissement"], "IdEncaissement": l["idencaissement"], "NumeroPiece": l["numeropiece"], "Mode": l["mode"],

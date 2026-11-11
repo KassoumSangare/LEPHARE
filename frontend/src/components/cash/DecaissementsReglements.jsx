@@ -104,7 +104,7 @@ export const ReglementsDecaissables = ({ onDecaisse }) => {
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
         Espèces, virement, paiement mobile, carte, traite ou compensation : un règlement s'annule avec son motif (fonds rendus au client, virement rejeté,
         erreur de caisse…). Son encaissement est contre-passé et ses quittances redeviennent à encaisser. Un chèque du portefeuille se traite depuis l'onglet Chèques
-        (Impayé) ; un règlement déjà reversé à la compagnie ne s'annule pas.
+        (bouton Annuler) ; un règlement déjà reversé à la compagnie ne s'annule pas.
       </p>
       <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 240px' }}>
@@ -269,7 +269,7 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
             onClick={() => setStatut(code)}>{libelle}</button>
         ))}
       </div>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>Règlements annulés hors chèques ; les chèques impayés restent suivis dans l'onglet Chèques.</p>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>Règlements annulés hors chèques ; les chèques annulés restent suivis dans l'onglet Chèques.</p>
       <div className="table-wrapper">
         <table className="data-table" style={{ fontSize: '0.83rem' }}>
           <thead><tr><th>Annulé le</th><th>Pièce</th><th>Mode</th><th>Client</th><th>Quittance(s)</th><th style={{ textAlign: 'right' }}>Montant</th><th style={{ textAlign: 'right' }}>Réencaissé</th><th>Statut</th><th>Motif</th><th>Actions</th></tr></thead>

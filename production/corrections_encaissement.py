@@ -196,7 +196,7 @@ def _refus_commun(f):
     if f["code_mode"] in MODES_EXCLUS:
         return "Ce mode (annulation, contrepartie, décaissement de prime mal affectée) ne se corrige pas."
     if f["cheque"] and f["cheque"]["statut"] in ("IMPAYE", "REENCAISSE"):
-        return "Le chèque de cette pièce est déclaré impayé : il se traite dans le Portefeuille des règlements."
+        return "Le chèque de cette pièce est annulé dans le Portefeuille des règlements : il s'y réencaisse."
     return ""
 
 
@@ -526,6 +526,8 @@ def _reponse(fonction, *args, code=status.HTTP_200_OK):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_du_jour(request):
+    if not a_le_droit(request.user, "encaissements.view"):
+        return Response({"erreur": "Accès refusé : droit « Consulter la caisse » requis."}, status=status.HTTP_403_FORBIDDEN)
     return _reponse(encaissements_du_jour, request.user, str(request.query_params.get("tous") or "") in ("1", "true"))
 
 
@@ -533,6 +535,9 @@ def vue_du_jour(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_fiche(request, id_encaissement):
+    # Défense en profondeur : la garde centrale exige déjà ce droit (autorisations/garde.py), qui ouvre aussi l'état des encaissements
+    if not a_le_droit(request.user, "encaissements.view"):
+        return Response({"erreur": "Accès refusé : droit « Consulter la caisse » requis."}, status=status.HTTP_403_FORBIDDEN)
     return _reponse(fiche, request.user, id_encaissement)
 
 

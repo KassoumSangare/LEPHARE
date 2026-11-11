@@ -38,7 +38,7 @@ const versJjMmAaaa = (iso) => iso.split('-').reverse().join('-');
 const STATUTS = [
   { code: 'A_DEPOSER', libelle: 'À déposer', couleur: 'blue' },
   { code: 'ENCAISSE', libelle: 'Encaissé', couleur: 'emerald' },
-  { code: 'IMPAYE', libelle: 'Impayé', couleur: 'rose' },
+  { code: 'IMPAYE', libelle: 'Annulé', couleur: 'rose' },
   { code: 'REENCAISSE', libelle: 'Réencaissé', couleur: 'amber' },
 ];
 const statut = (code) => STATUTS.find((s) => s.code === code) || STATUTS[1];
@@ -66,7 +66,7 @@ const messageErreur = (err, defaut) => {
 const ligneVide = (banque = '') => ({ numero: '', montant: 0, date: '', banque });
 
 // Portefeuille des chèques (stdcheque) : chèques reçus en caisse et chèques remis d'avance par
-// un client avec un échéancier de dépôt ; suivi des impayés (décaissement puis réencaissement).
+// un client avec un échéancier de dépôt ; suivi des chèques annulés (annulation puis réencaissement ; « Annuler » à la place de « Impayé » depuis le 2026-11-11).
 export const ChequeManagementPage = () => {
   const { success, error: toastError } = useToast();
   const [cheques, setCheques] = useState([]);
@@ -230,7 +230,7 @@ export const ChequeManagementPage = () => {
   };
 
   // ---------------------------------------------------------------------------------------------
-  // Chèque impayé : décaissement (motif), puis réencaissement (références)
+  // Chèque annulé (revenu impayé, rejeté…) : annulation (motif), puis réencaissement (références)
   // ---------------------------------------------------------------------------------------------
   const [decaissement, setDecaissement] = useState(null); // { cheque, motif, date }
 
@@ -243,11 +243,11 @@ export const ChequeManagementPage = () => {
         motif: decaissement.motif.trim(),
         date_decaissement: decaissement.date,
       });
-      success(res.data?.message || 'Chèque déclaré impayé.');
+      success(res.data?.message || 'Chèque annulé.');
       setDecaissement(null);
       chargerCheques();
     } catch (err) {
-      toastError(messageErreur(err, "Le décaissement n'a pas pu être enregistré."));
+      toastError(messageErreur(err, "L'annulation n'a pas pu être enregistrée."));
     } finally {
       setEnvoi(false);
     }
@@ -366,10 +366,10 @@ export const ChequeManagementPage = () => {
               type="button"
               className="btn btn-secondary"
               style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', color: '#f87171' }}
-              title="Chèque revenu impayé : annule ses encaissements"
+              title="Annuler le chèque (revenu impayé, rejeté, erreur…) : ses encaissements sont contre-passés"
               onClick={() => setDecaissement({ cheque: row, motif: '', date: aujourdhui() })}
             >
-              <Ban size={13} /> Impayé
+              <Ban size={13} /> Annuler
             </button>
           )}
           {row.statut === 'IMPAYE' && (
@@ -408,7 +408,7 @@ export const ChequeManagementPage = () => {
             Portefeuille des règlements
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-            Chèques reçus en caisse, échéanciers de chèques à déposer, chèques impayés, annulation de tout autre règlement (espèces, virement, paiement mobile…) et réencaissement.
+            Chèques reçus en caisse, échéanciers de chèques à déposer, annulation des chèques et de tout autre règlement (espèces, virement, paiement mobile…) et réencaissement.
           </p>
         </div>
         {vue === 'cheques' && (
@@ -585,8 +585,8 @@ export const ChequeManagementPage = () => {
         </form>
       </Modal>
 
-      {/* Décaissement d'un chèque impayé */}
-      <Modal isOpen={Boolean(decaissement)} onClose={() => setDecaissement(null)} title="Chèque impayé : décaissement">
+      {/* Annulation d'un chèque */}
+      <Modal isOpen={Boolean(decaissement)} onClose={() => setDecaissement(null)} title="Annulation d'un chèque">
         {decaissement && (
           <form onSubmit={enregistrerDecaissement}>
             <div style={{ display: 'flex', gap: '0.6rem', padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', marginBottom: '1rem', fontSize: '0.85rem' }}>
@@ -597,7 +597,7 @@ export const ChequeManagementPage = () => {
               </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Motif du décaissement (* requis)</label>
+              <label className="form-label">Motif de l'annulation (* requis)</label>
               <textarea
                 className="form-control"
                 required
@@ -609,28 +609,28 @@ export const ChequeManagementPage = () => {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Date du décaissement</label>
+              <label className="form-label">Date de l'annulation</label>
               <input type="date" className="form-control" required value={decaissement.date}
                 onChange={(e) => setDecaissement((prev) => ({ ...prev, date: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setDecaissement(null)}>Annuler</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setDecaissement(null)}>Fermer</button>
               <button type="submit" className="btn btn-primary" disabled={envoi} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
-                {envoi ? 'Enregistrement…' : 'Déclarer impayé'}
+                {envoi ? 'Enregistrement…' : 'Annuler le chèque'}
               </button>
             </div>
           </form>
         )}
       </Modal>
 
-      {/* Réencaissement d'un chèque impayé */}
-      <Modal isOpen={Boolean(reencaissement)} onClose={() => setReencaissement(null)} title="Réencaissement d'un chèque impayé" size="large">
+      {/* Réencaissement d'un chèque annulé */}
+      <Modal isOpen={Boolean(reencaissement)} onClose={() => setReencaissement(null)} title="Réencaissement d'un chèque annulé" size="large">
         {reencaissement && (
           <form onSubmit={enregistrerReencaissement}>
             <div style={{ padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(30, 41, 59, 0.6)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-              Chèque impayé <strong>{reencaissement.cheque.numero_cheque}</strong> ({reencaissement.cheque.nom_banque}) -
-              {' '}décaissé le {formatDate(reencaissement.cheque.date_decaissement)} : « {reencaissement.cheque.motif_decaissement} ».
-              {' '}Montant impayé : <strong>{fcfa(reencaissement.cheque.montant_impaye)}</strong>
+              Chèque annulé <strong>{reencaissement.cheque.numero_cheque}</strong> ({reencaissement.cheque.nom_banque}) -
+              {' '}annulé le {formatDate(reencaissement.cheque.date_decaissement)} : « {reencaissement.cheque.motif_decaissement} ».
+              {' '}Montant annulé : <strong>{fcfa(reencaissement.cheque.montant_impaye)}</strong>
               {Number(reencaissement.cheque.montant_reencaisse) > 0 && <>, déjà réencaissé : {fcfa(reencaissement.cheque.montant_reencaisse)}</>}.
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginBottom: '1rem' }}>

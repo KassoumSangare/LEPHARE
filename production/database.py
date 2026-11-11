@@ -2879,7 +2879,7 @@ def save_premium_collection(user, input_data):
             )
             if not cheque_impaye:
                 raise ValidationError(
-                    "Chèque impayé introuvable ou déjà réencaissé."
+                    "Chèque annulé introuvable ou déjà réencaissé."
                 )
             if not reference_reencaissement:
                 raise ValidationError(
@@ -2906,7 +2906,7 @@ def save_premium_collection(user, input_data):
             )
             if cheque and cheque.statut == Cheque.Statut.IMPAYE:
                 raise ValidationError(
-                    "Ce chèque est revenu impayé : il ne peut plus régler de quittance."
+                    "Ce chèque est annulé (Portefeuille des règlements) : il ne peut plus régler de quittance."
                 )
             # Un chèque qui règle plusieurs quittances garde le montant de son premier usage :
             # un autre montant saisi est une erreur (il était ignoré sans prévenir)
@@ -3019,6 +3019,10 @@ def save_premium_collection(user, input_data):
     return res_dict
 
 
+# État d'un chèque dans les messages du Portefeuille des règlements (« Annuler » au lieu de « Impayé », 2026-11-11)
+ETATS_CHEQUE = {"A_DEPOSER": "à déposer", "IMPAYE": "déjà annulé", "REENCAISSE": "annulé puis réencaissé"}
+
+
 def decaisser_cheque_impaye(user, id_cheque, motif, date_decaissement):
     """
     Chèque revenu impayé : annule chacun des encaissements qu'il a réglés
@@ -3027,14 +3031,14 @@ def decaisser_cheque_impaye(user, id_cheque, motif, date_decaissement):
     """
     motif = str(motif or "").strip()
     if not motif:
-        raise ValidationError("Le motif du décaissement doit être précisé.")
+        raise ValidationError("Le motif de l'annulation doit être précisé.")
     with transaction.atomic():
         cheque = Cheque.objects.select_for_update().filter(id_cheque=id_cheque).first()
         if not cheque:
             raise ValidationError("Chèque introuvable.")
         if cheque.statut != Cheque.Statut.ENCAISSE:
             raise ValidationError(
-                f"Ce chèque est « {cheque.get_statut_display()} » : décaissement impossible."
+                f"Ce chèque est {ETATS_CHEQUE.get(cheque.statut, cheque.get_statut_display().lower())} : annulation impossible."
             )
         ids = list(cheque.operations.values_list("id_encaissement", flat=True))
         encaissements = list(
@@ -3074,7 +3078,7 @@ def decaisser_cheque_impaye(user, id_cheque, motif, date_decaissement):
         "id_cheque": cheque.id_cheque,
         "montant_impaye": montant,
         "encaissements_annules": len(encaissements),
-        "message": f"Chèque déclaré impayé : {len(encaissements)} encaissement(s) annulé(s).",
+        "message": f"Chèque annulé : {len(encaissements)} encaissement(s) contre-passé(s), les quittances sont de nouveau à encaisser.",
     }
 
 
