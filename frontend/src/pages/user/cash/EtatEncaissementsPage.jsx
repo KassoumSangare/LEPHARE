@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileSpreadsheet, FileText, ListChecks, Loader2, Printer, RefreshCw, Search, X } from 'lucide-react';
+import { FileSpreadsheet, FileText, ListChecks, Loader2, PencilLine, Printer, RefreshCw, Search, X } from 'lucide-react';
 import { financeApi, settingsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
+import { CorrectionEncaissement } from '../../../components/cash/CorrectionEncaissement';
+import { aLeDroit } from '../../../utils/droits';
 import { useToast } from '../../../context/ToastContext';
 import {
   aujourdhui, correspondRecherche, dateFr, exporterEtatEncaissements, fcfa, messageErreurApi, recentsDabord,
@@ -36,6 +38,10 @@ export const EtatEncaissementsPage = () => {
   const [etat, setEtat] = useState(null);
   const [chargement, setChargement] = useState(false);
   const [recherche, setRecherche] = useState('');
+  // Correction d'une pièce saisie par erreur (référence, client, doublon) ; le serveur dit ce qui est permis
+  const [aCorriger, setACorriger] = useState(null);
+  const peutCorriger = aLeDroit('encaissements.create') || aLeDroit('encaissements.cancel');
+  const corrigeable = (l) => peutCorriger && l.Montant > 0 && !['ANNULE', 'IMPAYE', 'DECAISSEMENT'].includes(l.Statut);
 
   useEffect(() => {
     settingsApi.getCompanies().then((l) => setCompagnies(Array.isArray(l) ? l : [])).catch(() => {});
@@ -222,6 +228,7 @@ export const EtatEncaissementsPage = () => {
                   <tr>
                     <th>Date de saisie</th><th>N° pièce</th><th>Compagnie</th><th>Client</th><th>Branche</th><th>Quittance</th>
                     <th>Mode</th><th>Référence</th><th style={{ textAlign: 'right' }}>Montant</th><th>Statut</th>
+                    {peutCorriger && <th aria-label="Corriger" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -244,10 +251,20 @@ export const EtatEncaissementsPage = () => {
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: l.Montant < 0 ? 'var(--accent-rose)' : undefined }}>{fcfa(l.Montant)}</td>
                       <td title={l.MotifAnnulation || undefined} style={{ whiteSpace: 'nowrap' }}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
+                      {peutCorriger && (
+                        <td>
+                          {corrigeable(l) && (
+                            <button type="button" className="admin-bouton-icone" onClick={() => setACorriger(l.IdEncaissement)}
+                              title={`Corriger la pièce ${l.NumeroPiece} : référence, client, quittance ou doublon`} aria-label={`Corriger la pièce ${l.NumeroPiece}`}>
+                              <PencilLine size={15} />
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {!lignesVisibles.length && (
-                    <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                    <tr><td colSpan={peutCorriger ? 11 : 10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
                       {etat.Lignes.length ? 'Aucun encaissement ne correspond à la recherche.' : 'Aucun encaissement pour ces critères.'}
                     </td></tr>
                   )}
@@ -257,6 +274,7 @@ export const EtatEncaissementsPage = () => {
           </div>
         </>
       )}
+      {aCorriger && <CorrectionEncaissement idEncaissement={aCorriger} onClose={() => setACorriger(null)} onCorrige={charger} />}
     </div>
   );
 };

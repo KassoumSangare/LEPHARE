@@ -190,18 +190,21 @@ def lire_fichier(contenu, nom_fichier=""):
 
 
 # ------------------------------------------------------------------ contrôles d'une ligne
+# Un salarié peut ne pas cotiser un mois (règle de l'utilisateur du 2026-11-11) : parts vides ou nulles admises, il reste dans
+# l'état à 0 F ; dans les états de CI-ENERGIES il est le plus souvent absent du fichier du mois puis y revient (comparer).
+SANS_COTISATION = "Aucune cotisation ce mois."
+
+
 def controler_ligne(ligne):
     """Erreurs (bloquantes) et avertissements d'un salarié saisi ou importé."""
     erreurs, avertissements = [], []
     if not ligne["Nom"]:
         erreurs.append("Nom absent.")
     salarie, employeur = ligne.get("CotisationSalarie"), ligne.get("CotisationEmployeur")
-    if salarie is None and employeur is None:
-        erreurs.append("Cotisations absentes.")
-    elif (salarie or 0) < 0 or (employeur or 0) < 0:
+    if (salarie or 0) < 0 or (employeur or 0) < 0:
         erreurs.append("Une cotisation ne peut pas être négative.")
     elif not (salarie or 0) and not (employeur or 0):
-        erreurs.append("Cotisations nulles : saisissez les montants ou retirez le salarié.")
+        avertissements.append(SANS_COTISATION)
     if not ligne["Matricule"]:
         avertissements.append("Sans matricule, le salarié ne pourra pas être suivi d'un mois à l'autre.")
     return erreurs, avertissements
@@ -263,14 +266,40 @@ def etat_precedent(cursor, id_client, avant, exclure=0):
         return None
     id_devis, numero, effet, confirme = ligne
     return {"IdDevis": id_devis, "NumeroDevis": numero, "Mois": _iso(effet), "LibelleMois": libelle_mois(effet), "Confirme": confirme,
-            "Cotisants": lire_cotisants(cursor, id_devis)}
+            "Cotisants": lire_cotisants(cursor, id_devis), "Connus": sorted(salaries_connus(cursor, id_client, avant, exclure))}
+
+
+def salaries_connus(cursor, id_client, avant, exclure=0):
+    """Salariés (clé matricule, sinon nom) figurant dans au moins un état du souscripteur antérieur au mois donné : un salarié
+    absent le mois précédent qui revient reprend ses cotisations, il n'est pas un nouvel entrant."""
+    if not id_client or not vie_offres.tables_presentes(cursor):
+        return set()
+    cursor.execute(
+        """
+        SELECT DISTINCT c.matricule, c.nom, c.prenoms FROM lephare_vie_cotisant c
+        JOIN stddevis d ON d.iddevis = c.iddevis
+        JOIN lephare_vie_devis v ON v.iddevis = d.iddevis
+        JOIN lephare_vie_offre o ON o.idoffre = v.idoffre AND o.saisie = %s
+        WHERE d.idclient = %s AND d.idproduit = 10 AND d.iddevis <> %s AND NOT COALESCE(d.archive, FALSE)
+          AND (%s::date IS NULL OR d.dateeffet::date < %s::date)
+        """,
+        [vie_offres.SAISIE_COTISATION, id_client, exclure or 0, avant, avant],
+    )
+    return {_cle({"Matricule": m, "Nom": n, "Prenoms": p}) for m, n, p in cursor.fetchall()}
+
+
+def _total(ligne):
+    return (ligne.get("CotisationSalarie") or 0) + (ligne.get("CotisationEmployeur") or 0)
 
 
 def comparer(lignes, precedent):
-    """Entrées, sorties et cotisations modifiées depuis l'état précédent (par matricule, sinon par nom)."""
+    """Écarts avec l'état précédent (par matricule, sinon par nom). Un salarié peut ne pas cotiser un mois : absent du fichier
+    (« Sortants » : sans cotisation ce mois, ou parti) ou présent à 0 F (« SansCotisation ») ; à son retour il « reprend »
+    (« Reprises » : déjà dans un état antérieur, precedent["Connus"]) ; « Entrants » = jamais vus pour ce souscripteur."""
     if not precedent:
         return None
     avant = {_cle(l): l for l in precedent["Cotisants"]}
+    connus = set(precedent.get("Connus") or ()) | avant.keys()
     maintenant = {_cle(l): l for l in lignes if l.get("Nom") or l.get("Matricule")}
     resume = lambda l: {k: l.get(k) for k in ("Matricule", "Nom", "Prenoms", "CotisationSalarie", "CotisationEmployeur")}  # noqa: E731
     modifies = []
@@ -278,14 +307,17 @@ def comparer(lignes, precedent):
         a, m = avant[cle], maintenant[cle]
         if (a["CotisationSalarie"] or 0) != (m.get("CotisationSalarie") or 0) or (a["CotisationEmployeur"] or 0) != (m.get("CotisationEmployeur") or 0):
             modifies.append(resume(m) | {"AncienneSalarie": a["CotisationSalarie"], "AncienneEmployeur": a["CotisationEmployeur"]})
-    total_avant = sum((l["CotisationSalarie"] or 0) + (l["CotisationEmployeur"] or 0) for l in precedent["Cotisants"])
-    total = sum((l.get("CotisationSalarie") or 0) + (l.get("CotisationEmployeur") or 0) for l in maintenant.values())
+    total_avant = sum(_total(l) for l in precedent["Cotisants"])
+    total = sum(_total(l) for l in maintenant.values())
+    arrives = maintenant.keys() - avant.keys()
     return {
         "IdDevis": precedent["IdDevis"], "NumeroDevis": precedent["NumeroDevis"], "Mois": precedent["Mois"],
         "LibelleMois": precedent["LibelleMois"], "Confirme": precedent["Confirme"],
         "Salaries": len(avant), "Total": total_avant, "Ecart": total - total_avant,
-        "Entrants": [resume(maintenant[c]) for c in sorted(maintenant.keys() - avant.keys())],
+        "Entrants": [resume(maintenant[c]) for c in sorted(arrives - connus)],
+        "Reprises": [resume(maintenant[c]) for c in sorted(arrives & connus)],
         "Sortants": [resume(avant[c]) for c in sorted(avant.keys() - maintenant.keys())],
+        "SansCotisation": [resume(maintenant[c]) for c in sorted(maintenant) if not _total(maintenant[c])],
         "Modifies": sorted(modifies, key=lambda l: (l["Nom"], l["Prenoms"])),
     }
 
@@ -332,6 +364,11 @@ def analyser(contenu, nom_fichier=""):
             attendu = None
         if attendu is not None and attendu != calcule:
             avertissements.append(f"Total des {libelle} du fichier ({attendu:,.0f} F) différent de la somme des lignes ({calcule:,.0f} F).".replace(",", " "))
+    sans_cotisation = sum(1 for l in lignes if SANS_COTISATION in l["Avertissements"])
+    if not total_salarie + total_employeur:
+        erreurs.append("Aucune cotisation dans cet état : le total du mois est nul.")
+    elif sans_cotisation:
+        avertissements.append(f"{sans_cotisation} salarié(s) sans cotisation ce mois (0 F) : gardé(s) dans l'état, sans prime.")
     mois = fichier["Mois"]
     if not mois:
         avertissements.append("Mois de l'état non reconnu dans le titre, la feuille ni le nom du fichier : choisissez-le à l'écran.")
@@ -380,6 +417,62 @@ def polices_annotees(cursor, id_client):
     return polices
 
 
+# ------------------------------------------------------------------ renouvellement mensuel (demande du 2026-11-11)
+# « Au renouvellement de la Retraite complémentaire, on télécharge chaque mois le fichier des cotisations » : le mois suivant
+# d'une police se crée depuis l'écran Vie avec l'état du mois (afa.enregistrer exige le fichier), jamais en recopiant le total
+# du mois précédent comme le renouvellement des autres branches (production/renouvellement.py renvoie vers l'écran Vie).
+def etat_mensuel_de_police(cursor, base):
+    """Police Vie renouvelée chaque mois par l'état des cotisations : de quoi importer l'état du mois suivant, None pour une
+    autre police. base : contrat de base de la police (renouvellement._contrat_base). Police reprise d'URANUS sans offre
+    connue : Retraite complémentaire si sa période est d'un mois au plus."""
+    if base["idproduit"] != 10 or not vie_offres.tables_presentes(cursor):
+        return None
+    if vie_offres.offres_des_devis(cursor, [base["iddevis"]]):
+        offre = vie_offres.offre_du_devis(cursor, base["iddevis"])
+        if offre["Saisie"] != vie_offres.SAISIE_COTISATION:
+            return None
+    else:
+        if (base["dateexpiration"] - base["dateeffet"]).days > 31:
+            return None
+        offre = next((o for o in vie_offres.offres(cursor, actives_seulement=False)
+                      if o["Saisie"] == vie_offres.SAISIE_COTISATION and o["Periodicite"] == "MENSUELLE"), None)
+        if not offre:
+            return None
+    dernier = base["dateeffet"].replace(day=1)
+    suivant = date(dernier.year + dernier.month // 12, dernier.month % 12 + 1, 1)
+    return {
+        "IdContrat": base["idcontrat"], "NumeroPolice": base["numeropolice"], "IdClient": base["idclient"], "Client": base["client"],
+        "IdCompagnie": base["idcompagnie"], "Compagnie": (base["compagnie"] or "").strip(), "IdOffreVie": offre["IdOffre"],
+        "Offre": offre["Libelle"], "DernierMois": _iso(dernier), "LibelleDernierMois": libelle_mois(dernier),
+        "MoisSuivant": _iso(suivant), "LibelleMoisSuivant": libelle_mois(suivant),
+    }
+
+
+def message_fichier_exige(effet):
+    return (f"Mois suivant de la police : importez l'état des cotisations de {libelle_mois(effet)} reçu du souscripteur, "
+            "chaque mois se renouvelle avec son fichier.")
+
+
+def message_renouvellement(etat):
+    return (f"{etat['Offre']} : chaque mois se renouvelle avec l'état des cotisations reçu du souscripteur. Importez l'état de "
+            f"{etat['LibelleMoisSuivant']} dans l'écran Vie (bouton « Importer l'état de {etat['LibelleMoisSuivant']} »).")
+
+
+def verifier_etat_avant_confirmation(cursor, id_devis):
+    """Devis d'état des cotisations sans salarié (devis de renouvellement qui n'aurait recopié que le total du mois précédent) :
+    pas de confirmation avant l'import de l'état du mois. ValueError sinon (message affiché par l'écran)."""
+    if not vie_offres.tables_presentes(cursor):
+        return
+    cursor.execute("SELECT idproduit, dateeffet::date FROM stddevis WHERE iddevis = %s", [id_devis])
+    ligne = cursor.fetchone()
+    if not ligne or ligne[0] != 10 or vie_offres.offre_du_devis(cursor, id_devis)["Saisie"] != vie_offres.SAISIE_COTISATION:
+        return
+    cursor.execute("SELECT 1 FROM lephare_vie_cotisant WHERE iddevis = %s LIMIT 1", [id_devis])
+    if not cursor.fetchone():
+        raise ValueError(f"État des cotisations de {libelle_mois(ligne[1])} absent : ouvrez le devis dans l'écran Vie et importez le "
+                         "fichier du mois avant de le confirmer.")
+
+
 # ------------------------------------------------------------------ enregistrement (appelé par afa.enregistrer)
 def cotisants_saisis(donnees):
     """Salariés envoyés par l'écran, contrôlés comme à l'import ; ErreurAfa au premier problème bloquant."""
@@ -406,6 +499,8 @@ def cotisants_saisis(donnees):
         cotisants.append(ligne)
     if not cotisants:
         raise ErreurAfa("Ajoutez au moins un salarié, ou importez l'état des cotisations.")
+    if not any(c["CotisationSalarie"] or c["CotisationEmployeur"] for c in cotisants):
+        raise ErreurAfa("Aucune cotisation dans cet état : le total du mois est nul, il n'y a rien à enregistrer.")
     return cotisants
 
 
@@ -523,6 +618,23 @@ def precedent(request):
         return Response({"error": "Paramètres illisibles."}, status=status.HTTP_400_BAD_REQUEST)
     with connection.cursor() as cursor:
         return Response({"Etat": etat_precedent(cursor, id_client, avant, exclure)})
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def renouveler(request, idcontrat):
+    """Mois suivant d'une police d'état des cotisations : souscripteur, compagnie, offre et mois à importer (écran Vie)."""
+    from .renouvellement import ErreurRenouvellement, _contrat_base
+
+    with connection.cursor() as cursor:
+        try:
+            etat = etat_mensuel_de_police(cursor, _contrat_base(cursor, idcontrat))
+        except ErreurRenouvellement as erreur:
+            return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+    if not etat:
+        return Response({"error": "Cette police n'est pas renouvelée par un état mensuel des cotisations."}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({"EtatMensuel": etat})
 
 
 @api_view(["GET"])

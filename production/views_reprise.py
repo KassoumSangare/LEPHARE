@@ -364,8 +364,9 @@ def referentiels(request):
     with connection.cursor() as cursor:
         compagnies = _lignes_sql(cursor, "SELECT idcompagnie AS id, raisonsociale AS nom FROM stdcompagnie "
                                          "WHERE idcompagnie > 0 AND COALESCE(active, true) ORDER BY raisonsociale")
+        # 1 à 9 et la Vie (10, AFA, Retraite complémentaire, Temporaire décès : saisie /user/reprises/saisie/afa, 2026-11-11)
         produits = _lignes_sql(cursor, "SELECT idproduit AS id, libelleproduit AS libelle FROM stdproduit "
-                                       "WHERE active AND idproduit BETWEEN 1 AND 9 ORDER BY idproduit")
+                                       "WHERE active AND idproduit BETWEEN 1 AND 10 ORDER BY idproduit")
         for p in produits:
             p.update(risque_branche(p["id"]))
             p["categories"] = [{"id": t, "libelle": f"{c} - {l}", "code": c}

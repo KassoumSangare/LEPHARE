@@ -1273,6 +1273,8 @@ export const afaApi = {
     params: { client: idClient, avant: avant || undefined, devis: idDevis || undefined },
   })).data,
   modeleRetraite: async () => (await apiClient.get('/afa/retraite/modele/', { responseType: 'blob' })).data,
+  // Mois suivant d'une police d'état des cotisations (page Renouvellement) : souscripteur, compagnie, offre et mois à importer
+  renouvelerRetraite: async (idContrat) => (await apiClient.get(`/afa/retraite/renouveler/${idContrat}/`)).data,
 };
 
 // Réglages Vie (configuration_api/parametrage_vie.py) : offres commerciales de la liste déroulante du devis Vie
@@ -1921,6 +1923,16 @@ export const cashApi = {
   // GET /api/listedetailencaissement/:idencaissement (lignes d'un encaissement, une par quittance)
   getDetailsEncaissement: async (idencaissement) =>
     extractData(await apiClient.get(`/listedetailencaissement/${idencaissement}`)),
+  // Correction d'un encaissement saisi par erreur (production/corrections_encaissement.py) : pièces du jour, fiche, références,
+  // annulation (doublon) ou annulation et réaffectation ; motif aussi en en-tête X-Motif pour le journal
+  encaissementsDuJour: async (tous = false) => (await apiClient.get('/caisse/encaissements/du-jour/', { params: tous ? { tous: 1 } : undefined })).data,
+  ficheCorrection: async (id) => (await apiClient.get(`/caisse/encaissements/${id}/correction/`)).data,
+  corrigerReferences: async (id, donnees) => (await apiClient.post(`/caisse/encaissements/${id}/correction/references/`, donnees, {
+    headers: { 'X-Motif': encodeURIComponent(donnees.motif || '') }, motifEnvoye: true,
+  })).data,
+  annulerEncaissement: async (id, donnees) => (await apiClient.post(`/caisse/encaissements/${id}/correction/annulation/`, donnees, {
+    headers: { 'X-Motif': encodeURIComponent(donnees.motif || '') }, motifEnvoye: true,
+  })).data,
   // GET /api/detailencaissement/?numeroquittance= (dernier règlement non annulé d'une quittance)
   getDernierReglementQuittance: async (numeroquittance) =>
     extractData(await apiClient.get('/detailencaissement/', { params: { numeroquittance, page_size: 1 } }))[0] || null,

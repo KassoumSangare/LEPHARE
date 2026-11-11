@@ -1,6 +1,6 @@
 """
 Suivi des consommations santé (mission OREOLE SANTÉ du 2026-11-05) : relevés du gestionnaire MCI CARE, droits, plafonds, soldes, statistiques,
-contrôles et détection des cas de fraude.
+contrôles et détection des anomalies (cas de fraude possibles ; « fraude » renommée « anomalie » à l'écran le 2026-11-11).
 
 Règles établies sur les relevés d'OREOLE (rapport d'analyse OREOLE SANTÉ - LE PHARE 2026) :
 - une ligne = une prestation, NUMERO_PREST unique ; les relevés sont cumulatifs : une prestation déjà connue n'est jamais réimportée ni écrasée,
@@ -42,7 +42,7 @@ STATUTS = {"A": "Assuré principal", "C": "Conjoint", "E": "Enfant"}
 SEUIL_BONS, SEUIL_PHARMACIE, SEUIL_PLAFOND = 15, Decimal("200000"), Decimal("0.8")
 CARENCES = {"MATERNITE": 9, "OPTIQUE": 10}
 CARENCE_DEFAUT = 3
-DECISIONS = {"A_INSTRUIRE": "À instruire", "JUSTIFIE": "Justifié", "FRAUDE": "Fraude avérée", "SANS_SUITE": "Sans suite"}
+DECISIONS = {"A_INSTRUIRE": "À instruire", "JUSTIFIE": "Justifié", "FRAUDE": "Anomalie avérée", "SANS_SUITE": "Sans suite"}
 
 # Relevé de prestations : en-tête du gestionnaire -> colonne ; obligatoires marquées True
 COLONNES_PRESTATIONS = {
@@ -155,13 +155,49 @@ def _iso(v):
 
 
 # ------------------------------------------------------------------ lecture des fichiers
-def _feuilles(contenu):
+def _ligne_xls(livre, feuille, rang):
+    """Ligne d'une feuille .xls comme openpyxl la rendrait : dates en datetime, nombres entiers sans « .0 » (matricules), vides à None."""
+    import xlrd
+
+    valeurs = []
+    for cellule in feuille.row(rang):
+        if cellule.ctype in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+            valeurs.append(None)
+        elif cellule.ctype == xlrd.XL_CELL_DATE:
+            try:
+                valeurs.append(xlrd.xldate_as_datetime(cellule.value, livre.datemode))
+            except (ValueError, OverflowError):
+                valeurs.append(None)
+        elif cellule.ctype == xlrd.XL_CELL_NUMBER:
+            valeurs.append(int(cellule.value) if float(cellule.value).is_integer() else cellule.value)
+        else:
+            valeurs.append(cellule.value)
+    return tuple(valeurs)
+
+
+def _classeur(contenu):
+    """(titre, lignes) de chaque feuille. Effectifs du gestionnaire aussi en ancien format Excel 97 (.xls, modèles EFFECTIF OREOLE et
+    EFFECTIF OREOLE CGA reçus le 2026-11-11), lus par xlrd ; sinon classeur .xlsx (openpyxl)."""
+    if contenu[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        import xlrd
+
+        try:
+            livre = xlrd.open_workbook(file_contents=contenu)
+        except Exception as erreur:  # xlrd lève des erreurs propres à chaque défaut du fichier
+            raise ErreurConsommation("Fichier .xls illisible : enregistrez-le de nouveau depuis Excel, en .xlsx ou en .xls.") from erreur
+        for feuille in livre.sheets():
+            yield feuille.name, iter([_ligne_xls(livre, feuille, i) for i in range(feuille.nrows)])
+        return
     try:
         classeur = load_workbook(io.BytesIO(contenu), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, KeyError, OSError, ValueError) as erreur:
-        raise ErreurConsommation("Fichier illisible : un classeur Excel (.xlsx) est attendu.") from erreur
+        raise ErreurConsommation("Fichier illisible : un classeur Excel (.xlsx ou .xls) est attendu.") from erreur
     for feuille in classeur.worksheets:
-        lignes = feuille.iter_rows(values_only=True)
+        yield feuille.title, feuille.iter_rows(values_only=True)
+
+
+def _feuilles(contenu):
+    for titre_feuille, lignes in _classeur(contenu):
         tete = []
         for _rang in range(15):
             try:
@@ -175,7 +211,7 @@ def _feuilles(contenu):
         if not tete:
             continue
         if _est_cotisations(tete):
-            yield feuille.title, "COTISATIONS", tete, lignes
+            yield titre_feuille, "COTISATIONS", tete, lignes
             continue
         # Effectifs des analyses d'OREOLE (BASE UNIFIEE, BASE EFFECTIF PRECEDENT / ACTUEL de l'ANALYSE DES SORTANT) : avec la colonne PERIODE,
         # les lignes EXERCICE PRECEDENT forment l'effectif de référence des mouvements et les lignes EXERCICE ACTUEL l'effectif courant ; une
@@ -187,9 +223,9 @@ def _feuilles(contenu):
         elif "SOURCE" in tete:
             nature = None
         else:
-            nature = "EFFECTIF_PRECEDENT" if "PRECEDENT" in normaliser(feuille.title) else "EFFECTIF"
+            nature = "EFFECTIF_PRECEDENT" if "PRECEDENT" in normaliser(titre_feuille) else "EFFECTIF"
         if nature:
-            yield feuille.title, nature, tete, lignes
+            yield titre_feuille, nature, tete, lignes
 
 
 def _est_cotisations(noms):
@@ -270,6 +306,9 @@ def _lire(contenu):
             manquantes.append(f"{titre} : {', '.join(absentes)}")
             continue
         nombre = 0
+        # matricules bénéficiaires présents sur plusieurs lignes de la feuille : la première est gardée, les autres sont signalées
+        # (contrôle Q01 de la qualité de l'effectif, consommations_qualite.py)
+        doublons = Counter()
         periode = tete.index("PERIODE") if nature == "EFFECTIF_PERIODES" else None
         for ligne in lignes:
             l = _convertir(tete, ligne, colonnes)
@@ -289,9 +328,15 @@ def _lire(contenu):
                     cible = precedent if "PRECEDENT" in exercice_ligne else effectif if "ACTUEL" in exercice_ligne else None
                     if cible is None:
                         continue
+                if l["matricule_beneficiaire"] in cible:
+                    doublons[l["matricule_beneficiaire"]] += 1
                 cible.setdefault(l["matricule_beneficiaire"], l)
             nombre += 1
-        feuilles.append({"Feuille": titre, "Nature": nature, "Lignes": nombre})
+        feuille_lue = {"Feuille": titre, "Nature": nature, "Lignes": nombre}
+        if doublons:
+            sources = {**precedent, **effectif}
+            feuille_lue["Doublons"] = [{"Matricule": m, "Lignes": n + 1, "Entreprise": (sources.get(m) or {}).get("police", "")} for m, n in sorted(doublons.items())]
+        feuilles.append(feuille_lue)
     if not feuilles:
         raise ErreurConsommation("Aucune feuille reconnue : il faut un relevé de prestations (colonne NUMERO_PREST), un effectif du gestionnaire "
                                  "(colonne MATBENEF) ou l'état des cotisations (colonnes ENTREPRISES, COTISATIONS SANTE PURE, PROVISIONS POUR PAIEMENT)."
@@ -337,6 +382,8 @@ CHAMPS_PRESTATION = ["numero_prest", "date_cloture", "numero_garant", "garant", 
 # Personnes ajoutées à l'effectif depuis les contrats Oreole Santé de LE PHARE (consommations_souscriptions.py) : import tracé sous ce nom de
 # fichier, sans date de situation ; il ne date pas l'effectif courant et un effectif du gestionnaire ne fait pas sortir ces personnes
 SOURCE_SOUSCRIPTIONS = "Souscriptions Oreole Santé - LE PHARE"
+# Journal d'audit : matricules bénéficiaires en double d'un fichier d'effectif importé (objet = relevé)
+ACTION_DOUBLONS = "consommations.import.doublons"
 CHAMPS_EFFECTIF = ["matricule_beneficiaire", "matricule_assure", "garant", "police", "college", "nom", "prenoms", "statut", "genre", "date_naissance", "date_effet"]
 LONGUEURS = {"garant": 60, "souscripteur": 150, "police": 150, "college": 80, "beneficiaire": 200, "statut": 1, "assure": 200, "centre_prescripteur": 200, "code_centre": 30,
              "centre_executant": 200, "famille": 80, "acte": 20, "medecin": 200, "type": 5, "nom": 100, "prenoms": 150, "genre": 1}
@@ -455,6 +502,15 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
                 f"INSERT INTO lephare_sante_cotisation ({', '.join(colonnes)}) VALUES ({', '.join(['%s'] * len(colonnes))})",
                 [[resume["Exercice"], c["entreprise"], c["effectif"], c["options"], *[c[m] for m in MONTANTS_COTISATIONS], id_releve] for c in cotisations],
             )
+        doublons = [d for f in resume["Feuilles"] for d in f.get("Doublons", [])]
+        if doublons:
+            # Gardés au journal d'audit de l'import : le rapport et l'écran des contrôles les relisent (aucune colonne libre dans les relevés)
+            from autorisations.journal import journaliser
+
+            journaliser(utilisateur=user, module="consommations", action=ACTION_DOUBLONS, objet_type="releve_sante", objet_id=id_releve,
+                        description=f"Import {nom_fichier or ''} : {len(doublons)} matricule(s) bénéficiaire(s) en double, première ligne gardée",
+                        details={"Doublons": doublons[:500], "Fichier": nom_fichier or ""})
+            resume["MatriculesEnDouble"] = len(doublons)
         resume["IdReleve"] = id_releve
         return resume
 
@@ -612,7 +668,7 @@ def signaux_beneficiaire(matricule):
 def instruire(matricule, donnees, user):
     statut_ = str(donnees.get("Statut") or "").strip().upper()
     if statut_ not in DECISIONS:
-        raise ErreurConsommation("Choisissez la décision : à instruire, justifié, fraude avérée ou sans suite.")
+        raise ErreurConsommation("Choisissez la décision : à instruire, justifié, anomalie avérée ou sans suite.")
     observation = str(donnees.get("Observation") or "").strip()[:500]
     if statut_ in ("JUSTIFIE", "FRAUDE", "SANS_SUITE") and len(observation) < 5:
         raise ErreurConsommation("Précisez l'observation qui motive la décision.")
@@ -905,8 +961,8 @@ def controles(code=None):
         prestations = _charger(cursor)
         exercice = _exercice(cursor)
         ecarts = _lignes(cursor, "SELECT * FROM lephare_sante_prestation_ecart ORDER BY idecart DESC LIMIT 200")
-        sans_principal = _lignes(cursor, """SELECT e.matricule_beneficiaire, e.police FROM lephare_sante_effectif e WHERE e.actif AND NOT EXISTS (
-                                                SELECT 1 FROM lephare_sante_effectif a WHERE a.matricule_beneficiaire = e.matricule_assure AND a.statut = 'A')""")
+        effectif = _lignes(cursor, "SELECT * FROM lephare_sante_effectif WHERE actif")
+        doublons = doublons_importes(cursor)
     anomalies = []
 
     def ajouter(code, gravite, libelle, explication, p=None, matricule=None, police="", montant=None):
@@ -950,12 +1006,34 @@ def controles(code=None):
         ajouter("MONTANT_CHANGE", "Moyenne", "Montant modifié par un relevé suivant",
                 f"{e['champ']} : {e['ancienne']} puis {e['nouvelle']} ; la valeur d'origine est conservée.")
         anomalies[-1]["NumeroPrestation"] = e["numero_prest"]
-    for l in sans_principal:
-        ajouter("SANS_PRINCIPAL", "Moyenne", "Bénéficiaire sans assuré principal", "Le matricule assuré n'est pas un assuré principal (statut A) de l'effectif.",
-                matricule=l["matricule_beneficiaire"], police=l["police"])
+    # Qualité de l'effectif (attentes de l'équipe actuariat, point 2.3) : mêmes contrôles que le rapport Word
+    from .consommations_qualite import A_CORRIGER, controler
+
+    for c in controler(effectif, dt.date.today(), doublons):
+        for x in c["Cas"]:
+            ajouter(f"EFFECTIF_{c['Code']}", "Moyenne" if c["Gravite"] == A_CORRIGER else "Faible", c["Libelle"],
+                    " - ".join(filter(None, [x["Statut"] if x["Statut"] != "-" else "", f"{x['Age']} ans" if x["Age"] is not None else "", x["Detail"]])),
+                    matricule=x["Matricule"], police=x["Entreprise"])
     return {"Synthese": [{"Code": c, "Anomalie": next(a["Anomalie"] for a in anomalies if a["Code"] == c), "Gravite": next(a["Gravite"] for a in anomalies if a["Code"] == c),
                           "Nombre": n, "Montant": sum(a["Montant"] or 0 for a in anomalies if a["Code"] == c)} for c, n in Counter(a["Code"] for a in anomalies).most_common()],
             "Lignes": [a for a in anomalies if not code or a["Code"] == code][:2000], "Total": len(anomalies)}
+
+
+def doublons_importes(cursor, garant=""):
+    """Matricules en double des fichiers d'effectif d'où viennent les personnes actives (journal d'audit de leur import, importer())."""
+    cursor.execute("SELECT DISTINCT idreleve::text FROM lephare_sante_effectif WHERE actif AND (%s = '' OR garant = %s)", [garant, garant])
+    releves = [l[0] for l in cursor.fetchall()]
+    if not releves:
+        return []
+    cursor.execute("""SELECT details_json FROM institutionnel_auditlogcima WHERE action = %s AND objet_type = 'releve_sante' AND objet_id = ANY(%s)""",
+                   [ACTION_DOUBLONS, releves])
+    vus, doublons = set(), []
+    for (details,) in cursor.fetchall():
+        for d in (details or {}).get("Doublons", []):
+            if d.get("Matricule") not in vus:
+                vus.add(d.get("Matricule"))
+                doublons.append(d)
+    return doublons
 
 
 # ------------------------------------------------------------------ routes

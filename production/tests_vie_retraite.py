@@ -9,7 +9,8 @@ from django.test import SimpleTestCase
 from openpyxl import Workbook
 
 from .afa import ErreurAfa
-from .vie_retraite import _employeur, comparer, controler_periode, cotisants_saisis, fin_de_mois, lire_fichier, mois_du_texte
+from .vie_retraite import (SANS_COTISATION, _employeur, comparer, controler_ligne, controler_periode, cotisants_saisis,
+                           etat_mensuel_de_police, fin_de_mois, lire_fichier, mois_du_texte)
 
 SALARIES = [("05002M", "EBAH Anasthasie", "ADINGRA", 30000, 41657), ("05004P", "Marie Madeleine", "BEDIA", 15000, 94807),
             ("05010W", "AHOU SOPHIE", "KOUAKOU", 30000, 43732)]
@@ -87,11 +88,20 @@ class SaisieEtComparaisonTests(SimpleTestCase):
     def test_cotisants_controles(self):
         lignes = cotisants_saisis({"Cotisants": [{"Matricule": "05002m", "Nom": "adingra", "CotisationSalarie": "30 000", "CotisationEmployeur": 41657}]})
         self.assertEqual((lignes[0]["Matricule"], lignes[0]["Nom"], int(lignes[0]["CotisationSalarie"])), ("05002M", "ADINGRA", 30000))
-        for cotisants, attendu in (([], "au moins un salarié"), ([{"Nom": "A", "CotisationSalarie": 0, "CotisationEmployeur": 0}], "nulles"),
+        for cotisants, attendu in (([], "au moins un salarié"), ([{"Nom": "A", "CotisationSalarie": 0, "CotisationEmployeur": 0}], "total du mois est nul"),
                                    ([{"Nom": "A", "CotisationSalarie": -5}], "négative"),
                                    ([{"Matricule": "X", "Nom": "A", "CotisationSalarie": 1}, {"Matricule": "X", "Nom": "B", "CotisationSalarie": 1}], "déjà saisi")):
             with self.subTest(attendu=attendu), self.assertRaisesRegex(ErreurAfa, attendu):
                 cotisants_saisis({"Cotisants": cotisants})
+
+    def test_salarie_sans_cotisation_ce_mois_admis(self):
+        # Règle du 2026-11-11 : un salarié peut ne pas cotiser un mois, il reste dans l'état à 0 F
+        lignes = cotisants_saisis({"Cotisants": [{"Matricule": "A1", "Nom": "X", "CotisationSalarie": 100, "CotisationEmployeur": 200},
+                                                 {"Matricule": "B2", "Nom": "Y", "CotisationSalarie": "", "CotisationEmployeur": None},
+                                                 {"Matricule": "C3", "Nom": "Z", "CotisationSalarie": 0, "CotisationEmployeur": 0}]})
+        self.assertEqual([int(l["CotisationSalarie"] + l["CotisationEmployeur"]) for l in lignes], [300, 0, 0])
+        erreurs, avertissements = controler_ligne({"Matricule": "B2", "Nom": "Y", "CotisationSalarie": None, "CotisationEmployeur": None})
+        self.assertEqual((erreurs, avertissements), ([], [SANS_COTISATION]))
 
     def test_periode_d_un_mois_entier(self):
         offre = {"Libelle": "Retraite complémentaire", "Periodicite": "MENSUELLE"}
@@ -111,6 +121,47 @@ class SaisieEtComparaisonTests(SimpleTestCase):
         self.assertEqual((c["Modifies"][0]["Matricule"], c["Modifies"][0]["AncienneEmployeur"]), ("A1", 200))
         self.assertEqual(c["Ecart"], 450 - 600)
         self.assertIsNone(comparer(lignes, None))
+
+    def test_absent_un_mois_puis_revenu_n_est_pas_un_nouveau(self):
+        # États CI-ENERGIES : un salarié qui ne cotise pas un mois est absent du fichier, puis revient (juin 2026 : 16 sur 17)
+        precedent = {"IdDevis": 2, "NumeroDevis": "D2", "Mois": "2026-02-01", "LibelleMois": "février 2026", "Confirme": True,
+                     "Connus": ["M:A1", "M:B2", "M:R9"], "Cotisants": [
+                         {"Matricule": "A1", "Nom": "X", "Prenoms": "", "CotisationSalarie": 100, "CotisationEmployeur": 200},
+                         {"Matricule": "B2", "Nom": "Y", "Prenoms": "", "CotisationSalarie": 100, "CotisationEmployeur": 200}]}
+        lignes = [{"Matricule": "A1", "Nom": "X", "Prenoms": "", "CotisationSalarie": 0, "CotisationEmployeur": 0},
+                  {"Matricule": "R9", "Nom": "R", "Prenoms": "", "CotisationSalarie": 100, "CotisationEmployeur": 200},
+                  {"Matricule": "N5", "Nom": "N", "Prenoms": "", "CotisationSalarie": 100, "CotisationEmployeur": 200}]
+        c = comparer(lignes, precedent)
+        matricules = lambda cle: [l["Matricule"] for l in c[cle]]  # noqa: E731
+        self.assertEqual((matricules("Entrants"), matricules("Reprises"), matricules("Sortants"), matricules("SansCotisation")),
+                         (["N5"], ["R9"], ["B2"], ["A1"]))
+
+
+class RenouvellementMensuelTests(SimpleTestCase):
+    BASE = {"idproduit": 10, "iddevis": 7, "idcontrat": 70, "numeropolice": "3100000250296C", "idclient": 4, "client": "CI-ENERGIES",
+            "idcompagnie": 31, "compagnie": "ALLIANZ CI VIE ", "dateeffet": date(2026, 2, 1), "dateexpiration": date(2026, 2, 28)}
+    RETRAITE = {"IdOffre": 2, "Code": "RETRAITE", "Libelle": "Retraite complémentaire", "Saisie": "COTISATION", "Periodicite": "MENSUELLE"}
+
+    @mock.patch("production.vie_retraite.vie_offres.tables_presentes", return_value=True)
+    @mock.patch("production.vie_retraite.vie_offres.offres_des_devis", return_value={7: {"Code": "RETRAITE"}})
+    def test_mois_suivant_de_la_police(self, *_):
+        with mock.patch("production.vie_retraite.vie_offres.offre_du_devis", return_value=self.RETRAITE):
+            e = etat_mensuel_de_police(None, self.BASE)
+            self.assertEqual((e["MoisSuivant"], e["LibelleMoisSuivant"], e["IdOffreVie"], e["Compagnie"]),
+                             ("2026-03-01", "mars 2026", 2, "ALLIANZ CI VIE"))
+            decembre = etat_mensuel_de_police(None, self.BASE | {"dateeffet": date(2026, 12, 1), "dateexpiration": date(2026, 12, 31)})
+            self.assertEqual(decembre["MoisSuivant"], "2027-01-01")
+        with mock.patch("production.vie_retraite.vie_offres.offre_du_devis", return_value=self.RETRAITE | {"Saisie": "CAPITAL"}):
+            self.assertIsNone(etat_mensuel_de_police(None, self.BASE))
+        self.assertIsNone(etat_mensuel_de_police(None, self.BASE | {"idproduit": 2}))
+
+    @mock.patch("production.vie_retraite.vie_offres.tables_presentes", return_value=True)
+    @mock.patch("production.vie_retraite.vie_offres.offres_des_devis", return_value={})
+    def test_police_reprise_d_uranus_sans_offre(self, *_):
+        with mock.patch("production.vie_retraite.vie_offres.offres", return_value=[{"Saisie": "CAPITAL", "Periodicite": "ANNUELLE"}, self.RETRAITE]):
+            self.assertEqual(etat_mensuel_de_police(None, self.BASE)["Offre"], "Retraite complémentaire")
+            annuelle = self.BASE | {"dateeffet": date(2026, 1, 1), "dateexpiration": date(2026, 12, 31)}
+            self.assertIsNone(etat_mensuel_de_police(None, annuelle))
 
 
 class AnalyseTests(SimpleTestCase):

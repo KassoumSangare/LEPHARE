@@ -14,7 +14,7 @@ export const versReprise = (cible) => {
   const requete = suite.length ? `?${suite.join('?')}` : '';
   if (chemin === '/user/quotes' || chemin === '/user/quotes/' || chemin === '/user/quotes/transport') return `/user/reprises${requete}`;
   if (chemin === '/user/quotes/transport/hors-guce') return `${PREFIXE_SAISIE_REPRISE}/transport${requete}`;
-  const module = chemin.match(/^\/user\/quotes\/(auto|mrh|sante|ia|rc|mrp|tous-dommages|voyage)\/?$/);
+  const module = chemin.match(/^\/user\/quotes\/(auto|mrh|sante|ia|rc|mrp|tous-dommages|voyage|afa)\/?$/);
   return module ? `${PREFIXE_SAISIE_REPRISE}/${module[1]}${requete}` : cible;
 };
 

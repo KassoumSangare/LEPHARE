@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, ArrowLeftRight, Building2, CalendarDays, FileSpreadsheet, ShieldCheck, X } from 'lucide-react';
 import { Modal } from '../../../../components/common/Modal';
-import { fcfa, fcfaSigne, libelleMois } from './vieCommun';
+import { compte, fcfa, fcfaSigne, libelleMois } from './vieCommun';
 
 /* Résultat de la lecture d'un état des cotisations (POST /api/afa/retraite/analyse/) : rien n'est enregistré avant
    « Enregistrer le devis ». Mois, souscripteur et police reconnus, totaux, écarts avec l'état précédent, contrôles. */
@@ -56,15 +56,19 @@ export const ImportEtatModal = ({ analyse, onFermer, onReprendre, lignesActuelle
                 <span className="vie-etiquette">{c.NumeroDevis}{c.Confirme ? ' · confirmé' : ''}</span>
               </div>
               <div className="vie-offre-etiquettes">
-                <span className="vie-etiquette vert">{c.Entrants.length} entrée{c.Entrants.length > 1 ? 's' : ''}</span>
-                <span className="vie-etiquette rose">{c.Sortants.length} sortie{c.Sortants.length > 1 ? 's' : ''}</span>
+                <span className="vie-etiquette vert">{compte(c.Entrants.length, 'nouveau', 'nouveaux')}</span>
+                <span className="vie-etiquette accent" title="Absents de l'état précédent, ils avaient déjà cotisé avant">{compte((c.Reprises || []).length, 'reprise')}</span>
+                <span className="vie-etiquette rose" title="Dans l'état précédent, absents de celui-ci : sans cotisation ce mois ou sortis">{compte(c.Sortants.length, 'absent')}</span>
+                {(c.SansCotisation || []).length > 0 && <span className="vie-etiquette">{compte(c.SansCotisation.length, 'salarié')} à 0 F</span>}
                 <span className="vie-etiquette ambre">{c.Modifies.length} montant{c.Modifies.length > 1 ? 's' : ''} modifié{c.Modifies.length > 1 ? 's' : ''}</span>
                 <span className={`vie-etiquette ${c.Ecart >= 0 ? 'vert' : 'rose'}`}>
                   {fcfaSigne(c.Ecart)} F{c.Total ? ` · ${(c.Ecart / c.Total * 100).toLocaleString('fr-FR', { maximumFractionDigits: 1, signDisplay: 'always' })} %` : ''}
                 </span>
               </div>
-              <Liste titre="Entrées" lignes={c.Entrants} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
-              <Liste titre="Sorties" lignes={c.Sortants} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
+              <Liste titre="Nouveaux salariés" lignes={c.Entrants} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
+              <Liste titre="Reprises des cotisations" lignes={c.Reprises} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
+              <Liste titre="Absents de cet état, sans cotisation ce mois ou sortis" lignes={c.Sortants} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
+              <Liste titre="Présents sans cotisation (0 F)" lignes={c.SansCotisation} rendu={(l) => `${l.Nom} ${l.Prenoms} - ${l.Matricule || 'sans matricule'}`} />
               <Liste titre="Montants modifiés" lignes={c.Modifies}
                 rendu={(l) => `${l.Nom} ${l.Prenoms} : salarié ${fcfa(l.AncienneSalarie)} → ${fcfa(l.CotisationSalarie)}, employeur ${fcfa(l.AncienneEmployeur)} → ${fcfa(l.CotisationEmployeur)}`} />
             </div>

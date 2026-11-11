@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, Link, useLocation } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Loader2, CalendarRange, ListChecks, AlertTriangle, ExternalLink, Info } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Loader2, CalendarRange, ListChecks, AlertTriangle, ExternalLink, Info, FileSpreadsheet } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { messageErreurApi } from '../../../utils/financeUtils';
@@ -51,6 +51,8 @@ export const RenouvellementPage = () => {
   useEffect(() => { charger(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const contrat = donnees?.Contrat;
+  // Retraite complémentaire (Vie) : chaque mois se renouvelle avec l'état des cotisations du souscripteur, importé dans l'écran Vie
+  const etatMensuel = donnees?.EtatMensuel || null;
   const auto = contrat?.IdProduit === 1;
   const objets = donnees?.Objets || [];
   // Santé : une ligne par famille (adhérent et ayants droit), reconduite avec sa couverture
@@ -91,8 +93,10 @@ export const RenouvellementPage = () => {
         <RefreshCw size={20} /> Renouvellement {contrat ? `de la police ${contrat.NumeroPolice}` : ''}
       </h1>
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.86rem', margin: '0 0 1.25rem', maxWidth: 900 }}>
-        La police garde son numéro. Préparez la nouvelle période et la liste des {auto ? 'véhicules' : 'assurés'} (incorporations et retraits de l'année déjà pris en compte),
-        puis créez le devis de renouvellement : il s'ouvre dans l'écran de saisie pour les ajouts, les garanties et la tarification, avant sa confirmation en contrat.
+        {etatMensuel
+          ? "La police garde son numéro et se renouvelle chaque mois avec l'état des cotisations envoyé par le souscripteur : importez le fichier du mois, vérifiez-le, puis confirmez-le en contrat."
+          : `La police garde son numéro. Préparez la nouvelle période et la liste des ${auto ? 'véhicules' : 'assurés'} (incorporations et retraits de l'année déjà pris en compte),
+        puis créez le devis de renouvellement : il s'ouvre dans l'écran de saisie pour les ajouts, les garanties et la tarification, avant sa confirmation en contrat.`}
       </p>
 
       {erreur && (
@@ -121,10 +125,38 @@ export const RenouvellementPage = () => {
                   n° {d.NumeroDevis} (effet {dateFr(d.DateEffet)}) <ExternalLink size={13} />
                 </Link>
               ))}
-              <span style={{ color: 'var(--text-muted)' }}>- reprenez-le plutôt que d'en créer un autre.</span>
+              <span style={{ color: 'var(--text-muted)' }}>
+                {etatMensuel
+                  ? "- ouvrez-le pour y importer ou vérifier l'état du mois, puis confirmez-le : chaque mois renouvelle la police."
+                  : "- reprenez-le plutôt que d'en créer un autre."}
+              </span>
             </div>
           )}
 
+          {etatMensuel && (
+            <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center',
+              flexWrap: 'wrap', borderLeft: '4px solid #7c3aed', animation: 'mouvement-apparait 0.35s ease-out both' }}>
+              <FileSpreadsheet size={28} color="#7c3aed" style={{ flexShrink: 0 }} />
+              <div style={{ flex: '1 1 420px' }}>
+                <div style={{ fontWeight: 800, marginBottom: '0.25rem' }}>
+                  {etatMensuel.Offre} : état des cotisations de {etatMensuel.LibelleMoisSuivant}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+                  Dernier mois enregistré : {etatMensuel.LibelleDernierMois}. Le mois suivant se crée avec le fichier des cotisations mensuelles des salariés,
+                  jamais en recopiant le mois précédent. Un salarié qui ne cotise pas ce mois peut être absent du fichier ou y figurer à 0 F : il reste suivi
+                  par son matricule et reprend ses cotisations à son retour.
+                </div>
+              </div>
+              <button type="button" className="btn btn-primary" disabled={(donnees.DevisEnCours || []).length > 0}
+                onClick={() => navigate(`/user/quotes/afa?renouveler=${etatMensuel.IdContrat}`)}
+                title={(donnees.DevisEnCours || []).length ? "Confirmez d'abord le mois en cours" : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, padding: '0.6rem 1.2rem', background: '#7c3aed', borderColor: '#7c3aed' }}>
+                <FileSpreadsheet size={16} /> Importer l'état de {etatMensuel.LibelleMoisSuivant}
+              </button>
+            </div>
+          )}
+
+          {!etatMensuel && (<>
           <div className="glass-panel" style={{ padding: '1rem 1.25rem', marginBottom: '1rem' }}>
             <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}><CalendarRange size={17} /> Nouvelle période</h2>
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -232,6 +264,7 @@ export const RenouvellementPage = () => {
               {envoi ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />} Créer le devis de renouvellement
             </button>
           </div>
+          </>)}
         </>
       )}
     </div>

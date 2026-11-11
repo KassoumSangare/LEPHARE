@@ -61,40 +61,51 @@ def offre_par_id(cursor, id_offre):
     return _offre(ligne) if ligne else (dict(OFFRE_AFA) if not id_offre else None)
 
 
+# Devis d'où découle un devis (renouvellements, incorporations), de proche en proche : un devis de renouvellement créé hors de
+# l'écran Vie (page Renouvellement, sp_avenant_initiation) n'a pas sa ligne lephare_vie_devis, ni ceux qui le suivent ; l'offre
+# est celle du devis le plus proche qui en porte une (2026-11-11 : un mois de Retraite complémentaire passait pour un devis AFA).
+CHAINE = """
+    WITH RECURSIVE chaine(origine, iddevis, idoldhist, rang) AS (
+        SELECT d.iddevis, d.iddevis, d.idoldhist, 0 FROM stddevis d WHERE d.iddevis = ANY(%s)
+        UNION ALL
+        SELECT c.origine, d.iddevis, d.idoldhist, c.rang + 1 FROM stddevis d JOIN chaine c ON d.iddevis = c.idoldhist
+        WHERE c.rang < 1000 AND COALESCE(c.idoldhist, 0) <> 0 AND c.idoldhist <> c.iddevis
+    )"""
+
+
 def offre_du_devis(cursor, id_devis):
-    """Offre d'un devis Vie : la sienne, sinon celle du devis dont il découle (renouvellement, incorporation), sinon AFA."""
+    """Offre d'un devis Vie : la sienne, sinon celle du devis le plus proche dont il découle (renouvellement, incorporation),
+    sinon AFA."""
     if not id_devis or not tables_presentes(cursor):
         return dict(OFFRE_AFA)
     cursor.execute(
-        f"""SELECT {COLONNES} FROM stddevis d
-            JOIN lephare_vie_devis v ON v.iddevis IN (d.iddevis, d.idoldhist)
+        f"""{CHAINE}
+            SELECT {COLONNES} FROM chaine c
+            JOIN lephare_vie_devis v ON v.iddevis = c.iddevis
             JOIN lephare_vie_offre o ON o.idoffre = v.idoffre
             LEFT JOIN stdsousgarantie sg ON sg.idsousgarantie = o.idgarantie
-            WHERE d.iddevis = %s
-            ORDER BY v.iddevis = d.iddevis DESC LIMIT 1""",
-        [id_devis],
+            ORDER BY c.rang LIMIT 1""",
+        [[id_devis]],
     )
     ligne = cursor.fetchone()
     return _offre(ligne) if ligne else offre_par_id(cursor, 0)
 
 
 def offres_des_devis(cursor, ids_devis):
-    """{iddevis: libellé de l'offre} des devis qui en ont une (polices proposées au renouvellement)."""
+    """{iddevis: libellé de l'offre} des devis qui en ont une, la leur ou celle du devis le plus proche dont ils découlent
+    (polices proposées au renouvellement)."""
     ids = [i for i in ids_devis if i]
     if not ids or not tables_presentes(cursor):
         return {}
     cursor.execute(
-        """SELECT d.iddevis, o.code, o.libelle FROM stddevis d
-           JOIN lephare_vie_devis v ON v.iddevis IN (d.iddevis, d.idoldhist)
-           JOIN lephare_vie_offre o ON o.idoffre = v.idoffre
-           WHERE d.iddevis = ANY(%s)
-           ORDER BY d.iddevis, v.iddevis = d.iddevis DESC""",
+        f"""{CHAINE}
+            SELECT DISTINCT ON (c.origine) c.origine, o.code, o.libelle FROM chaine c
+            JOIN lephare_vie_devis v ON v.iddevis = c.iddevis
+            JOIN lephare_vie_offre o ON o.idoffre = v.idoffre
+            ORDER BY c.origine, c.rang""",
         [ids],
     )
-    resultat = {}
-    for iddevis, code, libelle in cursor.fetchall():
-        resultat.setdefault(iddevis, {"Code": code, "Libelle": libelle})
-    return resultat
+    return {iddevis: {"Code": code, "Libelle": libelle} for iddevis, code, libelle in cursor.fetchall()}
 
 
 def lier_devis(cursor, id_devis, offre, fichier=""):

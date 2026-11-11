@@ -226,6 +226,8 @@ function App() {
                 <Route path="/user/reprises/saisie/tous-dommages" element={<NewTousDommagesQuotePage />} />
                 <Route path="/user/reprises/saisie/voyage" element={<NewVoyageQuotePage />} />
                 <Route path="/user/reprises/saisie/transport" element={<NewTransportHorsGucePage />} />
+                {/* Branche Vie (AFA, Retraite complémentaire, Temporaire décès), ajoutée aux boutons de saisie communs */}
+                <Route path="/user/reprises/saisie/afa" element={<NewAfaQuotePage />} />
                 <Route path="/user/asaci" element={<AsaciPage />} />
 
                 {/* ===== MODULE F – ENCAISSEMENT & TRÉSORERIE ===== */}

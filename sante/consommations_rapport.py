@@ -30,7 +30,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor, Twips
+from docx.shared import Cm, Pt, RGBColor, Twips
 
 from django.db import connection
 from django.http import HttpResponse
@@ -40,7 +40,9 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from autorisations.journal import journaliser
 from production.renouvellement import AUTHENTIFICATION
 
-from .consommations import ErreurConsommation, _reponse, normaliser
+from . import consommations_graphiques as graphiques
+from . import consommations_qualite as qualite
+from .consommations import ErreurConsommation, _reponse, doublons_importes, normaliser
 from .consommations_analyse import analyse as analyse_periode
 from .consommations_pilotage import (MOIS, GENRES, TRANCHES, _age, _div, _periode, charger, date_effectif, effectif_de_reference,
                                      entreprises_a_risque, indicateurs, mouvements_effectif, ordre_des_tranches, repartition, tableau_de_bord, tranche)
@@ -56,6 +58,7 @@ INSECABLE = " "
 MARGE_CELLULE = 40                            # marge gauche et droite du texte d'une cellule (twips, 0,7 mm)
 LARGEUR_SOUHAITEE_MAX = 4800                  # largeur souhaitée au plus pour une colonne de texte long (twips, 8,5 cm)
 FICHES_MAX = 5
+ANNEXE_MAX = 40                               # cas détaillés par contrôle dans l'annexe des anomalies de l'effectif
 # Polices du gestionnaire qui regroupent des contrats individuels (ETAT des cotisations : « OREOLE SANTE/ PARTICULIERS ») : le relevé y donne le
 # nom de la police comme souscripteur
 POLICES_PARTICULIERS = {"OREOLE SANTE", "OREOLE SANTE PLUS"}
@@ -171,6 +174,20 @@ class Rapport:
         # largeur du texte d'une page A4 en portrait, en twips (1 twip = 635 EMU)
         self.largeur = int((min(section.page_width, section.page_height) - section.left_margin - section.right_margin) / 635)
         self.numero = 0
+        self.numero_graphique = 0
+        self.anomalies = []                    # contrôles de l'effectif à détailler en annexe
+
+    # ---- graphiques (attentes de l'équipe actuariat du 2026-11-11 : « tableaux et graphiques »)
+    def graphique(self, legende, image):
+        """Graphique numéroté à part des tableaux (« Graphique N - ... »), centré, à la largeur du texte (16 cm au plus) ; rien sans donnée."""
+        if not image:
+            return
+        self.numero_graphique += 1
+        self._legende(f"Graphique {self.numero_graphique} - {legende}")
+        p = self.doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(12)
+        p.add_run().add_picture(io.BytesIO(image), width=Cm(min(graphiques.LARGEUR_CM, self.largeur / 567)))
 
     # ---- texte
     @staticmethod
@@ -403,9 +420,12 @@ def _souscripteur(p):
 
 
 def _indicateurs_tableau(r, legende, ind, effectif_libelle="Effectif total de bénéficiaires"):
+    presence = ([("Bénéficiaires absents de la base des effectifs ayant exposé des frais", _f(ind["Absents"])),
+                 ("Bénéficiaires présents dans la base des effectifs sans aucun frais", _f(ind["PresentsSansFrais"]))] if "Absents" in ind
+                else [("Bénéficiaires n'ayant pas exposé de frais", _f(ind["NonConsommants"]))])
     r.tableau(legende, ["Indicateur", "Valeur"], [
         (effectif_libelle, _f(ind["Effectif"])), ("Bénéficiaires ayant exposé des frais", _f(ind["Consommants"])),
-        ("Bénéficiaires n'ayant pas exposé de frais", _f(ind["NonConsommants"])), ("Nombre d'actes", _f(ind["Actes"])),
+        *presence, ("Nombre d'actes", _f(ind["Actes"])),
         ("Taux de recours", _p(ind["TauxRecours"])), ("Montant total réclamé", _f(ind["Reclame"])), ("Montant total remboursé", _f(ind["Rembourse"])),
         ("Coût moyen par bénéficiaire", _f(ind["CoutParBeneficiaire"])), ("Coût moyen par acte", _f(ind["CoutParActe"])),
         ("Fréquence moyenne d'actes", "-" if ind["Frequence"] is None else f"{ind['Frequence']:.1f}".replace(".", ",")),
@@ -472,7 +492,7 @@ def _top(r, legende, prestations, cle, colonne, limite=20):
     r.repartition(legende, colonne, repartition(prestations, cle), beneficiaires=True, limite=limite)
 
 
-def _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice):
+def _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice, numero="I", doublons=()):
     actifs = [e for e in effectif if e["actif"]]
     statuts = defaultdict(list)
     for e in actifs:
@@ -492,7 +512,7 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
 
     # sans effectif de référence importé, l'effectif de début de période est estimé (maintenus + sortants datés)
     libelle_reference = f"Effectif de référence au {_d(date_reference)}" if reference is not None else "Effectif en début de période, estimé"
-    r.titre("I.1. Description de la population assurée", 2)
+    r.titre(f"{numero}.1. Description de la population assurée", 2)
     r.tableau("Indicateurs clés de l'effectif", ["Indicateur", "Valeur"], [
         ("Effectif total" + (f" au {_d(situation)}" if situation else ""), _f(len(actifs))), ("Nombre d'assurés", _f(len(statuts["A"]))),
         ("Nombre de conjoint(e)s", _f(len(statuts["C"]))), ("Nombre d'enfants", _f(len(statuts["E"]))), ("Âge moyen de l'effectif", _ans(_moyenne(ages))),
@@ -515,6 +535,9 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
               [(p or "Non renseigné", _f(mouvements[p]["Maintenus"]), sortants(mouvements[p]), _f(mouvements[p]["Nouveaux"]), _f(mouvements[p]["Effectif"]))
                for p in sorted(mouvements, key=normaliser)],
               total=(TOTAL, _f(somme("Maintenus")), _f(somme("Sortants")), _f(somme("Nouveaux")), _f(somme("Effectif"))))
+    classees = sorted(mouvements, key=lambda p: (-mouvements[p]["Effectif"], normaliser(p)))
+    r.graphique("Effectif global consolidé par entreprise", graphiques.barres([p or "Non renseigné" for p in classees],
+                                                                             [mouvements[p]["Effectif"] for p in classees]))
     if reference is not None and garants_sans_reference:
         noms = ", ".join(garants_sans_reference)
         r.para(f"« - » dans la colonne Sortants : aucun effectif {noms} antérieur au {_d(du)} n'est importé. Les sortants de ces entreprises ne "
@@ -538,12 +561,16 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
               [(p or "Non renseigné", _f(par_police[p]["A"]), _f(par_police[p]["C"]), _f(par_police[p]["E"]), _f(effectif_de[p]), _ans(_moyenne(par_police[p]["Ages"])))
                for p in sorted(par_police, key=lambda p: (-effectif_de[p], p))],
               total=(TOTAL, _f(len(statuts["A"])), _f(len(statuts["C"])), _f(len(statuts["E"])), _f(len(actifs)), _ans(_moyenne(ages))))
+    principales = sorted(par_police, key=lambda p: (-effectif_de[p], p))[:20]
+    r.graphique("Répartition des effectifs par statut et par entreprise" + (", 20 premières entreprises" if len(par_police) > 20 else ""),
+                graphiques.empilees([p or "Non renseigné" for p in principales], [(noms[s], [par_police[p][s] for p in principales]) for s in "ACE"]))
     lignes = []
     for s in ("A", "C", "E"):
         a = [x for x in (_age(e["date_naissance"], au) for e in statuts[s]) if x is not None]
         lignes.append((noms[s], _f(len(statuts[s])), _p(_div(len(statuts[s]), len(actifs))), _ans(_moyenne(a))))
     r.tableau("Répartition des effectifs par statut", ["Statut", "Bénéficiaires", "% des bénéficiaires", "Âge moyen"], lignes,
               total=(TOTAL, _f(len(actifs)), _p(1), _ans(_moyenne(ages))))
+    r.graphique("Répartition globale des effectifs par statut", graphiques.anneau([(noms[s], len(statuts[s])) for s in "ACE"]))
     par_tranche = defaultdict(lambda: {"A": 0, "C": 0, "E": 0, "Ages": []})
     for e in actifs:
         a = _age(e["date_naissance"], au)
@@ -555,28 +582,50 @@ def _effectifs(r, effectif, du, au, reference, date_reference, situation, exerci
     r.tableau("Répartition des effectifs par tranche d'âge", ["Tranche d'âge", "Bénéficiaires", "% des bénéficiaires", "Âge moyen"],
               [(t, _f(sum(par_tranche[t][s] for s in "ACE")), _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs))), _ans(_moyenne(par_tranche[t]["Ages"])))
                for t in presentes], total=(TOTAL, _f(len(actifs)), _p(1), _ans(_moyenne(ages))))
+    r.graphique("Répartition des effectifs par tranche d'âge", graphiques.colonnes(presentes, [sum(par_tranche[t][s] for s in "ACE") for t in presentes]))
     r.tableau("Répartition des effectifs par tranche d'âge et par statut", ["Tranche d'âge", noms["A"], noms["C"], noms["E"], "Total", "% des bénéficiaires"],
               [(t, _f(par_tranche[t]["A"]), _f(par_tranche[t]["C"]), _f(par_tranche[t]["E"]), _f(sum(par_tranche[t][s] for s in "ACE")),
                 _p(_div(sum(par_tranche[t][s] for s in "ACE"), len(actifs)))) for t in presentes],
               total=(TOTAL, _f(len(statuts["A"])), _f(len(statuts["C"])), _f(len(statuts["E"])), _f(len(actifs)), _p(1)))
-    # Contrôle de cohérence (même liste que le modèle)
-    r.titre("I.2. Contrôle de cohérence et anomalies", 2)
-    r.para("Contrôles réalisés sur l'effectif avant exploitation : unicité des personnes, âges plausibles, conjoint(e)s et enfants rattachés à un assuré.")
-    identites = defaultdict(set)
-    for e in actifs:
-        if e["nom"] and e["date_naissance"]:
-            identites[(e["nom"].strip().upper(), (e["prenoms"] or "").strip().upper(), e["date_naissance"])].add(e["matricule_beneficiaire"])
-    doublons = sum(1 for v in identites.values() if len(v) > 1)
-    ages_incoherents = sum(1 for e in actifs if (lambda a: a is not None and (a < 0 or a > 100 or (e["statut"] in ("A", "C") and a < 16)))(_age(e["date_naissance"], au)))
-    principaux = {e["matricule_beneficiaire"] for e in actifs if e["statut"] == "A"}
-    statuts_errones = sum(1 for e in actifs if e["statut"] not in ("A", "C", "E") or (e["statut"] == "A" and e["matricule_beneficiaire"] != e["matricule_assure"])
-                          or (e["statut"] in ("C", "E") and e["matricule_assure"] not in principaux))
-    r.tableau("Anomalies de l'effectif", ["Type d'anomalie", "Nombre de cas", "Statut"], [
-        ("Doublon d'identité : même nom, prénoms et naissance", _f(doublons), "Conforme" if not doublons else "À vérifier"),
-        ("Âge incohérent : négatif, plus de 100 ans, assuré ou conjoint(e) de moins de 16 ans", _f(ages_incoherents), "Conforme" if not ages_incoherents else "À vérifier"),
-        ("Statut erroné : statut inconnu, ou conjoint(e) ou enfant sans assuré de rattachement", _f(statuts_errones),
-         "Conforme" if not statuts_errones else "À vérifier"),
-    ])
+    r.graphique("Répartition des effectifs par tranche d'âge et par statut",
+                graphiques.empilees(presentes, [(noms[s], [par_tranche[t][s] for t in presentes]) for s in "ACE"], horizontal=False))
+    # Contrôle de cohérence et détection des anomalies (attentes de l'équipe actuariat, point 2.3 : consommations_qualite.py)
+    r.titre(f"{numero}.2. Contrôle de cohérence et détection des anomalies", 2)
+    _controles_effectif(r, actifs, au, doublons, effectif)
+
+
+def _controles_effectif(r, actifs, au, doublons, effectif=None, annexe=True):
+    """Tableau des 17 contrôles de qualité de l'effectif ; cas détaillés en annexe du rapport (r.annexe_anomalies)."""
+    controles = qualite.controler(actifs, au, doublons)
+    r.para("Contrôles automatiques réalisés sur l'effectif avant exploitation : unicité des matricules et des personnes, rattachement de chaque "
+           "bénéficiaire à son assuré principal, âges plausibles et conformes au statut, données obligatoires. « À corriger » : donnée fausse ; "
+           "« À vérifier » : situation possible mais inhabituelle, à confirmer. Limites retenues : assuré principal et conjoint(e) de 18 ans au "
+           "moins, enfant couvert jusqu'à 21 ans (25 ans s'il est scolarisé), 12 ans d'écart au moins entre un enfant et son assuré principal.")
+    r.tableau("Contrôle de cohérence de l'effectif", ["Contrôle", "Gravité", "Nombre de cas", "Résultat"],
+              [(c["Libelle"], c["Gravite"], _f(c["Nombre"]), "Conforme" if not c["Nombre"] else c["Gravite"]) for c in controles],
+              total=(TOTAL, "", _f(sum(c["Nombre"] for c in controles)), ""))
+    sans_genre = qualite.garants_sans_genre(effectif if effectif is not None else actifs)
+    if sans_genre:
+        r.para(f"Genre : le fichier d'effectif du garant {', '.join(sans_genre)} n'a pas de colonne genre ; ses bénéficiaires ne sont pas comptés "
+               "dans le contrôle du genre et figurent « Non renseigné » dans les répartitions par genre.", italique=True)
+    if annexe:
+        r.anomalies.extend(c for c in controles if c["Nombre"])
+    return controles
+
+
+def _annexe_anomalies(r, lettre="A"):
+    """Détail des cas des contrôles de l'effectif (40 premiers par contrôle), en fin de rapport."""
+    if not r.anomalies:
+        return
+    r.titre(f"ANNEXE {lettre}. DÉTAIL DES ANOMALIES DE L'EFFECTIF", 1)
+    r.para("Personnes concernées par chaque contrôle, pour correction par le gestionnaire. Document contenant des données personnelles : "
+           "diffusion restreinte.", italique=True)
+    for c in r.anomalies:
+        cas = c["Cas"][:ANNEXE_MAX]
+        r.tableau(f"{c['Libelle']} ({_f(c['Nombre'])} cas{', ' + str(ANNEXE_MAX) + ' premiers' if c['Nombre'] > ANNEXE_MAX else ''})",
+                  ["Matricule", "Nom et prénoms", "Entreprise", "Statut", "Âge", "Constat"],
+                  [(x["Matricule"], x["Nom"] or "-", x["Entreprise"] or "-", x["Statut"], "-" if x["Age"] is None else _ans(x["Age"]), x["Detail"] or "-")
+                   for x in cas])
 
 
 def _fiche(r, police, prestations, effectif, au):
@@ -585,14 +634,39 @@ def _fiche(r, police, prestations, effectif, au):
     r.titre(f"Fiche d'entreprise : {police}", 3)
     if _particuliers(police):
         r.para("Police des particuliers : chaque famille souscrit pour elle-même, le souscripteur indiqué est l'assuré.", italique=True)
-    _indicateurs_tableau(r, "Indicateurs clés de l'entreprise", indicateurs(ps, beneficiaires, au))
-    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(ps, lambda p: p["famille"]), total=True)
+    # Axes du premier module (attentes, troisième module : « mêmes axes d'étude que les deux premiers modules ») : effectif et sa qualité
+    statuts = defaultdict(list)
+    for e in beneficiaires:
+        statuts[e["statut"] if e["statut"] in ("A", "C", "E") else "E"].append(_age(e["date_naissance"], au))
+    ages = [a for liste in statuts.values() for a in liste if a is not None]
+    r.tableau("Effectif de l'entreprise par statut", ["Statut", "Bénéficiaires", "% des bénéficiaires", "Âge moyen"],
+              [(STATUTS_RAPPORT[s], _f(len(statuts[s])), _p(_div(len(statuts[s]), len(beneficiaires))), _ans(_moyenne([a for a in statuts[s] if a is not None])))
+               for s in "ACE"], total=(TOTAL, _f(len(beneficiaires)), _p(1) if beneficiaires else "-", _ans(_moyenne(ages))))
+    par_tranche = defaultdict(lambda: {"A": 0, "C": 0, "E": 0})
+    for e in beneficiaires:
+        par_tranche[tranche(_age(e["date_naissance"], au))][e["statut"] if e["statut"] in ("A", "C", "E") else "E"] += 1
+    presentes = [t for t in [t[2] for t in TRANCHES] + ["Non renseigné"] if t in par_tranche]
+    r.graphique(f"Effectif de {police} par tranche d'âge et par statut",
+                graphiques.empilees(presentes, [(STATUTS_RAPPORT[s], [par_tranche[t][s] for t in presentes]) for s in "ACE"], horizontal=False))
+    anomalies = [c for c in qualite.controler(beneficiaires, au) if c["Nombre"]]
+    if anomalies:
+        r.tableau("Anomalies de l'effectif de l'entreprise", ["Contrôle", "Gravité", "Nombre de cas"],
+                  [(c["Libelle"], c["Gravite"], _f(c["Nombre"])) for c in anomalies])
+    else:
+        r.para("Aucune anomalie dans l'effectif de l'entreprise.", italique=True)
+    # Axes du second module : dépenses
+    _indicateurs_tableau(r, "Indicateurs clés de l'entreprise", _indicateurs(ps, beneficiaires, {e["matricule_beneficiaire"] for e in effectif}, au))
+    familles = repartition(ps, lambda p: p["famille"])
+    r.repartition("Répartition des dépenses par type de prestation", "Type de prestation", familles, total=True)
+    _graphique_repartition(r, f"Dépenses de {police} par type de prestation", familles)
     r.repartition("Répartition des dépenses par statut", "Statut", _ordre_statuts(repartition(ps, lambda p: _statut(p["statut"]))), total=True)
     r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge",
                   ordre_des_tranches(repartition(ps, lambda p: tranche(_age(p["date_naissance"], au)))), total=True)
     # comme les fiches du modèle : dépenses et actes de chaque famille de prestation par tranche d'âge
     _famille_tranche(r, "Répartition des dépenses par tranche d'âge et par famille de prestation", ps, au)
-    r.repartition("Répartition des dépenses par genre", "Genre", repartition(ps, lambda p: GENRES.get(p["genre"], "Non renseigné")), total=True)
+    genres = _genres(ps)
+    if any(g["Libelle"] != "Non renseigné" for g in genres):  # genre inconnu de tout l'effectif de l'entreprise : tableau sans objet
+        r.repartition("Répartition des dépenses par genre", "Genre", genres, total=True)
     _top(r, "Top 10 des centres prescripteurs", ps, lambda p: p["centre_prescripteur"], "Centre prescripteur", 10)
     _top(r, "Top 10 des centres exécutants", ps, lambda p: p["centre_executant"], "Centre exécutant", 10)
     _familles_depensieres(r, "Top 10 des familles les plus dépensières", ps, limite=10)
@@ -674,59 +748,159 @@ def _analyses_complementaires(r, a, numero):
               total=(TOTAL, _f(sum(t["Actes"] for t in dl["Tranches"])), _p(1), _f(sum(t["Depenses"] for t in dl["Tranches"]))))
 
 
-def produire(params):
-    with connection.cursor() as cursor:
-        exercice, du, au, _exercices = _periode(cursor, params)
-        garant = str(params.get("garant") or "").strip()
-        prestations, effectif = charger(cursor, du, au, garant)
-        reference, date_reference = effectif_de_reference(cursor, du, garant)
-        situation = date_effectif(cursor)
-    if not prestations and not effectif:
-        raise ErreurConsommation("Aucune donnée sur cette période : importez d'abord les relevés du gestionnaire.")
-    bord = tableau_de_bord(params)
-    r = Rapport()
-    r.titre(f"ANALYSE DES DÉPENSES SANTÉ {exercice} OREOLE SANTÉ", 0)
-    r.para(f"Du {_d(du)} au {_d(au)}" + (f" - garant {garant}" if garant else ""), centre=True)
-    r.para("Source : relevés de prestations et effectif du gestionnaire importés dans LE PHARE ; mois et période selon la date de clôture du relevé ; "
-           "âges à la fin de la période. Document contenant des données de santé : diffusion restreinte.", italique=True)
+TYPES_RAPPORT = {
+    "effectifs": ("ANALYSE DES EFFECTIFS", "RAPPORT EFFECTIFS SANTE", "rapport des effectifs"),
+    "depenses": ("ANALYSE DES DÉPENSES DE SANTÉ", "RAPPORT DEPENSES SANTE", "rapport des dépenses de santé"),
+    "global": ("RAPPORT GLOBAL : EFFECTIFS ET DÉPENSES DE SANTÉ", "RAPPORT GLOBAL CONSOMMATIONS SANTE", "rapport global"),
+}
 
-    r.titre("I. ANALYSE DES EFFECTIFS", 1)
-    _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice)
 
-    r.titre("II. ANALYSE GLOBALE DES DÉPENSES SANTÉ", 1)
-    portefeuille = indicateurs(prestations, [e for e in effectif if e["actif"]], au)
+def _indicateurs(prestations, actifs, matricules_effectif, au):
+    """Indicateurs clés des attentes (point II.1) : ceux du modèle, plus les bénéficiaires absents de la base des effectifs ayant exposé des
+    frais et ceux présents dans l'effectif sans aucun frais."""
+    ind = indicateurs(prestations, actifs, au)
+    consommants = {p["matricule_beneficiaire"] for p in prestations}
+    ind["Absents"] = len(consommants - matricules_effectif)
+    ind["PresentsSansFrais"] = len({e["matricule_beneficiaire"] for e in actifs} - consommants)
+    return ind
+
+
+def _frequence(v):
+    return "-" if v is None else f"{v:.1f}".replace(".", ",")
+
+
+def _indicateurs_par_entreprise(r, prestations, effectif, au, portefeuille):
+    actifs = [e for e in effectif if e["actif"]]
+    tous = {e["matricule_beneficiaire"] for e in effectif}
+    par_police, eff_police = defaultdict(list), defaultdict(list)
+    for p in prestations:
+        par_police[p["police"]].append(p)
+    for e in actifs:
+        eff_police[e["police"]].append(e)
+    lignes = []
+    for police in sorted(set(par_police) | set(eff_police), key=normaliser):
+        ind = _indicateurs(par_police[police], eff_police[police], tous, au)
+        lignes.append((police or "Non renseigné", _f(len(eff_police[police])), _f(ind["Consommants"]), _f(ind["Absents"]), _f(ind["PresentsSansFrais"]),
+                       _f(ind["Actes"]), _p(ind["TauxRecours"]) if eff_police[police] else "-", _f(ind["Reclame"]), _f(ind["Rembourse"]),
+                       _f(ind["CoutParBeneficiaire"]), _f(ind["CoutParActe"]), _frequence(ind["Frequence"])))
+    r.tableau("Indicateurs clés par entreprise", ["Entreprise", "Effectif", "Bénéf. avec frais", "Absents de l'effectif avec frais", "Présents sans frais",
+                                                  "Actes", "Taux de recours", "Réclamé", "Remboursé", "Coût / bénéf.", "Coût / acte", "Fréquence"], lignes,
+              total=(TOTAL, _f(portefeuille["Effectif"]), _f(portefeuille["Consommants"]), _f(portefeuille["Absents"]), _f(portefeuille["PresentsSansFrais"]),
+                     _f(portefeuille["Actes"]), _p(portefeuille["TauxRecours"]), _f(portefeuille["Reclame"]), _f(portefeuille["Rembourse"]),
+                     _f(portefeuille["CoutParBeneficiaire"]), _f(portefeuille["CoutParActe"]), _frequence(portefeuille["Frequence"])))
+    r.para("Taux de recours : bénéficiaires ayant exposé des frais rapportés à l'effectif ; fréquence : actes par bénéficiaire ayant exposé des frais. "
+           "« Absents de l'effectif avec frais » : bénéficiaires du relevé inconnus de l'effectif importé, à faire régulariser par le gestionnaire.",
+           italique=True)
+
+
+def _genres(prestations):
+    groupes = {g["Libelle"]: g for g in repartition(prestations, lambda p: GENRES.get(p["genre"], "Non renseigné"))}
+    return [groupes[l] for l in ("Masculin", "Féminin", "Non renseigné") if l in groupes]
+
+
+def _prescripteur_executant(r, prestations):
+    """Analyse comparative des dépenses selon le centre prescripteur et le centre exécutant (attentes, point II.3)."""
+    def lien(p):
+        prescripteur, executant = normaliser(p["centre_prescripteur"] or ""), normaliser(p["centre_executant"] or "")
+        if not prescripteur:
+            return "Non renseigné"
+        return "Prescrit et exécuté dans le même centre" if prescripteur == executant else "Prescrit et exécuté dans des centres différents"
+
+    groupes = repartition(prestations, lien)
+    r.repartition("Dépenses selon le centre prescripteur et le centre exécutant", "Prescription et exécution", groupes, total=True)
+    r.graphique("Dépenses selon le centre prescripteur et le centre exécutant", graphiques.anneau([(g["Libelle"], g["Depenses"]) for g in groupes]))
+    couples = repartition([p for p in prestations if p["centre_prescripteur"] and normaliser(p["centre_prescripteur"]) != normaliser(p["centre_executant"] or "")],
+                          lambda p: f"{p['centre_prescripteur']} > {p['centre_executant']}")[:20]
+    r.tableau("Dépenses prescrites par un centre et exécutées par un autre, 20 premiers couples", ["Prescripteur > exécutant", "Dépenses", "% des dépenses", "Nombre d'actes", "Coût moyen par acte"],
+              [(g["Libelle"], _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(g["CoutParActe"])) for g in couples])
+
+
+def _graphique_repartition(r, legende, groupes, forme="barres"):
+    libelles, depenses = [g["Libelle"] for g in groupes], [g["Depenses"] for g in groupes]
+    if forme == "anneau":
+        r.graphique(legende, graphiques.anneau(list(zip(libelles, depenses))))
+    elif forme == "colonnes":
+        r.graphique(legende, graphiques.colonnes(libelles, depenses))
+    else:
+        r.graphique(legende, graphiques.barres(libelles, depenses))
+
+
+def _famille_tranche_graphique(r, prestations, au):
+    """Dépenses par tranche d'âge, empilées par type de prestation : les 3 plus coûteux, les autres regroupés."""
+    familles = [g["Libelle"] for g in repartition(prestations, lambda p: p["famille"])]
+    retenues = familles[:3]
+    tranches = [t[2] for t in TRANCHES]
+    series = {f: defaultdict(lambda: ZERO) for f in retenues + ["Autres"]}
+    for p in prestations:
+        f = p["famille"] if p["famille"] in retenues else "Autres"
+        series[f][tranche(_age(p["date_naissance"], au))] += p["mt_rembourse"]
+    presentes = [t for t in tranches + ["Non renseigné"] if any(series[f][t] for f in series)]
+    r.graphique("Répartition des dépenses par type de prestation et par tranche d'âge",
+                graphiques.empilees(presentes, [(f, [float(series[f][t]) for t in presentes]) for f in retenues + (["Autres"] if len(familles) > 3 else [])],
+                                    horizontal=False))
+
+
+def _depenses(r, prestations, effectif, au, exercice, numero="II"):
+    """Analyse des dépenses de santé (attentes, deuxième module) : indicateurs du portefeuille et par entreprise, structure des dépenses,
+    principaux acteurs et centres médicaux."""
+    actifs = [e for e in effectif if e["actif"]]
+    portefeuille = _indicateurs(prestations, actifs, {e["matricule_beneficiaire"] for e in effectif}, au)
+    r.titre(f"{numero}.1. Indicateurs clés", 2)
     _indicateurs_tableau(r, "Indicateurs clés du portefeuille", portefeuille, "Effectif total assuré")
+    _indicateurs_par_entreprise(r, prestations, effectif, au, portefeuille)
+
+    r.titre(f"{numero}.2. Structure des dépenses", 2)
     mensuel = defaultdict(lambda: [ZERO, 0])
     for p in prestations:
         m = mensuel[(p["date_cloture"].year, p["date_cloture"].month)]
         m[0] += p["mt_rembourse"]
         m[1] += 1
     total = sum((v[0] for v in mensuel.values()), ZERO)
+    mois = sorted(mensuel.items())
     r.tableau(f"Dépenses mensuelles {exercice}", ["Mois", "Dépenses", "% des dépenses", "Nombre d'actes", "% des actes", "Coût moyen par acte"],
               [(f"{MOIS[m - 1]} {a}", _f(v[0]), _p(_div(v[0], total)), _f(v[1]), _p(_div(v[1], len(prestations))), _f(_div(v[0], v[1])))
-               for (a, m), v in sorted(mensuel.items())],
+               for (a, m), v in mois],
               total=(TOTAL, _f(total), _p(1), _f(len(prestations)), _p(1), _f(_div(total, len(prestations)))))
+    r.graphique(f"Dépenses mensuelles {exercice}", graphiques.colonnes([f"{MOIS[m - 1]} {a}" for (a, m), _v in mois], [float(v[0]) for _k, v in mois]))
     par_entreprise = repartition(prestations, lambda p: p["police"])
     r.tableau("Répartition des dépenses par entreprise", ["Entreprise", "Bénéficiaires", "Dépenses", "% des dépenses", "Nombre d'actes", "Coût moyen par bénéficiaire", "Coût moyen par acte"],
               [(g["Libelle"], _f(g["Beneficiaires"]), _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(_div(g["Depenses"], g["Beneficiaires"])), _f(g["CoutParActe"]))
                for g in par_entreprise],
               total=(TOTAL, _f(portefeuille["Consommants"]), _f(total), _p(1), _f(len(prestations)), _f(portefeuille["CoutParBeneficiaire"]), _f(portefeuille["CoutParActe"])))
-    r.repartition("Répartition des dépenses par famille de prestation", "Famille de prestation", repartition(prestations, lambda p: p["famille"]), total=True)
-    r.repartition("Répartition des dépenses par statut", "Statut", _ordre_statuts(repartition(prestations, lambda p: _statut(p["statut"]))), total=True)
-    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge",
-                  ordre_des_tranches(repartition(prestations, lambda p: tranche(_age(p["date_naissance"], au)))), total=True)
-    _famille_tranche(r, "Répartition des dépenses par tranche d'âge et par famille de prestation", prestations, au)
-    _top(r, "Top 20 des centres prescripteurs", prestations, lambda p: p["centre_prescripteur"], "Centre prescripteur")
-    _top(r, "Top 20 des centres exécutants", prestations, lambda p: p["centre_executant"], "Centre exécutant")
-    _familles_depensieres(r, "Familles dont le montant remboursé dépasse 1 000 000 F", prestations, seuil=Decimal("1000000"))
-    _top(r, "Top 20 des médecins les plus coûteux", prestations, lambda p: p["medecin"], "Médecin")
-    couples = repartition([p for p in prestations if p["centre_prescripteur"] and p["centre_prescripteur"] != p["centre_executant"]],
-                          lambda p: f"{p['centre_prescripteur']} > {p['centre_executant']}")[:20]
-    r.tableau("Dépenses prescrites par un centre et exécutées par un autre, 20 premiers couples", ["Prescripteur > exécutant", "Dépenses", "% des dépenses", "Nombre d'actes", "Coût moyen par acte"],
-              [(g["Libelle"], _f(g["Depenses"]), _p(g["Part"]), _f(g["Actes"]), _f(g["CoutParActe"])) for g in couples])
+    _graphique_repartition(r, "Répartition des dépenses par entreprise" + (", 25 premières" if len(par_entreprise) > 25 else ""), par_entreprise)
+    familles = repartition(prestations, lambda p: p["famille"])
+    r.repartition("Répartition des dépenses par type de prestation", "Type de prestation", familles, total=True)
+    _graphique_repartition(r, "Répartition des dépenses par type de prestation", familles)
+    statuts = _ordre_statuts(repartition(prestations, lambda p: _statut(p["statut"])))
+    r.repartition("Répartition des dépenses par statut", "Statut", statuts, total=True)
+    _graphique_repartition(r, "Répartition des dépenses par statut", statuts, "anneau")
+    tranches = ordre_des_tranches(repartition(prestations, lambda p: tranche(_age(p["date_naissance"], au))))
+    r.repartition("Répartition des dépenses par tranche d'âge", "Tranche d'âge", tranches, total=True)
+    _graphique_repartition(r, "Répartition des dépenses par tranche d'âge", tranches, "colonnes")
+    _famille_tranche(r, "Répartition des dépenses par type de prestation et par tranche d'âge", prestations, au)
+    _famille_tranche_graphique(r, prestations, au)
+    genres = _genres(prestations)
+    r.repartition("Répartition des dépenses par genre", "Genre", genres, total=True)
+    _graphique_repartition(r, "Répartition des dépenses par genre", genres, "anneau")
+    sans_genre = qualite.garants_sans_genre(effectif)
+    if sans_genre:
+        r.para(f"Le fichier d'effectif du garant {', '.join(sans_genre)} ne donne pas le genre : les dépenses de ses bénéficiaires sont comptées "
+               "« Non renseigné ».", italique=True)
 
-    r.titre("III. ANALYSE CIBLÉE DES ENTREPRISES À RISQUE", 1)
-    r.titre("III.1. Sélection des entreprises à risque", 2)
+    r.titre(f"{numero}.3. Principaux acteurs et centres médicaux", 2)
+    for legende, cle, colonne in (("Top 20 des centres prescripteurs les plus coûteux", lambda p: p["centre_prescripteur"], "Centre prescripteur"),
+                                  ("Top 20 des centres exécutants les plus coûteux", lambda p: p["centre_executant"], "Centre exécutant"),
+                                  ("Top 20 des médecins les plus coûteux", lambda p: p["medecin"], "Médecin")):
+        _top(r, legende, prestations, cle, colonne)
+        _graphique_repartition(r, legende, repartition(prestations, cle)[:20])
+    _prescripteur_executant(r, prestations)
+    _familles_depensieres(r, "Familles dont le montant remboursé dépasse 1 000 000 F", prestations, seuil=Decimal("1000000"))
+    return portefeuille
+
+
+def _risque(r, prestations, effectif, au, numero="III"):
+    """Analyse ciblée des entreprises à risque (attentes, troisième module) : sélection, puis pour chacune les axes des deux premiers modules."""
+    r.titre(f"{numero}.1. Sélection des entreprises à risque", 2)
     r.para("Critères : coût moyen par acte supérieur de plus de 30 % à la moyenne du portefeuille ; plus de 10 actes par bénéficiaire ; score égal ou supérieur à 1 (entreprise critique). "
            "Le score est la moyenne des rapports à la moyenne du portefeuille du coût par bénéficiaire, du nombre d'actes par bénéficiaire et du coût par acte "
            "(formule proposée, à valider).")
@@ -735,44 +909,91 @@ def produire(params):
               [(l["Police"], _f(l["Beneficiaires"]), _f(l["Actes"]), _f(l["Depenses"]), _f(l["AgeMoyen"]), _f(l["CoutParBeneficiaire"]),
                 "-" if l["ActesParBeneficiaire"] is None else f"{l['ActesParBeneficiaire']:.1f}".replace(".", ","), _f(l["CoutParActe"]), ", ".join(l["Alertes"]),
                 f"{l['Score']:.2f}".replace(".", ",")) for l in risque])
+    r.graphique("Score de risque par entreprise (en orange : entreprises à risque)",
+                graphiques.barres([l["Police"] for l in risque], [l["Score"] for l in risque], format_valeur=lambda v: f"{v:.2f}".replace(".", ","),
+                                  couleurs=[graphiques.COULEURS[1] if l["Alertes"] else graphiques.COULEURS[0] for l in risque]))
     a_risque = [l["Police"] for l in risque if l["Alertes"]][:FICHES_MAX]
-    r.titre("III.2. Analyse des entreprises à risque", 2)
+    r.titre(f"{numero}.2. Analyse approfondie des entreprises à risque", 2)
     if not a_risque:
         r.para("Aucune entreprise ne répond aux critères sur la période.", italique=True)
     for police in a_risque:
         _fiche(r, police, prestations, effectif, au)
 
-    if bord["CotisationsImportees"]:
-        t = bord["Totaux"]
-        r.titre(f"IV. CONTRÔLE DE GESTION {exercice}", 1)
-        r.para("Provision pour paiement des dépenses de santé (état des cotisations) face à la consommation des relevés de l'exercice.")
-        r.tableau("Pilotage global", ["Indicateur", "Montant"], [
-            ("Primes HT", _f(t["PrimeHt"])), ("Cotisations santé pure", _f(t["CotisationPure"])), ("Honoraires du gestionnaire", _f(t["Honoraires"])),
-            ("Commissions", _f(t["Commissions"])), ("Apporteurs d'affaires", _f(t["Apporteurs"])), ("Provisions pour paiement des dépenses", _f(t["Provision"])),
-            ("Consommation", _f(t["Consommation"])), ("Reste sur les provisions", _f(t["Reste"])), ("Taux de consommation des provisions", _p(t["Taux"])),
-            ("Entreprises", _f(t["Entreprises"])),
-        ])
-        # en-têtes courts : le tableau tient sur la largeur d'une page en portrait (dépenses = consommation des relevés)
-        r.tableau("Contrôle de gestion par entreprise", ["Entreprise", "Police du gestionnaire", "Provision", "Dépenses", "Reste", "Taux", "État"],
-                  [(l["Entreprise"] or "-", l["Police"] or "-", _f(l["Provision"]), _f(l["Consommation"]), _f(l["Reste"]), _p(l["Taux"]), l["Situation"])
-                   for l in bord["Controle"]],
-                  total=(TOTAL, "", _f(t["Provision"]), _f(t["Consommation"]), _f(t["Reste"]), _p(t["Taux"]), ""))
-    _analyses_complementaires(r, analyse_periode(params), "V" if bord["CotisationsImportees"] else "IV")
-    return r.octets(), f"RAPPORT CONSOMMATIONS SANTE {exercice} du {du:%d-%m-%Y} au {au:%d-%m-%Y}.docx", {"Exercice": exercice, "Du": du, "Au": au,
-                                                                                                       "Prestations": len(prestations)}
+
+def produire(params):
+    """Rapport Word selon les attentes de l'équipe actuariat (2026-11-11) : « effectifs » (premier module), « depenses » (deuxième module) ou
+    « global » (les deux, puis l'analyse ciblée des entreprises à risque, le contrôle de gestion et les analyses complémentaires)."""
+    nature = str(params.get("type") or "global").strip().lower()
+    if nature not in TYPES_RAPPORT:
+        raise ErreurConsommation("Rapport inconnu : effectifs, depenses ou global.")
+    titre, fichier, _libelle = TYPES_RAPPORT[nature]
+    with connection.cursor() as cursor:
+        exercice, du, au, _exercices = _periode(cursor, params)
+        garant = str(params.get("garant") or "").strip()
+        prestations, effectif = charger(cursor, du, au, garant)
+        reference, date_reference = effectif_de_reference(cursor, du, garant)
+        situation = date_effectif(cursor)
+        doublons = doublons_importes(cursor, garant)
+    actifs = [e for e in effectif if e["actif"]]
+    if nature == "effectifs" and not actifs:
+        raise ErreurConsommation("Aucun effectif importé : importez d'abord l'effectif du gestionnaire.")
+    if nature == "depenses" and not prestations:
+        raise ErreurConsommation("Aucune prestation sur cette période : importez d'abord les relevés de consommation du gestionnaire.")
+    if not prestations and not effectif:
+        raise ErreurConsommation("Aucune donnée sur cette période : importez d'abord les relevés du gestionnaire.")
+    r = Rapport()
+    r.titre(f"{titre} {exercice} - OREOLE SANTÉ", 0)
+    r.para(f"Du {_d(du)} au {_d(au)}" + (f" - garant {garant}" if garant else ""), centre=True)
+    r.para("Source : relevés de prestations et effectif du gestionnaire importés dans LE PHARE ; mois et période selon la date de clôture du relevé ; "
+           "âges à la fin de la période. Document contenant des données de santé : diffusion restreinte.", italique=True)
+
+    if nature in ("effectifs", "global"):
+        r.titre("I. ANALYSE DES EFFECTIFS", 1)
+        r.para("Structure démographique de la population assurée, composition des familles et qualité des données transmises par le gestionnaire.")
+        _effectifs(r, effectif, du, au, reference, date_reference, situation, exercice, "I", doublons)
+    if nature in ("depenses", "global"):
+        numero = "I" if nature == "depenses" else "II"
+        r.titre(f"{numero}. ANALYSE DES DÉPENSES DE SANTÉ", 1)
+        r.para("Consommation médicale, remboursements et structure des dépenses de santé du portefeuille.")
+        _depenses(r, prestations, effectif, au, exercice, numero)
+    if nature == "global":
+        r.titre("III. ANALYSE CIBLÉE DES ENTREPRISES À RISQUE", 1)
+        _risque(r, prestations, effectif, au, "III")
+        bord = tableau_de_bord(params)
+        if bord["CotisationsImportees"]:
+            t = bord["Totaux"]
+            r.titre(f"IV. CONTRÔLE DE GESTION {exercice}", 1)
+            r.para("Provision pour paiement des dépenses de santé (état des cotisations) face à la consommation des relevés de l'exercice.")
+            r.tableau("Pilotage global", ["Indicateur", "Montant"], [
+                ("Primes HT", _f(t["PrimeHt"])), ("Cotisations santé pure", _f(t["CotisationPure"])), ("Honoraires du gestionnaire", _f(t["Honoraires"])),
+                ("Commissions", _f(t["Commissions"])), ("Apporteurs d'affaires", _f(t["Apporteurs"])), ("Provisions pour paiement des dépenses", _f(t["Provision"])),
+                ("Consommation", _f(t["Consommation"])), ("Reste sur les provisions", _f(t["Reste"])), ("Taux de consommation des provisions", _p(t["Taux"])),
+                ("Entreprises", _f(t["Entreprises"])),
+            ])
+            # en-têtes courts : le tableau tient sur la largeur d'une page en portrait (dépenses = consommation des relevés)
+            r.tableau("Contrôle de gestion par entreprise", ["Entreprise", "Police du gestionnaire", "Provision", "Dépenses", "Reste", "Taux", "État"],
+                      [(l["Entreprise"] or "-", l["Police"] or "-", _f(l["Provision"]), _f(l["Consommation"]), _f(l["Reste"]), _p(l["Taux"]), l["Situation"])
+                       for l in bord["Controle"]],
+                      total=(TOTAL, "", _f(t["Provision"]), _f(t["Consommation"]), _f(t["Reste"]), _p(t["Taux"]), ""))
+        if prestations:
+            _analyses_complementaires(r, analyse_periode(params), "V" if bord["CotisationsImportees"] else "IV")
+    _annexe_anomalies(r)
+    return r.octets(), f"{fichier} {exercice} du {du:%d-%m-%Y} au {au:%d-%m-%Y}.docx", {"Exercice": exercice, "Du": du, "Au": au,
+                                                                                        "Prestations": len(prestations), "Type": nature}
 
 
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_rapport(request):
-    """GET /api/consommations/rapport/?exercice=&du=&au=&garant= : le rapport Word, seul export du suivi des consommations."""
+    """GET /api/consommations/rapport/?type=effectifs|depenses|global&exercice=&du=&au=&garant= : rapport Word, seul export du suivi."""
     try:
         contenu, nom, resume = produire(request.query_params)
     except ErreurConsommation:
         return _reponse(produire, request.query_params)
     journaliser(request=request, module="consommations", action="consommations.rapport", objet_type="rapport_consommations", objet_id=str(resume["Exercice"]),
-                description=f"Export du rapport des consommations santé du {resume['Du']:%d/%m/%Y} au {resume['Au']:%d/%m/%Y} ({resume['Prestations']} prestations).")
+                description=f"Export du {TYPES_RAPPORT[resume['Type']][2]} des consommations santé du {resume['Du']:%d/%m/%Y} au {resume['Au']:%d/%m/%Y} "
+                            f"({resume['Prestations']} prestations).")
     reponse = HttpResponse(contenu, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     reponse["Content-Disposition"] = f'attachment; filename="{nom}"'
     return reponse

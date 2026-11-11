@@ -24,6 +24,7 @@ from .views_devis_voyage import (
     lire_devis_voyage,
 )
 from . import apporteurs, decaissements, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
+from . import corrections_encaissement
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
@@ -676,6 +677,7 @@ urlpatterns = [
     # Vie, offre Retraite complémentaire : état mensuel des cotisations (analyse sans écriture), dernier état du souscripteur, modèle
     path("afa/retraite/analyse/", vie_retraite_views.analyse_import, name="vie-retraite-analyse"),
     path("afa/retraite/etat-precedent/", vie_retraite_views.precedent, name="vie-retraite-precedent"),
+    path("afa/retraite/renouveler/<int:idcontrat>/", vie_retraite_views.renouveler, name="vie-retraite-renouveler"),
     path("afa/retraite/modele/", vie_retraite_views.modele, name="vie-retraite-modele"),
     # MRH : import Excel des maisons d'un devis ou d'une incorporation (lecture et contrôle sans écriture), modèle vierge
     path("mrh/import/analyse/", import_mrh.analyse_import, name="mrh-import-analyse"),
@@ -883,6 +885,13 @@ urlpatterns = [
     path("caisse/reglements/", decaissements.vue_reglements, name="caisse-reglements"),
     path("caisse/reglements/<int:id_encaissement>/decaissement/", decaissements.vue_decaissement, name="caisse-reglement-decaissement"),
     path("caisse/decaissements/", decaissements.vue_decaissements, name="caisse-decaissements"),
+    # Correction d'un encaissement saisi par erreur : références, annulation, annulation et réaffectation
+    path("caisse/encaissements/du-jour/", corrections_encaissement.vue_du_jour, name="caisse-encaissements-du-jour"),
+    path("caisse/encaissements/<int:id_encaissement>/correction/", corrections_encaissement.vue_fiche, name="caisse-encaissement-correction"),
+    path("caisse/encaissements/<int:id_encaissement>/correction/references/", corrections_encaissement.vue_references,
+         name="caisse-encaissement-correction-references"),
+    path("caisse/encaissements/<int:id_encaissement>/correction/annulation/", corrections_encaissement.vue_annulation,
+         name="caisse-encaissement-correction-annulation"),
     # Chèque impayé : décaissement, puis quittances à réencaisser
     path(
         "cheques/<int:id_cheque>/decaissement/",

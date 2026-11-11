@@ -27,6 +27,13 @@
   border: 1.5px dashed var(--vie-bord); background: var(--bg-surface); transition: border-color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast); }
 .vie-depot:hover, .vie-depot:focus-visible { border-color: var(--vie); background: var(--vie-teinte); outline: none; }
 .vie-depot.survol { border-color: var(--vie); background: var(--vie-teinte); transform: scale(1.005); animation: vie-pulse 1.2s ease-in-out infinite; }
+/* Mois suivant d'une police d'état des cotisations : le fichier du mois est attendu */
+.vie-depot.attendu { border-color: var(--vie); background: var(--vie-teinte); animation: vie-pulse 2.4s ease-in-out infinite; }
+.vie-mois-attendu { display: flex; gap: 0.6rem; align-items: flex-start; max-width: 860px; margin: 0; padding: 0.7rem 0.9rem; border-radius: 10px;
+  border: 1px solid var(--vie-bord); background: var(--vie-teinte); font-size: 0.86rem; line-height: 1.55; color: var(--text-primary);
+  animation: vie-apparition 0.35s ease-out both; }
+@keyframes vie-apparition { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .vie-depot.attendu, .vie-mois-attendu { animation: none; } }
 .vie-depot.occupe { cursor: progress; opacity: 0.85; }
 .vie-depot-icone { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
   background: var(--vie-teinte); color: var(--vie); }
@@ -79,6 +86,9 @@
 .vie-ligne-erreur .col-num { color: var(--accent-rose); font-weight: 800; }
 .vie-ligne-nouvelle { box-shadow: inset 3px 0 0 var(--accent-emerald); }
 .vie-ligne-modifiee { box-shadow: inset 3px 0 0 var(--accent-amber); }
+/* Salarié sans cotisation ce mois : gardé dans l'état, en retrait */
+.vie-ligne-zero { box-shadow: inset 3px 0 0 var(--border-strong, var(--text-muted)); }
+.vie-ligne-zero .col-total .vie-etiquette { color: var(--text-muted); }
 .vie-ligne-message td { border-top: 0; padding-top: 0; }
 .vie-message { display: inline-flex; align-items: center; gap: 0.3rem; margin-right: 0.8rem; color: var(--accent-amber); font-size: 0.73rem; }
 .vie-message.erreur { color: var(--accent-rose); }
@@ -92,7 +102,7 @@
 
 /* ---------- sorties depuis le mois précédent */
 .vie-sortants { margin-top: 0.9rem; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-surface); }
-.vie-sortants summary { cursor: pointer; padding: 0.65rem 0.85rem; font-size: 0.84rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 0.45rem; }
+.vie-sortants summary { cursor: pointer; padding: 0.65rem 0.85rem; font-size: 0.84rem; font-weight: 700; color: var(--text-primary); display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; }
 .vie-sortants ul { list-style: none; margin: 0; padding: 0 0.85rem 0.75rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 0.4rem; }
 .vie-sortants li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.4rem 0.55rem; border-radius: 8px; background: var(--bg-surface-elevated); font-size: 0.78rem; }
 

@@ -29,7 +29,7 @@ from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 AUTHENTIFICATION = [KnoxOrDemoTokenAuthentication, BasicAuthentication]
 CODES_BASE = ("AFN", "REN", "RPP", "TRP")
 # Écran de saisie qui rouvre le devis, par produit
-MODULES = {1: "auto", 2: "ia", 3: "voyage", 4: "mrh", 5: "sante", 7: "mrp", 8: "rc", 9: "tous-dommages"}
+MODULES = {1: "auto", 2: "ia", 3: "voyage", 4: "mrh", 5: "sante", 7: "mrp", 8: "rc", 9: "tous-dommages", 10: "afa"}
 ID_PRODUIT_SANTE = 5
 PREFIXE_FAMILLE = "ADH-"
 
@@ -220,6 +220,16 @@ def _devis_en_cours(cursor, base):
     """, [base["iddevis"]])
 
 
+def _etat_mensuel(cursor, base):
+    """Retraite complémentaire (Vie, état mensuel des cotisations) : le mois suivant se crée dans l'écran Vie avec le fichier du
+    souscripteur, pas en recopiant le total du mois précédent (production/vie_retraite.py). None pour les autres polices."""
+    if base["idproduit"] != 10:
+        return None
+    from .vie_retraite import etat_mensuel_de_police
+
+    return etat_mensuel_de_police(cursor, base)
+
+
 def _reconduire_montants_ia(cursor, base, id_devis):
     from .ia_montants_imposes import OFFRES_HORS_MONTANTS_GARDES, appliquer, enregistrer, montants_du_contrat
 
@@ -278,6 +288,7 @@ def renouvellement(request, pk):
                     "Objets": _objets(cursor, base, effet),
                     "Retraits": _retraits(cursor, base),
                     "DevisEnCours": encours,
+                    "EtatMensuel": _etat_mensuel(cursor, base),
                 })
 
         donnees = request.data
@@ -285,6 +296,11 @@ def renouvellement(request, pk):
         valeurs = {str(k).strip(): v for k, v in (donnees.get("ValeursVenales") or {}).items()}
         with transaction.atomic(), connection.cursor() as cursor:
             base = _contrat_base(cursor, pk)
+            etat = _etat_mensuel(cursor, base)
+            if etat:
+                from .vie_retraite import message_renouvellement
+
+                raise ErreurRenouvellement(message_renouvellement(etat))
             effet, expiration = _periode(cursor, base, donnees.get("DateEffet"), donnees.get("DateExpiration"))
             if effet <= base["dateexpiration"]:
                 raise ErreurRenouvellement("La nouvelle période doit commencer après l'échéance du contrat.")

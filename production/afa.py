@@ -589,11 +589,14 @@ def _devis_renouvellement(cursor, entete, id_utilisateur, mensuel=False):
         raise ErreurAfa(f"Le renouvellement doit prendre effet après le {base['dateeffet']:%d/%m/%Y}, début de la période en cours.")
     en_cours = _lignes(
         cursor,
-        """SELECT d.numerodevis FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant
+        """SELECT d.numerodevis, d.dateeffet::date AS dateeffet FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant
            WHERE a.codeavenant = 'REN' AND d.idoldhist = %s AND NOT COALESCE(d.confirme, FALSE) AND NOT COALESCE(d.archive, FALSE)""",
         [base["iddevis"]],
     )
     if en_cours:
+        if mensuel and en_cours[0]["dateeffet"] == entete["DateEffet"]:
+            raise ErreurAfa(f"Le mois du {entete['DateEffet']:%d/%m/%Y} est déjà ouvert sur la police {base['numeropolice']} (devis "
+                            f"{en_cours[0]['numerodevis']}) : ouvrez ce devis (Modifier) et importez-y l'état du mois.")
         if mensuel:
             raise ErreurAfa(f"L'état précédent de la police {base['numeropolice']} (devis {en_cours[0]['numerodevis']}) n'est pas encore "
                             "confirmé : confirmez-le d'abord, chaque mois renouvelle la police.")
@@ -681,11 +684,19 @@ def enregistrer(donnees, id_utilisateur):
         cursor.execute("SELECT 1 FROM stdclient WHERE idclient = %s", [entete["IdClient"]])
         if not cursor.fetchone():
             raise ErreurAfa(f"Souscripteur n° {entete['IdClient']} introuvable.")
+        fichier = str(donnees.get("Fichier") or "").strip()
         if cotisations:
             doublon = vie_retraite.mois_deja_enregistre(cursor, entete["IdClient"], entete["DateEffet"], id_devis)
             if doublon:
                 raise ErreurAfa(f"L'état de {vie_retraite.libelle_mois(entete['DateEffet'])} de ce souscripteur est déjà enregistré "
                                 f"(devis {doublon['NumeroDevis']}) : modifiez ce devis.")
+            # Mois suivant déjà ouvert sans son état (devis de renouvellement qui n'a recopié que le total du mois précédent) : le fichier aussi
+            if id_devis and not incorporation and offre["Periodicite"] == "MENSUELLE" and not fichier:
+                cursor.execute("""SELECT a.codeavenant = 'REN', EXISTS (SELECT 1 FROM lephare_vie_cotisant c WHERE c.iddevis = d.iddevis)
+                                  FROM stddevis d JOIN stdavenant a ON a.idavenant = d.idavenant WHERE d.iddevis = %s""", [id_devis])
+                renouvellement, etat_present = cursor.fetchone()
+                if renouvellement and not etat_present:
+                    raise ErreurAfa(vie_retraite.message_fichier_exige(entete["DateEffet"]))
         for assure in assures:
             assure["IdClient"] = _client_assure(cursor, assure)
         vus = {}
@@ -698,7 +709,11 @@ def enregistrer(donnees, id_utilisateur):
             _controler_incorpores(cursor, id_devis, assures)
         elif not id_devis:
             if entete["IdContratRenouvele"]:
-                id_devis = _devis_renouvellement(cursor, entete, id_utilisateur, mensuel=cotisations and offre["Periodicite"] == "MENSUELLE")
+                mensuel = cotisations and offre["Periodicite"] == "MENSUELLE"
+                # Mois suivant d'une police d'état des cotisations : avec le fichier du souscripteur, chaque mois (demande du 2026-11-11)
+                if mensuel and not fichier:
+                    raise ErreurAfa(vie_retraite.message_fichier_exige(entete["DateEffet"]))
+                id_devis = _devis_renouvellement(cursor, entete, id_utilisateur, mensuel=mensuel)
             else:
                 id_devis = _devis_affaire_nouvelle(cursor, entete, id_utilisateur)
 

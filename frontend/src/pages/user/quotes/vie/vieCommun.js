@@ -48,41 +48,51 @@ export const cotisantVide = (base = {}) => ({
   Avertissements: [], ...base,
 });
 
+/** Un salarié peut ne pas cotiser un mois (règle du 2026-11-11) : parts vides ou à 0, il reste dans l'état à 0 F */
+export const sansCotisation = (l) => !(Number(l.CotisationSalarie) || 0) && !(Number(l.CotisationEmployeur) || 0);
+
 /** Contrôles d'un salarié, les mêmes que le serveur (vie_retraite.controler_ligne) : bloquants avant l'enregistrement */
 export const erreursCotisant = (l) => {
   const erreurs = [];
   if (!String(l.Nom || '').trim()) erreurs.push('nom absent');
-  const s = l.CotisationSalarie === '' || l.CotisationSalarie === null || l.CotisationSalarie === undefined ? null : Number(l.CotisationSalarie);
-  const e = l.CotisationEmployeur === '' || l.CotisationEmployeur === null || l.CotisationEmployeur === undefined ? null : Number(l.CotisationEmployeur);
-  if (s === null && e === null) erreurs.push('cotisations à saisir');
-  else if (Number.isNaN(s) || Number.isNaN(e)) erreurs.push('montant illisible');
-  else if ((s || 0) < 0 || (e || 0) < 0) erreurs.push('montant négatif');
-  else if (!(s || 0) && !(e || 0)) erreurs.push('cotisations nulles');
+  const s = l.CotisationSalarie === '' || l.CotisationSalarie === null || l.CotisationSalarie === undefined ? 0 : Number(l.CotisationSalarie);
+  const e = l.CotisationEmployeur === '' || l.CotisationEmployeur === null || l.CotisationEmployeur === undefined ? 0 : Number(l.CotisationEmployeur);
+  if (Number.isNaN(s) || Number.isNaN(e)) erreurs.push('montant illisible');
+  else if (s < 0 || e < 0) erreurs.push('montant négatif');
   return erreurs;
 };
 
-/** Écarts avec l'état précédent : { parCle: {cle: ancienne ligne}, entrants: Set(cle), sortants: [...], modifies: Set(cle), ecart } */
+/** Écarts avec l'état précédent (comme vie_retraite.comparer) : { parCle: {cle: ancienne ligne}, entrants: Set(cle) jamais vus,
+ *  reprises: Set(cle) absents le mois précédent mais déjà dans un état antérieur (precedent.Connus), sansCotisation: Set(cle) à 0 F,
+ *  sortants: [...] absents de cet état (sans cotisation ce mois ou partis), modifies: Set(cle), ecart } */
 export const comparerEtats = (lignes, precedent) => {
   if (!precedent?.Cotisants?.length) return null;
   const parCle = new Map(precedent.Cotisants.map((l) => [cleSalarie(l), l]));
+  const connus = new Set(precedent.Connus || []);
   const presents = new Set();
   const entrants = new Set();
+  const reprises = new Set();
   const modifies = new Set();
+  const zero = new Set();
   let total = 0;
   lignes.forEach((l) => {
     if (!String(l.Nom || '').trim() && !String(l.Matricule || '').trim()) return;
     const cle = cleSalarie(l);
     presents.add(cle);
     total += totalSalarie(l);
+    if (sansCotisation(l)) zero.add(l.cle);
     const avant = parCle.get(cle);
-    if (!avant) entrants.add(l.cle);
+    if (!avant) (connus.has(cle) ? reprises : entrants).add(l.cle);
     else if ((Number(avant.CotisationSalarie) || 0) !== (Number(l.CotisationSalarie) || 0)
       || (Number(avant.CotisationEmployeur) || 0) !== (Number(l.CotisationEmployeur) || 0)) modifies.add(l.cle);
   });
   const sortants = precedent.Cotisants.filter((l) => !presents.has(cleSalarie(l)));
   const totalAvant = precedent.Cotisants.reduce((s, l) => s + totalSalarie(l), 0);
-  return { parCle, entrants, modifies, sortants, total, totalAvant, ecart: total - totalAvant };
+  return { parCle, entrants, reprises, sansCotisation: zero, modifies, sortants, total, totalAvant, ecart: total - totalAvant };
 };
+
+/** « 3 nouveaux », « 1 reprise » : nombre et libellé accordé */
+export const compte = (n, singulier, pluriel = `${singulier}s`) => `${n} ${n > 1 ? pluriel : singulier}`;
 
 export const telechargerBlob = (blob, nom) => {
   const lien = document.createElement('a');

@@ -178,6 +178,12 @@ def _banque_creation(request, view):
     return "encaissements.create" if a_le_droit(request.user, "encaissements.create") else "parametrage.update"
 
 
+def _correction_encaissement(request, view):
+    """Correction d'un encaissement : droit des responsables s'il est accordé, sinon celui de la caisse (l'auteur corrige sa saisie
+    du jour ; production/corrections_encaissement.droits le vérifie)."""
+    return "encaissements.cancel" if a_le_droit(request.user, "encaissements.cancel") else "encaissements.create"
+
+
 CLES_DEVIS = ("iddevis", "IdDevis", "id_devis", "devis_id", "idDevis")
 CLES_CONTRAT = ("idcontrat", "IdContrat", "id_contrat", "contrat_id")
 R = Regle
@@ -379,6 +385,11 @@ REGLES = [
     # Décaissement de tout autre règlement : même droit et même motif que le chèque impayé
     R("POST", r"caisse/reglements/(?P<id_encaissement>\d+)/decaissement/?$", "encaissements.cancel", objet="encaissement", cles=("id_encaissement",)),
     R("GET", r"caisse/(reglements|decaissements)/?$", "encaissements.view"),
+    # Correction d'un encaissement saisi par erreur (production/corrections_encaissement.py) : l'auteur le jour même, sinon un
+    # responsable ; la vue vérifie lequel des deux
+    R("POST", r"caisse/encaissements/(?P<id_encaissement>\d+)/correction/(references|annulation)/?$", _correction_encaissement,
+      objet="encaissement", cles=("id_encaissement",)),
+    R("GET", r"caisse/encaissements/(du-jour|\d+/correction)/?$", "encaissements.view"),
     R("DELETE", r"cheques/(?P<id_cheque>\d+)/", "encaissements.cancel", objet="cheque", cles=("id_cheque",)),
     R("PUT,PATCH,DELETE", r"encaissement/(?P<pk>\d+)", "encaissements.cancel", objet="encaissement", cles=("pk",)),
     R("POST", r"(enregistrementencaissement|cheques/echeancier/|initiationpaiementmobile|quittances-cima/$|encaissement/$|"

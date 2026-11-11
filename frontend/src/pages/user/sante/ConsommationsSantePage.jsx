@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Building2, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, Save, Search, ShieldAlert, Stethoscope, Upload, UserSearch, Users,
+  Building2, ChevronDown, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, Save, Search, ShieldAlert, Stethoscope, Upload, UserSearch, Users,
 } from 'lucide-react';
 import { consommationsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -13,11 +13,11 @@ import { AnalyseConsommations, BarreFiltres, useAnalyse } from './consommations/
 
 /* =========================================================================
    Suivi des consommations santé : relevés du gestionnaire (MCI CARE) importés, droits, plafonds et soldes de chaque assuré et de ses
-   bénéficiaires, statistiques par entreprise, contrôles des données et détection des cas de fraude.
+   bénéficiaires, statistiques par entreprise, contrôles des données et détection des anomalies.
    Trois groupes d'onglets (refonte du 2026-11-09) :
    - Analyse : vue d'ensemble, entreprises, prestations, assurés et foyers, sur une seule lecture filtrée (consommations/AnalyseConsommations.jsx,
      calculs sante/consommations_analyse.py) ;
-   - Suivi : fiche assuré, plafonds, contrôles, fraude (sante/consommations.py) ;
+   - Suivi : fiche assuré, plafonds, contrôles, anomalies (sante/consommations.py ; « fraude » renommée « anomalie » le 2026-11-11) ;
    - Données : imports des relevés, effectifs et états des cotisations.
    Données de santé : chaque onglet suit son droit (consommations.view, consommations.fraude, consommations.import).
    ========================================================================= */
@@ -29,7 +29,7 @@ const COULEUR_SITUATION = { Normal: 'emerald', Alerte: 'amber', 'Plafond dépass
 const COULEUR_NIVEAU = { Élevé: 'rose', Moyen: 'amber', Faible: 'blue' };
 const COULEUR_GRAVITE = { Élevée: 'rose', Moyenne: 'amber', Faible: 'slate' };
 const COULEUR_INSTRUCTION = { A_INSTRUIRE: 'blue', JUSTIFIE: 'emerald', FRAUDE: 'rose', SANS_SUITE: 'slate' };
-const DECISIONS = [['A_INSTRUIRE', 'À instruire'], ['JUSTIFIE', 'Justifié'], ['FRAUDE', 'Fraude avérée'], ['SANS_SUITE', 'Sans suite']];
+const DECISIONS = [['A_INSTRUIRE', 'À instruire'], ['JUSTIFIE', 'Justifié'], ['FRAUDE', 'Anomalie avérée'], ['SANS_SUITE', 'Sans suite']];
 
 const Tuile = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => (
   <div className="glass-panel" style={{ padding: '0.9rem 1.05rem' }}>
@@ -139,7 +139,7 @@ const FicheFamille = ({ fiche }) => {
       <Panneau titre="Bénéficiaires, plafonds individuels et soldes">
         <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
           <thead><tr><th>Lien</th><th>Nom</th><th>Naissance</th><th>Effet</th><th>Situation</th><th style={DROITE}>Prestations</th><th style={DROITE}>Remboursé</th>
-            <th style={DROITE}>Solde dentaire</th><th style={DROITE}>Solde optique</th><th>Alertes</th>{signaux && <th>Fraude</th>}</tr></thead>
+            <th style={DROITE}>Solde dentaire</th><th style={DROITE}>Solde optique</th><th>Alertes</th>{signaux && <th>Anomalie</th>}</tr></thead>
           <tbody>{fiche.Beneficiaires.map((b) => (
             <tr key={b.Matricule}>
               <td>{b.Lien}</td>
@@ -158,8 +158,8 @@ const FicheFamille = ({ fiche }) => {
         </table></div>
       </Panneau>
       {signaux && signaux.length > 0 && (
-        <Panneau titre={`Signaux de fraude de la famille : ${signaux.length}`}>
-          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Un signal est à instruire : ce n'est pas une preuve de fraude.</p>
+        <Panneau titre={`Signaux d'anomalie de la famille : ${signaux.length}`}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Un signal est à instruire : ce n'est pas la preuve d'une anomalie.</p>
           <TableSignaux signaux={signaux} />
         </Panneau>
       )}
@@ -274,7 +274,7 @@ const OngletControles = () => {
   return (
     <>
       <Panneau titre={`Anomalies des données : ${fcfa(donnees?.Total || 0)}`}>
-        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Contrôles de qualité des relevés et de l'effectif. Les comportements suspects relèvent de l'onglet Fraude.</p>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Contrôles de qualité des relevés et de l'effectif. Les comportements suspects relèvent de l'onglet Anomalie.</p>
         <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.83rem' }}>
           <thead><tr><th>Anomalie</th><th>Gravité</th><th style={DROITE}>Nombre</th><th style={DROITE}>Montant concerné</th><th /></tr></thead>
           <tbody>
@@ -304,7 +304,7 @@ const OngletControles = () => {
   );
 };
 
-// ------------------------------------------------------------------ fraude
+// ------------------------------------------------------------------ anomalies (anciennement « fraude »)
 const TableSignaux = ({ signaux }) => (
   <div className="table-wrapper" style={{ maxHeight: 420, overflow: 'auto' }}><table className="data-table" style={{ fontSize: '0.8rem' }}>
     <thead><tr><th>Règle</th><th>Prestation</th><th>Soins</th><th>Famille</th><th>Centre</th><th>Constat</th><th style={DROITE}>Montant</th></tr></thead>
@@ -322,7 +322,7 @@ const Instruction = ({ suspicion, onEnregistree }) => {
   const [observation, setObservation] = useState(suspicion.Observation || '');
   const [envoi, setEnvoi] = useState(false);
   const enregistrer = async () => {
-    if (statut === 'FRAUDE' && !(await confirmer({ titre: 'Fraude avérée', message: "Confirmer que l'instruction établit une fraude ? La décision et son auteur sont conservés.", confirmer: 'Confirmer la fraude', ton: 'danger' }))) return;
+    if (statut === 'FRAUDE' && !(await confirmer({ titre: 'Anomalie avérée', message: "Confirmer que l'instruction établit une anomalie ? La décision et son auteur sont conservés.", confirmer: "Confirmer l'anomalie", ton: 'danger' }))) return;
     setEnvoi(true);
     try {
       success((await consommationsApi.instruire(suspicion.MatriculeBeneficiaire, { Statut: statut, Observation: observation })).Message);
@@ -373,7 +373,7 @@ const OngletFraude = ({ onOuvrir }) => {
         <Tuile libelle="Niveau élevé" valeur={fcfa(n['Élevé'] || 0)} couleur="#e11d48" detail="score de 15 et plus" />
         <Tuile libelle="Niveau moyen" valeur={fcfa(n.Moyen || 0)} couleur="#d97706" detail="score de 8 à 14" />
         <Tuile libelle="Niveau faible" valeur={fcfa(n.Faible || 0)} detail="moins de 8" />
-        <Tuile libelle="Fraudes avérées" valeur={fcfa(donnees?.Instructions?.FRAUDE || 0)} detail={`${fcfa(donnees?.Instructions?.JUSTIFIE || 0)} justifiés, ${fcfa(donnees?.Instructions?.SANS_SUITE || 0)} sans suite`} />
+        <Tuile libelle="Anomalies avérées" valeur={fcfa(donnees?.Instructions?.FRAUDE || 0)} detail={`${fcfa(donnees?.Instructions?.JUSTIFIE || 0)} justifiés, ${fcfa(donnees?.Instructions?.SANS_SUITE || 0)} sans suite`} />
       </Grille>
       <Panneau titre="Règles de détection">
         <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -545,6 +545,7 @@ const OngletImports = () => {
         : `Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}`
           + (r.EffectifPrecedent ? `, effectif de référence au ${dateFr(r.SituationPrecedent)} : ${fcfa(r.EffectifPrecedent)} bénéficiaires` : '')
           + (r.Anterieur ? `. Effectif plus ancien que l'effectif courant du ${dateFr(r.Anterieur)} : gardé comme effectif de référence, l'effectif courant n'est pas modifié` : '')
+          + (r.MatriculesEnDouble ? `. ${fcfa(r.MatriculesEnDouble)} matricule(s) bénéficiaire(s) en double dans le fichier : première ligne gardée, cas listés dans l'onglet Contrôles et le rapport` : '')
           + '.');
       setAnalyse(null);
       setFichier(null);
@@ -565,7 +566,7 @@ const OngletImports = () => {
           une prestation déjà importée n'est jamais réécrite et un montant changé est signalé. Une date de soins postérieure à la clôture, jour et mois inversés, est corrigée et la date du relevé conservée.
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <Champ id="imp-fichier" libelle="Fichier Excel"><input id="imp-fichier" type="file" accept=".xlsx" className="form-control" onChange={choisir} /></Champ>
+          <Champ id="imp-fichier" libelle="Fichier Excel"><input id="imp-fichier" type="file" accept=".xlsx,.xls" className="form-control" onChange={choisir} /></Champ>
           <Champ id="imp-situation" libelle="Effectif à jour au"><input id="imp-situation" type="date" className="form-control" value={situation} onChange={(e) => setSituation(e.target.value)} /></Champ>
           <Champ id="imp-exercice" libelle="Exercice de l'état"><input id="imp-exercice" type="number" min="2000" max="2100" className="form-control" style={{ maxWidth: 120 }} placeholder="d'après le nom" value={exercice} onChange={(e) => setExercice(e.target.value)} /></Champ>
           <button type="button" className="btn btn-secondary" disabled={!fichier || envoi} onClick={analyser} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -629,10 +630,16 @@ const ONGLETS = [
   { groupe: 'Suivi', cle: 'fiche', libelle: 'Fiche assuré', icone: UserSearch },
   { groupe: 'Suivi', cle: 'plafonds', libelle: 'Plafonds', icone: Gauge },
   { groupe: 'Suivi', cle: 'controles', libelle: 'Contrôles', icone: ListChecks },
-  { groupe: 'Suivi', cle: 'fraude', libelle: 'Fraude', icone: ShieldAlert, droit: 'consommations.fraude' },
+  { groupe: 'Suivi', cle: 'fraude', libelle: 'Anomalie', icone: ShieldAlert, droit: 'consommations.fraude' },
   { groupe: 'Données', cle: 'imports', libelle: 'Imports', icone: Upload, droit: 'consommations.import' },
 ];
 const GROUPES = ['Analyse', 'Suivi', 'Données'];
+// Rapports Word (sante/consommations_rapport.py, TYPES_RAPPORT)
+const RAPPORTS = [
+  { type: 'effectifs', titre: 'Rapport des effectifs', detail: "Indicateurs, structure par entreprise, statut et âge, contrôle de cohérence et anomalies." },
+  { type: 'depenses', titre: 'Rapport des dépenses de santé', detail: 'Indicateurs par entreprise, structure des dépenses, top 20 des centres et des médecins.' },
+  { type: 'global', titre: 'Rapport global', detail: 'Effectifs et dépenses, puis analyse ciblée des entreprises à risque et analyses complémentaires.' },
+];
 const ANALYSE = new Set(['ensemble', 'entreprises', 'prestations', 'assures']);
 const FILTRES_VIDES = { exercice: '', du: '', au: '', garant: '', police: '' };
 
@@ -649,12 +656,23 @@ export default function ConsommationsSantePage() {
   const ouvrirFiche = (m) => { setMatricule(m); setOnglet('fiche'); };
   const changer = (cle) => { setMatricule(null); setOnglet(cle); };
 
-  // Rapport Word, seul export du suivi : exercice, période et compagnie choisis (le filtre d'entreprise ne s'y applique pas)
-  const exporterRapport = async () => {
+  // Rapport Word, seul export du suivi : exercice, période et compagnie choisis (le filtre d'entreprise ne s'y applique pas). Attentes de
+  // l'équipe actuariat (2026-11-11) : un rapport des effectifs, un des dépenses de santé, et un rapport global qui les regroupe
+  const [menuRapport, setMenuRapport] = useState(false);
+  useEffect(() => {
+    if (!menuRapport) return undefined;
+    const fermer = (e) => { if (!e.target.closest?.('.cs-export-zone')) setMenuRapport(false); };
+    const echap = (e) => { if (e.key === 'Escape') setMenuRapport(false); };
+    document.addEventListener('mousedown', fermer);
+    document.addEventListener('keydown', echap);
+    return () => { document.removeEventListener('mousedown', fermer); document.removeEventListener('keydown', echap); };
+  }, [menuRapport]);
+  const exporterRapport = async (type) => {
+    setMenuRapport(false);
     setExportEnCours(true);
     try {
       const { police: _police, ...parametres } = filtres;
-      const reponse = await consommationsApi.rapport(parametres);
+      const reponse = await consommationsApi.rapport({ ...parametres, type });
       const entete = reponse.headers?.['content-disposition'] || '';
       const nom = decodeURIComponent((entete.match(/filename="?([^";]+)"?/) || [])[1] || `rapport-consommations-${donnees?.Exercice || ''}.docx`);
       downloadBlob(reponse.data, nom);
@@ -680,10 +698,23 @@ export default function ConsommationsSantePage() {
             droits, plafonds et soldes de chaque assuré. Données de santé à ne pas diffuser.
           </p>
         </div>
-        <button type="button" className="btn btn-primary cs-export" disabled={exportEnCours} aria-busy={exportEnCours} onClick={exporterRapport}
-          title="Rapport Word de l'exercice, de la période et de la compagnie choisis">
-          {!exportEnCours && <FileText size={15} aria-hidden="true" />} Exporter le rapport
-        </button>
+        <div className="cs-export-zone">
+          <button type="button" className="btn btn-primary cs-export" disabled={exportEnCours} aria-busy={exportEnCours} aria-haspopup="menu"
+            aria-expanded={menuRapport} onClick={() => setMenuRapport((o) => !o)} title="Rapport Word de l'exercice, de la période et de la compagnie choisis">
+            {exportEnCours ? <Loader2 size={15} className="spin" aria-hidden="true" /> : <FileText size={15} aria-hidden="true" />} Exporter un rapport
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+          {menuRapport && (
+            <div className="cs-export-menu" role="menu">
+              {RAPPORTS.map((r) => (
+                <button key={r.type} type="button" role="menuitem" onClick={() => exporterRapport(r.type)}>
+                  <strong>{r.titre}</strong>
+                  <span>{r.detail}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       <nav className="cs-onglets" aria-label="Rubriques des consommations santé">

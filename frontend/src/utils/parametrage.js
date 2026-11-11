@@ -237,7 +237,7 @@ export const moduleDuProduit = (idProduit) => produitPar(idProduit)?.ModuleSaisi
 export const moduleOuvert = (module) => etat.Produits.some((p) => p.ModuleSaisie === module && p.SaisieOuverte);
 
 export const libellesModulesOuverts = () => {
-  const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Dommages' };
+  const libelles = { auto: 'Automobile', ia: 'Individuelle Accidents', sante: 'Santé', voyage: 'Voyage', transport: 'Transport', mrh: 'Multirisques Habitation', rc: 'Responsabilité Civile', mrp: 'Multirisque Professionnelle', 'tous-dommages': 'Dommages', afa: 'Vie' };
   return [...new Set(etat.Produits.filter((p) => p.SaisieOuverte && p.ModuleSaisie).map((p) => libelles[p.ModuleSaisie] || p.ModuleSaisie))];
 };
 

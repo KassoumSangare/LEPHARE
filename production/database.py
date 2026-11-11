@@ -238,6 +238,10 @@ def save_contract(input_data):
             with connection.cursor() as cursor:
                 verifier_categorie_police(cursor, IdDevis)
                 verifier_incorporation_non_vide(cursor, IdDevis)
+                # Retraite complémentaire : pas de mois confirmé sans son état des cotisations
+                from .vie_retraite import verifier_etat_avant_confirmation
+
+                verifier_etat_avant_confirmation(cursor, IdDevis)
                 cursor.execute(
                     "CALL sp_confirmation_devis(%s, %s, %s);",
                     (IdDevis, IdContrat, OutputMessage),

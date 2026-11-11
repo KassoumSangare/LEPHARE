@@ -2,18 +2,20 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, History, Loader2, Plus, Search, Trash2, Undo2, UserMinus, Users,
 } from 'lucide-react';
-import { PAR_PAGE, cleSalarie, cotisantVide, fcfa, fcfaSigne, totalSalarie } from './vieCommun';
+import { PAR_PAGE, cleSalarie, compte, cotisantVide, fcfa, fcfaSigne, sansCotisation, totalSalarie } from './vieCommun';
 
 /* =========================================================================
    ÉTAT DES COTISATIONS (offre Retraite complémentaire) : un salarié par ligne, part salariale et part employeur.
-   Environ 600 salariés chez CI-ENERGIES : tableau paginé, recherche, filtres (nouveaux, montants modifiés, à corriger),
-   écart avec l'état du mois précédent ligne par ligne, salariés sortis réintégrables d'un clic.
+   Environ 600 salariés chez CI-ENERGIES : tableau paginé, recherche, filtres (nouveaux, reprises, sans cotisation, montants
+   modifiés, à corriger), écart avec l'état du mois précédent ligne par ligne. Un salarié peut ne pas cotiser un mois : absent
+   du fichier (liste des absents, réintégrable d'un clic) ou présent à 0 F ; à son retour il « reprend », ce n'est pas un nouveau.
    ========================================================================= */
 
 const norme = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 
 const LigneSalarie = memo(({ ligne, numero, problemes, ancienne, statut, comparer, lectureSeule, focus, onChanger, onRetirer }) => {
   const total = totalSalarie(ligne);
+  const zero = sansCotisation(ligne);
   const ecart = ancienne ? total - totalSalarie(ancienne) : 0;
   const champ = (nom, props = {}) => (
     <input className="form-control" value={ligne[nom] ?? ''} disabled={lectureSeule} aria-label={`${props.libelle || nom} du salarié ${numero}`}
@@ -23,17 +25,25 @@ const LigneSalarie = memo(({ ligne, numero, problemes, ancienne, statut, compare
   const avertissements = (ligne.Avertissements || []).filter(Boolean);
   return (
     <>
-      <tr className={[problemes ? 'vie-ligne-erreur' : '', statut === 'nouveau' ? 'vie-ligne-nouvelle' : '', statut === 'modifie' ? 'vie-ligne-modifiee' : ''].join(' ')}>
+      <tr className={[problemes ? 'vie-ligne-erreur' : '', statut === 'nouveau' || statut === 'reprise' ? 'vie-ligne-nouvelle' : '',
+        statut === 'modifie' ? 'vie-ligne-modifiee' : '', zero ? 'vie-ligne-zero' : ''].join(' ')}>
         <td className="col-num">{numero}</td>
         <td className="col-mat">{champ('Matricule', { libelle: 'Matricule', majuscules: true, focus })}</td>
         <td className="col-nom">{champ('Nom', { libelle: 'Nom', majuscules: true })}</td>
         <td className="col-prenoms">{champ('Prenoms', { libelle: 'Prénoms', majuscules: true })}</td>
         <td className="col-montant">{champ('CotisationSalarie', { libelle: 'Part salariale', nombre: true })}</td>
         <td className="col-montant">{champ('CotisationEmployeur', { libelle: 'Part employeur', nombre: true })}</td>
-        <td className="col-total droite">{fcfa(total)}</td>
+        <td className="col-total droite">
+          {zero && (String(ligne.Nom || '').trim() || String(ligne.Matricule || '').trim())
+            ? <span className="vie-etiquette" title="Ce salarié ne cotise pas ce mois : il reste dans l'état, sans prime">Sans cotisation</span>
+            : fcfa(total)}
+        </td>
         {comparer && (
           <td className="col-ecart droite">
             {statut === 'nouveau' && <span className="vie-etiquette vert">Nouveau</span>}
+            {statut === 'reprise' && (
+              <span className="vie-etiquette accent" title="Absent de l'état du mois précédent, il avait déjà cotisé avant : il reprend ses cotisations">Reprise</span>
+            )}
             {statut === 'modifie' && (
               <span className={`vie-ecart ${ecart > 0 ? 'vie-hausse' : 'vie-baisse'}`} title={`Mois précédent : ${fcfa(totalSalarie(ancienne))} F`}>
                 {ecart > 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />} {fcfaSigne(ecart)}
@@ -75,14 +85,18 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
   const statut = useCallback((l) => {
     if (!comparaison) return '';
     if (comparaison.entrants.has(l.cle)) return 'nouveau';
+    if (comparaison.reprises.has(l.cle)) return 'reprise';
     if (comparaison.modifies.has(l.cle)) return 'modifie';
     return String(l.Nom || l.Matricule || '').trim() ? 'inchange' : '';
   }, [comparaison]);
 
   const enErreur = cotisants.filter((l) => erreurs[l.cle]?.length).length;
+  const aZero = cotisants.filter((l) => sansCotisation(l) && (String(l.Nom || '').trim() || String(l.Matricule || '').trim())).length;
   const filtres = [
     ['tous', 'Tous', cotisants.length],
-    ...(comparaison ? [['nouveaux', 'Nouveaux', comparaison.entrants.size], ['modifies', 'Montants modifiés', comparaison.modifies.size]] : []),
+    ...(comparaison ? [['nouveaux', 'Nouveaux', comparaison.entrants.size], ['reprises', 'Reprises', comparaison.reprises.size],
+      ['modifies', 'Montants modifiés', comparaison.modifies.size]] : []),
+    ...(aZero ? [['zero', 'Sans cotisation', aZero]] : []),
     ['erreurs', 'À corriger', enErreur],
   ];
 
@@ -90,7 +104,9 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
     const q = norme(recherche).trim();
     return cotisants.filter((l) => {
       if (filtre === 'nouveaux' && !comparaison?.entrants.has(l.cle)) return false;
+      if (filtre === 'reprises' && !comparaison?.reprises.has(l.cle)) return false;
       if (filtre === 'modifies' && !comparaison?.modifies.has(l.cle)) return false;
+      if (filtre === 'zero' && !sansCotisation(l)) return false;
       if (filtre === 'erreurs' && !erreurs[l.cle]?.length) return false;
       return !q || norme(`${l.Matricule} ${l.Nom} ${l.Prenoms}`).includes(q);
     });
@@ -124,7 +140,11 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
     <div>
       <div className="vie-kpis">
         <div className="vie-kpi"><div className="vie-kpi-libelle">Salariés</div><div className="vie-kpi-valeur">{cotisants.length}</div>
-          {comparaison && <div className="vie-kpi-detail">{comparaison.entrants.size} entrée(s), {comparaison.sortants.length} sortie(s)</div>}</div>
+          {comparaison && (
+            <div className="vie-kpi-detail">
+              {compte(comparaison.entrants.size, 'nouveau', 'nouveaux')}, {compte(comparaison.reprises.size, 'reprise')}, {compte(comparaison.sortants.length, 'absent')}
+            </div>
+          )}</div>
         <div className="vie-kpi"><div className="vie-kpi-libelle">Part salariale</div><div className="vie-kpi-valeur">{fcfa(totaux.salarie)} F</div></div>
         <div className="vie-kpi"><div className="vie-kpi-libelle">Part employeur</div><div className="vie-kpi-valeur">{fcfa(totaux.employeur)} F</div></div>
         <div className="vie-kpi accent"><div className="vie-kpi-libelle">Total des cotisations</div><div className="vie-kpi-valeur">{fcfa(totaux.salarie + totaux.employeur)} F</div>
@@ -150,7 +170,7 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
         </div>
         {!lectureSeule && (
           <div className="vie-outils-droite">
-            {precedent && (
+            {precedent && onReprendrePrecedent && (
               <button type="button" className="btn btn-secondary" onClick={onReprendrePrecedent} disabled={chargementPrecedent}
                 title={`Reprendre les ${precedent.Cotisants.length} salariés et leurs cotisations de ${precedent.LibelleMois}, puis ajuster`}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
@@ -169,7 +189,11 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
           <div className="vie-vide">
             <Users size={30} />
             <strong style={{ color: 'var(--text-primary)' }}>Aucun salarié dans l'état</strong>
-            <span>Importez l'état Excel du mois{precedent ? `, reprenez celui de ${precedent.LibelleMois}` : ''} ou ajoutez les salariés un à un.</span>
+            <span>
+              {onReprendrePrecedent
+                ? `Importez l'état Excel du mois${precedent ? `, reprenez celui de ${precedent.LibelleMois}` : ''} ou ajoutez les salariés un à un.`
+                : "Importez l'état Excel du mois reçu du souscripteur : chaque mois se renouvelle avec son fichier."}
+            </span>
           </div>
         </div>
       ) : (
@@ -221,7 +245,10 @@ export const EtatCotisations = ({ cotisants, setCotisants, erreurs, comparaison,
 
       {comparaison?.sortants.length > 0 && (
         <details className="vie-sortants">
-          <summary><UserMinus size={15} color="var(--accent-rose)" /> {comparaison.sortants.length} salarié{comparaison.sortants.length > 1 ? 's' : ''} de {precedent?.LibelleMois} absent{comparaison.sortants.length > 1 ? 's' : ''} de cet état</summary>
+          <summary>
+            <UserMinus size={15} color="var(--accent-rose)" /> {comparaison.sortants.length} salarié{comparaison.sortants.length > 1 ? 's' : ''} de {precedent?.LibelleMois} absent{comparaison.sortants.length > 1 ? 's' : ''} de cet état
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> - sans cotisation ce mois ou sortis ; réintégrez-les seulement s'ils figurent dans l'état du souscripteur</span>
+          </summary>
           <ul>
             {comparaison.sortants.map((s) => (
               <li key={`${s.Matricule}-${s.Nom}-${s.Prenoms}`}>

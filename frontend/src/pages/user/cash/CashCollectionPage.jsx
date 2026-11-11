@@ -5,7 +5,9 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { cashApi, contractApi, oreoleApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { CreditCard, Check, Receipt, FileSpreadsheet, FileText, ListChecks, Search, X } from 'lucide-react';
+import { CreditCard, Check, Clock, PencilLine, Receipt, FileSpreadsheet, FileText, ListChecks, Search, X } from 'lucide-react';
+import { CorrectionEncaissement } from '../../../components/cash/CorrectionEncaissement';
+import { aLeDroit } from '../../../utils/droits';
 import { formatDate } from '../../../utils/dateUtils';
 import { exportToExcel, exportToPdf, printRecuEncaissement, printRecuReglementCommun } from '../../../utils/exportUtils';
 import { ouvrirApercuImpression } from '../../../utils/apercuImpression';
@@ -109,6 +111,16 @@ export const CashCollectionPage = () => {
     }
   };
 
+  // Encaissements saisis aujourd'hui (les siens ; toute la caisse pour un responsable) : une erreur se corrige aussitôt
+  const responsable = aLeDroit('encaissements.cancel');
+  const [duJour, setDuJour] = useState([]);
+  const [toutLaCaisse, setToutLaCaisse] = useState(false);
+  const [aCorriger, setACorriger] = useState(null);
+  const chargerDuJour = (tous = toutLaCaisse) => cashApi.encaissementsDuJour(tous)
+    .then((r) => setDuJour(r.Encaissements || []))
+    .catch(() => setDuJour([]));
+  useEffect(() => { chargerDuJour(); }, [toutLaCaisse]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     loadContracts();
     Promise.all([settingsApi.getModesEncaissement(), settingsApi.getBanques()])
@@ -200,6 +212,7 @@ export const CashCollectionPage = () => {
         });
       setIsModalOpen(false);
       loadContracts();
+      chargerDuJour();
       success(res.data?.message || `Règlement de ${Number(montantEncaisse).toLocaleString('fr-FR')} FCFA enregistré.`);
       if (selectedContract.oreole) {
         await printRecuReglementCommun(res.data?.id_encaissement, fenetre);
@@ -399,6 +412,43 @@ export const CashCollectionPage = () => {
           Conformité CIMA 100% Active
         </span>
       </div>
+
+      {(duJour.length > 0 || toutLaCaisse) && (
+        <details className="glass-panel caisse-du-jour" style={{ padding: '0.9rem 1.25rem' }} open>
+          <summary>
+            <Clock size={17} color="#10b981" />
+            {toutLaCaisse ? 'Encaissements de la caisse aujourd\'hui' : 'Vos encaissements d\'aujourd\'hui'} ({duJour.length})
+            <span style={{ fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              - une erreur de client, de chèque ou de référence ? Corrigez-la ici
+            </span>
+            {responsable && (
+              <label style={{ marginLeft: 'auto', display: 'inline-flex', gap: '0.35rem', alignItems: 'center', fontWeight: 500, fontSize: '0.8rem' }}
+                onClick={(e) => e.stopPropagation()}>
+                <input type="checkbox" checked={toutLaCaisse} onChange={(e) => setToutLaCaisse(e.target.checked)} /> Toute la caisse
+              </label>
+            )}
+          </summary>
+          <div style={{ marginTop: '0.5rem' }}>
+            {duJour.map((e) => (
+              <div key={e.IdEncaissement} className="caisse-du-jour-ligne">
+                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{e.Heure}</span>
+                <span><strong>{e.Clients || '-'}</strong><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Quittance {e.Quittances}</div></span>
+                <span>{e.Mode}{e.Reference ? ` - ${e.Reference}` : ''}{toutLaCaisse && e.Operateur ? <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{e.Operateur}</div> : null}</span>
+                <strong style={{ fontFamily: 'var(--font-mono)' }}>{montantFormate(e.Montant)} F</strong>
+                <button type="button" className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }} onClick={() => setACorriger(e.IdEncaissement)}
+                  title={`Corriger la pièce ${e.NumeroPiece}`}>
+                  <PencilLine size={14} /> Corriger
+                </button>
+              </div>
+            ))}
+            {!duJour.length && <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem' }}>Aucun encaissement aujourd'hui.</div>}
+          </div>
+        </details>
+      )}
+      {aCorriger && (
+        <CorrectionEncaissement idEncaissement={aCorriger} onClose={() => setACorriger(null)}
+          onCorrige={() => { loadContracts(); chargerDuJour(); }} />
+      )}
 
       <div className="glass-panel" style={{ padding: '1.25rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 170px), 1fr))', gap: '0.75rem', alignItems: 'end' }}>

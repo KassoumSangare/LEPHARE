@@ -100,8 +100,8 @@ DROITS = [
      True, False, False),
     ("consommations.import", "Importer les relevés du gestionnaire santé", "Relevés de prestations et effectifs reçus du gestionnaire (MCI CARE).",
      True, False, False),
-    ("consommations.fraude", "Détecter et instruire les cas de fraude santé",
-     "Signaux de fraude par bénéficiaire et décision d'instruction ; aucune décision n'est automatique.", True, False, False),
+    ("consommations.fraude", "Détecter et instruire les anomalies santé",
+     "Signaux d'anomalie par bénéficiaire et décision d'instruction ; aucune décision n'est automatique.", True, False, False),
 
     ("rafas.view", "Consulter le RAFAS",
      "Conventions des régimes autofinancés, fonds, effectifs, dépenses de santé et contrôles du gestionnaire. Données de santé.", True, False, False),

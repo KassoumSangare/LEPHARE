@@ -30,6 +30,7 @@ ID_INTERMEDIAIRE = 1
 ID_AVENANT_AFFAIRE_NOUVELLE = 1
 ID_PRODUIT_AUTO = 1
 ID_PRODUIT_SANTE = 5
+ID_PRODUIT_VIE = 10
 ID_OFFRE_NON_SPECIFIEE = 0
 SOURCE_REPRISE = 2
 STATUT_QUITTANCE_EN_COURS = 1
@@ -541,6 +542,17 @@ def description_devis(cursor, id_devis, id_produit):
             affichage.append(["Familles", str(familles)])
         if personnes:
             affichage.append(["Personnes assurées", str(personnes)])
+    elif id_produit == ID_PRODUIT_VIE:
+        # Vie : offre commerciale du devis et assurés (une ligne par assuré), ou salariés d'un état de cotisations
+        from .vie_offres import SAISIE_COTISATION, offre_du_devis
+
+        offre = offre_du_devis(cursor, id_devis)
+        affichage.append(["Offre", offre["Libelle"]])
+        if offre["Saisie"] == SAISIE_COTISATION:
+            salaries = _un(cursor, "SELECT COUNT(*) FROM lephare_vie_cotisant WHERE iddevis = %s", [id_devis]) or 0
+            affichage.append(["Salariés", str(salaries)])
+        elif lignes:
+            affichage.append(["Assurés", str(len(lignes))])
     elif len(lignes) > 1:
         affichage.append(["Objets assurés", str(len(lignes))])
     return affichage

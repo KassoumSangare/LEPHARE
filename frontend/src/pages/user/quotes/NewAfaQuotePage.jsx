@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { redirigerSiOreole } from './oreole/oreoleCommun';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+// Renvois vers la gestion des devis traduits en Affaires antérieures quand l'écran y est ouvert (/user/reprises/saisie/afa)
+import { useNavigate } from '../../../utils/navigationDevis';
 import {
   AlertTriangle, ArrowLeftRight, Calculator, CalendarDays, Check, Download, FileSpreadsheet, FileText, HeartHandshake, Layers, Loader2,
-  Plus, Trash2, Upload, UserCheck, Users, Wallet,
+  Plus, RefreshCw, Trash2, Upload, UserCheck, Users, Wallet,
 } from 'lucide-react';
 import { afaApi, contractApi, quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -71,6 +73,8 @@ export const NewAfaQuotePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const idDevisEdite = Number(searchParams.get('edit')) || 0;
+  // Page Renouvellement d'une police Retraite complémentaire : mois suivant de la police, avec l'état du mois à importer
+  const idContratARenouveler = idDevisEdite ? 0 : Number(searchParams.get('renouveler')) || 0;
   // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
   useEffect(() => redirigerSiOreole(idDevisEdite, navigate), [idDevisEdite]); // eslint-disable-line react-hooks/exhaustive-deps
   const { success, error: toastError, info } = useToast();
@@ -106,6 +110,8 @@ export const NewAfaQuotePage = () => {
   // Devis d'incorporation : police, période du contrat et nombre de personnes déjà assurées
   const [incorporation, setIncorporation] = useState(null);
   const [devisEnregistre, setDevisEnregistre] = useState(null);
+  // Mois suivant attendu (GET /api/afa/retraite/renouveler/<contrat>/) : police, dernier mois et mois à importer
+  const [moisAttendu, setMoisAttendu] = useState(null);
   const [nouveauClient, setNouveauClient] = useState(false);
   const [capitalTous, setCapitalTous] = useState('');
   const [primeTous, setPrimeTous] = useState('');
@@ -144,7 +150,10 @@ export const NewAfaQuotePage = () => {
         setMouvement(d.Mouvement === 'REN' ? 'REN' : 'AFN');
         setIdContratRenouvele(d.IdContratRenouvele ? String(d.IdContratRenouvele) : '');
         setDateEffet(d.DateEffet || '');
-        setDateExpiration(d.DateExpiration || '');
+        // État mensuel : du 1er au dernier jour du mois (un mois ouvert par l'ancienne page Renouvellement reprenait la durée du
+        // mois précédent, 28 jours après février)
+        const mensuelLu = d.Offre?.Saisie === SAISIE_COTISATION && d.Offre?.Periodicite === 'MENSUELLE' && d.DateEffet;
+        setDateExpiration(mensuelLu && !d.Confirme ? finDeMois(String(d.DateEffet).slice(0, 7)) : d.DateExpiration || '');
         setMois(d.DateEffet ? String(d.DateEffet).slice(0, 7) : '');
         setPoliceCompagnie(d.NumeroPoliceCompagnie || '');
         setAccessoire(Number(d.Accessoire) || 0);
@@ -274,6 +283,29 @@ export const NewAfaQuotePage = () => {
     if (!mois || mois <= String(p.DateEffet).slice(0, 7)) choisirMois(moisSuivant(p.DateEffet));
   };
 
+  // Ouvert depuis la page Renouvellement : police, souscripteur, compagnie, offre et mois suivant repris, reste à importer l'état
+  useEffect(() => {
+    if (!idContratARenouveler) return undefined;
+    let actif = true;
+    afaApi.renouvelerRetraite(idContratARenouveler)
+      .then(({ EtatMensuel: e }) => {
+        if (!actif || !e) return;
+        setMoisAttendu(e);
+        setIdOffre(String(e.IdOffreVie));
+        setSouscripteur({ IdClient: e.IdClient, Nom: e.Client || `Client n° ${e.IdClient}` });
+        setIdCompagnie(String(e.IdCompagnie));
+        setMouvement('REN');
+        setIdContratRenouvele(String(e.IdContrat));
+        choisirMois(String(e.MoisSuivant).slice(0, 7));
+      })
+      .catch((err) => { if (actif) toastError(`Police à renouveler non chargée : ${messageErreurApi(err)}`); });
+    return () => { actif = false; };
+  }, [idContratARenouveler]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mois suivant d'une police d'état des cotisations : il se crée avec le fichier du souscripteur, chaque mois (demande du 2026-11-11) ;
+  // de même pour un mois déjà ouvert sans son état (devis de renouvellement qui n'avait recopié que le total du mois précédent)
+  const fichierExige = mensuel && mouvement === 'REN' && (!enModification || !(devisLu?.Cotisants || []).length);
+
   // ------------------------------------------------------------- import Excel (liste AFA ou état des cotisations)
   const lireFichier = async (f) => {
     if (!f || analyse) return;
@@ -337,6 +369,9 @@ export const NewAfaQuotePage = () => {
     setImportEtat(null);
     setEtape(2);
     success(`État de ${a.LibelleMois || 'cotisations'} repris : ${lignes.length} salarié${lignes.length > 1 ? 's' : ''}, ${fcfa(a.Totaux.Total)} F. Vérifiez puis enregistrez.`);
+    if (moisAttendu && a.Mois && String(a.Mois).slice(0, 7) !== String(moisAttendu.MoisSuivant).slice(0, 7)) {
+      toastError(`Ce fichier est l'état de ${a.LibelleMois} : le mois attendu pour la police ${moisAttendu.NumeroPolice} est ${moisAttendu.LibelleMoisSuivant}. Vérifiez le fichier.`);
+    }
   };
   const reprendrePrecedent = async () => {
     if (!precedent) return;
@@ -361,6 +396,7 @@ export const NewAfaQuotePage = () => {
   };
 
   // ------------------------------------------------------------- navigation et enregistrement
+  const messageFichierExige = `Importez l'état des cotisations de ${libelleMois(dateEffet) || 'ce mois'} reçu du souscripteur : chaque mois se renouvelle avec son fichier.`;
   const controleContrat = () => {
     if (!offre) return "Choisissez l'offre commerciale.";
     if (!idCompagnie) return 'Choisissez la compagnie.';
@@ -386,6 +422,7 @@ export const NewAfaQuotePage = () => {
         return;
       }
       if (nombreErreurs) { toastError(`${nombreErreurs} ${cotisation ? 'salarié(s)' : 'assuré(s)'} à corriger avant de continuer.`); setEtape(2); return; }
+      if (fichierExige && !fichier) { toastError(messageFichierExige); setEtape(2); return; }
     }
     setEtape(cible);
   };
@@ -394,6 +431,7 @@ export const NewAfaQuotePage = () => {
     const message = controleContrat();
     if (message) { toastError(message); setEtape(1); return; }
     if (!nombreLignes || nombreErreurs) { allerA(3); return; }
+    if (fichierExige && !fichier) { toastError(messageFichierExige); setEtape(2); return; }
     setEnregistrement(true);
     try {
       const devis = await afaApi.enregistrer({
@@ -495,6 +533,20 @@ export const NewAfaQuotePage = () => {
             Saisissez ou importez seulement les personnes ajoutées ; une personne déjà assurée sous la police est refusée.
           </p>
         )}
+        {fichierExige && !lectureSeule && (
+          <p role="note" className="vie-mois-attendu">
+            <RefreshCw size={16} color={COULEUR} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              <strong>Mois suivant de la police {moisAttendu?.NumeroPolice || policeRenouvelee?.NumeroPolice || devisLu?.PoliceRenouvelee || ''}</strong>
+              {moisAttendu?.LibelleDernierMois || policeRenouvelee?.DateEffet
+                ? ` (dernier mois enregistré : ${moisAttendu?.LibelleDernierMois || libelleMois(policeRenouvelee.DateEffet)})` : ''}
+              {` : importez l'état des cotisations de ${libelleMois(dateEffet) || 'ce mois'} reçu du souscripteur. `}
+              {fichier
+                ? <>Fichier repris : <strong>{fichier}</strong>.</>
+                : 'Un salarié qui ne cotise pas ce mois peut être absent du fichier ou y figurer à 0 F : il reste suivi, et reprend ses cotisations à son retour.'}
+            </span>
+          </p>
+        )}
         {lectureSeule && (
           <p role="note" style={{ padding: '0.6rem 0.8rem', borderRadius: 8, background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.4)', color: '#b45309', fontSize: '0.85rem' }}>
             Devis déjà confirmé : il est affiché en lecture seule.
@@ -504,7 +556,7 @@ export const NewAfaQuotePage = () => {
 
       {/* Fichier Excel : glisser-déposer ou parcourir (liste AFA, ou état mensuel des cotisations) */}
       {!lectureSeule && offre && (
-        <div className={`vie-depot${survol ? ' survol' : ''}${analyse ? ' occupe' : ''}`} role="button" tabIndex={0}
+        <div className={`vie-depot${survol ? ' survol' : ''}${analyse ? ' occupe' : ''}${fichierExige && !fichier ? ' attendu' : ''}`} role="button" tabIndex={0}
           onClick={() => fichierRef.current?.click()}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fichierRef.current?.click(); } }}
           onDragOver={(e) => { e.preventDefault(); setSurvol(true); }} onDragLeave={() => setSurvol(false)}
@@ -514,7 +566,9 @@ export const NewAfaQuotePage = () => {
           <span className="vie-depot-icone">{analyse ? <Loader2 size={22} className="spin" /> : <Upload size={22} />}</span>
           <span className="vie-depot-texte">
             <span className="vie-depot-titre">
-              {analyse ? 'Lecture du fichier…' : cotisation ? "Déposez l'état des cotisations du mois" : `Déposez la liste ${libelleOffre} des assurés`}
+              {analyse ? 'Lecture du fichier…' : cotisation
+                ? `Déposez l'état des cotisations ${fichierExige && dateEffet ? `de ${libelleMois(dateEffet)}` : 'du mois'}`
+                : `Déposez la liste ${libelleOffre} des assurés`}
             </span>
             <span className="vie-depot-aide">
               {cotisation
@@ -678,7 +732,8 @@ export const NewAfaQuotePage = () => {
                 {souscripteur?.Nom && <span className="vie-etiquette">{souscripteur.Nom}</span>}
               </h2>
               <EtatCotisations cotisants={cotisants} setCotisants={setCotisants} erreurs={erreursCotisants} comparaison={comparaison}
-                precedent={precedent} chargementPrecedent={chargementPrecedent} onReprendrePrecedent={reprendrePrecedent} lectureSeule={lectureSeule} />
+                precedent={precedent} chargementPrecedent={chargementPrecedent} onReprendrePrecedent={fichierExige ? null : reprendrePrecedent}
+                lectureSeule={lectureSeule} />
               {pied(
                 <button key="prec" type="button" className="btn btn-secondary" onClick={() => setEtape(1)}>Précédent</button>,
                 <button key="suiv" type="button" className="btn btn-primary" onClick={() => allerA(3)} style={{ background: COULEUR, borderColor: COULEUR }}>Suivant : vérification</button>,
