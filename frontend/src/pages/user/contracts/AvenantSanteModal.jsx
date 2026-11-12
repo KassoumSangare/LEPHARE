@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { aLeDroit } from '../../../utils/droits';
-import { ArrowRight, FilePlus2, PencilLine, Repeat, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, FilePlus2, PencilLine, Plus, Repeat, Trash2, UserPlus, Users } from 'lucide-react';
 import { Modal } from '../../../components/common/Modal';
 import { santeApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -37,9 +37,22 @@ const formuleApresIncorporation = (f) => {
 };
 
 const MEMBRE_VIDE = { Lien: 'E', Nom: '', Prenom: '', DateNaissance: '', Sexe: '', Certificat: false, NombrePathologie: 0 };
+const ADHERENT_VIDE = { Nom: '', Prenom: '', DateNaissance: '', Sexe: '', NombrePathologie: 0, Matricule: '', Mobile: '' };
+const FAMILLE_VIDE = { IdOffre: 0, Adherent: ADHERENT_VIDE, Membres: [] };
+
+// Formule d'une nouvelle famille (sante/avenant.py formule_a_la_taille) : celle choisie, ou pour une formule à nombre de
+// personnes (MINENE) celle de la même offre commerciale qui accueille toute la famille ; null si aucune
+const formuleALaTaille = (formules, idOffre, taille) => {
+  const choisie = formules.find((o) => o.IdOffre === Number(idOffre));
+  if (!choisie || !choisie.PersonnesMax) return choisie || null;
+  if ((choisie.PersonnesMin || 1) <= taille && taille <= choisie.PersonnesMax) return choisie;
+  return formules.filter((o) => o.PersonnesMax && (o.PersonnesMin || 1) <= taille && taille <= o.PersonnesMax)
+    .sort((a, b) => a.PersonnesMax - b.PersonnesMax || a.IdOffre - b.IdOffre)[0] || null;
+};
 
 const MODES = [
   ['incorporation', UserPlus, 'Incorporer un membre'],
+  ['famille', Users, 'Incorporer une famille'],
   ['formule', Repeat, 'Changer de formule'],
   ['ecran', PencilLine, 'Autre modification'],
 ];
@@ -58,8 +71,10 @@ const champ = (libelle, controle, aide) => (
  *   formule de sa nouvelle taille (FAMILLE de 3 personnes + 1 : FAMILLE PLUS) et la prime de la nouvelle personne est
  *   l'écart entre les deux formules : dû en entier pour une police MINENE (tarif forfaitaire, 800 000 - 600 000 F TTC),
  *   au prorata des jours restants pour les autres offres ;
+ * - incorporation d'une nouvelle famille (adhérent et ayants droit, demande du 2026-11-12) dans une formule de l'offre
+ *   commerciale du contrat ; en MINENE, la formule de sa taille (SOLO, FAMILLE, FAMILLE PLUS) est prise d'office ;
  * - changement de formule d'une famille (CR OREOLE du 26-10-2026) ;
- * - autre modification saisie dans l'écran Santé (nouvelle famille…).
+ * - autre modification saisie dans l'écran Santé (couverture…).
  * Le devis d'avenant s'ouvre ensuite dans l'écran Santé.
  */
 export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
@@ -72,6 +87,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const [idAdherent, setIdAdherent] = useState(0);
   const [idOffre, setIdOffre] = useState(0);
   const [membre, setMembre] = useState(MEMBRE_VIDE);
+  const [nouvelleFamille, setNouvelleFamille] = useState(FAMILLE_VIDE);
   const [envoi, setEnvoi] = useState(false);
   const surprimes = reglagesMinene().surprimes;
 
@@ -91,6 +107,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
         setIdAdherent(unique ? unique.IdAdherent : 0);
         setIdOffre(unique ? (formuleApresIncorporation(unique) || unique).IdOffre : 0);
         setMembre(MEMBRE_VIDE);
+        setNouvelleFamille({ ...FAMILLE_VIDE, IdOffre: d.Familles?.[0]?.IdOffre || 0 });
       })
       .catch((err) => { if (actif) setErreur(messageErreurApi(err)); });
     return () => { actif = false; };
@@ -148,6 +165,45 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const affectionsMax = Math.max(0, Number(surprimes.affectionsMax) || 0);
   const majMembre = (cle, valeur) => setMembre((m) => ({ ...m, [cle]: valeur }));
 
+  // Nouvelle famille : formules des offres commerciales du contrat, formule retenue à la taille de la famille
+  const formulesContrat = useMemo(() => {
+    const vues = new Map();
+    (donnees?.Familles || []).forEach((f) => f.Formules.forEach((o) => {
+      if (!vues.has(o.IdOffre)) vues.set(o.IdOffre, { ...o, Groupe: f.Formules });
+    }));
+    return [...vues.values()];
+  }, [donnees]);
+  const tailleFamille = 1 + nouvelleFamille.Membres.length;
+  const groupeFamille = formulesContrat.find((o) => o.IdOffre === Number(nouvelleFamille.IdOffre))?.Groupe || [];
+  const formuleRetenue = formuleALaTaille(groupeFamille, nouvelleFamille.IdOffre, tailleFamille);
+  const majAdherent = (cle, valeur) => setNouvelleFamille((f) => ({ ...f, Adherent: { ...f.Adherent, [cle]: valeur } }));
+  const majMembreFamille = (rang, cle, valeur) => setNouvelleFamille((f) => ({
+    ...f, Membres: f.Membres.map((m, i) => (i === rang ? { ...m, [cle]: valeur } : m)),
+  }));
+  const ajouterMembreFamille = () => setNouvelleFamille((f) => ({
+    ...f, Membres: [...f.Membres, { ...MEMBRE_VIDE, Nom: f.Adherent.Nom, Lien: f.Membres.length ? 'E' : 'C' }],
+  }));
+  const retirerMembreFamille = (rang) => setNouvelleFamille((f) => ({ ...f, Membres: f.Membres.filter((_, i) => i !== rang) }));
+  const certificatPour = (m) => {
+    const a = ageAu(m.DateNaissance, dateEffet);
+    return m.Lien === 'E' && a !== null && a > Number(surprimes.ageMaxEnfant);
+  };
+  const aideAge = (naissance) => {
+    const a = ageAu(naissance, dateEffet);
+    return a !== null && a >= 0 ? `${pluriel(a, 'an')} au ${formatDate(dateEffet)}` : undefined;
+  };
+  const champAffections = (valeur, maj) => (
+    <input type="number" min="0" max={affectionsMax} className="form-control" value={valeur}
+      onChange={(e) => maj(Math.max(0, Math.min(affectionsMax, Number(e.target.value) || 0)))} />
+  );
+  const champSexe = (valeur, maj) => (
+    <select className="form-control" value={valeur} onChange={(e) => maj(e.target.value)}>
+      <option value="">Choisir</option>
+      <option value="F">Féminin</option>
+      <option value="M">Masculin</option>
+    </select>
+  );
+
   const creer = async () => {
     if (!dateEffet) { toastError('Saisissez la date d\'effet de l\'avenant.'); return; }
     let envoiAvenant = { DateEffet: dateEffet, IdAdherent: 0, IdOffre: 0 };
@@ -161,6 +217,24 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
         ...envoiAvenant, IdAdherent: famille.IdAdherent,
         Membre: { ...membre, Nom: membre.Nom.trim(), Prenom: membre.Prenom.trim(), Certificat: certificatPropose && membre.Certificat },
       };
+    } else if (mode === 'famille') {
+      const a = nouvelleFamille.Adherent;
+      if (!formuleRetenue) { toastError(`Aucune formule de l'offre n'accueille une famille de ${tailleFamille} personnes.`); return; }
+      if (!a.Nom.trim()) { toastError('Saisissez le nom de l\'adhérent.'); return; }
+      if (!a.DateNaissance) { toastError('Saisissez la date de naissance de l\'adhérent.'); return; }
+      if (!a.Sexe) { toastError('Précisez le sexe de l\'adhérent.'); return; }
+      const incomplet = nouvelleFamille.Membres.findIndex((m) => !m.Nom.trim() || !m.DateNaissance || !m.Sexe);
+      if (incomplet >= 0) { toastError(`Membre n° ${incomplet + 1} : nom, date de naissance et sexe obligatoires.`); return; }
+      envoiAvenant = {
+        ...envoiAvenant,
+        Famille: {
+          IdOffre: formuleRetenue.IdOffre,
+          Adherent: { ...a, Nom: a.Nom.trim(), Prenom: a.Prenom.trim(), Matricule: a.Matricule.trim(), Mobile: a.Mobile.trim() },
+          Membres: nouvelleFamille.Membres.map((m) => ({
+            ...m, Nom: m.Nom.trim(), Prenom: m.Prenom.trim(), Certificat: certificatPour(m) && m.Certificat,
+          })),
+        },
+      };
     } else if (mode === 'formule') {
       if (!famille) { toastError('Choisissez la famille qui change de formule.'); return; }
       envoiAvenant = { ...envoiAvenant, IdAdherent: famille.IdAdherent, IdOffre: Number(idOffre) || 0 };
@@ -171,6 +245,10 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
       const passage = r.Formule ? `, qui passe de ${r.FormuleAvant} à ${r.Formule}` : '';
       if (mode === 'incorporation') {
         success(`Avenant ${r.NumeroDevis} créé : ${r.Membre} incorporé(e) dans la famille ${r.Famille}${passage}. `
+          + `Prime de l'avenant : ${fcfa(r.PrimeTtc)} F TTC. Vérifiez-le dans l'écran Santé puis confirmez-le.`);
+      } else if (mode === 'famille') {
+        success(`Avenant ${r.NumeroDevis} créé : famille ${r.Famille} incorporée (${pluriel(Number(r.Personnes), 'personne')}`
+          + `${r.Formule ? `, ${r.Formule}` : ''}). ${r.MessageMembre ? `${r.MessageMembre} ` : ''}`
           + `Prime de l'avenant : ${fcfa(r.PrimeTtc)} F TTC. Vérifiez-le dans l'écran Santé puis confirmez-le.`);
       } else if (mode === 'formule') {
         success(`Avenant ${r.NumeroDevis} créé${r.Formule ? ` : la famille ${r.Famille} passe de ${r.FormuleAvant} à ${r.Formule}` : ''}. `
@@ -233,7 +311,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 {champ('Date d\'émission',
                   <input type="date" className="form-control" value={aujourdhui()} readOnly disabled title="Date du jour, non modifiable" />,
                   'Date du jour, non imprimée sur les documents')}
-                {champ(mode === 'incorporation' ? 'Date d\'incorporation *' : 'Date d\'effet de l\'avenant *',
+                {champ(mode === 'incorporation' || mode === 'famille' ? 'Date d\'incorporation *' : 'Date d\'effet de l\'avenant *',
                   <input type="date" className="form-control" value={dateEffet} min={contrat.DateEffet} max={contrat.DateExpiration}
                     onChange={(e) => setDateEffet(e.target.value)} />,
                   forfaitaire ? 'Au choix dans la période. Tarif forfaitaire : pas de prorata'
@@ -244,7 +322,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               </div>
 
               <div style={grille}>
-                {mode !== 'ecran' && champ('Famille *',
+                {(mode === 'incorporation' || mode === 'formule') && champ('Famille *',
                   <select className="form-control" value={idAdherent} onChange={(e) => choisirFamille(e.target.value)}>
                     <option value={0}>Choisir la famille</option>
                     {donnees.Familles.map((f) => (
@@ -371,6 +449,114 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 </>
               )}
 
+              {mode === 'famille' && (
+                <>
+                  <div style={grille}>
+                    {champ('Formule *',
+                      <select className="form-control" value={nouvelleFamille.IdOffre}
+                        onChange={(e) => setNouvelleFamille((f) => ({ ...f, IdOffre: Number(e.target.value) }))}>
+                        <option value={0}>Choisir la formule</option>
+                        {formulesContrat.map((o) => <option key={o.IdOffre} value={o.IdOffre}>{libelleFormule(o)}</option>)}
+                      </select>,
+                      'Formules des offres commerciales du contrat ; même collège et même zone que les familles de cette offre')}
+                  </div>
+                  <div style={{ fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <UserPlus size={15} /> Adhérent (assuré principal)
+                  </div>
+                  <div style={grille}>
+                    {champ('Nom *', <input className="form-control" value={nouvelleFamille.Adherent.Nom} maxLength={60}
+                      onChange={(e) => majAdherent('Nom', e.target.value)} />)}
+                    {champ('Prénoms', <input className="form-control" value={nouvelleFamille.Adherent.Prenom} maxLength={80}
+                      onChange={(e) => majAdherent('Prenom', e.target.value)} />)}
+                    {champ('Date de naissance *',
+                      <input type="date" className="form-control" value={nouvelleFamille.Adherent.DateNaissance} max={dateEffet || undefined}
+                        onChange={(e) => majAdherent('DateNaissance', e.target.value)} />,
+                      aideAge(nouvelleFamille.Adherent.DateNaissance))}
+                    {champ('Sexe *', champSexe(nouvelleFamille.Adherent.Sexe, (v) => majAdherent('Sexe', v)))}
+                    {champ('Affections chroniques', champAffections(nouvelleFamille.Adherent.NombrePathologie, (v) => majAdherent('NombrePathologie', v)))}
+                    {champ('Matricule', <input className="form-control" value={nouvelleFamille.Adherent.Matricule} maxLength={30}
+                      onChange={(e) => majAdherent('Matricule', e.target.value)} />)}
+                    {champ('Mobile', <input className="form-control" value={nouvelleFamille.Adherent.Mobile} maxLength={20}
+                      onChange={(e) => majAdherent('Mobile', e.target.value)} />)}
+                  </div>
+
+                  {nouvelleFamille.Membres.map((m, rang) => (
+                    <div key={rang} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border-subtle)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Membre n° {rang + 1}</span>
+                        <button type="button" className="btn btn-secondary" onClick={() => retirerMembreFamille(rang)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.6rem' }}>
+                          <Trash2 size={13} /> Retirer
+                        </button>
+                      </div>
+                      <div style={grille}>
+                        {champ('Lien *',
+                          <select className="form-control" value={m.Lien} onChange={(e) => majMembreFamille(rang, 'Lien', e.target.value)}>
+                            <option value="C">Conjoint</option>
+                            <option value="E">Enfant</option>
+                          </select>)}
+                        {champ('Nom *', <input className="form-control" value={m.Nom} maxLength={60}
+                          onChange={(e) => majMembreFamille(rang, 'Nom', e.target.value)} />)}
+                        {champ('Prénoms', <input className="form-control" value={m.Prenom} maxLength={80}
+                          onChange={(e) => majMembreFamille(rang, 'Prenom', e.target.value)} />)}
+                        {champ('Date de naissance *',
+                          <input type="date" className="form-control" value={m.DateNaissance} max={dateEffet || undefined}
+                            onChange={(e) => majMembreFamille(rang, 'DateNaissance', e.target.value)} />,
+                          aideAge(m.DateNaissance))}
+                        {champ('Sexe *', champSexe(m.Sexe, (v) => majMembreFamille(rang, 'Sexe', v)))}
+                        {champ('Affections chroniques', champAffections(m.NombrePathologie, (v) => majMembreFamille(rang, 'NombrePathologie', v)))}
+                      </div>
+                      {certificatPour(m) && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input type="checkbox" checked={m.Certificat} onChange={(e) => majMembreFamille(rang, 'Certificat', e.target.checked)} />
+                          <span>
+                            Certificat de scolarité ou rapport médical fourni : enfant de plus de {surprimes.ageMaxEnfant} ans admis
+                            jusqu'à {surprimes.ageMaxEnfantCertificat} ans.
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-secondary" onClick={ajouterMembreFamille}
+                    style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Plus size={14} /> Ajouter un conjoint ou un enfant
+                  </button>
+
+                  {Number(nouvelleFamille.IdOffre) > 0 && (
+                    <div style={{
+                      display: 'flex', gap: '0.6rem', alignItems: 'flex-start', padding: '0.75rem 0.9rem', borderRadius: '8px',
+                      border: `1px solid ${formuleRetenue ? 'var(--border-subtle)' : 'rgba(244, 63, 94, 0.45)'}`,
+                      background: formuleRetenue ? 'var(--bg-surface-elevated)' : 'rgba(244, 63, 94, 0.07)',
+                      color: 'var(--text-secondary)',
+                    }}>
+                      <Users size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+                      {!formuleRetenue ? (
+                        <span>Aucune formule de l'offre n'accueille une famille de {pluriel(tailleFamille, 'personne')}.</span>
+                      ) : (
+                        <span style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                          <span>
+                            Famille de {pluriel(tailleFamille, 'personne')}, incorporée
+                            en <strong style={{ color: 'var(--text-primary)' }}>{libelleFormule(formuleRetenue)}</strong>
+                            {formuleRetenue.IdOffre !== Number(nouvelleFamille.IdOffre) && ' (formule de sa taille, prise d\'office)'}.
+                          </span>
+                          {forfaitaire && formuleRetenue.PrimeTtc != null ? (
+                            <span>
+                              Prime de la famille au barème : <strong style={{ color: 'var(--text-primary)' }}>{fcfa(formuleRetenue.PrimeTtc)} F TTC</strong>,
+                              {' '}due en entier : tarif forfaitaire, sans prorata. Surprimes d'âge ou d'affections éventuelles en plus.
+                            </span>
+                          ) : (
+                            <span>
+                              Prime de l'avenant : prime annuelle de la famille{forfaitaire ? ', due en entier' : ` au prorata des jours restants (${Math.max(joursRestants, 0)} sur ${joursPeriode})`},
+                              {' '}calculée à la création avec les surprimes, réductions, accessoire et taxes.
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
               {mode === 'formule' && famille && Number(idOffre) !== Number(famille.IdOffre) && (
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', color: 'var(--text-secondary)' }}>
                   <Users size={16} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -383,8 +569,8 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               )}
               {mode === 'ecran' && (
                 <div style={{ color: 'var(--text-secondary)' }}>
-                  L'avenant reprend la composition en vigueur et s'ouvre dans l'écran Santé : ajout d'une famille, d'un membre
-                  ou d'une couverture. Un membre ajouté à une famille complète la fait passer d'office dans la formule de sa taille.
+                  L'avenant reprend la composition en vigueur et s'ouvre dans l'écran Santé : ajout d'un membre, d'une couverture
+                  ou toute autre modification. Un membre ajouté à une famille complète la fait passer d'office dans la formule de sa taille.
                 </div>
               )}
 
@@ -396,9 +582,10 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                 <button type="button" className="btn btn-secondary" onClick={onClose}>Annuler</button>
-                <button type="button" className="btn btn-primary" onClick={creer} disabled={envoi || (mode === 'incorporation' && Boolean(famille) && !apres)}
+                <button type="button" className="btn btn-primary" onClick={creer} disabled={envoi || (mode === 'incorporation' && Boolean(famille) && !apres)
+                  || (mode === 'famille' && Number(nouvelleFamille.IdOffre) > 0 && !formuleRetenue)}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <FilePlus2 size={15} /> {envoi ? 'Création…' : mode === 'incorporation' ? 'Incorporer' : 'Créer l\'avenant'}
+                  <FilePlus2 size={15} /> {envoi ? 'Création…' : mode === 'incorporation' || mode === 'famille' ? 'Incorporer' : 'Créer l\'avenant'}
                 </button>
               </div>
             </>

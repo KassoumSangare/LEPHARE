@@ -16,6 +16,12 @@ Santé : avenant de modification en cours de contrat, sous la même police (CR O
   par formule) : écart annuel dû en entier, sans prorata (demande du 2026-11-02) ; autres offres : au prorata des jours
   restants jusqu'à l'échéance. Le devis s'ouvre ensuite dans l'écran Santé ; la confirmation (sp_confirmation_devis) émet
   l'avenant et sa quittance sous la police du contrat.
+- POST {DateEffet, Famille} (incorporation d'une famille, demande du 2026-11-12) : nouvelle famille ajoutée à la composition
+  recopiée, comme dans l'écran Santé : couverture de sa formule (offre commerciale d'une famille du contrat, même collège et
+  zone, créée au besoin par sp_saisie_filiale_sante), adhérent par sp_saisie_adherent_sante (qui crée l'affilié « A »), puis
+  ses ayants droit par sp_saisie_affilie_sante v6. Formule MINENE prise d'office à la taille de la famille (SOLO, FAMILLE,
+  FAMILLE PLUS). Adhésion et consommation à la date d'incorporation ; même tarification de l'avenant (écart de prime
+  annuelle, au prorata hors MINENE).
 """
 
 from datetime import date
@@ -231,24 +237,152 @@ def _membre(valeur):
     return membre
 
 
+def _nouvelle_famille(valeur):
+    """Famille à incorporer {IdOffre, Adherent {Nom, Prenom, DateNaissance, Sexe M|F, NombrePathologie, Matricule, Mobile},
+    Membres [membre comme _membre]} ; None sans famille."""
+    if not valeur:
+        return None
+    if not isinstance(valeur, dict) or not isinstance(valeur.get("Adherent"), dict):
+        raise ErreurRenouvellement("Nouvelle famille illisible.")
+    try:
+        offre = int(valeur.get("IdOffre") or 0)
+    except (TypeError, ValueError):
+        offre = 0
+    if offre <= 0:
+        raise ErreurRenouvellement("Choisissez la formule de la nouvelle famille.")
+    brut = valeur["Adherent"]
+    texte = lambda cle: str(brut.get(cle) or "").strip()  # noqa: E731
+    adherent = {"nom": texte("Nom").upper(), "prenom": texte("Prenom").upper(), "sexe": texte("Sexe").upper()[:1],
+                "naissance": _date(brut.get("DateNaissance")), "matricule": texte("Matricule"), "mobile": texte("Mobile")}
+    if not adherent["nom"]:
+        raise ErreurRenouvellement("Saisissez le nom de l'adhérent de la nouvelle famille.")
+    if not adherent["naissance"]:
+        raise ErreurRenouvellement("Saisissez la date de naissance de l'adhérent de la nouvelle famille.")
+    if adherent["sexe"] not in ("M", "F"):
+        raise ErreurRenouvellement("Précisez le sexe de l'adhérent de la nouvelle famille.")
+    try:
+        adherent["pathologies"] = int(brut.get("NombrePathologie") or 0)
+    except (TypeError, ValueError):
+        raise ErreurRenouvellement("Nombre d'affections de l'adhérent illisible.") from None
+    membres = valeur.get("Membres") or []
+    if not isinstance(membres, list):
+        raise ErreurRenouvellement("Membres de la nouvelle famille illisibles.")
+    lus = []
+    for rang, membre in enumerate(membres, start=1):
+        try:
+            lu = _membre(membre)
+        except ErreurRenouvellement as erreur:
+            raise ErreurRenouvellement(f"Membre n° {rang} : {erreur}") from None
+        if not lu:
+            raise ErreurRenouvellement(f"Membre n° {rang} : saisie vide.")
+        lus.append(lu)
+    return {"offre": offre, "adherent": adherent, "membres": lus}
+
+
+def _poser_age(cursor, utilisateur, effet):
+    """Âge apprécié à la date d'incorporation, dérogation aux limites d'âge pour l'utilisateur habilité (lus par les
+    procédures de saisie Santé), le temps de la transaction."""
+    cursor.execute("SELECT set_config('lephare.derogation_age', %s, true), set_config('lephare.date_effet_age', %s, true)",
+                   ["on" if a_le_droit(utilisateur, DROIT_DEROGATION_AGE) else "", effet.isoformat()])
+
+
+def _retirer_age(cursor):
+    cursor.execute("SELECT set_config('lephare.derogation_age', '', true), set_config('lephare.date_effet_age', '', true)")
+
+
+def _saisir_affilie(cursor, utilisateur, id_devis, id_adherent, membre, effet):
+    """sp_saisie_affilie_sante v6 : membre ajouté à la famille id_adherent du devis d'avenant, adhésion et consommation
+    à la date d'incorporation. Renvoie le message de la base."""
+    cursor.execute("CALL sp_saisie_affilie_sante(" + ", ".join(["%s"] * 24) + ")", [
+        membre["nom"], membre["prenom"], membre["naissance"], membre["sexe"], "", "", "", membre["lien"], effet,
+        membre["certificat"], "", "RAS", False, effet, False, 0, membre["pathologies"], "", "NS", utilisateur.id,
+        0, id_adherent, id_devis, ""])
+    return cursor.fetchone()[3] or ""
+
+
 def _incorporer(cursor, utilisateur, id_devis, id_adherent, membre, effet):
     """Nouveau membre ajouté à la famille id_adherent du devis d'avenant (sp_saisie_affilie_sante v6 : une famille
     complète passe dans la formule de sa nouvelle taille), adhésion et consommation à la date d'incorporation, âge
     apprécié à cette date, dérogation aux limites d'âge pour l'utilisateur habilité. Renvoie le message de la base."""
     try:
         with transaction.atomic():
-            cursor.execute("SELECT set_config('lephare.derogation_age', %s, true), set_config('lephare.date_effet_age', %s, true)",
-                           ["on" if a_le_droit(utilisateur, DROIT_DEROGATION_AGE) else "", effet.isoformat()])
-            cursor.execute("CALL sp_saisie_affilie_sante(" + ", ".join(["%s"] * 24) + ")", [
-                membre["nom"], membre["prenom"], membre["naissance"], membre["sexe"], "", "", "", membre["lien"], effet,
-                membre["certificat"], "", "RAS", False, effet, False, 0, membre["pathologies"], "", "NS", utilisateur.id,
-                0, id_adherent, id_devis, ""])
-            message = cursor.fetchone()[3]
-            cursor.execute("SELECT set_config('lephare.derogation_age', '', true), set_config('lephare.date_effet_age', '', true)")
+            _poser_age(cursor, utilisateur, effet)
+            message = _saisir_affilie(cursor, utilisateur, id_devis, id_adherent, membre, effet)
+            _retirer_age(cursor)
     except DatabaseError as erreur:
         raise ErreurRenouvellement(f"{membre['nom']} {membre['prenom']} non incorporé(e) : "
                                    + str(erreur).splitlines()[0][:250]) from erreur
-    return message or ""
+    return message
+
+
+def formule_a_la_taille(formules, id_offre, taille):
+    """Formule de la nouvelle famille : celle choisie, ou pour une formule à nombre de personnes (MINENE) celle de la même
+    offre commerciale qui accueille la famille entière (SOLO, FAMILLE, FAMILLE PLUS) ; None si aucune ne l'accueille."""
+    choisie = next((o for o in formules if o["IdOffre"] == id_offre), None)
+    if not choisie or not choisie.get("PersonnesMax"):
+        return choisie
+    if (choisie.get("PersonnesMin") or 1) <= taille <= choisie["PersonnesMax"]:
+        return choisie
+    adaptees = [o for o in formules if o.get("PersonnesMax") and (o.get("PersonnesMin") or 1) <= taille <= o["PersonnesMax"]]
+    return min(adaptees, key=lambda o: (o["PersonnesMax"], o["IdOffre"])) if adaptees else None
+
+
+def _incorporer_famille(cursor, utilisateur, id_devis, famille, anciennes, effet, expiration):
+    """Nouvelle famille ajoutée au devis d'avenant comme dans l'écran Santé : couverture de sa formule (collège et zone d'une
+    famille du contrat de la même offre commerciale), adhérent, puis ses ayants droit. Renvoie (libellé de la famille,
+    formule, nombre de personnes, messages de la base)."""
+    formules_par_tarif = {}
+    for f in anciennes:
+        if f["IdTarif"] and f["IdTarif"] not in formules_par_tarif:
+            formules_par_tarif[f["IdTarif"]] = _formules(cursor, f["IdTarif"])
+    tarif = next((t for t, liste in formules_par_tarif.items() if any(o["IdOffre"] == famille["offre"] for o in liste)), None)
+    if tarif is None:
+        raise ErreurRenouvellement("Formule d'une offre commerciale absente du contrat : saisissez la famille dans l'écran Santé.")
+    taille = 1 + len(famille["membres"])
+    formule = formule_a_la_taille(formules_par_tarif[tarif], famille["offre"], taille)
+    if not formule:
+        raise ErreurRenouvellement(f"Aucune formule de l'offre n'accueille une famille de {taille} personnes.")
+    # Collège et zone : ceux d'une famille de la même formule, à défaut de la même offre commerciale
+    reference = next((f for f in anciennes if f["IdOffre"] == formule["IdOffre"]), None) \
+        or next(f for f in anciennes if f["IdTarif"] == tarif)
+    adherent = famille["adherent"]
+    libelle = f"{adherent['nom']} {adherent['prenom']}".strip()
+    personne = libelle
+    try:
+        with transaction.atomic():
+            cursor.execute(
+                """SELECT idfiliale FROM stdfiliale WHERE iddevis = %s AND idoffresante = %s AND idoperateur = %s
+                   AND idcollege IS NOT DISTINCT FROM %s AND idzonecouverture IS NOT DISTINCT FROM %s ORDER BY idfiliale LIMIT 1""",
+                [id_devis, formule["IdOffre"], utilisateur.id, reference["IdCollege"], reference["IdZone"]])
+            existante = cursor.fetchone()
+            if existante:
+                id_filiale = existante[0]
+            else:
+                cursor.execute(
+                    "CALL sp_saisie_filiale_sante(%s, %s, %s, %s, %s, %s, 'S', %s, 0, %s, '')",
+                    [reference["IdCollege"], formule["IdOffre"], reference["IdZone"], effet, expiration, date.today(),
+                     utilisateur.id, id_devis])
+                id_filiale = cursor.fetchone()[0]
+            _poser_age(cursor, utilisateur, effet)
+            # URANUS enregistre en VIP les adhérents saisis à l'écran (views_devis_sante.enregistrer_adherent)
+            cursor.execute("CALL sp_saisie_adherent_sante(" + ", ".join(["%s"] * 23) + ")", [
+                adherent["nom"], adherent["prenom"], adherent["sexe"], "", True, "", adherent["mobile"], "", "",
+                adherent["naissance"], effet, id_filiale, effet, adherent["matricule"], False, 0, adherent["pathologies"],
+                "", "NS", utilisateur.id, 0, id_devis, ""])
+            id_adherent, _, message = cursor.fetchone()
+            if not id_adherent:
+                raise ErreurRenouvellement(f"{libelle} non incorporé(e) : {message or 'adhérent refusé par la base.'}")
+            messages = [message or ""]
+            for membre in famille["membres"]:
+                personne = f"{membre['nom']} {membre['prenom']}".strip()
+                messages.append(_saisir_affilie(cursor, utilisateur, id_devis, id_adherent, membre, effet))
+            _retirer_age(cursor)
+    except DatabaseError as erreur:
+        raise ErreurRenouvellement(f"{personne} non incorporé(e) : " + str(erreur).splitlines()[0][:250]) from erreur
+    # Messages de la base sans leur formule de succès : dérogations d'âge, passage de formule
+    details = [m.replace("Adherent enregistré avec succès.", "").replace("Affilié enregistré avec succès.", "").strip()
+               for m in messages]
+    return libelle, _formule_famille(cursor, id_adherent), taille, " ".join(d for d in details if d)
 
 
 def _formule_famille(cursor, id_adherent):
@@ -384,6 +518,9 @@ def avenant_sante(request, idcontrat):
         membre = _membre(donnees.get("Membre"))
         if membre and not id_adherent:
             raise ErreurRenouvellement("Choisissez la famille dans laquelle incorporer le nouveau membre.")
+        nouvelle_famille = _nouvelle_famille(donnees.get("Famille"))
+        if nouvelle_famille and (membre or id_adherent or id_offre):
+            raise ErreurRenouvellement("Une nouvelle famille s'incorpore seule : sans membre ni changement de formule dans le même avenant.")
         with transaction.atomic(), connection.cursor() as cursor:
             base = _base_sante(cursor, idcontrat)
             encours = _en_cours(cursor, base)
@@ -445,17 +582,24 @@ def avenant_sante(request, idcontrat):
                 cursor.execute("UPDATE stdadherent SET idfiliale = %s WHERE idadherent = %s", [id_filiale, nouvelle])
             # Incorporation : le membre rejoint sa famille, qui change de formule si elle était complète
             message_membre = _incorporer(cursor, request.user, id_devis, nouvelle, membre, effet) if membre else ""
+            # Incorporation d'une famille : couverture, adhérent et ayants droit ajoutés à la composition recopiée
+            famille_ajoutee = None
+            if nouvelle_famille:
+                famille_ajoutee = _incorporer_famille(cursor, request.user, id_devis, nouvelle_famille, anciennes, effet,
+                                                      base["dateexpiration"])
+                message_membre = famille_ajoutee[3]
             # Montants de l'avenant dès sa création (écart au prorata), jamais une prime annuelle entière
             _tarifer(cursor, request.user.id, id_devis)
             cursor.execute("SELECT numerodevis, COALESCE(primenette, 0), COALESCE(primettc, 0) FROM stddevis WHERE iddevis = %s",
                            [id_devis])
             numero, prime_nette, prime_ttc = cursor.fetchone()
             formule_avant = (choisie["Option"] or choisie["Formule"] or "") if choisie else ""
-            formule_apres = _formule_famille(cursor, nouvelle) if choisie else ""
+            formule_apres = _formule_famille(cursor, nouvelle) if choisie else (famille_ajoutee[1] if famille_ajoutee else "")
         return Response({
             "IdDevis": id_devis, "NumeroDevis": numero, "Module": "sante", "DateEffet": _iso(effet),
-            "Famille": choisie["Adherent"] if choisie else "", "FormuleAvant": formule_avant,
-            "Formule": formule_apres if formule_apres != formule_avant else "",
+            "Famille": choisie["Adherent"] if choisie else (famille_ajoutee[0] if famille_ajoutee else ""),
+            "FormuleAvant": formule_avant, "Formule": formule_apres if formule_apres != formule_avant else "",
+            "Personnes": famille_ajoutee[2] if famille_ajoutee else 0,
             "Membre": f"{membre['nom']} {membre['prenom']}".strip() if membre else "", "MessageMembre": message_membre,
             "PrimeNette": float(prime_nette), "PrimeTtc": float(prime_ttc), "Message": message,
         }, status=status.HTTP_201_CREATED)
