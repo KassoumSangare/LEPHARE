@@ -5,7 +5,7 @@ import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { cashApi, contractApi, oreoleApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
-import { CreditCard, Check, Clock, PencilLine, Receipt, FileSpreadsheet, FileText, ListChecks, Search, X } from 'lucide-react';
+import { CreditCard, Check, Clock, PencilLine, Receipt, FileSpreadsheet, FileText, ListChecks, Repeat, Search, X } from 'lucide-react';
 import { CorrectionEncaissement } from '../../../components/cash/CorrectionEncaissement';
 import { aLeDroit } from '../../../utils/droits';
 import { formatDate } from '../../../utils/dateUtils';
@@ -92,6 +92,21 @@ export const CashCollectionPage = () => {
   // Lien « Encaisser » de la fiche d'un contrat Oreole Santé : ouvre directement le règlement du package
   const [parametres, setParametres] = useSearchParams();
   const packageDemande = useRef(parametres.get('oreole'));
+  // « Réutiliser » d'un chèque annulé (Portefeuille des règlements) : le chèque préremplit le règlement des quittances choisies
+  const chequeDemande = useRef(parametres.get('cheque'));
+  const [chequeAReutiliser, setChequeAReutiliser] = useState(null);
+  useEffect(() => {
+    const id = chequeDemande.current;
+    if (!id) return;
+    chequeDemande.current = null;
+    setParametres({}, { replace: true });
+    cashApi.getChequeStatus({ id })
+      .then((r) => {
+        if (r?.existe && r.annule) setChequeAReutiliser(r);
+        else toastError('Ce chèque n\'est pas annulé : il se réutilise directement à la caisse par son numéro.');
+      })
+      .catch(() => toastError('Chèque introuvable.'));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadContracts = async () => {
     try {
@@ -148,10 +163,22 @@ export const CashCollectionPage = () => {
     const reste = resteAEncaisser(contract);
     setMontantEncaisse(reste);
     const especes = modes.find((m) => natureMode(m).especes);
-    setReglement({
-      ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
-      idMode: String((especes || modes[0])?.idmodeencaissement || ''),
-    });
+    const modeCheque = modes.find((m) => natureMode(m).cheque);
+    setReglement(chequeAReutiliser && modeCheque && !contract.oreole
+      ? {
+        ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
+        idMode: String(modeCheque.idmodeencaissement),
+        idBanque: String(chequeAReutiliser.banque),
+        numero: chequeAReutiliser.numero_cheque,
+        montantInitialCheque: String(Math.round(Number(chequeAReutiliser.montant_initial) || 0)),
+      }
+      : {
+        ...reglementVide(String(contract.client_nom || '').slice(0, 50)),
+        idMode: String((especes || modes[0])?.idmodeencaissement || ''),
+      });
+    if (chequeAReutiliser && modeCheque && !contract.oreole) {
+      setMontantEncaisse(Math.max(0, Math.min(reste, Number(chequeAReutiliser.solde_disponible) || 0)));
+    }
     setIsModalOpen(true);
   };
 
@@ -213,7 +240,12 @@ export const CashCollectionPage = () => {
       setIsModalOpen(false);
       loadContracts();
       chargerDuJour();
-      success(res.data?.message || `Règlement de ${Number(montantEncaisse).toLocaleString('fr-FR')} FCFA enregistré.`);
+      success(`${res.data?.message || `Règlement de ${Number(montantEncaisse).toLocaleString('fr-FR')} FCFA enregistré.`}${res.data?.cheque_reutilise ? ' Chèque annulé réutilisé.' : ''}`);
+      // Chèque réutilisé : il reste proposé tant qu'il garde un solde (il peut régler plusieurs quittances)
+      if (chequeAReutiliser && String(reglement.numero) === String(chequeAReutiliser.numero_cheque)) {
+        const solde = Number(res.data?.solde_restant_cheque);
+        setChequeAReutiliser(solde > 0 ? { ...chequeAReutiliser, solde_disponible: solde, annule: false } : null);
+      }
       if (selectedContract.oreole) {
         await printRecuReglementCommun(res.data?.id_encaissement, fenetre);
       } else {
@@ -412,6 +444,25 @@ export const CashCollectionPage = () => {
           Conformité CIMA 100% Active
         </span>
       </div>
+
+      {chequeAReutiliser && (
+        <div className="cheque-reutilise" role="status">
+          <Repeat size={20} aria-hidden="true" />
+          <div>
+            <strong>Réutilisation du chèque n° {chequeAReutiliser.numero_cheque} - {chequeAReutiliser.nom_banque}</strong>
+            <span>
+              {chequeAReutiliser.annule
+                ? `Annulé${chequeAReutiliser.date_annulation ? ` le ${formatDate(chequeAReutiliser.date_annulation)}` : ''}${chequeAReutiliser.motif_annulation ? ` (« ${chequeAReutiliser.motif_annulation} »)` : ''}. `
+                : 'De nouveau en service. '}
+              Disponible : {Math.round(Number(chequeAReutiliser.solde_disponible) || 0).toLocaleString('fr-FR')} F.
+              {' '}Choisissez la quittance à régler : le règlement sera prérempli avec ce chèque.
+            </span>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={() => setChequeAReutiliser(null)}>
+            <X size={14} /> Terminer
+          </button>
+        </div>
+      )}
 
       {(duJour.length > 0 || toutLaCaisse) && (
         <details className="glass-panel caisse-du-jour" style={{ padding: '0.9rem 1.25rem' }} open>

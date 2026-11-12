@@ -3247,87 +3247,301 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 }
 
 /* ==========================================================================
-   COCKPIT OPÉRATIONNEL (pages/user/UserDashboard.jsx)
+   COCKPIT OPÉRATIONNEL, TABLEAU DE BORD, SUIVI COMMERCIAL (components/common/Cockpit.jsx)
+   Style moderne (2026-11-12) : cartes arrondies, en-tête dégradé, tuiles à pastille de teinte, chiffres qui défilent.
    Couleurs tirées des variables du thème : lisible en mode clair comme sombre. Les états (critique, attention,
    information) portent toujours une icône et un libellé, jamais la couleur seule.
+   Séries du chiffre d'affaires (commissions, accessoires, RAFAS) : palette catégorielle validée (skill dataviz), un pas
+   par thème ; la légende écrit chaque montant (vert sous 3:1 sur fond clair).
    ========================================================================== */
-.cockpit { display: flex; flex-direction: column; gap: 1.25rem; }
-.cockpit-entete {
-  padding: 1.5rem 1.75rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+.cockpit {
+  --ca-1: #3987e5; --ca-2: #d95926; --ca-3: #199e70;
+  --cockpit-rayon: 16px;
+  --cockpit-carte: var(--bg-surface);
+  --cockpit-ligne: var(--border-subtle);
+  display: flex; flex-direction: column; gap: 1.25rem;
 }
-.cockpit-entete p { color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.3rem; }
-.cockpit-raccourcis { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+[data-theme="light"] .cockpit { --ca-1: #2a78d6; --ca-2: #eb6834; --ca-3: #1baf7a; }
+.cockpit-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.cockpit-anime { font-variant-numeric: tabular-nums; }
+
+/* ---- En-tête : surtitre, titre, raccourcis */
+.cockpit .cockpit-entete {
+  position: relative; overflow: hidden; border-radius: var(--cockpit-rayon);
+  padding: 1.6rem 1.75rem; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 1.1rem;
+  border: 1px solid var(--cockpit-ligne); box-shadow: var(--shadow-sm);
+  background:
+    radial-gradient(110% 150% at 0% 0%, color-mix(in srgb, var(--primary-500) 16%, transparent), transparent 55%),
+    radial-gradient(80% 140% at 100% 0%, color-mix(in srgb, var(--accent-emerald) 12%, transparent), transparent 60%),
+    var(--cockpit-carte);
+}
+.cockpit-surtitre {
+  display: inline-flex; align-items: center; gap: 0.4rem; margin-bottom: 0.55rem; padding: 0.22rem 0.65rem;
+  border-radius: var(--radius-full); font-size: 0.72rem; font-weight: 600; color: var(--text-secondary);
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent); border: 1px solid color-mix(in srgb, var(--primary-500) 24%, transparent);
+}
+.cockpit-surtitre svg { color: var(--primary-500); }
+.cockpit .cockpit-entete h1 { font-size: 1.65rem; letter-spacing: -0.025em; line-height: 1.15; }
+.cockpit-entete p { color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.35rem; max-width: 62ch; }
+.cockpit-raccourcis { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.cockpit-raccourcis .btn { border-radius: 10px; }
 .cockpit-erreur {
-  display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem; border-radius: var(--radius-md);
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.85rem 1rem; border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--accent-rose) 40%, transparent);
   background: color-mix(in srgb, var(--accent-rose) 10%, transparent); color: var(--text-primary); font-size: 0.875rem;
 }
 .cockpit-erreur span { flex: 1; }
+
+/* ---- Choix de l'exercice : boutons groupés */
+.cockpit-segments {
+  display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; flex-wrap: wrap;
+  background: var(--bg-surface-elevated); border: 1px solid var(--cockpit-ligne);
+}
+.cockpit-segments button {
+  border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: 8px;
+  padding: 0.38rem 0.8rem; font-size: 0.82rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.cockpit-segments button:hover { color: var(--text-primary); }
+.cockpit-segments button.actif { background: var(--cockpit-carte); color: var(--text-primary); box-shadow: var(--shadow-sm), 0 0 0 1px var(--cockpit-ligne); }
+.cockpit-segments button:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
+/* ---- Bandeaux de rangée */
+.cockpit-bande {
+  display: flex; align-items: center; gap: 0.6rem; margin: 0.35rem 0 -0.5rem;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted);
+}
+.cockpit-bande::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--cockpit-ligne), transparent); }
+
+/* ---- Tuiles d'indicateurs */
 .cockpit-tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
-.cockpit-tuile.cliquable { cursor: pointer; }
+.cockpit .cockpit-tuile {
+  --ton: var(--primary-500);
+  padding: 1.1rem 1.2rem 1.15rem; gap: 0.45rem; border-radius: 14px; background: var(--cockpit-carte);
+  border: 1px solid var(--cockpit-ligne); box-shadow: var(--shadow-sm);
+  transition: transform var(--mouvement-normal) var(--courbe-entree), box-shadow var(--mouvement-normal) var(--courbe-entree),
+              border-color var(--mouvement-normal) ease;
+}
+.cockpit-tuile.ton-blue { --ton: var(--primary-500); }
+.cockpit-tuile.ton-emerald { --ton: var(--accent-emerald); }
+.cockpit-tuile.ton-amber { --ton: var(--accent-amber); }
+.cockpit-tuile.ton-purple { --ton: var(--accent-purple); }
+.cockpit-tuile.ton-rose { --ton: var(--accent-rose); }
+/* Filet de teinte en haut de la tuile */
+.cockpit .cockpit-tuile::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+  background: linear-gradient(90deg, var(--ton), color-mix(in srgb, var(--ton) 0%, transparent));
+  opacity: 0.85;
+}
+.cockpit .cockpit-tuile.cliquable { cursor: pointer; }
+.cockpit .cockpit-tuile.cliquable:hover {
+  transform: translateY(-2px); border-color: color-mix(in srgb, var(--ton) 40%, var(--cockpit-ligne)); box-shadow: var(--shadow-md);
+}
 .cockpit-tuile.cliquable:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.cockpit-tuile-ligne { font-size: 0.75rem; color: var(--text-muted); line-height: 1.4; }
-.cockpit-evolution { display: inline-flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; color: var(--text-muted); }
-.cockpit-evolution strong { font-weight: 700; }
-.cockpit-evolution.hausse svg, .cockpit-evolution.hausse strong { color: var(--accent-emerald); }
-.cockpit-evolution.baisse svg, .cockpit-evolution.baisse strong { color: var(--accent-rose); }
-.cockpit-jauge { height: 6px; border-radius: 3px; background: var(--border-subtle); overflow: hidden; margin-top: 0.25rem; }
-.cockpit-jauge span { display: block; height: 100%; border-radius: 3px; background: var(--primary-500); }
+.cockpit-tuile-entete { display: flex; align-items: center; gap: 0.6rem; }
+.cockpit-tuile-icone {
+  flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  color: var(--ton); background: color-mix(in srgb, var(--ton) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ton) 24%, transparent);
+}
+.cockpit-tuile-titre { flex: 1; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); line-height: 1.3; }
+.cockpit-tuile-ouvrir { color: var(--text-muted); opacity: 0; transform: translate(-3px, 3px); transition: opacity var(--transition-fast), transform var(--transition-fast); }
+.cockpit-tuile.cliquable:hover .cockpit-tuile-ouvrir, .cockpit-tuile.cliquable:focus-visible .cockpit-tuile-ouvrir { opacity: 1; transform: none; }
+.cockpit .cockpit-tuile .metric-value { font-size: 1.55rem; letter-spacing: -0.03em; margin-top: 0.15rem; }
+.cockpit-tuile-ligne { font-size: 0.75rem; color: var(--text-muted); line-height: 1.45; }
+.cockpit-tuile-evolution { margin-top: -0.1rem; }
+
+/* Indicateur principal : chiffre d'affaires du cabinet, sur deux colonnes */
+.cockpit .cockpit-tuile.vedette {
+  --ton: var(--accent-emerald);
+  grid-column: span 2; padding: 1.35rem 1.45rem 1.4rem; gap: 0.6rem;
+  border-color: color-mix(in srgb, var(--accent-emerald) 32%, var(--cockpit-ligne));
+  background:
+    radial-gradient(90% 120% at 100% 0%, color-mix(in srgb, var(--accent-emerald) 13%, transparent), transparent 60%),
+    radial-gradient(70% 90% at 0% 100%, color-mix(in srgb, var(--primary-500) 8%, transparent), transparent 70%),
+    var(--cockpit-carte);
+  box-shadow: var(--shadow-md);
+}
+.cockpit .cockpit-tuile.vedette::before { height: 4px; }
+.cockpit .cockpit-tuile.vedette .metric-value { font-size: 2.35rem; letter-spacing: -0.035em; }
+.cockpit-tuile.vedette .cockpit-tuile-icone { width: 40px; height: 40px; border-radius: 12px; }
+.cockpit-tuile.vedette .cockpit-tuile-titre { font-size: 0.875rem; color: var(--text-primary); }
+@media (max-width: 760px) {
+  .cockpit .cockpit-tuile.vedette { grid-column: auto; }
+  .cockpit .cockpit-tuile.vedette .metric-value { font-size: 1.75rem; }
+}
+
+/* Lignes libellé / montant */
+.cockpit-detail { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
+.cockpit-detail .libelle { flex: 1; min-width: 0; }
+.cockpit-detail strong { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Chiffres clés sous l'indicateur principal */
+.cockpit-chiffres-cles {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0.45rem 0 0; padding-top: 0.8rem;
+  border-top: 1px solid var(--cockpit-ligne);
+}
+.cockpit-chiffres-cles > div { padding: 0 0.8rem; border-left: 1px solid var(--cockpit-ligne); min-width: 0; }
+.cockpit-chiffres-cles > div:first-child { padding-left: 0; border-left: none; }
+.cockpit-chiffres-cles dt { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.cockpit-chiffres-cles dd {
+  margin: 0.2rem 0 0; font-family: var(--font-mono); font-size: 1.02rem; font-weight: 700; color: var(--text-primary);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em; white-space: nowrap;
+}
+.cockpit-chiffres-cles dd.aide { margin-top: 0.05rem; font-family: var(--font-main); font-size: 0.72rem; font-weight: 400; color: var(--text-muted); white-space: normal; letter-spacing: 0; }
+@media (max-width: 560px) {
+  .cockpit-chiffres-cles { grid-template-columns: 1fr; gap: 0.65rem; }
+  .cockpit-chiffres-cles > div { padding: 0; border-left: none; }
+}
+
+/* Pastilles des séries */
+.cockpit-cle { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 3px; align-self: center; }
+.serie-1 { background: var(--ca-1); }
+.serie-2 { background: var(--ca-2); }
+.serie-3 { background: var(--ca-3); }
+
+/* Évolution : pastille fléchée + libellé */
+.cockpit-evolution { display: inline-flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; color: var(--text-muted); font-size: 0.75rem; }
+.cockpit-pastille {
+  display: inline-flex; align-items: center; gap: 0.15rem; padding: 0.1rem 0.5rem 0.1rem 0.35rem; border-radius: var(--radius-full);
+  font-weight: 700; font-size: 0.75rem; font-variant-numeric: tabular-nums;
+}
+.cockpit-evolution.hausse .cockpit-pastille { color: var(--accent-emerald); background: color-mix(in srgb, var(--accent-emerald) 13%, transparent); }
+.cockpit-evolution.baisse .cockpit-pastille { color: var(--accent-rose); background: color-mix(in srgb, var(--accent-rose) 12%, transparent); }
+
+/* Jauge */
+.cockpit-jauge { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text-muted) 16%, transparent); overflow: hidden; margin: 0.2rem 0; }
+.cockpit-jauge span {
+  display: block; height: 100%; border-radius: 4px; background: var(--ton, var(--primary-500));
+  transform-origin: left; animation: cockpit-pousse var(--mouvement-lent) var(--courbe-entree) 120ms backwards;
+}
+@keyframes cockpit-pousse { from { transform: scaleX(0); } }
+@keyframes cockpit-monte { from { transform: scaleY(0); } }
+
+/* Répartition du chiffre d'affaires : barre empilée (2 px de fond entre les parts) et légende chiffrée */
+.cockpit-repartition { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.35rem; }
+.cockpit-repartition-barre {
+  display: flex; gap: 2px; height: 12px; border-radius: 6px; overflow: hidden;
+  transform-origin: left; animation: cockpit-pousse 0.6s var(--courbe-entree) 150ms backwards;
+}
+.cockpit-repartition-barre span { flex-basis: 0; min-width: 4px; }
+.cockpit-repartition-legende { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.cockpit-repartition-legende li { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); }
+.cockpit-repartition-legende strong { color: var(--text-primary); font-variant-numeric: tabular-nums; font-weight: 700; }
+.cockpit-repartition-legende em { font-style: normal; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Petites colonnes mensuelles */
+.cockpit-mini { margin-top: 0.4rem; }
+.cockpit-mini-lecture { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 0.74rem; color: var(--text-muted); margin-bottom: 0.35rem; }
+.cockpit-mini-lecture span::first-letter { text-transform: uppercase; }
+.cockpit-mini-lecture strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cockpit-mini-barres { display: flex; align-items: flex-end; height: 54px; border-bottom: 1px solid var(--cockpit-ligne); }
+.cockpit-mini-barres .colonne { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; padding: 0 2px; cursor: default; }
+.cockpit-mini-barres .barre {
+  width: 100%; max-width: 18px; border-radius: 4px 4px 0 0; background: var(--ca-1); opacity: 0.55;
+  transform-origin: bottom; animation: cockpit-monte 0.5s var(--courbe-entree) backwards;
+  transition: opacity var(--transition-fast);
+}
+.cockpit-mini-barres .colonne.active .barre { opacity: 1; }
+.cockpit-mini-barres .colonne.a-venir { background: repeating-linear-gradient(0deg, transparent 0 6px, color-mix(in srgb, var(--text-muted) 8%, transparent) 6px 7px); }
+
+/* ---- Sections */
 .cockpit-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1.25rem; align-items: start; }
 @media (max-width: 1100px) { .cockpit-colonnes { grid-template-columns: minmax(0, 1fr); } }
-.cockpit-section { padding: 1.4rem 1.5rem; min-width: 0; }
-.cockpit-section-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-.cockpit-section-entete h2 { color: var(--text-primary); }
+.cockpit .cockpit-section {
+  padding: 1.35rem 1.45rem; min-width: 0; border-radius: var(--cockpit-rayon); background: var(--cockpit-carte);
+  border: 1px solid var(--cockpit-ligne); box-shadow: var(--shadow-sm);
+  animation: mouvement-apparait var(--mouvement-lent) var(--courbe-entree) 80ms backwards;
+}
+.cockpit-section-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+.cockpit-section-titre { display: flex; align-items: flex-start; gap: 0.7rem; min-width: 0; }
+.cockpit-section-icone {
+  flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+.cockpit-section-entete h2 { color: var(--text-primary); font-size: 0.98rem; letter-spacing: -0.01em; }
 .cockpit-section-entete p { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
-.cockpit-voir { font-size: 0.75rem; padding: 0.35rem 0.75rem; }
-.cockpit-bouton-ligne { font-size: 0.75rem; padding: 0.25rem 0.65rem; white-space: nowrap; }
+.cockpit-voir { font-size: 0.75rem; padding: 0.38rem 0.8rem; border-radius: 9px; display: inline-flex; align-items: center; gap: 0.35rem; }
+.cockpit-bouton-ligne { font-size: 0.75rem; padding: 0.25rem 0.65rem; white-space: nowrap; border-radius: 8px; }
 .cockpit-rien { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.875rem; padding: 0.5rem 0; }
 .cockpit-rien svg { color: var(--accent-emerald); }
+
+/* ---- Liste « À traiter » et alertes */
 .cockpit-a-traiter { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .cockpit-a-traiter button {
-  width: 100%; display: flex; align-items: center; gap: 0.65rem; text-align: left; cursor: pointer;
-  padding: 0.65rem 0.8rem; border-radius: var(--radius-md); font-size: 0.85rem; color: var(--text-primary);
-  background: var(--bg-surface); border: 1px solid var(--border-subtle);
-  transition: border-color var(--transition-normal), transform var(--transition-normal);
+  --ton: var(--primary-500);
+  width: 100%; display: flex; align-items: center; gap: 0.75rem; text-align: left; cursor: pointer;
+  padding: 0.7rem 0.8rem; border-radius: 12px; font-size: 0.85rem; color: var(--text-primary);
+  background: color-mix(in srgb, var(--ton) 4%, var(--cockpit-carte)); border: 1px solid var(--cockpit-ligne);
+  transition: border-color var(--transition-normal), transform var(--transition-normal), background var(--transition-normal);
 }
-.cockpit-a-traiter button:hover { border-color: var(--border-medium); transform: translateX(2px); }
+.cockpit-a-traiter button:hover { border-color: color-mix(in srgb, var(--ton) 45%, var(--cockpit-ligne)); transform: translateX(3px); background: color-mix(in srgb, var(--ton) 8%, var(--cockpit-carte)); }
 .cockpit-a-traiter button:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
-.cockpit-a-traiter button span { flex: 1; }
-.cockpit-a-traiter .fleche { color: var(--text-muted); flex: none; }
-.cockpit-a-traiter button > svg:first-child { flex: none; }
-.cockpit-a-traiter .ton-critique { border-left: 3px solid var(--accent-rose); }
-.cockpit-a-traiter .ton-critique > svg:first-child { color: var(--accent-rose); }
-.cockpit-a-traiter .ton-attention { border-left: 3px solid var(--accent-amber); }
-.cockpit-a-traiter .ton-attention > svg:first-child { color: var(--accent-amber); }
-.cockpit-a-traiter .ton-info { border-left: 3px solid var(--primary-500); }
-.cockpit-a-traiter .ton-info > svg:first-child { color: var(--primary-500); }
-.cockpit-branches { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-.cockpit-branches th {
-  text-align: left; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--text-muted); padding: 0 0.5rem 0.5rem; border-bottom: 1px solid var(--border-subtle);
+.cockpit-a-traiter button span { flex: 1; line-height: 1.4; }
+.cockpit-a-traiter .fleche { color: var(--text-muted); flex: none; transition: transform var(--transition-fast); }
+.cockpit-a-traiter button:hover .fleche { transform: translateX(2px); color: var(--ton); }
+.cockpit-a-traiter button > svg:first-child {
+  flex: none; box-sizing: content-box; padding: 7px; border-radius: 9px;
+  color: var(--ton); background: color-mix(in srgb, var(--ton) 14%, transparent);
 }
-.cockpit-branches td { padding: 0.5rem; color: var(--text-primary); border-bottom: 1px solid var(--border-subtle); }
-.cockpit-branches tr:last-child td { border-bottom: none; }
+.cockpit-a-traiter .ton-critique { --ton: var(--accent-rose); }
+.cockpit-a-traiter .ton-attention { --ton: var(--accent-amber); }
+.cockpit-a-traiter .ton-info { --ton: var(--primary-500); }
+.cockpit-a-traiter .montant-alerte {
+  flex: none; font-family: var(--font-mono); font-weight: 700; font-size: 0.78rem; white-space: nowrap; color: var(--text-primary);
+  padding: 0.15rem 0.5rem; border-radius: var(--radius-full); background: color-mix(in srgb, var(--ton) 12%, transparent);
+}
+.cockpit-a-traiter button:disabled { cursor: default; transform: none; }
+.cockpit-a-traiter li { animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.cockpit-a-traiter li:nth-child(2) { animation-delay: 40ms; }
+.cockpit-a-traiter li:nth-child(3) { animation-delay: 80ms; }
+.cockpit-a-traiter li:nth-child(n+4) { animation-delay: 120ms; }
+
+/* ---- Tableaux de chiffres : en-tête discret, survol des lignes, rang, barres de part */
+.cockpit-branches { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.85rem; }
+.cockpit-branches th {
+  text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); padding: 0.55rem 0.6rem; background: var(--bg-surface-elevated); border-bottom: 1px solid var(--cockpit-ligne);
+}
+.cockpit-branches th:first-child { border-radius: 9px 0 0 9px; }
+.cockpit-branches th:last-child { border-radius: 0 9px 9px 0; }
+.cockpit-branches thead th { border-bottom: none; }
+.cockpit-branches td { padding: 0.6rem; color: var(--text-primary); border-bottom: 1px solid var(--cockpit-ligne); transition: background var(--transition-fast); }
+.cockpit-branches tbody tr:hover td { background: color-mix(in srgb, var(--primary-500) 5%, transparent); }
+.cockpit-branches tbody tr:last-child td { border-bottom: none; }
 .cockpit-branches .montant { font-family: var(--font-mono); white-space: nowrap; }
-.cockpit-branches .part { display: flex; align-items: center; gap: 0.5rem; min-width: 140px; color: var(--text-secondary); }
-.cockpit-barre { flex: 1; height: 8px; border-radius: 4px; background: var(--border-subtle); overflow: hidden; }
-.cockpit-barre span { display: block; height: 100%; min-width: 2px; border-radius: 4px; background: var(--primary-500); }
-.cockpit-branches .part > span { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+.cockpit-branches .part { display: flex; align-items: center; gap: 0.55rem; min-width: 140px; color: var(--text-secondary); }
+.cockpit-barre { flex: 1; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text-muted) 14%, transparent); overflow: hidden; }
+.cockpit-barre span {
+  display: block; height: 100%; min-width: 2px; border-radius: 4px; background: var(--ca-1);
+  transform-origin: left; animation: cockpit-pousse 0.55s var(--courbe-entree) 150ms backwards;
+}
+.cockpit-branches .part > span { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+.cockpit-rang {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 0.55rem; border-radius: 7px; vertical-align: middle;
+  font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); background: var(--bg-surface-elevated); font-variant-numeric: tabular-nums;
+}
+.cockpit-branches tbody tr:nth-child(-n+3) .cockpit-rang { color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 13%, transparent); }
+.cockpit-branches .avec-rang { display: flex; align-items: center; }
+.cockpit-branches .avec-rang > div { min-width: 0; }
 @media (max-width: 640px) {
-  .cockpit-entete { padding: 1.1rem 1rem; }
-  .cockpit-section { padding: 1rem; }
+  .cockpit .cockpit-entete { padding: 1.15rem 1rem; }
+  .cockpit .cockpit-entete h1 { font-size: 1.35rem; }
+  .cockpit .cockpit-section { padding: 1rem; }
   .cockpit-branches .part { min-width: 90px; }
 }
-/* Tableaux de chiffres : colonnes alignées à droite, ligne de total */
 .cockpit-branches th.nombre, .cockpit-branches td.nombre { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cockpit-branches tfoot td { font-weight: 700; border-top: 1px solid var(--border-medium); border-bottom: none; }
+.cockpit-branches tfoot td { font-weight: 700; border-top: 1px solid var(--border-medium); border-bottom: none; background: color-mix(in srgb, var(--text-muted) 5%, transparent); }
 .cockpit-branches .secondaire { display: block; font-size: 0.72rem; color: var(--text-muted); font-weight: 400; font-family: var(--font-main); }
-.cockpit-a-traiter .montant-alerte { font-family: var(--font-mono); font-weight: 700; white-space: nowrap; color: var(--text-primary); }
-.cockpit-a-traiter button:disabled { cursor: default; transform: none; }
 .cockpit-exercice { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-secondary); }
 .cockpit-exercice select { width: auto; min-width: 7rem; font-size: 0.85rem; }
 .cockpit-chargement { opacity: 0.55; transition: opacity 0.2s ease; }
-.cockpit-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; line-height: 1.5; }
+.cockpit-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.85rem; line-height: 1.55; }
+/* Tableaux de données des sections (DataTable) : coins arrondis comme les cartes */
+.cockpit-section .table-wrapper { border-radius: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .cockpit .cockpit-tuile.cliquable:hover, .cockpit-a-traiter button:hover { transform: none; }
+}
 
 /* Graphique mensuel (components/common/GraphiqueMensuel.jsx) : palette validée en sombre et en clair
    (production de l'exercice / de l'an dernier : deux pas d'un même bleu ; encaissements : orange) */
@@ -3371,7 +3585,7 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .graphique-bulle .titre { font-weight: 700; color: var(--text-primary); text-transform: capitalize; margin-bottom: 0.3rem; }
 .graphique-bulle .ligne-bulle { display: flex; align-items: center; gap: 0.45rem; line-height: 1.6; }
 .graphique-bulle .ligne-bulle strong { color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.graphique-bulle .ligne-bulle span:last-child { color: var(--text-muted); }
+.graphique-bulle .ligne-bulle span:last-child { color: var(--text-muted); white-space: nowrap; }
 .graphique-tableau .montant { text-align: right; font-family: var(--font-mono); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .graphique-bulle { animation: none; } }
 
@@ -4277,6 +4491,19 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .correction-historique ul { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; line-height: 1.55; }
 .correction-resultat { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; text-align: center; padding: 1.2rem 0.5rem;
   animation: mouvement-zoom 0.3s ease-out both; }
+/* Chèque annulé réutilisé (demande du 2026-11-12) : encart de la caisse et de ses champs de règlement */
+.cheque-reutilise {
+  display: flex; align-items: center; gap: 0.85rem; padding: 0.9rem 1.1rem; border-radius: 12px; font-size: 0.85rem; color: var(--text-primary);
+  background: color-mix(in srgb, var(--primary-500) 8%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--primary-500) 35%, transparent);
+  animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards;
+}
+.cheque-reutilise > svg { flex: none; color: var(--primary-500); }
+.cheque-reutilise > div { flex: 1; display: flex; flex-direction: column; gap: 0.15rem; }
+.cheque-reutilise > div span { color: var(--text-secondary); line-height: 1.45; }
+.cheque-reutilise.compact { padding: 0.55rem 0.75rem; font-size: 0.8rem; gap: 0.55rem; margin: -0.2rem 0 0.6rem; align-items: flex-start; }
+.cheque-reutilise.compact > svg { margin-top: 0.1rem; }
+.cheque-reutilise .depasse { color: var(--accent-rose); font-weight: 600; }
+@media (max-width: 640px) { .cheque-reutilise { flex-wrap: wrap; } }
 /* Saisies du jour de la caisse */
 .caisse-du-jour summary { cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-weight: 800; color: var(--text-primary); }
 .caisse-du-jour-ligne { display: grid; grid-template-columns: 4rem minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto; gap: 0.5rem 0.9rem; align-items: center;

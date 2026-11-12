@@ -1,8 +1,8 @@
 """
-Tableau de bord de la direction (/admin/dashboard) : production, encaissements et résultats du cabinet sur un
-exercice, comparés à la même période de l'exercice précédent, par mois, par branche et par compagnie, et alertes de
-conformité à la date du jour. Chiffres réels de la base, mêmes règles que le cockpit, la caisse, les reversements et
-les commissions.
+Tableau de bord de la direction (/admin/dashboard) : chiffre d'affaires du cabinet (courtier : commissions et accessoires,
+production/chiffre_affaires.py), primes placées et encaissements sur un exercice, comparés à la même période de
+l'exercice précédent, par mois, par branche et par compagnie, et alertes de conformité à la date du jour. Chiffres réels
+de la base, mêmes règles que le cockpit, la caisse, les reversements et les commissions.
 
 GET /api/tableau-de-bord/?exercice=2026 (droit reporting.view)
 """
@@ -18,7 +18,7 @@ from autorisations.models import DemandeAutorisation, StatutDemande
 from autorisations.rbac import a_le_droit
 from institutionnel.models import ConventionAssureur
 
-from . import views_finance
+from . import chiffre_affaires, views_finance
 from .reste_encaissement import sql_reste
 from .views_cockpit import CONTRAT_VALIDE, _franc, _lignes, _meme_jour, _une
 from .views_reprise import AUTHENTIFICATION
@@ -106,10 +106,10 @@ def _par_mois(cursor, p):
     } for m in range(1, 13)]
 
 
-def _par_branche(cursor, p):
+def _par_branche(cursor, p, ca):
     production = _lignes(cursor, f"""
-        SELECT c.idproduit, COUNT(*) AS nombre, SUM(c.primettc) AS ttc, SUM(c.primenette) AS pn,
-               SUM(c.commissionintermediaire) AS commission
+        SELECT c.idproduit, COUNT(*) AS nombre, SUM(NULLIF(c.primettc, 'NaN')) AS ttc, SUM(NULLIF(c.primenette, 'NaN')) AS pn,
+               SUM(NULLIF(c.commissionintermediaire, 'NaN')) AS commission, SUM(NULLIF(c.accessoireintermediaire, 'NaN')) AS accessoires
         FROM stdcontrat c WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut)s AND %(au)s
         GROUP BY 1
     """, p)
@@ -135,23 +135,6 @@ def _par_branche(cursor, p):
             WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut)s AND %(au)s)
         GROUP BY 1
     """, p)
-    # Commissions perçues : règlements des compagnies datés de l'exercice, et affaires antérieures soldées
-    percues = _lignes(cursor, """
-        SELECT q.idproduit, SUM(dp.montant_commission_paye) AS montant
-        FROM std_detail_paiement_commission dp
-        JOIN std_paiement_commission pc ON pc.id = dp.paiement_id
-        JOIN stddetailreversement d ON d.iddetailreversement = dp.detail_reversement_id
-        JOIN stddetailencaissement de ON de.iddetailencaissement = d.iddetailencaissement
-        JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
-        WHERE NOT dp.est_annule AND pc.date_paiement::date BETWEEN %(debut)s AND %(au)s
-        GROUP BY 1
-    """, p)
-    reprises = _lignes(cursor, f"""
-        SELECT c.idproduit, SUM(c.commissionintermediaire) AS montant
-        FROM lephare_reprise r JOIN stdcontrat c ON c.idcontrat = r.idcontrat
-        WHERE r.commission_percue AND {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut)s AND %(au)s
-        GROUP BY 1
-    """, p)
     produits = {l["idproduit"]: l["libelleproduit"] for l in _lignes(cursor, "SELECT idproduit, libelleproduit FROM stdproduit")}
 
     branches = {}
@@ -161,15 +144,16 @@ def _par_branche(cursor, p):
             "IdProduit": id_produit,
             "Branche": views_finance._branche(id_produit, produits.get(id_produit)) if id_produit else "Sans branche",
             "CategorieCima": CATEGORIES_CIMA.get(id_produit, "Autres"),
-            "Nombre": 0, "PrimeTtc": 0.0, "PrimeNette": 0.0, "Commission": 0.0, "EncaisseExercice": 0.0,
-            "EncaisseAnterieur": 0.0, "PrimeEmiseQuittancee": 0.0, "EncaisseSurEmissions": 0.0, "ResteAEncaisser": 0.0,
-            "QuittancesImpayees": 0, "CommissionPercue": 0.0, "CommissionReprise": 0.0,
+            "Nombre": 0, "PrimeTtc": 0.0, "PrimeNette": 0.0, "Commission": 0.0, "Accessoires": 0.0, "ChiffreAffaires": 0.0,
+            "EncaisseExercice": 0.0, "EncaisseAnterieur": 0.0, "PrimeEmiseQuittancee": 0.0, "EncaisseSurEmissions": 0.0,
+            "ResteAEncaisser": 0.0, "QuittancesImpayees": 0, "ChiffreAffairesPercu": 0.0,
         })
 
     for l in production:
         b = branche(l["idproduit"])
+        commission, accessoires = float(l["commission"] or 0), float(l["accessoires"] or 0)
         b.update(Nombre=l["nombre"], PrimeTtc=float(l["ttc"] or 0), PrimeNette=float(l["pn"] or 0),
-                 Commission=float(l["commission"] or 0))
+                 Commission=commission, Accessoires=accessoires, ChiffreAffaires=commission + accessoires)
     for l in encaissements:
         b = branche(l["idproduit"])
         b["EncaisseExercice" if l["exercice"] else "EncaisseAnterieur"] += float(l["montant"] or 0)
@@ -177,35 +161,48 @@ def _par_branche(cursor, p):
         b = branche(l["idproduit"])
         b.update(PrimeEmiseQuittancee=float(l["ttc"] or 0), EncaisseSurEmissions=float(l["encaisse"] or 0),
                  ResteAEncaisser=float(l["reste"] or 0), QuittancesImpayees=l["impayees"])
-    for l in percues:
-        branche(l["idproduit"])["CommissionPercue"] += float(l["montant"] or 0)
-    for l in reprises:
-        branche(l["idproduit"])["CommissionReprise"] += float(l["montant"] or 0)
+    # Chiffre d'affaires perçu sur l'exercice : règlements des compagnies, frais courtiers gardés à l'encaissement, affaires
+    # antérieures soldées (production/chiffre_affaires.py)
+    for id_produit, montant in ca["PercuParProduit"].items():
+        branche(id_produit)["ChiffreAffairesPercu"] += float(montant)
 
     resultat = []
-    for b in sorted(branches.values(), key=lambda b: (-b["PrimeTtc"], b["Branche"])):
+    # Branches dans l'ordre du chiffre d'affaires du cabinet, puis des primes
+    for b in sorted(branches.values(), key=lambda b: (-b["ChiffreAffaires"], -b["PrimeTtc"], b["Branche"])):
         ligne = {k: (_franc(v) if isinstance(v, float) else v) for k, v in b.items()}
         ligne["TauxRecouvrement"] = _taux(b["EncaisseSurEmissions"], b["PrimeEmiseQuittancee"])
-        ligne["TauxCommission"] = _taux(b["Commission"], b["PrimeNette"])
+        ligne["TauxCommission"] = _taux(b["ChiffreAffaires"], b["PrimeNette"])
         resultat.append(ligne)
     return resultat
 
 
-def _par_compagnie(cursor, p):
+def _par_compagnie(cursor, p, ca):
     lignes = _lignes(cursor, f"""
         SELECT c.idcompagnie, COALESCE(TRIM(co.raisonsociale), 'Compagnie non renseignée') AS compagnie, COUNT(*) AS nombre,
-               SUM(c.primettc) AS ttc, SUM(c.commissionintermediaire) AS commission
+               SUM(NULLIF(c.primettc, 'NaN')) AS ttc, SUM(NULLIF(c.commissionintermediaire, 'NaN')) AS commission,
+               SUM(NULLIF(c.accessoireintermediaire, 'NaN')) AS accessoires
         FROM stdcontrat c LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
         WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut)s AND %(au)s
-        GROUP BY 1, 2 ORDER BY 4 DESC NULLS LAST
+        GROUP BY 1, 2
     """, p)
+    percu = dict(ca["PercuParCompagnie"])
     resultat = [{"IdCompagnie": l["idcompagnie"], "Compagnie": l["compagnie"], "Nombre": l["nombre"],
-                 "PrimeTtc": _franc(l["ttc"]), "Commission": _franc(l["commission"])} for l in lignes]
+                 "PrimeTtc": _franc(l["ttc"]), "Commission": _franc(l["commission"]), "Accessoires": _franc(l["accessoires"]),
+                 "ChiffreAffaires": _franc(l["commission"]) + _franc(l["accessoires"]),
+                 "ChiffreAffairesPercu": percu.pop(l["idcompagnie"], 0)} for l in lignes]
+    # Compagnie qui a réglé des commissions sur l'exercice sans acte émis dans l'exercice
+    if percu:
+        noms = {l["idcompagnie"]: (l["raisonsociale"] or "").strip() for l in _lignes(
+            cursor, "SELECT idcompagnie, raisonsociale FROM stdcompagnie WHERE idcompagnie = ANY(%s)", [[k for k in percu if k]])}
+        resultat += [{"IdCompagnie": k, "Compagnie": noms.get(k) or "Compagnie non renseignée", "Nombre": 0, "PrimeTtc": 0,
+                      "Commission": 0, "Accessoires": 0, "ChiffreAffaires": 0, "ChiffreAffairesPercu": v} for k, v in percu.items() if v]
+    resultat.sort(key=lambda c: (-c["ChiffreAffaires"], -c["PrimeTtc"], c["Compagnie"]))
     if len(resultat) > COMPAGNIES_AFFICHEES:
         autres = resultat[COMPAGNIES_AFFICHEES - 1:]
         resultat = resultat[:COMPAGNIES_AFFICHEES - 1] + [{
-            "IdCompagnie": None, "Compagnie": f"Autres compagnies ({len(autres)})", "Nombre": sum(a["Nombre"] for a in autres),
-            "PrimeTtc": sum(a["PrimeTtc"] for a in autres), "Commission": sum(a["Commission"] for a in autres),
+            "IdCompagnie": None, "Compagnie": f"Autres compagnies, {len(autres)}",
+            **{cle: sum(a[cle] for a in autres) for cle in ("Nombre", "PrimeTtc", "Commission", "Accessoires", "ChiffreAffaires",
+                                                             "ChiffreAffairesPercu")},
         }]
     return resultat
 
@@ -321,18 +318,23 @@ def tableau_de_bord(request):
     p = {"debut": date(exercice, 1, 1), "au": au, "debut_n1": date(exercice - 1, 1, 1), "au_n1": _meme_jour(au, exercice - 1),
          "decaissements": sorted(views_finance.MODES_DECAISSEMENT)}
     with connection.cursor() as cursor:
+        situation = _situation(cursor, jour)
+        # Chiffre d'affaires du cabinet : commissions et accessoires acquis, perçus, en attente (courtier, 2026-11-12)
+        ca = chiffre_affaires.calculer(cursor, p, en_attente=situation["Commissions"])
         production = _production(cursor, p)
-        branches = _par_branche(cursor, p)
+        branches = _par_branche(cursor, p, ca)
+        par_mois = _par_mois(cursor, p)
+        for ligne, revenu in zip(par_mois, ca["ParMois"]):
+            ligne.update({cle: valeur for cle, valeur in revenu.items() if cle != "Mois"})
         resultat = {
             "Jour": jour.isoformat(), "Exercice": exercice, "Exercices": _exercices(cursor, jour.year),
             "Du": p["debut"].isoformat(), "Au": au.isoformat(), "AuPrecedent": p["au_n1"].isoformat(),
             "EnCours": exercice == jour.year,
             "Production": production,
-            "ParMois": _par_mois(cursor, p),
+            "ParMois": par_mois,
             "ParBranche": branches,
-            "ParCompagnie": _par_compagnie(cursor, p),
+            "ParCompagnie": _par_compagnie(cursor, p, ca),
         }
-        situation = _situation(cursor, jour)
         # Régimes autofinancés (RAFAS) : la commission du courtier sur les cotisations fait partie du chiffre d'affaires du cabinet
         # (demande du 2026-11-10) ; elle n'a pas de prime d'assurance ni d'encaissement de prime
         from sante.rafas import commissions_rafas
@@ -340,13 +342,13 @@ def tableau_de_bord(request):
     if rafas["Commission"] or rafas["Percue"] or rafas["CommissionN1"]:
         branches.append({
             "IdProduit": None, "Branche": "RAFAS - Régime autofinancé", "CategorieCima": "Assurance des personnes", "Nombre": rafas["Nombre"],
-            "PrimeTtc": 0.0, "PrimeNette": 0.0, "Commission": float(rafas["Commission"]), "EncaisseExercice": 0.0, "EncaisseAnterieur": 0.0,
-            "PrimeEmiseQuittancee": 0.0, "EncaisseSurEmissions": 0.0, "ResteAEncaisser": 0.0, "QuittancesImpayees": 0,
-            "CommissionPercue": float(rafas["Percue"]), "CommissionReprise": 0.0, "TauxRecouvrement": None,
-            "TauxCommission": _taux(rafas["Commission"], rafas["Base"]), "BaseCommission": float(rafas["Base"]),
+            "PrimeTtc": 0, "PrimeNette": 0, "Commission": rafas["Commission"], "Accessoires": 0, "ChiffreAffaires": rafas["Commission"],
+            "EncaisseExercice": 0, "EncaisseAnterieur": 0, "PrimeEmiseQuittancee": 0, "EncaisseSurEmissions": 0, "ResteAEncaisser": 0,
+            "QuittancesImpayees": 0, "ChiffreAffairesPercu": rafas["Percue"], "TauxRecouvrement": None,
+            "TauxCommission": _taux(rafas["Commission"], rafas["Base"]), "BaseCommission": rafas["Base"],
             "LibelleBase": "des cotisations du régime",
         })
-        resultat["ParBranche"] = branches
+        branches.sort(key=lambda b: (-b["ChiffreAffaires"], -b["PrimeTtc"], b["Branche"]))
 
     somme = lambda cle: sum(b[cle] for b in branches)  # noqa: E731
     emis_quittance = somme("PrimeEmiseQuittancee")
@@ -357,13 +359,10 @@ def tableau_de_bord(request):
         "ResteAEncaisser": somme("ResteAEncaisser"), "QuittancesImpayees": somme("QuittancesImpayees"),
         "TauxRecouvrement": _taux(somme("EncaisseSurEmissions"), emis_quittance),
     }
-    resultat["Resultats"] = {
-        "CommissionsAcquises": production["Commission"] + rafas["Commission"],
-        "CommissionsAcquisesPrecedent": production["Precedent"]["Commission"] + rafas["CommissionN1"],
-        "TauxMoyen": _taux(production["Commission"], production["PrimeNette"]),
-        "CommissionsPercues": somme("CommissionPercue") + somme("CommissionReprise"),
-        "PercuesReglements": somme("CommissionPercue"), "PercuesReprises": somme("CommissionReprise"),
-        "CommissionsRafas": rafas["Commission"], "PercuesRafas": rafas["Percue"],
+    resultat["ChiffreAffaires"] = {
+        **{cle: valeur for cle, valeur in ca.items() if cle not in ("ParMois", "PercuParProduit", "PercuParCompagnie")},
+        # Part des primes émises qui revient au cabinet
+        "PartDesPrimes": _taux(ca["Commissions"] + ca["Accessoires"], production["PrimeTtc"]),
     }
     resultat["Situation"] = situation
     resultat["Alertes"] = _alertes(situation)

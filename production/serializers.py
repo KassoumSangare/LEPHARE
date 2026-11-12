@@ -2891,6 +2891,8 @@ class EncaissementResponseSerializer(serializers.Serializer):
     solde_restant_cheque = serializers.DecimalField(
         max_digits=19, decimal_places=4, required=False
     )
+    # Chèque annulé remis en service par cet encaissement : trace écrite sur le chèque (database.reutiliser_cheque_annule)
+    cheque_reutilise = serializers.CharField(required=False)
 
 
 class ReversementGroupePrimeSerializer(DynamicFieldsSerializer):

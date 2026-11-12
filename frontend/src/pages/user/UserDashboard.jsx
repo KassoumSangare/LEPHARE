@@ -5,16 +5,22 @@ import {
   ArrowRight,
   Banknote,
   CalendarClock,
+  CalendarDays,
   CalendarX,
   CheckCircle2,
   ClipboardList,
+  Coins,
   CreditCard,
   FilePlus,
   FileText,
   HandCoins,
   History,
   Landmark,
+  Layers,
+  ListChecks,
   Percent,
+  PiggyBank,
+  Receipt,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
@@ -23,7 +29,7 @@ import {
 } from 'lucide-react';
 
 import {
-  BoutonVoir, cheminDevis, Evolution, francs, Jauge, nombre, pluriel, Section, Tuile,
+  Anime, BoutonVoir, cheminDevis, Detail, Evolution, francs, Jauge, MiniBarres, nombre, pluriel, pourcent, Repartition, Section, Tuile,
 } from '../../components/common/Cockpit';
 import { DataTable } from '../../components/common/DataTable';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -32,11 +38,21 @@ import { cockpitApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate, formatDateLisible } from '../../utils/dateUtils';
 
-// Cockpit opérationnel : chiffres réels de la base (GET /api/cockpit/), chaque bloc selon les droits de l'utilisateur
+// Cockpit opérationnel : chiffres réels de la base (GET /api/cockpit/), chaque bloc selon les droits de l'utilisateur.
+// OREOLE est courtier : son chiffre d'affaires, ce sont ses commissions et accessoires (droit commissions.view ou
+// reporting.view), les primes reviennent aux compagnies.
+const SOURCES_PERCU = [
+  ['Compagnies', 'Règlements des compagnies'],
+  ['FraisCourtiers', 'Frais courtiers Oreole Santé'],
+  ['Reprises', 'Affaires antérieures'],
+  ['Rafas', 'RAFAS'],
+];
+const MOIS = Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleDateString('fr-FR', { month: 'long' }));
 
 export const UserDashboard = () => {
   const navigate = useNavigate();
-  const { peut, isDirectorOrAdmin } = useAuth();
+  const { peut, isDirectorOrAdmin, user } = useAuth();
+  const prenom = String(user?.first_name || user?.name || '').trim().split(/\s+/)[0];
   const [donnees, setDonnees] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
@@ -61,7 +77,9 @@ export const UserDashboard = () => {
   const caisse = donnees?.Caisse;
   const reversements = donnees?.Reversements;
   const commissions = donnees?.Commissions;
+  const ca = donnees?.ChiffreAffaires;
   const exercice = donnees?.Exercice || new Date().getFullYear();
+  const sourcesPercues = ca ? SOURCES_PERCU.filter(([cle]) => ca.Percu[cle]) : [];
 
   const ouvrirDevis = (d) => navigate(cheminDevis(d.IdProduit, d.IdDevis));
 
@@ -101,7 +119,13 @@ export const UserDashboard = () => {
     },
   ].filter(Boolean);
 
-  const totalBranches = (production?.ParBranche || []).reduce((s, b) => s + Math.max(b.PrimeTtc, 0), 0);
+  // Part de chaque branche : dans le chiffre d'affaires du cabinet quand il est visible, sinon dans les primes
+  const mesurePart = ca ? 'ChiffreAffaires' : 'PrimeTtc';
+  const totalBranches = (production?.ParBranche || []).reduce((s, b) => s + Math.max(b[mesurePart] || 0, 0), 0);
+  const colonneCa = (libelle) => (ca ? [{
+    header: libelle, accessor: 'ChiffreAffaires',
+    render: (l) => <span style={{ fontFamily: 'var(--font-mono)' }}>{francs(l.ChiffreAffaires)}</span>,
+  }] : []);
 
   const colonnesEcheances = [
     { header: 'N° Police', accessor: 'NumeroPolice', render: (e) => <strong style={{ fontFamily: 'var(--font-mono)' }}>{e.NumeroPolice}</strong> },
@@ -121,6 +145,7 @@ export const UserDashboard = () => {
       ),
     },
     { header: 'Prime TTC', accessor: 'PrimeTtc', render: (e) => <span style={{ fontFamily: 'var(--font-mono)' }}>{francs(e.PrimeTtc)}</span> },
+    ...colonneCa('Commission en jeu'),
     {
       header: 'Action',
       render: (e) => (e.DevisEnCours
@@ -144,6 +169,7 @@ export const UserDashboard = () => {
     { header: 'Branche', accessor: 'Produit' },
     { header: 'Émis le', accessor: 'DateEmission', render: (c) => formatDate(c.DateEmission) },
     { header: 'Prime TTC', accessor: 'PrimeTtc', render: (c) => <span style={{ fontFamily: 'var(--font-mono)' }}>{francs(c.PrimeTtc)}</span> },
+    ...colonneCa('Commission'),
     {
       header: 'Règlement', accessor: 'Reste',
       render: (c) => (c.Reste > 0
@@ -158,11 +184,13 @@ export const UserDashboard = () => {
       {/* En-tête et raccourcis */}
       <div className="glass-panel cockpit-entete">
         <div>
+          <span className="cockpit-surtitre">
+            <CalendarDays size={13} aria-hidden="true" />
+            {donnees ? `${formatDateLisible(donnees.Jour, { moisLong: true, jourSemaine: true })} · exercice ${exercice}` : 'Exercice en cours'}
+          </span>
           <h1 className="title-xl">Cockpit opérationnel</h1>
           <p>
-            {donnees
-              ? `Situation au ${formatDateLisible(donnees.Jour, { moisLong: true, jourSemaine: true })}, exercice ${exercice}.`
-              : 'Production, devis, caisse et échéances du cabinet.'}
+            {`${prenom ? `Bonjour ${prenom}, voici` : 'Voici'} le chiffre d'affaires, la production, les devis, la caisse et les échéances du cabinet.`}
           </p>
         </div>
         <div className="cockpit-raccourcis">
@@ -204,105 +232,180 @@ export const UserDashboard = () => {
 
       {donnees && (
         <>
+          {/* Chiffre d'affaires du cabinet : commissions et accessoires, ce qui fait le revenu du courtier */}
+          {ca && (
+            <>
+              <p className="cockpit-bande">Chiffre d'affaires du cabinet</p>
+              <div className="cockpit-tuiles">
+                <Tuile
+                  vedette
+                  titre={`Chiffre d'affaires ${exercice}`}
+                  valeur={<Anime valeur={ca.Total} format={francs} />}
+                  icone={Coins}
+                  couleur="emerald"
+                  vers={isDirectorOrAdmin && peut('reporting.view') ? '/admin/dashboard' : undefined}
+                  aide="Revenu du cabinet : commissions et accessoires des actes émis depuis le 1er janvier, contrats annulés exclus, et commission RAFAS facturée. Les primes reviennent aux compagnies."
+                  evolution={<Evolution actuel={ca.Total} precedent={ca.Precedent} au={ca.AuPrecedent} />}
+                >
+                  <Repartition
+                    libelle="Composition du chiffre d'affaires"
+                    parts={[
+                      { serie: 1, libelle: 'Commissions', valeur: ca.Commissions },
+                      { serie: 2, libelle: 'Accessoires et frais courtiers', valeur: ca.Accessoires },
+                      { serie: 3, libelle: 'RAFAS', valeur: ca.Rafas },
+                    ]}
+                  />
+                  {ca.Mensuel && (
+                    <MiniBarres
+                      titre="Chiffre d'affaires"
+                      valeurs={ca.Mensuel}
+                      libelles={MOIS}
+                      actuel={Number(String(donnees.Jour).slice(5, 7)) - 1}
+                    />
+                  )}
+                  <Detail libelle="Taux moyen sur la prime nette" valeur={pourcent(ca.TauxMoyen)} />
+                  {ca.Apporteurs.Total > 0 && <Detail libelle="Après les apporteurs d'affaires" valeur={francs(ca.Net)} />}
+                </Tuile>
+                <Tuile
+                  titre={`Perçu en ${exercice}`}
+                  valeur={<Anime valeur={ca.Percu.Total} format={francs} />}
+                  icone={PiggyBank}
+                  couleur="blue"
+                  vers={isDirectorOrAdmin && peut('commissions.view') ? '/admin/commissions' : undefined}
+                  aide="Sommes reçues par le cabinet depuis le 1er janvier : règlements des compagnies, frais courtiers gardés à l'encaissement, affaires antérieures déjà réglées, RAFAS"
+                  lignes={[
+                    ...(sourcesPercues.length
+                      ? sourcesPercues.map(([cle, libelle]) => <Detail libelle={libelle} valeur={francs(ca.Percu[cle])} />)
+                      : ['Aucun règlement de commission saisi cette année']),
+                    <Detail libelle="Ce mois-ci" valeur={francs(ca.Mois.Percu)} />,
+                  ]}
+                />
+                <Tuile
+                  titre="À percevoir"
+                  valeur={<Anime valeur={ca.EnAttente.Total} format={francs} />}
+                  icone={HandCoins}
+                  couleur="amber"
+                  vers={isDirectorOrAdmin && peut('commissions.view') ? '/admin/commissions' : undefined}
+                  aide="Commissions des primes reversées pas encore payées par les compagnies, commission RAFAS facturée non réglée"
+                  lignes={[
+                    <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
+                    <Detail
+                      libelle={`Réclamées non payées${commissions?.BordereauxEnAttente ? `, ${pluriel(commissions.BordereauxEnAttente, 'bordereau', 'bordereaux')}` : ''}`}
+                      valeur={francs(ca.EnAttente.Reclamees)}
+                    />,
+                    ca.EnAttente.Rafas > 0 && <Detail libelle="RAFAS non réglée" valeur={francs(ca.EnAttente.Rafas)} />,
+                  ]}
+                />
+              </div>
+            </>
+          )}
+
           {/* Production et devis */}
+          {(production || devis) && ca && <p className="cockpit-bande">Production et devis</p>}
           {(production || devis) && (
             <div className="cockpit-tuiles">
               {production && (
                 <Tuile
-                  titre={`Production ${exercice}`}
-                  valeur={francs(production.Annee.PrimeTtc)}
+                  titre={`Primes émises ${exercice}`}
+                  valeur={<Anime valeur={production.Annee.PrimeTtc} format={francs} />}
                   icone={TrendingUp}
                   couleur="purple"
                   vers={peut('contrats.view') ? '/user/contracts' : undefined}
-                  aide="Primes TTC des actes émis depuis le 1er janvier, contrats annulés exclus"
+                  aide="Primes TTC des actes émis depuis le 1er janvier, contrats annulés exclus : elles reviennent aux compagnies"
+                  evolution={<Evolution actuel={production.Annee.PrimeTtc} precedent={production.AnneePrecedente.PrimeTtc} au={production.AnneePrecedente.Au} />}
                   lignes={[
                     `${pluriel(production.Annee.Nombre, 'acte', 'actes')} : ${nombre(production.Annee.AffairesNouvelles)} affaires nouvelles, ${nombre(production.Annee.Renouvellements)} renouvellements`,
-                    `Ce mois-ci : ${francs(production.Mois.PrimeTtc)}, ${pluriel(production.Mois.Nombre, 'acte', 'actes')}`,
-                    <Evolution actuel={production.Annee.PrimeTtc} precedent={production.AnneePrecedente.PrimeTtc} au={production.AnneePrecedente.Au} />,
+                    <Detail libelle={`Ce mois-ci, ${pluriel(production.Mois.Nombre, 'acte', 'actes')}`} valeur={francs(production.Mois.PrimeTtc)} />,
                   ]}
                 />
               )}
               {production && (
                 <Tuile
                   titre="Polices en vigueur"
-                  valeur={nombre(production.PolicesEnVigueur)}
+                  valeur={<Anime valeur={production.PolicesEnVigueur} format={nombre} />}
                   icone={ShieldCheck}
                   couleur="emerald"
                   vers={peut('contrats.view') ? '/user/contracts?statut=en_cours' : undefined}
                   aide="Polices dont la période d'affaire nouvelle ou de renouvellement couvre aujourd'hui, résiliations exclues"
                   lignes={[
-                    `${pluriel(production.Echeances.AEchoir, 'échéance', 'échéances')} dans les 30 jours`,
-                    `${pluriel(production.Echeances.Echues, 'police échue', 'polices échues')} depuis moins de 30 jours`,
+                    <Detail libelle="Échéances dans les 30 jours" valeur={nombre(production.Echeances.AEchoir)} />,
+                    <Detail libelle="Échues depuis moins de 30 jours" valeur={nombre(production.Echeances.Echues)} />,
+                    production.Echeances.ChiffreAffaires > 0 && <Detail libelle="Commissions en jeu" valeur={francs(production.Echeances.ChiffreAffaires)} />,
                   ]}
                 />
               )}
               {devis && (
                 <Tuile
                   titre="Devis en cours"
-                  valeur={nombre(devis.EnCours)}
+                  valeur={<Anime valeur={devis.EnCours} format={nombre} />}
                   icone={FileText}
                   couleur="blue"
                   vers={peut('devis.view') ? '/user/quotes' : undefined}
                   aide="Devis ni confirmés ni archivés, encore valables"
                   lignes={[
-                    `${francs(devis.PrimeTtcEnCours)} de primes proposées`,
-                    `${pluriel(devis.Expires, 'devis expiré', 'devis expirés')} depuis le ${formatDate(devis.ExpiresDepuis)}`,
+                    <Detail libelle="Primes proposées" valeur={francs(devis.PrimeTtcEnCours)} />,
+                    <Detail libelle={`Expirés depuis le ${formatDate(devis.ExpiresDepuis)}`} valeur={nombre(devis.Expires)} />,
                   ]}
                 />
               )}
               {devis && (
                 <Tuile
                   titre={`Transformation ${exercice}`}
-                  valeur={`${Number(devis.TauxTransformation).toLocaleString('fr-FR')} %`}
+                  valeur={<Anime valeur={devis.TauxTransformation} format={pourcent} entier={false} />}
                   icone={Percent}
                   couleur="amber"
                   vers={peut('devis.view') ? '/user/quotes' : undefined}
                   aide="Devis émis depuis le 1er janvier et déjà confirmés en contrat"
                   lignes={[
-                    `${nombre(devis.ConfirmesAnnee)} devis confirmés sur ${nombre(devis.EmisAnnee)} émis`,
                     <Jauge taux={devis.TauxTransformation} libelle="Taux de transformation" />,
+                    `${nombre(devis.ConfirmesAnnee)} devis confirmés sur ${nombre(devis.EmisAnnee)} émis`,
                   ]}
                 />
               )}
             </div>
           )}
 
-          {/* Caisse et flux financiers */}
-          {(caisse || reversements || commissions) && (
+          {/* Caisse et flux financiers : primes pour le compte des compagnies */}
+          {(caisse || reversements) && ca && <p className="cockpit-bande">Caisse et compagnies</p>}
+          {(caisse || reversements || (commissions && !ca)) && (
             <div className="cockpit-tuiles">
               {caisse && (
                 <Tuile
                   titre={`Encaissé en ${exercice}`}
-                  valeur={francs(caisse.Annee.Montant)}
+                  valeur={<Anime valeur={caisse.Annee.Montant} format={francs} />}
                   icone={Wallet}
                   couleur="emerald"
                   vers={peut('encaissements.view') ? '/user/cash/etat' : undefined}
                   aide="Encaissements saisis depuis le 1er janvier, pièces annulées exclues, décaissements déduits"
                   lignes={[
                     `${pluriel(caisse.Annee.Pieces, 'pièce de caisse', 'pièces de caisse')}`,
-                    `Ce mois-ci : ${francs(caisse.Mois.Montant)}, ${pluriel(caisse.Mois.Pieces, 'pièce', 'pièces')}`,
+                    <Detail libelle={`Ce mois-ci, ${pluriel(caisse.Mois.Pieces, 'pièce', 'pièces')}`} valeur={francs(caisse.Mois.Montant)} />,
                   ]}
                 />
               )}
               {caisse && (
                 <Tuile
                   titre="Reste à encaisser"
-                  valeur={francs(caisse.ResteAEncaisser.Montant)}
+                  valeur={<Anime valeur={caisse.ResteAEncaisser.Montant} format={francs} />}
                   icone={CreditCard}
                   couleur="rose"
                   vers={peut('encaissements.view') ? '/user/cash' : undefined}
                   aide="Quittances non soldées des contrats en vigueur ou échus, émises depuis le 1er janvier"
                   lignes={[
                     `${pluriel(caisse.ResteAEncaisser.Nombre, 'quittance', 'quittances')} de l'exercice`,
-                    caisse.ResteAEncaisser.NombreAnterieur > 0
-                      && `Années antérieures : ${francs(caisse.ResteAEncaisser.MontantAnterieur)}, ${pluriel(caisse.ResteAEncaisser.NombreAnterieur, 'quittance', 'quittances')}`,
+                    caisse.ResteAEncaisser.NombreAnterieur > 0 && (
+                      <Detail
+                        libelle={`Années antérieures, ${pluriel(caisse.ResteAEncaisser.NombreAnterieur, 'quittance', 'quittances')}`}
+                        valeur={francs(caisse.ResteAEncaisser.MontantAnterieur)}
+                      />
+                    ),
                   ]}
                 />
               )}
               {reversements && (
                 <Tuile
                   titre="À reverser aux compagnies"
-                  valeur={francs(reversements.Montant)}
+                  valeur={<Anime valeur={reversements.Montant} format={francs} />}
                   icone={Banknote}
                   couleur="blue"
                   vers={isDirectorOrAdmin && peut('reversements.view') ? '/admin/remittances' : undefined}
@@ -313,7 +416,7 @@ export const UserDashboard = () => {
                   ]}
                 />
               )}
-              {commissions && (
+              {commissions && !ca && (
                 <Tuile
                   titre="Commissions en attente"
                   valeur={francs(commissions.AReclamer + commissions.Reclamees)}
@@ -332,7 +435,7 @@ export const UserDashboard = () => {
 
           <div className="cockpit-colonnes">
             {/* Points en attente */}
-            <Section titre="À traiter" sousTitre="Ce qui attend une action, d'après la base">
+            <Section icone={ListChecks} titre="À traiter" sousTitre="Ce qui attend une action, d'après la base">
               {aTraiter.length === 0 ? (
                 <div className="cockpit-rien">
                   <CheckCircle2 size={18} aria-hidden="true" />
@@ -355,31 +458,38 @@ export const UserDashboard = () => {
 
             {/* Production par branche : une seule mesure, une seule teinte */}
             {production && (
-              <Section titre={`Production ${exercice} par branche`} sousTitre="Primes TTC émises depuis le 1er janvier">
+              <Section
+                icone={Layers}
+                titre={ca ? `Chiffre d'affaires ${exercice} par branche` : `Production ${exercice} par branche`}
+                sousTitre={ca ? 'Commissions et accessoires du cabinet, primes TTC émises depuis le 1er janvier' : 'Primes TTC émises depuis le 1er janvier'}
+              >
                 {production.ParBranche.length === 0 ? (
                   <div className="cockpit-rien"><span>Aucun acte émis cette année.</span></div>
                 ) : (
-                  <table className="cockpit-branches">
-                    <thead>
-                      <tr><th>Branche</th><th>Actes</th><th>Prime TTC</th><th>Part</th></tr>
-                    </thead>
-                    <tbody>
-                      {production.ParBranche.map((b) => {
-                        const part = totalBranches ? (Math.max(b.PrimeTtc, 0) * 100) / totalBranches : 0;
-                        return (
-                          <tr key={b.IdProduit ?? b.Branche} title={`${b.Branche} : ${francs(b.PrimeTtc)}, ${pluriel(b.Nombre, 'acte', 'actes')}`}>
-                            <td>{b.Branche}</td>
-                            <td>{nombre(b.Nombre)}</td>
-                            <td className="montant">{francs(b.PrimeTtc)}</td>
-                            <td className="part">
-                              <div className="cockpit-barre" aria-hidden="true"><span style={{ width: `${part}%` }} /></div>
-                              <span>{part.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <div className="table-wrapper">
+                    <table className="cockpit-branches">
+                      <thead>
+                        <tr><th>Branche</th><th>Actes</th>{ca && <th>Chiffre d'affaires</th>}<th>Prime TTC</th><th>{ca ? 'Part du CA' : 'Part'}</th></tr>
+                      </thead>
+                      <tbody>
+                        {production.ParBranche.map((b, i) => {
+                          const part = totalBranches ? (Math.max(b[mesurePart] || 0, 0) * 100) / totalBranches : 0;
+                          return (
+                            <tr key={b.IdProduit ?? b.Branche} title={`${b.Branche} : ${ca ? `${francs(b.ChiffreAffaires)} de chiffre d'affaires, ` : ''}${francs(b.PrimeTtc)} de primes, ${pluriel(b.Nombre, 'acte', 'actes')}`}>
+                              <td><div className="avec-rang"><span className="cockpit-rang" aria-hidden="true">{i + 1}</span><div>{b.Branche}</div></div></td>
+                              <td>{nombre(b.Nombre)}</td>
+                              {ca && <td className="montant">{francs(b.ChiffreAffaires)}</td>}
+                              <td className="montant">{francs(b.PrimeTtc)}</td>
+                              <td className="part">
+                                <div className="cockpit-barre" aria-hidden="true"><span style={{ width: `${part}%` }} /></div>
+                                <span>{part.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </Section>
             )}
@@ -387,6 +497,7 @@ export const UserDashboard = () => {
 
           {production && (
             <Section
+              icone={CalendarClock}
               titre="Échéances à suivre"
               sousTitre="Polices échues depuis moins de 30 jours ou à échoir dans les 30 jours, sans renouvellement enregistré"
               action={peut('contrats.view') && <BoutonVoir libelle="Toutes les échéances" vers="/user/contracts?statut=a_renouveler" />}
@@ -399,6 +510,7 @@ export const UserDashboard = () => {
 
           {devis && (
             <Section
+              icone={FileText}
               titre="Derniers devis en cours"
               sousTitre="Devis encore valables, à confirmer en contrat"
               action={peut('devis.view') && <BoutonVoir libelle="Tous les devis" vers="/user/quotes" />}
@@ -411,6 +523,7 @@ export const UserDashboard = () => {
 
           {production && (
             <Section
+              icone={Receipt}
               titre="Derniers contrats émis"
               sousTitre="Polices et avenants les plus récents, avec leur règlement"
               action={peut('contrats.view') && <BoutonVoir libelle="Tous les contrats" vers="/user/contracts" />}
@@ -419,7 +532,7 @@ export const UserDashboard = () => {
             </Section>
           )}
 
-          {!production && !devis && !caisse && !reversements && !commissions && (
+          {!ca && !production && !devis && !caisse && !reversements && !commissions && (
             <div className="cockpit-rien"><span>Vos droits ne donnent accès à aucun chiffre du cockpit.</span></div>
           )}
         </>

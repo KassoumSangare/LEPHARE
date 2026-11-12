@@ -11,6 +11,7 @@ from django.db.models import Sum
 from django.db.utils import DatabaseError
 from rest_framework.exceptions import APIException, ValidationError
 
+from autorisations.journal import journaliser
 from core.date_parser import date_emission_du_jour, parse_date_string
 from core.services import ServiceError
 from configuration_api.models import Banque, ModeEncaissement
@@ -2864,6 +2865,7 @@ def save_premium_collection(user, input_data):
     id_encaissement = 0
     output_message = ""
     cheque = None
+    trace_reutilisation = ""
 
     with transaction.atomic():
         if abrege not in MODES_SANS_PLAFOND:
@@ -2904,13 +2906,12 @@ def save_premium_collection(user, input_data):
                 .filter(numero_cheque=numero_cheque, banque_id=banque)
                 .first()
             )
-            if cheque and cheque.statut == Cheque.Statut.IMPAYE:
-                raise ValidationError(
-                    "Ce chèque est annulé (Portefeuille des règlements) : il ne peut plus régler de quittance."
-                )
+            # Chèque annulé : remis en service (demande du 2026-11-12), son montant initial peut être corrigé
+            if cheque and cheque.statut in STATUTS_CHEQUE_ANNULE:
+                trace_reutilisation = reutiliser_cheque_annule(cheque, montant_initial_cheque, date_encaissement)
             # Un chèque qui règle plusieurs quittances garde le montant de son premier usage :
             # un autre montant saisi est une erreur (il était ignoré sans prévenir)
-            if cheque and montant_initial_cheque and montant_initial_cheque != cheque.montant_initial:
+            elif cheque and montant_initial_cheque and montant_initial_cheque != cheque.montant_initial:
                 raise ValidationError(
                     f"Ce chèque est déjà enregistré pour un montant initial de {cheque.montant_initial:,.0f} F "
                     f"(solde disponible {cheque.solde_disponible:,.0f} F).".replace(",", " ")
@@ -2999,8 +3000,17 @@ def save_premium_collection(user, input_data):
             with connection.cursor() as cursor:
                 lier_reencaissement(cursor, int(id_decaissement), id_enc_genere)
 
-        # 5. Chèque impayé entièrement réencaissé
-        if cheque_impaye:
+        if trace_reutilisation:
+            journaliser(
+                utilisateur=user, module="encaissements", action=ACTION_REUTILISATION_CHEQUE, objet_type="cheque",
+                objet_id=cheque.id_cheque, type_operation="ENCAISSEMENT",
+                description=f"Chèque n° {cheque.numero_cheque} réutilisé après annulation : {trace_reutilisation}, encaissement {id_enc_genere}",
+                details={"Cheque": cheque.id_cheque, "Encaissement": id_enc_genere, "Montant": str(montant_total),
+                         "MontantInitial": str(cheque.montant_initial), "Trace": trace_reutilisation},
+            )
+
+        # 5. Chèque impayé entièrement réencaissé (sauf s'il se réencaisse lui-même : il est de nouveau en service)
+        if cheque_impaye and not (cheque and cheque.id_cheque == cheque_impaye.id_cheque):
             reencaisse = Encaissement.objects.filter(
                 cheque_impaye=cheque_impaye,
                 piece_annulee=False,
@@ -3016,11 +3026,61 @@ def save_premium_collection(user, input_data):
     }
     if utilisation_cheque:
         res_dict["solde_restant_cheque"] = cheque.solde_disponible
+    if trace_reutilisation:
+        res_dict["cheque_reutilise"] = trace_reutilisation
     return res_dict
 
 
 # État d'un chèque dans les messages du Portefeuille des règlements (« Annuler » au lieu de « Impayé », 2026-11-11)
 ETATS_CHEQUE = {"A_DEPOSER": "à déposer", "IMPAYE": "déjà annulé", "REENCAISSE": "annulé puis réencaissé"}
+
+# Chèque annulé (IMPAYE, « Annulé » à l'écran ; REENCAISSE : annulé puis réglé autrement) : réutilisable (demande du
+# 2026-11-12 : « un chèque annulé doit pouvoir être réutilisable à cause des diverses causes d'annulation » - erreur de
+# client, de quittance ou de montant, chèque représenté à la banque…). Ses anciennes pièces restent contre-passées ; il
+# retrouve le montant qu'aucune pièce en cours n'utilise. Trace : observation du chèque et journal.
+STATUTS_CHEQUE_ANNULE = (Cheque.Statut.IMPAYE, Cheque.Statut.REENCAISSE)
+ACTION_REUTILISATION_CHEQUE = "encaissements.cheque.reutilisation"
+
+
+def montant_utilise_cheque(cheque):
+    """Montant du chèque consommé par des pièces non annulées."""
+    operations = list(cheque.operations.all())
+    actives = set(
+        Encaissement.objects.filter(
+            idencaissement__in=[op.id_encaissement for op in operations], piece_annulee=False
+        ).values_list("idencaissement", flat=True)
+    )
+    return sum((op.montant_operation for op in operations if op.id_encaissement in actives), Decimal("0"))
+
+
+def reutiliser_cheque_annule(cheque, montant_initial=None, jour=None, statut=Cheque.Statut.ENCAISSE, echeance=None, id_client=None):
+    """Remet en service un chèque annulé (ligne verrouillée par l'appelant) : encaissé ce jour, ou de nouveau à déposer à
+    l'échéance donnée (échéancier). Montant initial corrigeable s'il couvre ce que des pièces en cours utilisent encore.
+    Renvoie la trace écrite dans l'observation du chèque."""
+    jour = jour or date_emission_du_jour()
+    utilise = montant_utilise_cheque(cheque)
+    if montant_initial and montant_initial != cheque.montant_initial:
+        if montant_initial < utilise:
+            raise ValidationError(
+                f"Ce chèque règle encore {utilise:,.0f} F : son montant initial ne peut pas descendre en dessous.".replace(",", " ")
+            )
+        cheque.montant_initial = montant_initial
+    annule = f"annulé le {cheque.date_decaissement:%d/%m/%Y}" if cheque.date_decaissement else "annulé"
+    if cheque.motif_decaissement:
+        annule += f" ({cheque.motif_decaissement.strip()[:60]})"
+    trace = f"{annule}, réutilisé le {jour:%d/%m/%Y}" + (" pour l'échéancier" if statut == Cheque.Statut.A_DEPOSER else "")
+    historique = f"{cheque.observation.strip()} ; {trace[0].upper()}{trace[1:]}" if (cheque.observation or "").strip() else f"{trace[0].upper()}{trace[1:]}"
+    # Observation bornée à 255 caractères : les réutilisations les plus récentes sont gardées
+    cheque.observation = historique if len(historique) <= 255 else "…" + historique[-254:]
+    cheque.solde_disponible = cheque.montant_initial - utilise
+    cheque.statut = statut
+    cheque.date_depot = jour if statut == Cheque.Statut.ENCAISSE else None
+    if echeance:
+        cheque.date_echeance = echeance
+    if id_client:
+        cheque.client_id = id_client
+    cheque.save()
+    return trace
 
 
 def decaisser_cheque_impaye(user, id_cheque, motif, date_decaissement):
@@ -3112,7 +3172,12 @@ def enregistrer_echeancier_cheques(id_client, id_banque, cheques, observation=""
                     f"Le chèque n° {numero} ({banques[banque]}) est saisi deux fois."
                 )
             vus.add((numero, banque))
-            if Cheque.objects.filter(numero_cheque=numero, banque_id=banque).exists():
+            existant = Cheque.objects.select_for_update().filter(numero_cheque=numero, banque_id=banque).first()
+            if existant and existant.statut in STATUTS_CHEQUE_ANNULE:
+                reutiliser_cheque_annule(existant, montant, statut=Cheque.Statut.A_DEPOSER, echeance=echeance, id_client=id_client)
+                crees.append(existant)
+                continue
+            if existant:
                 raise ValidationError(
                     f"Le chèque n° {numero} de la banque {banques[banque]} est déjà enregistré."
                 )

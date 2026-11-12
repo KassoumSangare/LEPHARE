@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { Receipt, Plus, Trash2, AlertTriangle, RotateCcw, Ban, BellRing, Search } from 'lucide-react';
+import { Receipt, Plus, Trash2, AlertTriangle, RotateCcw, Ban, BellRing, Search, Repeat } from 'lucide-react';
 import { cashApi, customerApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
@@ -77,6 +77,7 @@ export const ChequeManagementPage = () => {
   const [envoi, setEnvoi] = useState(false);
   // Onglets : chèques du portefeuille, autres règlements à décaisser, historique des décaissements
   const [vue, setVue] = useState('cheques');
+  const navigate = useNavigate();
   const [versionDecaissements, setVersionDecaissements] = useState(0);
 
   const chargerCheques = async () => {
@@ -302,7 +303,7 @@ export const ChequeManagementPage = () => {
         reference_reencaissement: reencaissement.references.trim(),
         id_cheque_impaye: reencaissement.cheque.id,
       });
-      success(res.data?.message || 'Réencaissement enregistré.');
+      success(`${res.data?.message || 'Réencaissement enregistré.'}${res.data?.cheque_reutilise ? ' Le chèque est de nouveau en service.' : ''}`);
       setReencaissement(null);
       chargerCheques();
       const [ligne] = await cashApi.getDetailsEncaissement(res.data?.id_encaissement);
@@ -348,6 +349,11 @@ export const ChequeManagementPage = () => {
           {row.statut === 'IMPAYE' && Number(row.montant_reencaisse) > 0 && (
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Réencaissé : {fcfa(row.montant_reencaisse)} / {fcfa(row.montant_impaye)}</span>
           )}
+          {row.statut !== 'IMPAYE' && row.statut !== 'REENCAISSE' && row.date_decaissement && (
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }} title={row.observation || undefined}>
+              Annulé le {formatDate(row.date_decaissement)} puis réutilisé
+            </span>
+          )}
         </div>
       ),
     },
@@ -381,6 +387,17 @@ export const ChequeManagementPage = () => {
               onClick={() => ouvrirReencaissement(row)}
             >
               <RotateCcw size={13} /> Réencaisser
+            </button>
+          )}
+          {(row.statut === 'IMPAYE' || row.statut === 'REENCAISSE') && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem' }}
+              title="Réutiliser ce chèque pour régler une quittance à la caisse (erreur de client, de quittance ou de montant, chèque représenté à la banque…)"
+              onClick={() => navigate(`/user/cash?cheque=${row.id}`)}
+            >
+              <Repeat size={13} /> Réutiliser
             </button>
           )}
           {row.statut === 'A_DEPOSER' && Number(row.nombre_operations) === 0 && (
@@ -673,6 +690,29 @@ export const ChequeManagementPage = () => {
                 />
               </div>
             </div>
+            {modes.some((m) => natureMode(m).cheque) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.78rem', padding: '0.35rem 0.7rem' }}
+                  title="Chèque représenté à la banque : le même chèque règle de nouveau ses quittances"
+                  onClick={() => setReencaissement((prev) => ({
+                    ...prev,
+                    references: prev.references || `Chèque n° ${prev.cheque.numero_cheque} représenté`,
+                    reglement: {
+                      ...prev.reglement,
+                      idMode: String(modes.find((m) => natureMode(m).cheque).idmodeencaissement),
+                      idBanque: String(prev.cheque.banque),
+                      numero: prev.cheque.numero_cheque,
+                      montantInitialCheque: String(Math.round(Number(prev.cheque.montant_initial) || 0)),
+                    },
+                  }))}
+                >
+                  <Repeat size={13} /> Avec ce même chèque
+                </button>
+              </div>
+            )}
             <ChampsReglement
               modes={modes}
               banques={banques}

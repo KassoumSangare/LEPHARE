@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { cashApi } from '../../api/endpoints';
 import { ChoixBanque } from './BanqueModal';
 import { aujourdhui, dateFr } from '../../utils/financeUtils';
@@ -140,7 +141,12 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
     return () => { actif = false; clearTimeout(minuterie); };
   }, [nature.cheque, valeurs.idBanque, valeurs.numero]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const plafondCheque = chequeConnu?.existe ? Number(chequeConnu.solde_disponible) : Number(valeurs.montantInitialCheque) || null;
+  // Chèque annulé : réutilisé par cet encaissement (demande du 2026-11-12), avec le montant initial saisi, moins ce que des
+  // pièces en cours en utilisent encore
+  const chequeAnnule = Boolean(chequeConnu?.existe && chequeConnu.annule);
+  const plafondCheque = chequeAnnule
+    ? (Number(valeurs.montantInitialCheque) || Number(chequeConnu.montant_initial) || 0) - (Number(chequeConnu.montant_utilise) || 0)
+    : (chequeConnu?.existe ? Number(chequeConnu.solde_disponible) : Number(valeurs.montantInitialCheque) || null);
   const depassementCheque = nature.cheque && plafondCheque !== null && Number(montantAEncaisser) > plafondCheque;
 
   return (
@@ -196,8 +202,8 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
                 placeholder="Au 1er usage, sauf chèque de l'échéancier"
                 value={valeurs.montantInitialCheque}
                 onChange={saisie('montantInitialCheque')}
-                readOnly={Boolean(chequeConnu?.existe)}
-                title={chequeConnu?.existe ? 'Montant fixé au premier usage du chèque' : undefined}
+                readOnly={Boolean(chequeConnu?.existe && !chequeConnu.montant_modifiable)}
+                title={chequeConnu?.existe && !chequeConnu.montant_modifiable ? 'Montant fixé au premier usage du chèque' : undefined}
               />
             </div>
           )}
@@ -251,7 +257,18 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
       </div>
 
 
-      {nature.cheque && chequeConnu && (
+      {nature.cheque && chequeAnnule && (
+        <div className="cheque-reutilise compact" role="status">
+          <RotateCcw size={16} aria-hidden="true" />
+          <span>
+            <strong>Chèque annulé{chequeConnu.date_annulation ? ` le ${dateFr(chequeConnu.date_annulation)}` : ''}</strong>
+            {chequeConnu.motif_annulation ? ` (« ${chequeConnu.motif_annulation} »)` : ''} : il sera réutilisé pour cet encaissement.
+            {' '}Montant disponible : {fcfa(plafondCheque)} F ; le montant initial reste corrigeable.
+          </span>
+          {depassementCheque && <span className="depasse"> Le montant à encaisser ({fcfa(montantAEncaisser)} F) dépasse ce disponible.</span>}
+        </div>
+      )}
+      {nature.cheque && chequeConnu && !chequeAnnule && (
         <div style={{ fontSize: '0.8rem', marginTop: '-0.3rem', color: depassementCheque ? 'var(--accent-rose)' : 'var(--text-secondary)' }}>
           {chequeConnu.existe
             ? `Chèque déjà enregistré : montant initial ${fcfa(chequeConnu.montant_initial)} F, solde disponible ${fcfa(chequeConnu.solde_disponible)} F.`

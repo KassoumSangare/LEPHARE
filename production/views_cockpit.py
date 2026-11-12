@@ -1,6 +1,7 @@
 """
 Cockpit opérationnel (/user/dashboard) : chiffres réels de la base, en un appel, chaque bloc selon les droits de
-l'utilisateur (production, devis, caisse, reversements, commissions, sinistres, suivi commercial).
+l'utilisateur (chiffre d'affaires du cabinet, production, devis, caisse, reversements, commissions, sinistres, suivi
+commercial).
 
 GET /api/cockpit/
 """
@@ -16,7 +17,7 @@ from rest_framework.response import Response
 from autorisations.rbac import a_le_droit
 from configuration_api.parametrage import valeur_parametre
 
-from . import views_finance
+from . import chiffre_affaires, views_finance
 from .reste_encaissement import sql_reste
 from .views_reprise import AUTHENTIFICATION
 
@@ -29,6 +30,12 @@ SINISTRES_CLOS = ("Réglé", "Clôturé", "Rejeté")
 QUESTIONNAIRE_TRAITE = "Devis établi"
 
 CONTRAT_VALIDE = "COALESCE(c.idcontratannulation, 0) = 0"
+# Chiffre d'affaires du cabinet (courtier : commissions et accessoires, production/chiffre_affaires.py) : visible avec l'un
+# de ces droits
+DROITS_CHIFFRE_AFFAIRES = ("commissions.view", "reporting.view")
+# Chiffre d'affaires d'un contrat c (même règle que production/chiffre_affaires.SQL_CHIFFRE_AFFAIRES)
+CA_CONTRAT = ("(COALESCE(NULLIF(c.commissionintermediaire, 'NaN'), 0) "
+              "+ COALESCE(NULLIF(c.accessoireintermediaire, 'NaN'), 0))")
 # Devis du registre (vue Production) : ni archivé ni confirmé, hors devis d'affaires antérieures à finaliser
 DEVIS_NON_CONFIRME = """COALESCE(d.archive, FALSE) = FALSE AND COALESCE(d.confirme, FALSE) = FALSE
     AND d.iddevis NOT IN (SELECT iddevis FROM lephare_reprise_devis)
@@ -72,6 +79,7 @@ def echeances_polices(cursor, du, au):
     récent ni résiliation (cockpit, suivi commercial)."""
     return _lignes(cursor, f"""
         SELECT c.idcontrat, c.iddevis, c.numeropolice, c.dateexpiration::date AS dateexpiration, c.primettc,
+               {CA_CONTRAT} AS chiffre_affaires,
                TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
                co.raisonsociale AS compagnie, c.idproduit, NULLIF(TRIM(cl.telephone), '') AS telephone,
                -- Devis de renouvellement déjà préparé (page de renouvellement : rattaché au devis du contrat). Ensemble
@@ -96,7 +104,8 @@ def echeances_polices(cursor, du, au):
     """, [du, au])
 
 
-def _production(cursor, jour):
+def _production(cursor, jour, avec_ca=False):
+    """Production de l'exercice ; avec_ca : chiffre d'affaires du cabinet par branche, par échéance et par contrat."""
     debut, debut_mois = date(jour.year, 1, 1), jour.replace(day=1)
     debut_n1, jour_n1 = date(jour.year - 1, 1, 1), _meme_jour(jour, jour.year - 1)
     total = _une(cursor, f"""
@@ -112,10 +121,11 @@ def _production(cursor, jour):
         WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut_n1)s AND %(jour)s
     """, {"debut": debut, "jour": jour, "debut_mois": debut_mois, "debut_n1": debut_n1, "jour_n1": jour_n1})
     branches = _lignes(cursor, f"""
-        SELECT c.idproduit, COALESCE(p.libelleproduit, 'Autres') AS branche, COUNT(*) AS nombre, SUM(c.primettc) AS ttc
+        SELECT c.idproduit, COALESCE(p.libelleproduit, 'Autres') AS branche, COUNT(*) AS nombre, SUM(c.primettc) AS ttc,
+               SUM({CA_CONTRAT}) AS chiffre_affaires
         FROM stdcontrat c LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
         WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %s AND %s
-        GROUP BY 1, 2 ORDER BY 4 DESC NULLS LAST
+        GROUP BY 1, 2 ORDER BY {'5' if avec_ca else '4'} DESC NULLS LAST, 4 DESC NULLS LAST
     """, [debut, jour])
     # Polices en vigueur : période d'affaire nouvelle ou de renouvellement qui couvre le jour, police non résiliée
     en_vigueur = _une(cursor, f"""
@@ -131,7 +141,7 @@ def _production(cursor, jour):
         SELECT c.idcontrat, c.numeropolice, c.dateemission::date AS dateemission, c.dateeffet::date AS dateeffet,
                c.dateexpiration::date AS dateexpiration, c.primettc, a.libelleavenant AS avenant,
                TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
-               co.raisonsociale AS compagnie, {sql_reste()} AS reste
+               co.raisonsociale AS compagnie, {sql_reste()} AS reste, {CA_CONTRAT} AS chiffre_affaires
         FROM stdcontrat c
         JOIN stdavenant a ON a.idavenant = c.idavenant
         LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
@@ -142,12 +152,13 @@ def _production(cursor, jour):
         ORDER BY c.dateemission DESC, c.idcontrat DESC
         LIMIT %s
     """, [jour, LIGNES_LISTE])
-    return {
+    resultat = {
         "Annee": {"Nombre": total["nombre"], "PrimeTtc": _franc(total["ttc"]),
                   "AffairesNouvelles": total["nouvelles"], "Renouvellements": total["renouvellements"]},
         "Mois": {"Nombre": total["nombre_mois"], "PrimeTtc": _franc(total["ttc_mois"])},
         "AnneePrecedente": {"Nombre": total["nombre_n1"], "PrimeTtc": _franc(total["ttc_n1"]), "Au": _iso(jour_n1)},
-        "ParBranche": [{"IdProduit": b["idproduit"], "Branche": b["branche"], "Nombre": b["nombre"], "PrimeTtc": _franc(b["ttc"])}
+        "ParBranche": [{"IdProduit": b["idproduit"], "Branche": b["branche"], "Nombre": b["nombre"], "PrimeTtc": _franc(b["ttc"]),
+                        **({"ChiffreAffaires": _franc(b["chiffre_affaires"])} if avec_ca else {})}
                        for b in branches],
         "PolicesEnVigueur": en_vigueur,
         "Echeances": {
@@ -157,6 +168,8 @@ def _production(cursor, jour):
                 "IdContrat": e["idcontrat"], "NumeroPolice": e["numeropolice"], "Client": e["client"], "Produit": e["produit"],
                 "Compagnie": e["compagnie"], "DateExpiration": _iso(e["dateexpiration"]),
                 "Jours": (e["dateexpiration"] - jour).days, "PrimeTtc": _franc(e["primettc"]), "DevisEnCours": e["devis_en_cours"],
+                # Commission en jeu au renouvellement (celle de la période qui s'achève)
+                **({"ChiffreAffaires": _franc(e["chiffre_affaires"])} if avec_ca else {}),
             # Les plus proches du jour, dans l'ordre des dates
             } for e in sorted(sorted(echeances, key=lambda e: abs((e["dateexpiration"] - jour).days))[:LIGNES_LISTE],
                               key=lambda e: (e["dateexpiration"], e["idcontrat"]))],
@@ -166,8 +179,13 @@ def _production(cursor, jour):
             "Compagnie": c["compagnie"], "Avenant": c["avenant"], "DateEmission": _iso(c["dateemission"]),
             "DateEffet": _iso(c["dateeffet"]), "DateExpiration": _iso(c["dateexpiration"]),
             "PrimeTtc": _franc(c["primettc"]), "Reste": _franc(c["reste"]),
+            **({"ChiffreAffaires": _franc(c["chiffre_affaires"])} if avec_ca else {}),
         } for c in derniers],
     }
+    if avec_ca:
+        # Commissions en jeu sur les échéances suivies (période qui s'achève), toutes lignes comprises
+        resultat["Echeances"]["ChiffreAffaires"] = _franc(sum(_franc(e["chiffre_affaires"]) for e in echeances))
+    return resultat
 
 
 def _devis(cursor, jour):
@@ -275,6 +293,20 @@ def _commissions(jour):
     }
 
 
+def _chiffre_affaires(cursor, jour, commissions):
+    """Chiffre d'affaires du cabinet depuis le 1er janvier, comparé à la même date de l'an dernier, et ce mois-ci."""
+    p = {"debut": date(jour.year, 1, 1), "au": jour, "debut_n1": date(jour.year - 1, 1, 1), "au_n1": _meme_jour(jour, jour.year - 1)}
+    ca = chiffre_affaires.calculer(cursor, p, en_attente=commissions)
+    mois = ca["ParMois"][jour.month - 1]
+    return {
+        **{cle: valeur for cle, valeur in ca.items() if cle not in ("ParMois", "PercuParProduit", "PercuParCompagnie")},
+        "AuPrecedent": _iso(p["au_n1"]),
+        "Mois": {"Total": mois["ChiffreAffaires"] or 0, "Percu": mois["Percu"] or 0},
+        # Chiffre d'affaires de chaque mois de l'exercice (null : mois à venir), petites colonnes de la tuile
+        "Mensuel": [m["ChiffreAffaires"] for m in ca["ParMois"]],
+    }
+
+
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
@@ -282,9 +314,14 @@ def cockpit(request):
     jour = timezone.localdate()
     utilisateur = request.user
     resultat = {"Jour": jour.isoformat(), "Exercice": jour.year}
+    avec_ca = any(a_le_droit(utilisateur, droit) for droit in DROITS_CHIFFRE_AFFAIRES)
+    # Commissions en attente : lues une fois, pour leur tuile et pour le chiffre d'affaires
+    commissions = _commissions(jour) if avec_ca or a_le_droit(utilisateur, "commissions.view") else None
     with connection.cursor() as cursor:
+        if avec_ca:
+            resultat["ChiffreAffaires"] = _chiffre_affaires(cursor, jour, commissions)
         if a_le_droit(utilisateur, "contrats.view"):
-            resultat["Production"] = _production(cursor, jour)
+            resultat["Production"] = _production(cursor, jour, avec_ca)
         if a_le_droit(utilisateur, "devis.view"):
             resultat["Devis"] = _devis(cursor, jour)
         if a_le_droit(utilisateur, "encaissements.view"):
@@ -299,7 +336,7 @@ def cockpit(request):
     if a_le_droit(utilisateur, "reversements.view"):
         resultat["Reversements"] = _reversements()
     if a_le_droit(utilisateur, "commissions.view"):
-        resultat["Commissions"] = _commissions(jour)
+        resultat["Commissions"] = commissions
     return Response(resultat)
 
 

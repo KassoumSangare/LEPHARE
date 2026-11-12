@@ -3,8 +3,9 @@ import { Table2 } from 'lucide-react';
 
 import { francs } from './Cockpit';
 
-// Production TTC par mois (exercice et précédent, en colonnes) et encaissements de l'exercice (courbe), sur un seul
-// axe en francs. Bulle au survol et au clavier ; les chiffres restent lisibles sans elle (tableau).
+// Deux mesures par mois en colonnes (exercice et précédent) et une en courbe, sur un seul axe en francs : par défaut la
+// production TTC et les encaissements ; le tableau de bord y montre aussi le chiffre d'affaires du cabinet (series).
+// Bulle au survol et au clavier ; les chiffres restent lisibles sans elle (tableau).
 const MOIS = Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleDateString('fr-FR', { month: 'short' }));
 const MOIS_LONG = Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).toLocaleDateString('fr-FR', { month: 'long' }));
 const compact = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
@@ -27,7 +28,14 @@ const colonne = (x, y, l, h) => {
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + l - r}Q${x + l},${y} ${x + l},${y + r}V${y + h}Z`;
 };
 
-export const GraphiqueMensuel = ({ mois = [], exercice }) => {
+// Séries par défaut : classes n (exercice), n1 (exercice précédent), enc (courbe) de la palette validée (index.css)
+const seriesProduction = (exercice) => [
+  { cle: 'PrimeTtc', libelle: `Production ${exercice}`, classe: 'n', forme: 'barre' },
+  { cle: 'PrimeTtcPrecedent', libelle: `Production ${exercice - 1}`, classe: 'n1', forme: 'barre' },
+  { cle: 'Encaisse', libelle: `Encaissements ${exercice}`, classe: 'enc', forme: 'ligne' },
+];
+
+export const GraphiqueMensuel = ({ mois = [], exercice, series: seriesDonnees, titre }) => {
   const conteneur = useRef(null);
   const [largeur, setLargeur] = useState(720);
   const [actif, setActif] = useState(null);
@@ -41,17 +49,16 @@ export const GraphiqueMensuel = ({ mois = [], exercice }) => {
     return () => obs.disconnect();
   }, []);
 
-  const series = [
-    { cle: 'PrimeTtc', libelle: `Production ${exercice}`, classe: 'n', forme: 'barre' },
-    { cle: 'PrimeTtcPrecedent', libelle: `Production ${exercice - 1}`, classe: 'n1', forme: 'barre' },
-    { cle: 'Encaisse', libelle: `Encaissements ${exercice}`, classe: 'enc', forme: 'ligne' },
-  ];
+  const series = seriesDonnees || seriesProduction(exercice);
+  const [barreN, barreN1] = series.filter((s) => s.forme === 'barre');
+  const courbe = series.find((s) => s.forme === 'ligne');
+  const cles = series.map((s) => s.cle).join(',');
 
   const { pas, max } = useMemo(() => {
-    const valeurs = mois.flatMap((m) => [m.PrimeTtc, m.PrimeTtcPrecedent, m.Encaisse]).filter((v) => v !== null && v !== undefined);
+    const valeurs = mois.flatMap((m) => cles.split(',').map((cle) => m[cle])).filter((v) => v !== null && v !== undefined);
     const p = pasRond(Math.max(0, ...valeurs));
     return { pas: p, max: Math.max(p, Math.ceil(Math.max(0, ...valeurs) / p) * p) };
-  }, [mois]);
+  }, [mois, cles]);
 
   const interieurL = largeur - MARGE.gauche - MARGE.droite;
   const interieurH = HAUTEUR - MARGE.haut - MARGE.bas;
@@ -61,7 +68,9 @@ export const GraphiqueMensuel = ({ mois = [], exercice }) => {
   const centre = (i) => MARGE.gauche + bande * i + bande / 2;
   const graduations = Array.from({ length: Math.round(max / pas) + 1 }, (_, i) => i * pas);
 
-  const points = mois.map((m, i) => (m.Encaisse === null || m.Encaisse === undefined ? null : [centre(i), y(m.Encaisse)]));
+  const points = courbe
+    ? mois.map((m, i) => (m[courbe.cle] === null || m[courbe.cle] === undefined ? null : [centre(i), y(m[courbe.cle])]))
+    : [];
   const trace = points.reduce((d, p, i) => {
     if (!p) return d;
     return `${d}${d && points[i - 1] ? 'L' : 'M'}${p[0]},${p[1]}`;
@@ -90,7 +99,7 @@ export const GraphiqueMensuel = ({ mois = [], exercice }) => {
       </div>
 
       <div ref={conteneur} className="graphique-zone" onMouseLeave={() => setActif(null)}>
-        <svg width={largeur} height={HAUTEUR} role="img" aria-label={`Production et encaissements par mois, exercice ${exercice}`}>
+        <svg width={largeur} height={HAUTEUR} role="img" aria-label={`${titre || 'Production et encaissements par mois'}, exercice ${exercice}`}>
           {graduations.map((g) => (
             <g key={g}>
               <line x1={MARGE.gauche} x2={largeur - MARGE.droite} y1={y(g)} y2={y(g)} className={g === 0 ? 'axe' : 'grille'} />
@@ -102,14 +111,14 @@ export const GraphiqueMensuel = ({ mois = [], exercice }) => {
             return (
               <g key={m.Mois}>
                 {actif === i && <rect x={MARGE.gauche + bande * i} y={MARGE.haut} width={bande} height={interieurH} className="survol" />}
-                <path d={colonne(x0, y(m.PrimeTtc), epaisseur, y(0) - y(m.PrimeTtc))} className="barre n" />
-                <path d={colonne(x0 + epaisseur + 2, y(m.PrimeTtcPrecedent), epaisseur, y(0) - y(m.PrimeTtcPrecedent))} className="barre n1" />
+                {barreN && <path d={colonne(x0, y(m[barreN.cle]), epaisseur, y(0) - y(m[barreN.cle]))} className={`barre ${barreN.classe}`} />}
+                {barreN1 && <path d={colonne(x0 + epaisseur + 2, y(m[barreN1.cle]), epaisseur, y(0) - y(m[barreN1.cle]))} className={`barre ${barreN1.classe}`} />}
                 <text x={centre(i)} y={HAUTEUR - 8} textAnchor="middle" className="graduation">{MOIS[i]}</text>
               </g>
             );
           })}
-          {trace && <path d={trace} className="ligne enc" />}
-          {points.map((p, i) => p && <circle key={i} cx={p[0]} cy={p[1]} r={4} className="point enc" />)}
+          {trace && <path d={trace} className={`ligne ${courbe.classe}`} />}
+          {points.map((p, i) => p && <circle key={i} cx={p[0]} cy={p[1]} r={4} className={`point ${courbe.classe}`} />)}
           {/* Zones de survol : la bande entière du mois, plus large que les marques */}
           {mois.map((m, i) => (
             <rect
@@ -132,7 +141,7 @@ export const GraphiqueMensuel = ({ mois = [], exercice }) => {
           <div
             className="graphique-bulle"
             role="presentation"
-            style={{ left: Math.min(Math.max(centre(actif), 110), largeur - 110), top: MARGE.haut }}
+            style={{ left: Math.min(Math.max(centre(actif), 140), largeur - 140), top: MARGE.haut }}
           >
             <div className="titre">{MOIS_LONG[actif]}</div>
             {series.map((s) => (

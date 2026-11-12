@@ -103,6 +103,8 @@ from .database import (
     save_plate_number,
     decaisser_cheque_impaye,
     enregistrer_echeancier_cheques,
+    montant_utilise_cheque,
+    STATUTS_CHEQUE_ANNULE,
     save_premium_collection,
     save_premium_collection_cancellation,
     save_premium_remittance,
@@ -5955,23 +5957,46 @@ class ChequeFilter(filters.FilterSet):
 
 
 class CheckChequeStatusView(APIView):
+    """Chèque déjà au portefeuille, par numéro et banque (?numero_cheque=&banque=) ou par identifiant (?id=) : montant
+    initial, solde ; chèque annulé : réutilisable (database.reutiliser_cheque_annule), avec le montant qu'il retrouvera et
+    son montant initial corrigeable."""
+
     def get(self, request):
-        numero = request.query_params.get("numero_cheque")
-        banque_id = request.query_params.get("banque")
+        if request.query_params.get("id"):
+            try:
+                cheque = Cheque.objects.select_related("banque").filter(id_cheque=int(request.query_params["id"])).first()
+            except ValueError:
+                cheque = None
+        else:
+            cheque = Cheque.objects.select_related("banque").filter(
+                numero_cheque=request.query_params.get("numero_cheque"), banque_id=request.query_params.get("banque")
+            ).first()
 
-        cheque = Cheque.objects.filter(
-            numero_cheque=numero, banque_id=banque_id
-        ).first()
-
-        if cheque:
-            return Response(
-                {
-                    "existe": True,
-                    "montant_initial": cheque.montant_initial,
-                    "solde_disponible": cheque.solde_disponible,
-                }
-            )
-        return Response({"existe": False})
+        if not cheque:
+            return Response({"existe": False})
+        resultat = {
+            "existe": True,
+            "id": cheque.id_cheque,
+            "numero_cheque": cheque.numero_cheque,
+            "banque": cheque.banque_id,
+            "nom_banque": (cheque.banque.libelle or "").strip(),
+            "statut": cheque.statut,
+            "montant_initial": cheque.montant_initial,
+            "solde_disponible": cheque.solde_disponible,
+            "annule": cheque.statut in STATUTS_CHEQUE_ANNULE,
+        }
+        if resultat["annule"]:
+            utilise = montant_utilise_cheque(cheque)
+            resultat.update({
+                "reutilisable": True,
+                # Montant que le chèque retrouvera à sa réutilisation
+                "solde_disponible": cheque.montant_initial - utilise,
+                "montant_utilise": utilise,
+                "montant_modifiable": True,
+                "date_annulation": cheque.date_decaissement,
+                "motif_annulation": cheque.motif_decaissement or "",
+            })
+        return Response(resultat)
 
 
 class ChequeListView(generics.ListAPIView):
