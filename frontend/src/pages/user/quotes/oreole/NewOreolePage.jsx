@@ -173,7 +173,15 @@ export default function NewOreolePage() {
           setApporteurConvention(Boolean(d.ApporteurValeur));
           setAvecIA(Boolean(d.Produits.IA && !d.Produits.IA.Archive));
           setAvecAFA(Boolean(d.Produits.AFA && !d.Produits.AFA.Archive));
-          const repris = d.Adherents.map((a) => ligneVide({ ...a, PartFichier: a.CotisationImposee > 0, Ayants: (a.Ayants || []).map((x) => ({ ...x, cle: nouvelleCle() })) }));
+          // Devis enregistré sans IA ou sans AFA : la cotisation imposée est gardée nette de cette part (PartRetiree),
+          // que la case « Émettre » rend si on la recoche
+          const sansIA = !(d.Produits.IA && !d.Produits.IA.Archive);
+          const sansAFA = !(d.Produits.AFA && !d.Produits.AFA.Archive);
+          const repris = d.Adherents.map((a) => ligneVide({
+            ...a, PartFichier: a.CotisationImposee > 0,
+            PartRetiree: { PartIA: sansIA && !Number(a.PartIA), PartAFA: sansAFA && !Number(a.PartAFA) },
+            Ayants: (a.Ayants || []).map((x) => ({ ...x, cle: nouvelleCle() })),
+          }));
           setLignes(repris);
           if (d.Cible === 'P' && repris[0]) {
             setFamille({ conjoint: repris[0].Ayants.some((x) => x.Lien === 'C'), enfants: Math.max(repris[0].Ayants.filter((x) => x.Lien === 'E').length, 0) + (repris[0].EnfantsEnPlus && !repris[0].Ayants.length ? ENFANTS_FORFAIT + repris[0].EnfantsEnPlus : 0) });
@@ -315,6 +323,21 @@ export default function NewOreolePage() {
   }, [apercu, lectureSeule, devisLu, complementsFamille]);
 
   // ------------------------------------------------------------------ actions
+  // Case « Émettre » d'un produit lié. Décochée : le serveur retire sa part de chaque cotisation. Recochée sur un devis
+  // enregistré sans ce produit : chaque ligne retrouve la part de son offre, ajoutée à sa cotisation imposée.
+  const emettreProduit = (champ, definir) => (coche) => {
+    definir(coche);
+    if (!coche) return;
+    setLignes((avant) => avant.map((l) => {
+      if (!l.PartRetiree?.[champ]) return l;
+      const part = Number(offres.find((o) => o.IdOffre === Number(l.IdOffre || idOffre))?.[champ]) || 0;
+      return {
+        ...l, [champ]: part, PartRetiree: { ...l.PartRetiree, [champ]: false },
+        CotisationImposee: Number(l.CotisationImposee) > 0 ? Number(l.CotisationImposee) + part : l.CotisationImposee,
+      };
+    }));
+  };
+
   const modifierLigne = (cle, changement) => setLignes((avant) => avant.map((l) => (l.cle === cle ? { ...l, ...changement } : l)));
   const retirerLigne = (cle) => setLignes((avant) => avant.filter((l) => l.cle !== cle));
   const ajouterLigne = () => setLignes((avant) => [...avant, ligneVide({ IdOffre: Number(idOffre) || null })]);
@@ -326,7 +349,11 @@ export default function NewOreolePage() {
       const r = await oreoleApi.analyserImport(fichier);
       if (!r.Groupes.length) { toastError("Aucune feuille d'adhérents reconnue dans ce fichier."); return; }
       const groupe = r.Groupes[0];
-      if (r.Groupes.length > 1) warning(`${r.Groupes.length} feuilles dans ce classeur : la première est reprise. Pour traiter toutes les entreprises, utilisez Renouveler par fichier.`);
+      if (r.Groupes.length > 1) {
+        warning(incorporation
+          ? `${r.Groupes.length} feuilles dans ce classeur : seule la première est reprise pour cette incorporation.`
+          : `${r.Groupes.length} feuilles dans ce classeur : la première est reprise. Pour traiter toutes les entreprises, utilisez Renouveler par fichier.`);
+      }
       setLignes(groupe.Lignes.map((l) => ligneVide(ligneDepuisImport(l))));
       const offreCourante = groupe.Lignes.find((l) => l.OffreExacte)?.IdOffre || groupe.Lignes[0]?.IdOffre;
       if (offreCourante && !idOffre) setIdOffre(offreCourante);
@@ -612,7 +639,7 @@ export default function NewOreolePage() {
                 {!lectureSeule && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
                     <button type="button" className="btn btn-secondary" onClick={ajouterLigne} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem' }}><Plus size={14} /> {incorporation ? 'Nouvel adhérent' : 'Ajouter'}</button>
-                    {!incorporation && (
+                    {!particulier && (
                       <>
                         <input ref={fichierRef} type="file" accept=".xlsx,.xlsm" hidden onChange={(e) => lireFichier(e.target.files?.[0])} />
                         <button type="button" className="btn btn-primary" disabled={analyse} onClick={() => fichierRef.current?.click()} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem' }}>
@@ -641,7 +668,10 @@ export default function NewOreolePage() {
                   <tbody>
                     {lignes.length === 0 && (
                       <tr><td colSpan={8} style={{ textAlign: 'center', padding: '1.6rem', color: 'var(--text-muted)' }}>
-                        {incorporation ? 'Ajoutez un nouvel adhérent ou complétez une famille.' : 'Ajoutez un adhérent ou importez la liste Excel.'}
+                        {incorporation ? (particulier
+                          ? 'Ajoutez manuellement un nouvel assuré ou complétez une famille.'
+                          : 'Ajoutez un nouvel assuré ou importez le fichier Excel configuré. Chaque ligne importée crée une nouvelle famille.')
+                          : 'Ajoutez un adhérent ou importez la liste Excel.'}
                       </td></tr>
                     )}
                     {lignes.map((l) => {
@@ -707,8 +737,8 @@ export default function NewOreolePage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 210px), 1fr))', gap: '0.7rem' }}>
                   {[
                     ['Sante', totaux.PartSante, reglages?.Gestionnaire, null, null, 'Police mère'],
-                    ['IA', totaux.PartIA, 'NSIA ASSURANCES', avecIA, setAvecIA, offre?.CapitalIA ? `Capital ${fcfa(offre.CapitalIA)} par assuré principal` : ''],
-                    ['AFA', totaux.PartAFA, 'ALLIANZ CI VIE', avecAFA, setAvecAFA, offre?.CapitalAFA ? `Capital ${fcfa(offre.CapitalAFA)} par assuré principal` : ''],
+                    ['IA', totaux.PartIA, 'NSIA ASSURANCES', avecIA, emettreProduit('PartIA', setAvecIA), offre?.CapitalIA ? `Capital ${fcfa(offre.CapitalIA)} par assuré principal` : ''],
+                    ['AFA', totaux.PartAFA, 'ALLIANZ CI VIE', avecAFA, emettreProduit('PartAFA', setAvecAFA), offre?.CapitalAFA ? `Capital ${fcfa(offre.CapitalAFA)} par assuré principal` : ''],
                   ].map(([cle, montant, compagnie, active, activer, detailProduit]) => {
                     const p = PRODUITS[cle];
                     const Icone = p.icone;
@@ -717,7 +747,7 @@ export default function NewOreolePage() {
                       <div key={cle} style={{ padding: '0.85rem', borderRadius: 12, border: '1px solid var(--border-medium)', borderTop: `3px solid ${p.couleur}`, display: 'flex', flexDirection: 'column', gap: '0.25rem', opacity: active === false ? 0.55 : 1, transition: 'opacity 0.2s' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center' }}>
                           <b style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.88rem' }}><Icone size={15} color={p.couleur} /> {p.long}</b>
-                          {activer && !lectureSeule && !incorporation && (
+                          {activer && !lectureSeule && (
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                               <input type="checkbox" checked={active} onChange={(e) => activer(e.target.checked)} /> Émettre
                             </label>
@@ -730,6 +760,11 @@ export default function NewOreolePage() {
                     );
                   })}
                 </div>
+                {incorporation && (
+                  <p style={{ margin: '0.65rem 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                    Le choix IA/AFA s’applique aux nouveaux assurés principaux incorporés, pas aux ajouts à une famille existante.
+                  </p>
+                )}
 
                 {emission >= 0 && !emis && (
                   <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '1rem' }}>
@@ -937,4 +972,3 @@ export default function NewOreolePage() {
     </div>
   );
 }
-

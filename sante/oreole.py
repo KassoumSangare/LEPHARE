@@ -1403,7 +1403,8 @@ def _offre_de_ligne(offres, cotisation, part_ia, part_afa, option):
     """Offre de la prime du fichier : celle du montant et des parts ; sinon l'offre habituelle de son option, avec une cotisation imposée."""
     par_prix = [o for o in offres.values() if o["cible"] == "E" and o["cotisation"] == cotisation]
     for o in par_prix:
-        if o["partia"] == part_ia and o["partafa"] == part_afa:
+        # Part non donnée par le fichier (None) : celle de l'offre convient
+        if part_ia in (None, o["partia"]) and part_afa in (None, o["partafa"]):
             return o, True
     if par_prix:
         return par_prix[0], False
@@ -1443,10 +1444,12 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
             cotisation = ZERO
         if cotisation <= 0:
             anomalies_ligne.append("Cotisation absente")
+        # Part IA ou AFA : colonne absente ou cellule vide = non donnée, la part de l'offre s'applique (un 0 écrit
+        # dans le fichier reste un 0). Lue à 0, elle privait les cases « Émettre » de tout effet sur la cotisation.
         try:
-            part_ia, part_afa = _decimal(v("partia")), _decimal(v("partafa"))
+            part_ia, part_afa = _optionnel(v("partia")), _optionnel(v("partafa"))
         except ErreurOreole:
-            part_ia, part_afa = ZERO, ZERO
+            part_ia, part_afa = None, None
             anomalies_ligne.append("Part IA ou AFA illisible")
         naissance = None
         brute = v("naissance")
@@ -1468,6 +1471,10 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
             matricules[matricule] += 1
         option = _entier(v("option"))
         offre, exacte = _offre_de_ligne(offres, cotisation, part_ia, part_afa, option)
+        if part_ia is None:
+            part_ia = offre["partia"] if offre else ZERO
+        if part_afa is None:
+            part_afa = offre["partafa"] if offre else ZERO
         lignes.append({
             "Feuille": feuille.title, "Ligne": numero, "Matricule": matricule, "Nom": nom, "Prenoms": prenoms, "DateNaissance": _iso(naissance), "DateBrute": str(brute or "")[:20],
             "Sexe": _texte(v("sexe"))[:1].upper(), "Option": option, "Cotisation": _nombre(cotisation), "PartIA": _nombre(part_ia), "PartAFA": _nombre(part_afa),

@@ -129,6 +129,54 @@ class ProduitsDecoches(SimpleTestCase):
         self.assertEqual((t["Cotisation"], t["PartSante"]), (436800, 423300))
 
 
+class FichierSansPartsLiees(SimpleTestCase):
+    """Effectif importé sans colonne (ou sans montant) IA et AFA : les parts de l'offre s'appliquent, les cases « Émettre » agissent."""
+    OFFRES = {
+        4: {**OFFRE_575, "idoffre": 4, "code": "E575", "cible": "E", "libelle": "Entreprise 575 000", "idoffreia": 156, "capitalia": D(2000000), "capitalafa": D(1000000)},
+    }
+    CORRESPONDANCES = ({D(0): (None, D(0)), D(17000): (156, D(2000000))}, {D(0): D(0), D(15000): D(1000000)})
+    REGLES_SAISIE = {**REGLES, "AgeMax": 59, "AffectionsMax": 3}
+
+    def _lignes(self, entetes, *rangees):
+        from openpyxl import Workbook
+
+        from sante.oreole import _entete_feuille, _lire_groupe
+        feuille = Workbook().active
+        feuille.append(entetes)
+        for rangee in rangees:
+            feuille.append(rangee)
+        numero, colonnes = _entete_feuille(feuille)
+        return _lire_groupe(feuille, numero, colonnes, self.OFFRES)[0]
+
+    def _cotisation(self, importee, **cases):
+        from datetime import date
+
+        from sante.oreole import _ligne_saisie
+        brut = {**importee, "DateNaissance": "1986-01-01", **cases}
+        ligne, erreurs, _ = _ligne_saisie(1, brut, self.OFFRES, self.REGLES_SAISIE, date(2026, 1, 1), self.CORRESPONDANCES)
+        self.assertEqual(erreurs, [])
+        t = tarifer_adherent(self.OFFRES[4], ligne, self.REGLES_SAISIE)
+        return t["Cotisation"], t["PartSante"], t["PartIA"], t["PartAFA"]
+
+    def test_colonnes_absentes(self):
+        ligne, plus_cher = self._lignes(["MATRICULE", "NOM", "PRENOMS", "OPTION", "PRIME TTC SANTE"],
+                                        ["0000001", "ESSAI", "Un", 4, 575000], ["0000002", "ESSAI", "Deux", 4, 1661000])
+        self.assertEqual((ligne["PartIA"], ligne["PartAFA"], ligne["OffreExacte"]), (17000, 15000, True))
+        self.assertEqual(self._cotisation(ligne), (575000, 543000, 17000, 15000))
+        self.assertEqual(self._cotisation(ligne, AvecIA=False), (558000, 543000, 0, 15000))
+        self.assertEqual(self._cotisation(ligne, AvecIA=False, AvecAFA=False), (543000, 543000, 0, 0))
+        # Cotisation hors grille : même retrait, la part Santé garde le reste
+        self.assertEqual(self._cotisation(plus_cher, AvecIA=False, AvecAFA=False), (1629000, 1629000, 0, 0))
+
+    def test_cellules_vides_ou_zero_ecrit(self):
+        vide, zero = self._lignes(["MATRICULE", "NOM", "PRENOMS", "PRIME TTC SANTE", "PRIME IA", "PRIME AFA"],
+                                  ["0000001", "ESSAI", "Un", 575000, None, None], ["0000002", "ESSAI", "Deux", 575000, 0, 0])
+        self.assertEqual((vide["PartIA"], vide["PartAFA"]), (17000, 15000))
+        # Un 0 écrit dans le fichier reste un 0 : famille sans IA ni AFA, rien à retirer
+        self.assertEqual((zero["PartIA"], zero["PartAFA"]), (0, 0))
+        self.assertEqual(self._cotisation(zero, AvecIA=False, AvecAFA=False), (575000, 575000, 0, 0))
+
+
 class ReglementCommun(SimpleTestCase):
     QUITTANCES = [
         {"NumeroQuittance": "S", "PrimeTtc": D(423300), "Encaisse": D(0)},
