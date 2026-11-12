@@ -82,6 +82,53 @@ class TarifOreole(SimpleTestCase):
         self.assertEqual(t["Cotisation"], 520000)
         self.assertEqual(t["PartSante"], 520000)
 
+
+class ProduitsDecoches(SimpleTestCase):
+    """IA ou AFA décochée : sa part sort de la cotisation totale, dans tous les modes de calcul."""
+    REGLES_SAISIE = {**REGLES, "AgeMax": 59, "AffectionsMax": 3}
+    OFFRES = {1: {**OFFRE_436, "idoffreia": 154, "capitalia": D(1000000), "capitalafa": D(500000)}}
+    CORRESPONDANCES = ({D(0): (None, D(0)), D(6000): (154, D(1000000))}, {D(0): D(0), D(7500): D(500000)})
+
+    def _tarif(self, prix_famille=None, **brut):
+        from datetime import date
+
+        from sante.oreole import _ligne_saisie
+        ligne, erreurs, _ = _ligne_saisie(1, {"Nom": "ESSAI", "Prenoms": "Un", "DateNaissance": "1986-01-01", "IdOffre": 1, **brut},
+                                          self.OFFRES, self.REGLES_SAISIE, date(2026, 1, 1), self.CORRESPONDANCES)
+        self.assertEqual(erreurs, [])
+        return ligne, tarifer_adherent(self.OFFRES[1], ligne, self.REGLES_SAISIE, prix_famille=prix_famille)
+
+    def test_calcul_normal(self):
+        _, t = self._tarif(AvecIA=False, AvecAFA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"], t["PartIA"], t["PartAFA"]), (423300, 423300, 0, 0))
+        _, t = self._tarif(AvecAFA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"], t["PartIA"], t["PartAFA"]), (429300, 423300, 6000, 0))
+
+    def test_prix_negocie(self):
+        _, t = self._tarif(prix_famille=D(400400), AvecIA=False, AvecAFA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"]), (386900, 386900))
+
+    def test_cotisation_du_fichier(self):
+        ligne, t = self._tarif(CotisationImposee=436800, PartIA=6000, PartAFA=7500, AvecIA=False, AvecAFA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"], t["PartIA"], t["PartAFA"]), (423300, 423300, 0, 0))
+        self.assertEqual(t["FraisCourtiers"], 289967)  # la part Santé ne gagne rien au retrait
+        self.assertEqual((ligne["IdOffreIA"], ligne["CapitalIA"], ligne["CapitalAFA"]), (None, 0, 0))
+        _, t = self._tarif(CotisationImposee=436800, PartIA=6000, PartAFA=7500, AvecIA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"], t["PartIA"], t["PartAFA"]), (430800, 423300, 0, 7500))
+
+    def test_cotisation_saisie_sans_part_de_fichier(self):
+        _, t = self._tarif(CotisationImposee=436800, AvecAFA=False)
+        self.assertEqual((t["Cotisation"], t["PartSante"], t["PartAFA"]), (429300, 423300, 0))
+
+    def test_devis_relu_deja_net_n_est_pas_reduit_deux_fois(self):
+        _, t = self._tarif(CotisationImposee=423300, PartIA=0, PartAFA=0, AvecIA=False, AvecAFA=False)
+        self.assertEqual(t["Cotisation"], 423300)
+
+    def test_produits_coches_inchanges(self):
+        _, t = self._tarif(CotisationImposee=436800, PartIA=6000, PartAFA=7500)
+        self.assertEqual((t["Cotisation"], t["PartSante"]), (436800, 423300))
+
+
 class ReglementCommun(SimpleTestCase):
     QUITTANCES = [
         {"NumeroQuittance": "S", "PrimeTtc": D(423300), "Encaisse": D(0)},

@@ -1926,11 +1926,37 @@ class Encaissement(models.Model):
 
         from autorisations.models import DemandeAutorisation
 
+        # Liste : valeur posée pour toutes les lignes par precharger_demandes_annulation
+        if "_demande_annulation" in self.__dict__:
+            return self._demande_annulation
         content_type = ContentType.objects.get_for_model(self.__class__)
         return DemandeAutorisation.objects.filter(
             content_type=content_type,
             object_id=self.idencaissement,
         ).first()
+
+    @classmethod
+    def precharger_demandes_annulation(cls, encaissements):
+        """
+        Pose sur chaque encaissement d'une liste sa demande d'annulation, lue en une seule requête
+        (sans cela, la propriété demande_annulation interroge la base deux fois par ligne).
+        """
+        from django.contrib.contenttypes.models import ContentType
+
+        from autorisations.models import DemandeAutorisation
+
+        encaissements = list(encaissements)
+        demandes = {}
+        if encaissements:
+            for demande in DemandeAutorisation.objects.filter(
+                content_type=ContentType.objects.get_for_model(cls),
+                object_id__in=[e.idencaissement for e in encaissements],
+            ).order_by("-pk"):
+                # Même choix que .first() : la demande la plus ancienne de l'encaissement
+                demandes[demande.object_id] = demande
+        for encaissement in encaissements:
+            encaissement._demande_annulation = demandes.get(encaissement.idencaissement)
+        return encaissements
 
     @property
     def demande_annulation_en_cours(self):

@@ -361,10 +361,19 @@ def _ligne_saisie(rang, brut, offres, regles, effet, correspondances, offre_defa
         ia, afa = correspondances
         part_ia = offre["partia"] if part_ia_saisie is None else part_ia_saisie
         part_afa = offre["partafa"] if part_afa_saisie is None else part_afa_saisie
+        retrait = ZERO
         if not ligne["AvecIA"]:
+            retrait += part_ia
             part_ia = ZERO
         if not ligne["AvecAFA"]:
+            retrait += part_afa
             part_afa = ZERO
+        # Cotisation imposée (fichier ou saisie) = cumul des trois produits : la part d'un produit non émis en sort aussi
+        if retrait > 0 and cotisation_imposee > 0:
+            if cotisation_imposee <= retrait:
+                erreurs.append(f"cotisation de {_franc(cotisation_imposee)} F inférieure aux parts IA et AFA retirées")
+            else:
+                ligne["CotisationImposee"] = cotisation_imposee - retrait
         if part_ia == offre["partia"]:
             ligne["IdOffreIA"], ligne["CapitalIA"] = (offre["idoffreia"], offre["capitalia"]) if part_ia > 0 else (None, ZERO)
         else:

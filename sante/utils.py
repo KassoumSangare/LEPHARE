@@ -362,7 +362,6 @@ def save_quotation_sante(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     # Patch ORM : force la mise à jour de taux_reduction_commerciale après fermeture du curseur raw.
     # Le SP peut ignorer ce champ lorsque le complément existe déjà (ex. renouvellement),
@@ -1089,7 +1088,6 @@ def enregistrer_adherent_sante(user_id, input_data, fichier_piece=None, derogati
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1270,7 +1268,6 @@ def enregistrer_affilie_sante(userid, input_data, fichier_piece=None, derogation
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1337,7 +1334,6 @@ def enregistrer_filiale_sante(userid, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1368,7 +1364,6 @@ def get_quotation_id(userid):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (msg, id_devis)
 
 
@@ -1404,7 +1399,6 @@ def get_saisie_sante_en_cours(user_id):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -1450,6 +1444,5 @@ def get_liste_affilie_sante(iddevis):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)

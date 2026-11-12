@@ -336,6 +336,30 @@ class TypeAssureSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+def _nombre_clients(serialiseur, champ, valeur):
+    """Nombre de clients rattachés à une ligne de référentiel (profession, secteur d'activité).
+
+    Sur une liste, les clients sont comptés en une seule requête pour toutes les lignes (au lieu
+    d'un comptage par ligne) ; le résultat est gardé sur le sérialiseur racine le temps de la réponse.
+    """
+    try:
+        from django.db.models import Count
+
+        from customer.models import Client
+
+        racine = serialiseur.root
+        if not isinstance(racine, serializers.ListSerializer):
+            return Client.objects.filter(**{champ: valeur}).count()
+        comptes = racine.__dict__.setdefault("_nombre_clients", {})
+        if champ not in comptes:
+            comptes[champ] = dict(
+                Client.objects.exclude(**{champ: None}).values_list(champ).annotate(n=Count("pk")).order_by()
+            )
+        return comptes[champ].get(valeur, 0)
+    except Exception:
+        return 0
+
+
 class ProfessionSerializer(serializers.ModelSerializer):
     client_count = serializers.SerializerMethodField()
 
@@ -344,11 +368,7 @@ class ProfessionSerializer(serializers.ModelSerializer):
         fields = ["IdProfession", "Libelle", "CodeProfession", "client_count"]
 
     def get_client_count(self, obj):
-        try:
-            from customer.models import Client
-            return Client.objects.filter(IdProfession=obj.IdProfession).count()
-        except Exception:
-            return 0
+        return _nombre_clients(self, "IdProfession", obj.IdProfession)
 
 
 class GenreVehiculeSerializer(serializers.ModelSerializer):
@@ -521,11 +541,7 @@ class SecteurActiviteSerializer(serializers.ModelSerializer):
         fields = ["IdSecteurActivite", "Libelle", "client_count"]
 
     def get_client_count(self, obj):
-        try:
-            from customer.models import Client
-            return Client.objects.filter(IdSecteurActivite=obj.IdSecteurActivite).count()
-        except Exception:
-            return 0
+        return _nombre_clients(self, "IdSecteurActivite", obj.IdSecteurActivite)
 
 
 

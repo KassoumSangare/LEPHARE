@@ -1045,7 +1045,7 @@ class ModeleVehiculeViewSet(viewsets.ModelViewSet):
 
 
 class UsageVehiculeViewSet(viewsets.ModelViewSet):
-    queryset = UsageVehicule.objects.filter(~Q(IdUsage=0))
+    queryset = UsageVehicule.objects.filter(~Q(IdUsage=0)).prefetch_related("Carrosseries__Usages")
     serializer_class = UsageVehiculeSerializer
     permission_classes = [
         permissions.IsAuthenticated,

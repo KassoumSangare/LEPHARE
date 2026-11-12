@@ -157,8 +157,14 @@ def reglements(parametres):
     if au:
         conditions.append("e.dateencaissement::date <= %s")
         valeurs.append(au)
+    # Les règlements à afficher sont choisis d'abord (filtres, ordre, plafond), puis eux seuls sont joints à leurs
+    # quittances et clients : la requête agrégeait tous les encaissements de la base avant d'en garder 300
+    ordre = "ORDER BY e.dateencaissement DESC, e.idencaissement DESC"
+    choisis = (f"e.idencaissement IN (SELECT e.idencaissement FROM stdencaissement e "
+               f"LEFT JOIN stdmodeencaissement m ON m.idmodeencaissement = e.idmodepaiement "
+               f"WHERE {' AND '.join(conditions)} {ordre} LIMIT %s)")
     with connection.cursor() as cursor:
-        lignes = _lignes(cursor, _sql_reglements(conditions) + " ORDER BY e.dateencaissement DESC, e.idencaissement DESC LIMIT %s", valeurs + [MAX_LIGNES + 1])
+        lignes = _lignes(cursor, f"{_sql_reglements([choisis])} {ordre}", valeurs + [MAX_LIGNES + 1])
         modes = _lignes(cursor, f"""SELECT idmodeencaissement AS id, TRIM(libellemodepaiement) AS libelle FROM stdmodeencaissement
                                    WHERE COALESCE(abregereglement, '') NOT IN {MODES_EXCLUS} ORDER BY COALESCE(ordreaffichage, '99'), libellemodepaiement""")
     return {"Reglements": [_json_reglement(r) for r in lignes[:MAX_LIGNES]], "Tronque": len(lignes) > MAX_LIGNES,

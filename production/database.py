@@ -335,7 +335,6 @@ def save_quotation_ia(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (
         error_occured,
@@ -412,7 +411,6 @@ def save_insured_ia(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -558,7 +556,6 @@ def save_quotation_voyage(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -695,7 +692,6 @@ def save_quotation_mrh(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -847,7 +843,6 @@ def save_quotation_tousrisquesinfo(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1142,7 +1137,6 @@ def save_quotation_globaledebanque(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1435,7 +1429,6 @@ def save_quotation(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occurred,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1492,7 +1485,6 @@ def quotation_completion(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1539,7 +1531,6 @@ def archive_quote(input_data, user_id):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1584,7 +1575,6 @@ def unarchive_quote(input_data, user_id):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_insertion_result_list)),
@@ -1630,7 +1620,6 @@ def cancel_car_input(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (
         error_occured,
         list(chain(queryset_vide, data_deletion_result_list)),
@@ -1678,7 +1667,6 @@ def enregistrer_ayant_droit(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return list(chain(queryset_vide, data_insertion_result_list))
 
 
@@ -1758,7 +1746,6 @@ def get_quotation_info(iddevis):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -1819,7 +1806,6 @@ def get_liste_assure_ia(id, statut):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -1844,7 +1830,6 @@ def get_taux_reduction_flotte(iddevis):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return taux_reduction
 
@@ -1895,7 +1880,6 @@ def get_assure_ia(iddevis):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -1932,7 +1916,6 @@ def get_encaissement_info_for_sms(idencaissement):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return encaissement_info_list
 
@@ -2016,7 +1999,6 @@ def get_contract_info(idcontrat):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2057,7 +2039,6 @@ def get_contract_coverage(idcontrat):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2109,7 +2090,6 @@ def get_garantie_souscrite(id_entite, type_entite):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (msg, res)
 
 
@@ -2185,7 +2165,6 @@ def get_contract_car_list(id, contrat=True):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2244,7 +2223,6 @@ def get_contract_list_for_pc(referenceclient, referencecontrat):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2316,7 +2294,6 @@ def get_contract_list_for_customer(
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2389,7 +2366,6 @@ def get_encaissement_recherche(referenceclient, referencecontrat):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2443,7 +2419,6 @@ def get_contract_premium_remittance(idcompagnie):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2500,7 +2475,6 @@ def get_info_encaissement(detailencaissement):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2563,7 +2537,6 @@ def get_info_vehicule(idcontrat):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -2619,7 +2592,6 @@ def get_info_reversement(reversement):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 
@@ -3309,7 +3281,6 @@ def save_plate_number(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (
         error_occured,
@@ -3385,7 +3356,6 @@ def policy_modification(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (
         error_occured,
@@ -3459,7 +3429,6 @@ def save_premium_remittance(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return list(chain(queryset_vide, data_insertion_result_list))
 
@@ -3512,7 +3481,6 @@ def premium_remittance_validation(user_id, input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return error_occured, list(
         chain(queryset_vide, data_insertion_result_list)
@@ -3551,7 +3519,6 @@ def get_contrat_echeance():
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, res)
 

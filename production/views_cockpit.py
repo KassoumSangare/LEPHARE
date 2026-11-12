@@ -142,15 +142,21 @@ def _production(cursor, jour, avec_ca=False):
                c.dateexpiration::date AS dateexpiration, c.primettc, a.libelleavenant AS avenant,
                TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS client, p.libelleproduit AS produit,
                co.raisonsociale AS compagnie, {sql_reste()} AS reste, {CA_CONTRAT} AS chiffre_affaires
-        FROM stdcontrat c
+        FROM (
+            -- Les derniers contrats sont choisis d'abord, puis seuls ceux-là sont joints : la requête
+            -- joignait les 21 000 contrats à cinq tables avant de n'en garder que quelques-uns
+            SELECT c.* FROM stdcontrat c
+            WHERE {CONTRAT_VALIDE} AND c.dateemission::date <= %s
+              AND EXISTS (SELECT 1 FROM stdavenant a WHERE a.idavenant = c.idavenant)
+            ORDER BY c.dateemission DESC, c.idcontrat DESC
+            LIMIT %s
+        ) c
         JOIN stdavenant a ON a.idavenant = c.idavenant
         LEFT JOIN stdquittance q ON q.idquittance = c.idquittance
         LEFT JOIN stdclient cl ON cl.idclient = c.idclient
         LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
         LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
-        WHERE {CONTRAT_VALIDE} AND c.dateemission::date <= %s
         ORDER BY c.dateemission DESC, c.idcontrat DESC
-        LIMIT %s
     """, [jour, LIGNES_LISTE])
     resultat = {
         "Annee": {"Nombre": total["nombre"], "PrimeTtc": _franc(total["ttc"]),

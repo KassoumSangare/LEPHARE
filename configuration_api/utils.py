@@ -223,7 +223,6 @@ def get_garantie_offre(request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     if status == 0:
         return list(chain(queryset_vide, garantie_proposee_list))
 
@@ -301,7 +300,6 @@ def get_garantie_offre_ia(request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     if status == 0:
         return list(chain(queryset_vide, garantie_proposee_list))
 
@@ -367,7 +365,6 @@ def get_garantie_offre_voyage(request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     if status == 0:
         return list(chain(queryset_vide, garantie_proposee_list))
 
@@ -414,7 +411,6 @@ def get_garantie_produit(request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     if status == 0:
         return list(chain(queryset_vide, garantie_proposee_list))
 
@@ -447,7 +443,6 @@ def get_liste_avenant_produit(id_produit, flotte):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return (msg, avenants)
 
 
@@ -506,7 +501,6 @@ def save_offre_garantie(input_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (code_retour, output_message, query_set)
 
@@ -582,7 +576,6 @@ def get_garantie_offre_mrh(request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return res
 
 
@@ -668,7 +661,6 @@ def get_garantie_offre_risques_divers(id_produit, request_data):
     finally:
         if connection:
             cursor.close()
-            connection.close()
     return res
 
 
@@ -842,8 +834,6 @@ def get_offre_par_produit(idproduit, idtarif=None):
     finally:
         if cursor:
             cursor.close()
-        if connection:
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_offre_produit)))
 
@@ -884,8 +874,6 @@ def get_offre_voyage(idcompagnie, idtarif, idzone):
     finally:
         if cursor:
             cursor.close()
-        if connection:
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_offre_voyage)))
 
@@ -920,7 +908,6 @@ def get_offre_sante_par_tarif(idtarif):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_offre_tarif)))
 
@@ -982,7 +969,6 @@ def get_zone_couverture_sante(idzone):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_zone)))
 
@@ -1015,7 +1001,6 @@ def get_formule_securite_routiere(idcompagnie):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, liste_formule)
 
@@ -1049,7 +1034,6 @@ def get_tarif_par_produit(idproduit):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_tarif_produit)))
 
@@ -1083,7 +1067,6 @@ def get_tarif_voyage(idcompagnie):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_tarif_voyage)))
 
@@ -1119,6 +1102,5 @@ def get_liste_pays_voyage(idcompagnie):
     finally:
         if connection:
             cursor.close()
-            connection.close()
 
     return (msg, list(chain(queryset_vide, liste_pays_voyage)))

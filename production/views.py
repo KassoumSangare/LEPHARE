@@ -63,6 +63,7 @@ from configuration_api.serializers import (  # Serializers lecture
 )
 from core.date_parser import parse_date_string
 from core.services import ServiceError
+from core.utils import relations_directes
 from customer.models import Client
 
 from .anti_doublons.importateur import importer_assures_anti_doublons
@@ -284,9 +285,17 @@ class ContractForPremiumCollectionView(generics.ListCreateAPIView):
             return ContractForPremiumCollection.objects.none()
 
 
+def encaissements_avec_relations(queryset):
+    """Encaissements avec ce que lit EncaissementSerializer (mode, banque, auteur, quittances et clients
+    des lignes) : 4 requêtes pour la liste au lieu de 4 par encaissement."""
+    return queryset.select_related("modepaiement", "banque", "utilisateur").prefetch_related(
+        "details__numeroquittance__client"
+    )
+
+
 class EncaissementRechercheView(generics.ListCreateAPIView):
-    queryset = Encaissement.objects.filter(~Q(piece_annulee=True)).order_by(
-        "-dateencaissement"
+    queryset = encaissements_avec_relations(
+        Encaissement.objects.filter(~Q(piece_annulee=True)).order_by("-dateencaissement")
     )[:1000]
     serializer_class = EncaissementSerializer
     permission_classes = [
@@ -309,7 +318,7 @@ class EncaissementRechercheView(generics.ListCreateAPIView):
                 reference_client, reference_contrat
             )
             if not msg:
-                return item
+                return encaissements_avec_relations(item)
             else:
                 return Encaissement.objects.none()
         return super().get_queryset()
@@ -784,8 +793,13 @@ class DevisViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         if dateexpiration_avant:
             queryset = queryset.filter(dateexpiration__date__lt=dateexpiration_avant)
 
-        # Les devis les plus récents en premier
-        return queryset.order_by("-dateemission", "-iddevis")
+        # Les devis les plus récents en premier ; relations sérialisées (depth=1) chargées dans la
+        # même requête : une page de 200 devis lançait plus de 2 000 requêtes
+        return (
+            queryset.select_related(*relations_directes(Devis))
+            .prefetch_related("produit__avenants")
+            .order_by("-dateemission", "-iddevis")
+        )
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):
@@ -950,13 +964,14 @@ class DevisClientView(generics.ListAPIView):
         except Produit.DoesNotExist as eq:
             print(eq)
             devis_qs = devis_qs.filter(iddevis=0)
-        devis_qs = devis_qs.prefetch_related(
+        devis_qs = devis_qs.select_related("client").prefetch_related(
             Prefetch(
                 "details",
-                queryset=DevisDetail.objects.filter(iddevis__in=devis_qs),
+                queryset=DevisDetail.objects.select_related("idmarque"),
             )
         )
-        return devis_qs
+        # Ordre explicite : les pages ne changent plus d'un appel à l'autre
+        return devis_qs.order_by("pk")
 
 
 class ConsolidationDevisView(APIView):
@@ -1114,7 +1129,7 @@ class ConsolidationDevisView(APIView):
 
 
 class DevisDetailViewSet(viewsets.ModelViewSet):
-    queryset = DevisDetail.objects.all()
+    queryset = DevisDetail.objects.select_related(*relations_directes(DevisDetail)).order_by("pk")
     serializer_class = DevisDetailSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -1122,7 +1137,9 @@ class DevisDetailViewSet(viewsets.ModelViewSet):
 
 
 class DevisDetGarantieViewSet(viewsets.ModelViewSet):
-    queryset = DevisDetGarantie.objects.filter(~Q(IdGarantie=0))
+    queryset = DevisDetGarantie.objects.filter(~Q(IdGarantie=0)).select_related(
+        *relations_directes(DevisDetGarantie)
+    ).order_by("pk")
     serializer_class = DevisDetGarantieSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -1328,12 +1345,35 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             else:
                 queryset = queryset.order_by("-idcontrat")
 
-        # Relations sérialisées (depth=1) et offre boisée chargées dans la même requête :
-        # évite 8 à 10 requêtes par contrat sur les listes de 200 lignes
+        if self.action == "list":
+            # Liste : les relations sont ajoutées aux seuls contrats de la page (paginate_queryset)
+            return queryset
+        return self._avec_relations(queryset)
+
+    @staticmethod
+    def _avec_relations(queryset):
+        """Relations sérialisées (depth=1) et offre boisée chargées dans la même requête : évite 8 à 10
+        requêtes par contrat sur les listes de 200 lignes."""
         return queryset.select_related(
             "iddevis", "idcompagnie", "idintermediaire", "idproduit",
             "idclient", "idavenant", "idquittance", "piece_jointe",
-        ).annotate(offreboisee_annotee=OffreAutomobileBoisee(F("iddevis__offre__IdOffre")))
+        ).prefetch_related("idproduit__avenants").annotate(offreboisee_annotee=OffreAutomobileBoisee(F("iddevis__offre__IdOffre")))
+
+    def paginate_queryset(self, queryset):
+        """
+        Page du Portefeuille en deux temps : les identifiants de la page d'abord (filtres, statut, tri),
+        puis ces seuls contrats avec leurs relations. En une seule requête, PostgreSQL joignait devis,
+        clients et quittances de tout le portefeuille avant de garder 25 lignes (1,5 s par page filtrée).
+        """
+        if self.action != "list":
+            return super().paginate_queryset(queryset)
+        identifiants = super().paginate_queryset(
+            queryset.select_related(None).prefetch_related(None).values_list("pk", flat=True)
+        )
+        if identifiants is None:
+            return None
+        contrats = {contrat.pk: contrat for contrat in self._avec_relations(queryset.filter(pk__in=identifiants))}
+        return [contrats[pk] for pk in identifiants if pk in contrats]
 
     @action(detail=False, methods=["get"])
     def synthese(self, request):
@@ -1379,19 +1419,23 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset=ContratDetGarantie.objects.order_by("idcontratdetgarantie"),
             )
         )
+        # Un seul sérialiseur pour tous les objets et un seul pour toutes les garanties : en créer un par
+        # ligne prenait 3 s sur une flotte de 600 véhicules
+        details = list(details)
+        garanties = [garantie for detail in details for garantie in detail.garanties.all()]
+        donnees_garanties = iter(ContratGarantieAdministrationSerializer(garanties, many=True).data)
         resultat_details = []
-        for detail in details:
-            garanties = detail.garanties.all()
+        for detail, donnees_detail in zip(details, ContratDetailAdministrationSerializer(details, many=True).data):
             resultat_details.append(
                 {
-                    **ContratDetailAdministrationSerializer(detail).data,
+                    **donnees_detail,
                     "idcontratdetail": detail.pk,
                     "garanties": [
                         {
-                            **ContratGarantieAdministrationSerializer(garantie).data,
+                            **next(donnees_garanties),
                             "idcontratdetgarantie": garantie.pk,
                         }
-                        for garantie in garanties
+                        for garantie in detail.garanties.all()
                     ],
                 }
             )
@@ -1505,7 +1549,12 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         total = queryset.count()
-        contrats = queryset[(page - 1) * page_size : page * page_size]
+        # Identifiants de la page d'abord, puis ces seuls contrats avec leurs relations (voir paginate_queryset)
+        identifiants = list(queryset.values_list("pk", flat=True)[(page - 1) * page_size : page * page_size])
+        par_identifiant = {
+            contrat.pk: contrat for contrat in self._avec_relations(queryset.filter(pk__in=identifiants))
+        }
+        contrats = [par_identifiant[pk] for pk in identifiants if pk in par_identifiant]
         return Response(
             {
                 "count": total,
@@ -1740,7 +1789,7 @@ class ContratDetailViewSet(viewsets.ModelViewSet):
 
 
 class ContratDetGarantieViewSet(viewsets.ModelViewSet):
-    queryset = ContratDetGarantie.objects.filter(~Q(idgarantie=0))
+    queryset = ContratDetGarantie.objects.filter(~Q(idgarantie=0)).select_related("idgarantie").order_by("pk")
     serializer_class = ContratDetGarantieSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -2440,7 +2489,9 @@ class LogRecordView(APIView):
 
 
 class QuittanceViewSet(viewsets.ModelViewSet):
-    queryset = Quittance.objects.all()
+    queryset = Quittance.objects.select_related(*relations_directes(Quittance)).prefetch_related(
+        "produit__avenants"
+    ).order_by("pk")
     serializer_class = QuittanceSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -2448,7 +2499,7 @@ class QuittanceViewSet(viewsets.ModelViewSet):
 
 
 class DetailQuittanceViewSet(viewsets.ModelViewSet):
-    queryset = DetailQuittance.objects.all()
+    queryset = DetailQuittance.objects.select_related(*relations_directes(DetailQuittance)).order_by("pk")
     serializer_class = DetailQuittanceSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -2462,11 +2513,8 @@ class EncaissementViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         if self.action in ["list", "retrieve", "annuler"]:
-            return (
-                Encaissement.objects.select_related("modepaiement", "banque")
-                .prefetch_related("details")
-                .filter(Q(piece_annulee=False))
-                .order_by("-dateencaissement")
+            return encaissements_avec_relations(
+                Encaissement.objects.filter(Q(piece_annulee=False)).order_by("-dateencaissement")
             )
 
         else:
@@ -2627,7 +2675,8 @@ class EncaissementViewSet(viewsets.ModelViewSet):
 
 
 class DetailEncaissementViewSet(viewsets.ModelViewSet):
-    queryset = DetailEncaissement.objects.all()
+    # Ordre explicite : sans lui, la jointure changeait l'ordre des pages d'un appel à l'autre
+    queryset = DetailEncaissement.objects.select_related(*relations_directes(DetailEncaissement)).order_by("pk")
     serializer_class = DetailEncaissementSerializer
     permission_classes = [
         permissions.IsAuthenticated,
@@ -2784,7 +2833,7 @@ class ReversementCompagnieViewSet(viewsets.ModelViewSet):
 
 
 class DetailReversementViewSet(viewsets.ModelViewSet):
-    queryset = DetailReversement.objects.all()
+    queryset = DetailReversement.objects.select_related(*relations_directes(DetailReversement)).order_by("pk")
     serializer_class = DetailReversementSerializer
     permission_classes = [
         permissions.IsAuthenticated,

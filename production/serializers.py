@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 from dateutil.relativedelta import relativedelta
-from django.db.models import F
+from django.db.models import F, Manager
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -562,6 +562,9 @@ class DevisSerializer(serializers.ModelSerializer):
         return row[0] if row else None
 
     def get_offreboisee(self, obj):
+        # Valeur déjà calculée par DevisViewSet.get_queryset (annotation) : pas de requête par devis
+        if "offreboisee" in obj.__dict__:
+            return obj.offreboisee
         try:
             if hasattr(obj, "iddevis"):
                 devis = Devis.objects.annotate(
@@ -1222,6 +1225,14 @@ class DetailEncaissementShortSerializer(serializers.ModelSerializer):
         )
 
 
+class ListeEncaissementsSerializer(serializers.ListSerializer):
+    """Liste d'encaissements : demandes d'annulation de toutes les lignes lues en une requête."""
+
+    def to_representation(self, data):
+        lignes = data.all() if isinstance(data, Manager) else data
+        return super().to_representation(Encaissement.precharger_demandes_annulation(lignes))
+
+
 class EncaissementSerializer(serializers.ModelSerializer):
     details = DetailEncaissementShortSerializer(many=True, read_only=True)
     modepaiement = serializers.CharField(
@@ -1236,6 +1247,7 @@ class EncaissementSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Encaissement
+        list_serializer_class = ListeEncaissementsSerializer
         fields = (
             "idencaissement",
             "numeropiece",
