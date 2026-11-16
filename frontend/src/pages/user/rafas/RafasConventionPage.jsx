@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, FileDown, FileUp, HeartHandshake, Loader2, RotateCcw } from 'lucide-react';
+import {
+  ArrowLeft, BarChart3, Building2, FileDown, FileSpreadsheet, FileText, FileUp, HeartHandshake, LayoutDashboard, Loader2, RotateCcw, ShieldAlert,
+  Users, Wallet,
+} from 'lucide-react';
 import { rafasApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
 import { messageErreurApi } from '../../../utils/financeUtils';
-import { Badge, dateFr, libelleRang, moisFr, nomFichier, periode, telecharger } from './rafasCommun';
+import { Badge, Entete, dateFr, libelleRang, moisFr, nomFichier, periode, telecharger } from './rafasCommun';
 import OngletEnsemble from './OngletEnsemble';
 import OngletFonds from './OngletFonds';
 import OngletEffectif from './OngletEffectif';
@@ -21,9 +24,9 @@ import OngletImports from './OngletImports';
    ========================================================================= */
 
 const GROUPES = [
-  { titre: 'Pilotage', onglets: [['ensemble', "Vue d'ensemble"], ['fonds', 'Fonds et honoraires']] },
-  { titre: 'Analyse de la période', onglets: [['effectif', 'Effectif'], ['depenses', 'Dépenses'], ['controles', 'Contrôles']] },
-  { titre: 'Gestion', onglets: [['convention', 'Convention'], ['imports', 'Fichiers du gestionnaire']] },
+  { titre: 'Pilotage', onglets: [['ensemble', "Vue d'ensemble", LayoutDashboard], ['fonds', 'Fonds et honoraires', Wallet]] },
+  { titre: 'Analyse de la période', onglets: [['effectif', 'Effectif', Users], ['depenses', 'Dépenses', BarChart3], ['controles', 'Contrôles', ShieldAlert]] },
+  { titre: 'Gestion', onglets: [['convention', 'Convention', FileText], ['imports', 'Fichiers du gestionnaire', FileSpreadsheet]] },
 ];
 const AVEC_ANALYSE = new Set(['ensemble', 'effectif', 'depenses', 'controles']);
 const SEUILS = [300000, 400000, 500000, 750000, 1000000];
@@ -174,34 +177,32 @@ const RafasConventionPage = () => {
   const sansDonnees = !convention.Imports.length;
   return (
     <div className="cs-page rafas-page">
-      <button type="button" className="btn btn-link rafas-retour" onClick={() => navigate('/user/rafas')}><ArrowLeft size={15} /> Conventions RAFAS</button>
-      <div className="cs-entete">
-        <div>
-          <h1 className="title-xl"><HeartHandshake size={26} aria-hidden="true" />{c.souscripteur}</h1>
-          <div className="rafas-convention-badges">
-            <Badge ton="neutre" icone={Building2}>{c.gestionnaire}</Badge>
-            {c.polices && <Badge ton="neutre">{`Polices ${c.polices}`}</Badge>}
-            {courant && <Badge ton="info">{`${libelleRang(courant.rang)} ${periode(courant)}`}</Badge>}
-            {c.statut === 'RESILIEE' && <Badge ton="critique">Résiliée</Badge>}
-          </div>
+      <Entete icone={HeartHandshake} titre={c.souscripteur} retour={{ libelle: 'Conventions RAFAS', onClick: () => navigate('/user/rafas') }}
+        actions={(
+          <>
+            {aLeDroit('rafas.import') && <button type="button" className="btn btn-secondary rafas-bouton" onClick={() => choisir('imports')}><FileUp size={16} /> Importer un fichier</button>}
+            <button type="button" className="btn btn-primary rafas-bouton" onClick={telechargerRapport} disabled={rapport || sansDonnees}
+              title={sansDonnees ? "Importez d'abord les fichiers du gestionnaire" : 'Rapport Word de la période et des collèges choisis'}>
+              {rapport ? <Loader2 size={16} className="spin" /> : <FileDown size={16} />} Rapport Word
+            </button>
+          </>
+        )}>
+        <div className="rafas-convention-badges">
+          <Badge ton="neutre" icone={Building2}>{c.gestionnaire}</Badge>
+          {c.polices && <Badge ton="neutre">{`Polices ${c.polices}`}</Badge>}
+          {courant && <Badge ton="info">{`${libelleRang(courant.rang)} ${periode(courant)}`}</Badge>}
+          {c.statut === 'RESILIEE' && <Badge ton="critique">Résiliée</Badge>}
         </div>
-        <div className="rafas-actions">
-          {aLeDroit('rafas.import') && <button type="button" className="btn btn-secondary rafas-bouton" onClick={() => choisir('imports')}><FileUp size={16} /> Importer un fichier</button>}
-          <button type="button" className="btn btn-primary rafas-bouton" onClick={telechargerRapport} disabled={rapport || sansDonnees}
-            title={sansDonnees ? "Importez d'abord les fichiers du gestionnaire" : 'Rapport Word de la période et des collèges choisis'}>
-            {rapport ? <Loader2 size={16} className="spin" /> : <FileDown size={16} />} Rapport Word
-          </button>
-        </div>
-      </div>
+      </Entete>
 
       <nav className="cs-onglets" aria-label="Rubriques de la convention">
         {GROUPES.map((g) => (
           <div key={g.titre} className="cs-onglets-groupe">
             <span className="cs-onglets-titre">{g.titre}</span>
             <div className="cs-onglets-boutons" role="tablist">
-              {g.onglets.map(([cleOnglet, libelle]) => (
+              {g.onglets.map(([cleOnglet, libelle, Icone]) => (
                 <button key={cleOnglet} type="button" role="tab" aria-selected={onglet === cleOnglet} className={`cs-onglet${onglet === cleOnglet ? ' actif' : ''}`} onClick={() => choisir(cleOnglet)}>
-                  {libelle}
+                  <Icone size={15} aria-hidden="true" />{libelle}
                 </button>
               ))}
             </div>
@@ -214,7 +215,7 @@ const RafasConventionPage = () => {
       <div className={`cs-contenu${analyse.chargement && a ? ' cs-rechargement' : ''}`} key={onglet}>
         {AVEC_ANALYSE.has(onglet) && sansDonnees && (
           <div className="rafas-vide etat-anime">
-            <FileUp size={26} aria-hidden="true" />
+            <span className="rafas-vide-icone" aria-hidden="true"><FileUp size={24} /></span>
             <p>Aucun fichier du gestionnaire pour cette convention : importez l'effectif et les relevés de prestations pour analyser les dépenses.</p>
             <button type="button" className="btn btn-primary rafas-bouton" onClick={() => choisir('imports')}><FileUp size={15} /> Importer un fichier</button>
           </div>

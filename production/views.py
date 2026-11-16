@@ -3247,6 +3247,20 @@ def _confirmation_oreole(donnees):
                         status=status.HTTP_201_CREATED, safe=False)
 
 
+def _confirmation_minene(donnees, id_utilisateur):
+    """Devis Santé MINENE (affaire nouvelle ou renouvellement) confirmé d'où que ce soit : Santé, IA et RC émises ensemble (minene_package)."""
+    from .minene_package import ErreurMinene, confirmation_depuis_registre
+
+    try:
+        resultat = confirmation_depuis_registre(int(donnees.get("IdDevis") or 0), id_utilisateur)
+    except ErreurMinene as erreur:
+        return JsonResponse([{"ObjectId": 0, "OutputMessage": str(erreur)}], status=status.HTTP_400_BAD_REQUEST, safe=False)
+    if resultat is None:
+        return None
+    id_contrat, message = resultat
+    return JsonResponse([{"ObjectId": id_contrat, "OutputMessage": message}], status=status.HTTP_201_CREATED, safe=False)
+
+
 # Change quotation into contract
 @api_view(["POST"])
 @authentication_classes([KnoxOrDemoTokenAuthentication, BasicAuthentication])
@@ -3261,6 +3275,9 @@ def create_contract(request):
         reponse_oreole = _confirmation_oreole(confirmationdevis_data)
         if reponse_oreole is not None:
             return reponse_oreole
+        reponse_minene = _confirmation_minene(confirmationdevis_data, request.user.id)
+        if reponse_minene is not None:
+            return reponse_minene
         (err, qryset) = save_contract(confirmationdevis_data)
         data_insertion_serializer = DataInsertionSerializer(qryset, many=True)
         st = status.HTTP_201_CREATED

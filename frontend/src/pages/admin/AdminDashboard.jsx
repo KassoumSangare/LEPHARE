@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 
 import {
-  Anime, BoutonVoir, Detail, Evolution, francs, Jauge, nombre, pluriel, pourcent, Repartition, Section, Segments, Tuile,
+  AIDE_CHIFFRE_AFFAIRES, Anime, BoutonVoir, Detail, Evolution, francs, Jauge, nombre, partsChiffreAffaires, pluriel, pourcent, Repartition,
+  Section, Segments, SYNONYMES_CHIFFRE_AFFAIRES, Tuile,
 } from '../../components/common/Cockpit';
 import { GraphiqueMensuel } from '../../components/common/GraphiqueMensuel';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -153,17 +154,10 @@ export const AdminDashboard = () => {
               icone={Coins}
               couleur="emerald"
               vers={peut('commissions.view') ? '/admin/commissions' : undefined}
-              aide="Revenu du cabinet : commissions et accessoires des actes émis sur la période, contrats annulés exclus, et commission RAFAS facturée. Les primes reviennent aux compagnies."
+              aide={AIDE_CHIFFRE_AFFAIRES}
               evolution={<Evolution actuel={ca.Total} precedent={ca.Precedent} au={d.AuPrecedent} />}
             >
-              <Repartition
-                libelle="Composition du chiffre d'affaires"
-                parts={[
-                  { serie: 1, libelle: 'Commissions', valeur: ca.Commissions },
-                  { serie: 2, libelle: 'Accessoires et frais courtiers', valeur: ca.Accessoires },
-                  { serie: 3, libelle: 'RAFAS', valeur: ca.Rafas },
-                ]}
-              />
+              <Repartition libelle="Composition du chiffre d'affaires (commissions)" parts={partsChiffreAffaires(ca)} />
               <dl className="cockpit-chiffres-cles">
                 <div><dt>Taux moyen</dt><dd>{pourcent(ca.TauxMoyen)}</dd><dd className="aide">de la prime nette</dd></div>
                 <div><dt>Part des primes</dt><dd>{pourcent(ca.PartDesPrimes)}</dd><dd className="aide">des primes TTC émises</dd></div>
@@ -187,13 +181,14 @@ export const AdminDashboard = () => {
                 : ['Aucun règlement de commission saisi sur la période']}
             />
             <Tuile
-              titre="À percevoir"
-              valeur={<Anime valeur={ca.EnAttente.Total} format={francs} />}
+              titre={`Reste à percevoir ${n}`}
+              valeur={<Anime valeur={ca.ResteAPercevoir?.Total ?? ca.EnAttente.Total} format={francs} />}
               icone={HandCoins}
               couleur="amber"
               vers={peut('commissions.view') ? '/admin/commissions' : undefined}
-              aide={`Situation au ${formatDate(d.Jour)} : commissions des primes reversées pas encore payées par les compagnies, commission RAFAS facturée non réglée`}
+              aide={`Commission à percevoir moins commission perçue : chiffre d'affaires ${n} pas encore reçu (situation au ${formatDate(d.Jour)}). La commission ne se réclame à la compagnie qu'une fois la prime encaissée et reversée.`}
               lignes={[
+                ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
                 <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
                 <Detail libelle="Réclamées, non payées" valeur={francs(ca.EnAttente.Reclamees)} />,
                 ca.EnAttente.Rafas > 0 && <Detail libelle="RAFAS non réglée" valeur={francs(ca.EnAttente.Rafas)} />,
@@ -245,7 +240,7 @@ export const AdminDashboard = () => {
           <Section
             icone={BarChart3}
             titre="Chiffre d'affaires par mois"
-            sousTitre={`Commissions et accessoires des actes émis en ${n} et en ${n - 1}, sommes perçues en ${n}, en francs CFA`}
+            sousTitre={`Commissions du cabinet (au taux et sur les accessoires) des actes émis en ${n} et en ${n - 1}, sommes perçues en ${n}, en francs CFA`}
           >
             <GraphiqueMensuel
               mois={d.ParMois}
@@ -303,7 +298,7 @@ export const AdminDashboard = () => {
             </Section>
 
             {/* Chiffre d'affaires par compagnie : une seule mesure pour la part, une seule teinte */}
-            <Section icone={Building2} titre={`Chiffre d'affaires ${n} par compagnie`} sousTitre="Commissions et accessoires du cabinet, avec les primes TTC placées">
+            <Section icone={Building2} titre={`Chiffre d'affaires ${n} par compagnie`} sousTitre="Commissions du cabinet (au taux et sur les accessoires), avec les primes TTC placées">
               {d.ParCompagnie.length === 0 ? (
                 <div className="cockpit-rien"><span>Aucun acte émis sur la période.</span></div>
               ) : (
@@ -388,7 +383,7 @@ export const AdminDashboard = () => {
                         <td className="nombre montant">
                           {francs(b.ChiffreAffaires)}
                           {b.TauxCommission !== null && <span className="secondaire">{pourcent(b.TauxCommission)} {b.LibelleBase || 'de la prime nette'}</span>}
-                          {b.Accessoires > 0 && <span className="secondaire">dont accessoires {francs(b.Accessoires)}</span>}
+                          {b.Accessoires > 0 && <span className="secondaire">dont commission sur accessoires {francs(b.Accessoires)}</span>}
                         </td>
                         <td className="nombre montant">{francs(b.ChiffreAffairesPercu)}</td>
                         <td className="nombre montant">{francs(b.PrimeTtc)}</td>
@@ -418,8 +413,9 @@ export const AdminDashboard = () => {
               </div>
             )}
             <p className="cockpit-note">
-              Chiffre d'affaires : commission et accessoires du cabinet de chaque acte émis sur la période ; en Oreole Santé, les frais
-              courtiers que le cabinet garde. Perçu : règlements des compagnies saisis dans LE PHARE, frais courtiers gardés à
+              Chiffre d'affaires : commission du cabinet sur chaque acte émis sur la période, au taux de la compagnie et sur les
+              accessoires (accessoire courtier ; en Oreole Santé, frais courtiers et honoraires OREOLE). Les termes {SYNONYMES_CHIFFRE_AFFAIRES} désignent
+              tous ce chiffre d'affaires. Perçu : règlements des compagnies saisis dans LE PHARE, frais courtiers gardés à
               l'encaissement des cotisations, affaires antérieures déjà réglées et commission RAFAS réglée.
               Recouvrement : part des primes émises sur la période déjà encaissée à ce jour.
             </p>

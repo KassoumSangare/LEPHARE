@@ -28,7 +28,7 @@ from . import corrections_encaissement
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import renouvellement as renouvellement_views
-from . import minene_connexes
+from . import minene_connexes, minene_package
 from . import incorporation as incorporation_views
 from . import suppression as suppression_views
 from . import views_archives
@@ -689,6 +689,13 @@ urlpatterns = [
     path("minene/ia/apercu/", minene_connexes.apercu_ia, name="minene-ia-apercu"),
     path("minene/rc/apercu/", minene_connexes.apercu_rc, name="minene-rc-apercu"),
     path("minene/police/", minene_connexes.police, name="minene-police"),
+    # MINENE en package, comme Oreole Santé (production/minene_package.py)
+    path("minene/devis/<int:iddevis>/", minene_package.devis, name="minene-package-devis"),
+    path("minene/devis/<int:iddevis>/emission/", minene_package.emission_devis, name="minene-package-emission"),
+    path("minene/devis/<int:iddevis>/encaissement/", minene_package.encaissement, name="minene-package-encaissement"),
+    path("minene/contrat/<int:idcontrat>/", minene_package.contrat, name="minene-package-contrat"),
+    path("minene/contrat/<int:idcontrat>/emission/", minene_package.emission_contrat, name="minene-package-emission-contrat"),
+    path("minene/caisse/", minene_package.caisse, name="minene-package-caisse"),
     path(
         r"avenant/modificationpriseeffet",
         modify_policy,

@@ -29,7 +29,8 @@ import {
 } from 'lucide-react';
 
 import {
-  Anime, BoutonVoir, cheminDevis, Detail, Evolution, francs, Jauge, MiniBarres, nombre, pluriel, pourcent, Repartition, Section, Tuile,
+  AIDE_CHIFFRE_AFFAIRES, Anime, BoutonVoir, cheminDevis, Detail, Evolution, francs, Jauge, MiniBarres, nombre, partsChiffreAffaires, pluriel,
+  pourcent, Repartition, Section, Tuile,
 } from '../../components/common/Cockpit';
 import { DataTable } from '../../components/common/DataTable';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -244,17 +245,10 @@ export const UserDashboard = () => {
                   icone={Coins}
                   couleur="emerald"
                   vers={isDirectorOrAdmin && peut('reporting.view') ? '/admin/dashboard' : undefined}
-                  aide="Revenu du cabinet : commissions et accessoires des actes émis depuis le 1er janvier, contrats annulés exclus, et commission RAFAS facturée. Les primes reviennent aux compagnies."
+                  aide={`${AIDE_CHIFFRE_AFFAIRES} Depuis le 1er janvier.`}
                   evolution={<Evolution actuel={ca.Total} precedent={ca.Precedent} au={ca.AuPrecedent} />}
                 >
-                  <Repartition
-                    libelle="Composition du chiffre d'affaires"
-                    parts={[
-                      { serie: 1, libelle: 'Commissions', valeur: ca.Commissions },
-                      { serie: 2, libelle: 'Accessoires et frais courtiers', valeur: ca.Accessoires },
-                      { serie: 3, libelle: 'RAFAS', valeur: ca.Rafas },
-                    ]}
-                  />
+                  <Repartition libelle="Composition du chiffre d'affaires (commissions)" parts={partsChiffreAffaires(ca)} />
                   {ca.Mensuel && (
                     <MiniBarres
                       titre="Chiffre d'affaires"
@@ -281,13 +275,14 @@ export const UserDashboard = () => {
                   ]}
                 />
                 <Tuile
-                  titre="À percevoir"
-                  valeur={<Anime valeur={ca.EnAttente.Total} format={francs} />}
+                  titre={`Reste à percevoir ${exercice}`}
+                  valeur={<Anime valeur={ca.ResteAPercevoir?.Total ?? ca.EnAttente.Total} format={francs} />}
                   icone={HandCoins}
                   couleur="amber"
                   vers={isDirectorOrAdmin && peut('commissions.view') ? '/admin/commissions' : undefined}
-                  aide="Commissions des primes reversées pas encore payées par les compagnies, commission RAFAS facturée non réglée"
+                  aide={`Commission à percevoir moins commission perçue : chiffre d'affaires ${exercice} pas encore reçu. La commission ne se réclame à la compagnie qu'une fois la prime encaissée et reversée.`}
                   lignes={[
+                    ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
                     <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
                     <Detail
                       libelle={`Réclamées non payées${commissions?.BordereauxEnAttente ? `, ${pluriel(commissions.BordereauxEnAttente, 'bordereau', 'bordereaux')}` : ''}`}
@@ -461,7 +456,7 @@ export const UserDashboard = () => {
               <Section
                 icone={Layers}
                 titre={ca ? `Chiffre d'affaires ${exercice} par branche` : `Production ${exercice} par branche`}
-                sousTitre={ca ? 'Commissions et accessoires du cabinet, primes TTC émises depuis le 1er janvier' : 'Primes TTC émises depuis le 1er janvier'}
+                sousTitre={ca ? 'Commissions du cabinet (au taux et sur les accessoires), primes TTC émises depuis le 1er janvier' : 'Primes TTC émises depuis le 1er janvier'}
               >
                 {production.ParBranche.length === 0 ? (
                   <div className="cockpit-rien"><span>Aucun acte émis cette année.</span></div>

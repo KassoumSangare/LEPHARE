@@ -11,6 +11,7 @@ import {
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { PieceJointe } from '../../../components/common/PieceJointe';
 import PoliceMineneConnexe from './PoliceMineneConnexe';
+import { redirigerSiMinene } from './BlocPackageMinene';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
@@ -115,6 +116,8 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   // « Modifier » depuis le registre des devis : ?edit=<iddevis>
   const [searchParams] = useSearchParams();
   const editIddevisParam = searchParams.get('edit');
+  // RC créée avec un devis Santé MINENE : elle se modifie depuis l'écran Santé, qui garde les trois devis ensemble
+  useEffect(() => redirigerSiMinene(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
   const [isLoadingEdit, setIsLoadingEdit] = useState(Boolean(editIddevisParam));
   const [idDevisEdite, setIdDevisEdite] = useState(null);
   const [numeroDevisEdite, setNumeroDevisEdite] = useState('');

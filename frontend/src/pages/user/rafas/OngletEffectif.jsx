@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Search, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Home, Loader2, Search, UserCheck, UserMinus, UserPlus, Users } from 'lucide-react';
 import { rafasApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { messageErreurApi } from '../../../utils/financeUtils';
@@ -114,11 +114,11 @@ const OngletEffectif = ({ id, donnees: a }) => {
   return (
     <div className="cs-pile">
       <div className="cs-tuiles larges">
-        <Tuile libelle="Bénéficiaires" valeur={entier(e.Total)} detail={`Effectif du ${dateFr(a.Situation?.Date)}`} />
-        <Tuile libelle="Familles" valeur={entier(a.Synthese.Familles)} />
-        {total && <Tuile libelle="Nouveaux en un an" valeur={entier(total.Nouveaux)} detail={`Taux d'adhésion ${pct(total.TauxAdhesion)}`} />}
-        {total && <Tuile libelle="Sortis en un an" valeur={entier(total.Sortis)} detail={`Taux de sortie ${pct(total.TauxSortie)}`} />}
-        {total && <Tuile libelle="Présents les deux années" valeur={entier(total.Presents)} detail={`Taux de maintien ${pct(total.TauxMaintien)}`} />}
+        <Tuile libelle="Bénéficiaires" icone={Users} valeur={entier(e.Total)} detail={`Effectif du ${dateFr(a.Situation?.Date)}`} />
+        <Tuile libelle="Familles" icone={Home} valeur={entier(a.Synthese.Familles)} />
+        {total && <Tuile libelle="Nouveaux en un an" icone={UserPlus} ton="bon" valeur={entier(total.Nouveaux)} detail={`Taux d'adhésion ${pct(total.TauxAdhesion)}`} />}
+        {total && <Tuile libelle="Sortis en un an" icone={UserMinus} valeur={entier(total.Sortis)} detail={`Taux de sortie ${pct(total.TauxSortie)}`} />}
+        {total && <Tuile libelle="Présents les deux années" icone={UserCheck} valeur={entier(total.Presents)} detail={`Taux de maintien ${pct(total.TauxMaintien)}`} />}
       </div>
       {total ? (
         <Carte titre="Effectif consolidé par collège" sousTitre={`Comparé à l'effectif du ${dateFr(a.Reference?.Date)} : présents les deux années, nouveaux et sortis.`}>

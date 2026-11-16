@@ -74,3 +74,18 @@ class ChiffreAffairesPercu(SimpleTestCase):
     def test_net_des_apporteurs(self):
         ca = assembler(EN_COURS, [acte(2026, 5, 300_000)], [], SANS_RAFAS, {"Payees": 25_000, "APayer": 50_000})
         self.assertEqual((ca["Apporteurs"]["Total"], ca["Net"]), (75_000, 225_000))
+
+
+class ResteAPercevoir(SimpleTestCase):
+    """Synonymes (2026-11-16) : commission à percevoir - commission perçue = solde ; réclamable seulement après le reversement."""
+
+    def test_solde_du_chiffre_d_affaires(self):
+        actes = [acte(2026, 3, 100_000, 20_000)]
+        ca = assembler(EN_COURS, actes, [percu("Compagnies", date(2026, 4, 1), 30_000)], SANS_RAFAS, SANS_APPORTEUR,
+                       en_attente={"AReclamer": 50_000, "Reclamees": 10_000})
+        self.assertEqual(ca["ResteAPercevoir"], {"Total": 90_000, "Reclamable": 60_000, "AvantReversement": 30_000})
+
+    def test_solde_jamais_negatif(self):
+        ca = assembler(EN_COURS, [acte(2026, 3, 10_000)], [percu("Compagnies", date(2026, 4, 1), 25_000)], SANS_RAFAS, SANS_APPORTEUR,
+                       en_attente={"AReclamer": 5_000, "Reclamees": 0})
+        self.assertEqual(ca["ResteAPercevoir"], {"Total": 0, "Reclamable": 0, "AvantReversement": 0})

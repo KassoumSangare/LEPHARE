@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Banknote, Check, HandCoins, Loader2, Plus, Printer, ReceiptText, Trash2, Undo2, Wallet } from 'lucide-react';
+import { Banknote, Building2, Check, Coins, HandCoins, Loader2, Plus, Printer, ReceiptText, ShieldCheck, Trash2, TrendingUp, Undo2, Wallet } from 'lucide-react';
 import { rafasApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
@@ -220,12 +220,12 @@ const OngletFonds = ({ id, convention, onModifie }) => {
           {fonds.BesoinEcheance !== null && <p className="cs-note">{`Besoin estimé jusqu'à l'échéance : ${francs(fonds.BesoinEcheance)} (${fonds.MoisRestants} mois de dépenses au rythme moyen et honoraires restant dus).`}</p>}
         </Carte>
         <div className="cs-tuiles">
-          <Tuile libelle="Cotisations de l'exercice" valeur={francsCourts(budget.Cotisations)} detail={reel && fonds.BudgetReel ? "Sur l'effectif du gestionnaire" : 'Familles de la convention'} />
-          <Tuile libelle="Enveloppe des sinistres" valeur={francsCourts(budget.Enveloppe)} detail={`${pct(taux, 0)} consommés`} />
-          <Tuile libelle="Projection à l'échéance" valeur={francsCourts(fonds.Projection)} detail={`Rythme ${francsCourts(fonds.Rythme)} par mois sur ${fonds.MoisAvecDonnees} mois`} />
-          <Tuile libelle={`Honoraires du gestionnaire, ${tauxFr(ex.taux_honoraires)}`} valeur={francsCourts(budget.Honoraires)} detail={`Émis ${francsCourts(fonds.HonorairesEmis.GESTIONNAIRE)}, réglés ${francsCourts(fonds.HonorairesRegles.GESTIONNAIRE)}`} />
-          <Tuile libelle={`Commission du cabinet, ${tauxFr(ex.taux_commission)}`} valeur={francsCourts(budget.Commission)} ton="accent" detail={`Facturée ${francsCourts(fonds.HonorairesEmis.COURTIER)}, encaissée ${francsCourts(fonds.HonorairesRegles.COURTIER)}`} />
-          <Tuile libelle="Versements du souscripteur" valeur={francsCourts(fonds.Versements)} detail={`${fonds.Appels.length} appel${fonds.Appels.length > 1 ? 's' : ''} de fonds`} />
+          <Tuile libelle="Cotisations de l'exercice" icone={Coins} valeur={francsCourts(budget.Cotisations)} detail={reel && fonds.BudgetReel ? "Sur l'effectif du gestionnaire" : 'Familles de la convention'} />
+          <Tuile libelle="Enveloppe des sinistres" icone={ShieldCheck} valeur={francsCourts(budget.Enveloppe)} detail={`${pct(taux, 0)} consommés`} />
+          <Tuile libelle="Projection à l'échéance" icone={TrendingUp} valeur={francsCourts(fonds.Projection)} detail={`Rythme ${francsCourts(fonds.Rythme)} par mois sur ${fonds.MoisAvecDonnees} mois`} />
+          <Tuile libelle={`Honoraires du gestionnaire, ${tauxFr(ex.taux_honoraires)}`} icone={Building2} valeur={francsCourts(budget.Honoraires)} detail={`Émis ${francsCourts(fonds.HonorairesEmis.GESTIONNAIRE)}, réglés ${francsCourts(fonds.HonorairesRegles.GESTIONNAIRE)}`} />
+          <Tuile libelle={`Commission du cabinet, ${tauxFr(ex.taux_commission)}`} icone={HandCoins} valeur={francsCourts(budget.Commission)} ton="accent" detail={`Facturée ${francsCourts(fonds.HonorairesEmis.COURTIER)}, encaissée ${francsCourts(fonds.HonorairesRegles.COURTIER)}`} />
+          <Tuile libelle="Versements du souscripteur" icone={Wallet} valeur={francsCourts(fonds.Versements)} detail={`${fonds.Appels.length} appel${fonds.Appels.length > 1 ? 's' : ''} de fonds`} />
         </div>
       </div>
 

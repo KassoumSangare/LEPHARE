@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { CircleAlert, CircleCheck, Info, ListChecks, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, CircleAlert, CircleCheck, Info, ListChecks, Plus, Trash2, TriangleAlert, X } from 'lucide-react';
+import { Anime } from '../../../components/common/Cockpit';
 import { decimal, entier, francs, francsCourts, pct } from '../sante/consommations/graphiques';
 
 /* =========================================================================
@@ -43,10 +44,36 @@ export const Carte = ({ titre, sousTitre, actions, children, className = '', id 
   </section>
 );
 
-export const Tuile = ({ libelle, valeur, detail, ton, icone: Icone }) => (
-  <div className={`cs-tuile${ton ? ` rafas-tuile-${ton}` : ''}`}>
-    <div className="cs-tuile-libelle">{Icone && <Icone size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />}{libelle}</div>
-    <div className="cs-tuile-corps"><div className="cs-tuile-valeur" title={typeof valeur === 'string' ? valeur : undefined}>{valeur}</div></div>
+/* En-tête d'un écran RAFAS : bandeau à fond dégradé, surtitre, pastille d'icône, titre, texte ou badges (children), actions à droite ;
+   retour : { libelle, onClick } pour revenir au portefeuille */
+export const Entete = ({ surtitre, icone: Icone, titre, children, actions, retour }) => (
+  <header className="rafas-entete">
+    <div className="rafas-entete-corps">
+      {retour && <button type="button" className="rafas-entete-retour" onClick={retour.onClick}><ArrowLeft size={14} aria-hidden="true" />{retour.libelle}</button>}
+      {surtitre && !retour && <span className="rafas-surtitre">{surtitre}</span>}
+      <div className="rafas-entete-titre">
+        {Icone && <span className="rafas-entete-icone" aria-hidden="true"><Icone size={22} /></span>}
+        <h1 className="title-xl">{titre}</h1>
+      </div>
+      {children}
+    </div>
+    {actions && <div className="rafas-actions">{actions}</div>}
+  </header>
+);
+
+/* Tuile d'indicateur : pastille d'icône, filet de teinte (ton : accent, bon, attention, critique), valeur, détail.
+   nombre + format : le chiffre défile jusqu'à sa valeur (valeur exacte lue par les lecteurs d'écran). */
+export const Tuile = ({ libelle, valeur, detail, ton, icone: Icone, nombre: montant, format = entier }) => (
+  <div className={`cs-tuile rafas-tuile${ton ? ` rafas-tuile-${ton}` : ''}`}>
+    <div className="rafas-tuile-tete">
+      {Icone && <span className="rafas-tuile-icone" aria-hidden="true"><Icone size={16} /></span>}
+      <span className="cs-tuile-libelle">{libelle}</span>
+    </div>
+    <div className="cs-tuile-corps">
+      <div className="cs-tuile-valeur" title={typeof valeur === 'string' ? valeur : undefined}>
+        {montant !== undefined && montant !== null ? <Anime valeur={montant} format={format} /> : valeur}
+      </div>
+    </div>
     {detail && <div className="cs-tuile-detail">{detail}</div>}
   </div>
 );
@@ -57,7 +84,7 @@ export const Badge = ({ ton = 'neutre', icone: Icone, children, titre }) => (
 
 export const Vide = ({ texte, action }) => (
   <div className="rafas-vide etat-anime">
-    <ListChecks size={26} aria-hidden="true" />
+    <span className="rafas-vide-icone" aria-hidden="true"><ListChecks size={24} /></span>
     <p>{texte}</p>
     {action}
   </div>

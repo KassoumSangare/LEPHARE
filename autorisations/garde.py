@@ -317,6 +317,10 @@ REGLES = [
     R("POST", r"oreole/devis/(?P<iddevis>\d+)/emission/?$", "devis.validate", objet="devis", cles=("iddevis",), instantane=instantane_devis),
     R("POST", r"oreole/contrat/(?P<idcontrat>\d+)/emission/?$", "devis.validate", objet="contrat", cles=("idcontrat",), instantane=instantane_contrat),
     R("POST", r"oreole/devis/(?P<iddevis>\d+)/encaissement/?$", "encaissements.create", objet="encaissement", cles=("iddevis",)),
+    # MINENE en package (production/minene_package.py) : émission groupée de Santé, IA et RC, règlement unique
+    R("POST", r"minene/devis/(?P<iddevis>\d+)/emission/?$", "devis.validate", objet="devis", cles=("iddevis",), instantane=instantane_devis),
+    R("POST", r"minene/contrat/(?P<idcontrat>\d+)/emission/?$", "devis.validate", objet="contrat", cles=("idcontrat",), instantane=instantane_contrat),
+    R("POST", r"minene/devis/(?P<iddevis>\d+)/encaissement/?$", "encaissements.create", objet="encaissement", cles=("iddevis",)),
     # Consommations santé (sante/consommations.py) : données de santé, droits dédiés ; l'analyse d'un relevé n'écrit rien
     R("POST", r"consommations/import/analyse/?$", "consommations.import", lecture=True),
     R("POST", r"consommations/import/?$", "consommations.import", objet="releve_sante"),
@@ -365,6 +369,9 @@ REGLES = [
     R("GET", r"minene/\d+/connexes/?$", "contrats.view"),
     R("GET", r"minene/(ia|rc)/apercu/?$", "devis.view"),
     R("GET", r"minene/police/?$", "devis.view"),
+    R("GET", r"minene/caisse/?$", "encaissements.view"),
+    R("GET", r"minene/contrat/\d+/?$", "contrats.view"),
+    R("GET", r"minene/devis/\d+/?$", "devis.view"),
     R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"incorporation/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),

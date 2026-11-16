@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { redirigerSiOreole } from './oreole/oreoleCommun';
+import { redirigerSiMinene } from './BlocPackageMinene';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
 import { dataStore } from '../../../api/dataStore';
@@ -161,6 +162,8 @@ export const NewIaQuotePage = () => {
   const [chargementBrouillon, setChargementBrouillon] = useState(Boolean(brouillonParam));
   // Devis lié au package Oreole Santé : il s'ouvre dans la branche, qui garde les trois polices ensemble
   useEffect(() => redirigerSiOreole(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // IA créée avec un devis Santé MINENE : elle se modifie depuis l'écran Santé, qui garde les trois devis ensemble
+  useEffect(() => redirigerSiMinene(editIddevisParam, navigate), [editIddevisParam]); // eslint-disable-line react-hooks/exhaustive-deps
   // Devis de renouvellement (page Renouvellement) : les assurés sont renvoyés à l'enregistrement, puis le serveur leur rend les montants du
   // contrat renouvelé (production/ia_montants_imposes.py) ; seul un assuré dont les capitaux ou l'offre changent repart au tarif
   const renouvellementParam = searchParams.get('renouvellement') === '1';

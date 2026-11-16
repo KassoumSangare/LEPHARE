@@ -12,6 +12,22 @@ export const nombre = (n) => Number(n || 0).toLocaleString('fr-FR');
 export const pluriel = (n, un, plusieurs) => `${nombre(n)} ${Number(n) > 1 ? plusieurs : un}`;
 export const pourcent = (n) => (n === null || n === undefined ? '-' : `${Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`);
 
+// Chiffre d'affaires du courtier (production/chiffre_affaires.py). Consigne du 2026-11-16 : dans les documents d'OREOLE, taux de
+// commission OREOLE ASSURANCES ou COURTIER, commission acquise, générée, réelle, à percevoir, frais de courtage, frais
+// courtiers, accessoire courtier, honoraires du courtier sont des synonymes : tous forment le chiffre d'affaires
+export const SYNONYMES_CHIFFRE_AFFAIRES = 'commission acquise, générée ou réelle, taux de commission OREOLE ASSURANCES ou COURTIER, frais de courtage, '
+  + 'frais courtiers, accessoire courtier, honoraires du courtier';
+export const AIDE_CHIFFRE_AFFAIRES = `Revenu du cabinet, quel que soit son nom (${SYNONYMES_CHIFFRE_AFFAIRES}) : commissions des actes émis, `
+  + 'contrats annulés exclus, et commission RAFAS facturée. Les primes reviennent aux compagnies ; les honoraires du gestionnaire (MCI, VITALIS) '
+  + 'et les frais de gestion n\'en font pas partie.';
+// Composition : la commission au taux de la compagnie, la commission sur les accessoires (accessoire courtier, frais courtiers
+// d'Oreole Santé), la commission RAFAS
+export const partsChiffreAffaires = (ca) => [
+  { serie: 1, libelle: 'Commission au taux', valeur: ca.Commissions },
+  { serie: 2, libelle: 'Accessoire courtier et frais courtiers', valeur: ca.Accessoires },
+  { serie: 3, libelle: 'Commission RAFAS', valeur: ca.Rafas },
+];
+
 // Devis : formulaire du produit rouvert s'il sait le faire, sinon registre des devis
 export const cheminDevis = (idProduit, idDevis) => {
   const module = moduleDuProduit(Number(idProduit));

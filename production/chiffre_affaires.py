@@ -4,6 +4,12 @@ sont les commissions qu'il perçoit »). Les primes émises reviennent aux compa
 commissions et ses accessoires. Lu par le cockpit opérationnel (views_cockpit) et le tableau de bord de la direction
 (views_tableau_de_bord).
 
+Synonymes (consigne du 2026-11-16, documents d'OREOLE) : taux de commission OREOLE ASSURANCES, taux de commission COURTIER,
+commission acquise, générée, réelle, prévisionnelle, à percevoir, Comm. Interm., frais de courtage, frais courtiers (Oreole
+Santé, « chargement pour sinistres à payer »), accessoire courtier, honoraires de courtier ou du cabinet (« honoraires
+OREOLE » d'Oreole Santé) désignent tous ce revenu : ils forment le chiffre d'affaires. Ne pas confondre avec les honoraires du
+gestionnaire (MCI, VITALIS), les frais de gestion (ADEC, MINENE) ni la rétrocession aux apporteurs, qui ne sont pas au cabinet.
+
 - Acquis : commission du contrat (stdcontrat.commissionintermediaire) + accessoires du cabinet
   (stdcontrat.accessoireintermediaire ; en Oreole Santé, frais courtiers gardés par le cabinet) des actes émis sur la
   période (date d'émission), contrats annulés exclus, comme la commission due des reversements (views_finance) ; plus la
@@ -13,6 +19,8 @@ commissions et ses accessoires. Lu par le cockpit opérationnel (views_cockpit) 
   saisies avec leur commission déjà perçue, commission RAFAS réglée (date du règlement).
 - En attente (situation au jour) : commissions des primes reversées non encore payées (views_finance) et commission RAFAS
   facturée non réglée.
+- Reste à percevoir : chiffre d'affaires de la période moins le perçu, dont la part réclamable (en attente ci-dessus) et la
+  part qui attend l'encaissement et le reversement de la prime.
 - Apporteurs : commissions dues aux apporteurs d'affaires sur les quittances émises de la période, d'après le dernier
   calcul du module Apporteurs (production/apporteurs.py).
 
@@ -215,6 +223,10 @@ def assembler(p, acquis, percu, rafas, apporteurs, en_attente=None):
     en_attente = en_attente or {}
     attente = {"AReclamer": _nombre(en_attente.get("AReclamer")), "Reclamees": _nombre(en_attente.get("Reclamees")),
                "Rafas": rafas["NonReglee"]}
+    # Reste à percevoir (« solde » des bordereaux : commission à percevoir - commission perçue) : chiffre d'affaires de la période
+    # pas encore reçu. Il n'est réclamable aux compagnies qu'une fois la prime encaissée et reversée ; le reste attend la prime
+    solde = max(total - sum(percu_sources.values()), 0.0)
+    reclamable = min(attente["AReclamer"] + attente["Reclamees"] + attente["Rafas"], solde)
     retro = apporteurs["Payees"] + apporteurs["APayer"]
     en_cours = annee == au.year and au.month < 12
     return {
@@ -228,6 +240,7 @@ def assembler(p, acquis, percu, rafas, apporteurs, en_attente=None):
         "Percu": {"Total": _franc(sum(percu_sources.values())), **{cle: _franc(v) for cle, v in percu_sources.items()}},
         "PercuPrecedent": _franc(percu_n1),
         "EnAttente": {"Total": _franc(sum(attente.values())), **{cle: _franc(v) for cle, v in attente.items()}},
+        "ResteAPercevoir": {"Total": _franc(solde), "Reclamable": _franc(reclamable), "AvantReversement": _franc(solde - reclamable)},
         "Apporteurs": {"Total": _franc(retro), "Payees": _franc(apporteurs["Payees"]), "APayer": _franc(apporteurs["APayer"])},
         "Net": _franc(total - retro),
         "ParMois": [{

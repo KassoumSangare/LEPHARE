@@ -1286,6 +1286,19 @@ export const vieOffresApi = {
 };
 
 // Branche Oreole Santé (sante/oreole.py) : package Santé + IA + AFA, classeur des effectifs
+// MINENE en package, comme Oreole Santé (production/minene_package.py) : Santé, IA et RC chef de famille émises ensemble et réglées en une fois
+export const mineneApi = {
+  // Package d'un devis Santé MINENE (primes annoncées de l'IA et de la RC, ou polices émises) ; { Minene: false } sinon
+  devis: async (idDevis) => (await apiClient.get(`/minene/devis/${idDevis}/`)).data,
+  emettre: async (idDevis) => (await apiClient.post(`/minene/devis/${idDevis}/emission/`, {}, { timeout: 300000 })).data,
+  // Package d'un contrat Santé, IA ou RC MINENE, et émission de l'IA et de la RC qui manquent (sans ressaisie)
+  contrat: async (idContrat) => (await apiClient.get(`/minene/contrat/${idContrat}/`)).data,
+  emettreContrat: async (idContrat) => (await apiClient.post(`/minene/contrat/${idContrat}/emission/`, {}, { timeout: 300000 })).data,
+  // Caisse : packages à encaisser et règlement unique réparti par le serveur (mêmes champs que collectPremium)
+  caisse: async () => (await apiClient.get('/minene/caisse/')).data,
+  encaisser: (idDevis, donnees) => apiClient.post(`/minene/devis/${idDevis}/encaissement/`, donnees),
+};
+
 export const oreoleApi = {
   referentiels: async () => (await apiClient.get('/oreole/referentiels/')).data,
   apercu: async (donnees) => (await apiClient.post('/oreole/apercu/', donnees)).data,

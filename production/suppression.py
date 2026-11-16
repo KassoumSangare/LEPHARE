@@ -105,6 +105,12 @@ def _retirer_du_package_oreole(cursor, id_devis):
 
 
 def _supprimer_devis(cursor, id_devis):
+    # MINENE : un devis Santé encore en devis emporte ses devis IA et RC créés avec lui (minene_package.preparer)
+    from .minene_package import devis_lies_en_attente, oublier_choix
+
+    for id_lie in devis_lies_en_attente(cursor, id_devis):
+        _supprimer_devis(cursor, id_lie)
+    oublier_choix(cursor, id_devis)
     _retirer_du_package_oreole(cursor, id_devis)
     retirer_du_devis(cursor, id_devis)
     registre_cartes.annuler_du_devis(cursor, id_devis, "Devis supprimé")
@@ -226,10 +232,16 @@ def suppression_devis(request, iddevis):
                 if not devis:
                     return Response({"error": "Devis introuvable."}, status=status.HTTP_404_NOT_FOUND)
                 blocages = _blocages_devis(cursor, devis)
+                from .minene_package import devis_lies_en_attente
+
+                lies = devis_lies_en_attente(cursor, iddevis)
+                cursor.execute("SELECT numerodevis FROM stddevis WHERE iddevis = ANY(%s) ORDER BY iddevis", [lies])
+                numeros_lies = [(l[0] or "").strip() for l in cursor.fetchall()]
             return Response({
                 "Reference": (devis["numerodevis"] or "").strip() or f"n° {iddevis}", "Client": devis["client"],
                 "PrimeTtc": _franc(devis["primettc"]), "Supprimable": not blocages, "Blocages": blocages,
                 "Effets": ["Le devis et toute sa saisie (objets assurés, garanties, familles et assurés) sont supprimés.",
+                           *([f"Ses devis IA et RC MINENE liés ({', '.join(numeros_lies)}) sont supprimés avec lui."] if numeros_lies else []),
                            "Son numéro n'est pas réutilisé."],
             })
         with transaction.atomic(), connection.cursor() as cursor:

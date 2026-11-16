@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Building2, CalendarClock, ChevronRight, FileSpreadsheet, HandCoins, HeartHandshake, Loader2, Plus, ShieldCheck, Wallet,
+  Building2, CalendarClock, ChevronRight, Coins, FileSpreadsheet, FolderOpen, HandCoins, HeartHandshake, Loader2, Plus, ShieldCheck, Sparkles,
+  Users, Wallet,
 } from 'lucide-react';
 import { rafasApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { Jauge } from '../sante/consommations/graphiques';
-import { Badge, Carte, Vide, dateFr, entier, francsCourts, libelleRang, pct, periode } from './rafasCommun';
+import { Badge, Carte, Entete, Tuile, Vide, dateFr, entier, francsCourts, libelleRang, pct, periode } from './rafasCommun';
 import AssistantConvention from './AssistantConvention';
 
 /* =========================================================================
@@ -32,7 +33,7 @@ const CarteConvention = ({ ligne, onOuvrir }) => {
   const taux = f ? (f.TauxEnveloppeReel ?? f.TauxEnveloppe) : null;
   const ton = taux > 1 ? 'critique' : taux > 0.8 ? 'attention' : 'normal';
   return (
-    <button type="button" className="glass-panel rafas-convention" onClick={onOuvrir}>
+    <button type="button" className={`glass-panel rafas-convention ton-${f?.Alerte ? 'critique' : ton}`} onClick={onOuvrir}>
       <div className="rafas-convention-tete">
         <span className="rafas-pastille"><Building2 size={18} aria-hidden="true" /></span>
         <div>
@@ -89,45 +90,45 @@ const RafasAccueilPage = () => {
 
   return (
     <div className="cs-page rafas-page">
-      <div className="cs-entete">
-        <div>
-          <h1 className="title-xl"><HeartHandshake size={26} aria-hidden="true" />RAFAS : régimes autofinancés d'assurance santé</h1>
-          <p>L'entreprise finance elle-même les soins de son personnel : le gestionnaire traite et paie les prestations, le cabinet conseille, suit le fonds
-            alimenté par les appels de fonds et analyse les dépenses. La commission de courtage sur les cotisations entre dans le chiffre d'affaires.</p>
-        </div>
-        {peutGerer && (
+      <Entete icone={HeartHandshake} titre="Régimes autofinancés d'assurance santé"
+        surtitre={<><Sparkles size={13} aria-hidden="true" />Branche RAFAS</>}
+        actions={peutGerer && (
           <button type="button" className="btn btn-primary rafas-bouton" onClick={() => setCreation(true)} disabled={!donnees}>
             <Plus size={16} /> Nouvelle convention
           </button>
-        )}
-      </div>
+        )}>
+        <p>L'entreprise finance elle-même les soins de son personnel : le gestionnaire traite et paie les prestations, le cabinet conseille, suit le fonds
+          alimenté par les appels de fonds et analyse les dépenses. La commission de courtage sur les cotisations entre dans le chiffre d'affaires.</p>
+      </Entete>
 
-      <div className="rafas-parcours">
+      <ol className="rafas-parcours">
         {[
-          { icone: ShieldCheck, titre: '1. Convention et collèges', texte: 'Période, cotisation par famille de chaque collège, barème, honoraires du gestionnaire et commission du cabinet.' },
-          { icone: HandCoins, titre: '2. Fonds du régime', texte: "Appels de fonds au souscripteur, versements, dépenses remboursées et solde ; facture de commission." },
-          { icone: FileSpreadsheet, titre: '3. Fichiers du gestionnaire', texte: "Effectifs et relevés de prestations : analyse de la période, contrôles des incohérences, rapport Word." },
-        ].map((x) => (
-          <div key={x.titre} className="rafas-parcours-etape">
-            <x.icone size={20} aria-hidden="true" />
-            <div><strong>{x.titre}</strong><p>{x.texte}</p></div>
-          </div>
+          { icone: ShieldCheck, titre: 'Convention et collèges', texte: 'Période, cotisation par famille de chaque collège, barème, honoraires du gestionnaire et commission du cabinet.' },
+          { icone: HandCoins, titre: 'Fonds du régime', texte: "Appels de fonds au souscripteur, versements, dépenses remboursées et solde ; facture de commission." },
+          { icone: FileSpreadsheet, titre: 'Fichiers du gestionnaire', texte: "Effectifs et relevés de prestations : analyse de la période, contrôles des incohérences, rapport Word." },
+        ].map((x, i) => (
+          <li key={x.titre} className="rafas-parcours-etape">
+            <span className="rafas-parcours-icone" aria-hidden="true"><x.icone size={18} /></span>
+            <div><span className="rafas-parcours-rang">{`Étape ${i + 1}`}</span><strong>{x.titre}</strong><p>{x.texte}</p></div>
+          </li>
         ))}
-      </div>
+      </ol>
 
       {erreur && !donnees && <Carte titre="RAFAS indisponible"><p className="rafas-erreur">{erreur}</p></Carte>}
       {!donnees && !erreur && <div className="rafas-chargement"><Loader2 size={22} className="spin" /> Chargement des conventions…</div>}
 
       {donnees && conventions.length > 0 && (
         <div className="cs-tuiles larges">
-          <div className="cs-tuile"><div className="cs-tuile-libelle">Conventions</div><div className="cs-tuile-valeur">{entier(conventions.length)}</div></div>
-          <div className="cs-tuile"><div className="cs-tuile-libelle">Bénéficiaires couverts</div><div className="cs-tuile-valeur">{entier(totaux.beneficiaires)}</div><div className="cs-tuile-detail">Derniers effectifs du gestionnaire</div></div>
-          <div className="cs-tuile"><div className="cs-tuile-libelle">Cotisations de l'exercice</div><div className="cs-tuile-valeur">{francsCourts(totaux.cotisations)}</div><div className="cs-tuile-detail">Sur l'effectif quand il est importé</div></div>
-          <div className="cs-tuile rafas-tuile-accent"><div className="cs-tuile-libelle">Commission facturée</div><div className="cs-tuile-valeur">{francsCourts(totaux.commission)}</div><div className="cs-tuile-detail">Exercices en cours</div></div>
-          <div className={`cs-tuile${totaux.alertes ? ' rafas-tuile-critique' : ''}`}><div className="cs-tuile-libelle">Fonds à réapprovisionner</div><div className="cs-tuile-valeur">{entier(totaux.alertes)}</div></div>
+          <Tuile libelle="Conventions" icone={FolderOpen} nombre={conventions.length} detail="Régimes suivis par le cabinet" />
+          <Tuile libelle="Bénéficiaires couverts" icone={Users} nombre={totaux.beneficiaires} detail="Derniers effectifs du gestionnaire" />
+          <Tuile libelle="Cotisations de l'exercice" icone={Coins} valeur={francsCourts(totaux.cotisations)} detail="Sur l'effectif quand il est importé" />
+          <Tuile libelle="Commission facturée" icone={HandCoins} ton="accent" valeur={francsCourts(totaux.commission)} detail="Exercices en cours" />
+          <Tuile libelle="Fonds à réapprovisionner" icone={Wallet} ton={totaux.alertes ? 'critique' : 'bon'} nombre={totaux.alertes}
+            detail={totaux.alertes ? 'Appel de fonds conseillé' : 'Aucun fonds sous son seuil'} />
         </div>
       )}
 
+      {donnees && conventions.length > 0 && <h2 className="rafas-bande">Portefeuille des conventions</h2>}
       {donnees && (conventions.length ? (
         <div className="rafas-conventions">
           {conventions.map((l) => <CarteConvention key={l.Convention.idconvention} ligne={l} onOuvrir={() => navigate(`/user/rafas/${l.Convention.idconvention}`)} />)}

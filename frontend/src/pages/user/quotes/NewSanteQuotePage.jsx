@@ -3,7 +3,8 @@ import { redirigerSiOreole } from './oreole/oreoleCommun';
 import { confirmer } from '../../../utils/dialogue';
 import { useSearchParams } from 'react-router-dom';
 import { useNavigate } from '../../../utils/navigationDevis';
-import { quoteApi, customerApi, settingsApi, contractApi, santeApi } from '../../../api/endpoints';
+import { quoteApi, customerApi, settingsApi, contractApi, santeApi, mineneApi } from '../../../api/endpoints';
+import BlocPackageMinene from './BlocPackageMinene';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
 import {
@@ -190,6 +191,10 @@ export const NewSanteQuotePage = () => {
   const [repriseEnCours, setRepriseEnCours] = useState(false);
   const [numeroDevis, setNumeroDevis] = useState('');
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
+  // MINENE : devis IA et RC chef de famille créés avec la Santé à chaque enregistrement (production/minene_package.py) ;
+  // chacune se coche ou se décoche à la création du devis comme au renouvellement
+  const [packageMinene, setPackageMinene] = useState(null);
+  const [choixMinene, setChoixMinene] = useState({ IA: true, RC: true });
   // Devis de renouvellement : taux d'ajustement de l'an dernier (déjà compris dans la prime de base MINENE)
   const [tauxPrecedent, setTauxPrecedent] = useState(null);
   // Devis d'avenant de modification d'un contrat en cours (changement de formule, incorporation) : police, période, prorata
@@ -423,6 +428,11 @@ export const NewSanteQuotePage = () => {
         setTotauxEnregistres({
           primeNette: devis.primenette, taxe: devis.taxe, accessoire: devis.accessoire, primeTtc: devis.primettc,
         });
+        mineneApi.devis(devis.iddevis).then((p) => {
+          if (!actif) return;
+          setPackageMinene(p?.Minene ? p : null);
+          if (p?.Choix) setChoixMinene({ IA: p.Choix.IA !== false, RC: p.Choix.RC !== false });
+        }).catch(() => {});
         setTauxPrecedent(devis.code_avenant === 'REN' && devis.taux_reduction_precedent !== null ? Number(devis.taux_reduction_precedent) : null);
         setAvenantModification(donnees.avenant || null);
         if (detail) {
@@ -731,6 +741,8 @@ export const NewSanteQuotePage = () => {
     PrimeGlobale: Number(primeGlobale) || 0,
     MontantSuprime: Number(montantSurprime) || 0,
     MontantAccessoireManuel: Number(accessoireManuel) || 0,
+    // MINENE : Individuelle Accidents et RC chef de famille souscrites avec la Santé
+    ...(estMinene ? { MineneIA: choixMinene.IA, MineneRC: choixMinene.RC } : {}),
   });
 
   // Aperçu des primes (barème MINENE, surprimes, accessoires, taxes) recalculé dès que la saisie change : import
@@ -779,8 +791,15 @@ export const NewSanteQuotePage = () => {
     setTotauxEnregistres({
       primeNette: res.totaux?.prime_nette, taxe: res.totaux?.taxe, accessoire: res.totaux?.accessoire, primeTtc: res.totaux?.prime_ttc,
     });
+    setPackageMinene(res.minene?.Minene ? res.minene : null);
+    if (res.minene?.Choix) setChoixMinene({ IA: res.minene.Choix.IA !== false, RC: res.minene.Choix.RC !== false });
     await recharger(res.devis_id);
-    success(`Devis Santé N° ${res.numero_devis} ${editParam ? 'modifié' : 'enregistré'}.`);
+    const lies = res.minene?.Minene
+      ? ['IA', 'RC'].filter((cle) => res.minene.Produits?.[cle]?.NumeroDevis).map((cle) => `${cle} ${res.minene.Produits[cle].NumeroDevis}`)
+      : [];
+    const libelleLies = lies.length ? `, avec ${lies.length > 1 ? 'ses devis MINENE liés' : 'son devis MINENE lié'} (${lies.join(', ')})` : '';
+    success(`Devis Santé N° ${res.numero_devis} ${editParam ? 'modifié' : 'enregistré'}${libelleLies}.`);
+    if (res.avertissement_minene) warning(res.avertissement_minene);
     const devis = await quoteApi.getQuote(res.devis_id).catch(() => null);
     if (devis) setCreatedQuote(devis);
   }, 'Devis Santé non enregistré');
@@ -788,8 +807,10 @@ export const NewSanteQuotePage = () => {
   // Confirmation : contrat créé par la base, sans repli local
   const handleConvertToContract = async (q) => {
     try {
-      await contractApi.createContractFromQuote(q.iddevis || q.id);
-      success(`Devis ${q.numerodevis} confirmé : le contrat a été créé.`);
+      const res = await contractApi.createContractFromQuote(q.iddevis || q.id);
+      // MINENE : Santé, IA et RC émises ensemble (le serveur le dit dans son message)
+      const message = String(res?.data?.[0]?.OutputMessage || '');
+      success(message.startsWith('MINENE') ? `Devis ${q.numerodevis} confirmé. ${message}` : `Devis ${q.numerodevis} confirmé : le contrat a été créé.`);
       setCreatedQuote(null);
       navigate('/user/contracts');
     } catch (err) {
@@ -1649,6 +1670,47 @@ export const NewSanteQuotePage = () => {
               </div>
             )}
 
+            {/* MINENE : assurances souscrites avec la Santé, à la création du devis comme au renouvellement */}
+            {estMinene && (
+              <div style={{ ...encadre, marginTop: '1.25rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '0.3rem' }}>Assurances du package MINENE</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.7rem' }}>
+                  Cochées, elles sont créées avec la Santé à l&apos;enregistrement, tarifées par adhérent, puis émises avec elle. Décochée, une
+                  assurance n&apos;est ni créée, ni renouvelée, ni émise ; son devis déjà préparé est archivé.
+                </div>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  {[['IA', 'Individuelle Accidents'], ['RC', 'RC chef de famille']].map(([cle, libelle]) => {
+                    const p = packageMinene?.Produits?.[cle];
+                    const emise = p?.Etat === 'Emise';
+                    const verrouille = desactive || emise || packageMinene?.ChoixModifiable === false;
+                    return (
+                      <label key={cle} style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.86rem', cursor: verrouille ? 'default' : 'pointer', color: 'var(--text-primary)' }}>
+                        <input
+                          type="checkbox"
+                          checked={emise || choixMinene[cle]}
+                          disabled={verrouille}
+                          onChange={(e) => setChoixMinene((c) => ({ ...c, [cle]: e.target.checked }))}
+                        />
+                        <span>
+                          {libelle}
+                          {p?.Unitaire ? <span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}>{` ${fcfa(p.Unitaire)} FCFA par adhérent`}</span> : null}
+                          {emise ? <span style={{ color: 'var(--text-muted)', fontSize: '0.76rem' }}>{` déjà émise (police ${p.NumeroPolice})`}</span> : null}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {packageMinene?.ChoixModifiable === false && (
+                  <div style={{ fontSize: '0.76rem', color: 'var(--accent-amber)', marginTop: '0.5rem' }}>
+                    Choix indisponible tant que la migration production 0220 n&apos;est pas appliquée : l&apos;IA et la RC restent souscrites.
+                  </div>
+                )}
+                {packageMinene && (choixMinene.IA !== (packageMinene.Choix?.IA !== false) || choixMinene.RC !== (packageMinene.Choix?.RC !== false)) && (
+                  <div style={{ fontSize: '0.76rem', color: 'var(--accent-amber)', marginTop: '0.5rem' }}>Choix modifié : enregistrez le devis pour l&apos;appliquer.</div>
+                )}
+              </div>
+            )}
+
             {estMinene && (
               <div style={{ ...encadre, marginTop: '1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -1682,6 +1744,8 @@ export const NewSanteQuotePage = () => {
                 )}
               </div>
             )}
+
+            {estMinene && packageMinene && <BlocPackageMinene donnees={packageMinene} style={{ marginTop: '1.25rem' }} />}
 
             {totauxEnregistres && (
               <div style={{ marginTop: '1.25rem' }}>

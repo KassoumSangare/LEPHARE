@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BlocOreole from './BlocOreole';
+import BlocMinene from './BlocMinene';
 import BlocApporteursAffaire from '../../../components/apporteurs/BlocApporteursAffaire';
 import { imprimerOreole } from '../../../utils/impressionsOreole';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -86,7 +87,7 @@ export const ContractDetailPage = () => {
 
   // Documents imprimables selon la branche (partagés avec les Affaires antérieures) ; MINENE SANTÉ : IA et RC
   // rattachées à la police Santé de ce contrat
-  const { documents, fenetres: fenetresDocuments, mineneConnexes, ouvrirReleve } = useDocumentsContrat(currentContract, id, {
+  const { documents, fenetres: fenetresDocuments, ouvrirReleve } = useDocumentsContrat(currentContract, id, {
     onSaveContract: (updated) => {
       setCurrentContract(updated);
       dataStore.saveContract(updated);
@@ -575,41 +576,8 @@ export const ContractDetailPage = () => {
         </div>
       )}
 
-      {/* MINENE SANTÉ : IA et RC chef de famille rattachées à la police Santé (créées depuis cette police) */}
-      {mineneConnexes?.Minene && (
-        <div className="glass-panel" style={{ padding: '1.1rem 1.25rem', marginBottom: '1.5rem', border: '1px solid rgba(249, 115, 22, 0.35)' }}>
-          <div style={{ fontWeight: 700, color: '#f97316', marginBottom: '0.35rem' }}>MINENE SANTÉ : Individuelle Accidents et RC chef de famille</div>
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-            Trois assurances indissociables : l'IA et la RC sont émises sur cette police Santé ({mineneConnexes.Adherents} adhérent{mineneConnexes.Adherents > 1 ? 's' : ''}, tarifés chacun), sans ressaisie.
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '0.75rem' }}>
-            {[['IA', 'Individuelle Accidents MINENE', 'ia'], ['RC', 'RC chef de famille MINENE', 'rc']].map(([cle, libelle, module]) => {
-              const lies = mineneConnexes[cle] || [];
-              const parametres = new URLSearchParams({
-                minene: mineneConnexes.NumeroPolice, effet: mineneConnexes.DateEffet, expiration: mineneConnexes.DateExpiration,
-                client: String(mineneConnexes.IdClient || ''), nom: mineneConnexes.Client || '',
-              }).toString();
-              return (
-                <div key={cle} style={{ border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '0.7rem 0.9rem' }}>
-                  <div style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: '0.4rem' }}>{libelle}</div>
-                  {lies.length === 0 && <div style={{ fontSize: '0.8rem', color: '#f59e0b', marginBottom: '0.5rem' }}>Pas encore émise sur cette police.</div>}
-                  {lies.map((l) => (
-                    <div key={l.IdDevis} style={{ fontSize: '0.8rem', marginBottom: '0.3rem' }}>
-                      {l.IdContrat
-                        ? <span>Contrat <strong>{l.NumeroPolice}</strong> - {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC <button type="button" className="btn btn-link" style={{ padding: 0, fontSize: '0.8rem' }} onClick={() => navigate(`/user/contracts/${l.IdContrat}`)}>Ouvrir</button></span>
-                        : <span>Devis <strong>{l.NumeroDevis}</strong> non confirmé - {Math.round(l.PrimeTtc).toLocaleString('fr-FR')} F TTC</span>}
-                    </div>
-                  ))}
-                  <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/quotes/${module}?${parametres}`)}
-                    style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', marginTop: '0.25rem' }}>
-                    {lies.length ? `Émettre une autre ${cle} MINENE` : `Créer l'${cle === 'IA' ? 'IA' : 'RC'} MINENE`}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* MINENE : Santé, IA et RC chef de famille en package (émission sans ressaisie, règlement unique) */}
+      {id && <BlocMinene idContrat={id} />}
 
       {/* Historique des Avenants & Renouvellements CIMA */}
       <div className="glass-panel" style={{ padding: '1.5rem' }}>

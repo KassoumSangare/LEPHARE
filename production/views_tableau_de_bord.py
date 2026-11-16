@@ -60,11 +60,11 @@ def _production(cursor, p):
     t = _une(cursor, f"""
         SELECT COUNT(*) FILTER (WHERE x.n) AS nombre, COALESCE(SUM(c.primettc) FILTER (WHERE x.n), 0) AS ttc,
                COALESCE(SUM(c.primenette) FILTER (WHERE x.n), 0) AS pn,
-               COALESCE(SUM(c.commissionintermediaire) FILTER (WHERE x.n), 0) AS commission,
+               COALESCE(SUM({chiffre_affaires.SQL_CHIFFRE_AFFAIRES}) FILTER (WHERE x.n), 0) AS commission,
                COUNT(*) FILTER (WHERE x.n AND a.codeavenant = 'AFN') AS afn,
                COUNT(*) FILTER (WHERE x.n AND a.codeavenant = 'REN') AS ren,
                COUNT(*) FILTER (WHERE x.n1) AS nombre_n1, COALESCE(SUM(c.primettc) FILTER (WHERE x.n1), 0) AS ttc_n1,
-               COALESCE(SUM(c.commissionintermediaire) FILTER (WHERE x.n1), 0) AS commission_n1
+               COALESCE(SUM({chiffre_affaires.SQL_CHIFFRE_AFFAIRES}) FILTER (WHERE x.n1), 0) AS commission_n1
         FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
         CROSS JOIN LATERAL (SELECT c.dateemission::date BETWEEN %(debut)s AND %(au)s AS n,
                                    c.dateemission::date BETWEEN %(debut_n1)s AND %(au_n1)s AS n1) x

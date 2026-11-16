@@ -19,7 +19,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import Q
 from rest_framework import permissions, status
 from rest_framework.authentication import BasicAuthentication
@@ -39,6 +39,8 @@ from configuration_api.parametrage import valeur_parametre
 from core.date_parser import date_emission_du_jour
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from production.database import enregistrer_terme_devis
+from production.minene_package import ErreurMinene
+from production.minene_package import preparer as preparer_package_minene
 from production.models import Devis
 from production.periode_contrat import periode_contrat
 
@@ -678,13 +680,27 @@ def enregistrer_devis_sante(request):
         )
     # sp_creation_devis_sante n'a pas de paramètre terme : posé après création
     enregistrer_terme_devis(ligne.ObjectId, data.get("IdTerme"))
+    # MINENE (affaire nouvelle, renouvellement) : devis IA et RC du package créés ou mis à jour avec la Santé, comme en Oreole Santé.
+    # La Santé est déjà enregistrée : un échec ne la défait pas, il est signalé
+    package_minene, avertissement_minene = None, ""
+    # Cases « Individuelle Accidents » et « RC chef de famille » de l'écran (absentes : choix enregistré gardé)
+    choix_minene = {cle: str(request.data.get(champ)).strip().lower() not in ("false", "0", "non", "")
+                    for cle, champ in (("IA", "MineneIA"), ("RC", "MineneRC")) if request.data.get(champ) is not None}
+    try:
+        package_minene = preparer_package_minene(ligne.ObjectId, request.user.id, choix_minene or None)
+        if package_minene and package_minene.get("Avertissement"):
+            avertissement_minene = f" {package_minene['Avertissement']}"
+    except (ErreurMinene, DatabaseError) as erreur_minene:
+        avertissement_minene = f" IA et RC MINENE non préparées : {str(erreur_minene).splitlines()[0]}"
     devis = Devis.objects.get(pk=ligne.ObjectId)
     return Response(
         {
             "devis_id": devis.iddevis,
             "numero_devis": devis.numerodevis or "",
             "message": ligne.OutputMessage
-            + (f" Dérogation à la limite d'âge : {texte_hors_limites}." if hors_limites else ""),
+            + (f" Dérogation à la limite d'âge : {texte_hors_limites}." if hors_limites else "") + avertissement_minene,
+            "minene": package_minene,
+            "avertissement_minene": avertissement_minene.strip(),
             "totaux": {
                 "prime_nette": float(devis.primenette or 0),
                 "taxe": float(devis.taxe or 0),

@@ -233,7 +233,11 @@ export const QuoteListPage = () => {
     if (!selectedQuote) return;
     try {
       const res = await contractApi.createContractFromQuote(selectedQuote.id);
-      success(`Devis ${selectedQuote.numerodevis} confirmé : le contrat a bien été créé.`);
+      // MINENE : Santé, IA et RC émises ensemble (production/minene_package.py), annoncé par le message du serveur
+      const message = String(res?.data?.[0]?.OutputMessage || '');
+      success(message.startsWith('MINENE')
+        ? `Devis ${selectedQuote.numerodevis} confirmé. ${message}`
+        : `Devis ${selectedQuote.numerodevis} confirmé : le contrat a bien été créé.`);
       if (getBranchOf(selectedQuote) === 'AUTO') {
         try {
           await telechargerDemandeEditionAttestationAuto(selectedQuote.id);
@@ -248,7 +252,7 @@ export const QuoteListPage = () => {
       if (estDevisDommages(selectedQuote) && idContrat > 0) navigate(`/user/contracts/${idContrat}`, { state: { releve: true } });
       else navigate('/user/contracts');
     } catch (err) {
-      toastError(err.response?.data?.detail || err.response?.data?.message || 'Le devis n\'a pas pu être confirmé. Veuillez réessayer.');
+      toastError(err.response?.data?.detail || err.response?.data?.message || err.response?.data?.[0]?.OutputMessage || 'Le devis n\'a pas pu être confirmé. Veuillez réessayer.');
       setIsConfirmModalOpen(false);
     }
   };

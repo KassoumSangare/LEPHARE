@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, CircleAlert, Info, TriangleAlert, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRight, CircleAlert, Coins, Home, Info, Percent, Stethoscope, TriangleAlert, Users, Wallet } from 'lucide-react';
 import { BarresClassees, Cadre, Colonnes, Courbes, Jauge } from '../sante/consommations/graphiques';
 import { Badge, Carte, Constats, Tuile, decimal, entier, francs, francsCourts, pct } from './rafasCommun';
 
@@ -42,11 +42,11 @@ const OngletEnsemble = ({ donnees: a, fonds, onOnglet }) => {
         <div className="cs-tuiles">
           <Tuile libelle="Bénéficiaires couverts" valeur={entier(s.Effectif)} icone={Users}
             detail={mv ? `${entier(mv.Nouveaux)} nouveaux, ${entier(mv.Sortis)} sortis en un an` : `${entier(s.Familles)} familles`} />
-          <Tuile libelle="Familles" valeur={entier(s.Familles)} detail={`${decimal(s.Effectif / Math.max(1, s.Familles))} bénéficiaires par famille`} />
-          <Tuile libelle="Recours aux soins" valeur={pct(s.TauxRecours, 1)} detail={`${entier(s.Consommants)} ont exposé des frais${s.HorsEffectif ? `, dont ${entier(s.HorsEffectif)} hors effectif` : ''}`} />
-          <Tuile libelle="Coût par bénéficiaire" valeur={francs(s.CoutParBeneficiaire)} detail={`${francs(s.CoutParConsommant)} par consommant`} />
-          <Tuile libelle="Coût moyen par acte" valeur={francs(s.CoutParActe)} detail={`${decimal(s.ActesParConsommant)} actes par consommant`} />
-          <Tuile libelle="Prise en charge" valeur={pct(s.TauxPriseEnCharge, 0)} detail={`${francsCourts(s.PartPatient)} à la charge des patients`} />
+          <Tuile libelle="Familles" icone={Home} valeur={entier(s.Familles)} detail={`${decimal(s.Effectif / Math.max(1, s.Familles))} bénéficiaires par famille`} />
+          <Tuile libelle="Recours aux soins" icone={Activity} valeur={pct(s.TauxRecours, 1)} detail={`${entier(s.Consommants)} ont exposé des frais${s.HorsEffectif ? `, dont ${entier(s.HorsEffectif)} hors effectif` : ''}`} />
+          <Tuile libelle="Coût par bénéficiaire" icone={Coins} valeur={francs(s.CoutParBeneficiaire)} detail={`${francs(s.CoutParConsommant)} par consommant`} />
+          <Tuile libelle="Coût moyen par acte" icone={Stethoscope} valeur={francs(s.CoutParActe)} detail={`${decimal(s.ActesParConsommant)} actes par consommant`} />
+          <Tuile libelle="Prise en charge" icone={Percent} valeur={pct(s.TauxPriseEnCharge, 0)} detail={`${francsCourts(s.PartPatient)} à la charge des patients`} />
         </div>
       </div>
 

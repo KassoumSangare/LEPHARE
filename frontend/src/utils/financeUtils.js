@@ -35,6 +35,8 @@ export const messageErreurApi = (err) => {
   const data = err?.response?.data;
   if (!data) return messageErreurLisible(err?.message || 'Le serveur ne répond pas.', err?.response?.status);
   if (typeof data === 'string') return messageErreurLisible(data.slice(0, 200), err?.response?.status);
+  // Procédures (confirmation d'un devis…) : [{ ObjectId, OutputMessage }]
+  if (Array.isArray(data) && data[0]?.OutputMessage) return messageErreurLisible(String(data[0].OutputMessage), err?.response?.status);
   const direct = data.error || data.detail || data.message;
   if (direct) return messageErreurLisible(typeof direct === 'string' ? direct : JSON.stringify(direct), err?.response?.status);
   return messageErreurLisible(Object.entries(data).map(([k, v]) => `${k} : ${Array.isArray(v) ? v.join(' ') : v}`).join(' ; '), err?.response?.status);

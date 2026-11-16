@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
-import { cashApi, contractApi, oreoleApi, settingsApi } from '../../../api/endpoints';
+import { cashApi, contractApi, mineneApi, oreoleApi, settingsApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { CreditCard, Check, Clock, PencilLine, Receipt, FileSpreadsheet, FileText, ListChecks, Repeat, Search, X } from 'lucide-react';
 import { CorrectionEncaissement } from '../../../components/cash/CorrectionEncaissement';
@@ -41,15 +41,18 @@ const primeDue = (contract) => Number(contract?.raw?.idquittance?.primettc ?? co
 // Reliquat de moins de 5 F compté comme nul (utils/resteEncaissement.js)
 const resteAEncaisser = (contract) => resteQuittance(primeDue(contract), contract?.montant_encaisse);
 
-// Oreole Santé : le client paie une seule prime. Les quittances du package (une par compagnie, pour les reversements)
-// sont réunies sur une ligne, et le serveur répartit le règlement entre elles.
-const LIBELLES_PACKAGE = { Sante: 'Santé', IA: 'Individuelle Accidents', AFA: 'Assistance funéraire' };
+// Packages Oreole Santé et MINENE : le client paie une seule prime. Les quittances du package (une par police, pour les
+// reversements) sont réunies sur une ligne, et le serveur répartit le règlement entre elles. Le package est porté par la
+// clé « oreole » de la ligne, quelle que soit sa branche (Branche : 'MINENE', sinon Oreole Santé).
+const LIBELLES_PACKAGE = { Sante: 'Santé', IA: 'Individuelle Accidents', AFA: 'Assistance funéraire', RC: 'RC chef de famille' };
+const brancheMinene = (p) => p?.Branche === 'MINENE';
+const nomPackage = (p) => (brancheMinene(p) ? 'MINENE' : 'Oreole Santé');
 const lignePackage = (p) => ({
-  id: `oreole-${p.IdDevis}`,
+  id: `${brancheMinene(p) ? 'minene' : 'oreole'}-${p.IdDevis}`,
   numeropolice: p.NumeroPolice,
   client_nom: p.Client,
-  compagnie: p.Quittances.map((q) => q.Compagnie).join(', '),
-  produit: 'Oreole Santé',
+  compagnie: [...new Set(p.Quittances.map((q) => q.Compagnie))].join(', '),
+  produit: nomPackage(p),
   prime_totale: p.PrimeTtc,
   montant_encaisse: p.Encaisse,
   statut_encaissement: 'À Encaisser',
@@ -89,9 +92,10 @@ export const CashCollectionPage = () => {
   const [banques, setBanques] = useState([]);
   const [filtres, setFiltres] = useState({ du: '', au: '', compagnie: '', statut: '', recherche: '' });
   const { success, error: toastError } = useToast();
-  // Lien « Encaisser » de la fiche d'un contrat Oreole Santé : ouvre directement le règlement du package
+  // Lien « Encaisser » de la fiche d'un contrat Oreole Santé ou MINENE : ouvre directement le règlement du package
   const [parametres, setParametres] = useSearchParams();
-  const packageDemande = useRef(parametres.get('oreole'));
+  const packageDemande = useRef(parametres.get('oreole') ? { branche: 'Oreole', id: parametres.get('oreole') }
+    : parametres.get('minene') ? { branche: 'MINENE', id: parametres.get('minene') } : null);
   // « Réutiliser » d'un chèque annulé (Portefeuille des règlements) : le chèque préremplit le règlement des quittances choisies
   const chequeDemande = useRef(parametres.get('cheque'));
   const [chequeAReutiliser, setChequeAReutiliser] = useState(null);
@@ -111,15 +115,19 @@ export const CashCollectionPage = () => {
   const loadContracts = async () => {
     try {
       // Contrats dont la quittance reste à encaisser, derniers confirmés en tête
-      const [data, oreole] = await Promise.all([
+      const [data, oreole, minene] = await Promise.all([
         contractApi.getContracts({ a_encaisser: 1 }),
         oreoleApi.caisse().catch((err) => {
           console.error('Packages Oreole Santé indisponibles :', err);
           return { Packages: [] };
         }),
+        mineneApi.caisse().catch((err) => {
+          console.error('Packages MINENE indisponibles :', err);
+          return { Packages: [] };
+        }),
       ]);
       if (Array.isArray(data)) {
-        setContracts(reunirPackages(data, oreole.Packages || []));
+        setContracts(reunirPackages(data, [...(oreole.Packages || []), ...(minene.Packages || [])]));
       }
     } catch (err) {
       console.error('Erreur chargement contrats caisse Django:', err);
@@ -184,7 +192,8 @@ export const CashCollectionPage = () => {
 
   useEffect(() => {
     if (!packageDemande.current || !modes.length || !contracts.length) return;
-    const ligne = contracts.find((c) => String(c.oreole?.IdDevis) === String(packageDemande.current));
+    const demande = packageDemande.current;
+    const ligne = contracts.find((c) => c.oreole && String(c.oreole.IdDevis) === String(demande.id) && brancheMinene(c.oreole) === (demande.branche === 'MINENE'));
     packageDemande.current = null;
     setParametres({}, { replace: true });
     if (ligne) handleOpenPayment(ligne);
@@ -232,7 +241,7 @@ export const CashCollectionPage = () => {
         montant_total: Number(montantEncaisse),
       };
       const res = selectedContract.oreole
-        ? await oreoleApi.encaisser(selectedContract.oreole.IdDevis, charge)
+        ? await (brancheMinene(selectedContract.oreole) ? mineneApi : oreoleApi).encaisser(selectedContract.oreole.IdDevis, charge)
         : await cashApi.collectPremium({
           ...charge,
           liste_quittance: [{ numero_quittance: quittance, montant_encaissement: Number(montantEncaisse) }],
@@ -329,7 +338,7 @@ export const CashCollectionPage = () => {
       render: (row) => (
         <>
           <strong style={{ color: '#34d399', fontFamily: 'var(--font-mono)' }}>{row.numeropolice}</strong>
-          {row.oreole && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Package Oreole Santé : {row.oreole.Quittances.length} polices</div>}
+          {row.oreole && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Package {nomPackage(row.oreole)} : {row.oreole.Quittances.length} police{row.oreole.Quittances.length > 1 ? 's' : ''}</div>}
         </>
       ),
     },
@@ -580,7 +589,7 @@ export const CashCollectionPage = () => {
               </div>
               {selectedContract.oreole && (
                 <div style={{ marginTop: '0.6rem', paddingTop: '0.55rem', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem' }}>
-                  <div style={{ marginBottom: '0.3rem' }}>Un seul règlement pour le package, réparti automatiquement entre les compagnies :</div>
+                  <div style={{ marginBottom: '0.3rem' }}>Un seul règlement pour le package {nomPackage(selectedContract.oreole)}, réparti automatiquement entre ses polices :</div>
                   {selectedContract.oreole.Quittances.map((q) => (
                     <div key={q.NumeroQuittance} style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
                       <span>{LIBELLES_PACKAGE[q.Produit] || q.Produit} - {q.Compagnie}</span>

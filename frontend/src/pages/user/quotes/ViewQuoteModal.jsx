@@ -25,7 +25,8 @@ import { cedeaoDansPrimeNette } from '../../../utils/tarificationAuto';
 import BlocApporteursAffaire from '../../../components/apporteurs/BlocApporteursAffaire';
 import { ImpositionPrimes } from './ImpositionPrimes';
 import { ImpositionGaranties } from './ImpositionGaranties';
-import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
+import { iaApi, santeApi, voyageApi, transportApi, mrhApi, dommagesApi, repriseApi, impressionSanteApi, mineneApi } from '../../../api/endpoints';
+import BlocPackageMinene from './BlocPackageMinene';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { useModeReprise } from '../reprises/modeReprise';
 import {
@@ -153,6 +154,18 @@ export const ViewQuoteModal = ({
           setAjustementSante({ taux: Number(b.TauxAjustement) || 0, montant: Number(b.Recap.Ajustement), avant: Number(b.Recap.PrimeNetteAvantAjustement) });
         }
       })
+      .catch(() => {});
+    return () => { actif = false; };
+  }, [isOpen, idDevisBase, brancheDevis, quoteAJour]);
+
+  // Devis Santé MINENE et ses devis IA et RC chef de famille liés : le package, émis ensemble à la confirmation de l'un des trois
+  const [packageMinene, setPackageMinene] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    setPackageMinene(null);
+    if (!isOpen || !idDevisBase || !['Santé', 'IA', 'RC'].includes(brancheDevis)) return undefined;
+    mineneApi.devis(idDevisBase)
+      .then((p) => { if (actif && p?.Minene) setPackageMinene(p); })
       .catch(() => {});
     return () => { actif = false; };
   }, [isOpen, idDevisBase, brancheDevis, quoteAJour]);
@@ -430,6 +443,8 @@ export const ViewQuoteModal = ({
             <strong style={{ color: '#38bdf8' }}>{Number(quote.commission || 0).toLocaleString('fr-FR')} FCFA</strong>
           </div>
         </div>
+
+        <BlocPackageMinene donnees={packageMinene} />
 
         <BlocApporteursAffaire idDevis={idDevisBase} />
 
