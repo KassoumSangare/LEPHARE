@@ -48,6 +48,7 @@ from .models import (
     QuotationInsertionResult,
     VehiculeContrat,
 )
+from .taxe_auto import taux_taxe_auto, taxe_et_ttc_auto
 
 # Configuration du logging pour tracer les erreurs en production
 logger = logging.getLogger(__name__)
@@ -3538,6 +3539,21 @@ def correction_devis(data):
 
         # Date d'émission imposée : celle du jour de la correction
         data_dict["date_emission"] = date_emission_du_jour()
+
+        if id_produit == 1:
+            # Automobile : la taxe n'est jamais celle reçue, toujours (prime nette hors CEDEAO + accessoire) x 14,5 %,
+            # et la prime TTC suit (production/taxe_auto.py). prime_nette arrive CEDEAO comprise, comme d'URANUS.
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT dateeffet FROM stddevis WHERE iddevis = %s", [data_dict["id_devis"]])
+                ligne = cursor.fetchone()
+                taux = taux_taxe_auto(cursor, ligne[0] if ligne else None)
+            data_dict["taxe"], data_dict["prime_ttc"] = taxe_et_ttc_auto(
+                data_dict.get("prime_nette"),
+                data_dict.get("cedeao"),
+                data_dict.get("accessoire"),
+                data_dict.get("fga"),
+                taux,
+            )
 
         # Convertir les données validées du sérialiseur en une chaîne JSON
         json_data = json.dumps(data, default=str)

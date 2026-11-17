@@ -13,12 +13,15 @@ const nf0 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const nfCompact = new Intl.NumberFormat('fr-FR', { notation: 'compact', maximumFractionDigits: 1 });
 const vide = (v) => v === null || v === undefined || Number.isNaN(Number(v));
 
-export const entier = (v) => (vide(v) ? '-' : nf0.format(Math.round(Number(v))));
+// Milliers séparés par une espace insécable ordinaire : celle d'Intl (espace fine) se voit à peine dans la police de l'application
+// (« 1250000 » au lieu de « 1 250 000 », remarque du 2026-11-17 sur les montants RAFAS)
+const espaces = (texte) => texte.replace(/ /g, ' ');
+export const entier = (v) => (vide(v) ? '-' : espaces(nf0.format(Math.round(Number(v)))));
 export const francs = (v) => (vide(v) ? '-' : `${entier(v)} F`);
 export const compact = (v) => (vide(v) ? '-' : Math.abs(Number(v)) < 10000 ? entier(v) : nfCompact.format(Number(v)));
 export const francsCourts = (v) => (vide(v) ? '-' : `${compact(v)} F`);
 export const pct = (v, chiffres = 1) => (vide(v) ? '-' : `${(Number(v) * 100).toLocaleString('fr-FR', { maximumFractionDigits: chiffres })} %`);
-export const decimal = (v, chiffres = 1) => (vide(v) ? '-' : Number(v).toLocaleString('fr-FR', { minimumFractionDigits: chiffres, maximumFractionDigits: chiffres }));
+export const decimal = (v, chiffres = 1) => (vide(v) ? '-' : espaces(Number(v).toLocaleString('fr-FR', { minimumFractionDigits: chiffres, maximumFractionDigits: chiffres })));
 
 // Largeur disponible du conteneur, suivie au redimensionnement
 export const useLargeur = (initiale = 640) => {

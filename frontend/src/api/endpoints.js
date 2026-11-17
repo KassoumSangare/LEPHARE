@@ -884,8 +884,9 @@ export const quoteApi = {
       date_effet: dateEffet,
     });
     const accessoire = Math.round(Number(data?.accessoire) || 0);
-    // Même arrondi que fn_get_accessoire : ROUND(accessoire × taux / 100, 0)
-    return { accessoire, taxeAccessoire: Math.round((accessoire * (Number(data?.taux_taxe) || 0)) / 100) };
+    const taux = Number(data?.taux_taxe) || 0;
+    // Même arrondi que fn_get_accessoire : ROUND(accessoire × taux / 100, 0) ; taux : celui de la taxe Auto
+    return { accessoire, taxeAccessoire: Math.round((accessoire * taux) / 100), taux };
   },
   // POST /api/correctiondevis/ (Enregistrement des primes & garanties imposées / modifiées)
   correctQuote: (payload) => apiClient.post('/correctiondevis/', payload),

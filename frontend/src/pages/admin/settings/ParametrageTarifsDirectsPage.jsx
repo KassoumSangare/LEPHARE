@@ -7,6 +7,7 @@ import { LigneParametre } from '../../../components/admin/LigneParametre';
 import { parametrageApi } from '../../../api/endpoints';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { chargerParametrage } from '../../../utils/parametrage';
+import { taxeAuto } from '../../../utils/tarificationAuto';
 import { confirmer } from '../../../utils/dialogue';
 import { useToast } from '../../../context/ToastContext';
 
@@ -25,7 +26,6 @@ const MONTANTS = [
   { champ: 'PrimeTtc', titre: 'Prime TTC', court: 'TTC' },
 ];
 const DETAIL = ['Accessoire', 'Taxe', 'Fga', 'Cedeao'];
-const ECART_TOLERE = 2;
 const CRITERES = { PUISSANCE: 'Puissance fiscale (CV)', CHARGE_UTILE: 'Charge utile (kg)' };
 const nombre = (v) => Math.round(Number(v) || 0).toLocaleString('fr-FR').replace(/[  ]/g, ' ');
 const francs = (v) => `${nombre(v)} F`;
@@ -34,7 +34,14 @@ const ligneVide = (duree, modele = {}) => ({
   Libelle: modele.Libelle || '', BorneMin: modele.BorneMin ?? '', BorneMax: modele.BorneMax ?? '', Usages: modele.Usages || '',
   DureeMois: duree, PrimeNette: '', Accessoire: '', Taxe: '', Fga: '', Cedeao: '', PrimeTtc: '',
 });
-const ecartTtc = (l) => Math.round((Number(l.PrimeTtc) || 0) - MONTANTS.slice(0, 5).reduce((s, m) => s + (Number(l[m.champ]) || 0), 0));
+// Taxe et TTC jamais saisies (règle du 2026-11-17, comme le serveur) : taxe = (prime nette + accessoires) × 14,5 %,
+// TTC = prime nette + accessoires + taxe + FGA + CEDEAO
+const CALCULES = ['Taxe', 'PrimeTtc'];
+const montantCalcule = (l, champ) => {
+  const taxe = taxeAuto(l.PrimeNette, l.Accessoire);
+  if (champ === 'Taxe') return taxe;
+  return ['PrimeNette', 'Accessoire', 'Fga', 'Cedeao'].reduce((s, c) => s + (Number(l[c]) || 0), taxe);
+};
 const cleTranche = (l) => `${l.Libelle}|${l.BorneMin ?? ''}|${l.BorneMax ?? ''}|${l.Usages || ''}`;
 const nomEnergie = (energies, id) => (id ? (energies.find((e) => Number(e.Id) === Number(id))?.Libelle || `énergie ${id}`) : 'Toutes énergies');
 
@@ -96,7 +103,6 @@ const VueGrille = ({ grille, offres, energies }) => {
   }, [recherche, tranches]);
   const ligneTrouvee = trouvee?.cle && trouvee.duree ? tranches.find((t) => t.cle === trouvee.cle)?.parDuree[trouvee.duree] : null;
 
-  const ecarts = grille.Lignes.filter((l) => Math.abs(ecartTtc(l)) > ECART_TOLERE).length;
   const th = { padding: '0.5rem 0.55rem', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap' };
   const td = { padding: '0.5rem 0.55rem', fontSize: '0.86rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
   const debutDuree = { borderLeft: '2px solid var(--border-medium)' };
@@ -108,7 +114,6 @@ const VueGrille = ({ grille, offres, energies }) => {
         <Pastille>{nomEnergie(energies, grille.IdEnergie)}</Pastille>
         <Pastille>Tranches : {CRITERES[grille.Critere]}</Pastille>
         <Pastille ton={grille.Actif ? 'vert' : 'ambre'}>{grille.Actif ? 'Appliqué aux devis' : 'Désactivé'}</Pastille>
-        {ecarts > 0 && <Pastille ton="ambre"><AlertTriangle size={12} /> {ecarts} ligne(s) : TTC ≠ somme</Pastille>}
       </div>
       <div style={{ fontSize: '0.84rem', marginBottom: '0.9rem', lineHeight: 1.6 }}>
         <span style={{ color: 'var(--text-muted)' }}>Offres tarifées par cette grille : </span>
@@ -137,7 +142,7 @@ const VueGrille = ({ grille, offres, energies }) => {
             </select>
           )}
           {trouvee && !trouvee.cle && <span style={{ color: 'var(--accent-amber)' }}>hors grille : calcul au barème</span>}
-          {ligneTrouvee && <span><strong>{ligneTrouvee.Libelle}</strong>, {trouvee.duree} mois : TTC <strong>{francs(ligneTrouvee.PrimeTtc)}</strong></span>}
+          {ligneTrouvee && <span><strong>{ligneTrouvee.Libelle}</strong>, {trouvee.duree} mois : TTC <strong>{francs(montantCalcule(ligneTrouvee, 'PrimeTtc'))}</strong></span>}
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.84rem', cursor: 'pointer' }}>
           <input type="checkbox" checked={detail} onChange={(e) => setDetail(e.target.checked)} />
@@ -175,12 +180,8 @@ const VueGrille = ({ grille, offres, energies }) => {
                         color: m.champ === 'PrimeTtc' ? 'var(--text-primary)' : 'var(--text-secondary)',
                         background: vise ? 'rgba(99, 102, 241, 0.18)' : undefined,
                       }}>
-                        {l ? (
-                          <span title={m.champ === 'PrimeTtc' && Math.abs(ecartTtc(l)) > ECART_TOLERE ? `TTC différent de la somme des montants (${francs(ecartTtc(l))})` : undefined}>
-                            {nombre(l[m.champ])}
-                            {m.champ === 'PrimeTtc' && Math.abs(ecartTtc(l)) > ECART_TOLERE && <AlertTriangle size={12} color="var(--accent-amber)" style={{ marginLeft: 4 }} />}
-                          </span>
-                        ) : <span style={{ color: 'var(--text-muted)' }}>-</span>}
+                        {l ? nombre(CALCULES.includes(m.champ) ? montantCalcule(l, m.champ) : l[m.champ])
+                          : <span style={{ color: 'var(--text-muted)' }}>-</span>}
                       </td>
                     ));
                   })}
@@ -191,7 +192,7 @@ const VueGrille = ({ grille, offres, energies }) => {
         </table>
       </div>
       <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginTop: '0.45rem' }}>
-        Montants en FCFA, tels que publiés par la compagnie (chaque montant est arrondi à part : le TTC peut différer de 1 F de leur somme).
+        Montants en FCFA. Taxe et prime TTC calculées : 14,5 % de la prime nette et des accessoires, puis somme des montants.
         Une durée absente de la grille (ex. 1 mois) est calculée au barème.
       </div>
     </>
@@ -285,14 +286,20 @@ const EditionGrille = ({ grille, compagnies, offres, energies, onChange }) => {
                     <td style={cellule}><input className="form-control" style={{ padding: '0.3rem', fontSize: '0.8rem', width: 80 }} value={l.Usages || ''} onChange={(e) => changerLigne(i, 'Usages', e.target.value)} /></td>
                     {MONTANTS.map((m) => (
                       <td key={m.champ} style={cellule}>
-                        <input type="number" min={0} className="form-control" style={{ ...champ, width: m.champ === 'PrimeNette' || m.champ === 'PrimeTtc' ? 95 : 78, fontWeight: m.champ === 'PrimeTtc' ? 700 : 400 }}
-                          value={l[m.champ] ?? ''} onChange={(e) => changerLigne(i, m.champ, e.target.value)} />
+                        {CALCULES.includes(m.champ) ? (
+                          <div style={{ ...champ, width: m.champ === 'PrimeTtc' ? 95 : 78, fontWeight: m.champ === 'PrimeTtc' ? 700 : 400, textAlign: 'right' }}>
+                            {l.PrimeNette === '' || l.PrimeNette == null ? '-' : nombre(montantCalcule(l, m.champ))}
+                          </div>
+                        ) : (
+                          <input type="number" min={0} className="form-control" style={{ ...champ, width: m.champ === 'PrimeNette' ? 95 : 78 }}
+                            value={l[m.champ] ?? ''} onChange={(e) => changerLigne(i, m.champ, e.target.value)} />
+                        )}
                       </td>
                     ))}
                     <td style={{ ...cellule, whiteSpace: 'nowrap', textAlign: 'center' }}>
-                      {Math.abs(ecartTtc(l)) <= ECART_TOLERE
-                        ? <span title="Prime TTC = somme des montants (à 2 F près : chaque montant est arrondi par la compagnie)"><CheckCircle2 size={15} color="var(--accent-emerald)" /></span>
-                        : <span style={{ color: 'var(--accent-rose)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }} title="Prime TTC différente de la somme des montants : la grille ne pourra pas être enregistrée"><AlertTriangle size={14} /> {francs(ecartTtc(l))}</span>}
+                      {Number(l.PrimeNette) > 0
+                        ? <CheckCircle2 size={15} color="var(--accent-emerald)" />
+                        : <span style={{ color: 'var(--accent-rose)', display: 'inline-flex', alignItems: 'center' }} title="Prime nette à saisir"><AlertTriangle size={14} /></span>}
                     </td>
                     <td style={cellule}>
                       <button type="button" className="btn btn-secondary" onClick={() => onChange({ ...grille, Lignes: grille.Lignes.filter((_, k) => k !== i) })} style={{ padding: '0.3rem 0.45rem' }} title="Supprimer la tranche"><Trash2 size={13} /></button>

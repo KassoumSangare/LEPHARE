@@ -8,7 +8,7 @@ import { messageErreurApi } from '../../../utils/financeUtils';
 import { imprimerAppel, imprimerFacture } from '../../../utils/impressionsRafas';
 import Modal from '../../../components/common/Modal';
 import { Cadre, Courbes } from '../sante/consommations/graphiques';
-import { Badge, Carte, Champ, Tableau, Tuile, dateFr, entier, francs, francsCourts, libelleRang, nombre, pct, periode, taux as tauxFr } from './rafasCommun';
+import { Badge, Carte, Champ, ChampMontant, Tableau, Tuile, dateFr, entier, francs, francsCourts, libelleRang, pct, periode, taux as tauxFr } from './rafasCommun';
 
 /* Fonds du régime d'un exercice : budget (familles de la convention et effectif du gestionnaire), dépenses remboursées, appels de fonds et
    versements du souscripteur, solde et appel conseillé ; honoraires du gestionnaire et commission du cabinet (chiffre d'affaires). */
@@ -29,7 +29,7 @@ const FormulaireAppel = ({ fonds, ouvert, onFermer, onValider }) => {
         <Champ libelle="Date de l'appel" requis><input type="date" className="form-control" value={d.date_appel || ''} onChange={(e) => setD({ ...d, date_appel: e.target.value })} /></Champ>
         <Champ libelle="À verser au plus tard"><input type="date" className="form-control" value={d.date_limite || ''} onChange={(e) => setD({ ...d, date_limite: e.target.value })} /></Champ>
         <Champ libelle="Montant (F)" requis aide={fonds.AppelConseille ? `Conseillé : ${francs(fonds.AppelConseille)} (${fonds.Exercice.mois_provision} mois de dépenses au rythme moyen, moins le solde)` : undefined}>
-          <input className="form-control rafas-nombre" inputMode="numeric" value={d.montant ?? ''} onChange={(e) => setD({ ...d, montant: nombre(e.target.value) })} />
+          <ChampMontant valeur={d.montant} onChange={(v) => setD({ ...d, montant: v })} />
         </Champ>
         <Champ libelle="Objet"><input className="form-control" value={d.objet || ''} onChange={(e) => setD({ ...d, objet: e.target.value })} /></Champ>
       </div>
@@ -57,7 +57,7 @@ const FormulaireVersement = ({ fonds, appel, ouvert, onFermer, onValider }) => {
           </select>
         </Champ>
         <Champ libelle="Date du versement" requis><input type="date" className="form-control" value={d.date_versement || ''} onChange={(e) => setD({ ...d, date_versement: e.target.value })} /></Champ>
-        <Champ libelle="Montant (F)" requis><input className="form-control rafas-nombre" inputMode="numeric" value={d.montant ?? ''} onChange={(e) => setD({ ...d, montant: nombre(e.target.value) })} /></Champ>
+        <Champ libelle="Montant (F)" requis><ChampMontant valeur={d.montant} onChange={(v) => setD({ ...d, montant: v })} /></Champ>
         <Champ libelle="Mode"><select className="form-control" value={d.mode} onChange={(e) => setD({ ...d, mode: e.target.value })}>{MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Champ>
         <Champ libelle="Référence"><input className="form-control" value={d.reference || ''} onChange={(e) => setD({ ...d, reference: e.target.value })} placeholder="N° de virement ou de chèque" /></Champ>
         <Champ libelle="Banque"><input className="form-control" value={d.banque || ''} onChange={(e) => setD({ ...d, banque: e.target.value })} /></Champ>
@@ -98,7 +98,7 @@ const FormulaireFacture = ({ fonds, beneficiaire, ouvert, onFermer, onValider })
           <input className="form-control rafas-nombre" value={francs(base)} readOnly />
         </Champ>
         <Champ libelle="Montant (F)" aide={`Calculé : ${francs(calcule)} ; modifiable`}>
-          <input className="form-control rafas-nombre" inputMode="numeric" value={montant ?? ''} onChange={(e) => setD({ ...d, montant: nombre(e.target.value) })} />
+          <ChampMontant valeur={montant} onChange={(v) => setD({ ...d, montant: v })} />
         </Champ>
         {beneficiaire === 'GESTIONNAIRE' && <Champ libelle="N° de la facture du gestionnaire" aide="Vide : numéro attribué par LE PHARE."><input className="form-control" value={d.numero || ''} onChange={(e) => setD({ ...d, numero: e.target.value })} /></Champ>}
       </div>

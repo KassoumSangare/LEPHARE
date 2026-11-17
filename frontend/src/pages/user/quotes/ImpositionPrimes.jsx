@@ -3,6 +3,8 @@ import { quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingSpinner } from '../../../components/common/LoadingSpinner';
 import { Check, X } from 'lucide-react';
+import { arrondirMontant } from '../../../utils/parametrage';
+import { cedeaoDansPrimeNette, primeNettePourTtc, taxeAuto } from '../../../utils/tarificationAuto';
 
 // Montants saisis en FCFA entiers : chiffres seuls pendant la saisie, séparateurs de milliers ensuite
 const chiffres = (v) => String(v ?? '').replace(/[^\d]/g, '');
@@ -15,7 +17,29 @@ const entier = (v) => String(Math.round(Number(v) || 0));
 const CHAMPS_DU_TTC = ['prime_nette', 'accessoire', 'taxe', 'fga'];
 const sommeTtc = (v, fraisGestion = 0) => CHAMPS_DU_TTC.reduce((total, champ) => total + (enNombre(v[champ]) || 0), fraisGestion);
 
-const Montant = ({ nom, libelle, valeurs, enSaisie, setEnSaisie, onChange, disabled }) => (
+// Automobile (règle du 2026-11-17) : taxe jamais saisie, (prime nette hors CEDEAO + accessoire) × 14,5 %, recalculée à
+// chaque modification avec la TTC (arrondi réglé comme à l'enregistrement, annulé le 2026-11-17) ; une TTC saisie fait
+// déduire la prime nette. Le serveur applique la même règle (production/taxe_auto.py).
+const arrondirTtcAuto = (montant) => arrondirMontant(montant, 1);
+const nombre = (v) => enNombre(v) || 0;
+const recalculerAuto = (v, champ, fraisGestion) => {
+  const suivantes = { ...v };
+  if (champ === 'prime_ttc') {
+    const primeNetteHt = primeNettePourTtc({
+      ttc: nombre(v.prime_ttc) - fraisGestion,
+      cedeao: nombre(v.cedeao),
+      fga: nombre(v.fga),
+      accessoire: nombre(v.accessoire),
+      arrondir: arrondirTtcAuto,
+    });
+    suivantes.prime_nette = String(primeNetteHt + nombre(v.cedeao));
+  }
+  suivantes.taxe = String(taxeAuto(nombre(suivantes.prime_nette) - nombre(suivantes.cedeao), nombre(suivantes.accessoire)));
+  if (champ !== 'prime_ttc') suivantes.prime_ttc = String(arrondirTtcAuto(sommeTtc(suivantes, fraisGestion)));
+  return suivantes;
+};
+
+const Montant = ({ nom, libelle, valeurs, enSaisie, setEnSaisie, onChange, onQuitter, disabled }) => (
   <div className="form-group" style={{ margin: 0 }}>
     <label className="form-label" htmlFor={`recap-${nom}`}>{libelle}</label>
     <div style={{ position: 'relative' }}>
@@ -32,7 +56,7 @@ const Montant = ({ nom, libelle, valeurs, enSaisie, setEnSaisie, onChange, disab
         // saute et le nombre tapé s'ajoute à l'ancien)
         value={enSaisie === nom ? chiffres(valeurs[nom]) : avecMilliers(valeurs[nom])}
         onFocus={(e) => e.target.select()}
-        onBlur={() => setEnSaisie(null)}
+        onBlur={() => { setEnSaisie(null); if (onQuitter) onQuitter(nom); }}
         onChange={(e) => { setEnSaisie(nom); onChange(nom, e.target.value); }}
         disabled={disabled}
         placeholder="0"
@@ -70,18 +94,31 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
       .then((devis) => {
         if (!actif) return;
         const r = devis?.raw || {};
-        setFraisGestion(Math.round(Number(r.accessoiregestionnaire) || 0));
-        setValeurs({
+        const frais = Math.round(Number(r.accessoiregestionnaire) || 0);
+        setFraisGestion(frais);
+        // Prime nette du devis hors FGA, CEDEAO incluse (stddevis.primenette comprend le FGA) ; FGA et CEDEAO
+        // n'existent qu'en Auto (la base les met à 0 pour les autres produits). Un devis Auto déjà imposé par le
+        // formulaire du devis a sa prime nette enregistrée sans la CEDEAO : elle y est ajoutée.
+        const sansCedeao = auto && !cedeaoDansPrimeNette({
+          primenette: r.primenette,
+          accessoire: r.accessoire,
+          taxe: r.taxe,
+          cedeao: r.cedeao,
+          primettc: r.primettc,
+          primeImposee: Boolean(r.prime_imposee ?? r.primeimposee),
+          arrondiNsia: Number(r.compagnie?.IdCompagnie ?? r.compagnie ?? r.idcompagnie) === 1,
+        });
+        const initiales = {
           prime_annuelle: entier(r.primeannuelle),
-          // Prime nette du devis hors FGA, CEDEAO incluse (stddevis.primenette comprend le FGA) ; FGA et CEDEAO
-          // n'existent qu'en Auto (la base les met à 0 pour les autres produits)
-          prime_nette: entier(Number(r.primenette || 0) - (auto ? Number(r.fga || 0) : 0)),
+          prime_nette: entier(Number(r.primenette || 0) - (auto ? Number(r.fga || 0) : 0) + (sansCedeao ? Number(r.cedeao || 0) : 0)),
           accessoire: entier(r.accessoire),
           taxe: entier(r.taxe),
           fga: auto ? entier(r.fga) : '0',
           cedeao: auto ? entier(r.cedeao) : '0',
           prime_ttc: entier(r.primettc),
-        });
+        };
+        // Auto : taxe à la règle et TTC égale à la somme des montants
+        setValeurs(auto ? recalculerAuto(initiales, 'taxe', frais) : initiales);
       })
       .catch((err) => {
         console.error('Chargement du devis pour imposition :', err);
@@ -93,6 +130,7 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
   const modifier = (champ, saisie) => {
     setValeurs((prec) => {
       const suivantes = { ...prec, [champ]: chiffres(saisie) };
+      if (auto) return champ === 'prime_annuelle' ? suivantes : recalculerAuto(suivantes, champ, fraisGestion);
       if (CHAMPS_DU_TTC.includes(champ)) suivantes.prime_ttc = String(sommeTtc(suivantes, fraisGestion));
       return suivantes;
     });
@@ -101,6 +139,8 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
   const enregistrer = async (e) => {
     e.preventDefault();
     const montants = Object.fromEntries(Object.entries(valeurs).map(([champ, v]) => [champ, enNombre(v)]));
+    // Auto : TTC retenue = celle des montants affichés, arrondie (la saisie peut tomber entre deux)
+    if (auto && !Number.isNaN(montants.prime_ttc)) montants.prime_ttc = arrondirTtcAuto(sommeTtc(valeurs, fraisGestion));
     if (Object.values(montants).some((n) => Number.isNaN(n))) {
       toastError('Renseignez tous les montants (0 si besoin).');
       return;
@@ -140,9 +180,13 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
     );
   }
 
-  const ttcCalcule = sommeTtc(valeurs, fraisGestion);
+  const ttcCalcule = auto ? arrondirTtcAuto(sommeTtc(valeurs, fraisGestion)) : sommeTtc(valeurs, fraisGestion);
   const ttcSaisi = enNombre(valeurs.prime_ttc);
-  const proprietes = { valeurs, enSaisie, setEnSaisie, onChange: modifier, disabled: enregistrement };
+  // Auto, sortie du champ TTC : la TTC affichée devient celle réellement retenue (somme des montants)
+  const quitter = (nom) => {
+    if (auto && nom === 'prime_ttc') setValeurs((v) => ({ ...v, prime_ttc: String(arrondirTtcAuto(sommeTtc(v, fraisGestion))) }));
+  };
+  const proprietes = { valeurs, enSaisie, setEnSaisie, onChange: modifier, onQuitter: quitter, disabled: enregistrement };
   const composantesTtc = ['prime nette', 'accessoire', 'taxes', auto && 'FGA', fraisGestion > 0 && 'frais de gestion'].filter(Boolean).join(' + ');
 
   return (
@@ -169,7 +213,14 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
 
       <Section>
         <Montant nom="accessoire" libelle="Accessoire" {...proprietes} />
-        <Montant nom="taxe" libelle="Taxes d'enregistrement" {...proprietes} />
+        {auto ? (
+          <div className="form-group" style={{ margin: 0 }}>
+            <span className="form-label">Taxes d'enregistrement</span>
+            <div style={{ padding: '0.55rem 0.75rem', fontFamily: 'var(--font-mono)', fontWeight: 600, textAlign: 'right', color: 'var(--text-primary)' }}>
+              {nombre(valeurs.taxe).toLocaleString('fr-FR')} FCFA
+            </div>
+          </div>
+        ) : <Montant nom="taxe" libelle="Taxes d'enregistrement" {...proprietes} />}
         {auto && <Montant nom="fga" libelle="Fonds de Garantie Automobile (FGA)" {...proprietes} />}
         {auto && <Montant nom="cedeao" libelle="CEDEAO" {...proprietes} />}
         {fraisGestion > 0 && (
@@ -187,7 +238,14 @@ export const ImpositionPrimes = ({ quote, auto = false, flotte = false, onAnnule
         <Montant nom="prime_ttc" libelle="Prime TTC" {...proprietes} />
         {!Number.isNaN(ttcSaisi) && ttcSaisi !== ttcCalcule && (
           <div style={{ fontSize: '0.78rem', color: '#f59e0b' }}>
-            Différente de {composantesTtc} ({ttcCalcule.toLocaleString('fr-FR')} FCFA).
+            {auto
+              ? `Prime TTC retenue : ${ttcCalcule.toLocaleString('fr-FR')} FCFA, la plus proche (prime nette déduite, taxe recalculée).`
+              : `Différente de ${composantesTtc} (${ttcCalcule.toLocaleString('fr-FR')} FCFA).`}
+          </div>
+        )}
+        {auto && (
+          <div className="champ-message aide">
+            Une prime TTC saisie fait recalculer la prime nette ; toute autre modification recalcule la taxe et la prime TTC.
           </div>
         )}
       </Section>

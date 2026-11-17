@@ -25,6 +25,8 @@ from .models import (
     AutoRegleGarantie, AutoRegleInteraction, Compagnie, DepreciationClasse, DepreciationRegle, ParametreGeneral, PoolTpvTranche,
     TarifAutoGrille, TarifAutoGrilleLigne,
 )
+from production.taxe_auto import taxe_auto
+
 from .serializers import DemandeGarantieSerializer
 from .utils import parametres_garantie_offre, tarification_demandee
 from .parametrage import ErreurParametrage, _auteur, _cache, _journal, _parametre_json, _reponse_erreur, _texte, _valider_parametre
@@ -680,7 +682,14 @@ def prime_garantie(request):
 # le devis est calculé au barème (fn_garantie_offre).
 CLE_COEFFICIENTS = "auto.coefficients_duree"
 MONTANTS_TARIF = ("PrimeNette", "Accessoire", "Taxe", "Fga", "Cedeao", "PrimeTtc")
-ECART_TTC_TOLERE = Decimal("2")  # composantes arrondies une à une par la compagnie : TTC à 1 F de leur somme
+MONTANTS_SAISIS = ("PrimeNette", "Accessoire", "Fga", "Cedeao")
+
+
+def _taxe_et_ttc(montants):
+    """Taxe et TTC d'une ligne, jamais saisies (règle du 2026-11-17, production/taxe_auto.py) : taxe = (prime nette +
+    accessoires) x 14,5 %, TTC = prime nette + accessoires + taxe + FGA + CEDEAO, sans arrondi."""
+    taxe = taxe_auto(montants["PrimeNette"], montants["Accessoire"])
+    return {"Taxe": taxe, "PrimeTtc": sum(Decimal(str(montants[m])) for m in MONTANTS_SAISIS) + taxe}
 
 
 def _chaine(valeur, longueur):
@@ -781,14 +790,10 @@ def _lire_grille(donnees):
                 raise ErreurParametrage(f"{nom} ({duree} mois) : minimum ({unite}) attendu.")
             if maxi is not None and maxi < mini:
                 raise ErreurParametrage(f"{nom} ({duree} mois) : le maximum doit être au moins égal au minimum.")
-        montants = {m: _montant_tarif(l.get(m), f"{nom} ({duree} mois), {m}") for m in MONTANTS_TARIF}
+        montants = {m: _montant_tarif(l.get(m), f"{nom} ({duree} mois), {m}") for m in MONTANTS_SAISIS}
         if montants["PrimeNette"] <= 0:
             raise ErreurParametrage(f"{nom} ({duree} mois) : prime nette attendue.")
-        somme = sum(montants[m] for m in MONTANTS_TARIF if m != "PrimeTtc")
-        if abs(montants["PrimeTtc"] - somme) > ECART_TTC_TOLERE:
-            raise ErreurParametrage(
-                f"{nom} ({duree} mois) : la prime TTC ({montants['PrimeTtc']:,.0f} F) ne correspond pas à la somme des "
-                f"montants ({somme:,.0f} F).".replace(",", " "))
+        montants.update(_taxe_et_ttc(montants))
         # Tranches d'une même durée sans chevauchement ; une seule ligne par usage
         for autre in vues.get(duree, []):
             if usages or autre["usages"]:
@@ -963,6 +968,8 @@ def tarif_direct(request):
         "DureeMois": resultat["duree"], "Compagnie": nom_compagnie, "Source": grille.Source,
         "PrimeAnnuelle": float(annuelle.PrimeNette if annuelle else ligne.PrimeNette),
         **{m: float(getattr(ligne, m)) for m in MONTANTS_TARIF},
+        # Taxe et TTC toujours à la règle, même pour une ligne enregistrée avant (TTC de la compagnie à 1 F près)
+        **{m: float(v) for m, v in _taxe_et_ttc({m: getattr(ligne, m) for m in MONTANTS_SAISIS}).items()},
         "Message": f"Tarif {nom_compagnie} à lecture directe : {grille.Libelle}, {ligne.Libelle}, {resultat['duree']} mois",
     })
 

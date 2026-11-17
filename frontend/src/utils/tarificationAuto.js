@@ -1,12 +1,12 @@
 import { ttcRetombe } from './parametrage';
 // Totaux d'un devis automobile, alignés sur URANUS (fn_garantie_offre + sp_finalisation_devis).
 //
-// Le moteur CIMA (fn_garantie_offre) applique déjà réduction commerciale, BNS, prorata de durée
-// et taxe par garantie : ces montants ne doivent surtout pas être réappliqués ici.
+// Le moteur CIMA (fn_garantie_offre) applique déjà réduction commerciale, BNS et prorata de durée :
+// ces montants ne doivent surtout pas être réappliqués ici.
 //   PA  = Σ PA des garanties acquises + FGA annuel (2 % de la PA de la RC)
 //   PN  = Σ PN des garanties acquises hors CEDEAO (FGA exclu)
 //   FGA = 2 % de la PN de la RC
-//   Taxe = Σ taxes des garanties acquises + taxe sur accessoire
+//   Taxe = (PN + Accessoire) × 14,5 / 100, en une fois (taxeAuto) ; ni le FGA ni la CEDEAO ne sont taxés
 //   TTC = PN + CEDEAO + FGA + Taxe + Accessoire
 
 // Sous-garanties identifiées par leur id (stdsousgarantie), jamais par un code figé :
@@ -157,8 +157,39 @@ export const cedeaoDansPrimeNette = ({ primenette, accessoire, taxe, cedeao, pri
   return !primeImposee;
 };
 
-// Taxe d'une garantie : celle calculée par le moteur (fn_calcul_montant_taxe). Si la prime
-// nette a été imposée à la main, on applique le même taux à la nouvelle prime.
+// Taxe d'enregistrement Automobile (règle de l'utilisateur, 2026-11-17) : (prime nette + accessoire) × 14,5 / 100,
+// calculée en une fois et arrondie au franc, jamais saisie. Prime nette hors FGA et hors CEDEAO, non taxés. Même règle
+// en base (sp_finalisation_devis v8) et dans l'API des primes imposées (production/taxe_auto.py).
+export const TAUX_TAXE_AUTO = 14.5;
+export const taxeAuto = (primeNetteHt, accessoire, taux = TAUX_TAXE_AUTO) => Math.round(
+  ((Number(primeNetteHt) || 0) + (Number(accessoire) || 0)) * (Number(taux) || 0) / 100,
+);
+
+// Prime nette (hors FGA et CEDEAO) qui donne la prime TTC saisie, la taxe suivant la règle ci-dessus :
+// TTC = PN + CEDEAO + FGA + Accessoire + taxeAuto(PN, Accessoire). arrondir : arrondi de la TTC à la pièce
+// (arrondirMontant) ; on retient la prime nette dont la TTC arrondie retombe sur celle saisie, au plus près.
+export const primeNettePourTtc = ({ ttc, cedeao = 0, fga = 0, accessoire = 0, taux = TAUX_TAXE_AUTO, arrondir = (m) => m }) => {
+  const cible = Number(ttc) || 0;
+  const acc = Number(accessoire) || 0;
+  const autres = (Number(cedeao) || 0) + (Number(fga) || 0) + acc;
+  const ttcPour = (pn) => pn + autres + taxeAuto(pn, acc, taux);
+  const approche = Math.round((cible - (Number(cedeao) || 0) - (Number(fga) || 0)) / (1 + (Number(taux) || 0) / 100) - acc);
+  const cibleArrondie = arrondir(cible);
+  let meilleure = Math.max(0, approche);
+  let ecartMeilleur = null;
+  for (let pn = Math.max(0, approche - 3); pn <= Math.max(0, approche + 3); pn += 1) {
+    const total = ttcPour(pn);
+    const ecart = [Math.abs(arrondir(total) - cibleArrondie), Math.abs(total - cible)];
+    if (!ecartMeilleur || ecart[0] < ecartMeilleur[0] || (ecart[0] === ecartMeilleur[0] && ecart[1] < ecartMeilleur[1])) {
+      meilleure = pn;
+      ecartMeilleur = ecart;
+    }
+  }
+  return meilleure;
+};
+
+// Taxe d'une garantie, pour le détail par garantie : celle calculée par le moteur (fn_calcul_montant_taxe). Si la prime
+// nette a été imposée à la main, on applique le même taux à la nouvelle prime. Les totaux n'en dépendent plus (taxeAuto).
 export const taxeGarantie = (g) => {
   const taxe = Number(g.taxe) || 0;
   const pn = Number(g.primeNette) || 0;
@@ -221,13 +252,12 @@ export const extraireLigneCumul = (lignesMoteur) => {
   };
 };
 
-export const calculerTotauxDevisAuto = ({ garanties, ligneCumul = null, vehiculesCount = 1 }) => {
+export const calculerTotauxDevisAuto = ({ garanties, ligneCumul = null, vehiculesCount = 1, tauxTaxe = TAUX_TAXE_AUTO }) => {
   let pa = 0;
   let pn = 0;
   let cedeao = 0;
   let rcPrimeAnnuelle = 0;
   let rcPrimeNette = 0;
-  let taxeGaranties = 0;
 
   (garanties || []).forEach((g) => {
     if (!g.acquise) return;
@@ -239,7 +269,6 @@ export const calculerTotauxDevisAuto = ({ garanties, ligneCumul = null, vehicule
       return;
     }
     pn += primeNette;
-    taxeGaranties += taxeGarantie(g);
     if (estGarantieRc(g)) {
       rcPrimeAnnuelle = primeAnnuelle;
       rcPrimeNette = primeNette;
@@ -251,9 +280,9 @@ export const calculerTotauxDevisAuto = ({ garanties, ligneCumul = null, vehicule
     pn: pn * vehiculesCount,
     fga: Math.round((rcPrimeNette * 2) / 100) * vehiculesCount,
     accessoire: (ligneCumul?.accessoire || 0) * vehiculesCount,
-    taxe: (taxeGaranties + (ligneCumul?.taxeAccessoire || 0)) * vehiculesCount,
     cedeao: cedeao * vehiculesCount,
   };
+  totaux.taxe = taxeAuto(totaux.pn, totaux.accessoire, tauxTaxe);
   totaux.ttc = totaux.pn + totaux.cedeao + totaux.fga + totaux.taxe + totaux.accessoire;
   return totaux;
 };

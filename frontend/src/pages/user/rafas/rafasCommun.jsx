@@ -22,6 +22,23 @@ export const periode = (e) => (e ? `du ${dateFr(e.date_effet)} au ${dateFr(e.dat
 export const taux = (v) => `${String(Number(v) || 0).replace('.', ',')} %`;
 export const nombre = (v) => (v === '' || v === null || v === undefined ? '' : Number(String(v).replace(/[\s  ]/g, '').replace(',', '.')));
 
+/* Montant en francs saisi avec ses milliers séparés (« 1 250 000 », demande du 2026-11-17) : la valeur transmise reste un nombre ; une case
+   vidée transmet « vide » ('' ou null selon le champ : un plafond vide veut dire sans plafond, jamais 0) */
+const milliers = (v) => (v === '' || v === null || v === undefined || Number.isNaN(Number(v)) ? '' : entier(v));
+export const ChampMontant = ({ valeur, onChange, vide = '', className = '', ...autres }) => (
+  <input
+    {...autres}
+    type="text"
+    inputMode="numeric"
+    className={`form-control rafas-nombre ${className}`.trim()}
+    value={milliers(valeur)}
+    onChange={(e) => {
+      const chiffres = e.target.value.replace(/\D/g, '');
+      onChange(chiffres === '' ? vide : Number(chiffres));
+    }}
+  />
+);
+
 export const TONS = {
   critique: { icone: CircleAlert, libelle: 'À traiter en priorité' },
   attention: { icone: TriangleAlert, libelle: 'À vérifier' },
@@ -222,7 +239,7 @@ export const EditeurBareme = ({ college, onChange, onFermer, lecture }) => {
                 <td>{lecture ? l.Rubrique : <select className="form-control" value={l.Rubrique} onChange={(e) => modifier(i, 'Rubrique', e.target.value)}>{RUBRIQUES.map((r) => <option key={r}>{r}</option>)}</select>}</td>
                 <td style={{ minWidth: 220 }}>{lecture ? l.Prestation : <input className="form-control" value={l.Prestation} onChange={(e) => modifier(i, 'Prestation', e.target.value)} />}</td>
                 <td className="cs-nombre">{lecture ? (l.Taux ?? '') : <input className="form-control rafas-nombre" inputMode="decimal" value={l.Taux ?? ''} onChange={(e) => modifier(i, 'Taux', e.target.value === '' ? null : nombre(e.target.value))} />}</td>
-                <td className="cs-nombre">{lecture ? (l.Plafond ? entier(l.Plafond) : '') : <input className="form-control rafas-nombre" inputMode="numeric" value={l.Plafond ?? ''} onChange={(e) => modifier(i, 'Plafond', e.target.value === '' ? null : nombre(e.target.value))} />}</td>
+                <td className="cs-nombre">{lecture ? (l.Plafond ? entier(l.Plafond) : '') : <ChampMontant valeur={l.Plafond} vide={null} aria-label="Plafond en francs" onChange={(v) => modifier(i, 'Plafond', v)} />}</td>
                 <td>{lecture ? l.Observation : <input className="form-control" value={l.Observation} onChange={(e) => modifier(i, 'Observation', e.target.value)} />}</td>
                 <td>{lecture ? (l.Garanti ? 'Oui' : 'Non') : <input type="checkbox" checked={!!l.Garanti} onChange={(e) => modifier(i, 'Garanti', e.target.checked)} aria-label="Garanti" />}</td>
                 <td>{lecture ? (l.Accord ? 'Oui' : '') : <input type="checkbox" checked={!!l.Accord} onChange={(e) => modifier(i, 'Accord', e.target.checked)} aria-label="Accord préalable" />}</td>
@@ -269,11 +286,11 @@ export const EditeurColleges = ({ colleges, onChange, modeles, familiesReelles, 
               <input className="form-control rafas-nombre" inputMode="numeric" value={c.familles} onChange={(e) => modifier(i, 'familles', nombre(e.target.value))} />
             </Champ>
             <Champ libelle="Cotisation par famille (F)" requis aide={aSaisir ? 'Convention ou dernier avenant' : undefined}>
-              <input className={`form-control rafas-nombre${aSaisir ? ' rafas-a-saisir' : ''}`} inputMode="numeric" value={c.cotisation}
-                autoFocus={exigerCotisation && i === colleges.findIndex((x) => !Number(x.cotisation))} onChange={(e) => modifier(i, 'cotisation', nombre(e.target.value))} />
+              <ChampMontant className={aSaisir ? 'rafas-a-saisir' : ''} valeur={c.cotisation}
+                autoFocus={exigerCotisation && i === colleges.findIndex((x) => !Number(x.cotisation))} onChange={(v) => modifier(i, 'cotisation', v)} />
             </Champ>
             <Champ libelle="Plafond annuel (F)">
-              <input className="form-control rafas-nombre" inputMode="numeric" value={c.plafond_famille ?? ''} onChange={(e) => modifier(i, 'plafond_famille', e.target.value === '' ? null : nombre(e.target.value))} />
+              <ChampMontant valeur={c.plafond_famille} vide={null} onChange={(v) => modifier(i, 'plafond_famille', v)} />
             </Champ>
             <div className="rafas-college-budget">
               <span>Cotisations</span>

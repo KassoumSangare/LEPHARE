@@ -67,7 +67,10 @@ import {
   ID_SOUS_GARANTIE_NSIA_AUTO_PLUS,
   ID_SOUS_GARANTIE_CEDEAO,
   noteCalculGarantie,
+  primeNettePourTtc,
   sansGarantiesNonAdmises,
+  TAUX_TAXE_AUTO,
+  taxeAuto,
   ventilerPrimeFichier,
 } from '../../../utils/tarificationAuto';
 
@@ -160,8 +163,9 @@ const DEFAULT_OFFRES = [
 ];
 
 // Tuiles financières du mode "Imposer la prime" : null = la tuile n'est pas saisie à la main et
-// suit en temps réel le total calculé à partir des garanties.
-const TUILES_NON_IMPOSEES = { taxe: null, fga: null, accessoire: null, pa: null, pn: null, ttc: null };
+// suit en temps réel le total calculé à partir des garanties. La taxe n'en fait pas partie : elle
+// est toujours calculée, (prime nette + accessoire) × 14,5 % (taxeAuto).
+const TUILES_NON_IMPOSEES = { fga: null, accessoire: null, pa: null, pn: null, ttc: null };
 
 // Message d'erreur lisible d'un appel d'enregistrement (erreurs DRF ou OutputMessage des procédures)
 // Message d'une procédure PL/pgSQL sans le préfixe « ERREUR: » ni le contexte technique
@@ -544,13 +548,21 @@ export const NewAutoQuotePage = () => {
   // montants tels quels (primes imposées comprises) tant que les garanties ne sont pas modifiées.
   const [totauxEnregistres, setTotauxEnregistres] = useState(null);
   const garantiesEnregistreesRef = useRef(null);
+  // Devis rouvert : numéro et primes imposées (flotte remise à la règle de calcul à l'édition, enregistrerFlotte)
+  const devisRouvertRef = useRef(null);
 
   // Accessoire de la prime nette réellement retenue à l'écran. La ligne cumul du moteur ne vaut
   // que pour l'offre complète (et n'existe pas pour un devis rouvert) : dès que des garanties sont
   // décochées, retirées, ajoutées ou leurs primes imposées, l'accessoire suit la tranche de la
   // nouvelle prime nette (fn_get_accessoire, comme à l'enregistrement). Flotte : l'accessoire est
-  // calculé à l'enregistrement sur le total du devis.
-  const baseAccessoire = useMemo(() => baseAccessoireAuto(garanties), [garanties]);
+  // calculé à l'enregistrement sur le total du devis. Prime nette saisie dans sa tuile (« Imposer la
+  // prime ») : l'accessoire suit la tranche de cette prime, sauf accessoire saisi lui aussi.
+  const pnSaisie = impositionActive && editedExtras.pn != null && editedExtras.pn !== '' ? Number(editedExtras.pn) : null;
+  const baseAccessoire = useMemo(() => {
+    if (pnSaisie === null) return baseAccessoireAuto(garanties);
+    const totaux = calculerTotauxDevisAuto({ garanties });
+    return pnSaisie + totaux.cedeao + totaux.fga;
+  }, [garanties, pnSaisie]);
   const [accessoireGaranties, setAccessoireGaranties] = useState(null);
   useEffect(() => {
     if (typeContrat === 'FLOTTE' || !offreId || !compagnieId || !dateEffet || baseAccessoire <= 0) return undefined;
@@ -564,7 +576,10 @@ export const NewAutoQuotePage = () => {
   }, [typeContrat, baseAccessoire, offreId, compagnieId, dateEffet]);
 
   // Calcul financier aligné sur URANUS (voir utils/tarificationAuto) : le moteur CIMA a déjà
-  // appliqué réduction commerciale, BNS, prorata et taxe par garantie.
+  // appliqué réduction commerciale, BNS et prorata. La taxe n'est jamais saisie : (prime nette +
+  // accessoire) × 14,5 %, recalculée à chaque modification, et la TTC suit ; une TTC saisie fait
+  // déduire la prime nette. Taux : celui que la base applique à l'accessoire (fn_get_taux_taxe).
+  const tauxTaxe = accessoireGaranties?.taux || TAUX_TAXE_AUTO;
   const calculFinancier = useMemo(() => {
     const vehiculesCount = typeContrat === 'FLOTTE' ? Math.max(1, flotteVehicules.length) : 1;
     const estSaisi = (champ) => impositionActive && editedExtras[champ] != null && editedExtras[champ] !== '';
@@ -585,24 +600,28 @@ export const NewAutoQuotePage = () => {
       }
       : totauxEnregistres && garanties === garantiesEnregistreesRef.current
         ? totauxEnregistres
-        : calculerTotauxDevisAuto({ garanties, ligneCumul: cumulAccessoire, vehiculesCount });
+        : calculerTotauxDevisAuto({ garanties, ligneCumul: cumulAccessoire, vehiculesCount, tauxTaxe });
 
     const finalPA = imposer('pa', base.pa);
-    const finalPN = imposer('pn', base.pn);
-    const finalTaxe = imposer('taxe', base.taxe);
     const finalFga = imposer('fga', base.fga);
-    const finalAccessoire = imposer('accessoire', base.accessoire);
     // La CEDEAO est une garantie de la liste : elle suit sa ligne, sans saisie séparée
     const finalCedeao = base.cedeao;
+    // Prime nette saisie : l'accessoire suit sa tranche (fn_get_accessoire) dès qu'elle est connue
+    const accessoireTranche = estSaisi('pn') && accessoireGaranties?.base === baseAccessoire ? accessoireGaranties.accessoire : null;
+    const finalAccessoire = imposer('accessoire', accessoireTranche ?? base.accessoire);
+    // Arrondi de la TTC réglé comme à l'enregistrement (Règles de gestion > Arrondi des montants ; annulé le 2026-11-17)
+    const arrondirTtc = (montant) => arrondirMontant(montant, 1);
+    // TTC saisie : la prime nette s'en déduit (taxe comprise) ; sinon prime nette saisie ou calculée
+    const ttcSaisie = estSaisi('ttc');
+    const finalPN = ttcSaisie
+      ? primeNettePourTtc({
+        ttc: Number(editedExtras.ttc), cedeao: finalCedeao, fga: finalFga, accessoire: finalAccessoire, taux: tauxTaxe, arrondir: arrondirTtc,
+      })
+      : imposer('pn', base.pn);
+    const finalTaxe = taxeAuto(finalPN, finalAccessoire, tauxTaxe);
 
-    // Dès qu'une composante est saisie, le TTC se recalcule à partir des montants affichés
-    // (sinon il reprend le total de base, qui est celui enregistré pour un devis rouvert).
-    const composanteSaisie = ['pn', 'taxe', 'fga', 'accessoire'].some(estSaisi);
-    const calculatedTtc = composanteSaisie
-      ? finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire
-      : base.ttc;
-    // TTC arrondie à la pièce de 5 F comme à l'enregistrement (Règles de gestion > Arrondi des montants)
-    const finalTtc = arrondirMontant(imposer('ttc', calculatedTtc), 1);
+    // TTC toujours égale à la somme des montants affichés, même pour un devis rouvert ou une grille
+    const finalTtc = arrondirTtc(finalPN + finalCedeao + finalFga + finalTaxe + finalAccessoire);
 
     return {
       primeAnnuelle: finalPA,
@@ -629,17 +648,35 @@ export const NewAutoQuotePage = () => {
     totauxEnregistres,
     tarifDirectActif,
     tarifDirect,
+    tauxTaxe,
   ]);
 
   // Valeur affichée dans une tuile éditable : la saisie si elle existe, sinon le total calculé
   const valeurTuile = (champ, valeurCalculee) => editedExtras[champ] ?? String(valeurCalculee);
 
-  // Saisie d'une tuile : le TTC (s'il n'est pas lui-même la tuile saisie) se recalcule aussitôt
-  const handleTuileChange = (champ, valeur) => setEditedExtras((prev) => ({
-    ...prev,
-    [champ]: valeur,
-    ...(champ !== 'ttc' && champ !== 'pa' ? { ttc: null } : {}),
-  }));
+  // Saisie d'une tuile : la TTC saisie fait déduire la prime nette ; toute autre saisie (hors prime
+  // annuelle) fait recalculer la TTC, la prime nette affichée (déduite d'une TTC saisie) étant gardée.
+  // La taxe suit toujours le calcul.
+  // Prime nette et accessoire affichés, figés (déduits d'une TTC saisie)
+  const montantsAffichesFiges = (prev) => ({
+    pn: String(calculFinancier.primeNette),
+    accessoire: prev.accessoire != null && prev.accessoire !== '' ? prev.accessoire : String(calculFinancier.accessoire),
+  });
+  const handleTuileChange = (champ, valeur) => setEditedExtras((prev) => {
+    const ttcSaisie = prev.ttc != null && prev.ttc !== '';
+    return {
+      ...prev,
+      ...(ttcSaisie && !['ttc', 'pa', 'pn'].includes(champ) ? montantsAffichesFiges(prev) : {}),
+      [champ]: valeur,
+      ...(champ === 'ttc' ? { pn: null } : {}),
+      ...(champ !== 'ttc' && champ !== 'pa' ? { ttc: null } : {}),
+    };
+  });
+  // Sortie de la tuile TTC : la TTC affichée devient celle réellement retenue (somme exacte, sans arrondi,
+  // à 1 F près de la saisie : chaque franc de prime nette en ajoute 1,145)
+  const figerPrimeNetteDeLaTtc = () => setEditedExtras((prev) => (
+    prev.ttc != null && prev.ttc !== '' ? { ...prev, ...montantsAffichesFiges(prev), ttc: null } : prev
+  ));
 
   // Une prime de garantie a changé : les totaux qui en découlent reprennent le calcul pour
   // refléter la modification en temps réel. Un accessoire saisi à la main reste imposé ; sinon
@@ -648,7 +685,7 @@ export const NewAutoQuotePage = () => {
     // Garanties personnalisées : le tarif à lecture directe ne vaut plus, retour au barème
     if (tarifDirectActif) setChoixTarifDirect({ idLigne: tarifDirect.IdLigne, actif: false, suspendu: true });
     setEditedExtras((prev) => ({
-      ...prev, pa: null, pn: null, taxe: null, fga: null, ttc: null,
+      ...prev, pa: null, pn: null, fga: null, ttc: null,
     }));
   };
 
@@ -1823,6 +1860,7 @@ export const NewAutoQuotePage = () => {
             cedeao: Number(d.cedeao || 0),
             ttc: Number(d.primettc || 0),
           });
+          devisRouvertRef.current = { numero: d.numerodevis, primeImposee: Boolean(d.prime_imposee) };
         }
 
         // Souscripteur / conducteur - d.client peut être un id simple ou l'objet
@@ -2522,8 +2560,36 @@ export const NewAutoQuotePage = () => {
     }
     setFlotteVehicules(vehicules);
 
-    // Totaux du devis ; rien n'a changé : le devis enregistré est laissé tel quel
-    if (aFinaliser) {
+    // Totaux du devis. Rien n'a changé : le devis enregistré est gardé, sauf si sa taxe ou sa TTC ne suit pas la règle
+    // actuelle (taxe = (prime nette + accessoire) × 14,5 %, TTC = somme des montants) : il y est remis à l'édition
+    const t = totauxEnregistres;
+    const taxeRegle = t ? taxeAuto(t.pn, t.accessoire, tauxTaxe) : 0;
+    const horsRegle = Boolean(editIddevis && t && devisRouvertRef.current) && (
+      Math.round(t.taxe) !== taxeRegle || Math.round(t.ttc) !== Math.round(t.pn + t.cedeao + t.fga + t.accessoire + t.taxe)
+    );
+    // Devis calculé dont les lignes des véhicules retombent sur l'en-tête : la base le retotalise (sp_finalisation_devis).
+    // Sinon (récapitulatif imposé, ou devis URANUS aux lignes vides) : la retotalisation effacerait ses montants
+    const pnVehicules = vehicules.reduce((s, v) => s + (Number(v.primesEnregistrees?.pn) || 0), 0);
+    const retotalisable = !devisRouvertRef.current?.primeImposee && pnVehicules > 0 && Math.abs(pnVehicules - (t?.pn || 0)) <= 1
+      && vehicules.every((v) => v.enregistre && v.primesEnregistrees);
+    if (!aFinaliser && horsRegle && !retotalisable) {
+      // Primes, accessoire, FGA et CEDEAO de l'en-tête gardés, taxe et TTC remises à la règle par le serveur
+      try {
+        await quoteApi.updateQuotePrimes({
+          numero_devis: devisRouvertRef.current.numero,
+          prime_annuelle: t.pa,
+          prime_nette: t.pn + t.cedeao,
+          accessoire: t.accessoire,
+          taxe: taxeRegle,
+          fga: t.fga,
+          cedeao: t.cedeao,
+          prime_ttc: t.pn + t.cedeao + t.fga + t.accessoire + taxeRegle,
+        });
+      } catch (e) {
+        toastError(`La taxe et la prime TTC du devis n'ont pas pu être remises à la règle de calcul : ${messageEnregistrement(e)}.`);
+        return null;
+      }
+    } else if (aFinaliser || horsRegle) {
       try {
         await quoteApi.finalizeFlotteQuote({
           IdDevis: Number(idDevis),
@@ -4122,7 +4188,6 @@ export const NewAutoQuotePage = () => {
                   // en temps réel ; une imposition déjà enregistrée garde ses montants saisis.
                   if (!primesImposees) setEditedExtras(TUILES_NON_IMPOSEES);
                   setIsEditingPrimes(true);
-                  info('Mode "Imposer la prime" activé : modifiez les capitaux, franchises, primes et taxes, les totaux se mettent à jour en temps réel.');
                 }}
                 style={{
                   background: isEditingPrimes ? '#059669' : '#2563eb',
@@ -4425,21 +4490,12 @@ export const NewAutoQuotePage = () => {
             <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.25rem', borderRadius: '12px', border: '1px solid var(--border-subtle)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#94a3b8', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
                 <FileText size={15} color="#60a5fa" />
-                TAXE D'ENREGISTREMENT (14.5%)
+                TAXE D'ENREGISTREMENT ({tauxTaxe.toLocaleString('fr-FR')} %)
               </div>
-              {isEditingPrimes ? (
-                <input
-                  type="number"
-                  className="form-control"
-                  style={{ marginTop: '0.5rem', fontWeight: 800, fontSize: '1.25rem' }}
-                  value={valeurTuile('taxe', calculFinancier.taxeEnregistrement)}
-                  onChange={(e) => handleTuileChange('taxe', e.target.value)}
-                />
-              ) : (
-                <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-                  {calculFinancier.taxeEnregistrement.toLocaleString('fr-FR')} FCFA
-                </div>
-              )}
+              {/* Jamais saisie : (prime nette hors CEDEAO + accessoire) × taux, recalculée à chaque modification */}
+              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#fff', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+                {calculFinancier.taxeEnregistrement.toLocaleString('fr-FR')} FCFA
+              </div>
             </div>
 
             {/* Tuile 2 : FGA */}
@@ -4545,6 +4601,7 @@ export const NewAutoQuotePage = () => {
                   style={{ marginTop: '0.5rem', fontWeight: 900, fontSize: '1.35rem', color: '#38bdf8' }}
                   value={valeurTuile('ttc', calculFinancier.primeTtc)}
                   onChange={(e) => handleTuileChange('ttc', e.target.value)}
+                  onBlur={figerPrimeNetteDeLaTtc}
                 />
               ) : (
                 <div style={{ fontSize: '1.85rem', fontWeight: 900, color: '#38bdf8', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>

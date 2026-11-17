@@ -124,6 +124,7 @@ from .import_assures import import_ia_insured, insert_new_assure
 from .periode_contrat import objets_periode, periode_contrat
 from .releve_compte import releve_compte as donnees_releve_compte
 from .reste_encaissement import RELIQUAT_NEGLIGEABLE, reste_a_encaisser
+from .taxe_auto import ID_PRODUIT_AUTO, taux_taxe_auto, taxe_et_ttc_auto
 from .views_devis_ia import completer_assures_devis_ia
 from sante.models import Adherent, Affilie
 from .models import (
@@ -4229,6 +4230,12 @@ class PrimeUpdateAPIView(APIView):
             p_fga = validated_data["fga"]
             p_cedeao = validated_data["cedeao"]
             p_prime_ttc = validated_data["prime_ttc"]
+            if devis.produit_id == ID_PRODUIT_AUTO:
+                # Automobile : taxe toujours calculée, (prime nette hors CEDEAO + accessoire) x 14,5 %, et TTC qui
+                # suit ; la prime nette reçue comprend la CEDEAO (production/taxe_auto.py)
+                with connection.cursor() as cursor:
+                    taux = taux_taxe_auto(cursor, devis.dateeffet)
+                p_taxe, p_prime_ttc = taxe_et_ttc_auto(p_prime_nette, p_cedeao, p_accessoire, p_fga, taux)
 
             try:
                 # Call the utility function to execute the stored procedure

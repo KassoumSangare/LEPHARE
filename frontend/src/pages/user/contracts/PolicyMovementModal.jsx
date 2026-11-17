@@ -26,6 +26,7 @@ import {
   Check,
 } from 'lucide-react';
 import { nomCabinet } from '../../../utils/parametrage';
+import { primeNettePourTtc, taxeAuto } from '../../../utils/tarificationAuto';
 
 export const PolicyMovementModal = ({
   isOpen,
@@ -125,6 +126,15 @@ export const PolicyMovementModal = ({
   };
 
   if (!isOpen || !contract) return null;
+
+  // Décompte du renouvellement à la règle du 2026-11-17 : prime nette déduite de la TTC saisie, avec l'accessoire, le FGA
+  // et la CEDEAO du contrat ; taxe = (prime nette hors CEDEAO + accessoire) × 14,5 %, sans arrondi de la TTC
+  const accessoireRenouvellement = Number(contract.accessoire) || 0;
+  const cedeaoRenouvellement = Number(contract.cedeao) || 0;
+  const primeNetteRenouvellement = primeNettePourTtc({
+    ttc: Number(renewalPrimeTotale) || 0, cedeao: cedeaoRenouvellement, fga: Number(contract.fga) || 0, accessoire: accessoireRenouvellement,
+  });
+  const taxeRenouvellement = taxeAuto(primeNetteRenouvellement, accessoireRenouvellement);
 
   // --- SUBMIT: Renouvellement ---
   const handleRenewalSubmit = async (e) => {
@@ -555,19 +565,19 @@ export const PolicyMovementModal = ({
                     <div>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Prime Nette :</span>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#60a5fa', fontFamily: 'monospace' }}>
-                        {Math.round(renewalPrimeTotale * 0.85).toLocaleString('fr-FR')} F
+                        {(primeNetteRenouvellement + cedeaoRenouvellement).toLocaleString('fr-FR')} F
                       </div>
                     </div>
                     <div>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Accessoires :</span>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>
-                        15 000 F
+                        {accessoireRenouvellement.toLocaleString('fr-FR')} F
                       </div>
                     </div>
                     <div>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Taxes Réglementaires :</span>
                       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', fontFamily: 'monospace' }}>
-                        {Math.round(renewalPrimeTotale * 0.145).toLocaleString('fr-FR')} F
+                        {taxeRenouvellement.toLocaleString('fr-FR')} F
                       </div>
                     </div>
                   </div>

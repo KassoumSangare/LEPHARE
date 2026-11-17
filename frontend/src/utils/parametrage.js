@@ -130,11 +130,20 @@ export const arrondirMontant = (montant, idProduit = null) => {
   return Math.sign(v) * arrondi;
 };
 
-/** La TTC enregistrée retombe-t-elle sur la somme des composantes ? Telle quelle, arrondie à la pièce, ou (contrats
- *  NSIA repris d'URANUS) arrondie au multiple de 5 supérieur. */
+// TTC enregistrées du 2026-10-14 au 2026-11-17 : arrondies à 5 F (reste jusqu'à 2 F à l'inférieur), quel que soit le
+// réglage actuel (arrondi annulé le 2026-11-17) ; sert seulement à reconnaître ces montants, jamais à arrondir
+const arrondiCinqHistorique = (montant) => {
+  const entier = Math.round(Math.abs(Number(montant) || 0));
+  const reste = entier % 5;
+  return Math.sign(Number(montant) || 0) * (reste === 0 ? entier : (reste <= 2 ? entier - reste : entier - reste + 5));
+};
+
+/** La TTC enregistrée retombe-t-elle sur la somme des composantes ? Telle quelle, arrondie selon le réglage, arrondie à
+ *  5 F (enregistrements du 2026-10-14 au 2026-11-17) ou (contrats NSIA repris d'URANUS) au multiple de 5 supérieur. */
 export const ttcRetombe = (ttcEnregistree, somme, { idProduit = null, nsia = false } = {}) => (
   ttcEnregistree === somme
   || ttcEnregistree === arrondirMontant(somme, idProduit)
+  || ttcEnregistree === arrondiCinqHistorique(somme)
   || (nsia && ttcEnregistree === Math.ceil(somme / 5) * 5)
 );
 /**
