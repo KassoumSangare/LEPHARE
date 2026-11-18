@@ -7,6 +7,7 @@ import {
 import { contractApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { SqueletteTableau } from '../../../components/common/Squelette';
+import { FiltreTypeContrat, libellesTypeContrat, parametreFlotte } from '../../../components/common/FiltreTypeContrat';
 import { useToast } from '../../../context/ToastContext';
 import { confirmer } from '../../../utils/dialogue';
 import { messageErreurApi } from '../../../utils/financeUtils';
@@ -476,7 +477,7 @@ const messageErreurAdministration = (error, nomRisque) => {
 };
 
 const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
-  const { success, error: toastError } = useToast();
+  const { success, warning, error: toastError } = useToast();
   const [initial, setInitial] = useState(donnees);
   const [edition, setEdition] = useState(donnees);
   const [onglet, setOnglet] = useState('contrat');
@@ -601,12 +602,19 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
     };
     setEnregistrement(true);
     try {
-      const resultat = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
+      // Contrat relu en base : un montant recalculé par la base (partage des accessoires réglé pour la compagnie,
+      // commission sur la prime HT) s'affiche tel qu'enregistré et il est signalé
+      const { recalcules = [], ...resultat } = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
       setInitial(resultat);
       setEdition(resultat);
       setMotif('');
       setOnglet('contrat');
       success(`${changements.length} modification${changements.length > 1 ? 's' : ''} enregistrée${changements.length > 1 ? 's' : ''} et journalisée${changements.length > 1 ? 's' : ''} avec le motif.`);
+      if (recalcules.length) {
+        warning(`Recalculé par la base selon les règles de la compagnie : ${recalcules
+          .map((r) => `${definition(r.Champ).libelle} ${montant(r.Enregistre)} au lieu de ${montant(r.Demande)}`)
+          .join(' ; ')}.`);
+      }
       onEnregistre();
     } catch (error) {
       const nomRisque = (id) => {
@@ -822,12 +830,14 @@ export const AdminContractManagementPage = () => {
   const [page, setPage] = useState(1);
   const [taille, setTaille] = useState(TAILLE_PAGE);
   const [branche, setBranche] = useState('ALL');
+  // Mono / flotte (Automobile), individuel / groupe (autres branches)
+  const [type, setType] = useState('tous');
   const [statut, setStatut] = useState('tous');
   const [ordre, setOrdre] = useState('');
   const [champPeriode, setChampPeriode] = useState('effet');
   const [du, setDu] = useState('');
   const [au, setAu] = useState('');
-  const [liste, setListe] = useState({ results: [], count: 0, par_produit: {}, par_statut: {} });
+  const [liste, setListe] = useState({ results: [], count: 0, par_produit: {}, par_type: {}, par_statut: {} });
   const [chargementListe, setChargementListe] = useState(true);
   const [contratOuvert, setContratOuvert] = useState(null);
   const [ouverture, setOuverture] = useState(null);
@@ -838,6 +848,7 @@ export const AdminContractManagementPage = () => {
       const filtres = {
         recherche: rechercheAppliquee || undefined,
         idproduit: BRANCHES.find((item) => item.cle === branche)?.produits?.join(','),
+        flotte: branche === 'ALL' ? undefined : parametreFlotte(type),
         statut: statut === 'tous' ? undefined : statut,
         [`${champPeriode}_du`]: du || undefined,
         [`${champPeriode}_au`]: au || undefined,
@@ -852,7 +863,7 @@ export const AdminContractManagementPage = () => {
     } finally {
       setChargementListe(false);
     }
-  }, [au, branche, champPeriode, du, ordre, page, rechercheAppliquee, statut, taille, toastError]);
+  }, [au, branche, champPeriode, du, ordre, page, rechercheAppliquee, statut, taille, toastError, type]);
 
   useEffect(() => {
     chargerListe();
@@ -900,16 +911,22 @@ export const AdminContractManagementPage = () => {
       .reduce((total, [, valeur]) => total + Number(valeur), 0);
     return Number(liste.par_statut?.[cle] || 0);
   };
-  const filtresActifs = Boolean(rechercheAppliquee || du || au || branche !== 'ALL' || statut !== 'tous');
+  const filtresActifs = Boolean(rechercheAppliquee || du || au || branche !== 'ALL' || statut !== 'tous' || type !== 'tous');
   const effacerFiltres = () => {
     setRecherche('');
     setRechercheAppliquee('');
     setDu('');
     setAu('');
     setBranche('ALL');
+    setType('tous');
     setStatut('tous');
     setPage(1);
   };
+  // Filtre de type : toujours en Automobile, ailleurs quand la branche compte des contrats des deux sortes
+  const brancheAuto = branche === 'AUTO';
+  const comptesType = liste.par_type || {};
+  const filtreTypeVisible = branche !== 'ALL'
+    && (brancheAuto || type !== 'tous' || (Number(comptesType.mono) > 0 && Number(comptesType.flotte) > 0));
 
   if (contratOuvert) {
     return (
@@ -1002,13 +1019,17 @@ export const AdminContractManagementPage = () => {
             return (
               <button key={item.cle} type="button" role="tab" aria-selected={actif}
                 className={`portefeuille-puce${actif ? ' actif' : ''}`}
-                onClick={() => { setBranche(item.cle); setPage(1); }}>
+                onClick={() => { setBranche(item.cle); setType('tous'); setPage(1); }}>
                 <Icone size={15} /><span>{item.libelle}</span>
                 <span className="portefeuille-compte">{nombre(compteBranche(item))}</span>
               </button>
             );
           })}
         </div>
+        {filtreTypeVisible && (
+          <FiltreTypeContrat valeur={type} auto={brancheAuto} comptes={comptesType}
+            onChoisir={(valeur) => { setType(valeur); setPage(1); }} />
+        )}
       </section>
 
       <section className="glass-panel portefeuille-liste" aria-label="Contrats">
@@ -1054,7 +1075,10 @@ export const AdminContractManagementPage = () => {
                       </td>
                       <td data-label="Client"><span className="portefeuille-client">{nomClient(contrat)}</span></td>
                       <td data-label="Produit">
-                        <div className="portefeuille-principal">{contrat.idproduit?.libelle_produit || '-'}</div>
+                        <div className="portefeuille-principal">
+                          {contrat.idproduit?.libelle_produit || '-'}
+                          {contrat.flotte && ` · ${libellesTypeContrat(Number(contrat.idproduit?.id_produit) === ID_PRODUIT_AUTO).flotte}`}
+                        </div>
                         <div className="portefeuille-secondaire">{contrat.idcompagnie?.RaisonSociale || '-'}</div>
                       </td>
                       <td data-label="Période">

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { Modal } from '../../../components/common/Modal';
 import { SqueletteTableau } from '../../../components/common/Squelette';
+import { FiltreTypeContrat, libellesTypeContrat, parametreFlotte } from '../../../components/common/FiltreTypeContrat';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -99,6 +100,8 @@ const valeurs = (c) => {
     clientId: client?.IdClient || null,
     client: client ? `${client.Nom || ''} ${client.Prenoms || ''}`.trim() : '',
     produit: r.idproduit?.libelle_produit || '',
+    // « Flotte » (Automobile) ou « Groupe » (autres branches) ; vide pour un contrat mono / individuel
+    type: r.flotte ? libellesTypeContrat(Number(r.idproduit?.id_produit) === 1).flotte : '',
     compagnie: r.idcompagnie?.RaisonSociale || '',
     effet: r.dateeffet || null,
     echeance: r.dateexpiration || null,
@@ -128,6 +131,8 @@ export const ContractListPage = () => {
 
   // Filtres, gardés dans l'adresse
   const branche = BRANCHES.some((b) => b.cle === parametres.get('branche')) ? parametres.get('branche') : 'ALL';
+  // Mono / flotte (Automobile), individuel / groupe (autres branches) : seulement avec une branche choisie
+  const type = branche !== 'ALL' && ['mono', 'flotte'].includes(parametres.get('type')) ? parametres.get('type') : 'tous';
   const statut = ONGLETS_STATUT.includes(parametres.get('statut')) ? parametres.get('statut') : 'tous';
   const recherche = parametres.get('q') || '';
   const champPeriode = ['echeance', 'emission'].includes(parametres.get('periode')) ? parametres.get('periode') : 'effet';
@@ -149,6 +154,7 @@ export const ContractListPage = () => {
       if (!garderPage) suivant.delete('page');
       // Valeurs par défaut absentes de l'adresse
       if (suivant.get('branche') === 'ALL') suivant.delete('branche');
+      if (suivant.get('type') === 'tous') suivant.delete('type');
       if (suivant.get('statut') === 'tous') suivant.delete('statut');
       if (suivant.get('periode') === 'effet') suivant.delete('periode');
       if (suivant.get('page') === '1') suivant.delete('page');
@@ -189,7 +195,9 @@ export const ContractListPage = () => {
     ...(du ? { [`${champPeriode}_du`]: du } : {}),
     ...(au ? { [`${champPeriode}_au`]: au } : {}),
   }), [recherche, champPeriode, du, au]);
-  const filtreProduit = useMemo(() => (brancheCourante?.produits ? { idproduit: brancheCourante.produits.join(',') } : {}), [brancheCourante]);
+  const filtreProduit = useMemo(() => (brancheCourante?.produits
+    ? { idproduit: brancheCourante.produits.join(','), ...(type !== 'tous' ? { flotte: parametreFlotte(type) } : {}) }
+    : {}), [brancheCourante, type]);
 
   // Dernière requête seulement : une réponse plus ancienne (filtre changé entre-temps) est ignorée
   const requeteListe = useRef(0);
@@ -246,10 +254,17 @@ export const ContractListPage = () => {
     return parStatut[cle] || 0;
   };
   const aRenouveler = compteStatut('a_renouveler') || 0;
+  // Filtre de type : toujours en Automobile, ailleurs quand la branche compte des contrats des deux sortes
+  const brancheAuto = branche === 'AUTO';
+  const comptesType = synthese?.par_type || null;
+  const filtreTypeVisible = branche !== 'ALL'
+    && (brancheAuto || type !== 'tous' || (Number(comptesType?.mono) > 0 && Number(comptesType?.flotte) > 0));
+  const libelleType = type !== 'tous' ? libellesTypeContrat(brancheAuto)[type] : '';
 
   const filtresActifs = [
     recherche && { cle: 'q', libelle: `Recherche : « ${recherche} »`, retirer: () => { setSaisie(''); majFiltres({ q: '' }); } },
-    branche !== 'ALL' && { cle: 'branche', libelle: brancheCourante.libelle, retirer: () => majFiltres({ branche: '' }) },
+    branche !== 'ALL' && { cle: 'branche', libelle: brancheCourante.libelle, retirer: () => majFiltres({ branche: '', type: '' }) },
+    type !== 'tous' && { cle: 'type', libelle: libelleType, retirer: () => majFiltres({ type: '' }) },
     statut !== 'tous' && { cle: 'statut', libelle: `Statut : ${STATUTS[statut].libelle}`, retirer: () => majFiltres({ statut: '' }) },
     (du || au) && {
       cle: 'periode',
@@ -305,13 +320,13 @@ export const ContractListPage = () => {
         metadata: {
           "Date d'édition": new Date().toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }),
           'Édité par': user?.nom || user?.email || '',
-          Sélection: [brancheCourante.libelle, libelleStatut, ...filtresActifs.filter((f) => f.cle === 'q' || f.cle === 'periode').map((f) => f.libelle)].join(' - '),
+          Sélection: [brancheCourante.libelle, libelleType, libelleStatut, ...filtresActifs.filter((f) => f.cle === 'q' || f.cle === 'periode').map((f) => f.libelle)].filter(Boolean).join(' - '),
           Volume: total > contrats.length ? `${nombre(contrats.length)} premières lignes sur ${pluriel(total, 'contrat')}` : pluriel(total, 'contrat'),
           'Total primes TTC': montant(lignes.reduce((s, l) => s + Number(l.primeTtc || 0), 0)),
         },
         headers: ['N° Police', 'Mouvement', 'Souscripteur', 'Produit', 'Compagnie', 'Date effet', 'Échéance', 'Prime nette', 'Prime TTC', 'Statut'],
         rows: lignes.map((l) => [
-          l.police, l.mouvement, l.client, l.produit, l.compagnie, dateFr(l.effet), dateFr(l.echeance),
+          l.police, l.mouvement, l.client, l.type ? `${l.produit} · ${l.type}` : l.produit, l.compagnie, dateFr(l.effet), dateFr(l.echeance),
           montant(l.primeNette), montant(l.primeTtc), STATUTS[l.statut]?.libelle || '',
         ]),
         enTete: false,
@@ -410,7 +425,7 @@ export const ContractListPage = () => {
                 role="tab"
                 aria-selected={actif}
                 className={`portefeuille-puce${actif ? ' actif' : ''}`}
-                onClick={() => majFiltres({ branche: b.cle })}
+                onClick={() => majFiltres({ branche: b.cle, type: '' })}
                 title={b.aide}
               >
                 <Icone size={15} />
@@ -420,6 +435,9 @@ export const ContractListPage = () => {
             );
           })}
         </div>
+        {filtreTypeVisible && (
+          <FiltreTypeContrat valeur={type} auto={brancheAuto} comptes={comptesType} onChoisir={(valeur) => majFiltres({ type: valeur })} />
+        )}
       </section>
 
       {/* Contrats arrivant à échéance */}
@@ -536,7 +554,7 @@ export const ContractListPage = () => {
                           ) : <span className="portefeuille-client">{v.client || '-'}</span>}
                         </td>
                         <td data-label="Produit">
-                          <div className="portefeuille-principal">{v.produit || '-'}</div>
+                          <div className="portefeuille-principal">{v.produit || '-'}{v.type && ` · ${v.type}`}</div>
                           <div className="portefeuille-secondaire">{v.compagnie || '-'}</div>
                         </td>
                         <td data-label="Période">

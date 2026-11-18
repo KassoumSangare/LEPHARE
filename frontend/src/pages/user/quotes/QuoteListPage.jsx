@@ -3,6 +3,7 @@ import { confirmer } from '../../../utils/dialogue';
 import { useNavigate } from 'react-router-dom';
 import { DataTable } from '../../../components/common/DataTable';
 import { BoutonsNouveauDevis, OngletsBranches, iconeOnglet } from '../../../components/common/BranchesDevis';
+import { FiltreTypeContrat, libellesTypeContrat } from '../../../components/common/FiltreTypeContrat';
 import { isExpiredQuote, isUnconfirmedQuote, MODULES_EDITION_COMPLETE } from '../../../utils/quoteRegistry';
 import { TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
 import { moduleDuProduit, moduleOuvert, ongletDuProduit, ongletsRegistre, parametre, produitsParametres } from '../../../utils/parametrage';
@@ -79,6 +80,9 @@ export const QuoteListPage = () => {
   const [selectedBranchFilter, setSelectedBranchFilter] = useState(() => new URLSearchParams(window.location.search).get('onglet') || 'ALL');
   // Décompte du registre par branche, calculé sur les devis à confirmer réellement chargés
   const [stats, setStats] = useState({ ALL: 0, CONSOLIDATED: 0 });
+  // Mono / flotte (Automobile), individuel / groupe (autres branches) dans l'onglet de branche choisi
+  const [typeDevis, setTypeDevis] = useState('tous');
+  const [comptesType, setComptesType] = useState({ mono: 0, flotte: 0 });
   // Onglets du registre : un par « Onglet du registre » des produits, « Autres » pour un produit non réglé
   const onglets = ongletsRegistre();
   const [selectedQuote, setSelectedQuote] = useState(null);
@@ -216,13 +220,25 @@ export const QuoteListPage = () => {
       if (isExpiredQuote(q)) counts.EXPIRED += 1;
     });
     setStats(counts);
-    setQuotes(
-      selectedBranchFilter === 'ALL' ? registry
-        : selectedBranchFilter === 'CONSOLIDATED' ? registry.filter((q) => q.devis_consolide)
-        : selectedBranchFilter === 'EXPIRED' ? registry.filter(isExpiredQuote)
-        : registry.filter((q) => getBranchOf(q) === selectedBranchFilter)
-    );
-  }, [registry, selectedBranchFilter]);
+    const liste = selectedBranchFilter === 'ALL' ? registry
+      : selectedBranchFilter === 'CONSOLIDATED' ? registry.filter((q) => q.devis_consolide)
+      : selectedBranchFilter === 'EXPIRED' ? registry.filter(isExpiredQuote)
+      : registry.filter((q) => getBranchOf(q) === selectedBranchFilter);
+    const flottes = liste.filter((q) => q.flotte).length;
+    setComptesType({ mono: liste.length - flottes, flotte: flottes });
+    setQuotes(typeDevis === 'tous' ? liste : liste.filter((q) => Boolean(q.flotte) === (typeDevis === 'flotte')));
+  }, [registry, selectedBranchFilter, typeDevis]);
+
+  // Onglet de la branche Automobile : libellés Mono / Flotte, sinon Individuel / Groupe
+  const ongletAuto = ongletDuProduit(1);
+  const libelleTypeDevis = (q) => libellesTypeContrat(getBranchOf(q) === ongletAuto)[q.flotte ? 'flotte' : 'mono'];
+  const ongletBranche = !['ALL', 'CONSOLIDATED', 'EXPIRED'].includes(selectedBranchFilter);
+  const filtreTypeVisible = ongletBranche
+    && (selectedBranchFilter === ongletAuto || typeDevis !== 'tous' || (comptesType.mono > 0 && comptesType.flotte > 0));
+  const choisirOnglet = (id) => {
+    setSelectedBranchFilter(id);
+    setTypeDevis('tous');
+  };
 
   const handleConvertContract = (quote) => {
     setSelectedQuote(quote);
@@ -326,7 +342,7 @@ export const QuoteListPage = () => {
         branchProd,
         q.compagnie || 'LE PHARE',
         q.avenant || '-',
-        q.flotte ? 'Flotte' : 'Mono',
+        libelleTypeDevis(q),
         formatDateTime(q.date_emission),
         formatDateTime(q.date_expiration),
         primeNette,
@@ -336,7 +352,8 @@ export const QuoteListPage = () => {
     });
 
     const totalMontant = listToPrint.reduce((acc, q) => acc + Number(q.prime_totale || 0), 0);
-    const tabName = getTabLabel(branchToUse);
+    const tabName = [getTabLabel(branchToUse), typeDevis !== 'tous' && branchToUse === selectedBranchFilter
+      ? libellesTypeContrat(branchToUse === ongletAuto)[typeDevis] : ''].filter(Boolean).join(' ');
 
     exportToPdf({
       filename: `Registre_Devis_${tabName}_LE_PHARE_${new Date().toISOString().slice(0, 10)}.pdf`,
@@ -465,7 +482,7 @@ export const QuoteListPage = () => {
             color: row.flotte ? '#c084fc' : '#94a3b8',
           }}
         >
-          {row.flotte ? 'Flotte' : 'Mono'}
+          {libelleTypeDevis(row)}
         </span>
       ),
     },
@@ -709,10 +726,13 @@ export const QuoteListPage = () => {
           { id: 'EXPIRED', label: 'Expirés', count: countByBranch.EXPIRED || 0, icon: <CalendarX size={13} color="#f87171" /> },
         ]}
         actif={selectedBranchFilter}
-        onChoisir={setSelectedBranchFilter}
+        onChoisir={choisirOnglet}
         onImprimer={handlePrintQuotes}
         libelle={(tab) => `Afficher les devis : ${tab.label}`}
       />
+      {filtreTypeVisible && (
+        <FiltreTypeContrat valeur={typeDevis} auto={selectedBranchFilter === ongletAuto} comptes={comptesType} onChoisir={setTypeDevis} />
+      )}
 
       {/* Consolidation Action Bar (si des devis sont sélectionnés) */}
       {selectedForConsolidation.length > 0 && (

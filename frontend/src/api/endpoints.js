@@ -1853,7 +1853,8 @@ export const contractApi = {
     const res = await apiClient.get('/contrat/', { params });
     return { contrats: extractData(res).map(normalizeContrat), total: Number(res?.data?.count ?? 0) };
   },
-  // GET /api/contrat/synthese/ : compteurs par produit et par statut pour la recherche et les périodes
+  // GET /api/contrat/synthese/ : compteurs par produit, mono / flotte de la branche (par_type, ?idproduit=) et par
+  // statut (?flotte=0 ou 1) pour la recherche et les périodes
   getSynthesePortefeuille: async (params = {}) => (await apiClient.get('/contrat/synthese/', { params })).data,
   // GET /api/contrat/:id/
   // GET /api/contrat/:id/conditions-particulieres/ (mêmes données que pour un devis, tables du contrat)

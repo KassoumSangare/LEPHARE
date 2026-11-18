@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from dateutil.relativedelta import relativedelta
 from django.db import connection, transaction
 from django.db.utils import DatabaseError
-from django.db.models import F, Prefetch, Q
+from django.db.models import DecimalField, F, Prefetch, Q
 from django.db.models.expressions import RawSQL
 from django.http import FileResponse, Http404
 from django.http.response import JsonResponse
@@ -1220,6 +1220,26 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 queryset = queryset.filter(idproduit_id=int(idproduit))
         return queryset
 
+    def _filtre_flotte(self, queryset):
+        # Mono ou flotte (Automobile), individuel ou groupe (autres branches) : case « flotte » du contrat,
+        # ?flotte=1 ou ?flotte=0 ; sans paramètre, les deux
+        flotte = str(self.request.query_params.get("flotte") or "").lower()
+        if flotte in ("1", "true", "flotte"):
+            return queryset.filter(flotte=True)
+        if flotte in ("0", "false", "mono"):
+            return queryset.filter(flotte=False)
+        return queryset
+
+    @staticmethod
+    def _compte_par_type(queryset):
+        """Contrats non annulés mono (individuels) et flotte (groupe) de la sélection, pour le filtre de type."""
+        from django.db.models import Count
+
+        comptes = {"mono": 0, "flotte": 0}
+        for ligne in queryset.filter(idcontratannulation=0).values("flotte").annotate(n=Count("pk")).order_by():
+            comptes["flotte" if ligne["flotte"] else "mono"] += ligne["n"]
+        return comptes
+
     def _renouvellement_posterieur(self):
         """Renouvellement (avenant REN) non annulé, plus récent, sur la police du contrat (sous-requête)."""
         from django.db.models import OuterRef
@@ -1333,7 +1353,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             if statut != "annule":
                 queryset = queryset.filter(idcontratannulation=0)
             queryset = self._statut_portefeuille(
-                self._filtres_portefeuille(self._filtre_produit(queryset))
+                self._filtre_flotte(self._filtres_portefeuille(self._filtre_produit(queryset)))
             )
             if statut in self.STATUTS_PORTEFEUILLE:
                 queryset = queryset.filter(statut_portefeuille=statut)
@@ -1380,8 +1400,9 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     def synthese(self, request):
         """
         GET /api/contrat/synthese/ : compteurs du Portefeuille des Contrats pour la recherche et les
-        périodes en cours, en une requête — contrats non annulés par produit (onglets de branche) et
-        contrats par statut pour les produits demandés (?idproduit=, onglets de statut).
+        périodes en cours, en une requête — contrats non annulés par produit (onglets de branche),
+        mono et flotte des produits demandés (?idproduit=, filtre de type) et contrats par statut pour
+        les produits et le type demandés (?flotte=, onglets de statut).
         """
         from django.db.models import Count
 
@@ -1391,12 +1412,16 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             for ligne in queryset.filter(idcontratannulation=0)
             .values("idproduit_id").annotate(n=Count("pk")).order_by()
         }
+        branche = self._filtre_produit(queryset)
         par_statut = {
             ligne["statut_portefeuille"]: ligne["n"]
-            for ligne in self._statut_portefeuille(self._filtre_produit(queryset))
+            for ligne in self._statut_portefeuille(self._filtre_flotte(branche))
             .values("statut_portefeuille").annotate(n=Count("pk")).order_by()
         }
-        return Response({"par_produit": par_produit, "par_statut": par_statut}, status=status.HTTP_200_OK)
+        return Response(
+            {"par_produit": par_produit, "par_type": self._compte_par_type(branche), "par_statut": par_statut},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get"], url_path="garanties")
     def get_garanties(self, request, pk=None):
@@ -1525,14 +1550,15 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             for ligne in base.filter(idcontratannulation=0)
             .values("idproduit_id").annotate(n=Count("pk")).order_by()
         }
+        branche = self._filtre_produit(base)
         par_statut = {
             ligne["statut_portefeuille"]: ligne["n"]
-            for ligne in self._statut_portefeuille(self._filtre_produit(base))
+            for ligne in self._statut_portefeuille(self._filtre_flotte(branche))
             .values("statut_portefeuille").annotate(n=Count("pk")).order_by()
         }
         statut = params.get("statut")
         queryset = base if statut == "annule" else base.filter(idcontratannulation=0)
-        queryset = self._statut_portefeuille(self._filtre_produit(queryset))
+        queryset = self._statut_portefeuille(self._filtre_flotte(self._filtre_produit(queryset)))
         if statut in self.STATUTS_PORTEFEUILLE:
             queryset = queryset.filter(statut_portefeuille=statut)
         ordre = params.get("ordre") or ""
@@ -1563,6 +1589,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 "page_size": page_size,
                 "results": ContratSerializer(contrats, many=True).data,
                 "par_produit": par_produit,
+                "par_type": self._compte_par_type(branche),
                 "par_statut": par_statut,
             },
             status=status.HTTP_200_OK,
@@ -1684,8 +1711,23 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             for serializer_garantie in garanties_a_sauver:
                 serializer_garantie.save()
 
+        # Contrat relu en base : ses déclencheurs recalculent le partage des accessoires réglé pour la compagnie et la
+        # commission sur la prime HT (trg_lephare_commission_courtier), et arrondissent la TTC. L'écran montrait jusqu'ici
+        # la valeur saisie alors que la base en gardait une autre.
+        contrat.refresh_from_db()
+        recalcules = []
+        for champ, demande in contrat_serializer.validated_data.items():
+            if not isinstance(Contrat._meta.get_field(champ), DecimalField) or demande is None:
+                continue
+            enregistre = getattr(contrat, champ)
+            if enregistre is None or Decimal(demande) != Decimal(enregistre):
+                recalcules.append({
+                    "Champ": champ,
+                    "Demande": float(demande),
+                    "Enregistre": None if enregistre is None else float(enregistre),
+                })
         return Response(
-            self._donnees_administration(contrat),
+            {**self._donnees_administration(contrat), "recalcules": recalcules},
             status=status.HTTP_200_OK,
         )
 

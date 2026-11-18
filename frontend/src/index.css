@@ -2032,6 +2032,23 @@ button[style]:not(.btn):disabled {
 }
 .portefeuille-puce.actif .portefeuille-compte, .portefeuille-statut.actif .portefeuille-compte { background: var(--primary-500); color: #fff; }
 
+/* Filtre Mono / Flotte (Individuel / Groupe hors Automobile), sous les onglets de branche */
+.filtre-type-contrat {
+  display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; border-radius: 999px;
+  border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated);
+  animation: filtre-type-entree 0.18s ease-out;
+}
+.filtre-type-option {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0.8rem; border: none; border-radius: 999px;
+  background: transparent; color: var(--text-secondary); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.filtre-type-option:hover { color: var(--text-primary); }
+.filtre-type-option.actif { background: color-mix(in srgb, var(--primary-500) 14%, transparent); color: var(--primary-500); }
+.filtre-type-option.actif .portefeuille-compte { background: var(--primary-500); color: #fff; }
+@keyframes filtre-type-entree { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .filtre-type-contrat { animation: none; } }
+
 .portefeuille-alerte {
   display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.7rem 1rem; border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--accent-amber) 35%, transparent);

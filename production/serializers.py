@@ -704,6 +704,12 @@ class ContratAdministrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"dateexpiration": "La date d’échéance doit être postérieure à la date d’effet."}
             )
+        # Les documents du contrat (fn_quittance_contrat) joignent l'assuré à la fiche client : un numéro inconnu les
+        # laisserait sans en-tête
+        if "idassure" in attrs and not Client.objects.filter(pk=attrs["idassure"]).exists():
+            raise serializers.ValidationError(
+                {"idassure": f"Aucun client ne porte le n° {attrs['idassure']}."}
+            )
         return attrs
 
 
