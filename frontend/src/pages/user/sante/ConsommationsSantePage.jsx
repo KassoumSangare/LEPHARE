@@ -675,6 +675,7 @@ const ONGLETS = [
 // restent ceux d'Oreole Santé (barèmes, effectif et état des cotisations du gestionnaire)
 const ONGLETS_MINENE_LISTE = [
   { groupe: 'Analyse', cle: 'm-ensemble', libelle: "Vue d'ensemble", icone: LayoutDashboard },
+  { groupe: 'Analyse', cle: 'm-entreprises', libelle: 'Entreprises', icone: Building2 },
   { groupe: 'Analyse', cle: 'm-familles', libelle: 'Familles et formules', icone: Users },
   { groupe: 'Analyse', cle: 'm-prestations', libelle: 'Prestations', icone: Stethoscope },
   { groupe: 'Analyse', cle: 'm-beneficiaires', libelle: 'Bénéficiaires', icone: UserSearch },
@@ -817,7 +818,10 @@ export default function ConsommationsSantePage() {
         {enAnalyse && (
           <AnalyseConsommations onglet={onglet} donnees={donnees} chargement={chargement} filtres={filtres} onFiltrer={setFiltres} onRecharger={recharger} onOuvrirFiche={ouvrirFiche} />
         )}
-        {enAnalyseMinene && <MineneConsommations onglet={onglet} donnees={donneesMinene} chargement={chargementMinene} />}
+        {enAnalyseMinene && (
+          <MineneConsommations onglet={onglet} donnees={donneesMinene} chargement={chargementMinene}
+            filtres={filtresMinene} onFiltrer={setFiltresMinene} onChangerOnglet={changer} />
+        )}
         {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} programme={programme} />}
         {onglet === 'plafonds' && <OngletPlafonds onOuvrir={ouvrirFiche} />}
         {onglet === 'controles' && <OngletControles />}

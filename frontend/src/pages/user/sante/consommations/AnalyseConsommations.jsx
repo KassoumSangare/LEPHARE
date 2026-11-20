@@ -424,7 +424,7 @@ export const OngletEntreprises = ({ donnees: a, onOuvrir }) => {
 };
 
 // ------------------------------------------------------------------ fiche d'une entreprise (panneau latéral)
-const Tiroir = ({ ouvert, onFermer, titre, sousTitre, children }) => {
+export const Tiroir = ({ ouvert, onFermer, titre, sousTitre, children }) => {
   const id = useId();
   const fermer = useRef(null);
   const precedent = useRef(null);

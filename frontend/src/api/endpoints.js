@@ -1392,6 +1392,9 @@ export const rafasApi = {
   creerHonoraire: async (idExercice, facture) => (await apiClient.post(`/rafas/exercices/${idExercice}/honoraires/`, facture)).data,
   reglerHonoraire: async (idHonoraire, reglement) => (await apiClient.put(`/rafas/honoraires/${idHonoraire}/`, reglement)).data,
   supprimerHonoraire: async (idHonoraire) => (await apiClient.delete(`/rafas/honoraires/${idHonoraire}/`)).data,
+  // Incorporation ou retrait de familles : { nature, code_college, date_effet, familles, adherents: [{ Nom, Matricule, Personnes }], prorata, motif }
+  creerMouvement: async (idExercice, mouvement) => (await apiClient.post(`/rafas/exercices/${idExercice}/mouvements/`, mouvement)).data,
+  annulerMouvement: async (idMouvement, motif) => (await apiClient.post(`/rafas/mouvements/${idMouvement}/annulation/`, { motif })).data,
   // Rapport Word de la période (seul export, journalisé)
   rapport: async (id, params) => apiClient.get(`/rafas/conventions/${id}/rapport/`, { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
 };
@@ -1993,6 +1996,19 @@ export const cashApi = {
     headers: { 'X-Motif': encodeURIComponent(data.motif) }, motifEnvoye: true,
   }),
   getDecaissements: async (params) => (await apiClient.get('/caisse/decaissements/', { params })).data,
+  // Ristournes (quittances négatives des avenants de retrait et de résiliation) : à régler, réglées, modes de remboursement
+  getRistournes: async () => (await apiClient.get('/caisse/ristournes/')).data,
+  // Primes du même client encore à payer, sur lesquelles imputer la ristourne
+  getPrimesImputables: async (idQuittance) => (await apiClient.get(`/caisse/ristournes/${idQuittance}/imputation/primes/`)).data,
+  // POST { Montant, IdMode, IdBanque, Reference, Beneficiaire, DateCheque } : remboursement au client
+  rembourserRistourne: async (idQuittance, data) => (await apiClient.post(`/caisse/ristournes/${idQuittance}/remboursement/`, data)).data,
+  // POST { Lignes: [{ NumeroQuittance, Montant }], Motif } : la ristourne paie d'autres primes du client
+  imputerRistourne: async (idQuittance, data) => (await apiClient.post(`/caisse/ristournes/${idQuittance}/imputation/`, data)).data,
+  // Remboursement ou imputation saisi par erreur : contre-passé (motif envoyé une fois)
+  annulerReglementRistourne: async (idEncaissement, motif) => (await apiClient.post(
+    `/caisse/ristournes/reglements/${idEncaissement}/annulation/`, { Motif: motif },
+    { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true },
+  )).data,
   // GET /api/cheques/:id/quittances/ : quittances réglées par le chèque (à réencaisser)
   getQuittancesCheque: async (id) => extractData(await apiClient.get(`/cheques/${id}/quittances/`)),
 };

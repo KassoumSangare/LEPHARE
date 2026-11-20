@@ -391,6 +391,7 @@ REGLES = [
     R("POST", r"incorporation/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     # Retrait, résiliation, changement d'immatriculation (production/avenants.py) : préparation, montants, émission
     R("GET", r"avenants/(document/|historique/)?\d+/?$", "contrats.view"),
+    R("GET", r"avenants/registre/?$", "contrats.view"),
     R("POST", r"avenants/\d+/simulation/?$", "contrats.view", lecture=True),
     R("POST", r"avenants/(?P<pk>\d+)/?$", _avenant_police, objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
@@ -413,6 +414,12 @@ REGLES = [
     # Décaissement de tout autre règlement : même droit et même motif que le chèque impayé
     R("POST", r"caisse/reglements/(?P<id_encaissement>\d+)/decaissement/?$", "encaissements.cancel", objet="encaissement", cles=("id_encaissement",)),
     R("GET", r"caisse/(reglements|decaissements)/?$", "encaissements.view"),
+    # Ristournes (production/ristournes.py) : remboursement ou imputation par la caisse, annulation d'une saisie erronée
+    R("GET", r"caisse/ristournes/((?P<idquittance>\d+)/imputation/primes/)?$", "encaissements.view"),
+    R("POST", r"caisse/ristournes/(?P<idquittance>\d+)/(remboursement|imputation)/?$", "encaissements.create",
+      objet="quittance", cles=("idquittance",)),
+    R("POST", r"caisse/ristournes/reglements/(?P<idencaissement>\d+)/annulation/?$", "encaissements.cancel",
+      objet="encaissement", cles=("idencaissement",)),
     # Correction d'un encaissement saisi par erreur (production/corrections_encaissement.py) : l'auteur le jour même, sinon un
     # responsable ; la vue vérifie lequel des deux
     R("POST", r"caisse/encaissements/(?P<id_encaissement>\d+)/correction/(references|annulation)/?$", _correction_encaissement,

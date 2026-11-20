@@ -205,6 +205,9 @@ urlpatterns = [
     path(r"rafas/versements/<int:idversement>/", rafas.vue_versement, name="rafas-versement"),
     path(r"rafas/exercices/<int:idexercice>/honoraires/", rafas.vue_honoraires, name="rafas-honoraires"),
     path(r"rafas/honoraires/<int:idhonoraire>/", rafas.vue_honoraire, name="rafas-honoraire"),
+    # Incorporations et retraits de familles en cours d'exercice (demande du 2026-11-20)
+    path(r"rafas/exercices/<int:idexercice>/mouvements/", rafas.vue_mouvements, name="rafas-mouvements"),
+    path(r"rafas/mouvements/<int:idmouvement>/annulation/", rafas.vue_annulation_mouvement, name="rafas-mouvement-annulation"),
 
 ]
 urlpatterns += router.urls

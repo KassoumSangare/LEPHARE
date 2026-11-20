@@ -207,8 +207,9 @@ def _par_compagnie(cursor, p, ca):
     return resultat
 
 
-def _situation(cursor, jour):
-    """Situation au jour, quel que soit l'exercice affiché : reversements, commissions, chèques, impayés, dérogations."""
+def _situation(cursor, jour, du=None, au=None):
+    """Situation au jour, quel que soit l'exercice affiché : reversements, commissions, chèques, impayés, dérogations ;
+    sauf le cumul des réclamations de commission, émises sur l'exercice affiché (du … au …)."""
     # Primes encaissées à reverser, au-delà du délai de la convention de la compagnie (30 jours sinon)
     delais = {c.idcompagnie: c.delai_reversement_jours for c in ConventionAssureur.objects.exclude(idcompagnie=None)
               if c.delai_reversement_jours}
@@ -250,6 +251,7 @@ def _situation(cursor, jour):
             "AReclamer": _franc(total["EnAttenteAReclamer"]), "Reclamees": _franc(total["EnAttenteReclamee"]),
             "Payees": _franc(total["CommissionPayee"]), "TauxRecouvrement": total["TauxRecouvrement"],
             "ReclamationsAnciennes": {"Nombre": len(anciennes), "Montant": _franc(sum(r["Reste"] for r in anciennes))},
+            "ReclamationsCumul": views_finance.cumul_reclamations(recap["Lignes"], du or date(jour.year, 1, 1), au or jour),
         },
         "ChequesEchus": {"Nombre": cheques["n"], "Montant": _franc(cheques["m"])},
         "Impayes": {"Nombre": impayes["n"], "Montant": _franc(impayes["m"]), "ApresJours": IMPAYE_APRES_JOURS},
@@ -318,7 +320,7 @@ def tableau_de_bord(request):
     p = {"debut": date(exercice, 1, 1), "au": au, "debut_n1": date(exercice - 1, 1, 1), "au_n1": _meme_jour(au, exercice - 1),
          "decaissements": sorted(views_finance.MODES_DECAISSEMENT)}
     with connection.cursor() as cursor:
-        situation = _situation(cursor, jour)
+        situation = _situation(cursor, jour, p["debut"], au)
         # Chiffre d'affaires du cabinet : commissions et accessoires acquis, perçus, en attente (courtier, 2026-11-12)
         ca = chiffre_affaires.calculer(cursor, p, en_attente=situation["Commissions"])
         production = _production(cursor, p)

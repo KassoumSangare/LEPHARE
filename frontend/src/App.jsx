@@ -45,6 +45,7 @@ const CashCollectionPage = lazy(() => import('./pages/user/cash/CashCollectionPa
 const ChequeManagementPage = lazy(() => import('./pages/user/cash/ChequeManagementPage'));
 const EtatEncaissementsPage = lazy(() => import('./pages/user/cash/EtatEncaissementsPage'));
 const RechercheReglementPage = lazy(() => import('./pages/user/cash/RechercheReglementPage'));
+const RistournesPage = lazy(() => import('./pages/user/cash/RistournesPage'));
 const AsaciPage = lazy(() => import('./pages/user/asaci/AsaciPage'));
 const MyDerogationsPage = lazy(() => import('./pages/user/derogations/MyDerogationsPage'));
 const ArchivesPage = lazy(() => import('./pages/user/archives/ArchivesPage'));
@@ -237,6 +238,7 @@ function App() {
                 <Route path="/user/cheques" element={<ChequeManagementPage />} />
                 <Route path="/user/cash/etat" element={<EtatEncaissementsPage />} />
                 <Route path="/user/cash/recherche" element={<RechercheReglementPage />} />
+                <Route path="/user/cash/ristournes" element={<RistournesPage />} />
 
                 {/* ===== MODULE H – SINISTRES DÉLÉGUÉS ===== */}
                 <Route path="/user/claims" element={<ClaimsListPage />} />

@@ -24,7 +24,7 @@ from .views_devis_voyage import (
     lire_devis_voyage,
 )
 from . import apporteurs, decaissements, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
-from . import corrections_encaissement
+from . import corrections_encaissement, registre_avenants, ristournes
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import avenants as avenants_views
@@ -664,6 +664,8 @@ urlpatterns = [
         name="avenant_renouvellement",
     ),
     # Avenants de retrait, de résiliation et de changement d'immatriculation : préparation, montants, émission, document
+    # Registre des avenants : actes émis et avenants en préparation, toutes polices (production/registre_avenants.py)
+    path("avenants/registre/", registre_avenants.registre, name="avenants-registre"),
     path("avenants/<int:pk>/", avenants_views.avenants, name="avenants-contrat"),
     path("avenants/<int:pk>/simulation/", avenants_views.simulation, name="avenants-simulation"),
     path("avenants/document/<int:pk>/", avenants_views.document, name="avenants-document"),
@@ -898,6 +900,12 @@ urlpatterns = [
     path("caisse/reglements/", decaissements.vue_reglements, name="caisse-reglements"),
     path("caisse/reglements/<int:id_encaissement>/decaissement/", decaissements.vue_decaissement, name="caisse-reglement-decaissement"),
     path("caisse/decaissements/", decaissements.vue_decaissements, name="caisse-decaissements"),
+    # Ristournes (quittances négatives des avenants de retrait et de résiliation) : remboursement ou imputation en caisse
+    path("caisse/ristournes/", ristournes.ristournes, name="caisse-ristournes"),
+    path("caisse/ristournes/<int:idquittance>/imputation/primes/", ristournes.imputation_primes, name="caisse-ristourne-primes"),
+    path("caisse/ristournes/<int:idquittance>/remboursement/", ristournes.remboursement, name="caisse-ristourne-remboursement"),
+    path("caisse/ristournes/<int:idquittance>/imputation/", ristournes.imputation, name="caisse-ristourne-imputation"),
+    path("caisse/ristournes/reglements/<int:idencaissement>/annulation/", ristournes.annulation, name="caisse-ristourne-annulation"),
     # Correction d'un encaissement saisi par erreur : références, annulation, annulation et réaffectation
     path("caisse/encaissements/du-jour/", corrections_encaissement.vue_du_jour, name="caisse-encaissements-du-jour"),
     path("caisse/encaissements/<int:id_encaissement>/correction/", corrections_encaissement.vue_fiche, name="caisse-encaissement-correction"),

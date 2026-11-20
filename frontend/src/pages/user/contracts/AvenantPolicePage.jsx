@@ -127,7 +127,8 @@ export const AvenantPolicePage = () => {
     setEnvoi(true);
     try {
       const resultat = await contractApi.emettreAvenant(id, { ...payload, Motif: motif.trim() });
-      success(`Avenant n° ${resultat.NumeroAvenant} émis${resultat.NumeroQuittance ? `, quittance ${resultat.NumeroQuittance}` : ''}.`);
+      success(`Avenant n° ${resultat.NumeroAvenant} émis${resultat.NumeroQuittance ? `, quittance ${resultat.NumeroQuittance}` : ''}.`
+        + (Number(resultat.PrimeTtc) < 0 && resultat.NumeroQuittance ? ' La ristourne se règle dans Caisse > Ristournes à régler.' : ''));
       imprimerAvenantPolice(resultat.IdContrat);
       navigate(`/user/contracts/${resultat.IdContrat}`);
     } catch (e) {

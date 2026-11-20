@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Banknote, Building2, Check, Coins, HandCoins, Loader2, Plus, Printer, ReceiptText, ShieldCheck, Trash2, TrendingUp, Undo2, Wallet } from 'lucide-react';
+import {
+  Ban, Banknote, Building2, Check, Coins, HandCoins, Loader2, Plus, Printer, ReceiptText, ShieldCheck, Trash2, TrendingUp, Undo2, UserMinus, UserPlus, Wallet,
+} from 'lucide-react';
 import { rafasApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { aLeDroit } from '../../../utils/droits';
-import { confirmer } from '../../../utils/dialogue';
+import { confirmer, saisirTexte } from '../../../utils/dialogue';
 import { messageErreurApi } from '../../../utils/financeUtils';
-import { imprimerAppel, imprimerFacture } from '../../../utils/impressionsRafas';
+import { imprimerAppel, imprimerFacture, imprimerMouvement } from '../../../utils/impressionsRafas';
 import Modal from '../../../components/common/Modal';
 import { Cadre, Courbes } from '../sante/consommations/graphiques';
 import { Badge, Carte, Champ, ChampMontant, Tableau, Tuile, dateFr, entier, francs, francsCourts, libelleRang, pct, periode, taux as tauxFr } from './rafasCommun';
@@ -89,7 +91,7 @@ const FormulaireFacture = ({ fonds, beneficiaire, ouvert, onFermer, onValider })
         <Champ libelle="au" requis><input type="date" className="form-control" value={d.periode_au || ''} onChange={(e) => setD({ ...d, periode_au: e.target.value, montant: null })} /></Champ>
         <Champ libelle="Familles retenues" aide="La convention calcule les honoraires sur l'ensemble des familles bénéficiant des prestations.">
           <select className="form-control" value={d.source} onChange={(e) => setD({ ...d, source: e.target.value, montant: null })}>
-            <option value="convention">{`Familles de la convention : ${francs(fonds.Budget.Cotisations)} de cotisations`}</option>
+            <option value="convention">{`Familles de la convention${fonds.BudgetInitial && fonds.BudgetInitial.Cotisations !== fonds.Budget.Cotisations ? ', après incorporations et retraits' : ''} : ${francs(fonds.Budget.Cotisations)} de cotisations`}</option>
             {fonds.BudgetReel && <option value="effectif">{`Familles de l'effectif du gestionnaire : ${francs(fonds.BudgetReel.Cotisations)}`}</option>}
           </select>
         </Champ>
@@ -126,6 +128,72 @@ const FormulaireReglement = ({ facture, onFermer, onValider }) => {
       <div className="rafas-pied-assistant">
         <button type="button" className="btn btn-secondary" onClick={onFermer}>Annuler</button>
         <button type="button" className="btn btn-primary rafas-bouton" disabled={!d.date_paiement} onClick={() => onValider(d)}><Check size={15} /> Enregistrer le règlement</button>
+      </div>
+    </Modal>
+  );
+};
+
+// Incorporation ou retrait de familles dans un collège de l'exercice (demande du 2026-11-20). Cotisation annuelle par famille entière par
+// défaut (tarif forfaitaire), au prorata des jours restants si la case est cochée ; une famille par ligne dans la liste des adhérents.
+const lireAdherents = (texte) => String(texte || '').split('\n').map((l) => l.trim()).filter(Boolean).map((ligne) => {
+  const [Nom, Matricule, Personnes] = ligne.split(/[;\t]/).map((x) => x.trim());
+  return { Nom, Matricule: Matricule || '', Personnes: Number(Personnes) > 0 ? Number(Personnes) : null };
+});
+
+const FormulaireMouvement = ({ fonds, nature, ouvert, onFermer, onValider }) => {
+  const ex = fonds.Exercice;
+  const [d, setD] = useState({});
+  useEffect(() => {
+    if (!ouvert) return;
+    const jour = aujourdhui();
+    setD({ code_college: fonds.Colleges[0]?.Code || '', date_effet: jour < ex.date_effet ? ex.date_effet : jour > ex.date_echeance ? ex.date_echeance : jour,
+      familles: '', liste: '', prorata: false, motif: '' });
+  }, [ouvert, fonds, ex]);
+  const incorporation = nature === 'INCORPORATION';
+  const college = fonds.Colleges.find((c) => c.Code === d.code_college);
+  const adherents = lireAdherents(d.liste);
+  const familles = adherents.length || Number(d.familles) || 0;
+  const fraction = d.prorata && d.date_effet ? Math.max(0, Math.min(1, joursEntre(d.date_effet, ex.date_echeance) / fonds.JoursExercice)) : 1;
+  const montant = college ? Math.round(college.Cotisation * familles * fraction) : 0;
+  const maximum = college?.FamillesApresMouvements ?? 0;
+  const trop = !incorporation && familles > maximum;
+  return (
+    <Modal isOpen={ouvert} onClose={onFermer} size="large" title={incorporation ? 'Incorporer des familles' : 'Retirer des familles'}
+      subtitle={`Exercice du ${dateFr(ex.date_effet)} au ${dateFr(ex.date_echeance)}`}>
+      <div className="rafas-grille-2">
+        <Champ libelle="Collège" requis>
+          <select className="form-control" value={d.code_college || ''} onChange={(e) => setD({ ...d, code_college: e.target.value })}>
+            {fonds.Colleges.map((c) => <option key={c.Code} value={c.Code}>{`${c.Libelle} - ${francs(c.Cotisation)} par famille, ${entier(c.FamillesApresMouvements)} familles`}</option>)}
+          </select>
+        </Champ>
+        <Champ libelle="Date d'effet" requis>
+          <input type="date" className="form-control" min={ex.date_effet} max={ex.date_echeance} value={d.date_effet || ''} onChange={(e) => setD({ ...d, date_effet: e.target.value })} />
+        </Champ>
+        <Champ libelle="Nombre de familles" requis aide={trop ? `Le collège compte ${entier(maximum)} familles.` : undefined}>
+          <input type="number" min="1" className="form-control rafas-nombre" disabled={adherents.length > 0} value={adherents.length || d.familles || ''}
+            onChange={(e) => setD({ ...d, familles: e.target.value })} />
+        </Champ>
+        <Champ libelle={incorporation ? 'Cotisations ajoutées' : 'Cotisations retirées'}>
+          <input className="form-control rafas-nombre" value={francs(montant)} readOnly />
+        </Champ>
+        <Champ libelle="Adhérents concernés" large aide="Une famille par ligne : nom ; matricule ; nombre de personnes.">
+          <textarea className="form-control" rows={4} value={d.liste || ''} onChange={(e) => setD({ ...d, liste: e.target.value })} />
+        </Champ>
+        <Champ libelle="Motif" large>
+          <input className="form-control" maxLength={500} value={d.motif || ''} onChange={(e) => setD({ ...d, motif: e.target.value })}
+            placeholder={incorporation ? 'Embauches, mutations…' : 'Départs, démissions…'} />
+        </Champ>
+      </div>
+      <label className="cs-filtre en-ligne" style={{ marginTop: '0.6rem' }}>
+        <input type="checkbox" checked={Boolean(d.prorata)} onChange={(e) => setD({ ...d, prorata: e.target.checked })} />
+        <span>{`Au prorata des jours restants de l'exercice${d.prorata && d.date_effet ? ` : ${entier(joursEntre(d.date_effet, ex.date_echeance))} jours sur ${entier(fonds.JoursExercice)}` : ''}`}</span>
+      </label>
+      <div className="rafas-pied-assistant">
+        <button type="button" className="btn btn-secondary" onClick={onFermer}>Annuler</button>
+        <button type="button" className="btn btn-primary rafas-bouton" disabled={!college || !familles || !d.date_effet || trop}
+          onClick={() => onValider({ nature, code_college: d.code_college, date_effet: d.date_effet, familles, adherents, prorata: Boolean(d.prorata), motif: d.motif })}>
+          <Check size={15} /> {incorporation ? 'Incorporer' : 'Retirer'}
+        </button>
       </div>
     </Modal>
   );
@@ -170,6 +238,15 @@ const OngletFonds = ({ id, convention, onModifie }) => {
   const conv = convention.Convention;
   const exerciceComplet = convention.Exercices.find((e) => e.idexercice === ex.idexercice);
   const factures = (b) => fonds.Honoraires.filter((h) => h.beneficiaire === b);
+  const actifs = (fonds.Mouvements || []).filter((m) => !m.Annule);
+  const ajustement = (code) => actifs.filter((m) => m.CodeCollege === code).reduce((s, m) => s + Number(m.Montant), 0);
+  const annulerMouvement = async (m) => {
+    const motif = await saisirTexte({
+      titre: `Annuler ${m.Numero}`, message: `${m.Libelle} de ${entier(m.Familles)} famille${m.Familles > 1 ? 's' : ''} : les cotisations de l'exercice seront rétablies. Indiquez le motif.`,
+      minimum: 5, maximum: 500, confirmer: 'Annuler le mouvement', ton: 'danger',
+    });
+    if (motif) action(() => rafasApi.annulerMouvement(m.IdMouvement, motif), `${m.Numero} annulé.`);
+  };
   const colonnesFactures = [
     { cle: 'numero', libelle: 'Facture', rendu: (h) => <span className="rafas-facture"><strong>{h.numero}</strong><span>{`émise le ${dateFr(h.date_emission)}`}</span></span> },
     { cle: 'periode', libelle: 'Période', rendu: (h) => <span className="rafas-facture"><span>{`du ${dateFr(h.periode_du)}`}</span><span>{`au ${dateFr(h.periode_au)}`}</span></span> },
@@ -220,7 +297,8 @@ const OngletFonds = ({ id, convention, onModifie }) => {
           {fonds.BesoinEcheance !== null && <p className="cs-note">{`Besoin estimé jusqu'à l'échéance : ${francs(fonds.BesoinEcheance)} (${fonds.MoisRestants} mois de dépenses au rythme moyen et honoraires restant dus).`}</p>}
         </Carte>
         <div className="cs-tuiles">
-          <Tuile libelle="Cotisations de l'exercice" icone={Coins} valeur={francsCourts(budget.Cotisations)} detail={reel && fonds.BudgetReel ? "Sur l'effectif du gestionnaire" : 'Familles de la convention'} />
+          <Tuile libelle="Cotisations de l'exercice" icone={Coins} valeur={francsCourts(budget.Cotisations)}
+            detail={reel && fonds.BudgetReel ? "Sur l'effectif du gestionnaire" : actifs.length ? 'Familles de la convention, après incorporations et retraits' : 'Familles de la convention'} />
           <Tuile libelle="Enveloppe des sinistres" icone={ShieldCheck} valeur={francsCourts(budget.Enveloppe)} detail={`${pct(taux, 0)} consommés`} />
           <Tuile libelle="Projection à l'échéance" icone={TrendingUp} valeur={francsCourts(fonds.Projection)} detail={`Rythme ${francsCourts(fonds.Rythme)} par mois sur ${fonds.MoisAvecDonnees} mois`} />
           <Tuile libelle={`Honoraires du gestionnaire, ${tauxFr(ex.taux_honoraires)}`} icone={Building2} valeur={francsCourts(budget.Honoraires)} detail={`Émis ${francsCourts(fonds.HonorairesEmis.GESTIONNAIRE)}, réglés ${francsCourts(fonds.HonorairesRegles.GESTIONNAIRE)}`} />
@@ -243,13 +321,50 @@ const OngletFonds = ({ id, convention, onModifie }) => {
             { cle: 'Libelle', libelle: 'Collège' },
             { cle: 'Cotisation', libelle: 'Par famille', nombre: true, rendu: (c) => francs(c.Cotisation) },
             { cle: 'Familles', libelle: 'Familles : convention', nombre: true },
+            ...(actifs.length ? [{ cle: 'FamillesApresMouvements', libelle: 'après mouvements', nombre: true }] : []),
             { cle: 'FamillesReelles', libelle: 'effectif', nombre: true, rendu: (c) => (c.FamillesReelles === null ? '-' : entier(c.FamillesReelles)) },
-            { cle: 'Budget', libelle: 'Cotisations', nombre: true, rendu: (c) => francs(reel && c.BudgetReel !== null ? c.BudgetReel : c.Budget) },
+            { cle: 'Budget', libelle: 'Cotisations', nombre: true, rendu: (c) => francs(reel && c.BudgetReel !== null ? c.BudgetReel : c.Budget + ajustement(c.Code)) },
           ]} lignes={fonds.Colleges}
-            pied={{ Libelle: 'Total', Familles: fonds.Colleges.reduce((s, c) => s + c.Familles, 0), FamillesReelles: fonds.BudgetReel ? fonds.Colleges.reduce((s, c) => s + (c.FamillesReelles || 0), 0) : null, Cotisation: null, Budget: budget.Cotisations, BudgetReel: budget.Cotisations }} />
+            pied={{ Libelle: 'Total', Familles: fonds.Colleges.reduce((s, c) => s + c.Familles, 0),
+              FamillesApresMouvements: fonds.Colleges.reduce((s, c) => s + (c.FamillesApresMouvements || 0), 0),
+              FamillesReelles: fonds.BudgetReel ? fonds.Colleges.reduce((s, c) => s + (c.FamillesReelles || 0), 0) : null, Cotisation: null, Budget: budget.Cotisations, BudgetReel: budget.Cotisations, Code: '' }} />
           {fonds.FamillesNonRattachees > 0 && <p className="cs-note">{`${entier(fonds.FamillesNonRattachees)} familles de l'effectif relèvent de collèges du gestionnaire non rattachés : onglet Fichiers du gestionnaire.`}</p>}
         </Carte>
       </div>
+
+      <Carte titre="Incorporations et retraits" sousTitre="Familles entrées dans un collège ou sorties en cours d'exercice : elles ajustent les cotisations, les honoraires et la commission."
+        actions={peut && fonds.Colleges.length > 0 && <>
+          <button type="button" className="btn btn-secondary rafas-bouton" onClick={() => setFenetre({ type: 'mouvement', nature: 'RETRAIT' })}><UserMinus size={15} /> Retirer des familles</button>
+          <button type="button" className="btn btn-primary rafas-bouton" onClick={() => setFenetre({ type: 'mouvement', nature: 'INCORPORATION' })}><UserPlus size={15} /> Incorporer des familles</button>
+        </>}>
+        <Tableau vide="Aucune incorporation ni aucun retrait sur cet exercice." colonnes={[
+          { cle: 'Numero', libelle: 'Avenant', rendu: (m) => <span className="rafas-facture"><strong>{m.Numero}</strong><span>{m.Operateur || ''}</span></span> },
+          { cle: 'Nature', libelle: 'Mouvement', rendu: (m) => (
+            <span className="rafas-facture">
+              <Badge ton={m.Annule ? 'neutre' : m.Nature === 'INCORPORATION' ? 'bon' : 'attention'}>{m.Libelle}</Badge>
+              {m.Annule && <span title={m.MotifAnnulation}>{`Annulé : ${m.MotifAnnulation}`}</span>}
+            </span>
+          ) },
+          { cle: 'DateEffet', libelle: 'Effet', rendu: (m) => dateFr(m.DateEffet) },
+          { cle: 'College', libelle: 'Collège' },
+          { cle: 'Familles', libelle: 'Familles', nombre: true, rendu: (m) => <span className="rafas-facture droite"><strong>{entier(m.Familles)}</strong>{m.Personnes ? <span>{`${entier(m.Personnes)} personnes`}</span> : null}</span> },
+          { cle: 'Adherents', libelle: 'Adhérents', rendu: (m) => (m.Adherents.length
+            ? <span title={m.Adherents.map((a) => a.Nom).join(', ')}>{m.Adherents.slice(0, 3).map((a) => a.Nom).join(', ')}{m.Adherents.length > 3 ? `, et ${m.Adherents.length - 3} autres` : ''}</span>
+            : <span className="cs-muet">-</span>) },
+          { cle: 'Montant', libelle: 'Cotisations', nombre: true, rendu: (m) => (
+            <span className={`rafas-facture droite${m.Annule ? ' cs-muet' : ''}`}>
+              <strong>{`${Number(m.Montant) >= 0 ? '+' : '-'} ${francs(Math.abs(Number(m.Montant)))}`}</strong>
+              <span>{m.Prorata ? `au prorata, ${pct(Number(m.Fraction), 0)}` : 'cotisation annuelle'}</span>
+            </span>
+          ) },
+          { cle: 'actions', libelle: '', rendu: (m) => (
+            <div className="rafas-actions-ligne">
+              <button type="button" className="rafas-icone-bouton" title="Imprimer l'avenant" onClick={() => imprimerMouvement(conv, fonds, m)}><Printer size={15} /></button>
+              {peut && !m.Annule && <button type="button" className="rafas-icone-bouton danger" title="Annuler" onClick={() => annulerMouvement(m)}><Ban size={15} /></button>}
+            </div>
+          ) },
+        ]} lignes={fonds.Mouvements || []} />
+      </Carte>
 
       <Carte titre="Appels de fonds et versements" sousTitre="La provision demandée au souscripteur en début d'année, puis ajustée selon les dépenses."
         actions={peut && <>
@@ -298,6 +413,12 @@ const OngletFonds = ({ id, convention, onModifie }) => {
         onValider={(d) => action(() => rafasApi.creerVersement(ex.idexercice, d), 'Versement enregistré.')} />
       <FormulaireFacture fonds={fonds} beneficiaire={fenetre?.beneficiaire} ouvert={fenetre?.type === 'facture'} onFermer={() => setFenetre(null)}
         onValider={(d) => action(() => rafasApi.creerHonoraire(ex.idexercice, d), d.beneficiaire === 'COURTIER' ? 'Facture de commission enregistrée.' : 'Honoraires enregistrés.')} />
+      <FormulaireMouvement fonds={fonds} nature={fenetre?.nature} ouvert={fenetre?.type === 'mouvement'} onFermer={() => setFenetre(null)}
+        onValider={async (d) => {
+          const r = await action(() => rafasApi.creerMouvement(ex.idexercice, d), d.nature === 'INCORPORATION' ? 'Familles incorporées.' : 'Familles retirées.');
+          const m = r?.Mouvements?.find((x) => x.IdMouvement === r.IdMouvement);
+          if (m) imprimerMouvement(conv, r, m);
+        }} />
       <FormulaireReglement facture={fenetre?.type === 'reglement' ? fenetre.facture : null} onFermer={() => setFenetre(null)}
         onValider={(d) => action(() => rafasApi.reglerHonoraire(fenetre.facture.idhonoraire, d), 'Règlement enregistré.')} />
       {envoi && <div className="rafas-voile" aria-live="polite"><Loader2 size={22} className="spin" /></div>}

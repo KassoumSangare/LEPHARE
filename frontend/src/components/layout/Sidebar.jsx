@@ -48,7 +48,7 @@ import {
   UserPlus,
   Wallet,
   Archive,
-  ListChecks, SearchCheck, HeartPulse, HeartHandshake,
+  ListChecks, SearchCheck, HeartPulse, HeartHandshake, Undo2,
 } from 'lucide-react';
 
 // Repère d'un menu déroulant : nombre de pages et chevron dans une pastille, qui se teinte et pivote à l'ouverture
@@ -280,7 +280,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
 
             {peut('contrats.view') && <NavLink to="/user/endorsements" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <RefreshCw size={16} className="nav-icon" />
-              <span>Avenants</span>
+              <span>Registre des avenants</span>
             </NavLink>}
 
             {peut('contrats.view') && <NavLink to="/user/reprises" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
@@ -332,6 +332,10 @@ export const Sidebar = ({ isOpen, onClose }) => {
                   <NavLink to="/user/cash/recherche" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
                     <SearchCheck size={14} className="nav-icon" />
                     <span>Rechercher un règlement</span>
+                  </NavLink>
+                  <NavLink to="/user/cash/ristournes" className={({ isActive }) => `sidebar-sublink-item ${isActive ? 'active' : ''}`}>
+                    <Undo2 size={14} className="nav-icon" />
+                    <span>Ristournes à régler</span>
                   </NavLink>
                 </div>
               )}

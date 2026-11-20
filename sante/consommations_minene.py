@@ -13,9 +13,15 @@ une ligne par prestation, tiers payant (TP) ou remboursement direct (RD), avec l
 - centres exécutants et communes, médecins, actes, délais des soins à la clôture ;
 - anomalies : règles F01 à F10 des consommations (detecter_fraude) sur les seules prestations MINENE.
 
-GET /api/consommations/minene/?du&au&police : rien n'est écrit (droit consommations.view par la garde).
+- entreprises (souscripteur du relevé, demande du 2026-11-20 : « affichage par entreprise et détail de sa consommation ») : consommation,
+  polices LE PHARE rattachées, primes acquises et taux ; avec ?entreprise=, toute l'analyse porte sur la seule entreprise (son portefeuille
+  LE PHARE compris).
+
+GET /api/consommations/minene/?du&au&police&entreprise : rien n'est écrit (droit consommations.view par la garde).
 """
 
+import re
+import unicodedata
 from collections import Counter, defaultdict
 from decimal import Decimal
 from statistics import median
@@ -108,7 +114,93 @@ def famille_du_matricule(matricule):
     return matricule // 100 if matricule and matricule >= 100 else None
 
 
-def analyser(prestations, liens, portefeuille, mois_couverts=None):
+def entreprise_de(p):
+    """Entreprise de la prestation : souscripteur du relevé du gestionnaire (SOAC, SOCIETE DE PETROLE ET DERIVES…), à défaut le nom de sa police."""
+    return (p.get("souscripteur") or p.get("police") or "").strip() or "Non renseignée"
+
+
+def lieur(liens):
+    """Rattachement d'une prestation à LE PHARE : par le matricule du bénéficiaire, sinon par sa famille (matricule assuré = matricule d'un
+    membre connu sans ses deux derniers chiffres). Renvoie (lien_de, liens par famille)."""
+    par_famille = {}
+    for matricule, lien in liens.items():
+        par_famille.setdefault(famille_du_matricule(matricule), lien)
+
+    def lien_de(p):
+        return liens.get(p["matricule_beneficiaire"]) or par_famille.get(p["matricule_assure"])
+    return lien_de, par_famille
+
+
+def cle_nom(texte, parentheses=True):
+    """Nom comparable : majuscules sans accents ni ponctuation ; sans la précision entre parenthèses si parentheses est faux."""
+    t = unicodedata.normalize("NFKD", str(texte or "")).encode("ascii", "ignore").decode().upper()
+    if not parentheses:
+        t = re.sub(r"\(.*?\)", " ", t)
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", t).split())
+
+
+def polices_par_nom(entreprise, souscripteurs):
+    """Polices MINENE de LE PHARE ({police: souscripteur}) dont le souscripteur porte le nom de l'entreprise du relevé, avec ou sans la
+    précision entre parenthèses (« SOAC ( SYSTEM OUEST AFRICAIN D'ACCREDITATION ) » = « SOAC ») : rattachement de l'entreprise quand les
+    matricules du gestionnaire manquent aux fiches des membres."""
+    cles = {cle_nom(entreprise), cle_nom(entreprise, False)} - {""}
+    return {police for police, nom in (souscripteurs or {}).items() if cles & {cle_nom(nom), cle_nom(nom, False)}}
+
+
+def _principal(montants):
+    """Clé du plus gros montant d'un cumul ({clé: montant}), vide s'il n'y en a pas."""
+    return max(montants.items(), key=lambda kv: kv[1])[0] if montants else ""
+
+
+def _par_entreprise(prestations, lien_de, portefeuille, familles, mois, nb_mois, total, souscripteurs=None):
+    """Consommation de chaque entreprise (souscripteur du relevé) : prestations, modes de prise en charge, premier poste et première
+    affection, série mensuelle ; polices MINENE de LE PHARE rattachées (par les membres, ou par le nom du souscripteur), primes acquises de
+    toutes leurs familles en vigueur sur la période, taux de consommation (toute la consommation de l'entreprise face à ces primes) et
+    familles à surveiller."""
+    groupes = defaultdict(_cumul)
+    infos = defaultdict(lambda: {"Npol": set(), "Polices": set(), "Lie": ZERO, "Modes": defaultdict(lambda: ZERO),
+                                 "Postes": defaultdict(lambda: ZERO), "Affections": defaultdict(lambda: ZERO), "Mois": defaultdict(lambda: ZERO)})
+    for p in prestations:
+        cle = entreprise_de(p)
+        montant = p["mt_rembourse"] or ZERO
+        _ajouter(groupes[cle], p)
+        info = infos[cle]
+        if p.get("npol"):
+            info["Npol"].add(str(p["npol"]))
+        lien = lien_de(p)
+        if lien:
+            info["Polices"].add(lien["Police"])
+            info["Lie"] += montant
+        info["Modes"][(p.get("type") or "").upper()] += montant
+        info["Postes"][p.get("famille") or "Non renseigné"] += montant
+        if p.get("type_affection"):
+            info["Affections"][p["type_affection"]] += montant
+        if p.get("date_soins_retenue"):
+            info["Mois"][p["date_soins_retenue"].strftime("%Y-%m")] += montant
+    surveillees = Counter(f["Entreprise"] for f in familles if f["Situation"] in ("DEPASSEE", "A_SURVEILLER"))
+    lignes = []
+    for cle, g in groupes.items():
+        info = infos[cle]
+        info["Polices"] |= polices_par_nom(cle, souscripteurs)
+        rattachees = [f for f in portefeuille if f["Police"] in info["Polices"]]
+        acquises = sum((Decimal(str(f.get("PrimeNette") or 0)) for f in rattachees), ZERO) * nb_mois / 12
+        taux = g["Rembourse"] / acquises if acquises else None
+        lignes.append(_sortie(
+            cle, cle, g, total,
+            PolicesGestionnaire=sorted(info["Npol"]), PolicesLePhare=sorted(info["Polices"]),
+            CoutMoyenBeneficiaire=_n(g["Rembourse"] / len(g["Beneficiaires"])) if g["Beneficiaires"] else 0.0,
+            TiersPayant=_n(info["Modes"].get("TP", ZERO)), RemboursementDirect=_n(info["Modes"].get("RD", ZERO)),
+            PremierPoste=_principal(info["Postes"]), PremiereAffection=_principal(info["Affections"]),
+            Serie=[_n(info["Mois"].get(m, ZERO)) for m in mois],
+            FamillesPortefeuille=len(rattachees), PersonnesPortefeuille=sum(f.get("Personnes") or 0 for f in rattachees),
+            PrimesAcquises=_n(acquises) if acquises else None, RembourseRattache=_n(info["Lie"]),
+            Taux=_n(taux) if taux is not None else None, Situation=_situation(taux), FamillesSurveillees=surveillees.get(cle, 0),
+        ))
+    lignes.sort(key=lambda l: (-l["Rembourse"], l["Libelle"]))
+    return lignes
+
+
+def analyser(prestations, liens, portefeuille, mois_couverts=None, souscripteurs=None, rattacher_tout=False):
     """
     Analyse pure des prestations MINENE.
     prestations : lignes de lephare_sante_prestation (date_soins_retenue, montants, matricules, famille, type, type_affection, sexe...) ;
@@ -116,14 +208,11 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
       un bénéficiaire sans matricule dans LE PHARE est rattaché par sa famille (matricule assuré = matricule d'un membre sans ses deux
       derniers chiffres) ;
     portefeuille : familles MINENE en vigueur [{"Police", "IdAdherent", "Famille", "Formule", "PrimeNette", "Personnes"}] ;
-    mois_couverts : nombre de mois de la période analysée (défaut : mois distincts des soins).
+    mois_couverts : nombre de mois de la période analysée (défaut : mois distincts des soins) ;
+    souscripteurs : {police LE PHARE: souscripteur}, rattachement des entreprises par leur nom ;
+    rattacher_tout : analyse d'une seule entreprise rattachée à LE PHARE, toute sa consommation porte sur ses polices.
     """
-    par_famille_lephare = {}
-    for matricule, lien in liens.items():
-        par_famille_lephare.setdefault(famille_du_matricule(matricule), lien)
-
-    def lien_de(p):
-        return liens.get(p["matricule_beneficiaire"]) or par_famille_lephare.get(p["matricule_assure"])
+    lien_de, par_famille_lephare = lieur(liens)
 
     total_reclame = sum((p["mt_reclame"] or ZERO for p in prestations), ZERO)
     total = sum((p["mt_rembourse"] or ZERO for p in prestations), ZERO)
@@ -156,11 +245,12 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
 
     # Familles (assuré principal) et rattachement à LE PHARE
     par_famille = defaultdict(_cumul)
-    noms, polices_mci, membres_lies = {}, {}, defaultdict(set)
+    noms, polices_mci, entreprises, membres_lies = {}, {}, {}, defaultdict(set)
     for p in prestations:
         _ajouter(par_famille[p["matricule_assure"]], p)
         noms.setdefault(p["matricule_assure"], p.get("assure") or p.get("souscripteur") or "")
         polices_mci.setdefault(p["matricule_assure"], p.get("police") or "")
+        entreprises.setdefault(p["matricule_assure"], entreprise_de(p))
         if lien_de(p):
             membres_lies[p["matricule_assure"]].add(p["matricule_beneficiaire"])
     familles = []
@@ -171,7 +261,7 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
         taux = g["Rembourse"] / acquise if acquise else None
         familles.append(_sortie(
             matricule, noms.get(matricule) or str(matricule), g, total,
-            PoliceGestionnaire=polices_mci.get(matricule, ""), PoliceLePhare=lien["Police"] if lien else "",
+            PoliceGestionnaire=polices_mci.get(matricule, ""), Entreprise=entreprises.get(matricule, ""), PoliceLePhare=lien["Police"] if lien else "",
             Formule=lien["Formule"] if lien else "", PrimeNette=_n(prime) if prime else None,
             PrimeAcquise=_n(acquise) if acquise else None, Taux=_n(taux) if taux is not None else None,
             Projection=_n(g["Rembourse"] * 12 / nb_mois / prime) if prime else None, Situation=_situation(taux),
@@ -204,7 +294,8 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
         })
     primes_annuelles = sum((Decimal(str(f.get("PrimeNette") or 0)) for f in portefeuille), ZERO)
     primes_acquises = primes_annuelles * nb_mois / 12
-    rembourse_lie = sum(remb_par_adherent.values(), ZERO)
+    # Une entreprise rattachée à LE PHARE : toute sa consommation porte sur ses polices (membres sans matricule du gestionnaire compris)
+    rembourse_lie = total if rattacher_tout else sum(remb_par_adherent.values(), ZERO)
 
     # Prestataires et actes
     centres = defaultdict(_cumul)
@@ -233,8 +324,15 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
     chaleur = [{"Libelle": fam, "Valeurs": [_n(v[m]) for m in mois], "Total": _n(sum(v.values(), ZERO))}
                for fam, v in sorted(croise.items(), key=lambda kv: -sum(kv[1].values(), ZERO))]
 
+    # Entreprises (souscripteurs du relevé)
+    liste_entreprises = _par_entreprise(prestations, lien_de, portefeuille, familles, mois, nb_mois, total, souscripteurs)
+
     # Constats rédigés
     constats = []
+    if len(liste_entreprises) > 1:
+        e = liste_entreprises[0]
+        constats.append(f"Première entreprise consommatrice : {e['Libelle']}, {round(e['Part'] * 100)} % des remboursements "
+                        f"({len(liste_entreprises)} entreprises sur la période).")
     types = _repartition(prestations, lambda p: (p.get("type") or "").upper(), lambda c: TYPES.get(c, c or "Non renseigné"), total)
     affections = _repartition(prestations, lambda p: p.get("type_affection") or "", total=total)
     familles_prest = _repartition(prestations, lambda p: p.get("famille") or "", total=total)
@@ -281,6 +379,7 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
         "ParSexe": _repartition(prestations, sexe, lambda c: SEXES.get(c, "Non renseigné"), total),
         "Pyramide": pyramide,
         "Familles": familles,
+        "Entreprises": liste_entreprises,
         "Formules": formules,
         "Centres": liste_centres[:TOP],
         "Localites": _repartition(prestations, lambda p: p.get("localite_centre") or "", total=total, limite=TOP),
@@ -292,6 +391,9 @@ def analyser(prestations, liens, portefeuille, mois_couverts=None):
 
 
 # ------------------------------------------------------------------ base
+SQL_ENTREPRISE = "COALESCE(NULLIF(TRIM(p.souscripteur), ''), NULLIF(TRIM(p.police), ''), 'Non renseignée')"
+
+
 def _prestations(cursor, params):
     detail = colonnes_detail(cursor)
     condition, valeurs = ["p.garant = %s"], [GARANT_MINENE]
@@ -304,6 +406,11 @@ def _prestations(cursor, params):
     if police:
         condition.append("(p.police = %s OR p.npol::text = %s)")
         valeurs += [police, police]
+    # Entreprise : souscripteur du relevé (entreprise_de), à défaut le nom de la police
+    entreprise = str(params.get("entreprise") or "").strip()
+    if entreprise:
+        condition.append(f"{SQL_ENTREPRISE} = %s")
+        valeurs.append(entreprise)
     lignes = _lignes(cursor, f"""
         SELECT p.*, e.genre, e.date_effet, e.actif AS actif_effectif, e.date_sortie, e.statut AS statut_effectif,
                (e.matricule_beneficiaire IS NOT NULL) AS dans_effectif, '' AS bareme
@@ -366,6 +473,15 @@ SQL_PORTEFEUILLE = f"""
 """
 
 
+# Souscripteur de chaque police MINENE de LE PHARE (dernier contrat émis) : rattachement des entreprises du relevé par leur nom
+SQL_SOUSCRIPTEURS = f"""
+    SELECT DISTINCT ON (c.numeropolice) c.numeropolice AS police, TRIM(COALESCE(cl.nom, '') || ' ' || COALESCE(cl.prenoms, '')) AS souscripteur
+    FROM stdcontrat c JOIN stddevis d ON d.iddevis = c.iddevis LEFT JOIN stdclient cl ON cl.idclient = c.idclient
+    WHERE c.idproduit = {ID_PRODUIT_SANTE} AND COALESCE(c.idcontratannulation, 0) = 0 AND {SQL_MINENE}
+    ORDER BY c.numeropolice, c.idcontrat DESC
+"""
+
+
 def _anomalies(prestations):
     """Règles F01 à F10 des consommations sur les seules prestations MINENE : bénéficiaires signalés, par niveau, et règles déclenchées."""
     if not prestations:
@@ -399,15 +515,34 @@ def analyse(params):
                                                   "IdAdherent": l["idadherent"], "Famille": l["famille"]})
         polices = [l["police"] for l in _lignes(cursor, """SELECT DISTINCT police FROM lephare_sante_prestation WHERE garant = %s AND police <> ''
                                                           ORDER BY 1""", [GARANT_MINENE])]
+        entreprises = [l["entreprise"] for l in _lignes(cursor, f"""SELECT DISTINCT {SQL_ENTREPRISE} AS entreprise FROM lephare_sante_prestation p
+                                                                   WHERE p.garant = %s ORDER BY 1""", [GARANT_MINENE])]
+        souscripteurs = {l["police"]: l["souscripteur"] for l in _lignes(cursor, SQL_SOUSCRIPTEURS)}
         releves = _lignes(cursor, """SELECT r.idreleve, r.fichier, r.dateimport, r.cloture_du, r.cloture_au, r.lignes, r.nouvelles
                                      FROM lephare_sante_releve r WHERE r.garants LIKE %s ORDER BY r.idreleve DESC LIMIT 12""", [f"%{GARANT_MINENE}%"])
     du, au = lire_date(params.get("du")), lire_date(params.get("au"))
     mois = None
     if du and au and au >= du:
         mois = (au.year - du.year) * 12 + au.month - du.month + 1
-    resultat = analyser(prestations, liens, portefeuille, mois)
+    entreprise = str(params.get("entreprise") or "").strip()
+    fiche = None
+    if entreprise and mois is None:
+        # Même période que la liste des entreprises : mois des soins de tout le relevé MINENE, pas de la seule entreprise
+        with connection.cursor() as cursor:
+            mois = len({p["date_soins_retenue"].strftime("%Y-%m") for p in _prestations(cursor, {**params, "entreprise": ""})
+                        if p.get("date_soins_retenue")}) or None
+    if entreprise:
+        # Une entreprise : son portefeuille LE PHARE = familles en vigueur des polices auxquelles ses membres sont rattachés, ou des polices
+        # MINENE souscrites à son nom
+        lien_de, _par_famille = lieur(liens)
+        polices_lephare = sorted({lien["Police"] for lien in map(lien_de, prestations) if lien} | polices_par_nom(entreprise, souscripteurs))
+        portefeuille = [f for f in portefeuille if f["Police"] in polices_lephare]
+        fiche = {"Nom": entreprise, "PolicesLePhare": polices_lephare,
+                 "PolicesGestionnaire": sorted({str(p["npol"]) for p in prestations if p.get("npol")})}
+    resultat = analyser(prestations, liens, portefeuille, mois, souscripteurs, rattacher_tout=bool(fiche and fiche["PolicesLePhare"]))
     resultat["Anomalies"] = _anomalies(prestations)
-    resultat["Filtres"] = {"Polices": polices}
+    resultat["Filtres"] = {"Polices": polices, "Entreprises": entreprises}
+    resultat["Entreprise"] = fiche
     resultat["Releves"] = [{"Id": r["idreleve"], "Fichier": r["fichier"], "Date": _iso(r["dateimport"]), "ClotureDu": _iso(r["cloture_du"]),
                             "ClotureAu": _iso(r["cloture_au"]), "Lignes": r["lignes"], "Nouvelles": r["nouvelles"]} for r in releves]
     resultat["DetailDisponible"] = bool(prestations) and any(p.get("type_affection") for p in prestations)

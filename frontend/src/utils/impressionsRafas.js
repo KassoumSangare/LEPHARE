@@ -141,6 +141,34 @@ export const imprimerAppel = (convention, fonds, appel) => {
   imprimer(`Appel de fonds ${appel.numero}`, corps);
 };
 
+/** Avenant d'incorporation ou de retrait de familles (demande du 2026-11-20) : collège, familles, adhérents et cotisations ajustées. */
+export const imprimerMouvement = (convention, fonds, m) => {
+  const cabinet = nomCabinet();
+  const incorporation = m.Nature === 'INCORPORATION';
+  const adherents = (m.Adherents || []).length ? `
+  <table>
+    <tr><th>Adhérent</th><th>Matricule</th><th>Personnes</th></tr>
+    ${m.Adherents.map((a) => `<tr><td>${echapper(a.Nom)}</td><td class="c">${echapper(a.Matricule || '-')}</td><td class="c">${a.Personnes || '-'}</td></tr>`).join('')}
+  </table>` : '';
+  const corps = `
+  <p style="text-align:right">${echapper(villeSignature())}, le ${dateFr(aujourdhui())}</p>
+  <p><b>${echapper(convention.souscripteur)}</b><br/>${echapper(convention.adresse)}${convention.representant ? `<br/>À l'attention de ${echapper(convention.representant)}` : ''}</p>
+  <div class="titre"><h1>AVENANT ${incorporation ? "D'INCORPORATION" : 'DE RETRAIT'} N° ${echapper(m.Numero)}</h1><div class="sous">Régime autofinancé d'assurance santé (RAFAS)</div>
+    <div>Exercice du ${dateFr(fonds.Exercice.date_effet)} au ${dateFr(fonds.Exercice.date_echeance)}</div></div>
+  <p>Le présent avenant ${incorporation ? 'incorpore au' : 'retire du'} régime, à compter du <b>${dateFr(m.DateEffet)}</b>, ${m.Familles} famille${m.Familles > 1 ? 's' : ''}${m.Personnes ? ` (${m.Personnes} personne${m.Personnes > 1 ? 's' : ''})` : ''} du collège <b>${echapper(m.College)}</b>. Les prestations sont gérées par ${echapper(convention.gestionnaire)}.</p>
+  ${adherents}
+  <table>
+    <tr><td>Cotisation annuelle par famille</td><td class="m">${montant(m.Cotisation)} F</td></tr>
+    <tr><td>Familles ${incorporation ? 'incorporées' : 'retirées'}</td><td class="m">${m.Familles}</td></tr>
+    <tr><td>${m.Prorata ? `Part de l'exercice restant à courir` : 'Cotisation annuelle entière'}</td><td class="m">${m.Prorata ? `${(Number(m.Fraction) * 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %` : '100 %'}</td></tr>
+    <tr class="total"><td>Cotisations ${incorporation ? 'ajoutées' : 'retirées'}</td><td class="m">${montant(Math.abs(Number(m.Montant)))} F</td></tr>
+  </table>
+  ${m.Motif ? `<p>Motif : ${echapper(m.Motif)}</p>` : ''}
+  <p>Les autres conditions de la convention restent inchangées.</p>
+  <div class="signatures"><div>Le souscripteur</div><div>Pour ${echapper(cabinet)}</div></div>`;
+  imprimer(`Avenant ${m.Numero}`, corps);
+};
+
 /** Facture de commission de courtage (chiffre d'affaires du cabinet) ou relevé d'honoraires du gestionnaire. */
 export const imprimerFacture = (convention, exercice, h) => {
   const cabinet = nomCabinet();

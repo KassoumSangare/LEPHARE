@@ -190,6 +190,12 @@ export const AdminDashboard = () => {
               lignes={[
                 ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
                 <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
+                situation?.Commissions?.ReclamationsCumul && (
+                  <Detail
+                    libelle={`Réclamations de commission cumulées en ${n}, ${pluriel(situation.Commissions.ReclamationsCumul.Nombre, 'bordereau', 'bordereaux')}`}
+                    valeur={francs(situation.Commissions.ReclamationsCumul.Montant)}
+                  />
+                ),
                 <Detail libelle="Réclamées, non payées" valeur={francs(ca.EnAttente.Reclamees)} />,
                 ca.EnAttente.Rafas > 0 && <Detail libelle="RAFAS non réglée" valeur={francs(ca.EnAttente.Rafas)} />,
               ]}

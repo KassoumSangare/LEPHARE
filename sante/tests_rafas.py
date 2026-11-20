@@ -4,11 +4,13 @@ Le moteur a été vérifié sur les fichiers réels contre l'étude « RAPPORT C
 
 import datetime as dt
 import io
+from decimal import Decimal as D
 
 from django.test import SimpleTestCase
 from openpyxl import Workbook
 
-from .rafas import budget, code_college, colleges_proposes, nom_police, periode_proposee
+from .rafas import (budget, budget_ajuste, code_college, colleges_proposes, familles_ajustees, fraction_restante, montant_mouvement, nom_police,
+                    periode_proposee)
 from .rafas_analyse import Contexte, analyser, tranche
 from .rafas_lecture import (categorie_depuis_college, lire_classeur, mois_cloture, proposer_college, repartir_sinistres, situation_depuis_nom,
                             zone_depuis_college)
@@ -172,6 +174,35 @@ class Budget(SimpleTestCase):
     def test_code_de_college(self):
         self.assertEqual(code_college("EXAT AGRICULTURE - AM/O", set()), "EXAT-AGRICULTURE-AM-O")
         self.assertEqual(code_college("EXAT AGRICULTURE - AM/O", {"EXAT-AGRICULTURE-AM-O"}), "EXAT-AGRICULTURE-AM-O-2")
+
+
+def mouvement(nature, code, familles, montant, annule=False):
+    return {"nature": nature, "code_college": code, "familles": familles, "montant": D(montant), "annule": annule}
+
+
+class IncorporationsEtRetraits(SimpleTestCase):
+    """Familles entrées ou sorties d'un collège en cours d'exercice (demande du 2026-11-20)."""
+
+    exercice = {"date_effet": dt.date(2026, 1, 1), "date_echeance": dt.date(2026, 12, 31), "taux_honoraires": D("8.5"), "taux_commission": D("6.5"),
+                "budget": {"Cotisations": 144963324}}
+    colleges = [{"code": "A", "cotisation": 701316, "familles": 38}, {"code": "B", "cotisation": 224400, "familles": 516}]
+
+    def test_cotisation_entiere_ou_au_prorata(self):
+        # Forfait par défaut : cotisation annuelle entière ; au prorata : jours restants (1er octobre -> 31 décembre = 92 jours sur 365)
+        self.assertEqual(montant_mouvement("INCORPORATION", 224400, 3, D(1)), 673200)
+        fraction = fraction_restante(self.exercice, dt.date(2026, 10, 1))
+        self.assertEqual(fraction, D(92) / D(365))
+        self.assertEqual(montant_mouvement("INCORPORATION", 224400, 3, fraction), 169683)
+        self.assertEqual(montant_mouvement("RETRAIT", 701316, 2, D(1)), -1402632)
+        self.assertEqual(fraction_restante(self.exercice, dt.date(2025, 6, 1)), D(1))
+
+    def test_familles_et_budget_ajustes(self):
+        mouvements = [mouvement("INCORPORATION", "B", 3, 673200), mouvement("RETRAIT", "A", 2, -1402632), mouvement("INCORPORATION", "B", 10, 2244000, annule=True)]
+        self.assertEqual(familles_ajustees(self.colleges, mouvements), {"A": 36, "B": 519})
+        b = budget_ajuste(self.exercice, mouvements)
+        # 144 963 324 + 673 200 - 1 402 632 = 144 233 892 ; honoraires 8,5 % et commission 6,5 % recalculés
+        self.assertEqual(b, {"Cotisations": 144233892, "Honoraires": 12259881, "Commission": 9375203, "Enveloppe": 122598808})
+        self.assertIsNone(budget_ajuste(self.exercice, [mouvement("RETRAIT", "A", 1, -701316, annule=True)]))
 
 
 class NouvelleConvention(SimpleTestCase):

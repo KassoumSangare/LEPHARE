@@ -4,6 +4,7 @@ from datetime import date
 
 from django.test import SimpleTestCase
 
+from . import views_finance
 from .chiffre_affaires import assembler
 
 EN_COURS = {"debut": date(2026, 1, 1), "au": date(2026, 11, 12), "debut_n1": date(2025, 1, 1), "au_n1": date(2025, 11, 12)}
@@ -89,3 +90,32 @@ class ResteAPercevoir(SimpleTestCase):
         ca = assembler(EN_COURS, [acte(2026, 3, 10_000)], [percu("Compagnies", date(2026, 4, 1), 25_000)], SANS_RAFAS, SANS_APPORTEUR,
                        en_attente={"AReclamer": 5_000, "Reclamees": 0})
         self.assertEqual(ca["ResteAPercevoir"], {"Total": 0, "Reclamable": 0, "AvantReversement": 0})
+
+
+def ligne_commission(id_reclamation, date_reclamation, due, payee=0):
+    return {"IdReclamation": id_reclamation, "DateReclamation": date_reclamation, "CommissionDue": due,
+            "CommissionPayee": payee, "Reste": max(due - payee, 0)}
+
+
+class CumulReclamations(SimpleTestCase):
+    """Cadre « Reste à percevoir » (demande du 2026-11-20) : réclamations de commission cumulées de l'exercice, payées comprises."""
+
+    LIGNES = [
+        ligne_commission(7, "2026-03-10", 100_000, payee=100_000),   # réclamation de mars, payée
+        ligne_commission(9, "2026-10-02", 40_000, payee=15_000),     # réclamation d'octobre, deux quittances
+        ligne_commission(9, "2026-10-02", 60_000),
+        ligne_commission(4, "2025-12-15", 80_000),                   # exercice précédent
+        ligne_commission(None, None, 25_000),                        # pas encore réclamée
+    ]
+
+    def test_cumul_de_l_exercice(self):
+        cumul = views_finance.cumul_reclamations(self.LIGNES, date(2026, 1, 1), date(2026, 11, 20))
+        self.assertEqual(cumul, {"Montant": 200_000, "Payees": 115_000, "Reste": 85_000, "Nombre": 2})
+
+    def test_exercice_clos(self):
+        cumul = views_finance.cumul_reclamations(self.LIGNES, date(2025, 1, 1), date(2025, 12, 31))
+        self.assertEqual(cumul, {"Montant": 80_000, "Payees": 0, "Reste": 80_000, "Nombre": 1})
+
+    def test_borne_au_jour(self):
+        cumul = views_finance.cumul_reclamations(self.LIGNES, date(2026, 1, 1), date(2026, 9, 30))
+        self.assertEqual((cumul["Montant"], cumul["Nombre"]), (100_000, 1))

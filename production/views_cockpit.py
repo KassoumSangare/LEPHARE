@@ -296,6 +296,8 @@ def _commissions(jour):
         "AReclamer": _franc(total["EnAttenteAReclamer"]), "Reclamees": _franc(total["EnAttenteReclamee"]),
         "Payees": _franc(total["CommissionPayee"]), "TauxRecouvrement": total["TauxRecouvrement"],
         "BordereauxEnAttente": len(recap["Reclamations"]),
+        # Réclamations de commission émises depuis le 1er janvier (cumul, payées comprises)
+        "ReclamationsCumul": views_finance.cumul_reclamations(recap["Lignes"], date(jour.year, 1, 1), jour),
     }
 
 

@@ -51,7 +51,8 @@ LONGUEURS_CONVENTION = {"souscripteur": 200, "adresse": 200, "contact": 100, "re
 CHAMPS_EXERCICE = {"rang": int, "date_effet": dt.date, "date_echeance": dt.date, "taux_honoraires": Decimal, "taux_commission": Decimal,
                    "mois_provision": int, "seuil_alerte_mois": Decimal, "date_signature": dt.date, "observations": str}
 MODES = ("VIREMENT", "CHEQUE", "ESPECES", "MOBILE", "COMPENSATION")
-PREFIXES = {"APPEL": "RAF-AF", "COURTIER": "RAF-FC", "GESTIONNAIRE": "RAF-HG"}
+PREFIXES = {"APPEL": "RAF-AF", "COURTIER": "RAF-FC", "GESTIONNAIRE": "RAF-HG", "INCORPORATION": "RAF-IN", "RETRAIT": "RAF-RE"}
+NATURES_MOUVEMENT = {"INCORPORATION": "Incorporation", "RETRAIT": "Retrait"}
 
 
 # ------------------------------------------------------------------ outils
@@ -138,6 +139,130 @@ def budget(colleges, taux_honoraires, taux_commission, familles=None):
     honoraires = (cotisations * Decimal(taux_honoraires or 0) / 100).quantize(Decimal("1"))
     commission = (cotisations * Decimal(taux_commission or 0) / 100).quantize(Decimal("1"))
     return {"Cotisations": int(cotisations), "Honoraires": int(honoraires), "Commission": int(commission), "Enveloppe": int(cotisations - honoraires - commission)}
+
+
+# ------------------------------------------------------------------ incorporations et retraits (demande du 2026-11-20)
+def fraction_restante(exercice, date_effet):
+    """Part de l'exercice qui reste à courir à partir de la date d'effet (jours inclus)."""
+    total = (exercice["date_echeance"] - exercice["date_effet"]).days + 1
+    restant = (exercice["date_echeance"] - max(date_effet, exercice["date_effet"])).days + 1
+    return Decimal(max(0, min(total, restant))) / Decimal(total) if total > 0 else Decimal(0)
+
+
+def montant_mouvement(nature, cotisation, familles, fraction):
+    """Cotisations apportées (incorporation) ou retirées (retrait) : cotisation annuelle par famille x familles x part de l'exercice."""
+    montant = (Decimal(cotisation or 0) * familles * Decimal(fraction)).quantize(Decimal("1"))
+    return montant if nature == "INCORPORATION" else -montant
+
+
+def familles_ajustees(colleges, mouvements):
+    """Familles de chaque collège après les incorporations et retraits non annulés de l'exercice."""
+    familles = {c["code"]: int(c["familles"] or 0) for c in colleges}
+    for m in mouvements:
+        if not m["annule"]:
+            familles[m["code_college"]] = familles.get(m["code_college"], 0) + (m["familles"] if m["nature"] == "INCORPORATION" else -m["familles"])
+    return familles
+
+
+def budget_ajuste(exercice, mouvements):
+    """Budget de la convention corrigé des mouvements de l'exercice : cotisations initiales + cotisations des incorporations - celles des
+    retraits ; honoraires, commission et enveloppe recalculés aux taux de l'exercice. None sans mouvement."""
+    actifs = [m for m in mouvements if not m["annule"]]
+    if not actifs:
+        return None
+    cotisations = Decimal(exercice["budget"]["Cotisations"]) + sum((Decimal(m["montant"]) for m in actifs), Decimal(0))
+    honoraires = (cotisations * Decimal(exercice["taux_honoraires"] or 0) / 100).quantize(Decimal("1"))
+    commission = (cotisations * Decimal(exercice["taux_commission"] or 0) / 100).quantize(Decimal("1"))
+    return {"Cotisations": int(cotisations), "Honoraires": int(honoraires), "Commission": int(commission),
+            "Enveloppe": int(cotisations - honoraires - commission)}
+
+
+def _mouvements(cursor, idexercice):
+    cursor.execute("SELECT to_regclass('public.lephare_rafas_mouvement') IS NOT NULL")
+    if not cursor.fetchone()[0]:
+        return []
+    lignes = _lignes(cursor, "SELECT * FROM lephare_rafas_mouvement WHERE idexercice = %s ORDER BY date_effet, idmouvement", [idexercice])
+    for m in lignes:
+        m["adherents"] = m["adherents"] if isinstance(m["adherents"], list) else json.loads(m["adherents"] or "[]")
+    return lignes
+
+
+def _adherents(brut):
+    """Adhérents concernés par un mouvement : [{Nom, Matricule, Personnes}] (facultatif ; leur nombre donne celui des familles)."""
+    resultat = []
+    for a in (brut or [])[:500]:
+        a = a if isinstance(a, dict) else {"Nom": str(a)}
+        nom = str(a.get("Nom") or "").strip()[:150]
+        if not nom:
+            continue
+        personnes = a.get("Personnes")
+        resultat.append({"Nom": nom, "Matricule": str(a.get("Matricule") or "").strip()[:30],
+                         "Personnes": _entier(personnes, f"Personnes de {nom}", mini=1, maxi=30) if personnes not in (None, "") else None})
+    return resultat
+
+
+def creer_mouvement(idexercice, d, user):
+    nature = str(d.get("nature") or "").upper()
+    if nature not in NATURES_MOUVEMENT:
+        raise ErreurRafas("Choisissez une incorporation ou un retrait.")
+    adherents = _adherents(d.get("adherents"))
+    familles = _entier(d.get("familles"), "Nombre de familles", mini=1, maxi=100000) if d.get("familles") not in (None, "") else len(adherents)
+    if not familles:
+        raise ErreurRafas("Indiquez le nombre de familles ou la liste des adhérents.")
+    if adherents and len(adherents) != familles:
+        raise ErreurRafas(f"La liste compte {len(adherents)} adhérent(s) pour {familles} famille(s) : une ligne par famille.")
+    jour = _date(d.get("date_effet"))
+    if not jour:
+        raise ErreurRafas("Date d'effet obligatoire.")
+    personnes = _entier(d.get("personnes"), "Personnes", mini=0, maxi=1000000) if d.get("personnes") not in (None, "") else (
+        sum(a["Personnes"] or 0 for a in adherents) or None)
+    prorata = d.get("prorata") in (True, "true", "1", 1)
+    motif = str(d.get("motif") or "").strip()[:500]
+    with transaction.atomic(), connection.cursor() as cursor:
+        e = _exercice_de(cursor, idexercice)
+        if not e["date_effet"] <= jour <= e["date_echeance"]:
+            raise ErreurRafas(f"La date d'effet doit être dans l'exercice, du {e['date_effet']:%d/%m/%Y} au {e['date_echeance']:%d/%m/%Y}.")
+        exercice = next(x for x in _exercices(cursor, e["idconvention"]) if x["idexercice"] == e["idexercice"])
+        college = next((c for c in exercice["colleges"] if c["code"] == str(d.get("code_college") or "")), None)
+        if not college:
+            raise ErreurRafas("Choisissez un collège de l'exercice.")
+        cursor.execute("LOCK TABLE lephare_rafas_mouvement IN SHARE ROW EXCLUSIVE MODE")
+        actuelles = familles_ajustees(exercice["colleges"], _mouvements(cursor, idexercice)).get(college["code"], 0)
+        if nature == "RETRAIT" and familles > actuelles:
+            raise ErreurRafas(f"Le collège {college['libelle']} ne compte que {actuelles} famille(s) : {familles} ne peuvent pas en être retirées.")
+        fraction = fraction_restante(e, jour) if prorata else Decimal(1)
+        montant = montant_mouvement(nature, college["cotisation"], familles, fraction)
+        numero = _numero(cursor, "lephare_rafas_mouvement", PREFIXES[nature], jour.year)
+        cursor.execute(
+            """INSERT INTO lephare_rafas_mouvement (idexercice, numero, nature, code_college, date_effet, familles, personnes, adherents, cotisation,
+                                                    prorata, fraction, montant, motif, idoperateur, operateur)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s) RETURNING idmouvement""",
+            [idexercice, numero, nature, college["code"], jour, familles, personnes, json.dumps(adherents, ensure_ascii=False), college["cotisation"],
+             prorata, fraction.quantize(Decimal("0.000001")), montant, motif, getattr(user, "id", None), _operateur(user)])
+        idmouvement = cursor.fetchone()[0]
+    return {"IdMouvement": idmouvement, "Numero": numero, **fonds(e["idconvention"], {"exercice": idexercice})}
+
+
+def annuler_mouvement(idmouvement, d):
+    motif = str(d.get("motif") or "").strip()
+    if len(motif) < 5:
+        raise ErreurRafas("Indiquez le motif de l'annulation (5 caractères au moins).")
+    with transaction.atomic(), connection.cursor() as cursor:
+        m = _une(cursor, """SELECT m.*, e.idconvention FROM lephare_rafas_mouvement m JOIN lephare_rafas_exercice e ON e.idexercice = m.idexercice
+                            WHERE m.idmouvement = %s FOR UPDATE OF m""", [idmouvement])
+        if not m:
+            raise ErreurRafas("Mouvement introuvable.")
+        if m["annule"]:
+            raise ErreurRafas("Ce mouvement est déjà annulé.")
+        if m["nature"] == "INCORPORATION":
+            # Annuler une incorporation retire ses familles : le collège ne doit pas passer sous zéro (retraits enregistrés après elle)
+            exercice = next(x for x in _exercices(cursor, m["idconvention"]) if x["idexercice"] == m["idexercice"])
+            reste = familles_ajustees(exercice["colleges"], [x for x in _mouvements(cursor, m["idexercice"]) if x["idmouvement"] != idmouvement])
+            if reste.get(m["code_college"], 0) < 0:
+                raise ErreurRafas("Des retraits enregistrés après cette incorporation portent sur ses familles : annulez-les d'abord.")
+        cursor.execute("""UPDATE lephare_rafas_mouvement SET annule = true, motif_annulation = %s, date_annulation = now() WHERE idmouvement = %s""",
+                       [motif[:500], idmouvement])
+    return fonds(m["idconvention"], {"exercice": m["idexercice"]})
 
 
 def _tables_presentes(cursor):
@@ -250,7 +375,11 @@ def situation_fonds(cursor, convention, exercice, liens=None, jour=None):
     par_mois = _depenses_par_mois(cursor, convention["idconvention"], mois[0], mois[-1])
     appels, versements, honoraires = _finances(cursor, exercice)
     familles, situation = _familles_reelles(cursor, convention["idconvention"], liens, jour)
-    b_conv = exercice["budget"]
+    # Budget de la convention corrigé des incorporations et retraits de l'exercice : il remplace le budget initial dans les calculs
+    mouvements = _mouvements(cursor, exercice["idexercice"])
+    b_ajuste = budget_ajuste(exercice, mouvements)
+    familles_apres = familles_ajustees(exercice["colleges"], mouvements)
+    b_conv = b_ajuste or exercice["budget"]
     b_reel = budget(exercice["colleges"], exercice["taux_honoraires"], exercice["taux_commission"], familles) if familles is not None else None
     depenses = sum(m["Depenses"] for m in par_mois.values())
     avec = [m for m in mois if m in par_mois]
@@ -284,12 +413,23 @@ def situation_fonds(cursor, convention, exercice, liens=None, jour=None):
                                               "seuil_alerte_mois")},
         "JoursExercice": jours_exercice,
         "Colleges": [{"Code": c["code"], "Libelle": c["libelle"], "Categorie": c["categorie"], "Cotisation": int(c["cotisation"]), "Familles": c["familles"],
+                      "FamillesApresMouvements": familles_apres.get(c["code"], 0),
                       "FamillesReelles": familles.get(c["code"], 0) if familles is not None else None,
                       "Budget": int(c["cotisation"]) * c["familles"],
                       "BudgetReel": int(c["cotisation"]) * familles.get(c["code"], 0) if familles is not None else None} for c in exercice["colleges"]],
         "FamillesNonRattachees": familles.get("", 0) if familles else 0,
         "SituationEffectif": situation["situation"] if situation else None,
-        "Budget": b_conv, "BudgetReel": b_reel,
+        # Budget : convention après incorporations et retraits ; BudgetInitial : familles de la convention seules
+        "Budget": b_conv, "BudgetInitial": exercice["budget"], "BudgetReel": b_reel,
+        "Mouvements": [{
+            "IdMouvement": m["idmouvement"], "Numero": m["numero"], "Nature": m["nature"], "Libelle": NATURES_MOUVEMENT[m["nature"]],
+            "CodeCollege": m["code_college"],
+            "College": next((c["libelle"] for c in exercice["colleges"] if c["code"] == m["code_college"]), m["code_college"]),
+            "DateEffet": m["date_effet"], "Familles": m["familles"], "Personnes": m["personnes"], "Adherents": m["adherents"],
+            "Cotisation": m["cotisation"], "Prorata": m["prorata"], "Fraction": m["fraction"], "Montant": m["montant"], "Motif": m["motif"],
+            "Operateur": m["operateur"], "DateSaisie": m["date_saisie"], "Annule": m["annule"], "MotifAnnulation": m["motif_annulation"],
+            "DateAnnulation": m["date_annulation"],
+        } for m in mouvements],
         "Mensuel": serie, "Depenses": depenses, "MoisAvecDonnees": len(avec), "Rythme": rythme,
         "Projection": rythme * len(mois) if rythme else None, "TauxEnveloppe": depenses / b_conv["Enveloppe"] if b_conv["Enveloppe"] else None,
         "TauxEnveloppeReel": depenses / b_reel["Enveloppe"] if b_reel and b_reel["Enveloppe"] else None,
@@ -1274,7 +1414,9 @@ def _reponse(fonction, *args, code=status.HTTP_200_OK):
     except DatabaseError as erreur:
         logger.exception("RAFAS : erreur de base")
         texte = str(erreur).split("\n")[0]
-        if "lephare_rafas" in texte and ("does not exist" in texte or "n'existe pas" in texte):
+        if "lephare_rafas_mouvement" in texte and ("does not exist" in texte or "n'existe pas" in texte):
+            texte = "Les incorporations et retraits RAFAS ne sont pas encore installés : appliquez la migration production 0226."
+        elif "lephare_rafas" in texte and ("does not exist" in texte or "n'existe pas" in texte):
             texte = "Les tables RAFAS n'existent pas encore : appliquez la migration production 0218."
         return Response({"error": texte}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1439,6 +1581,21 @@ def vue_versement(request, idversement):
 @permission_classes([permissions.IsAuthenticated])
 def vue_honoraires(request, idexercice):
     return _reponse(creer_honoraire, idexercice, request.data, request.user, code=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def vue_mouvements(request, idexercice):
+    """Incorporation ou retrait de familles dans un collège de l'exercice (droit rafas.manage par la garde)."""
+    return _reponse(creer_mouvement, idexercice, request.data, request.user, code=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def vue_annulation_mouvement(request, idmouvement):
+    return _reponse(annuler_mouvement, idmouvement, request.data)
 
 
 @api_view(["PUT", "DELETE"])

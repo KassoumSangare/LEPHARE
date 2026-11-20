@@ -284,6 +284,12 @@ export const UserDashboard = () => {
                   lignes={[
                     ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
                     <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
+                    commissions?.ReclamationsCumul && (
+                      <Detail
+                        libelle={`Réclamations de commission cumulées en ${exercice}, ${pluriel(commissions.ReclamationsCumul.Nombre, 'bordereau', 'bordereaux')}`}
+                        valeur={francs(commissions.ReclamationsCumul.Montant)}
+                      />
+                    ),
                     <Detail
                       libelle={`Réclamées non payées${commissions?.BordereauxEnAttente ? `, ${pluriel(commissions.BordereauxEnAttente, 'bordereau', 'bordereaux')}` : ''}`}
                       valeur={francs(ca.EnAttente.Reclamees)}

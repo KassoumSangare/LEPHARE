@@ -918,6 +918,21 @@ def _synthese_commissions(lignes):
     }
 
 
+def cumul_reclamations(lignes, du=None, au=None):
+    """Réclamations de commission émises du … au … (date d'émission du bordereau récapitulatif, annulées exclues), d'après
+    les lignes de _commissions : commission réclamée cumulée, part déjà payée par les assureurs, reste et nombre de
+    bordereaux (cadre « Reste à percevoir » du cockpit et du tableau de bord)."""
+    debut, fin = _iso(du), _iso(au)
+    retenues = [l for l in lignes if l["IdReclamation"] and l["DateReclamation"]
+                and (not debut or l["DateReclamation"] >= debut) and (not fin or l["DateReclamation"] <= fin)]
+    return {
+        "Montant": round(sum(l["CommissionDue"] for l in retenues)),
+        "Payees": round(sum(l["CommissionPayee"] for l in retenues)),
+        "Reste": round(sum(l["Reste"] for l in retenues)),
+        "Nombre": len({l["IdReclamation"] for l in retenues}),
+    }
+
+
 def _jours(depuis, jour):
     return (jour - date.fromisoformat(depuis[:10])).days if depuis else None
 

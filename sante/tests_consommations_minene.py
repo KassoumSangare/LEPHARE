@@ -8,7 +8,7 @@ from django.test import SimpleTestCase
 from openpyxl import Workbook
 
 from .consommations import _lire, lire_date
-from .consommations_minene import analyser
+from .consommations_minene import analyser, polices_par_nom
 
 ENTETE = ["DateCloture", "Numero", "CodGar", "Garant", "Souscripteur", "idPolice", "Police", "codeCollege", "College", "MatriculeP", "Matric",
           "SouscP", "Patient", "Statut", "dateNaissance", "sexe", "MatriculeA", "Assure", "localitecentreExecutant", "centreExecutant",
@@ -134,6 +134,46 @@ class AnalyseMineneTests(SimpleTestCase):
         r = analyser([], {}, self.portefeuille)
         self.assertEqual(r["Indicateurs"]["Prestations"], 0)
         self.assertEqual(r["Familles"], [])
+        self.assertEqual(r["Entreprises"], [])
+
+    def test_par_entreprise(self):
+        # Familles 10 et 30 chez SOAC, famille 20 chez SPD (demande du 2026-11-20 : affichage par entreprise)
+        prestations = [dict(p, souscripteur="SOAC", npol=2469) for p in self.prestations if p["matricule_assure"] != 20]
+        prestations += [dict(p, souscripteur="SPD", npol=1571) for p in self.prestations if p["matricule_assure"] == 20]
+        r = analyser(prestations, self.liens, self.portefeuille)
+        entreprises = {e["Libelle"]: e for e in r["Entreprises"]}
+        self.assertEqual([e["Libelle"] for e in r["Entreprises"]], ["SOAC", "SPD"])
+        soac, spd = entreprises["SOAC"], entreprises["SPD"]
+        self.assertEqual((soac["Prestations"], soac["Familles"], soac["Rembourse"]), (3, 2, 410000))
+        self.assertAlmostEqual(soac["Part"], 410000 / 460000)
+        self.assertEqual((soac["PolicesGestionnaire"], soac["PolicesLePhare"]), (["2469"], ["P1"]))
+        # Primes acquises de la police P1 sur 2 mois : 600 000 x 2 / 12 = 100 000 ; rattaché par les membres 400 000 (famille 30 sans
+        # matricule) ; le taux de l'entreprise compte toute sa consommation, 410 000
+        self.assertEqual((soac["PrimesAcquises"], soac["RembourseRattache"]), (100000, 400000))
+        self.assertAlmostEqual(soac["Taux"], 4.1)
+        self.assertEqual((soac["Situation"], soac["FamillesSurveillees"]), ("DEPASSEE", 1))
+        self.assertEqual(soac["Serie"], [300000, 110000])
+        self.assertEqual((soac["TiersPayant"], soac["RemboursementDirect"], soac["PremierPoste"]), (410000, 0, "BIOLOGIE"))
+        self.assertEqual((spd["RemboursementDirect"], spd["PolicesLePhare"]), (50000, ["P2"]))
+        self.assertEqual({f["Code"]: f["Entreprise"] for f in r["Familles"]}, {10: "SOAC", 20: "SPD", 30: "SOAC"})
+        self.assertTrue(any(c.startswith("Première entreprise consommatrice : SOAC") for c in r["Constats"]))
+
+    def test_entreprise_rattachee_par_le_nom_du_souscripteur(self):
+        # Membres sans matricule du gestionnaire dans LE PHARE : l'entreprise se rattache à la police souscrite à son nom
+        prestations = [dict(p, souscripteur="SOAC ( SYSTEM OUEST AFRICAIN D'ACCREDITATION )") for p in self.prestations]
+        r = analyser(prestations, {}, self.portefeuille, souscripteurs={"P3": "SOAC", "P2": "AUTRE"})
+        soac = r["Entreprises"][0]
+        self.assertEqual((soac["PolicesLePhare"], soac["FamillesPortefeuille"], soac["PrimesAcquises"]), (["P3"], 1, 50000))
+        self.assertAlmostEqual(soac["Taux"], 460000 / 50000)
+        # Fiche de l'entreprise : toute sa consommation face aux primes de ses polices
+        fiche = analyser(prestations, {}, self.portefeuille[2:], souscripteurs={"P3": "SOAC"}, rattacher_tout=True)
+        self.assertEqual(fiche["Indicateurs"]["RembourseRattache"], 460000)
+        self.assertEqual(polices_par_nom("Société de Pétrole et Dérivés", {"X": "SOCIETE DE PETROLE ET DERIVES"}), {"X"})
+        self.assertEqual(polices_par_nom("SOAC", {"X": "SOACI"}), set())
+
+    def test_entreprise_par_defaut_nom_de_police(self):
+        r = analyser(self.prestations, self.liens, self.portefeuille)
+        self.assertEqual([e["Libelle"] for e in r["Entreprises"]], ["POLICE MCI"])
 
 
 class SeparationProgrammesTests(SimpleTestCase):

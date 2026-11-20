@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck, CircleDashed, Info, Loader2, RotateCcw, ShieldAlert, TriangleAlert } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ChevronRight, CircleAlert, CircleCheck, CircleDashed, Filter, Info, Loader2, RotateCcw, Search, ShieldAlert, TriangleAlert,
+} from 'lucide-react';
 import { consommationsApi } from '../../../../api/endpoints';
 import { useToast } from '../../../../context/ToastContext';
 import { dateFr, messageErreurApi } from '../../../../utils/financeUtils';
+import { Tiroir } from './AnalyseConsommations';
 import {
-  BarreSegmentee, BarresClassees, Cadre, Colonnes, EchelleChaleur, Jauge, Pyramide, TableauChaleur, entier, francs, francsCourts, pct,
+  BarreSegmentee, BarresClassees, Cadre, Colonnes, EchelleChaleur, Jauge, Pyramide, Sparkline, TableauChaleur, entier, francs, francsCourts, pct,
 } from './graphiques';
 
 /* =========================================================================
@@ -14,8 +17,8 @@ import {
    Une lecture GET /api/consommations/minene/ partagée par les quatre onglets.
    ========================================================================= */
 
-export const ONGLETS_MINENE = new Set(['m-ensemble', 'm-familles', 'm-prestations', 'm-beneficiaires']);
-export const FILTRES_MINENE = { du: '', au: '', police: '' };
+export const ONGLETS_MINENE = new Set(['m-ensemble', 'm-entreprises', 'm-familles', 'm-prestations', 'm-beneficiaires']);
+export const FILTRES_MINENE = { du: '', au: '', police: '', entreprise: '' };
 const MOIS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const libelleMois = (code) => { const [a, m] = String(code).split('-'); return `${MOIS[Number(m) - 1] || m} ${a}`; };
 const SITUATIONS = {
@@ -106,6 +109,13 @@ export const FiltresMinene = ({ filtres, setFiltres, donnees, chargement }) => {
         <select className="form-control" value={filtres.police} onChange={champ('police')}>
           <option value="">Toutes les polices MINENE</option>
           {(donnees?.Filtres?.Polices || []).map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </label>
+      <label className="cs-filtre large">
+        <span>Entreprise</span>
+        <select className="form-control" value={filtres.entreprise} onChange={champ('entreprise')}>
+          <option value="">Toutes les entreprises</option>
+          {(donnees?.Filtres?.Entreprises || []).map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
       </label>
       {actifs && (
@@ -330,8 +340,197 @@ const Beneficiaires = ({ d }) => (
   </>
 );
 
+// ------------------------------------------------------------------ entreprises (demande du 2026-11-20)
+// Entreprise = souscripteur du relevé du gestionnaire ; rattachée à LE PHARE par ses membres ou par le nom du souscripteur de la police
+const modes = (e) => (e.Rembourse ? `TP ${pct(e.TiersPayant / e.Rembourse, 0)} · RD ${pct(e.RemboursementDirect / e.Rembourse, 0)}` : '-');
+const polices = (e) => [
+  e.PolicesGestionnaire?.length ? `police MCI ${e.PolicesGestionnaire.join(', ')}` : '',
+  e.PolicesLePhare?.length ? `LE PHARE ${e.PolicesLePhare.join(', ')}` : '',
+].filter(Boolean).join(' - ');
+const ORDRE_SITUATIONS_MINENE = ['DEPASSEE', 'A_SURVEILLER', 'NORMALE', 'SANS_CONTRAT'];
+
+const Entreprises = ({ d, onOuvrir }) => {
+  const [texte, setTexte] = useState('');
+  const [situation, setSituation] = useState('');
+  const comptes = useMemo(() => d.Entreprises.reduce((c, e) => ({ ...c, [e.Situation]: (c[e.Situation] || 0) + 1 }), {}), [d.Entreprises]);
+  const lignes = useMemo(() => {
+    const q = texte.trim().toLowerCase();
+    return d.Entreprises.filter((e) => (!situation || e.Situation === situation)
+      && (!q || `${e.Libelle} ${polices(e)} ${e.PremierPoste} ${e.PremiereAffection}`.toLowerCase().includes(q)));
+  }, [d.Entreprises, texte, situation]);
+  const premiere = d.Entreprises[0];
+  return (
+    <>
+      <div className="cs-tuiles">
+        <Tuile libelle="Entreprises" valeur={entier(d.Entreprises.length)} detail={`${entier(d.Indicateurs.Familles)} familles et ${entier(d.Indicateurs.Beneficiaires)} bénéficiaires consommateurs`} />
+        <Tuile libelle="Première entreprise" valeur={premiere ? pct(premiere.Part, 0) : '-'} detail={premiere ? `${premiere.Libelle} · ${francs(premiere.Rembourse)}` : ''} />
+        <Tuile libelle="Primes à surveiller ou dépassées" valeur={entier((comptes.DEPASSEE || 0) + (comptes.A_SURVEILLER || 0))} detail="consommation d'au moins 80 % des primes acquises" />
+        <Tuile libelle="Sans police LE PHARE" valeur={entier(comptes.SANS_CONTRAT || 0)} detail="ni membre ni souscripteur retrouvé dans LE PHARE" />
+      </div>
+      <Carte titre={`Entreprises : ${entier(lignes.length)}`} sousTitre="Cliquez une entreprise pour le détail de sa consommation : mois, prise en charge, postes, affections, familles, centres et actes.">
+        <div className="cs-outils">
+          <div className="cs-pastilles" role="group" aria-label="Situation face aux primes acquises">
+            <button type="button" className={`cs-pastille${!situation ? ' active' : ''}`} aria-pressed={!situation} onClick={() => setSituation('')}>
+              Toutes <span>{entier(d.Entreprises.length)}</span>
+            </button>
+            {ORDRE_SITUATIONS_MINENE.filter((s) => comptes[s]).map((s) => {
+              const Icone = SITUATIONS[s].icone;
+              return (
+                <button key={s} type="button" className={`cs-pastille ton-${SITUATIONS[s].ton}${situation === s ? ' active' : ''}`} aria-pressed={situation === s}
+                  onClick={() => setSituation(situation === s ? '' : s)}>
+                  <Icone size={13} aria-hidden="true" />{SITUATIONS[s].libelle} <span>{entier(comptes[s])}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="cs-outils-droite">
+            <label className="cs-recherche">
+              <Search size={14} aria-hidden="true" />
+              <input className="form-control" value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Entreprise, police, poste ou affection" aria-label="Rechercher une entreprise" />
+            </label>
+          </div>
+        </div>
+        <div className="table-wrapper cs-table-entreprises">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Entreprise</th><th className="cs-nombre">Bénéficiaires</th><th className="cs-nombre">Prestations</th><th className="cs-nombre">Remboursé par mois</th>
+                <th className="cs-nombre">Coût / bénéf.</th><th>Prise en charge</th><th>Consommation des primes</th><th>Situation</th><th aria-label="Ouvrir" />
+              </tr>
+            </thead>
+            <tbody>
+              {lignes.map((e) => (
+                <tr key={e.Code} className="cs-ligne-cliquable" onClick={() => onOuvrir(e)}>
+                  <td>
+                    <button type="button" className="cs-lien-ligne" onClick={(ev) => { ev.stopPropagation(); onOuvrir(e); }}>{e.Libelle}</button>
+                    <div className="cs-sous-texte">{polices(e)}</div>
+                  </td>
+                  <td className="cs-nombre">{entier(e.Beneficiaires)}<div className="cs-sous-texte">{entier(e.Familles)} famille{e.Familles > 1 ? 's' : ''}</div></td>
+                  <td className="cs-nombre">{entier(e.Prestations)}</td>
+                  <td className="cs-nombre">
+                    <div className="cs-depenses-cellule">
+                      {e.Serie.length > 1 && <Sparkline valeurs={e.Serie} largeur={84} hauteur={24} libelle={`Remboursements mensuels de ${e.Libelle}`} />}
+                      <span>{francsCourts(e.Rembourse)}<span className="cs-sous-texte">{pct(e.Part, 1)}</span></span>
+                    </div>
+                  </td>
+                  <td className="cs-nombre">{francs(e.CoutMoyenBeneficiaire)}</td>
+                  <td>{modes(e)}<div className="cs-sous-texte">{[e.PremierPoste, e.PremiereAffection].filter(Boolean).join(' · ').toLowerCase()}</div></td>
+                  <td className="cs-cellule-jauge">
+                    {e.Taux === null ? <span className="cs-muet">Aucune prime rattachée</span> : (
+                      <>
+                        <Jauge fine taux={e.Taux} repere={0.8} ton={SITUATIONS[e.Situation]?.jauge} libelle={`${e.Libelle} : ${pct(e.Taux)} des primes acquises consommés`} />
+                        <div className="cs-sous-texte">{`${pct(e.Taux, 0)} de ${francsCourts(e.PrimesAcquises)} · ${entier(e.FamillesPortefeuille)} familles`}</div>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    <Situation code={e.Situation} />
+                    {e.FamillesSurveillees > 0 && <div className="cs-sous-texte">{entier(e.FamillesSurveillees)} famille{e.FamillesSurveillees > 1 ? 's' : ''} à 80 % ou plus</div>}
+                  </td>
+                  <td className="cs-nombre"><ChevronRight size={16} className="cs-muet" aria-hidden="true" /></td>
+                </tr>
+              ))}
+              {!lignes.length && <tr><td colSpan={9}><Vide texte="Aucune entreprise ne correspond." /></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <p className="cs-note">
+          Entreprise : souscripteur du relevé du gestionnaire. Primes acquises : primes nettes annuelles des familles en vigueur de ses polices MINENE
+          dans LE PHARE (retrouvées par les membres ou par le nom du souscripteur), au prorata des mois de la période ; consommation : tout ce que
+          l'entreprise a consommé face à ces primes, « À surveiller » à partir de 80 %.
+        </p>
+      </Carte>
+    </>
+  );
+};
+
+// Fiche d'une entreprise : l'analyse MINENE limitée à ses prestations et à son portefeuille LE PHARE, sur la même période
+const FicheEntreprise = ({ entreprise, filtres, onFermer, onAnalyser }) => {
+  const filtresFiche = useMemo(() => ({ ...filtres, entreprise: entreprise?.Libelle || '' }), [filtres, entreprise]);
+  const [a, chargement] = useMinene(filtresFiche, Boolean(entreprise));
+  const i = a?.Indicateurs;
+  const pret = a && !chargement && a.Entreprise?.Nom === entreprise?.Libelle;
+  return (
+    <Tiroir ouvert={Boolean(entreprise)} onFermer={onFermer} titre={entreprise?.Libelle || ''} sousTitre={entreprise ? polices(entreprise) : ''}>
+      {!pret ? <p className="cs-vide"><Loader2 size={15} className="spin" aria-hidden="true" /> Calcul de la consommation de l'entreprise…</p> : (
+        <div className="cs-pile">
+          <div className="cs-tuiles compactes">
+            <Tuile libelle="Remboursé" valeur={francsCourts(i.Rembourse)} detail={`Réclamé ${francs(i.Reclame)}`} />
+            <Tuile libelle="Prestations" valeur={entier(i.Prestations)} detail={`${entier(i.Beneficiaires)} bénéficiaires · ${entier(i.Familles)} familles`} />
+            <Tuile libelle="Prise en charge" valeur={pct(i.TauxPriseEnCharge, 0)} detail={`À la charge des assurés : ${francs(i.PartAssures)}`} />
+            <Tuile libelle="Coût moyen" valeur={francs(i.CoutMoyenBeneficiaire)} detail={`par bénéficiaire · ${francs(i.CoutMoyenPrestation)} par prestation`} />
+            <Tuile libelle="Consommation des primes" valeur={i.TauxConsommation === null ? '-' : pct(i.TauxConsommation)}
+              detail={i.PrimesAcquises ? `${francs(i.RembourseRattache)} sur ${francs(i.PrimesAcquises)} acquis · ${entier(i.FamillesPortefeuille)} familles, ${entier(i.PersonnesPortefeuille)} personnes` : 'Aucune police LE PHARE rattachée'}>
+              <Jauge taux={i.TauxConsommation} repere={0.8} ton={tonTaux(i.TauxConsommation)} libelle="Remboursements face aux primes acquises" fine />
+            </Tuile>
+          </div>
+          <Cadre titre="Remboursements par mois" sousTitre="Selon la date des soins"
+            tableau={{ entetes: ['Mois', 'Prestations', 'Remboursé'], lignes: a.ParMois.map((m) => [libelleMois(m.Code), entier(m.Prestations), francs(m.Rembourse)]) }}>
+            <Colonnes points={a.ParMois.map((m) => ({ cle: m.Code, libelle: libelleMois(m.Code), libelleCourt: libelleMois(m.Code).split(' ')[0], valeur: m.Rembourse, prestations: m.Prestations }))}
+              libelleAria={`Remboursements mensuels de ${entreprise.Libelle}`} hauteur={180}
+              lignesBulle={(p) => [{ libelle: 'Remboursé', valeur: francs(p.valeur), couleur: 'var(--cs-viz-1)' }, { libelle: 'Prestations', valeur: entier(p.prestations) }]} />
+          </Cadre>
+          <Cadre titre="Mode de prise en charge" tableau={{ entetes: ['Mode', 'Prestations', 'Remboursé', 'Part'], lignes: a.ParType.map((t) => [t.Libelle, entier(t.Prestations), francs(t.Rembourse), pct(t.Part, 0)]) }}>
+            <BarreSegmentee parts={a.ParType.map((t) => ({ libelle: t.Libelle, valeur: t.Rembourse }))} libelleAria="Remboursements par mode de prise en charge" />
+          </Cadre>
+          <Cadre titre="Familles de prestations">
+            <BarresClassees lignes={barres(a.ParFamillePrestation.slice(0, 8), (l) => [francs(l.CoutMoyen)])} colonnes={['Coût moyen']} libelleValeur="Remboursé" />
+          </Cadre>
+          {a.ParAffection.some((l) => l.Libelle !== 'Non renseigné') && (
+            <Cadre titre="Types d’affection">
+              <BarresClassees lignes={barres(a.ParAffection.slice(0, 8), (l) => [entier(l.Beneficiaires)])} colonnes={['Bénéficiaires']} libelleValeur="Remboursé" />
+            </Cadre>
+          )}
+          <Cadre titre="Familles consommatrices" sousTitre="Assuré principal du relevé, police LE PHARE et consommation de sa prime">
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead><tr><th>Famille</th><th>Police LE PHARE · formule</th><th className="cs-nombre">Bénéf.</th><th className="cs-nombre">Remboursé</th><th>Consommation</th><th>Situation</th></tr></thead>
+                <tbody>
+                  {a.Familles.slice(0, 12).map((f) => (
+                    <tr key={f.Code}>
+                      <td><strong>{f.Libelle}</strong><div className="cs-muet">{f.Code}</div></td>
+                      <td>{f.PoliceLePhare ? <>{f.PoliceLePhare}<div className="cs-muet">{f.Formule}</div></> : '-'}</td>
+                      <td className="cs-nombre">{entier(f.Beneficiaires)}</td><td className="cs-nombre">{francs(f.Rembourse)}</td>
+                      <td>{f.Taux === null ? <span className="cs-muet">-</span> : pct(f.Taux, 0)}</td>
+                      <td><Situation code={f.Situation} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Cadre>
+          <Cadre titre="Centres exécutants">
+            <BarresClassees lignes={a.Centres.slice(0, 8).map((c) => ({ cle: c.Code, libelle: c.Libelle, valeur: c.Rembourse, detail: [c.Localite, `${entier(c.Prestations)} prestations`].filter(Boolean).join(' · ') }))} libelleValeur="Remboursé" />
+          </Cadre>
+          <Cadre titre="Actes les plus remboursés">
+            <div className="table-wrapper">
+              <table className="data-table">
+                <thead><tr><th>Acte</th><th className="cs-nombre">Prestations</th><th className="cs-nombre">Remboursé</th></tr></thead>
+                <tbody>{a.Actes.slice(0, 8).map((l) => <tr key={l.Code}><td>{l.Libelle}</td><td className="cs-nombre">{entier(l.Prestations)}</td><td className="cs-nombre">{francs(l.Rembourse)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </Cadre>
+          {a.Constats.length > 0 && (
+            <Cadre titre="Constats">
+              <ul className="cs-constats">
+                {a.Constats.map((c) => <li key={c} className="ton-info"><Info size={16} aria-hidden="true" /><div><p>{c}</p></div></li>)}
+              </ul>
+            </Cadre>
+          )}
+          <div>
+            <button type="button" className="btn btn-primary" onClick={() => onAnalyser(entreprise.Libelle)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Filter size={15} aria-hidden="true" /> Analyser cette entreprise dans tous les onglets
+            </button>
+          </div>
+        </div>
+      )}
+    </Tiroir>
+  );
+};
+
 // ------------------------------------------------------------------ onglets
-export const MineneConsommations = ({ onglet, donnees, chargement }) => {
+export const MineneConsommations = ({ onglet, donnees, chargement, filtres, onFiltrer, onChangerOnglet }) => {
+  const [fiche, setFiche] = useState(null);
   if (!donnees) return chargement ? <p className="cs-vide"><Loader2 size={15} className="spin" aria-hidden="true" /> Lecture des relevés MINENE…</p> : null;
   if (!donnees.Indicateurs.Prestations) {
     return (
@@ -343,9 +542,12 @@ export const MineneConsommations = ({ onglet, donnees, chargement }) => {
   return (
     <div className={`cs-pile${chargement ? ' cs-rechargement' : ''}`}>
       {onglet === 'm-ensemble' && <Ensemble d={donnees} />}
+      {onglet === 'm-entreprises' && <Entreprises d={donnees} onOuvrir={setFiche} />}
       {onglet === 'm-familles' && <Familles d={donnees} />}
       {onglet === 'm-prestations' && <Prestations d={donnees} />}
       {onglet === 'm-beneficiaires' && <Beneficiaires d={donnees} />}
+      <FicheEntreprise entreprise={fiche} filtres={filtres || FILTRES_MINENE} onFermer={() => setFiche(null)}
+        onAnalyser={(nom) => { setFiche(null); onFiltrer?.((f) => ({ ...f, entreprise: nom })); onChangerOnglet?.('m-ensemble'); }} />
     </div>
   );
 };
