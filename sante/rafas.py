@@ -201,6 +201,77 @@ def _adherents(brut):
     return resultat
 
 
+def _cle_famille(matricule, nom):
+    """Identité d'une famille : matricule de l'adhérent s'il est connu, sinon son nom normalisé."""
+    matricule = str(matricule or "").strip()
+    return ("M", matricule) if matricule else ("N", normaliser(nom))
+
+
+def familles_college(cursor, idconvention, exercice, code_college, jour=None):
+    """Familles d'un collège de l'exercice (demande du 2026-11-20 : « le système doit présenter la liste des familles et on choisit la famille
+    à retirer », puis « revois l'incorporation ») : adhérents distincts de l'effectif le plus récent du gestionnaire, avec leurs dates
+    d'entrée et de sortie et le nombre de membres présents, puis familles incorporées par avenant.
+    - Nouvelle : entrée dans l'effectif en cours de contrat (après le premier jour de l'exercice), donc à incorporer par avenant ;
+    - Sortie : date de sortie de l'adhérent, ou du dernier membre quand toute la famille sort (sortie passée ou annoncée), donc à retirer ;
+      une famille sortie avant le début de l'exercice n'est pas reprise ;
+    - Incorporee / Retiree : numéro de l'avenant d'incorporation ou de retrait qui la porte déjà.
+    Renvoie (familles, situation)."""
+    jour = jour or dt.date.today()
+    _convention, _exercices_, _liens_, ctx = _contexte(cursor, idconvention, jour)
+    situation, _imports = _situation(cursor, idconvention)
+    membres = defaultdict(list)
+    if situation:
+        for b in _beneficiaires(cursor, situation["idimport"]):
+            b = ctx.enrichir(b)
+            if b["_college"] == code_college:
+                membres[_cle_famille(b["matricule_adherent"] or b["matricule"], "")].append(b)
+    familles = {}
+    for cle, liste in membres.items():
+        adherent = next((b for b in liste if b["lien"] == "A"), liste[0])
+        presents = [b for b in liste if not b["date_sortie"] or b["date_sortie"] >= jour]
+        sortie = adherent["date_sortie"] if adherent["lien"] == "A" and adherent["date_sortie"] else (
+            max(b["date_sortie"] for b in liste) if all(b["date_sortie"] for b in liste) else None)
+        if sortie and sortie < exercice["date_effet"]:
+            continue
+        # Entrée de la famille : celle de l'adhérent, à défaut celle du premier membre entré
+        entrees = sorted((b["lien"] != "A", b["date_entree"]) for b in liste if b["date_entree"])
+        familles[cle] = {"Matricule": str(adherent["matricule_adherent"] or adherent["matricule"]), "Nom": adherent["adherent"] or adherent["nom"],
+                         "Personnes": len(presents) or len(liste), "Source": "EFFECTIF", "Avenant": "", "Entree": entrees[0][1] if entrees else None,
+                         "Sortie": sortie}
+    mouvements = [m for m in _mouvements(cursor, exercice["idexercice"]) if not m["annule"] and m["code_college"] == code_college]
+    portees = {"INCORPORATION": {}, "RETRAIT": {}}
+    for m in mouvements:
+        for a in m["adherents"]:
+            portees[m["nature"]][_cle_famille(a.get("Matricule"), a.get("Nom"))] = m["numero"]
+            portees[m["nature"]][("N", normaliser(a.get("Nom")))] = m["numero"]
+            if m["nature"] == "INCORPORATION":
+                familles.setdefault(_cle_famille(a.get("Matricule"), a.get("Nom")), {
+                    "Matricule": a.get("Matricule") or "", "Nom": a.get("Nom") or "", "Personnes": a.get("Personnes") or 0,
+                    "Source": "INCORPORATION", "Avenant": m["numero"], "Entree": m["date_effet"], "Sortie": None})
+
+    def porteur(nature, cle, f):
+        return portees[nature].get(cle) or portees[nature].get(("N", normaliser(f["Nom"]))) or ""
+
+    # Règle de l'utilisateur (2026-11-20) : « l'incorporation se fait en cours de contrat » ; une famille entrée le premier jour de l'exercice
+    # fait partie de la population de départ, comptée par la convention
+    lignes = [{**f, "Nouvelle": bool(f["Entree"] and f["Entree"] > exercice["date_effet"]), "Incorporee": porteur("INCORPORATION", cle, f),
+               "Retiree": porteur("RETRAIT", cle, f)} for cle, f in familles.items()]
+    # Familles sorties en tête (à retirer), familles déjà retirées en fin de liste
+    lignes.sort(key=lambda f: (bool(f["Retiree"]), not f["Sortie"], normaliser(f["Nom"])))
+    return lignes, situation
+
+
+def liste_familles_college(idexercice, params):
+    with connection.cursor() as cursor:
+        e = _exercice_de(cursor, idexercice)
+        exercice = next(x for x in _exercices(cursor, e["idconvention"]) if x["idexercice"] == e["idexercice"])
+        code = str(params.get("college") or "")
+        if not any(c["code"] == code for c in exercice["colleges"]):
+            raise ErreurRafas("Choisissez un collège de l'exercice.")
+        familles, situation = familles_college(cursor, e["idconvention"], exercice, code)
+    return _json({"Familles": familles, "Situation": situation["situation"] if situation else None})
+
+
 def creer_mouvement(idexercice, d, user):
     nature = str(d.get("nature") or "").upper()
     if nature not in NATURES_MOUVEMENT:
@@ -211,10 +282,17 @@ def creer_mouvement(idexercice, d, user):
         raise ErreurRafas("Indiquez le nombre de familles ou la liste des adhérents.")
     if adherents and len(adherents) != familles:
         raise ErreurRafas(f"La liste compte {len(adherents)} adhérent(s) pour {familles} famille(s) : une ligne par famille.")
+    vues = set()
+    for a in adherents:
+        cle = _cle_famille(a["Matricule"], a["Nom"])
+        if cle in vues:
+            raise ErreurRafas(f"La famille {a['Nom']} figure deux fois dans l'avenant.")
+        vues.add(cle)
     jour = _date(d.get("date_effet"))
     if not jour:
         raise ErreurRafas("Date d'effet obligatoire.")
-    personnes = _entier(d.get("personnes"), "Personnes", mini=0, maxi=1000000) if d.get("personnes") not in (None, "") else (
+    personnes_saisies = d.get("personnes") not in (None, "")
+    personnes = _entier(d.get("personnes"), "Personnes", mini=0, maxi=1000000) if personnes_saisies else (
         sum(a["Personnes"] or 0 for a in adherents) or None)
     prorata = d.get("prorata") in (True, "true", "1", 1)
     motif = str(d.get("motif") or "").strip()[:500]
@@ -222,6 +300,8 @@ def creer_mouvement(idexercice, d, user):
         e = _exercice_de(cursor, idexercice)
         if not e["date_effet"] <= jour <= e["date_echeance"]:
             raise ErreurRafas(f"La date d'effet doit être dans l'exercice, du {e['date_effet']:%d/%m/%Y} au {e['date_echeance']:%d/%m/%Y}.")
+        if nature == "INCORPORATION" and jour == e["date_effet"]:
+            raise ErreurRafas(f"Une incorporation se fait en cours de contrat : date d'effet après le {e['date_effet']:%d/%m/%Y}.")
         exercice = next(x for x in _exercices(cursor, e["idconvention"]) if x["idexercice"] == e["idexercice"])
         college = next((c for c in exercice["colleges"] if c["code"] == str(d.get("code_college") or "")), None)
         if not college:
@@ -230,6 +310,49 @@ def creer_mouvement(idexercice, d, user):
         actuelles = familles_ajustees(exercice["colleges"], _mouvements(cursor, idexercice)).get(college["code"], 0)
         if nature == "RETRAIT" and familles > actuelles:
             raise ErreurRafas(f"Le collège {college['libelle']} ne compte que {actuelles} famille(s) : {familles} ne peuvent pas en être retirées.")
+        if nature == "RETRAIT":
+            # Effectif du gestionnaire importé : le retrait se choisit dans la liste des familles du collège (effectif, incorporations) ;
+            # sans effectif, les familles de la convention ne sont pas nommées : familles saisies ou nombre seul, sauf famille déjà retirée
+            connues, situation_eff = familles_college(cursor, e["idconvention"], exercice, college["code"])
+            if not situation_eff:
+                for a in adherents:
+                    deja = next((f["Retiree"] for f in connues if f["Retiree"] and (_cle_famille(f["Matricule"], f["Nom"]) == _cle_famille(a["Matricule"], a["Nom"])
+                                                                                     or normaliser(f["Nom"]) == normaliser(a["Nom"]))), "")
+                    if deja:
+                        raise ErreurRafas(f"La famille {a['Nom']} a déjà été retirée ({deja}).")
+            elif connues:
+                if not adherents:
+                    raise ErreurRafas("Choisissez dans la liste les familles à retirer.")
+                disponibles = {_cle_famille(f["Matricule"], f["Nom"]) for f in connues if not f["Retiree"]}
+                disponibles |= {("N", normaliser(f["Nom"])) for f in connues if not f["Retiree"]}
+                for a in adherents:
+                    if _cle_famille(a["Matricule"], a["Nom"]) not in disponibles:
+                        deja = next((f["Retiree"] for f in connues if f["Retiree"] and _cle_famille(f["Matricule"], f["Nom"]) == _cle_famille(a["Matricule"], a["Nom"])), "")
+                        raise ErreurRafas(f"La famille {a['Nom']} a déjà été retirée ({deja})." if deja
+                                          else f"La famille {a['Nom']} ne figure pas dans le collège {college['libelle']}.")
+        if nature == "INCORPORATION":
+            # Familles nommées : entrées dans l'effectif depuis le début de l'exercice (choisies dans la liste), ou pas encore dans l'effectif ;
+            # une famille déjà comptée par la convention ou déjà incorporée est refusée
+            if not adherents:
+                raise ErreurRafas("Choisissez dans la liste ou ajoutez les familles à incorporer.")
+            connues, _situation_eff = familles_college(cursor, e["idconvention"], exercice, college["code"])
+            par_cle = {}
+            for f in connues:
+                par_cle.setdefault(_cle_famille(f["Matricule"], f["Nom"]), f)
+                par_cle.setdefault(("N", normaliser(f["Nom"])), f)
+            for a in adherents:
+                f = par_cle.get(_cle_famille(a["Matricule"], a["Nom"])) or par_cle.get(("N", normaliser(a["Nom"])))
+                if not f or f["Retiree"]:
+                    continue
+                if f["Incorporee"]:
+                    raise ErreurRafas(f"La famille {a['Nom']} est déjà incorporée ({f['Incorporee']}).")
+                if not f["Nouvelle"]:
+                    depuis = f" depuis le {f['Entree']:%d/%m/%Y}" if f.get("Entree") else ""
+                    raise ErreurRafas(f"La famille {a['Nom']} fait déjà partie du collège{depuis} : elle est comptée par la convention.")
+                if not a["Personnes"] and f["Personnes"]:
+                    a["Personnes"] = f["Personnes"]
+            if not personnes_saisies:
+                personnes = sum(a["Personnes"] or 0 for a in adherents) or None
         fraction = fraction_restante(e, jour) if prorata else Decimal(1)
         montant = montant_mouvement(nature, college["cotisation"], familles, fraction)
         numero = _numero(cursor, "lephare_rafas_mouvement", PREFIXES[nature], jour.year)
@@ -1589,6 +1712,14 @@ def vue_honoraires(request, idexercice):
 def vue_mouvements(request, idexercice):
     """Incorporation ou retrait de familles dans un collège de l'exercice (droit rafas.manage par la garde)."""
     return _reponse(creer_mouvement, idexercice, request.data, request.user, code=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def vue_familles_college(request, idexercice):
+    """Familles d'un collège de l'exercice, pour choisir celles à retirer (droit rafas.view par la garde)."""
+    return _reponse(liste_familles_college, idexercice, request.query_params)
 
 
 @api_view(["POST"])

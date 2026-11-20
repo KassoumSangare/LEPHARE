@@ -207,6 +207,7 @@ urlpatterns = [
     path(r"rafas/honoraires/<int:idhonoraire>/", rafas.vue_honoraire, name="rafas-honoraire"),
     # Incorporations et retraits de familles en cours d'exercice (demande du 2026-11-20)
     path(r"rafas/exercices/<int:idexercice>/mouvements/", rafas.vue_mouvements, name="rafas-mouvements"),
+    path(r"rafas/exercices/<int:idexercice>/familles/", rafas.vue_familles_college, name="rafas-familles-college"),
     path(r"rafas/mouvements/<int:idmouvement>/annulation/", rafas.vue_annulation_mouvement, name="rafas-mouvement-annulation"),
 
 ]

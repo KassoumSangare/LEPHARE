@@ -19,6 +19,11 @@ const MODES = [['VIREMENT', 'Virement'], ['CHEQUE', 'Chèque'], ['ESPECES', 'Esp
 const libelleMode = (m) => (MODES.find((x) => x[0] === m) || [m, m || '-'])[1];
 const aujourdhui = () => new Date().toISOString().slice(0, 10);
 const joursEntre = (du, au) => Math.round((new Date(`${au}T00:00:00`) - new Date(`${du}T00:00:00`)) / 86400000) + 1;
+const jourSuivant = (iso) => {
+  const x = new Date(`${iso}T00:00:00`);
+  x.setDate(x.getDate() + 1);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
 
 const FormulaireAppel = ({ fonds, ouvert, onFermer, onValider }) => {
   const [d, setD] = useState({});
@@ -133,30 +138,127 @@ const FormulaireReglement = ({ facture, onFermer, onValider }) => {
   );
 };
 
-// Incorporation ou retrait de familles dans un collège de l'exercice (demande du 2026-11-20). Cotisation annuelle par famille entière par
-// défaut (tarif forfaitaire), au prorata des jours restants si la case est cochée ; une famille par ligne dans la liste des adhérents.
-const lireAdherents = (texte) => String(texte || '').split('\n').map((l) => l.trim()).filter(Boolean).map((ligne) => {
-  const [Nom, Matricule, Personnes] = ligne.split(/[;\t]/).map((x) => x.trim());
-  return { Nom, Matricule: Matricule || '', Personnes: Number(Personnes) > 0 ? Number(Personnes) : null };
-});
+// Incorporation ou retrait de familles dans un collège de l'exercice (demande du 2026-11-20). Les familles se choisissent dans la liste du
+// collège : pour un retrait, ses familles ; pour une incorporation, celles entrées dans l'effectif du gestionnaire depuis le début de
+// l'exercice, plus les familles pas encore dans l'effectif, ajoutées une à une. Cotisation annuelle entière par défaut (tarif forfaitaire),
+// au prorata des jours restants si la case est cochée.
+const cleFamille = (f) => (f.Matricule ? `M${f.Matricule}` : `N${String(f.Nom || '').trim().toUpperCase()}`);
+
+const ChoixFamilles = ({ titre, liste, choisies, onBasculer, raison, origine, avecEntree }) => {
+  const [texte, setTexte] = useState('');
+  const visibles = liste.filter((f) => !texte.trim() || `${f.Nom} ${f.Matricule}`.toLowerCase().includes(texte.trim().toLowerCase()));
+  return (
+    <div className="rafas-champ large">
+      <span className="form-label">{`${titre} : ${entier(choisies.size)} cochée${choisies.size > 1 ? 's' : ''} sur ${entier(liste.filter((f) => !raison(f)).length)}`}</span>
+      <input className="form-control" value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Rechercher un adhérent ou un matricule" aria-label="Rechercher une famille" />
+      <div className="table-wrapper" style={{ maxHeight: 240, overflow: 'auto', marginTop: '0.4rem' }}>
+        <table className="data-table" style={{ fontSize: '0.82rem' }}>
+          <thead><tr><th aria-label="Choisir" /><th>Adhérent</th><th>Matricule</th><th className="rafas-nombre">Personnes</th>{avecEntree && <th>Entrée</th>}<th>Origine</th></tr></thead>
+          <tbody>
+            {visibles.map((f) => {
+              const cle = cleFamille(f);
+              const bloque = raison(f);
+              return (
+                <tr key={cle} style={bloque ? { opacity: 0.55 } : choisies.has(cle) ? { background: 'var(--primary-glow)' } : undefined}>
+                  <td><input type="checkbox" checked={choisies.has(cle)} disabled={Boolean(bloque)} onChange={() => onBasculer(f)} aria-label={`Choisir la famille ${f.Nom}`} /></td>
+                  <td>{f.Nom}</td>
+                  <td>{f.Matricule || '-'}</td>
+                  <td className="rafas-nombre">{f.Personnes ? entier(f.Personnes) : '-'}</td>
+                  {avecEntree && <td>{f.Entree ? dateFr(f.Entree) : '-'}</td>}
+                  <td>{bloque || origine(f)}</td>
+                </tr>
+              );
+            })}
+            {!visibles.length && <tr><td colSpan={avecEntree ? 6 : 5} className="cs-muet">{liste.length ? 'Aucune famille ne correspond.' : 'Aucune famille.'}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// Familles ajoutées une à une (pas encore dans l'effectif du gestionnaire) : adhérent, matricule, personnes
+const AjoutFamilles = ({ titre, ajoutees, onChange }) => {
+  const [f, setF] = useState({ Nom: '', Matricule: '', Personnes: '1' });
+  const ajouter = () => {
+    const nom = f.Nom.trim().toUpperCase();
+    if (!nom) return;
+    onChange([...ajoutees, { Nom: nom, Matricule: f.Matricule.trim(), Personnes: Number(f.Personnes) > 0 ? Number(f.Personnes) : null }]);
+    setF({ Nom: '', Matricule: '', Personnes: '1' });
+  };
+  return (
+    <div className="rafas-champ large">
+      <span className="form-label">{titre}</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr) 90px auto', gap: '0.4rem', alignItems: 'center' }}>
+        <input className="form-control" value={f.Nom} onChange={(e) => setF({ ...f, Nom: e.target.value })} placeholder="Nom et prénoms de l'adhérent" aria-label="Nom de l'adhérent"
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); ajouter(); } }} />
+        <input className="form-control" value={f.Matricule} onChange={(e) => setF({ ...f, Matricule: e.target.value })} placeholder="Matricule" aria-label="Matricule de l'adhérent" />
+        <input type="number" min="1" max="30" className="form-control rafas-nombre" value={f.Personnes} onChange={(e) => setF({ ...f, Personnes: e.target.value })} aria-label="Nombre de personnes" title="Personnes de la famille" />
+        <button type="button" className="btn btn-secondary rafas-bouton" disabled={!f.Nom.trim()} onClick={ajouter}><Plus size={15} /> Ajouter</button>
+      </div>
+      {ajoutees.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '0.4rem 0 0', display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+          {ajoutees.map((a, i) => (
+            <li key={`${a.Nom}-${i}`} className="cs-etat ton-neutre">
+              {`${a.Nom}${a.Matricule ? `, ${a.Matricule}` : ''}${a.Personnes ? `, ${a.Personnes} pers.` : ''}`}
+              <button type="button" className="rafas-icone-bouton" style={{ marginLeft: 4, width: 20, height: 20 }} title="Retirer de la liste" aria-label={`Retirer ${a.Nom} de la liste`}
+                onClick={() => onChange(ajoutees.filter((_x, j) => j !== i))}><Trash2 size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
 
 const FormulaireMouvement = ({ fonds, nature, ouvert, onFermer, onValider }) => {
   const ex = fonds.Exercice;
   const [d, setD] = useState({});
+  const [liste, setListe] = useState(null);
+  const [choisies, setChoisies] = useState(new Map());
+  const [ajoutees, setAjoutees] = useState([]);
+  const incorporation = nature === 'INCORPORATION';
+  // Une incorporation se fait en cours de contrat : au plus tôt le lendemain du premier jour de l'exercice
+  const debut = incorporation ? jourSuivant(ex.date_effet) : ex.date_effet;
   useEffect(() => {
     if (!ouvert) return;
     const jour = aujourdhui();
-    setD({ code_college: fonds.Colleges[0]?.Code || '', date_effet: jour < ex.date_effet ? ex.date_effet : jour > ex.date_echeance ? ex.date_echeance : jour,
-      familles: '', liste: '', prorata: false, motif: '' });
-  }, [ouvert, fonds, ex]);
-  const incorporation = nature === 'INCORPORATION';
+    setD({ code_college: fonds.Colleges[0]?.Code || '', date_effet: jour < debut ? debut : jour > ex.date_echeance ? ex.date_echeance : jour,
+      familles: '', prorata: false, motif: '' });
+  }, [ouvert, fonds, ex, debut]);
+  // Familles du collège choisi (effectif du gestionnaire et avenants) ; situation : date de l'effectif importé, null sans effectif
+  const [situation, setSituation] = useState(null);
+  useEffect(() => {
+    setChoisies(new Map());
+    setAjoutees([]);
+    setListe(null);
+    setSituation(null);
+    if (!ouvert || !d.code_college) return undefined;
+    let annule = false;
+    rafasApi.famillesCollege(ex.idexercice, d.code_college)
+      .then((r) => { if (!annule) { setListe(r.Familles || []); setSituation(r.Situation || null); } })
+      .catch(() => { if (!annule) setListe([]); });
+    return () => { annule = true; };
+  }, [ouvert, d.code_college, ex.idexercice]);
+  const basculer = (f) => setChoisies((m) => { const n = new Map(m); const cle = cleFamille(f); if (n.has(cle)) n.delete(cle); else n.set(cle, f); return n; });
+
+  // Incorporation : familles entrées dans l'effectif depuis le début de l'exercice ; retrait : toutes les familles du collège, sorties en tête
+  const proposees = (liste || []).filter((f) => f.Source === 'EFFECTIF' && f.Nouvelle && !f.Retiree)
+    .sort((a, b) => Boolean(a.Sortie) - Boolean(b.Sortie) || String(a.Nom).localeCompare(String(b.Nom), 'fr'));
+  const avecEffectif = Boolean(situation);
+  const choix = [...choisies.values()].map((f) => ({ Nom: f.Nom, Matricule: f.Matricule, Personnes: f.Personnes || null }));
+  const adherents = [...choix, ...ajoutees];
+  // Retrait sans effectif importé : les familles de la convention ne sont pas nommées, leur nombre peut se saisir seul
+  const nombreLibre = !incorporation && liste !== null && !avecEffectif;
+  const familles = adherents.length || (nombreLibre ? Number(d.familles) || 0 : 0);
   const college = fonds.Colleges.find((c) => c.Code === d.code_college);
-  const adherents = lireAdherents(d.liste);
-  const familles = adherents.length || Number(d.familles) || 0;
   const fraction = d.prorata && d.date_effet ? Math.max(0, Math.min(1, joursEntre(d.date_effet, ex.date_echeance) / fonds.JoursExercice)) : 1;
   const montant = college ? Math.round(college.Cotisation * familles * fraction) : 0;
   const maximum = college?.FamillesApresMouvements ?? 0;
   const trop = !incorporation && familles > maximum;
+  const raisonIncorporation = (f) => (f.Incorporee ? `Déjà incorporée, ${f.Incorporee}` : '');
+  const raisonRetrait = (f) => (f.Retiree ? `Déjà retirée, ${f.Retiree}` : '');
+  const sortie = (f) => (f.Sortie ? `Sortie ${f.Sortie > aujourdhui() ? 'prévue ' : ''}le ${dateFr(f.Sortie)}` : '');
   return (
     <Modal isOpen={ouvert} onClose={onFermer} size="large" title={incorporation ? 'Incorporer des familles' : 'Retirer des familles'}
       subtitle={`Exercice du ${dateFr(ex.date_effet)} au ${dateFr(ex.date_echeance)}`}>
@@ -167,18 +269,32 @@ const FormulaireMouvement = ({ fonds, nature, ouvert, onFermer, onValider }) => 
           </select>
         </Champ>
         <Champ libelle="Date d'effet" requis>
-          <input type="date" className="form-control" min={ex.date_effet} max={ex.date_echeance} value={d.date_effet || ''} onChange={(e) => setD({ ...d, date_effet: e.target.value })} />
+          <input type="date" className="form-control" min={debut} max={ex.date_echeance} value={d.date_effet || ''} onChange={(e) => setD({ ...d, date_effet: e.target.value })} />
         </Champ>
         <Champ libelle="Nombre de familles" requis aide={trop ? `Le collège compte ${entier(maximum)} familles.` : undefined}>
-          <input type="number" min="1" className="form-control rafas-nombre" disabled={adherents.length > 0} value={adherents.length || d.familles || ''}
-            onChange={(e) => setD({ ...d, familles: e.target.value })} />
+          <input type="number" min="1" className="form-control rafas-nombre" disabled={!nombreLibre || adherents.length > 0}
+            value={familles || d.familles || ''} onChange={(e) => setD({ ...d, familles: e.target.value })} />
         </Champ>
         <Champ libelle={incorporation ? 'Cotisations ajoutées' : 'Cotisations retirées'}>
           <input className="form-control rafas-nombre" value={francs(montant)} readOnly />
         </Champ>
-        <Champ libelle="Adhérents concernés" large aide="Une famille par ligne : nom ; matricule ; nombre de personnes.">
-          <textarea className="form-control" rows={4} value={d.liste || ''} onChange={(e) => setD({ ...d, liste: e.target.value })} />
-        </Champ>
+        {liste === null && <p className="cs-muet rafas-champ large"><Loader2 size={14} className="spin" /> Familles du collège…</p>}
+        {liste !== null && incorporation && (
+          <>
+            {avecEffectif && (
+              <ChoixFamilles titre={`Familles entrées en cours de contrat, après le ${dateFr(ex.date_effet)}`} liste={proposees} choisies={choisies}
+                onBasculer={basculer} raison={raisonIncorporation} origine={(f) => sortie(f) || 'Effectif du gestionnaire'} avecEntree />
+            )}
+            <AjoutFamilles titre={avecEffectif ? "Famille pas encore dans l'effectif du gestionnaire" : 'Familles à incorporer'} ajoutees={ajoutees} onChange={setAjoutees} />
+          </>
+        )}
+        {!incorporation && liste !== null && liste.length > 0 && (
+          <ChoixFamilles titre={avecEffectif ? 'Familles à retirer' : 'Familles incorporées par avenant'} liste={liste} choisies={choisies} onBasculer={basculer}
+            raison={raisonRetrait} origine={(f) => sortie(f) || (f.Source === 'INCORPORATION' ? `Incorporée, ${f.Avenant}` : 'Effectif du gestionnaire')} />
+        )}
+        {nombreLibre && (
+          <AjoutFamilles titre={liste.length ? 'Autres familles à retirer, ou leur nombre' : 'Familles à retirer, ou leur nombre'} ajoutees={ajoutees} onChange={setAjoutees} />
+        )}
         <Champ libelle="Motif" large>
           <input className="form-control" maxLength={500} value={d.motif || ''} onChange={(e) => setD({ ...d, motif: e.target.value })}
             placeholder={incorporation ? 'Embauches, mutations…' : 'Départs, démissions…'} />
@@ -190,9 +306,9 @@ const FormulaireMouvement = ({ fonds, nature, ouvert, onFermer, onValider }) => 
       </label>
       <div className="rafas-pied-assistant">
         <button type="button" className="btn btn-secondary" onClick={onFermer}>Annuler</button>
-        <button type="button" className="btn btn-primary rafas-bouton" disabled={!college || !familles || !d.date_effet || trop}
+        <button type="button" className="btn btn-primary rafas-bouton" disabled={!college || !familles || !d.date_effet || d.date_effet < debut || d.date_effet > ex.date_echeance || trop}
           onClick={() => onValider({ nature, code_college: d.code_college, date_effet: d.date_effet, familles, adherents, prorata: Boolean(d.prorata), motif: d.motif })}>
-          <Check size={15} /> {incorporation ? 'Incorporer' : 'Retirer'}
+          <Check size={15} /> {`${incorporation ? 'Incorporer' : 'Retirer'}${familles > 1 ? ` ${entier(familles)} familles` : familles === 1 ? ' la famille' : ''}`}
         </button>
       </div>
     </Modal>

@@ -1395,6 +1395,8 @@ export const rafasApi = {
   // Incorporation ou retrait de familles : { nature, code_college, date_effet, familles, adherents: [{ Nom, Matricule, Personnes }], prorata, motif }
   creerMouvement: async (idExercice, mouvement) => (await apiClient.post(`/rafas/exercices/${idExercice}/mouvements/`, mouvement)).data,
   annulerMouvement: async (idMouvement, motif) => (await apiClient.post(`/rafas/mouvements/${idMouvement}/annulation/`, { motif })).data,
+  // Familles d'un collège (effectif du gestionnaire et incorporations), pour choisir celles à retirer
+  famillesCollege: async (idExercice, college) => (await apiClient.get(`/rafas/exercices/${idExercice}/familles/`, { params: { college } })).data,
   // Rapport Word de la période (seul export, journalisé)
   rapport: async (id, params) => apiClient.get(`/rafas/conventions/${id}/rapport/`, { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
 };
