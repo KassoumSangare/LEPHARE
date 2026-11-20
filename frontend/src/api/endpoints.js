@@ -1340,6 +1340,7 @@ export const consommationsApi = {
   // programme : 'oreole' ou 'minene' (espaces séparés, sante/consommations.py) ; un fichier de l'autre programme est refusé
   analyser: async (fichier, exercice, programme) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier, { exercice, programme }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
   importer: async (fichier, situation, exercice, programme) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation, exercice, programme }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
+  supprimerReleve: async (idReleve, programme) => (await apiClient.delete(`/consommations/import/${idReleve}/`, { params: sansVide({ programme }) })).data,
   // Tableau de bord (contrôle de gestion, dépenses, entreprises à risque), lien entreprise de l'état / police du gestionnaire, rapport Word (seul export)
   tableauDeBord: async (params) => (await apiClient.get('/consommations/tableau-de-bord/', { params: sansVide(params), timeout: 120000 })).data,
   // Analyse complète d'une période (sante/consommations_analyse.py) : synthèse, projection, compagnies, entreprises, familles, profil, foyers, prestataires, délais
@@ -2122,7 +2123,7 @@ export const financeApi = {
 
   // Bordereaux et courriers au modèle d'OREOLE (production/views_bordereaux.py)
   // GET /api/finance/bordereaux/a-transmettre/?compagnie : primes encaissées à transmettre, ordre du règlement
-  aTransmettre: async (compagnie) => (await apiClient.get('/finance/bordereaux/a-transmettre/', { params: { compagnie } })).data,
+  aTransmettre: async (compagnie) => (await apiClient.get('/finance/bordereaux/a-transmettre/', { params: compagnie ? { compagnie } : {} })).data,
   // GET /api/finance/bordereaux/?compagnie&du&au&nature
   bordereaux: async (params) => (await apiClient.get('/finance/bordereaux/', { params })).data,
   bordereau: async (idReversement) => (await apiClient.get(`/finance/bordereaux/${idReversement}/`)).data,

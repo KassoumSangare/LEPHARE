@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Building2, ChevronDown, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, Save, Search, ShieldAlert, Stethoscope, Upload, UserSearch, Users,
+  Building2, ChevronDown, FileText, Gauge, HeartPulse, LayoutDashboard, ListChecks, Loader2, Save, Search, ShieldAlert, Stethoscope, Trash2, Upload, UserSearch, Users,
 } from 'lucide-react';
 import { consommationsApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -563,6 +563,25 @@ const OngletImports = ({ programme, onDonneesChangees }) => {
       setEnvoi(false);
     }
   };
+  const supprimer = async (releve) => {
+    if (!(await confirmer({
+      titre: 'Supprimer cet import',
+      message: `Supprimer définitivement les données du fichier « ${releve.Fichier} » ? Les autres imports ne sont pas modifiés.`,
+      confirmer: 'Supprimer',
+      ton: 'danger',
+    }))) return;
+    setEnvoi(true);
+    try {
+      await consommationsApi.supprimerReleve(releve.Id, programme);
+      success('Import supprimé et données directement rattachées retirées.');
+      recharger();
+      onDonneesChangees?.();
+    } catch (err) {
+      toastError(messageErreurApi(err));
+    } finally {
+      setEnvoi(false);
+    }
+  };
   const releves = donnees?.Releves || [];
   return (
     <>
@@ -618,15 +637,20 @@ const OngletImports = ({ programme, onDonneesChangees }) => {
       <PanneauSouscriptions programme={programme} onAjout={() => { recharger(); onDonneesChangees?.(); }} />
       <Panneau titre="Fichiers importés">
         <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
-          <thead><tr><th>Date</th><th>Fichier</th><th>Nature</th><th>Garants</th><th>Clôtures</th><th style={DROITE}>Lignes</th><th style={DROITE}>Nouvelles</th><th style={DROITE}>Montants changés</th><th>Par</th></tr></thead>
+          <thead><tr><th>Date</th><th>Fichier</th><th>Nature</th><th>Garants</th><th>Clôtures</th><th style={DROITE}>Lignes</th><th style={DROITE}>Nouvelles</th><th style={DROITE}>Montants changés</th><th>Par</th><th></th></tr></thead>
           <tbody>
             {releves.map((r) => (
               <tr key={r.Id}>
                 <td>{dateFr(r.Date)}</td><td>{r.Fichier}</td><td>{NATURES[r.Nature] || r.Nature}</td><td>{r.Garants}</td>
                 <td>{r.ClotureDu ? `${dateFr(r.ClotureDu)} au ${dateFr(r.ClotureAu)}` : r.Situation ? `effectif au ${dateFr(r.Situation)}` : '-'}</td><td style={DROITE}>{fcfa(r.Lignes)}</td><td style={DROITE}>{fcfa(r.Nouvelles)}</td><td style={DROITE}>{fcfa(r.Modifiees)}</td><td>{r.Operateur}</td>
+                <td>
+                  <button type="button" className="btn btn-sm btn-danger" disabled={envoi} onClick={() => supprimer(r)} title="Supprimer cet import" aria-label={`Supprimer ${r.Fichier}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </td>
               </tr>
             ))}
-            {!releves.length && <Vide colonnes={9} chargement={chargement} texte="Aucun fichier importé." />}
+            {!releves.length && <Vide colonnes={10} chargement={chargement} texte="Aucun fichier importé." />}
           </tbody>
         </table></div>
       </Panneau>

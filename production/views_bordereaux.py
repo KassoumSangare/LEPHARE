@@ -67,6 +67,15 @@ REVERSEMENT = BordereauReversement.NATURE_REVERSEMENT
 RECLAMATION = BordereauReversement.NATURE_RECLAMATION
 TITRES = {REVERSEMENT: "BORDEREAU DE REVERSEMENT DE PRIME", RECLAMATION: "BORDEREAU DE RECLAMATION DE COMMISSION"}
 NOMS_BORDEREAU = {REVERSEMENT: "le bordereau de reversement de prime", RECLAMATION: "le bordereau de réclamation de commission"}
+# Contrats qui ouvrent une période (leurs conditions particulières sont jointes au courrier) ; les autres actes sont des avenants
+CODES_CONTRAT_DE_BASE = ("AFN", "REN", "RPP", "TRP")
+AVENANTS_JOINTS = {
+    "INC": "l'avenant d'incorporation", "MOD": "l'avenant de modification", "RET": "l'avenant de retrait",
+    "RES": "l'avenant de résiliation", "CHI": "l'avenant de changement d'immatriculation",
+    "CHV": "l'avenant de changement de véhicule", "MPE": "l'avenant de modification de prise d'effet",
+    "SUS": "l'avenant de suspension", "REV": "l'avenant de remise en vigueur", "PRG": "l'avenant de prorogation",
+    "ANL": "l'avenant d'annulation", "ANP": "l'avenant d'annulation",
+}
 MODE_A_LA_COMPAGNIE = 28  # stdmodeencaissement « A la compagnie » (CHQ, banque) : chèque du client transmis
 MODE_ESPECES = 2
 LIBELLES_BRANCHE = {
@@ -159,6 +168,7 @@ SQL_QUITTANCES = """
            CASE WHEN UPPER(TRIM(COALESCE(ct.numeropolicecompagnie, ''))) IN ('', 'RAS', 'NEANT') THEN NULL
                 ELSE TRIM(ct.numeropolicecompagnie) END AS policecompagnie,
            NULLIF(TRIM(ct.numeroavenantcompagnie), '') AS avenantcompagnie,
+           COALESCE(ct.flotte, FALSE) AS flotte, TRIM(COALESCE(av.codeavenant, '')) AS codeavenant,
            COALESCE(ct.taux_commission, q.taux_commission, 0) AS taux,
            COALESCE(ct.commissionintermediaire, 0) AS commission,
            """ + SQL_ACC_COURTIER.format(ct="ct") + """ AS acccourtier, """ + SQL_PART_COMPAGNIE.format(ct="ct") + """ AS partcompagnie,
@@ -167,6 +177,7 @@ SQL_QUITTANCES = """
                                       ct.primeimposee) AS primeht
     FROM stdquittance q
     LEFT JOIN LATERAL (SELECT c.* FROM stdcontrat c WHERE c.idquittance = q.idquittance ORDER BY c.idcontrat LIMIT 1) ct ON TRUE
+    LEFT JOIN stdavenant av ON av.idavenant = ct.idavenant
     LEFT JOIN stdproduit p ON p.idproduit = q.idproduit
     LEFT JOIN stdclient cl ON cl.idclient = q.idclient
     WHERE q.numeroquittance = ANY(%s)
@@ -334,12 +345,12 @@ def _paiement_cabinet(entete, pour_courrier=False):
     montant = _f(entete["montantreversement"])
     banque = f"{entete['banque']} " if entete["banque"] else ""
     if entete["abrege"] in ("CHQ", "TRT"):
-        return (f"notre chèque {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}" if pour_courrier
+        return (f"le chèque {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}" if pour_courrier
                 else f"CHQ {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}")
     if entete["abrege"] == "VIR":
-        return (f"notre virement {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}" if pour_courrier
+        return (f"le virement {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}" if pour_courrier
                 else f"VIR {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}")
-    return f"{'notre règlement ' if pour_courrier else ''}{entete['mode'] or ''} du {jour} de FCFA {montant}".strip()
+    return f"{'le règlement ' if pour_courrier else ''}{entete['mode'] or ''} du {jour} de FCFA {montant}".strip()
 
 
 # ------------------------------------------------------------------ primes à transmettre
@@ -347,20 +358,23 @@ def _paiement_cabinet(entete, pour_courrier=False):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def a_transmettre(request):
-    """GET /api/finance/bordereaux/a-transmettre/?compagnie= : primes encaissées non encore transmises, avec l'ordre
-    du règlement (nature du bordereau), le statut de paiement de la quittance et les colonnes du bordereau."""
-    try:
-        id_compagnie = _entier(request.query_params.get("compagnie"), "Compagnie")
-    except ErreurFinance as erreur:
-        return _erreur(erreur)
+    """GET /api/finance/bordereaux/a-transmettre/?compagnie= : primes encaissées non encore transmises."""
+    compagnie = request.query_params.get("compagnie")
+    conditions = ["NOT COALESCE(e.piece_annulee, FALSE)", "de.montant_encaissement > COALESCE(de.montantreglement, 0)",
+                  "e.dateencaissement::date >= %s"]
+    parametres = [debut_reversements()]
+    if compagnie:
+        try:
+            conditions.insert(0, "cie.idcompagnie = %s")
+            parametres.insert(0, _entier(compagnie, "Compagnie"))
+        except ErreurFinance as erreur:
+            return _erreur(erreur)
     brutes = _lignes(
-        SQL_LIGNES_ENCAISSEMENT + """
-        WHERE cie.idcompagnie = %s AND NOT COALESCE(e.piece_annulee, FALSE)
-          AND de.montant_encaissement > COALESCE(de.montantreglement, 0)
-          AND e.dateencaissement::date >= %s
+        SQL_LIGNES_ENCAISSEMENT + f"""
+        WHERE {' AND '.join(conditions)}
         ORDER BY e.dateencaissement DESC, de.iddetailencaissement DESC
         """,
-        [id_compagnie, debut_reversements()],
+        parametres,
     )
     brutes = [l for l in brutes if not _est_decaissement(l)]
     numeros = {l["numeroquittance"] for l in brutes}
@@ -382,6 +396,7 @@ def a_transmettre(request):
             **_infos_quittance(q),
             "IdDetailEncaissement": l["iddetailencaissement"],
             "IdEncaissement": l["idencaissement"],
+            "IdCompagnie": l["idcompagnie"],
             "NumeroPiece": l["numeropiece"] or "",
             "DateEncaissement": _iso(l["dateencaissement"]),
             "Mode": l["mode"] or "",
@@ -521,6 +536,9 @@ def lire_bordereau(id_reversement):
             "RangPaiement": p["Rang"],
             "LibelleStatutPaiement": _libelle_paiement(p["Code"], p["Rang"]),
             "IdsEncaissement": sorted({d["idencaissement"] for d in siens}),
+            # Document du contrat joint au courrier : flotte et avenant (pièces jointes, _document_quittance)
+            "Flotte": bool(q["flotte"]),
+            "CodeAvenant": q["codeavenant"],
         })
 
     def total(cle, ls):
@@ -564,6 +582,19 @@ def lire_bordereau(id_reversement):
     }
 
 
+def _document_quittance(ligne, branche):
+    """Document du contrat joint au courrier d'une seule quittance : l'avenant pour un acte en cours de période
+    (incorporation, retrait…), les conditions particulières de la flotte pour une flotte automobile (courrier JCW du
+    12/01/2026 : « les conditions particulières automobiles correspondantes »), sinon la condition particulière."""
+    code = (ligne.get("CodeAvenant") or "").upper()
+    if code and code not in CODES_CONTRAT_DE_BASE:
+        avenant = AVENANTS_JOINTS.get(code) or "l'avenant"
+        return f"{avenant} correspondant."
+    if ligne.get("Flotte") and branche == LIBELLES_BRANCHE[1]:
+        return "les conditions particulières automobiles correspondantes."
+    return f"la condition particulière {branche.lower()} correspondante.".replace("  ", " ")
+
+
 def _courrier(entete, lignes, cheques, reglages, precedents, paiements, date_bordereau):
     """Courrier de règlement de prime au modèle d'OREOLE (courriers JCW du 12/01 et du 19/05/2026, KOUMOUE du
     01/09/2026) ; plusieurs clients : « P/C ASSURES DIVERS » (demande du 2026-10-19)."""
@@ -587,7 +618,7 @@ def _courrier(entete, lignes, cheques, reglages, precedents, paiements, date_bor
 
     textes = [c["TexteCourrier"] for c in cheques if c["TexteCourrier"]]
     if not textes:
-        instrument = f"notre règlement de FCFA {_f(entete['MontantReverse'])}"
+        instrument = f"le règlement de FCFA {_f(entete['MontantReverse'])}"
     elif len(textes) == 1:
         instrument = textes[0]
     elif all(t.startswith("le chèque ") for t in textes):
@@ -658,7 +689,7 @@ def _courrier(entete, lignes, cheques, reglages, precedents, paiements, date_bor
     if precedent:
         pieces.append(f"la décharge du courrier du {_jma(precedent['datebordereau'])}.")
     elif une_quittance:
-        pieces.append(f"la condition particulière {branche_texte.lower()} correspondante.".replace("  ", " "))
+        pieces.append(_document_quittance(l, branche_texte))
     else:
         pieces.append("les conditions particulières correspondantes.")
 

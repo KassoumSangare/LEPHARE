@@ -164,6 +164,7 @@ urlpatterns = [
     # Suivi des consommations santé : relevés du gestionnaire, droits et soldes, statistiques, contrôles, fraude (sante/consommations.py)
     path(r"consommations/import/analyse/", consommations.vue_analyse, name="consommations-analyse"),
     path(r"consommations/import/", consommations.vue_import, name="consommations-import"),
+    path(r"consommations/import/<int:idreleve>/", consommations.vue_supprimer_releve, name="consommations-import-suppression"),
     path(r"consommations/synthese/", consommations.vue_synthese, name="consommations-synthese"),
     path(r"consommations/tableau-de-bord/", consommations_pilotage.vue_tableau_de_bord, name="consommations-tableau-de-bord"),
     # Analyse approfondie : compagnies, entreprises, familles, profil, foyers, prestataires, délais, projection (sante/consommations_analyse.py)

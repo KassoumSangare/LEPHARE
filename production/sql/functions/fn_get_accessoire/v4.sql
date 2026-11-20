@@ -1,7 +1,7 @@
 -- v4 : plus aucune compagnie ni offre écrite ici (v3 : NSIA, SUNU et AMSA à 50/50, offres IA 154-156 et 162-170 à
 -- 1 000 F et 79 F).
---   - Part du cabinet : réglage de la fiche de la compagnie (fn_lephare_part_accessoires_cabinet ; NSIA, SUNU et
---     AMSA : 50 %). Le barème de la compagnie est partagé selon cette part ; sans réglage, la compagnie garde son
+--   - Part du cabinet : réglage de la fiche de la compagnie (fn_lephare_part_accessoires_cabinet ; NSIA et SUNU :
+--     50 % ; AMSA : 0 % depuis configuration_api 0111, elle ne partage pas). Le barème de la compagnie est partagé selon cette part ; sans réglage, la compagnie garde son
 --     barème et le cabinet a le sien (Accessoires du cabinet, sauf Voyage).
 --   - Offres IA à accessoire forfaitaire (CGA, CI-ÉNERGIES… ; Réglages par branche > Individuelle Accidents,
 --     lephare_ia_accessoire_offre) : montant de l'offre partagé selon la part du cabinet.

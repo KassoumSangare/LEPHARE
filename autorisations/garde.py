@@ -338,6 +338,7 @@ REGLES = [
     # Consommations santé (sante/consommations.py) : données de santé, droits dédiés ; l'analyse d'un relevé n'écrit rien
     R("POST", r"consommations/import/analyse/?$", "consommations.import", lecture=True),
     R("POST", r"consommations/import/?$", "consommations.import", objet="releve_sante"),
+    R("DELETE", r"consommations/import/(?P<idreleve>\d+)/?$", "consommations.import", objet="releve_sante", cles=("idreleve",)),
     R("POST", r"consommations/entreprises/lien/?$", "consommations.import", objet="lien_entreprise_police"),
     R("POST", r"consommations/souscriptions/?$", "consommations.import", objet="effectif_sante"),
     R("POST", r"consommations/fraude/(?P<matricule>\d+)/instruction/?$", "consommations.fraude", objet="suspicion_fraude", cles=("matricule",)),

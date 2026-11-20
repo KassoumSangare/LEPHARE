@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
@@ -704,6 +704,7 @@ class ContratAdministrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"dateexpiration": "La date d’échéance doit être postérieure à la date d’effet."}
             )
+        self._controler_affaire_anterieure(attrs)
         # Les documents du contrat (fn_quittance_contrat) joignent l'assuré à la fiche client : un numéro inconnu les
         # laisserait sans en-tête
         if "idassure" in attrs and not Client.objects.filter(pk=attrs["idassure"]).exists():
@@ -711,6 +712,26 @@ class ContratAdministrationSerializer(serializers.ModelSerializer):
                 {"idassure": f"Aucun client ne porte le n° {attrs['idassure']}."}
             )
         return attrs
+
+    def _controler_affaire_anterieure(self, attrs):
+        """Affaire antérieure (reprise, production/reprise.py) : ses dates d'émission et d'effet restent avant l'exercice en
+        cours, comme à la saisie ; sinon sa production et son chiffre d'affaires (commission et accessoires, rattachés à la
+        date d'émission) entreraient dans ceux de l'exercice."""
+        if self.instance is None or not ({"dateemission", "dateeffet"} & attrs.keys()):
+            return
+        from .models import RepriseAffaire
+
+        if not RepriseAffaire.objects.filter(idcontrat=self.instance.pk).exists():
+            return
+        debut_annee = date(timezone.localdate().year, 1, 1)
+        for champ, libelle in (("dateemission", "La date d’émission"), ("dateeffet", "La date d’effet")):
+            valeur = attrs.get(champ)
+            jour = valeur.date() if isinstance(valeur, datetime) else valeur
+            if jour and jour >= debut_annee:
+                raise serializers.ValidationError({
+                    champ: f"{libelle} d’une affaire antérieure reste avant le 01/01/{debut_annee.year} : sinon elle "
+                           f"compterait dans la production et le chiffre d’affaires de l’exercice en cours."
+                })
 
 
 class ContratDetailAdministrationSerializer(serializers.ModelSerializer):

@@ -24,7 +24,6 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 // - chaque bordereau a son courrier de règlement de prime ; la date de décharge (cachet de la compagnie) se saisit
 //   au retour ;
 // - tableau de reversement (COMMI-MOIS) par compagnie : à l'écran et en Excel, une feuille par état.
-const ID_NSIA = 1;
 // Paiement d'un bordereau de reversement par le cabinet : chèque ou virement seulement (demande du 2026-10-21)
 const MODES_PAIEMENT_CABINET = ['CHQ', 'VIR'];
 const NATURES = {
@@ -414,7 +413,7 @@ export const CompanyRemittancePage = () => {
   const [compagnies, setCompagnies] = useState([]);
   const [modes, setModes] = useState([]);
   const [banques, setBanques] = useState([]);
-  const [compagnie, setCompagnie] = useState(String(ID_NSIA));
+  const [compagnie, setCompagnie] = useState('');
   const [lignes, setLignes] = useState([]);
   const [selection, setSelection] = useState(new Set());
   const [dateBordereau, setDateBordereau] = useState(aujourdhui());
@@ -436,7 +435,6 @@ export const CompanyRemittancePage = () => {
   }, []);
 
   const chargerLignes = () => {
-    if (!compagnie) return;
     setChargement(true);
     financeApi.aTransmettre(compagnie)
       .then((r) => {
@@ -486,14 +484,21 @@ export const CompanyRemittancePage = () => {
   };
   // « Tout cocher » porte sur les lignes affichées (résultat de la recherche)
   const toutCoche = lignesVisibles.length > 0 && lignesVisibles.every((l) => selection.has(l.IdDetailEncaissement));
-  const basculer = (id) => setSelection((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toutBasculer = () => setSelection((s) => {
-    const n = new Set(s);
-    lignesVisibles.forEach((l) => (toutCoche ? n.delete(l.IdDetailEncaissement) : n.add(l.IdDetailEncaissement)));
-    return n;
-  });
+  const basculer = (id) => {
+    if (!compagnie) return;
+    setSelection((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+  const toutBasculer = () => {
+    if (!compagnie) return;
+    setSelection((s) => {
+      const n = new Set(s);
+      lignesVisibles.forEach((l) => (toutCoche ? n.delete(l.IdDetailEncaissement) : n.add(l.IdDetailEncaissement)));
+      return n;
+    });
+  };
 
   const emettre = async () => {
+    if (!compagnie) return;
     const sansPolice = cochees.filter((l) => !l.PoliceCompagnie).length;
     const details = [
       aReverser.length ? `BORDEREAU DE REVERSEMENT DE PRIME : ${aReverser.length} prime(s), ${fcfa(somme(aReverser, 'ResteAReverser'))} F à reverser par le cabinet` : '',
@@ -549,6 +554,7 @@ export const CompanyRemittancePage = () => {
         <div className="form-group" style={{ margin: 0, minWidth: 240 }}>
           <label className="form-label" htmlFor="rv-cie">Compagnie</label>
           <select id="rv-cie" className="form-control" value={compagnie} onChange={(e) => setCompagnie(e.target.value)}>
+            <option value="">Toutes les compagnies</option>
             {trierParLibelle(compagnies, (c) => c.RaisonSociale).map((c) => (
               <option key={c.IdCompagnie ?? c.id} value={c.IdCompagnie ?? c.id}>{c.RaisonSociale}</option>
             ))}
@@ -592,6 +598,9 @@ export const CompanyRemittancePage = () => {
 
       {onglet === 'a_transmettre' && (
         <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
+          {!compagnie && <p style={{ margin: '0 0 0.8rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+            Toutes les compagnies sont affichées pour faciliter la recherche. Choisissez une compagnie pour sélectionner des quittances et émettre un bordereau.
+          </p>}
           {/* Barre d'émission en tête de liste : toujours visible, elle s'éclaire dès qu'une prime est cochée */}
           <div style={{
             position: 'sticky', top: 0, zIndex: 3, marginBottom: '0.9rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-lg, 10px)',
@@ -624,7 +633,9 @@ export const CompanyRemittancePage = () => {
                   </>
                 ) : (
                   <span style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
-                    Cochez les primes à reverser à la compagnie : le bordereau et son courrier se préparent ici, le numéro est attribué à la génération.
+                    {compagnie
+                      ? 'Cochez les primes à reverser à la compagnie : le bordereau et son courrier se préparent ici, le numéro est attribué à la génération.'
+                      : 'Choisissez une compagnie pour sélectionner les primes et préparer un bordereau.'}
                   </span>
                 )}
               </div>
@@ -663,7 +674,8 @@ export const CompanyRemittancePage = () => {
             <table className="data-table" style={{ fontSize: '0.82rem' }}>
               <thead>
                 <tr>
-                  <th><input type="checkbox" checked={toutCoche} onChange={toutBasculer} aria-label="Tout cocher" /></th>
+                  <th><input type="checkbox" checked={toutCoche} onChange={toutBasculer} aria-label="Tout cocher" disabled={!compagnie} /></th>
+                  {!compagnie && <th>Compagnie</th>}
                   <th>Date d'encaissement</th><th>Client / n° de quittance</th><th>Branche</th><th>N° de police / avenant</th>
                   <th>Moyen de paiement du client</th><th>Règlement à l'ordre de</th><th>Statut du paiement</th>
                   <th style={{ textAlign: 'right' }}>Prime TTC</th><th style={{ textAlign: 'right' }}>Montant à reverser</th>
@@ -675,7 +687,8 @@ export const CompanyRemittancePage = () => {
                   const coche = selection.has(l.IdDetailEncaissement);
                   return (
                     <tr key={l.IdDetailEncaissement} style={coche ? { background: 'var(--primary-glow)' } : undefined}>
-                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l.IdDetailEncaissement)} aria-label={`Reverser la quittance ${l.NumeroQuittance}`} /></td>
+                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l.IdDetailEncaissement)} aria-label={`Reverser la quittance ${l.NumeroQuittance}`} disabled={!compagnie} /></td>
+                      {!compagnie && <td>{compagnies.find((c) => String(c.IdCompagnie ?? c.id) === String(l.IdCompagnie))?.RaisonSociale || ''}</td>}
                       <td>{dateFr(l.DateEncaissement)}</td>
                       <td>{l.Client}<div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{l.NumeroQuittance}</div></td>
                       <td>{l.Branche}</td>
@@ -696,7 +709,7 @@ export const CompanyRemittancePage = () => {
                   );
                 })}
                 {!lignesVisibles.length && (
-                  <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                  <tr><td colSpan={compagnie ? 11 : 12} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
                     {chargement ? 'Chargement…' : (lignes.length ? 'Aucune prime ne correspond à la recherche.' : `Aucune prime encaissée à reverser à ${nomCompagnie || 'cette compagnie'}.`)}
                   </td></tr>
                 )}
@@ -743,7 +756,9 @@ export const CompanyRemittancePage = () => {
         </div>
       )}
 
-      {onglet === 'tableau' && <TableauReversement compagnie={compagnie} nomCompagnie={nomCompagnie} recherche={recherche} />}
+      {onglet === 'tableau' && (compagnie
+        ? <TableauReversement compagnie={compagnie} nomCompagnie={nomCompagnie} recherche={recherche} />
+        : <div className="glass-panel" style={{ padding: '1rem', color: 'var(--text-muted)' }}>Choisissez une compagnie pour afficher son tableau de reversement.</div>)}
 
       <BordereauModal bordereau={ouvert} modes={modes} banques={banques} onClose={() => setOuvert(null)}
         onChange={(b) => { setOuvert(b); chargerBordereaux(); if (!b) chargerLignes(); }} />

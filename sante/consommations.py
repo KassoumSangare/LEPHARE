@@ -605,6 +605,55 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None, programm
         return resume
 
 
+def supprimer_releve(id_releve, programme=None):
+    """Supprime un import et uniquement les données qui lui sont directement rattachées."""
+    programme = programme or OREOLE
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT nature, fichier, garants FROM lephare_sante_releve WHERE idreleve = %s",
+            [id_releve],
+        )
+        relevé = cursor.fetchone()
+        if not relevé:
+            raise ErreurConsommation("Fichier importé introuvable.")
+        nature, fichier, garants = relevé
+        est_minene = GARANT_MINENE in (garants or "")
+        if (programme == MINENE) != est_minene:
+            raise ErreurConsommation("Cet import n'appartient pas à cet espace Santé.")
+        if fichier == SOURCE_SOUSCRIPTIONS:
+            raise ErreurConsommation("Cet effectif vient des souscriptions : utilisez la mise à jour des souscriptions.")
+
+        cursor.execute(
+            "DELETE FROM lephare_sante_prestation_ecart WHERE idreleve = %s",
+            [id_releve],
+        )
+        cursor.execute(
+            "DELETE FROM lephare_sante_prestation WHERE idreleve = %s",
+            [id_releve],
+        )
+        cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
+        if cursor.fetchone()[0]:
+            cursor.execute(
+                "DELETE FROM lephare_sante_effectif_situation WHERE idreleve = %s",
+                [id_releve],
+            )
+        cursor.execute(
+            "DELETE FROM lephare_sante_effectif WHERE idreleve = %s",
+            [id_releve],
+        )
+        cursor.execute("SELECT to_regclass('public.lephare_sante_cotisation') IS NOT NULL")
+        if cursor.fetchone()[0]:
+            cursor.execute(
+                "DELETE FROM lephare_sante_cotisation WHERE idreleve = %s",
+                [id_releve],
+            )
+        cursor.execute(
+            "DELETE FROM lephare_sante_releve WHERE idreleve = %s",
+            [id_releve],
+        )
+    return {"Supprime": True, "IdReleve": id_releve}
+
+
 # ------------------------------------------------------------------ chargement commun
 def _charger(cursor, condition="TRUE", parametres=(), programme=OREOLE):
     """Prestations du programme (Oreole par défaut) et ce que l'effectif du même programme en dit."""
@@ -1208,6 +1257,18 @@ def vue_import(request):
 @permission_classes([permissions.IsAuthenticated])
 def vue_synthese(request):
     return _reponse(synthese, request.query_params)
+
+
+@api_view(["DELETE"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def vue_supprimer_releve(request, idreleve):
+    if not a_le_droit(request.user, "consommations.import"):
+        return Response(
+            {"error": "Vous n'avez pas le droit de supprimer les relevés de consommations."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return _reponse(supprimer_releve, idreleve, programme_demande(request.query_params))
 
 
 @api_view(["GET"])

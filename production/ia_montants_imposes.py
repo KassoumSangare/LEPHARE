@@ -205,7 +205,11 @@ def _appliquer(cursor, id_devis):
     cursor.execute("SELECT set_config('lephare.reprise', 'on', true)")
     cursor.execute("CALL public.sp_maj_manuelle_primes(%s, %s, %s, %s, %s, %s, %s, %s)", [numero, pa, pn, accessoire, taxe, 0, 0, ttc])
     cursor.execute("SELECT set_config('lephare.reprise', '', true)")
-    compagnie = _franc(accessoire / 2)
+    # Part du cabinet réglée sur la fiche de la compagnie (NSIA et SUNU : 50 % ; AMSA : 0 %), moitié sans réglage
+    cursor.execute("SELECT public.fn_lephare_part_accessoires_cabinet(%s)", [id_compagnie])
+    part = (cursor.fetchone() or [None])[0]
+    part = Decimal("50") if part is None else _decimal(part)
+    compagnie = _franc(accessoire * (100 - part) / 100)
     cursor.execute("""UPDATE stddevis SET accessoirecompagnie = %s, accessoireintermediaire = %s, commissionintermediaire = %s WHERE iddevis = %s""",
                    [compagnie, accessoire - compagnie, _franc(pn * taux_commission / 100), id_devis])
     return len(concernees)
