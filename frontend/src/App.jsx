@@ -29,6 +29,7 @@ const TransportAbonnementsPage = lazy(() => import('./pages/user/quotes/Transpor
 const ContractListPage = lazy(() => import('./pages/user/contracts/ContractListPage'));
 const ContractDetailPage = lazy(() => import('./pages/user/contracts/ContractDetailPage'));
 const IncorporationFlottePage = lazy(() => import('./pages/user/contracts/IncorporationFlottePage'));
+const AvenantPolicePage = lazy(() => import('./pages/user/contracts/AvenantPolicePage'));
 const AdminContractManagementPage = lazy(() => import('./pages/admin/contracts/AdminContractManagementPage'));
 const EndorsementPage = lazy(() => import('./pages/user/endorsements/EndorsementPage'));
 const RepriseAffairesPage = lazy(() => import('./pages/user/reprises/RepriseAffairesPage'));
@@ -214,6 +215,7 @@ function App() {
                 <Route path="/user/contracts/:id" element={<ContractDetailPage />} />
                 <Route path="/user/contracts/:id/renouvellement" element={<RenouvellementPage />} />
                 <Route path="/user/contracts/:id/incorporation" element={<IncorporationFlottePage />} />
+                <Route path="/user/contracts/:id/avenant" element={<AvenantPolicePage />} />
                 <Route path="/user/endorsements" element={<EndorsementPage />} />
                 <Route path="/user/reprises" element={<RepriseAffairesPage />} />
                 {/* Affaires antérieures : écrans de devis de la Production, sans quitter la vue (utils/navigationDevis.js) */}

@@ -5,13 +5,15 @@ import { Modal } from '../../../components/common/Modal';
 import { SqueletteTableau } from '../../../components/common/Squelette';
 import { FiltreTypeContrat, libellesTypeContrat, parametreFlotte } from '../../../components/common/FiltreTypeContrat';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../../utils/modulesActifs';
+import { ongletDuProduit } from '../../../utils/parametrage';
+import { pucesBranches } from '../../../components/common/BranchesDevis';
 import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { exportToPdf } from '../../../utils/exportUtils';
 import { useNombreAnime } from '../../../utils/useNombreAnime';
 import {
-  Activity, AlertCircle, ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BellRing, Building2, Car, ChevronLeft,
+  AlertCircle, ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BellRing, Building2, Car, ChevronLeft,
   ChevronRight, Eye, FileCheck, HeartHandshake, HeartPulse, Home, Inbox, Layers, Plane, Plus, Printer, RefreshCw, Search, Shield,
   ShieldCheck, Ship, UserPlus, X,
 } from 'lucide-react';
@@ -25,19 +27,6 @@ import {
    une recherche porte sur tout l'historique. Les filtres sont gardés dans l'adresse : retour de la
    fiche d'un contrat sur la même sélection.
    ========================================================================= */
-
-// Onglets de branche : produits URANUS regroupés (libellés de stdproduit)
-const BRANCHES = [
-  { cle: 'ALL', libelle: 'Toutes les branches', icone: Layers, produits: null },
-  { cle: 'AUTO', libelle: 'Automobile', icone: Car, produits: [1] },
-  { cle: 'SANTE', libelle: 'Santé', icone: HeartPulse, produits: [5] },
-  { cle: 'VIE', libelle: 'Vie', icone: HeartHandshake, produits: [10] },
-  { cle: 'IA', libelle: 'Individuelle Accidents', icone: Activity, produits: [2] },
-  { cle: 'VOYAGE', libelle: 'Voyage', icone: Plane, produits: [3] },
-  { cle: 'TRANSPORT', libelle: 'Transport', icone: Ship, produits: [6] },
-  { cle: 'MRH', libelle: 'Habitation & Dommages', icone: Home, produits: [4, 7, 9], aide: 'Multirisques Habitation, Multirisques Professionnelle et Tous Dommages' },
-  { cle: 'RC', libelle: 'Responsabilité Civile', icone: Shield, produits: [8] },
-];
 
 // Statuts calculés par le serveur ; « tous » = contrats non annulés
 const STATUTS = {
@@ -130,7 +119,9 @@ export const ContractListPage = () => {
   const [parametres, setParametres] = useSearchParams();
 
   // Filtres, gardés dans l'adresse
-  const branche = BRANCHES.some((b) => b.cle === parametres.get('branche')) ? parametres.get('branche') : 'ALL';
+  // Une puce par branche de la Production (Administration > Produits), MRH, MRP et Dommages séparées (2026-11-20)
+  const branches = pucesBranches();
+  const branche = branches.some((b) => b.cle === parametres.get('branche')) ? parametres.get('branche') : 'ALL';
   // Mono / flotte (Automobile), individuel / groupe (autres branches) : seulement avec une branche choisie
   const type = branche !== 'ALL' && ['mono', 'flotte'].includes(parametres.get('type')) ? parametres.get('type') : 'tous';
   const statut = ONGLETS_STATUT.includes(parametres.get('statut')) ? parametres.get('statut') : 'tous';
@@ -189,15 +180,17 @@ export const ContractListPage = () => {
   const [impression, setImpression] = useState(false);
   const [nouvellePolice, setNouvellePolice] = useState(false);
 
-  const brancheCourante = BRANCHES.find((b) => b.cle === branche);
+  const brancheCourante = branches.find((b) => b.cle === branche);
+  // Produits de la branche en texte : la liste des branches est recalculée à chaque rendu, la requête ne repart pas pour autant
+  const produitsBranche = brancheCourante?.produits ? brancheCourante.produits.join(',') : '';
   const filtresServeur = useMemo(() => ({
     ...(recherche ? { recherche } : {}),
     ...(du ? { [`${champPeriode}_du`]: du } : {}),
     ...(au ? { [`${champPeriode}_au`]: au } : {}),
   }), [recherche, champPeriode, du, au]);
-  const filtreProduit = useMemo(() => (brancheCourante?.produits
-    ? { idproduit: brancheCourante.produits.join(','), ...(type !== 'tous' ? { flotte: parametreFlotte(type) } : {}) }
-    : {}), [brancheCourante, type]);
+  const filtreProduit = useMemo(() => (produitsBranche
+    ? { idproduit: produitsBranche, ...(type !== 'tous' ? { flotte: parametreFlotte(type) } : {}) }
+    : {}), [produitsBranche, type]);
 
   // Dernière requête seulement : une réponse plus ancienne (filtre changé entre-temps) est ignorée
   const requeteListe = useRef(0);
@@ -255,7 +248,7 @@ export const ContractListPage = () => {
   };
   const aRenouveler = compteStatut('a_renouveler') || 0;
   // Filtre de type : toujours en Automobile, ailleurs quand la branche compte des contrats des deux sortes
-  const brancheAuto = branche === 'AUTO';
+  const brancheAuto = branche === ongletDuProduit(1);
   const comptesType = synthese?.par_type || null;
   const filtreTypeVisible = branche !== 'ALL'
     && (brancheAuto || type !== 'tous' || (Number(comptesType?.mono) > 0 && Number(comptesType?.flotte) > 0));
@@ -414,7 +407,7 @@ export const ContractListPage = () => {
         )}
 
         <div className="portefeuille-branches" role="tablist" aria-label="Branches">
-          {BRANCHES.map((b) => {
+          {branches.map((b) => {
             const Icone = b.icone;
             const actif = b.cle === branche;
             const n = compteBranche(b);

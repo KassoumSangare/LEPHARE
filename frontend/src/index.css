@@ -2185,9 +2185,11 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .admin-contrats-page-indicator span { color: var(--text-muted); }
 .admin-contrats-page .portefeuille-ligne-recherche { align-items: stretch; }
 .admin-contrats-page .portefeuille-recherche { display: flex; align-items: center; }
-.admin-contrats-page .portefeuille-recherche input { flex: 1; min-width: 0; height: 42px; padding-right: 8.5rem; border-radius: var(--radius-md); }
+.admin-contrats-page .portefeuille-recherche input { flex: 1; min-width: 0; height: 42px; border-radius: var(--radius-md); }
 .admin-contrats-page .portefeuille-recherche > svg { z-index: 1; }
-.admin-contrats-page .admin-contrats-search { position: absolute; right: 4px; display: inline-flex; align-items: center; gap: 0.35rem; height: 34px; padding: 0 0.75rem; }
+/* Recherche en temps réel : la liste reste affichée, estompée, pendant sa mise à jour */
+.admin-contrats-table { transition: opacity 0.2s ease; }
+.admin-contrats-table.en-mise-a-jour { opacity: 0.55; }
 .admin-contrats-page .portefeuille-periode { min-height: 42px; padding: 0.25rem 0.5rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-surface-elevated); }
 .admin-contrats-page .portefeuille-periode select,
 .admin-contrats-page .portefeuille-periode input[type="date"] { height: 34px; border-color: transparent; background: transparent; }
@@ -2270,6 +2272,15 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 }
 .admin-champ-precision { overflow: hidden; color: var(--text-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
 .admin-champ-avant { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; color: var(--accent-amber); font-size: 0.7rem; }
+/* Montant recalculé (taxe, TTC, totaux) : affiché, jamais saisi */
+.admin-champ-calcule {
+  display: flex; align-items: center; justify-content: flex-end; background: var(--bg-surface-elevated); color: var(--text-primary);
+  font-variant-numeric: tabular-nums; cursor: default; white-space: nowrap;
+}
+.admin-champ-recalcule .form-control, .admin-cellule-recalculee .form-control { border-color: var(--primary-500); }
+.admin-champ-recalcule .admin-champ-avant { color: var(--primary-500); }
+.admin-ttc-recalculee { color: var(--primary-500); }
+.admin-sous-titre { display: flex; align-items: center; gap: 0.45rem; margin: 0; color: var(--text-primary); font-size: 0.85rem; font-weight: 700; }
 .admin-champ-avant button {
   display: inline-flex; align-items: center; gap: 0.2rem; padding: 0; border: 0; background: none;
   color: var(--primary-500); font-size: 0.7rem; font-weight: 650; cursor: pointer;
@@ -2330,6 +2341,95 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .admin-barre-actions > div { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .admin-barre-actions .btn { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 38px; }
 .admin-barre-compte { color: var(--text-secondary); font-size: 0.82rem; font-weight: 650; }
+
+/* Avenants de la police : retrait, résiliation, changement d'immatriculation (AvenantPolicePage) */
+.avenant-page { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+.avenant-retour { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.4rem; }
+.avenant-titre { display: flex; align-items: center; gap: 0.55rem; margin: 0; }
+.avenant-attente, .avenant-alerte { display: flex; align-items: center; gap: 0.45rem; margin: 0; font-size: 0.85rem; }
+.avenant-alerte { color: var(--accent-amber); }
+.avenant-resume { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.85rem; padding: 1rem 1.15rem; }
+.avenant-resume span { display: block; color: var(--text-muted); font-size: 0.72rem; }
+.avenant-resume strong { display: block; overflow: hidden; color: var(--text-primary); font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; }
+.avenant-actes { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.avenant-acte {
+  display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.65rem 1rem; border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); background: var(--bg-surface); color: var(--text-secondary); font-size: 0.85rem; font-weight: 650;
+  cursor: pointer; transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform var(--transition-fast);
+}
+.avenant-acte:hover:not(:disabled) { border-color: var(--primary-500); color: var(--text-primary); transform: translateY(-1px); }
+.avenant-acte.actif { border-color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-surface)); color: var(--primary-500); }
+.avenant-acte:disabled { opacity: 0.45; cursor: not-allowed; }
+.avenant-grille { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); align-items: start; gap: 1rem; }
+.avenant-saisie { display: flex; flex-direction: column; gap: 1rem; padding: 1.15rem; }
+.avenant-champs { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.85rem; }
+.avenant-champ { display: flex; min-width: 0; flex-direction: column; gap: 0.3rem; }
+.avenant-champ > span { color: var(--text-secondary); font-size: 0.75rem; font-weight: 650; }
+.avenant-champ .form-control { min-height: 40px; }
+.avenant-echeance .btn { min-height: 40px; }
+.avenant-echeance .btn.actif { border-color: var(--primary-500); color: var(--primary-500); }
+.avenant-plaque { font-family: var(--font-mono); letter-spacing: 0.06em; }
+.avenant-option { display: inline-flex; align-items: center; gap: 0.55rem; font-size: 0.85rem; cursor: pointer; }
+.avenant-option input { width: 16px; height: 16px; accent-color: var(--primary-500); }
+.avenant-objets { min-width: 0; margin: 0; padding: 0.75rem 0.85rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+.avenant-objets legend { padding: 0 0.35rem; color: var(--text-primary); font-size: 0.8rem; font-weight: 700; }
+.avenant-objets ul { display: flex; max-height: 340px; flex-direction: column; gap: 0.35rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.avenant-objets label {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.6rem; padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-md); cursor: pointer; transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.avenant-objets label:hover { border-color: var(--border-medium); }
+.avenant-objets label.coche { border-color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 7%, transparent); }
+.avenant-objets input { width: 16px; height: 16px; accent-color: var(--primary-500); }
+.avenant-objet-nom { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 0.82rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.avenant-objet-info { color: var(--text-muted); font-size: 0.74rem; white-space: nowrap; }
+.avenant-recherche { position: relative; margin-bottom: 0.5rem; }
+.avenant-recherche svg { position: absolute; top: 50%; left: 0.65rem; color: var(--text-muted); transform: translateY(-50%); }
+.avenant-recherche .form-control { width: 100%; min-height: 36px; padding-left: 2rem; }
+.avenant-motif textarea { min-height: 72px; resize: vertical; }
+.avenant-montants { position: sticky; top: calc(var(--navbar-height) + 1rem); display: flex; flex-direction: column; gap: 0.75rem; padding: 1.15rem; }
+.avenant-montants h2 { display: flex; align-items: center; gap: 0.45rem; margin: 0; font-size: 0.95rem; font-weight: 700; }
+.avenant-vide { margin: 0; color: var(--text-muted); font-size: 0.82rem; }
+.avenant-lignes { display: flex; max-height: 180px; flex-direction: column; gap: 0.3rem; margin: 0; padding: 0; overflow: auto; list-style: none; font-size: 0.78rem; }
+.avenant-lignes li { display: flex; justify-content: space-between; gap: 0.75rem; }
+.avenant-lignes span { overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.avenant-lignes strong, .avenant-totaux dd { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.avenant-totaux { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; padding-top: 0.6rem; border-top: 1px solid var(--border-subtle); font-size: 0.84rem; }
+.avenant-totaux > div { display: flex; justify-content: space-between; gap: 0.75rem; }
+.avenant-totaux dt { color: var(--text-secondary); }
+.avenant-totaux dd { margin: 0; color: var(--text-primary); font-weight: 650; }
+.avenant-ttc { padding-top: 0.45rem; border-top: 1px solid var(--border-subtle); font-size: 0.95rem; }
+.avenant-ttc dt, .avenant-ttc dd { color: var(--text-primary) !important; font-weight: 750 !important; }
+.avenant-secondaire, .avenant-secondaire dt, .avenant-secondaire dd { color: var(--text-muted) !important; font-size: 0.76rem; font-weight: 500 !important; margin: 0; }
+.avenant-emettre { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 42px; }
+@media (max-width: 860px) {
+  .avenant-grille { grid-template-columns: 1fr; }
+  .avenant-montants { position: static; }
+}
+@media (max-width: 520px) {
+  .avenant-objets label { grid-template-columns: auto 1fr; }
+  .avenant-objet-info { grid-column: 2; }
+  .avenant-acte { flex: 1 1 100%; }
+}
+/* Historique réel de la police (fiche contrat) */
+.historique-police { padding: 1.5rem; }
+.historique-police-entete { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; }
+.historique-police-entete h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.historique-police-entete .btn { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; }
+.historique-police-vide { margin: 0; padding: 1.5rem; border: 1px dashed var(--border-subtle); border-radius: var(--radius-md); color: var(--text-muted); text-align: center; font-size: 0.85rem; }
+.historique-police-table td, .historique-police-table th { font-size: 0.8rem; vertical-align: middle; }
+.historique-police-table .droite { text-align: right; }
+.historique-police-table .mono { font-family: var(--font-mono); white-space: nowrap; }
+.historique-police-table .negatif { color: var(--accent-emerald); }
+.historique-police-table tr.courant td { background: color-mix(in srgb, var(--primary-500) 7%, transparent); }
+.historique-police-table tr.annule td { opacity: 0.6; }
+.historique-mouvement { display: inline-block; padding: 0.15rem 0.5rem; border-radius: var(--radius-full); background: color-mix(in srgb, var(--primary-500) 14%, transparent); color: var(--primary-500); font-size: 0.72rem; font-weight: 650; }
+.historique-mouvement.code-ren { background: color-mix(in srgb, var(--accent-emerald) 16%, transparent); color: var(--accent-emerald); }
+.historique-mouvement.code-res, .historique-mouvement.code-anl, .historique-mouvement.code-ret { background: color-mix(in srgb, var(--accent-rose) 14%, transparent); color: var(--accent-rose); }
+.historique-etat { color: var(--text-muted); font-size: 0.72rem; }
+.historique-motif { max-width: 22rem; overflow: hidden; color: var(--text-muted); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.historique-actions { display: flex; justify-content: flex-end; gap: 0.35rem; }
+.historique-actions .btn { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.6rem; font-size: 0.75rem; }
 
 /* Devis Vie - AFA : tableau des assurés saisissable, contrôles par ligne, fiche client retrouvée ou à reprendre */
 .afa-table th, .afa-table td { padding: 0.4rem 0.35rem; vertical-align: top; }
@@ -2395,8 +2495,6 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
   .admin-contrats-section-heading p { max-width: 24rem; }
   .admin-contrats-page .portefeuille-ligne-recherche { gap: 0.65rem; }
   .admin-contrats-page .portefeuille-recherche { flex-basis: 100%; }
-  .admin-contrats-page .admin-contrats-search { width: auto; }
-  .admin-contrats-page .admin-contrats-search span { display: none; }
   .admin-contrats-page .portefeuille-periode { padding: 0; border: none; background: transparent; }
   .admin-contrats-page .portefeuille-periode select,
   .admin-contrats-page .portefeuille-periode input[type="date"] { border-color: var(--border-subtle); background: var(--bg-input); }
@@ -3884,6 +3982,16 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .cs-export { display: inline-flex; align-items: center; gap: 0.4rem; }
 /* Choix du rapport Word : effectifs, dépenses de santé ou global */
 .cs-export-zone { position: relative; }
+/* Programme analysé : Oreole Santé ou MINENE Santé (contrôle segmenté) */
+.cs-programmes { display: inline-flex; align-self: center; gap: 0.25rem; margin-left: auto; padding: 0.25rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-full); background: var(--bg-surface); }
+.cs-programme {
+  padding: 0.45rem 1rem; border: 0; border-radius: var(--radius-full); background: none; color: var(--text-secondary);
+  font-size: 0.84rem; font-weight: 650; cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast);
+}
+.cs-programme:hover { color: var(--text-primary); }
+.cs-programme.actif { background: var(--primary-500); color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-500) 35%, transparent); }
+.cs-programme:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+@media (max-width: 640px) { .cs-programmes { width: 100%; margin-left: 0; } .cs-programme { flex: 1; } }
 .cs-export-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(360px, 90vw); display: flex; flex-direction: column; padding: 0.35rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--bg-surface); box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18); animation: mouvement-descend var(--mouvement-rapide, 0.16s) ease-out both; }
 .cs-export-menu button { display: flex; flex-direction: column; gap: 0.15rem; text-align: left; padding: 0.6rem 0.7rem; border: none; border-radius: 8px; background: transparent; color: var(--text-primary); cursor: pointer; transition: background 0.15s ease; }
 .cs-export-menu button:hover, .cs-export-menu button:focus-visible { background: color-mix(in srgb, var(--primary-500, #3b82f6) 10%, transparent); outline: none; }

@@ -95,9 +95,15 @@ def _png(image):
 
 def _barre(dessin, x0, y0, x1, y1, couleur, rayon=8, cote="droite"):
     """Rectangle à l'extrémité arrondie (côté valeur), ancré sur la ligne de base."""
+    # Coordonnées entières : avec des fractions, Pillow pouvait tracer un coin plus haut que le segment d'une barre empilée de
+    # quelques pixels et refuser le dessin (« y1 must be greater than or equal to y0 », rapport Word du 2026-11-19)
+    x0, y0, x1, y1 = (int(round(v)) for v in (x0, y0, x1, y1))
     if x1 - x0 < 1 or y1 - y0 < 1:
         return
-    rayon = max(0, min(rayon, (x1 - x0) / 2, (y1 - y0) / 2))
+    rayon = max(0, min(int(rayon), (x1 - x0) // 2, (y1 - y0) // 2))
+    if rayon < 1:
+        dessin.rectangle([x0, y0, x1, y1], fill=couleur)
+        return
     dessin.rounded_rectangle([x0, y0, x1, y1], radius=rayon, fill=couleur)
     # côté de la ligne de base à angles droits
     if cote == "droite":

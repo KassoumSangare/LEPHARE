@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Car, ChevronDown, ChevronLeft,
-  ChevronRight, ClipboardCheck, FileText, HeartHandshake, HeartPulse, Home, Layers, Loader2, Pencil, Plane, RefreshCw, RotateCcw,
-  Search, Save, Shield, ShieldCheck, Ship,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Car, ChevronDown, ChevronLeft,
+  ChevronRight, ClipboardCheck, FileText, Loader2, Pencil, RefreshCw, RotateCcw,
+  Search, Save, Shield, ShieldCheck, X,
 } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
@@ -12,19 +12,10 @@ import { useToast } from '../../../context/ToastContext';
 import { confirmer } from '../../../utils/dialogue';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { DUREES_CONTRAT, ID_DUREE_LIBRE, TERMES_CONTRAT } from '../../../utils/termesContrat';
+import { ongletDuProduit } from '../../../utils/parametrage';
+import { pucesBranches } from '../../../components/common/BranchesDevis';
 
 const TAILLE_PAGE = 25;
-const BRANCHES = [
-  { cle: 'ALL', libelle: 'Toutes les branches', icone: Layers, produits: null },
-  { cle: 'AUTO', libelle: 'Automobile', icone: Car, produits: [1] },
-  { cle: 'SANTE', libelle: 'Santé', icone: HeartPulse, produits: [5] },
-  { cle: 'VIE', libelle: 'Vie', icone: HeartHandshake, produits: [10] },
-  { cle: 'IA', libelle: 'Individuelle Accidents', icone: Activity, produits: [2] },
-  { cle: 'VOYAGE', libelle: 'Voyage', icone: Plane, produits: [3] },
-  { cle: 'TRANSPORT', libelle: 'Transport', icone: Ship, produits: [6] },
-  { cle: 'MRH', libelle: 'Habitation & Dommages', icone: Home, produits: [4, 7, 9] },
-  { cle: 'RC', libelle: 'Responsabilité Civile', icone: Shield, produits: [8] },
-];
 const STATUTS = {
   en_cours: { libelle: 'En cours', badge: 'emerald' },
   a_renouveler: { libelle: 'À renouveler', badge: 'amber' },
@@ -189,6 +180,16 @@ const GROUPES_RISQUE = [
 ];
 const COLONNES_GARANTIE = ['acquise', 'capital', 'primeannuelle', 'primenette', 'taxe', 'textefranchise'];
 const EXCLUS = { contrat: ['idcontrat'], detail: ['idcontratdetail', 'idcontrat', 'garanties'], garantie: ['idcontratdetgarantie', 'idcontratdetail'] };
+// Montants que le serveur recalcule à chaque modification d'une prime (production/recalcul_contrat.py) : jamais saisis
+const CALCULES = { contrat: ['taxe', 'primettc'], detail: ['taxeenregistrement'], garantie: ['taxe'] };
+// Saisies qui demandent le recalcul des primes, de la garantie jusqu'à la quittance
+const CHAMPS_PRIME = {
+  contrat: ['primenette', 'primeannuelle', 'accessoire', 'accessoiregestionnaire', 'fga', 'cedeao', 'taux_commission'],
+  detail: ['primenette', 'primeannuelle', 'fga'],
+  garantie: ['acquise', 'primenette', 'primeannuelle', 'idgarantie'],
+};
+const SIMULATION_VIDE = { recalcules: [], avertissements: [], erreur: '', enCours: false };
+const cleRecalcul = (nature, id, cle) => `${nature}-${id}-${cle}`;
 
 const CLES_BOOLS = new Set(['transfere', 'anticipation', 'auteur', 'pc_control', 'cg_control']);
 const libelleGenerique = (cle) => cle
@@ -295,30 +296,41 @@ const ChampSaisie = ({ cle, valeur, onChange, referentiels, compact = false }) =
   return <input {...commun} type="text" value={valeur ?? ''} onChange={(e) => onChange(e.target.value === '' && valeur === null ? null : e.target.value)} />;
 };
 
-const Champ = ({ cle, valeur, initiale, onChange, referentiels, noms }) => {
+// Valeur montrée : la saisie, sinon le montant recalculé par le serveur (simulation), sinon la valeur enregistrée
+const valeurMontree = (cle, valeur, initiale, recalculee) => (
+  memeValeur(cle, valeur, initiale) && recalculee !== undefined ? recalculee : valeur
+);
+
+const Champ = ({ cle, valeur, initiale, onChange, referentiels, noms, lectureSeule = false, recalculee }) => {
   const def = definition(cle);
-  const modifie = !memeValeur(cle, valeur, initiale);
+  const saisi = !memeValeur(cle, valeur, initiale);
+  const montree = valeurMontree(cle, valeur, initiale, recalculee);
+  const recalcule = !saisi && !memeValeur(cle, montree, initiale);
   const precision = def.type === 'client' && noms?.[String(valeur)] ? noms[String(valeur)] : null;
   return (
-    <div className={`admin-champ admin-champ-${def.type}${modifie ? ' admin-champ-modifie' : ''}`}>
+    <div className={`admin-champ admin-champ-${def.type}${saisi ? ' admin-champ-modifie' : ''}${recalcule ? ' admin-champ-recalcule' : ''}`}>
       <label>
         <span className="admin-champ-libelle">{def.libelle}</span>
-        <ChampSaisie cle={cle} valeur={valeur} onChange={onChange} referentiels={referentiels} />
+        {lectureSeule
+          ? <output className="form-control admin-champ-calcule">{afficherValeur(cle, montree, referentiels, noms)}</output>
+          : <ChampSaisie cle={cle} valeur={montree} onChange={onChange} referentiels={referentiels} />}
       </label>
       {precision && <span className="admin-champ-precision">{precision}</span>}
-      {modifie && (
+      {(saisi || recalcule) && (
         <span className="admin-champ-avant">
           Avant : {afficherValeur(cle, initiale, referentiels, noms)}
-          <button type="button" onClick={() => onChange(initiale)} title="Rétablir la valeur d’origine">
-            <RotateCcw size={11} /> Rétablir
-          </button>
+          {saisi && (
+            <button type="button" onClick={() => onChange(initiale)} title="Rétablir la valeur d’origine">
+              <RotateCcw size={11} /> Rétablir
+            </button>
+          )}
         </span>
       )}
     </div>
   );
 };
 
-const GroupeChamps = ({ titre, cles, valeurs, initiales, onChange, referentiels, noms }) => {
+const GroupeChamps = ({ titre, cles, valeurs, initiales, onChange, referentiels, noms, lectureSeules = [], recalculee }) => {
   const presentes = cles.filter((cle) => cle in (valeurs || {}));
   if (!presentes.length) return null;
   const modifies = presentes.filter((cle) => !memeValeur(cle, valeurs[cle], initiales?.[cle])).length;
@@ -331,7 +343,7 @@ const GroupeChamps = ({ titre, cles, valeurs, initiales, onChange, referentiels,
       <div className="admin-groupe-champs">
         {presentes.map((cle) => (
           <Champ key={cle} cle={cle} valeur={valeurs[cle]} initiale={initiales?.[cle]} referentiels={referentiels} noms={noms}
-            onChange={(v) => onChange(cle, v)} />
+            onChange={(v) => onChange(cle, v)} lectureSeule={lectureSeules.includes(cle)} recalculee={recalculee?.(cle)} />
         ))}
       </div>
     </fieldset>
@@ -361,11 +373,13 @@ const AutresChamps = ({ groupes, exclus, valeurs, initiales, onChange, referenti
 };
 
 // ------------------------------------------------------------------ garanties d'un risque
-const TableGaranties = ({ garanties, initiales, onChange, referentiels, noms, primeRisque }) => {
+const TableGaranties = ({ garanties, initiales, onChange, referentiels, noms, primeRisque, recalculee }) => {
   const [ouverte, setOuverte] = useState(null);
   const libelle = (g) => afficherValeur('idgarantie', g.idgarantie, referentiels, noms);
+  const initialeDe = (g) => initiales.find((x) => x.idcontratdetgarantie === g.idcontratdetgarantie) || {};
+  const montree = (g, cle) => valeurMontree(cle, g[cle], initialeDe(g)[cle], recalculee?.(g.idcontratdetgarantie, cle));
   const acquises = garanties.filter((g) => g.acquise);
-  const somme = (cle) => acquises.reduce((total, g) => total + (Number(g[cle]) || 0), 0);
+  const somme = (cle) => acquises.reduce((total, g) => total + (Number(montree(g, cle)) || 0), 0);
   const ecart = Math.round(somme('primenette') - (Number(primeRisque) || 0));
   if (!garanties.length) return <p className="admin-vide">Aucune garantie enregistrée pour ce risque.</p>;
   return (
@@ -380,7 +394,7 @@ const TableGaranties = ({ garanties, initiales, onChange, referentiels, noms, pr
           </thead>
           <tbody>
             {garanties.map((g, index) => {
-              const initiale = initiales.find((x) => x.idcontratdetgarantie === g.idcontratdetgarantie) || {};
+              const initiale = initialeDe(g);
               const modifies = clesModifiees(g, initiale, EXCLUS.garantie);
               const autres = Object.keys(g).filter((cle) => !COLONNES_GARANTIE.includes(cle) && !EXCLUS.garantie.includes(cle));
               return (
@@ -395,12 +409,17 @@ const TableGaranties = ({ garanties, initiales, onChange, referentiels, noms, pr
                       <span>{libelle(g)}</span>
                     </td>
                     {COLONNES_GARANTIE.map((cle) => {
-                      const modifie = !memeValeur(cle, g[cle], initiale[cle]);
+                      const saisi = !memeValeur(cle, g[cle], initiale[cle]);
+                      const valeur = montree(g, cle);
+                      const recalcule = !saisi && !memeValeur(cle, valeur, initiale[cle]);
                       return (
-                        <td key={cle} className={`admin-col-${cle}${modifie ? ' admin-cellule-modifiee' : ''}`}
-                          title={modifie ? `Avant : ${afficherValeur(cle, initiale[cle], referentiels, noms)}` : undefined}>
-                          <ChampSaisie cle={cle} valeur={g[cle]} compact referentiels={referentiels}
-                            onChange={(v) => onChange(index, cle, v)} />
+                        <td key={cle}
+                          className={`admin-col-${cle}${saisi ? ' admin-cellule-modifiee' : ''}${recalcule ? ' admin-cellule-recalculee' : ''}`}
+                          title={saisi || recalcule ? `Avant : ${afficherValeur(cle, initiale[cle], referentiels, noms)}` : undefined}>
+                          {CALCULES.garantie.includes(cle)
+                            ? <output className="form-control admin-champ-calcule" aria-label={definition(cle).libelle}>{montant(valeur)}</output>
+                            : <ChampSaisie cle={cle} valeur={valeur} compact referentiels={referentiels}
+                              onChange={(v) => onChange(index, cle, v)} />}
                         </td>
                       );
                     })}
@@ -476,6 +495,23 @@ const messageErreurAdministration = (error, nomRisque) => {
   return lignes.join(' ; ') || messageErreurApi(error);
 };
 
+// Saisies envoyées au serveur : seuls les champs modifiés, ligne par ligne
+const construirePayload = (edition, initial) => ({
+  contrat: Object.fromEntries(clesModifiees(edition.contrat, initial.contrat, EXCLUS.contrat).map((cle) => [cle, edition.contrat[cle]])),
+  details: (edition.details || []).flatMap((detail) => {
+    const avant = initial.details.find((d) => d.idcontratdetail === detail.idcontratdetail) || {};
+    const champsDetail = Object.fromEntries(clesModifiees(detail, avant, EXCLUS.detail).map((cle) => [cle, detail[cle]]));
+    const garanties = (detail.garanties || []).flatMap((g) => {
+      const gAvant = (avant.garanties || []).find((x) => x.idcontratdetgarantie === g.idcontratdetgarantie);
+      if (!gAvant) return [];
+      const champsGarantie = Object.fromEntries(clesModifiees(g, gAvant, EXCLUS.garantie).map((cle) => [cle, g[cle]]));
+      return Object.keys(champsGarantie).length ? [{ ...champsGarantie, idcontratdetgarantie: g.idcontratdetgarantie }] : [];
+    });
+    if (!Object.keys(champsDetail).length && !garanties.length) return [];
+    return [{ ...champsDetail, idcontratdetail: detail.idcontratdetail, garanties }];
+  }),
+});
+
 const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
   const { success, warning, error: toastError } = useToast();
   const [initial, setInitial] = useState(donnees);
@@ -485,6 +521,8 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
   const [filtreRisques, setFiltreRisques] = useState('');
   const [motif, setMotif] = useState('');
   const [enregistrement, setEnregistrement] = useState(false);
+  const [simulation, setSimulation] = useState(SIMULATION_VIDE);
+  const numeroSimulation = useRef(0);
 
   const { contexte = {}, referentiels = {} } = edition;
   const noms = contexte.Noms || {};
@@ -520,6 +558,60 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
   const nbContrat = changements.filter((c) => c.nature === 'contrat').length;
   const nbRisques = changements.length - nbContrat;
   const modificationsRisque = (index) => changements.filter((c) => c.index === index).length;
+
+  const nomRisque = (id) => {
+    const index = details.findIndex((d) => String(d.idcontratdetail) === String(id));
+    return index >= 0 ? libelleRisque(details[index], index, auto, referentiels, noms) : `Risque ${id}`;
+  };
+
+  // Prime touchée : le serveur refait le calcul sur les saisies (écrites puis annulées) et renvoie les montants recalculés,
+  // montrés dans les champs et à la vérification ; la réponse d'une saisie dépassée est ignorée
+  const primeTouchee = changements.some((c) => CHAMPS_PRIME[c.nature]?.includes(c.cle));
+  useEffect(() => {
+    numeroSimulation.current += 1;
+    const numero = numeroSimulation.current;
+    if (!primeTouchee) {
+      setSimulation(SIMULATION_VIDE);
+      return undefined;
+    }
+    setSimulation((s) => ({ ...s, enCours: true }));
+    const minuteur = setTimeout(async () => {
+      try {
+        const resultat = await contractApi.simulateAdministrationContract(Number(edition.contrat.idcontrat), construirePayload(edition, initial));
+        if (numero === numeroSimulation.current) {
+          setSimulation({ recalcules: resultat.recalcules || [], avertissements: resultat.avertissements || [], erreur: '', enCours: false });
+        }
+      } catch (error) {
+        if (numero === numeroSimulation.current) {
+          setSimulation({ ...SIMULATION_VIDE, erreur: messageErreurAdministration(error, (id) => `Risque ${id}`) });
+        }
+      }
+    }, 450);
+    return () => clearTimeout(minuteur);
+  }, [edition, initial, primeTouchee]);
+
+  const parCle = useMemo(
+    () => new Map(simulation.recalcules.map((r) => [cleRecalcul(r.Nature, r.Id, r.Champ), r])),
+    [simulation.recalcules],
+  );
+  const recalculee = (nature, id, cle) => parCle.get(cleRecalcul(nature, id, cle))?.Apres;
+  const ttcRecalculee = recalculee('contrat', contrat?.idcontrat, 'primettc');
+
+  // Libellé d'une ligne recalculée : contrat, risque, garantie d'un risque ou quittance
+  const libellesGaranties = useMemo(() => {
+    const libelles = new Map();
+    details.forEach((detail, index) => (detail.garanties || []).forEach((g) => libelles.set(
+      g.idcontratdetgarantie,
+      `${libelleRisque(detail, index, auto, referentiels, noms)} · ${afficherValeur('idgarantie', g.idgarantie, referentiels, noms)}`,
+    )));
+    return libelles;
+  }, [details, auto, referentiels, noms]);
+  const elementRecalcule = (r) => {
+    if (r.Nature === 'contrat') return 'Contrat';
+    if (r.Nature === 'quittance') return r.Element || 'Quittance';
+    if (r.Nature === 'detail') return nomRisque(r.Id);
+    return libellesGaranties.get(r.Id) || `Garantie ${r.Id}`;
+  };
 
   // Saisie non enregistrée : le navigateur prévient avant de quitter la page
   useEffect(() => {
@@ -585,42 +677,22 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
       toastError('Indiquez le motif de la modification (5 caractères au moins).');
       return;
     }
-    const payload = {
-      contrat: Object.fromEntries(clesModifiees(edition.contrat, initial.contrat, EXCLUS.contrat).map((cle) => [cle, edition.contrat[cle]])),
-      details: details.flatMap((detail) => {
-        const avant = detailInitial(detail);
-        const champsDetail = Object.fromEntries(clesModifiees(detail, avant, EXCLUS.detail).map((cle) => [cle, detail[cle]]));
-        const garanties = (detail.garanties || []).flatMap((g) => {
-          const gAvant = (avant.garanties || []).find((x) => x.idcontratdetgarantie === g.idcontratdetgarantie);
-          if (!gAvant) return [];
-          const champsGarantie = Object.fromEntries(clesModifiees(g, gAvant, EXCLUS.garantie).map((cle) => [cle, g[cle]]));
-          return Object.keys(champsGarantie).length ? [{ ...champsGarantie, idcontratdetgarantie: g.idcontratdetgarantie }] : [];
-        });
-        if (!Object.keys(champsDetail).length && !garanties.length) return [];
-        return [{ ...champsDetail, idcontratdetail: detail.idcontratdetail, garanties }];
-      }),
-    };
+    const payload = construirePayload(edition, initial);
     setEnregistrement(true);
     try {
-      // Contrat relu en base : un montant recalculé par la base (partage des accessoires réglé pour la compagnie,
-      // commission sur la prime HT) s'affiche tel qu'enregistré et il est signalé
-      const { recalcules = [], ...resultat } = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
+      // Primes recalculées par le serveur (garanties, risques, contrat, quittance) et contrat relu en base : les montants
+      // s'affichent tels qu'enregistrés
+      const { recalcules = [], avertissements = [], ...resultat } = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
       setInitial(resultat);
       setEdition(resultat);
       setMotif('');
       setOnglet('contrat');
-      success(`${changements.length} modification${changements.length > 1 ? 's' : ''} enregistrée${changements.length > 1 ? 's' : ''} et journalisée${changements.length > 1 ? 's' : ''} avec le motif.`);
-      if (recalcules.length) {
-        warning(`Recalculé par la base selon les règles de la compagnie : ${recalcules
-          .map((r) => `${definition(r.Champ).libelle} ${montant(r.Enregistre)} au lieu de ${montant(r.Demande)}`)
-          .join(' ; ')}.`);
-      }
+      const pluriel = changements.length > 1 ? 's' : '';
+      success(`${changements.length} modification${pluriel} enregistrée${pluriel} et journalisée${pluriel} avec le motif${recalcules.length
+        ? ` ; ${recalcules.length} montant${recalcules.length > 1 ? 's' : ''} recalculé${recalcules.length > 1 ? 's' : ''}` : ''}.`);
+      avertissements.forEach((texte) => warning(texte));
       onEnregistre();
     } catch (error) {
-      const nomRisque = (id) => {
-        const index = details.findIndex((d) => String(d.idcontratdetail) === String(id));
-        return index >= 0 ? libelleRisque(details[index], index, auto, referentiels, noms) : `Risque ${id}`;
-      };
       toastError(`Les modifications n’ont pas été enregistrées : ${messageErreurAdministration(error, nomRisque)}`);
     } finally {
       setEnregistrement(false);
@@ -631,6 +703,8 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
     .map((detail, index) => ({ detail, index, nom: libelleRisque(detail, index, auto, referentiels, noms) }))
     .filter(({ nom }) => !filtreRisques.trim() || nom.toLowerCase().includes(filtreRisques.trim().toLowerCase()));
   const risque = details[indexRisque];
+  // Risque avec garanties : sa prime annuelle est leur somme (sa prime nette saisie leur est répartie)
+  const lectureSeulesRisque = (risque?.garanties || []).length ? [...CALCULES.detail, 'primeannuelle'] : CALCULES.detail;
   const quittance = contexte.Quittance;
   const police = contrat.numeropolice || contrat.numero_police_compagnie || `Contrat ${contrat.idcontrat}`;
 
@@ -671,7 +745,10 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
         </div>
         <div className="admin-contrats-summary-item">
           <span>Prime TTC du contrat</span>
-          <strong>{montant(initial.contrat.primettc)}</strong>
+          <strong>
+            {montant(initial.contrat.primettc)}
+            {ttcRecalculee !== undefined && <span className="admin-ttc-recalculee"> → {montant(ttcRecalculee)}</span>}
+          </strong>
         </div>
         <div className="admin-contrats-summary-item">
           <span>Quittance {quittance?.Numero || ''}</span>
@@ -682,7 +759,7 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
       <div className="admin-contrats-warning">
         <AlertTriangle size={17} style={{ color: 'var(--accent-amber)' }} />
         <span>
-          Correction administrative : aucun avenant n’est créé et la quittance liée n’est pas recalculée
+          Correction administrative : aucun avenant n’est créé. Toute prime modifiée est recalculée jusqu’à la quittance liée
           {quittance ? ` (${quittance.Numero}, reste à encaisser ${montant(quittance.Reste)})` : ''}.
           Chaque enregistrement est journalisé avec son motif et les valeurs avant / après.
         </span>
@@ -702,7 +779,8 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
         <section className="admin-panneau" role="tabpanel" aria-label="Contrat">
           {GROUPES_CONTRAT.map((groupe) => (
             <GroupeChamps key={groupe.titre} titre={groupe.titre} cles={groupe.champs} valeurs={contrat} initiales={initial.contrat}
-              onChange={modifierContrat} referentiels={referentiels} noms={noms} />
+              onChange={modifierContrat} referentiels={referentiels} noms={noms}
+              lectureSeules={CALCULES.contrat} recalculee={(cle) => recalculee('contrat', contrat.idcontrat, cle)} />
           ))}
           <AutresChamps groupes={GROUPES_CONTRAT} exclus={EXCLUS.contrat} valeurs={contrat} initiales={initial.contrat}
             onChange={modifierContrat} referentiels={referentiels} noms={noms} />
@@ -729,7 +807,10 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
                       <button type="button" className={`admin-risque${index === indexRisque ? ' actif' : ''}`} onClick={() => setIndexRisque(index)}
                         aria-current={index === indexRisque ? 'true' : undefined}>
                         <span className="admin-risque-nom">{nom}</span>
-                        <span className="admin-risque-prime">{montant(detail.primenette)} · {(detail.garanties || []).filter((g) => g.acquise).length} garanties</span>
+                        <span className="admin-risque-prime">
+                          {montant(valeurMontree('primenette', detail.primenette, detailInitial(detail).primenette,
+                            recalculee('detail', detail.idcontratdetail, 'primenette')))} · {(detail.garanties || []).filter((g) => g.acquise).length} garanties
+                        </span>
                         {modificationsRisque(index) > 0 && <span className="admin-pastille">{modificationsRisque(index)}</span>}
                       </button>
                     </li>
@@ -742,12 +823,17 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
                   <h2>{libelleRisque(risque, indexRisque, auto, referentiels, noms)}</h2>
                   {groupesRisque.map((groupe) => (
                     <GroupeChamps key={groupe.titre} titre={groupe.titre} cles={groupe.champs} valeurs={risque} initiales={detailInitial(risque)}
-                      onChange={(cle, v) => modifierDetail(indexRisque, cle, v)} referentiels={referentiels} noms={noms} />
+                      onChange={(cle, v) => modifierDetail(indexRisque, cle, v)} referentiels={referentiels} noms={noms}
+                      lectureSeules={lectureSeulesRisque}
+                      recalculee={(cle) => recalculee('detail', risque.idcontratdetail, cle)} />
                   ))}
                   <fieldset className="admin-groupe">
                     <legend>Garanties · {(risque.garanties || []).length}</legend>
                     <TableGaranties garanties={risque.garanties || []} initiales={detailInitial(risque).garanties || []}
-                      primeRisque={risque.primenette} referentiels={referentiels} noms={noms}
+                      primeRisque={valeurMontree('primenette', risque.primenette, detailInitial(risque).primenette,
+                        recalculee('detail', risque.idcontratdetail, 'primenette'))}
+                      referentiels={referentiels} noms={noms}
+                      recalculee={(idGarantie, cle) => recalculee('garantie', idGarantie, cle)}
                       onChange={(indexGarantie, cle, v) => modifierGarantie(indexRisque, indexGarantie, cle, v)} />
                   </fieldset>
                   <AutresChamps groupes={groupesRisque} exclus={EXCLUS.detail} valeurs={risque} initiales={detailInitial(risque)}
@@ -785,6 +871,33 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
                   </tbody>
                 </table>
               </div>
+              {simulation.recalcules.length > 0 && (
+                <>
+                  <h3 className="admin-sous-titre">
+                    Montants recalculés · {simulation.recalcules.length}
+                    {simulation.enCours && <Loader2 className="spin" size={14} aria-label="Calcul en cours" />}
+                  </h3>
+                  <div className="table-wrapper">
+                    <table className="data-table admin-recap">
+                      <thead><tr><th>Élément</th><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+                      <tbody>
+                        {simulation.recalcules.map((r) => (
+                          <tr key={cleRecalcul(r.Nature, r.Id, r.Champ)}>
+                            <td>{elementRecalcule(r)}</td>
+                            <td>{definition(r.Champ).libelle}</td>
+                            <td className="admin-recap-avant">{afficherValeur(r.Champ, r.Avant, referentiels, noms)}</td>
+                            <td className="admin-recap-apres">{afficherValeur(r.Champ, r.Apres, referentiels, noms)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+              {simulation.erreur && <p className="admin-controle ecart"><AlertTriangle size={14} /> {simulation.erreur}</p>}
+              {simulation.avertissements.map((texte) => (
+                <p key={texte} className="admin-controle ecart"><AlertTriangle size={14} /> {texte}</p>
+              ))}
               <label className="admin-motif">
                 <span>Motif de la correction (obligatoire, conservé au journal d’audit)</span>
                 <textarea className="form-control" rows={3} value={motif} onChange={(e) => setMotif(e.target.value)}
@@ -830,6 +943,9 @@ export const AdminContractManagementPage = () => {
   const [page, setPage] = useState(1);
   const [taille, setTaille] = useState(TAILLE_PAGE);
   const [branche, setBranche] = useState('ALL');
+  // Une puce par branche de la Production (Administration > Produits), MRH, MRP et Dommages séparées (2026-11-20)
+  const branches = pucesBranches();
+  const produitsBranche = branches.find((item) => item.cle === branche)?.produits?.join(',') || undefined;
   // Mono / flotte (Automobile), individuel / groupe (autres branches)
   const [type, setType] = useState('tous');
   const [statut, setStatut] = useState('tous');
@@ -839,15 +955,20 @@ export const AdminContractManagementPage = () => {
   const [au, setAu] = useState('');
   const [liste, setListe] = useState({ results: [], count: 0, par_produit: {}, par_type: {}, par_statut: {} });
   const [chargementListe, setChargementListe] = useState(true);
+  // Squelette au premier chargement seulement : ensuite la liste reste affichée, estompée, pendant la mise à jour
+  const [listeChargee, setListeChargee] = useState(false);
+  // Dernière requête seulement : une réponse plus ancienne (frappe continuée entre-temps) est ignorée
+  const requeteListe = useRef(0);
   const [contratOuvert, setContratOuvert] = useState(null);
   const [ouverture, setOuverture] = useState(null);
 
   const chargerListe = useCallback(async () => {
+    const numero = ++requeteListe.current;
     setChargementListe(true);
     try {
       const filtres = {
         recherche: rechercheAppliquee || undefined,
-        idproduit: BRANCHES.find((item) => item.cle === branche)?.produits?.join(','),
+        idproduit: produitsBranche,
         flotte: branche === 'ALL' ? undefined : parametreFlotte(type),
         statut: statut === 'tous' ? undefined : statut,
         [`${champPeriode}_du`]: du || undefined,
@@ -857,17 +978,30 @@ export const AdminContractManagementPage = () => {
         page_size: taille,
       };
       const resultat = await contractApi.getAdministrationContracts(filtres);
+      if (numero !== requeteListe.current) return;
       setListe(resultat);
+      setListeChargee(true);
     } catch (error) {
-      toastError(`Les contrats n’ont pas pu être chargés : ${messageErreurApi(error)}`);
+      if (numero === requeteListe.current) toastError(`Les contrats n’ont pas pu être chargés : ${messageErreurApi(error)}`);
     } finally {
-      setChargementListe(false);
+      if (numero === requeteListe.current) setChargementListe(false);
     }
-  }, [au, branche, champPeriode, du, ordre, page, rechercheAppliquee, statut, taille, toastError, type]);
+  }, [au, branche, champPeriode, du, ordre, page, produitsBranche, rechercheAppliquee, statut, taille, toastError, type]);
 
   useEffect(() => {
     chargerListe();
   }, [chargerListe]);
+
+  // Recherche en temps réel (demande du 2026-11-20) : appliquée après une courte pause de frappe, comme au Portefeuille
+  useEffect(() => {
+    const texte = recherche.trim();
+    if (texte === rechercheAppliquee) return undefined;
+    const minuterie = setTimeout(() => {
+      setRechercheAppliquee(texte);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(minuterie);
+  }, [recherche, rechercheAppliquee]);
 
   const ouvrirContrat = async (id) => {
     setOuverture(id);
@@ -923,7 +1057,7 @@ export const AdminContractManagementPage = () => {
     setPage(1);
   };
   // Filtre de type : toujours en Automobile, ailleurs quand la branche compte des contrats des deux sortes
-  const brancheAuto = branche === 'AUTO';
+  const brancheAuto = branche === ongletDuProduit(1);
   const comptesType = liste.par_type || {};
   const filtreTypeVisible = branche !== 'ALL'
     && (brancheAuto || type !== 'tous' || (Number(comptesType.mono) > 0 && Number(comptesType.flotte) > 0));
@@ -995,10 +1129,12 @@ export const AdminContractManagementPage = () => {
               placeholder="N° de police, client, produit ou compagnie…"
               aria-label="Rechercher un contrat"
             />
-            <button type="submit" className="btn btn-primary admin-contrats-search" aria-label="Rechercher">
-              <Search size={16} />
-              <span>Rechercher</span>
-            </button>
+            {recherche && (
+              <button type="button" className="portefeuille-effacer" aria-label="Effacer la recherche"
+                onClick={() => { setRecherche(''); setRechercheAppliquee(''); setPage(1); }}>
+                <X size={15} />
+              </button>
+            )}
           </div>
           <div className="portefeuille-periode" role="group" aria-label="Période">
             <select className="form-control" value={champPeriode} onChange={(event) => { setChampPeriode(event.target.value); setPage(1); }}>
@@ -1013,13 +1149,13 @@ export const AdminContractManagementPage = () => {
         </form>
 
         <div className="portefeuille-branches" role="tablist" aria-label="Branches">
-          {BRANCHES.map((item) => {
+          {branches.map((item) => {
             const Icone = item.icone;
             const actif = branche === item.cle;
             return (
               <button key={item.cle} type="button" role="tab" aria-selected={actif}
                 className={`portefeuille-puce${actif ? ' actif' : ''}`}
-                onClick={() => { setBranche(item.cle); setType('tous'); setPage(1); }}>
+                onClick={() => { setBranche(item.cle); setType('tous'); setPage(1); }} title={item.aide}>
                 <Icone size={15} /><span>{item.libelle}</span>
                 <span className="portefeuille-compte">{nombre(compteBranche(item))}</span>
               </button>
@@ -1050,11 +1186,11 @@ export const AdminContractManagementPage = () => {
             </button>
           ))}
         </div>
-        {chargementListe ? (
+        {chargementListe && !listeChargee ? (
           <SqueletteTableau colonnes={7} lignes={8} libelle="Chargement des contrats…" />
         ) : (
           <>
-            <div className="table-wrapper">
+            <div className={`table-wrapper admin-contrats-table${chargementListe ? ' en-mise-a-jour' : ''}`} aria-busy={chargementListe}>
               <table className="data-table portefeuille-table">
                 <thead>
                   <tr>

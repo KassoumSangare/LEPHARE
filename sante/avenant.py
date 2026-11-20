@@ -237,6 +237,55 @@ def _membre(valeur):
     return membre
 
 
+def _sortie(valeur):
+    """Sortie d'un membre ou d'une famille {IdAdherent, IdAffilie : 0 = toute la famille} ; None sans sortie."""
+    if not valeur:
+        return None
+    if not isinstance(valeur, dict):
+        raise ErreurRenouvellement("Sortie illisible.")
+    try:
+        sortie = {"adherent": int(valeur.get("IdAdherent") or 0), "affilie": int(valeur.get("IdAffilie") or 0)}
+    except (TypeError, ValueError):
+        raise ErreurRenouvellement("Sortie illisible.") from None
+    if not sortie["adherent"]:
+        raise ErreurRenouvellement("Choisissez la famille concernée par la sortie.")
+    return sortie
+
+
+def _membres(cursor, id_adherent, date_effet):
+    """Membres en vigueur d'une famille, dans l'ordre de leur recopie (sp_avenant_creation_devis_initial)."""
+    return _lignes(cursor, """
+        SELECT idaffilie AS "IdAffilie", TRIM(COALESCE(nom, '') || ' ' || COALESCE(prenom, '')) AS "Nom",
+               TRIM(COALESCE(lien, '')) AS "Lien"
+        FROM stdaffilie
+        WHERE idadherent = %s AND COALESCE(actif, TRUE) AND (datesortie IS NULL OR datesortie > %s)
+        ORDER BY idaffilie
+    """, [id_adherent, date_effet])
+
+
+def _sortir(cursor, id_adherent_avant, id_adherent_avenant, sortie, effet):
+    """Membre ou famille sorti de la composition de l'avenant à sa date d'effet : il n'est plus recopié ensuite
+    (avenants, renouvellement). Retour : nom de la personne ou de la famille sortie."""
+    if not sortie["affilie"]:
+        cursor.execute("UPDATE stdadherent SET actif = FALSE, datesortie = %s WHERE idadherent = %s", [effet, id_adherent_avenant])
+        cursor.execute("UPDATE stdaffilie SET actif = FALSE, datesortie = %s WHERE idadherent = %s", [effet, id_adherent_avenant])
+        return ""
+    anciens = _membres(cursor, id_adherent_avant, effet)
+    rang = next((i for i, m in enumerate(anciens) if m["IdAffilie"] == sortie["affilie"]), None)
+    if rang is None:
+        raise ErreurRenouvellement("Membre introuvable dans la famille.")
+    if anciens[rang]["Lien"].upper() == "A":
+        raise ErreurRenouvellement("L'adhérent principal ne sort pas seul : retirez toute la famille.")
+    if len(anciens) <= 1:
+        raise ErreurRenouvellement("Dernier membre de la famille : retirez toute la famille.")
+    cursor.execute("SELECT idaffilie FROM stdaffilie WHERE idadherent = %s ORDER BY idaffilie", [id_adherent_avenant])
+    nouveaux = [l[0] for l in cursor.fetchall()]
+    if len(nouveaux) != len(anciens):
+        raise ErreurRenouvellement("Membres de l'avenant différents de ceux du contrat : sortie impossible.")
+    cursor.execute("UPDATE stdaffilie SET actif = FALSE, datesortie = %s WHERE idaffilie = %s", [effet, nouveaux[rang]])
+    return anciens[rang]["Nom"]
+
+
 def _nouvelle_famille(valeur):
     """Famille à incorporer {IdOffre, Adherent {Nom, Prenom, DateNaissance, Sexe M|F, NombrePathologie, Matricule, Mobile},
     Membres [membre comme _membre]} ; None sans famille."""
@@ -492,6 +541,8 @@ def avenant_sante(request, idcontrat):
                     # Ce que coûterait le passage à chaque autre formule, détaillé comme le fera l'avenant
                     actuelle = next((o for o in f["Formules"] if o["IdOffre"] == f["IdOffre"]), None)
                     f["Ecarts"] = {o["IdOffre"]: _ecart_formule(cursor, actuelle, o) for o in f["Formules"] if o["IdOffre"] != f["IdOffre"]}
+                    # Sortie d'un membre : membres en vigueur de la famille
+                    f["Membres"] = _membres(cursor, f["IdAdherent"], effet)
                 avenants = _numeriques(_avenants(cursor, base))
                 en_cours = _numeriques(_en_cours(cursor, base))
                 for ligne in en_cours:
@@ -521,6 +572,12 @@ def avenant_sante(request, idcontrat):
         nouvelle_famille = _nouvelle_famille(donnees.get("Famille"))
         if nouvelle_famille and (membre or id_adherent or id_offre):
             raise ErreurRenouvellement("Une nouvelle famille s'incorpore seule : sans membre ni changement de formule dans le même avenant.")
+        # Retrait (demande du 2026-11-19) : sortie d'un membre ou d'une famille, seule dans son avenant
+        sortie = _sortie(donnees.get("Sortie"))
+        if sortie and (membre or nouvelle_famille or id_offre or (id_adherent and id_adherent != sortie["adherent"])):
+            raise ErreurRenouvellement("Une sortie se fait seule : sans incorporation ni changement de formule dans le même avenant.")
+        if sortie:
+            id_adherent = sortie["adherent"]
         with transaction.atomic(), connection.cursor() as cursor:
             base = _base_sante(cursor, idcontrat)
             encours = _en_cours(cursor, base)
@@ -582,6 +639,13 @@ def avenant_sante(request, idcontrat):
                 cursor.execute("UPDATE stdadherent SET idfiliale = %s WHERE idadherent = %s", [id_filiale, nouvelle])
             # Incorporation : le membre rejoint sa famille, qui change de formule si elle était complète
             message_membre = _incorporer(cursor, request.user, id_devis, nouvelle, membre, effet) if membre else ""
+            # Retrait : le membre ou la famille sort de la composition à la date d'effet ; tarification de l'avenant sans
+            # ristourne (sp_creation_devis_sante ne descend pas sous 0, règle des retraits MINENE)
+            sortant = ""
+            if sortie:
+                if len(anciennes) <= 1 and not sortie["affilie"]:
+                    raise ErreurRenouvellement("Dernière famille du contrat : sa sortie est une résiliation de la police.")
+                sortant = _sortir(cursor, id_adherent, nouvelle, sortie, effet) or choisie["Adherent"]
             # Incorporation d'une famille : couverture, adhérent et ayants droit ajoutés à la composition recopiée
             famille_ajoutee = None
             if nouvelle_famille:
@@ -601,6 +665,7 @@ def avenant_sante(request, idcontrat):
             "FormuleAvant": formule_avant, "Formule": formule_apres if formule_apres != formule_avant else "",
             "Personnes": famille_ajoutee[2] if famille_ajoutee else 0,
             "Membre": f"{membre['nom']} {membre['prenom']}".strip() if membre else "", "MessageMembre": message_membre,
+            "Sortie": sortant, "SortieFamille": bool(sortie and not sortie["affilie"]),
             "PrimeNette": float(prime_nette), "PrimeTtc": float(prime_ttc), "Message": message,
         }, status=status.HTTP_201_CREATED)
     except (ErreurRenouvellement, ValueError) as erreur:

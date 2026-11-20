@@ -239,6 +239,22 @@ export const ongletsRegistre = () => {
   return [...vus].map(([id, label]) => ({ id, label }));
 };
 
+/**
+ * Branches de production (onglets du registre) avec leurs produits : [{ id, label, produits: [IdProduit], libelles }],
+ * « Autres » (AUTRES) en dernier pour un produit sans onglet. Filtres du Portefeuille des contrats et des Affaires
+ * antérieures, une branche par onglet de la Gestion des devis (demande du 2026-11-20).
+ */
+export const branchesProduction = () => {
+  const groupes = new Map(ongletsRegistre().map((o) => [o.id, { ...o, produits: [], libelles: [] }]));
+  [...etat.Produits].sort((a, b) => (a.Ordre ?? 99) - (b.Ordre ?? 99)).forEach((p) => {
+    const id = ongletDuProduit(p.IdProduit) || 'AUTRES';
+    if (!groupes.has(id)) groupes.set(id, { id, label: 'Autres', produits: [], libelles: [] });
+    groupes.get(id).produits.push(Number(p.IdProduit));
+    groupes.get(id).libelles.push(p.Libelle);
+  });
+  return [...groupes.values()].filter((g) => g.produits.length);
+};
+
 /** Formulaire (route /user/quotes/<module>) qui rouvre un devis de ce produit, ou null. */
 export const moduleDuProduit = (idProduit) => produitPar(idProduit)?.ModuleSaisie || null;
 

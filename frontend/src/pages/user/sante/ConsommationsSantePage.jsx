@@ -10,6 +10,7 @@ import { aLeDroit } from '../../../utils/droits';
 import { downloadBlob } from '../../../utils/exportUtils';
 import { dateFr, fcfa, messageErreurApi } from '../../../utils/financeUtils';
 import { AnalyseConsommations, BarreFiltres, useAnalyse } from './consommations/AnalyseConsommations';
+import { FILTRES_MINENE, FiltresMinene, MineneConsommations, ONGLETS_MINENE, useMinene } from './consommations/MineneConsommations';
 
 /* =========================================================================
    Suivi des consommations santé : relevés du gestionnaire (MCI CARE) importés, droits, plafonds et soldes de chaque assuré et de ses
@@ -182,7 +183,7 @@ const FicheFamille = ({ fiche }) => {
   );
 };
 
-const OngletFiche = ({ matriculeInitial }) => {
+const OngletFiche = ({ matriculeInitial, programme }) => {
   const { error: toastError } = useToast();
   const [q, setQ] = useState('');
   const [resultats, setResultats] = useState([]);
@@ -192,22 +193,22 @@ const OngletFiche = ({ matriculeInitial }) => {
   const ouvrir = useCallback(async (matricule) => {
     setChargement(true);
     try {
-      setFiche(await consommationsApi.famille(matricule));
+      setFiche(await consommationsApi.famille(matricule, programme));
     } catch (err) {
       toastError(`Fiche non lue : ${messageErreurApi(err)}`);
     } finally {
       setChargement(false);
     }
-  }, [toastError]);
+  }, [toastError, programme]);
 
   useEffect(() => { if (matriculeInitial) ouvrir(matriculeInitial); }, [matriculeInitial, ouvrir]);
   useEffect(() => {
     if (q.trim().length < 2) { setResultats([]); return undefined; }
     const minuteur = setTimeout(async () => {
-      try { setResultats((await consommationsApi.rechercher(q.trim())).Lignes); } catch (err) { toastError(`Recherche impossible : ${messageErreurApi(err)}`); }
+      try { setResultats((await consommationsApi.rechercher(q.trim(), programme)).Lignes); } catch (err) { toastError(`Recherche impossible : ${messageErreurApi(err)}`); }
     }, 300);
     return () => clearTimeout(minuteur);
-  }, [q, toastError]);
+  }, [q, toastError, programme]);
 
   return (
     <>
@@ -352,10 +353,11 @@ const Instruction = ({ suspicion, onEnregistree }) => {
   );
 };
 
-const OngletFraude = ({ onOuvrir }) => {
+const OngletFraude = ({ onOuvrir, programme }) => {
   const [filtres, setFiltres] = useState({ niveau: '', instruction: '', q: '' });
   const [recherche, setRecherche] = useState('');
-  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.fraude(filtres), [filtres]);
+  // Anomalies du seul programme affiché (Oreole Santé ou MINENE Santé)
+  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.fraude({ ...filtres, programme }), [filtres, programme]);
   const [ouverte, setOuverte] = useState(null);
   const [detail, setDetail] = useState(null);
   useEffect(() => { const m = setTimeout(() => setFiltres((f) => ({ ...f, q: recherche })), 350); return () => clearTimeout(m); }, [recherche]);
@@ -440,26 +442,27 @@ const OngletFraude = ({ onOuvrir }) => {
 // Effectif complété par les souscriptions Oreole Santé de LE PHARE (demande du 2026-11-10) : personnes des contrats Oreole Santé que
 // l'effectif du gestionnaire ne connaît pas encore, reconnues par leur matricule ; l'effectif du gestionnaire fait foi
 const LIBELLES_STATUT = { A: 'Assuré', C: 'Conjoint(e)', E: 'Enfant' };
-const PanneauSouscriptions = ({ onAjout }) => {
+const PanneauSouscriptions = ({ onAjout, programme }) => {
+  const libelle = programme === 'minene' ? 'MINENE Santé' : 'Oreole Santé';
   const { success, error: toastError } = useToast();
   const [apercu, setApercu] = useState(null);
   const [envoi, setEnvoi] = useState(false);
   const verifier = async () => {
     setEnvoi(true);
-    try { setApercu(await consommationsApi.souscriptions()); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
+    try { setApercu(await consommationsApi.souscriptions(programme)); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
   };
   const aEcrire = apercu ? apercu.AAjouter.length + apercu.AMettreAJour + apercu.Retirees : 0;
   const ajouter = async () => {
-    const message = `${fcfa(apercu.AAjouter.length)} personne${apercu.AAjouter.length > 1 ? 's' : ''} souscrite${apercu.AAjouter.length > 1 ? 's' : ''} à Oreole Santé seront ajoutées à l'effectif`
+    const message = `${fcfa(apercu.AAjouter.length)} personne${apercu.AAjouter.length > 1 ? 's' : ''} souscrite${apercu.AAjouter.length > 1 ? 's' : ''} à ${libelle} seront ajoutées à l'effectif`
       + (apercu.AMettreAJour ? `, ${fcfa(apercu.AMettreAJour)} mises à jour` : '') + (apercu.Retirees ? `, ${fcfa(apercu.Retirees)} sorties` : '')
       + ". Les personnes que l'effectif du gestionnaire connaît déjà ne sont pas modifiées.";
     if (!(await confirmer({ titre: "Compléter l'effectif", message, confirmer: 'Ajouter à l\'effectif' }))) return;
     setEnvoi(true);
     try {
-      const r = await consommationsApi.ajouterSouscriptions();
+      const r = await consommationsApi.ajouterSouscriptions(programme);
       success(`Effectif complété : ${fcfa(r.Ajoutees)} personne${r.Ajoutees > 1 ? 's' : ''} ajoutée${r.Ajoutees > 1 ? 's' : ''}`
         + (r.MisesAJour ? `, ${fcfa(r.MisesAJour)} mises à jour` : '') + (r.Sorties ? `, ${fcfa(r.Sorties)} sorties` : '') + '.');
-      setApercu(await consommationsApi.souscriptions());
+      setApercu(await consommationsApi.souscriptions(programme));
       onAjout?.();
     } catch (err) {
       toastError(messageErreurApi(err));
@@ -475,11 +478,11 @@ const PanneauSouscriptions = ({ onAjout }) => {
   );
   const entetes = <tr><th>Entreprise</th><th>Police LE PHARE</th><th>Nom et prénoms</th><th>Lien</th><th>Matricule</th><th>Adhésion</th><th>Situation</th></tr>;
   return (
-    <Panneau titre="Compléter l'effectif avec les souscriptions Oreole Santé"
+    <Panneau titre={`Compléter l'effectif avec les souscriptions ${libelle}`}
       actions={<button type="button" className="btn btn-secondary" disabled={envoi} onClick={verifier} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
         {envoi && !apercu ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Vérifier</button>}>
       <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-        Les adhérents et ayants droit des contrats Oreole Santé de LE PHARE portent le matricule du gestionnaire. Ceux que l'effectif importé ne connaît
+        Les adhérents et ayants droit des contrats {libelle} de LE PHARE portent le matricule du gestionnaire. Ceux que l'effectif importé ne connaît
         pas encore, une incorporation récente par exemple, y sont ajoutés avec l'entreprise, le garant et le collège des autres personnes de leur police.
         L'effectif du gestionnaire fait foi : une personne qu'il connaît n'est pas modifiée, et son prochain fichier met à jour les personnes ajoutées ici.
       </p>
@@ -500,7 +503,7 @@ const PanneauSouscriptions = ({ onAjout }) => {
           {apercu.AAjouter.length > 100 && <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>{`Et ${fcfa(apercu.AAjouter.length - 100)} autres personnes.`}</p>}
           {apercu.SansMatricule.length > 0 && (
             <>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#d97706' }}>Sans matricule du gestionnaire, ces personnes ne peuvent pas être rapprochées du relevé : saisissez leur matricule dans le contrat Oreole Santé.</p>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#d97706' }}>Sans matricule du gestionnaire, ces personnes ne peuvent pas être rapprochées du relevé : saisissez leur matricule dans le contrat {libelle}.</p>
               <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.8rem' }}>
                 <thead>{entetes}</thead><tbody>{apercu.SansMatricule.map(ligne)}</tbody>
               </table></div>
@@ -517,19 +520,21 @@ const PanneauSouscriptions = ({ onAjout }) => {
   );
 };
 
-const OngletImports = () => {
+const OngletImports = ({ programme, onDonneesChangees }) => {
+  const minene = programme === 'minene';
   const { success, error: toastError } = useToast();
   const [fichier, setFichier] = useState(null);
   const [situation, setSituation] = useState('');
   const [exercice, setExercice] = useState('');
   const [analyse, setAnalyse] = useState(null);
   const [envoi, setEnvoi] = useState(false);
-  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.synthese({}), []);
+  // Fichiers importés du seul programme affiché
+  const [donnees, chargement, recharger] = useLecture(() => consommationsApi.synthese({ programme }), [programme]);
 
   const choisir = (e) => { setFichier(e.target.files?.[0] || null); setAnalyse(null); };
   const analyser = async () => {
     setEnvoi(true);
-    try { setAnalyse(await consommationsApi.analyser(fichier, exercice)); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
+    try { setAnalyse(await consommationsApi.analyser(fichier, exercice, programme)); } catch (err) { toastError(messageErreurApi(err)); } finally { setEnvoi(false); }
   };
   const importer = async () => {
     const message = analyse.Cotisations
@@ -540,7 +545,7 @@ const OngletImports = () => {
     if (!(await confirmer({ titre: 'Importer le fichier', message, confirmer: 'Importer' }))) return;
     setEnvoi(true);
     try {
-      const r = await consommationsApi.importer(fichier, situation, exercice);
+      const r = await consommationsApi.importer(fichier, situation, exercice, programme);
       success(r.Cotisations ? `État des cotisations ${r.Exercice} importé : ${fcfa(r.Cotisations)} entreprises.`
         : `Relevé importé : ${fcfa(r.Nouvelles)} prestations nouvelles${r.Sorties ? `, ${fcfa(r.Sorties)} bénéficiaires sortis` : ''}`
           + (r.EffectifPrecedent ? `, effectif de référence au ${dateFr(r.SituationPrecedent)} : ${fcfa(r.EffectifPrecedent)} bénéficiaires` : '')
@@ -550,6 +555,8 @@ const OngletImports = () => {
       setAnalyse(null);
       setFichier(null);
       recharger();
+      // Analyses, fiche et anomalies relues aussitôt, sans recharger la page
+      onDonneesChangees?.();
     } catch (err) {
       toastError(messageErreurApi(err));
     } finally {
@@ -559,16 +566,23 @@ const OngletImports = () => {
   const releves = donnees?.Releves || [];
   return (
     <>
-      <Panneau titre="Importer un fichier du gestionnaire">
+      <Panneau titre={minene ? 'Importer le détail des sinistres MINENE' : 'Importer un fichier du gestionnaire'}>
+        {minene ? (
+          <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            Détail des sinistres MINENE Santé du gestionnaire (états personnalisés, colonne NPrestations, garant OREOLEMINENE), au format Excel.
+            Une prestation déjà importée n'est jamais réécrite. Un fichier d'Oreole Santé est refusé ici.
+          </p>
+        ) : (
         <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
           Relevé de prestations (colonne NUMERO_PREST), effectif (colonne MATBENEF) ou état des cotisations (fichier ETAT, feuille des données par entreprise),
           au format Excel, toutes feuilles lues. Les relevés sont cumulatifs :
           une prestation déjà importée n'est jamais réécrite et un montant changé est signalé. Une date de soins postérieure à la clôture, jour et mois inversés, est corrigée et la date du relevé conservée.
         </p>
+        )}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <Champ id="imp-fichier" libelle="Fichier Excel"><input id="imp-fichier" type="file" accept=".xlsx,.xls" className="form-control" onChange={choisir} /></Champ>
-          <Champ id="imp-situation" libelle="Effectif à jour au"><input id="imp-situation" type="date" className="form-control" value={situation} onChange={(e) => setSituation(e.target.value)} /></Champ>
-          <Champ id="imp-exercice" libelle="Exercice de l'état"><input id="imp-exercice" type="number" min="2000" max="2100" className="form-control" style={{ maxWidth: 120 }} placeholder="d'après le nom" value={exercice} onChange={(e) => setExercice(e.target.value)} /></Champ>
+          {!minene && <Champ id="imp-situation" libelle="Effectif à jour au"><input id="imp-situation" type="date" className="form-control" value={situation} onChange={(e) => setSituation(e.target.value)} /></Champ>}
+          {!minene && <Champ id="imp-exercice" libelle="Exercice de l'état"><input id="imp-exercice" type="number" min="2000" max="2100" className="form-control" style={{ maxWidth: 120 }} placeholder="d'après le nom" value={exercice} onChange={(e) => setExercice(e.target.value)} /></Champ>}
           <button type="button" className="btn btn-secondary" disabled={!fichier || envoi} onClick={analyser} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             {envoi && !analyse ? <Loader2 size={14} className="spin" /> : <Search size={14} />} Analyser
           </button>
@@ -576,11 +590,11 @@ const OngletImports = () => {
             {envoi ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} Importer
           </button>}
         </div>
-        <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>La date de l'effectif date la sortie des bénéficiaires absents du nouvel effectif ; laissée vide, la date du jour est retenue.
+        {!minene && <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-muted)' }}>La date de l'effectif date la sortie des bénéficiaires absents du nouvel effectif ; laissée vide, la date du jour est retenue.
           Chaque effectif est gardé à sa date : pour compter les sortants et les nouveaux entrants du rapport, importez aussi l'effectif de l'exercice précédent,
           daté par exemple du 31/12 ; plus ancien que l'effectif courant, il sert de référence sans le modifier. Dans les classeurs d'analyse d'OREOLE (ANALYSE DES SORTANT, base unifiée),
           les lignes de PERIODE « EXERCICE PRECEDENT » et la feuille BASE EFFECTIF PRECEDENT forment cet effectif de référence, daté du 31/12 de l'année précédente.
-          L'exercice d'un état des cotisations se lit dans le nom du fichier (ETAT 2026) ; saisissez-le s'il n'y figure pas.</p>
+          L'exercice d'un état des cotisations se lit dans le nom du fichier (ETAT 2026) ; saisissez-le s'il n'y figure pas.</p>}
         {analyse && (
           <Grille min={170}>
             <Tuile libelle="Prestations lues" valeur={fcfa(analyse.Prestations)} detail={analyse.ClotureDu ? `clôtures du ${dateFr(analyse.ClotureDu)} au ${dateFr(analyse.ClotureAu)}` : ''} />
@@ -601,7 +615,7 @@ const OngletImports = () => {
         )}
         {analyse?.ColonnesManquantes?.length > 0 && <p style={{ margin: 0, color: '#d97706', fontSize: '0.8rem' }}>Feuilles écartées, colonnes absentes : {analyse.ColonnesManquantes.join(' ; ')}</p>}
       </Panneau>
-      <PanneauSouscriptions onAjout={recharger} />
+      <PanneauSouscriptions programme={programme} onAjout={() => { recharger(); onDonneesChangees?.(); }} />
       <Panneau titre="Fichiers importés">
         <div className="table-wrapper"><table className="data-table" style={{ fontSize: '0.82rem' }}>
           <thead><tr><th>Date</th><th>Fichier</th><th>Nature</th><th>Garants</th><th>Clôtures</th><th style={DROITE}>Lignes</th><th style={DROITE}>Nouvelles</th><th style={DROITE}>Montants changés</th><th>Par</th></tr></thead>
@@ -633,6 +647,18 @@ const ONGLETS = [
   { groupe: 'Suivi', cle: 'fraude', libelle: 'Anomalie', icone: ShieldAlert, droit: 'consommations.fraude' },
   { groupe: 'Données', cle: 'imports', libelle: 'Imports', icone: Upload, droit: 'consommations.import' },
 ];
+// MINENE Santé (demande du 2026-11-19) : analyse propre au détail des sinistres MINENE ; plafonds, contrôles d'effectif et rapports Word
+// restent ceux d'Oreole Santé (barèmes, effectif et état des cotisations du gestionnaire)
+const ONGLETS_MINENE_LISTE = [
+  { groupe: 'Analyse', cle: 'm-ensemble', libelle: "Vue d'ensemble", icone: LayoutDashboard },
+  { groupe: 'Analyse', cle: 'm-familles', libelle: 'Familles et formules', icone: Users },
+  { groupe: 'Analyse', cle: 'm-prestations', libelle: 'Prestations', icone: Stethoscope },
+  { groupe: 'Analyse', cle: 'm-beneficiaires', libelle: 'Bénéficiaires', icone: UserSearch },
+  { groupe: 'Suivi', cle: 'fiche', libelle: 'Fiche assuré', icone: UserSearch },
+  { groupe: 'Suivi', cle: 'fraude', libelle: 'Anomalie', icone: ShieldAlert, droit: 'consommations.fraude' },
+  { groupe: 'Données', cle: 'imports', libelle: 'Imports', icone: Upload, droit: 'consommations.import' },
+];
+const PROGRAMMES = [{ cle: 'oreole', libelle: 'Oreole Santé' }, { cle: 'minene', libelle: 'MINENE Santé' }];
 const GROUPES = ['Analyse', 'Suivi', 'Données'];
 // Rapports Word (sante/consommations_rapport.py, TYPES_RAPPORT)
 const RAPPORTS = [
@@ -645,16 +671,29 @@ const FILTRES_VIDES = { exercice: '', du: '', au: '', garant: '', police: '' };
 
 export default function ConsommationsSantePage() {
   const { success, error: toastError } = useToast();
+  const [programme, setProgramme] = useState('oreole');
   const [onglet, setOnglet] = useState('ensemble');
   const [matricule, setMatricule] = useState(null);
   const [filtres, setFiltres] = useState(FILTRES_VIDES);
+  const [filtresMinene, setFiltresMinene] = useState(FILTRES_MINENE);
   const [exportEnCours, setExportEnCours] = useState(false);
-  const enAnalyse = ANALYSE.has(onglet);
+  // Version des données : un import ou un ajout d'effectif la change, et les analyses déjà lues sont relues sans recharger la page
+  const [versionDonnees, setVersionDonnees] = useState(0);
+  const donneesChangees = useCallback(() => setVersionDonnees((v) => v + 1), []);
+  const minene = programme === 'minene';
+  const enAnalyse = !minene && ANALYSE.has(onglet);
+  const enAnalyseMinene = minene && ONGLETS_MINENE.has(onglet);
   // Une seule lecture pour les quatre onglets d'analyse ; elle n'est faite qu'à l'ouverture de l'un d'eux
-  const [donnees, chargement, recharger] = useAnalyse(filtres, enAnalyse);
-  const visibles = ONGLETS.filter((o) => !o.droit || aLeDroit(o.droit));
+  const [donnees, chargement, recharger] = useAnalyse(filtres, enAnalyse, versionDonnees);
+  const [donneesMinene, chargementMinene] = useMinene(filtresMinene, enAnalyseMinene, versionDonnees);
+  const visibles = (minene ? ONGLETS_MINENE_LISTE : ONGLETS).filter((o) => !o.droit || aLeDroit(o.droit));
   const ouvrirFiche = (m) => { setMatricule(m); setOnglet('fiche'); };
   const changer = (cle) => { setMatricule(null); setOnglet(cle); };
+  const changerProgramme = (cle) => {
+    setProgramme(cle);
+    setMatricule(null);
+    setOnglet(cle === 'minene' ? 'm-ensemble' : 'ensemble');
+  };
 
   // Rapport Word, seul export du suivi : exercice, période et compagnie choisis (le filtre d'entreprise ne s'y applique pas). Attentes de
   // l'équipe actuariat (2026-11-11) : un rapport des effectifs, un des dépenses de santé, et un rapport global qui les regroupe
@@ -698,7 +737,15 @@ export default function ConsommationsSantePage() {
             droits, plafonds et soldes de chaque assuré. Données de santé à ne pas diffuser.
           </p>
         </div>
-        <div className="cs-export-zone">
+        <div className="cs-programmes" role="tablist" aria-label="Programme">
+          {PROGRAMMES.map((p) => (
+            <button key={p.cle} type="button" role="tab" aria-selected={programme === p.cle} className={`cs-programme${programme === p.cle ? ' actif' : ''}`}
+              onClick={() => changerProgramme(p.cle)}>
+              {p.libelle}
+            </button>
+          ))}
+        </div>
+        {!minene && <div className="cs-export-zone">
           <button type="button" className="btn btn-primary cs-export" disabled={exportEnCours} aria-busy={exportEnCours} aria-haspopup="menu"
             aria-expanded={menuRapport} onClick={() => setMenuRapport((o) => !o)} title="Rapport Word de l'exercice, de la période et de la compagnie choisis">
             {exportEnCours ? <Loader2 size={15} className="spin" aria-hidden="true" /> : <FileText size={15} aria-hidden="true" />} Exporter un rapport
@@ -714,7 +761,7 @@ export default function ConsommationsSantePage() {
               ))}
             </div>
           )}
-        </div>
+        </div>}
       </header>
 
       <nav className="cs-onglets" aria-label="Rubriques des consommations santé">
@@ -740,16 +787,18 @@ export default function ConsommationsSantePage() {
       </nav>
 
       {enAnalyse && <BarreFiltres filtres={filtres} setFiltres={setFiltres} donnees={donnees} chargement={chargement} />}
+      {enAnalyseMinene && <FiltresMinene filtres={filtresMinene} setFiltres={setFiltresMinene} donnees={donneesMinene} chargement={chargementMinene} />}
 
-      <div key={onglet} className="cs-contenu" role="tabpanel">
+      <div key={`${programme}-${onglet}`} className="cs-contenu" role="tabpanel">
         {enAnalyse && (
           <AnalyseConsommations onglet={onglet} donnees={donnees} chargement={chargement} filtres={filtres} onFiltrer={setFiltres} onRecharger={recharger} onOuvrirFiche={ouvrirFiche} />
         )}
-        {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} />}
+        {enAnalyseMinene && <MineneConsommations onglet={onglet} donnees={donneesMinene} chargement={chargementMinene} />}
+        {onglet === 'fiche' && <OngletFiche matriculeInitial={matricule} programme={programme} />}
         {onglet === 'plafonds' && <OngletPlafonds onOuvrir={ouvrirFiche} />}
         {onglet === 'controles' && <OngletControles />}
-        {onglet === 'fraude' && aLeDroit('consommations.fraude') && <OngletFraude onOuvrir={ouvrirFiche} />}
-        {onglet === 'imports' && aLeDroit('consommations.import') && <OngletImports />}
+        {onglet === 'fraude' && aLeDroit('consommations.fraude') && <OngletFraude onOuvrir={ouvrirFiche} programme={programme} />}
+        {onglet === 'imports' && aLeDroit('consommations.import') && <OngletImports programme={programme} onDonneesChangees={donneesChangees} />}
       </div>
     </div>
   );

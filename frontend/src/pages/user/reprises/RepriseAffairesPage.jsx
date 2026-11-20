@@ -17,7 +17,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { messageErreurApi } from '../../../utils/financeUtils';
 import { confirmer } from '../../../utils/dialogue';
 import { downloadBlob } from '../../../utils/exportUtils';
-import { moduleDuProduit, ongletDuProduit, ongletsRegistre } from '../../../utils/parametrage';
+import { branchesProduction, moduleDuProduit } from '../../../utils/parametrage';
 import { lienDevisReprise } from './modeReprise';
 import { ListeDocumentsContrat, useDocumentsContrat } from '../contracts/documentsContrat';
 
@@ -287,7 +287,6 @@ export const ImportAffaires = ({ onImporte }) => {
 // chaque contrat (bouton Imprimer de la ligne) et état de la sélection.
 const FILTRES_VIDES = { annee: '', compagnie: '' };
 const TOUS = 'ALL';
-const AUTRES = 'AUTRES';
 
 const CarteChiffre = ({ libelle, valeur, icone: Icone, couleur, fond, detail }) => (
   <div className="glass-panel" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
@@ -324,16 +323,9 @@ export const RepriseAffairesPage = () => {
   const peutRenouveler = peut('contrats.avenant');
   const finaliser = Number(parametres.get('finaliser')) || 0;
 
-  // Onglets du registre des devis (Administration > Produits) et produits de chacun ; « Autres » : produit sans onglet
-  const onglets = ongletsRegistre();
-  const produitsOnglet = useMemo(() => {
-    const groupes = {};
-    (ref_?.Produits || []).forEach((p) => {
-      const id = ongletDuProduit(p.id) || AUTRES;
-      (groupes[id] = groupes[id] || []).push(p.id);
-    });
-    return groupes;
-  }, [ref_]);
+  // Une branche par onglet de la Gestion des devis (Administration > Produits), avec ses produits ; « Autres » : produit
+  // sans onglet. Affichées sans attendre les listes de l'écran (demande du 2026-11-20 : autant de filtres que de branches)
+  const branches = branchesProduction();
 
   useEffect(() => {
     repriseApi.referentiels().then(setRef).catch((err) => toastError(`Listes non chargées : ${messageErreurApi(err)}`));
@@ -341,7 +333,7 @@ export const RepriseAffairesPage = () => {
 
   const chargerAttente = () => repriseApi.devisEnAttente().then((r) => setEnAttente(r.Devis || [])).catch(() => {});
   // Toutes les affaires des filtres choisis : le tableau cherche, trie et pagine lui-même (comme le registre des devis)
-  const produits = onglet === TOUS ? '' : (produitsOnglet[onglet] || [0]).join(',');
+  const produits = onglet === TOUS ? '' : (branches.find((b) => b.id === onglet)?.produits || [0]).join(',');
   const charger = () => {
     setChargement(true);
     const params = { ...Object.fromEntries(Object.entries(filtres).filter(([, v]) => v !== '')), taille: 2000 };
@@ -398,8 +390,7 @@ export const RepriseAffairesPage = () => {
   const compte = (ids) => (ids || []).reduce((s, id) => s + (parBranche[String(id)] || 0), 0);
   const ongletsBranches = [
     { id: TOUS, label: 'Tous', count: Object.values(parBranche).reduce((s, n) => s + n, 0), icon: null },
-    ...onglets.filter((o) => produitsOnglet[o.id]).map((o) => ({ id: o.id, label: o.label, count: compte(produitsOnglet[o.id]), icon: iconeOnglet(o.id) })),
-    ...(produitsOnglet[AUTRES] ? [{ id: AUTRES, label: 'Autres', count: compte(produitsOnglet[AUTRES]), icon: iconeOnglet(AUTRES) }] : []),
+    ...branches.map((b) => ({ id: b.id, label: b.label, count: compte(b.produits), icon: iconeOnglet(b.id) })),
   ];
   const libelleOnglet = ongletsBranches.find((o) => o.id === onglet)?.label || '';
   // Recherche du tableau commun : police OREOLE et compagnie, client, quittance, compagnie
@@ -567,7 +558,7 @@ export const RepriseAffairesPage = () => {
       )}
 
       {/* Onglets de branches, comme le registre des devis */}
-      {ref_ && <OngletsBranches onglets={ongletsBranches} actif={onglet} onChoisir={setOnglet} libelle={(tab) => `Afficher les affaires antérieures : ${tab.label}`} />}
+      <OngletsBranches onglets={ongletsBranches} actif={onglet} onChoisir={setOnglet} libelle={(tab) => `Afficher les affaires antérieures : ${tab.label}`} />
 
       {/* Tableau */}
       <div className="card" style={{ padding: '1.25rem' }}>

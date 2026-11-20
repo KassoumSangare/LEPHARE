@@ -1337,23 +1337,26 @@ const fichierConsommations = (fichier, champs = {}) => {
 const sansVide = (params) => Object.fromEntries(Object.entries(params || {}).filter(([, v]) => v !== '' && v !== null && v !== undefined));
 
 export const consommationsApi = {
-  analyser: async (fichier, exercice) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier, { exercice }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
-  importer: async (fichier, situation, exercice) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation, exercice }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
+  // programme : 'oreole' ou 'minene' (espaces séparés, sante/consommations.py) ; un fichier de l'autre programme est refusé
+  analyser: async (fichier, exercice, programme) => (await apiClient.post('/consommations/import/analyse/', fichierConsommations(fichier, { exercice, programme }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })).data,
+  importer: async (fichier, situation, exercice, programme) => (await apiClient.post('/consommations/import/', fichierConsommations(fichier, { situation, exercice, programme }), { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })).data,
   // Tableau de bord (contrôle de gestion, dépenses, entreprises à risque), lien entreprise de l'état / police du gestionnaire, rapport Word (seul export)
   tableauDeBord: async (params) => (await apiClient.get('/consommations/tableau-de-bord/', { params: sansVide(params), timeout: 120000 })).data,
   // Analyse complète d'une période (sante/consommations_analyse.py) : synthèse, projection, compagnies, entreprises, familles, profil, foyers, prestataires, délais
   analyse: async (params) => (await apiClient.get('/consommations/analyse/', { params: sansVide(params), timeout: 120000 })).data,
+  // MINENE Santé : détail des sinistres du gestionnaire (TP / RD, affections), familles et formules de LE PHARE (sante/consommations_minene.py)
+  minene: async (params) => (await apiClient.get('/consommations/minene/', { params: sansVide(params), timeout: 120000 })).data,
   lier: async (entreprise, police) => (await apiClient.post('/consommations/entreprises/lien/', { Entreprise: entreprise, Police: police })).data,
   // Effectif complété par les souscriptions Oreole Santé de LE PHARE : aperçu sans écriture, puis ajout
-  souscriptions: async () => (await apiClient.get('/consommations/souscriptions/', { timeout: 120000 })).data,
-  ajouterSouscriptions: async () => (await apiClient.post('/consommations/souscriptions/', {}, { timeout: 120000 })).data,
+  souscriptions: async (programme) => (await apiClient.get('/consommations/souscriptions/', { params: sansVide({ programme }), timeout: 120000 })).data,
+  ajouterSouscriptions: async (programme) => (await apiClient.post('/consommations/souscriptions/', { programme }, { timeout: 120000 })).data,
   rapport: async (params) => apiClient.get('/consommations/rapport/', { params: sansVide(params), responseType: 'blob', timeout: 300000 }),
   synthese: async (params) => (await apiClient.get('/consommations/synthese/', { params: sansVide(params) })).data,
-  rechercher: async (q) => (await apiClient.get('/consommations/recherche/', { params: { q } })).data,
-  famille: async (matricule) => (await apiClient.get(`/consommations/famille/${matricule}/`)).data,
+  rechercher: async (q, programme) => (await apiClient.get('/consommations/recherche/', { params: sansVide({ q, programme }) })).data,
+  famille: async (matricule, programme) => (await apiClient.get(`/consommations/famille/${matricule}/`, { params: sansVide({ programme }) })).data,
   entreprises: async (params) => (await apiClient.get('/consommations/entreprises/', { params: sansVide(params) })).data,
   plafonds: async (params) => (await apiClient.get('/consommations/plafonds/', { params: sansVide(params) })).data,
-  controles: async (code) => (await apiClient.get('/consommations/controles/', { params: sansVide({ code }) })).data,
+  controles: async (code, programme) => (await apiClient.get('/consommations/controles/', { params: sansVide({ code, programme }) })).data,
   fraude: async (params) => (await apiClient.get('/consommations/fraude/', { params: sansVide(params) })).data,
   fraudeBeneficiaire: async (matricule) => (await apiClient.get(`/consommations/fraude/${matricule}/`)).data,
   instruire: async (matricule, donnees) => (await apiClient.post(`/consommations/fraude/${matricule}/instruction/`, donnees)).data,
@@ -1876,6 +1879,21 @@ export const contractApi = {
     await apiClient.patch(`/contrat/${id}/administration/`, data, motif
       ? { headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true }
       : undefined)
+  ).data,
+  // Avenants de retrait, de résiliation et de changement d'immatriculation (production/avenants.py)
+  // GET préparation (actes possibles, objets en vigueur, historique de la période) ; POST simulation (montants, rien
+  // n'est écrit) ; POST émission (motif envoyé en en-tête : la résiliation l'exige) ; document imprimé ; historique
+  preparerAvenant: async (id) => (await apiClient.get(`/avenants/${id}/`)).data,
+  simulerAvenant: async (id, data) => (await apiClient.post(`/avenants/${id}/simulation/`, data, { sansSignalement: true })).data,
+  emettreAvenant: async (id, data) => (
+    await apiClient.post(`/avenants/${id}/`, data, { headers: { 'X-Motif': encodeURIComponent(data.Motif || '') }, motifEnvoye: true })
+  ).data,
+  documentAvenant: async (id) => (await apiClient.get(`/avenants/document/${id}/`)).data,
+  historiqueAvenants: async (id) => (await apiClient.get(`/avenants/historique/${id}/`)).data,
+  // POST /api/contrat/:id/administration/simulation/ : mêmes saisies, écrites puis annulées par le serveur ; montants
+  // que le recalcul des primes donnerait (garanties, risques, contrat, quittance) et refus éventuel
+  simulateAdministrationContract: async (id, data) => (
+    await apiClient.post(`/contrat/${id}/administration/simulation/`, data, { sansSignalement: true })
   ).data,
   // POST /api/confirmationdevis (Validation et conversion d'un devis en contrat définitif)
   createContractFromQuote: (data) => {

@@ -20,10 +20,11 @@ import {
 
 // ------------------------------------------------------------------ lecture partagée
 // Une lecture par jeu de filtres ; pendant un rechargement, l'affichage précédent reste en place, atténué (pas de saut de page)
-export const useAnalyse = (filtres, actif) => {
+// version : changée après un import, elle fait relire l'analyse sans recharger la page
+export const useAnalyse = (filtres, actif, version = 0) => {
   const { error: toastError } = useToast();
   const [etat, setEtat] = useState({ donnees: null, chargement: false, cle: null });
-  const cle = JSON.stringify(filtres);
+  const cle = JSON.stringify([filtres, version]);
   useEffect(() => {
     if (!actif || etat.cle === cle) return undefined;
     let annule = false;

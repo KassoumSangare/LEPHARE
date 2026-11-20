@@ -3,6 +3,7 @@ import { Paperclip } from 'lucide-react';
 import { contractApi, dommagesApi } from '../../../api/endpoints';
 import { printContratFacture, printContratConditionsParticulieres, estDevisVoyage, estDevisDommages, printCotationDommagesContrat, printPieceDommages } from '../../../utils/exportUtils';
 import { estDevisSante, imprimerDocumentSante } from '../../../utils/impressionsSante';
+import { estAvenantPolice, imprimerAvenantPolice } from '../../../utils/impressionsAvenants';
 import { FenetrePieceJointe, usePieceJointe } from '../../../components/common/PieceJointe';
 import { ContractDocumentsModal } from './ContractDocumentsModal';
 import { ReleveCompteModal } from './ReleveCompteModal';
@@ -74,7 +75,10 @@ export const useDocumentsContrat = (contract, idContrat, { onSaveContract } = {}
   const idContratFactureMinene = mineneConnexes?.Minene ? (contrat.raw?.idcontrat || id) : policeSanteMinene?.IdContrat;
 
   const imprimer = (cle, libelle, ouvrir) => ({ cle, libelle, action: 'Imprimer', ouvrir, fenetre: false });
+  // Avenant de retrait, de résiliation ou de changement d'immatriculation : l'avenant à signer
+  const codeAvenant = String((contrat.raw?.idavenant && typeof contrat.raw.idavenant === 'object' ? contrat.raw.idavenant.CodeAvenant : '') || '').trim();
   const documents = !contract ? [] : [
+    ...(estAvenantPolice(codeAvenant) ? [imprimer('avenant', 'Avenant', () => imprimerAvenantPolice(id))] : []),
     ...(contratDommages ? [
       { cle: 'releve', libelle: 'Quittance - relevé de compte', action: 'Imprimer', ouvrir: () => setReleveOuvert(true), fenetre: true },
       imprimer('cotation', 'Cotation d’assurance', () => printCotationDommagesContrat(contrat)),

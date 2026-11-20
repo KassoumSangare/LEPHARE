@@ -7,8 +7,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { cashApi, contractApi, asaciApi, transportApi, transportHorsGuceApi, repriseApi, impressionSanteApi } from '../../../api/endpoints';
 import { dataStore } from '../../../api/dataStore';
 import { StatusBadge } from '../../../components/common/StatusBadge';
-import { PolicyMovementModal } from './PolicyMovementModal';
 import { ListeDocumentsContrat, useDocumentsContrat } from './documentsContrat';
+import { imprimerAvenantPolice } from '../../../utils/impressionsAvenants';
 import {
   ArrowLeft,
   Shield,
@@ -30,7 +30,10 @@ import {
   Users,
   Trash2,
   UserPlus,
+  UserMinus,
   Home,
+  Ban,
+  ExternalLink,
 } from 'lucide-react';
 import { useToast } from '../../../context/ToastContext';
 import { formatDate } from '../../../utils/dateUtils';
@@ -49,10 +52,7 @@ export const ContractDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { success, error: toastError, warning } = useToast();
-  const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
-  const [movementTab, setMovementTab] = useState('renouvellement');
-  const [initialOp, setInitialOp] = useState(null);
+  const { error: toastError, warning } = useToast();
 
   const [currentContract, setCurrentContract] = useState(null);
   const [attestationsList, setAttestationsList] = useState([]);
@@ -176,16 +176,22 @@ export const ContractDetailPage = () => {
     }
     return () => { actif = false; };
   }, [id, contratTransport]);
-  const [endorsements, setEndorsements] = useState(() =>
-    dataStore.getEndorsementsByPolicy(contract.numeropolice || contract.id)
-  );
-
+  // Avenants de la police (production/avenants.py) : retrait, changement d'immatriculation, résiliation possibles, et
+  // historique réel de la police (affaire nouvelle, renouvellements, avenants), police résiliée comprise
+  const [actesPolice, setActesPolice] = useState(null);
+  const [historique, setHistorique] = useState([]);
   useEffect(() => {
-    const unsub = dataStore.subscribe(() => {
-      setEndorsements(dataStore.getEndorsementsByPolicy(contract.numeropolice || contract.id));
-    });
-    return unsub;
-  }, [contract.numeropolice, contract.id]);
+    let actif = true;
+    setActesPolice(null);
+    setHistorique([]);
+    if (!id) return undefined;
+    contractApi.historiqueAvenants(id).then((h) => { if (actif) setHistorique(h.Lignes || []); }).catch(() => {});
+    if (aLeDroit('contrats.avenant') || aLeDroit('contrats.cancel')) {
+      contractApi.preparerAvenant(id).then((p) => { if (actif) setActesPolice(p.Actes || null); }).catch(() => {});
+    }
+    return () => { actif = false; };
+  }, [id]);
+  const acteOuvert = (code, droit) => Boolean(actesPolice?.[code]?.Possible) && aLeDroit(droit);
 
   const attestation = attestationsList.find((a) => a.police === contract.numeropolice || a.numeropolice === contract.numeropolice);
 
@@ -250,16 +256,37 @@ export const ContractDetailPage = () => {
             </button>
           )}
 
-          {/* Avenant et transformation retirés le 2026-10-14 : ils n'enregistraient rien en base
-              (PolicyMovementModal → dataStore du navigateur) tout en annonçant une réussite ; les procédures
-              d'avenant de modification n'existent pas encore (sp_avenant_modification) */}
-          {/* Santé : avenant de modification réel (changement de formule, incorporation), sante/avenant.py */}
+          {/* Santé : avenant de modification réel (incorporation, sortie d'un membre ou d'une famille, changement de
+              formule), sante/avenant.py */}
           {contratSante && !contratOreole && aLeDroit('contrats.avenant') && (
             <button className="btn btn-secondary" onClick={() => setAvenantSanteOuvert(true)}
-              title="Incorporer un membre dans une famille (une famille complète passe d'office dans la formule de sa taille, FAMILLE → FAMILLE PLUS) ou changer de formule en cours de contrat : avenant sous la même police, prime = écart entre les formules (en entier pour MINENE, tarif forfaitaire)"
+              title="Incorporer ou retirer un membre ou une famille, ou changer de formule en cours de contrat, sous la même police"
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Users size={16} />
-              <span>Incorporer un membre</span>
+              <span>Incorporer ou retirer un membre</span>
+            </button>
+          )}
+
+          {/* Retrait, changement d'immatriculation, résiliation (production/avenants.py), selon ce que permet la police */}
+          {acteOuvert('RET', 'contrats.avenant') && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}/avenant?type=RET`)}
+              title="Retirer un ou plusieurs objets de la police, avec ou sans ristourne" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <UserMinus size={16} />
+              <span>{idProduitContrat === 1 ? 'Retirer un véhicule' : idProduitContrat === 4 ? 'Retirer une maison' : 'Retirer une personne'}</span>
+            </button>
+          )}
+          {acteOuvert('CHI', 'contrats.avenant') && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}/avenant?type=CHI`)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Car size={16} />
+              <span>Changer l’immatriculation</span>
+            </button>
+          )}
+          {acteOuvert('RES', 'contrats.cancel') && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}/avenant?type=RES`)}
+              title="Résilier la police en cours de contrat (ristourne) ou à l'échéance" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-rose, #e11d48)' }}>
+              <Ban size={16} />
+              <span>Résilier</span>
             </button>
           )}
 
@@ -579,145 +606,69 @@ export const ContractDetailPage = () => {
       {/* MINENE : Santé, IA et RC chef de famille en package (émission sans ressaisie, règlement unique) */}
       {id && <BlocMinene idContrat={id} />}
 
-      {/* Historique des Avenants & Renouvellements CIMA */}
-      <div className="glass-panel" style={{ padding: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <h3 className="title-md" style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <FileText size={18} color="#10b981" />
-              Historique des Avenants ({endorsements.length})
-            </h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Actes modificatifs, prorogations de durée, attestations et certificats officiels CIMA.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button
-              className="btn"
-              style={{
-                background: 'linear-gradient(135deg, #059669, #10b981)',
-                color: '#fff',
-                fontSize: '0.8rem',
-                padding: '0.4rem 0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontWeight: 600,
-                border: 'none',
-                boxShadow: '0 2px 4px rgba(16, 185, 129, 0.3)',
-                cursor: 'pointer',
-              }}
-              onClick={() => navigate(`/user/contracts/${id}/renouvellement`)}
-            >
+      {/* Historique réel de la police : affaire nouvelle, renouvellements et avenants (production/avenants.py, historique) */}
+      <div className="glass-panel historique-police">
+        <div className="historique-police-entete">
+          <h3 className="title-md">
+            <FileText size={18} color="#10b981" />
+            Historique de la police ({historique.length})
+          </h3>
+          {!contratOreole && (
+            <button className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}/renouvellement`)}>
               <RefreshCw size={14} />
-              <span>Nouveau Renouvellement</span>
+              <span>Nouveau renouvellement</span>
             </button>
-          </div>
+          )}
         </div>
-
-        {endorsements.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2.5rem 1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px dashed var(--border-subtle)' }}>
-            <FileText size={32} color="var(--text-muted)" style={{ margin: '0 auto 0.5rem' }} />
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600 }}>Aucun avenant ou renouvellement pour le moment.</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-              Utilisez le bouton ci-dessus pour renouveler la police ou émettre un avenant de modification.
-            </div>
-          </div>
+        {historique.length === 0 ? (
+          <p className="historique-police-vide">Aucun mouvement enregistré pour cette police.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ width: '100%', fontSize: '0.825rem' }}>
+          <div className="table-wrapper">
+            <table className="data-table historique-police-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '0.65rem' }}>N° Avenant</th>
-                  <th style={{ textAlign: 'left', padding: '0.65rem' }}>Mouvement</th>
-                  <th style={{ textAlign: 'left', padding: '0.65rem' }}>Nature / Motif</th>
-                  <th style={{ textAlign: 'left', padding: '0.65rem' }}>Période Couverte</th>
-                  <th style={{ textAlign: 'right', padding: '0.65rem' }}>Incidence Financière</th>
-                  <th style={{ textAlign: 'center', padding: '0.65rem' }}>Certificat Officiel</th>
+                  <th>N° avenant</th>
+                  <th>Mouvement</th>
+                  <th>Période</th>
+                  <th className="droite">Prime TTC</th>
+                  <th>Quittance</th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
-                {endorsements.map((m) => (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                    <td style={{ padding: '0.65rem', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#34d399' }}>
-                      {m.numero_avenant}
-                    </td>
-                    <td style={{ padding: '0.65rem' }}>
-                      <span
-                        style={{
-                          padding: '0.2rem 0.5rem',
-                          borderRadius: '4px',
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          background:
-                            m.type_mouvement === 'Renouvellement'
-                              ? 'rgba(16, 185, 129, 0.15)'
-                              : m.type_mouvement === 'Transformation'
-                              ? 'rgba(168, 85, 247, 0.15)'
-                              : 'rgba(59, 130, 246, 0.15)',
-                          color:
-                            m.type_mouvement === 'Renouvellement'
-                              ? '#34d399'
-                              : m.type_mouvement === 'Transformation'
-                              ? '#c084fc'
-                              : '#60a5fa',
-                        }}
-                      >
-                        {m.type_mouvement}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.65rem', color: 'var(--text-secondary)' }}>
-                      {m.nature || m.details?.motif || 'Avenant de police'}
-                    </td>
-                    <td style={{ padding: '0.65rem' }}>
-                      {m.date_effet ? `Du ${formatDate(m.date_effet)} au ${m.date_expiration || '31/12/2026'}` : m.date_avenant}
-                    </td>
-                    <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                      {Number(m.prime_totale || 0).toLocaleString('fr-FR')} FCFA
-                    </td>
-                    <td style={{ padding: '0.65rem', textAlign: 'center' }}>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                        onClick={() => {
-                          setInitialOp({
-                            type: m.type_mouvement || 'Renouvellement',
-                            endorsement: m,
-                            contract,
-                            quittance: m.details?.quittance_num ? { numero_quittance: m.details.quittance_num } : null,
-                          });
-                          setIsMovementModalOpen(true);
-                        }}
-                        title="Imprimer le certificat officiel CIMA pour ce mouvement"
-                      >
-                        <Printer size={13} color="#0284c7" />
-                        <span>Imprimer</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {historique.map((m) => {
+                  const courant = String(m.IdContrat) === String(id);
+                  return (
+                    <tr key={m.IdContrat} className={`${courant ? 'courant' : ''}${m.Annule ? ' annule' : ''}`}>
+                      <td className="mono">{m.NumeroAvenant || '-'}</td>
+                      <td>
+                        <span className={`historique-mouvement code-${String(m.Code || '').toLowerCase()}`}>{m.Mouvement}</span>
+                        {m.Annule && <span className="historique-etat"> annulé ou résilié</span>}
+                        {m.Motif && <div className="historique-motif" title={m.Motif}>{m.Motif}</div>}
+                      </td>
+                      <td>{dateLisible(m.DateEffet)} au {dateLisible(m.DateExpiration)}</td>
+                      <td className={`droite mono${m.PrimeTtc < 0 ? ' negatif' : ''}`}>{Number(m.PrimeTtc || 0).toLocaleString('fr-FR')} F</td>
+                      <td className="mono">{m.Quittance || '-'}</td>
+                      <td className="historique-actions">
+                        {m.Document && (
+                          <button type="button" className="btn btn-secondary" onClick={() => imprimerAvenantPolice(m.IdContrat)} title="Imprimer l'avenant">
+                            <Printer size={13} /> <span>Avenant</span>
+                          </button>
+                        )}
+                        {!courant && (
+                          <button type="button" className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${m.IdContrat}`)} title="Ouvrir ce contrat">
+                            <ExternalLink size={13} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* Modal Mouvements CIMA & Impression Certificat */}
-      <PolicyMovementModal
-        isOpen={isMovementModalOpen}
-        onClose={() => {
-          setIsMovementModalOpen(false);
-          setInitialOp(null);
-        }}
-        contract={contract}
-        initialTab={movementTab}
-        initialOperation={initialOp}
-        onSuccess={() => {
-          const updated = dataStore.getContractById(contract.numeropolice || contract.id);
-          if (updated) setCurrentContract(updated);
-          setEndorsements(dataStore.getEndorsementsByPolicy(contract.numeropolice || contract.id));
-        }}
-      />
 
       {/* Attestation, carte brune et relevé de compte (rubrique Documents) */}
       {fenetresDocuments}

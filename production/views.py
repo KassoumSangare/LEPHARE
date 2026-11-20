@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from dateutil.relativedelta import relativedelta
 from django.db import connection, transaction
 from django.db.utils import DatabaseError
-from django.db.models import DecimalField, F, Prefetch, Q
+from django.db.models import F, Prefetch, Q
 from django.db.models.expressions import RawSQL
 from django.http import FileResponse, Http404
 from django.http.response import JsonResponse
@@ -1605,8 +1605,22 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 self._donnees_administration(contrat),
                 status=status.HTTP_200_OK,
             )
+        return self._enregistrer_administration(contrat, request.data)
 
-        payload = request.data
+    @action(detail=True, methods=["post"], url_path="administration/simulation")
+    def administration_simulation(self, request, pk=None):
+        """
+        POST /api/contrat/<id>/administration/simulation/ : mêmes saisies que l'enregistrement, écrites puis annulées ;
+        renvoie les montants que le recalcul des primes donnerait (écran d'administration, avant l'enregistrement).
+        """
+        contrat = get_object_or_404(Contrat.objects.select_related("idclient", "idcompagnie"), pk=pk)
+        return self._enregistrer_administration(contrat, request.data, simulation=True)
+
+    def _enregistrer_administration(self, contrat, payload, simulation=False):
+        """Saisies de l'écran d'administration écrites telles quelles, puis primes recalculées de la garantie jusqu'à
+        la quittance (recalcul_contrat.py) ; en simulation, tout est annulé."""
+        from .recalcul_contrat import ErreurRecalcul, etat_contrat, recalculer
+
         if (
             not isinstance(payload, dict)
             or not isinstance(payload.get("contrat"), dict)
@@ -1693,41 +1707,49 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             champ in contrat_serializer.validated_data
             for champ in ("dateeffet", "dateexpiration")
         )
-        with transaction.atomic():
-            contrat_enregistre = contrat_serializer.save()
-            if periode_modifiee:
-                # Même période sur le devis : les avenants la lisent là (sp_creation_devis_sante)
-                Devis.objects.filter(pk=contrat_enregistre.iddevis_id).update(
-                    dateeffet=contrat_enregistre.dateeffet,
-                    dateexpiration=contrat_enregistre.dateexpiration,
-                )
-            if periode_modifiee and contrat_enregistre.idquittance_id:
-                Quittance.objects.filter(pk=contrat_enregistre.idquittance_id).update(
-                    dateeffet=contrat_enregistre.dateeffet,
-                    dateexpiration=contrat_enregistre.dateexpiration,
-                )
-            for serializer_detail in details_a_sauver:
-                serializer_detail.save()
-            for serializer_garantie in garanties_a_sauver:
-                serializer_garantie.save()
-
-        # Contrat relu en base : ses déclencheurs recalculent le partage des accessoires réglé pour la compagnie et la
-        # commission sur la prime HT (trg_lephare_commission_courtier), et arrondissent la TTC. L'écran montrait jusqu'ici
-        # la valeur saisie alors que la base en gardait une autre.
+        # Saisies par ligne (clés étrangères ramenées à leur identifiant) et montants d'avant, lus avant l'écriture :
+        # le sérialiseur modifie le contrat en place
+        saisies = {
+            "contrat": {cle: getattr(v, "pk", v) for cle, v in contrat_serializer.validated_data.items()},
+            "details": {
+                s.instance.pk: {cle: getattr(v, "pk", v) for cle, v in s.validated_data.items()} for s in details_a_sauver
+            },
+            "garanties": {
+                s.instance.pk: {cle: getattr(v, "pk", v) for cle, v in s.validated_data.items()} for s in garanties_a_sauver
+            },
+        }
+        avant = etat_contrat(contrat, saisies)
+        try:
+            with transaction.atomic():
+                contrat_enregistre = contrat_serializer.save()
+                if periode_modifiee:
+                    # Même période sur le devis : les avenants la lisent là (sp_creation_devis_sante)
+                    Devis.objects.filter(pk=contrat_enregistre.iddevis_id).update(
+                        dateeffet=contrat_enregistre.dateeffet,
+                        dateexpiration=contrat_enregistre.dateexpiration,
+                    )
+                if periode_modifiee and contrat_enregistre.idquittance_id:
+                    Quittance.objects.filter(pk=contrat_enregistre.idquittance_id).update(
+                        dateeffet=contrat_enregistre.dateeffet,
+                        dateexpiration=contrat_enregistre.dateexpiration,
+                    )
+                for serializer_detail in details_a_sauver:
+                    serializer_detail.save()
+                for serializer_garantie in garanties_a_sauver:
+                    serializer_garantie.save()
+                # Toute prime touchée est recalculée : garanties, risques, contrat (taxe, TTC, commission) et quittance.
+                # Le contrat est relu en base : ses déclencheurs fixent aussi le partage des accessoires réglé pour la
+                # compagnie et la commission sur la prime HT (trg_lephare_commission_courtier).
+                resultat = recalculer(contrat_enregistre, avant, saisies)
+                if simulation:
+                    transaction.set_rollback(True)
+        except ErreurRecalcul as erreur:
+            return Response({"detail": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+        if simulation:
+            return Response(resultat, status=status.HTTP_200_OK)
         contrat.refresh_from_db()
-        recalcules = []
-        for champ, demande in contrat_serializer.validated_data.items():
-            if not isinstance(Contrat._meta.get_field(champ), DecimalField) or demande is None:
-                continue
-            enregistre = getattr(contrat, champ)
-            if enregistre is None or Decimal(demande) != Decimal(enregistre):
-                recalcules.append({
-                    "Champ": champ,
-                    "Demande": float(demande),
-                    "Enregistre": None if enregistre is None else float(enregistre),
-                })
         return Response(
-            {**self._donnees_administration(contrat), "recalcules": recalcules},
+            {**self._donnees_administration(contrat), **resultat},
             status=status.HTTP_200_OK,
         )
 

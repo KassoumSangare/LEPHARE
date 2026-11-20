@@ -27,6 +27,7 @@ from . import apporteurs, decaissements, views_bordereaux, views_cockpit, views_
 from . import corrections_encaissement
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
+from . import avenants as avenants_views
 from . import renouvellement as renouvellement_views
 from . import minene_connexes, minene_package
 from . import incorporation as incorporation_views
@@ -662,6 +663,11 @@ urlpatterns = [
         modify_policy,
         name="avenant_renouvellement",
     ),
+    # Avenants de retrait, de résiliation et de changement d'immatriculation : préparation, montants, émission, document
+    path("avenants/<int:pk>/", avenants_views.avenants, name="avenants-contrat"),
+    path("avenants/<int:pk>/simulation/", avenants_views.simulation, name="avenants-simulation"),
+    path("avenants/document/<int:pk>/", avenants_views.document, name="avenants-document"),
+    path("avenants/historique/<int:pk>/", avenants_views.historique, name="avenants-historique"),
     # Renouvellement LE PHARE : préparation (GET) et devis de renouvellement sous la même police (POST)
     path("renouvellement/<int:pk>/", renouvellement_views.renouvellement, name="renouvellement-contrat"),
     # Incorporation Automobile flotte : date d'effet distincte, échéance du contrat conservée

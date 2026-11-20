@@ -1,6 +1,6 @@
 from django.urls import include, path
 
-from . import consommations, consommations_analyse, consommations_pilotage, consommations_rapport, consommations_souscriptions, oreole, rafas, rafas_rapport
+from . import consommations, consommations_analyse, consommations_minene, consommations_pilotage, consommations_rapport, consommations_souscriptions, oreole, rafas, rafas_rapport
 
 # from django_api_admin.sites import site
 
@@ -168,6 +168,8 @@ urlpatterns = [
     path(r"consommations/tableau-de-bord/", consommations_pilotage.vue_tableau_de_bord, name="consommations-tableau-de-bord"),
     # Analyse approfondie : compagnies, entreprises, familles, profil, foyers, prestataires, délais, projection (sante/consommations_analyse.py)
     path(r"consommations/analyse/", consommations_analyse.vue_analyse, name="consommations-analyse-periode"),
+    # MINENE Santé : détail des sinistres du gestionnaire (TP / RD, affections), familles et formules de LE PHARE (sante/consommations_minene.py)
+    path(r"consommations/minene/", consommations_minene.vue_minene, name="consommations-minene"),
     path(r"consommations/entreprises/lien/", consommations_pilotage.vue_lien, name="consommations-lien"),
     # Effectif complété par les souscriptions Oreole Santé de LE PHARE : aperçu (GET), ajout (POST) (sante/consommations_souscriptions.py)
     path(r"consommations/souscriptions/", consommations_souscriptions.vue_souscriptions, name="consommations-souscriptions"),

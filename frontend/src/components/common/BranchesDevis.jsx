@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Car, FileText, HeartHandshake, HeartPulse, Home, Layers, Plane, Printer, Shield, Ship, UserPlus } from 'lucide-react';
+import { Building2, Car, FileText, HeartHandshake, HeartPulse, Home, LayoutGrid, Layers, Plane, Printer, Shield, ShieldCheck, Ship, UserPlus } from 'lucide-react';
 import { moduleActif, TITRE_MODULE_INACTIF } from '../../utils/modulesActifs';
+import { branchesProduction } from '../../utils/parametrage';
 
 /* =========================================================================
    BRANCHES COMME DANS LA GESTION DES DEVIS
@@ -39,6 +40,25 @@ export const ICONES_ONGLET = {
   DOMMAGES: <Layers size={13} />,
 };
 export const iconeOnglet = (id) => ICONES_ONGLET[id] || <FileText size={13} />;
+
+// Puces de filtre par branche (Portefeuille et Administration des contrats) : « Toutes les branches », puis une par
+// branche de la Production, onglets réglés dans Administration > Produits (demande du 2026-11-20 : autant de filtres
+// que de branches de production). Infobulle seulement pour une branche qui regroupe plusieurs produits.
+const ICONES_BRANCHE = {
+  AUTO: Car, VOYAGE: Plane, TRANSPORT: Ship, MRH: Home, MRP: Building2, DOMMAGES: Layers, SANTE: HeartPulse, VIE: HeartHandshake, IA: UserPlus, RC: Shield,
+};
+const enClair = (texte) => {
+  const t = String(texte || '').toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+/** [{ cle, libelle, icone, produits, aide }] ; cle 'ALL' et produits null pour toutes les branches. */
+export const pucesBranches = () => [
+  { cle: 'ALL', libelle: 'Toutes les branches', icone: LayoutGrid, produits: null },
+  ...branchesProduction().map((b) => ({
+    cle: b.id, libelle: b.label, icone: ICONES_BRANCHE[b.id] || ShieldCheck, produits: b.produits,
+    aide: b.produits.length > 1 ? b.libelles.map(enClair).join(', ') : undefined,
+  })),
+];
 
 /** Boutons de saisie par branche ; lien(module) donne l'adresse du formulaire (vue Production ou mode reprise). */
 export const BoutonsNouveauDevis = ({ lien = (module) => `/user/quotes/${module}`, titre }) => {

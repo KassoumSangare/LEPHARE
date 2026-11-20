@@ -26,7 +26,9 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 
 from production.renouvellement import AUTHENTIFICATION, _lignes
 
-from .consommations import ErreurConsommation, SEUIL_ALERTE_PROVISION, SOURCE_SOUSCRIPTIONS, _iso, _nombre, _reponse, lire_date, normaliser
+from .consommations import (
+    OREOLE, ErreurConsommation, SEUIL_ALERTE_PROVISION, SOURCE_SOUSCRIPTIONS, _iso, _nombre, _reponse, lire_date, normaliser, sql_programme,
+)
 
 ZERO = Decimal("0")
 MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
@@ -99,7 +101,8 @@ def proposer_liens(entreprises, polices, confirmes):
 # ------------------------------------------------------------------ données de la période
 def _periode(cursor, params):
     """Exercice et période : du/au donnés, sinon l'exercice entier (dernier exercice des relevés ou des cotisations)."""
-    cursor.execute("""SELECT DISTINCT a FROM (SELECT EXTRACT(YEAR FROM date_cloture)::int AS a FROM lephare_sante_prestation
+    # Exercices d'Oreole Santé seulement : les relevés MINENE Santé ont leur propre espace (consommations_minene.py)
+    cursor.execute(f"""SELECT DISTINCT a FROM (SELECT EXTRACT(YEAR FROM date_cloture)::int AS a FROM lephare_sante_prestation p WHERE {sql_programme(OREOLE)}
                       UNION SELECT exercice FROM lephare_sante_cotisation) x WHERE a IS NOT NULL ORDER BY a""")
     exercices = [r[0] for r in cursor.fetchall()]
     try:
@@ -113,9 +116,10 @@ def _periode(cursor, params):
     return exercice, du, au, exercices
 
 
-def charger(cursor, du, au, garant="", police=""):
-    condition, valeurs = "p.date_cloture BETWEEN %s AND %s", [du, au]
-    cond_eff, val_eff = ["TRUE"], []
+def charger(cursor, du, au, garant="", police="", programme=OREOLE):
+    """Prestations et effectif d'un programme (Oreole Santé par défaut, jamais mêlé à MINENE Santé)."""
+    condition, valeurs = f"p.date_cloture BETWEEN %s AND %s AND {sql_programme(programme)}", [du, au]
+    cond_eff, val_eff = [sql_programme(programme, "garant")], []
     for cle, v in (("garant", garant), ("police", police)):
         if v:
             condition += f" AND p.{cle} = %s"
@@ -128,6 +132,7 @@ def charger(cursor, du, au, garant="", police=""):
                p.centre_prescripteur, p.centre_executant, p.code_centre, p.medecin, p.souscripteur, p.college, p.type, p.date_soins_retenue,
                p.mt_reclame, p.base_decomptee, p.exclusion, p.depassement, p.mt_rembourse
         FROM lephare_sante_prestation p LEFT JOIN lephare_sante_effectif e ON e.matricule_beneficiaire = p.matricule_beneficiaire
+             AND {sql_programme(programme, 'e.garant')}
         WHERE {condition}""", valeurs)
     effectif = _lignes(cursor, f"SELECT * FROM lephare_sante_effectif WHERE {' AND '.join(cond_eff)}", val_eff)
     return prestations, effectif
@@ -138,7 +143,8 @@ def rapprochement(cursor, exercice):
     Renvoie [(ligne de l'état, police ou "", lien confirmé)] et la liste des polices connues."""
     cotisations = _lignes(cursor, "SELECT * FROM lephare_sante_cotisation WHERE exercice = %s ORDER BY entreprise", [exercice])
     confirmes = {l["entreprise"]: l["police"] for l in _lignes(cursor, "SELECT entreprise, police FROM lephare_sante_entreprise_police")}
-    polices = sorted({l["police"] for l in _lignes(cursor, "SELECT DISTINCT police FROM lephare_sante_prestation UNION SELECT DISTINCT police FROM lephare_sante_effectif")
+    polices = sorted({l["police"] for l in _lignes(cursor, f"""SELECT DISTINCT police FROM lephare_sante_prestation p WHERE {sql_programme(OREOLE)}
+                                                           UNION SELECT DISTINCT police FROM lephare_sante_effectif e WHERE {sql_programme(OREOLE, 'e.garant')}""")
                       if l["police"]})
     propositions = proposer_liens([c["entreprise"] for c in cotisations], polices, confirmes)
     liens = [(c, confirmes.get(c["entreprise"], propositions.get(c["entreprise"], "")) or "", c["entreprise"] in confirmes) for c in cotisations]
@@ -152,7 +158,7 @@ def effectif_de_reference(cursor, du, garant=""):
     cursor.execute("SELECT to_regclass('public.lephare_sante_effectif_situation') IS NOT NULL")
     if not cursor.fetchone()[0]:
         return None, None
-    condition, valeurs = "r.situation < %s", [du]
+    condition, valeurs = f"r.situation < %s AND {sql_programme(OREOLE, 's.garant')}", [du]
     if garant:
         condition += " AND s.garant = %s"
         valeurs.append(garant)
@@ -175,7 +181,8 @@ def date_effectif(cursor):
     situation = "COALESCE(r.situation, r.dateimport::date)" if cursor.fetchone()[0] else "r.dateimport::date"
     # les ajouts depuis les souscriptions Oreole Santé de LE PHARE ne datent pas l'effectif du gestionnaire
     cursor.execute(f"""SELECT max({situation}) FROM lephare_sante_releve r
-                       WHERE r.idreleve IN (SELECT DISTINCT idreleve FROM lephare_sante_effectif WHERE actif) AND r.fichier <> %s""",
+                       WHERE r.idreleve IN (SELECT DISTINCT idreleve FROM lephare_sante_effectif e WHERE actif AND {sql_programme(OREOLE, 'e.garant')})
+                         AND r.fichier <> %s""",
                    [SOURCE_SOUSCRIPTIONS])
     return cursor.fetchone()[0]
 
@@ -287,7 +294,8 @@ def tableau_de_bord(params):
         garant = str(params.get("garant") or "").strip()
         prestations, effectif = charger(cursor, du, au, garant)
         liens, polices = rapprochement(cursor, exercice)
-        garants = [l["garant"] for l in _lignes(cursor, "SELECT DISTINCT garant FROM lephare_sante_prestation ORDER BY 1") if l["garant"]]
+        garants = [l["garant"] for l in _lignes(cursor, f"SELECT DISTINCT garant FROM lephare_sante_prestation p WHERE {sql_programme(OREOLE)} ORDER BY 1")
+                   if l["garant"]]
     cotisations = [c for c, _police, _confirme in liens]
     conso = defaultdict(lambda: {"Total": ZERO, "Mois": defaultdict(lambda: ZERO), "Actes": 0, "Beneficiaires": set()})
     for p in prestations:

@@ -56,6 +56,22 @@ COLONNES_PRESTATIONS = {
     "BASE_DECOMPTEE": ("base_decomptee", False), "TICKET_MODERATEUR": ("ticket_moderateur", False), "EXCLUSION": ("exclusion", False),
     "DEPASSEMENT": ("depassement", False), "MT_REMBOURSE": ("mt_rembourse", True),
 }
+# Détail des sinistres en états personnalisés du gestionnaire (feuille ETATS PERSONNALISES, MINENE Santé, 2026-11-19) : mêmes prestations
+# sous d'autres en-têtes (normalisés : majuscules sans accent). CodGar = code du garant (OREOLEMINENE), Garant = la compagnie ; tm = taux du
+# ticket modérateur ; clôture au mois (« 01/2026 »). Colonnes propres au format (type d'affection, code de l'acte, sexe, commune du centre)
+# gardées quand la base les a (migration production 0223).
+COLONNES_PRESTATIONS_ETATS = {
+    "NPRESTATIONS": ("numero_prest", True), "DATECLOTURE": ("date_cloture", True), "NUMERO": ("numero_garant", False), "CODGAR": ("garant", False),
+    "SOUSCRIPTEUR": ("souscripteur", False), "IDPOLICE": ("npol", False), "POLICE": ("police", False), "COLLEGE": ("college", False),
+    "MATRICULEP": ("matricule_beneficiaire", True), "PATIENT": ("beneficiaire", False), "STATUT": ("statut", False), "DATENAISSANCE": ("date_naissance", False),
+    "SEXE": ("sexe", False), "MATRICULEA": ("matricule_assure", True), "ASSURE": ("assure", False), "CENTREPRESCRIPTEUR": ("centre_prescripteur", False),
+    "CENTREEXECUTANT": ("centre_executant", False), "LOCALITECENTREEXECUTANT": ("localite_centre", False),
+    "LOCALITECENTREEXECUTAN": ("localite_centre", False), "LIBELLE": ("famille", True),
+    "CODEACTE": ("code_acte", False), "ACTES": ("acte", False), "MEDECIN": ("medecin", False), "DATEDESOINS": ("date_soins", True),
+    "TYPEPRESTATION": ("type", False), "TYPEAFFECTION": ("type_affection", False), "CODEAFFECTION": ("code_affection", False),
+    "RECLAME": ("mt_reclame", True), "TM": ("ticket_moderateur", False), "MONTANTEXCLUS": ("exclusion", False), "DEPASSEMENT": ("depassement", False),
+    "REMBOURSE": ("mt_rembourse", True),
+}
 COLONNES_EFFECTIF = {
     "MATBENEF": ("matricule_beneficiaire", True), "MATASSURE": ("matricule_assure", True),
     # en-têtes des relevés repris dans les effectifs d'OREOLE (ANALYSE DES SORTANT, feuille BASE EFFECTIF PRECEDENT)
@@ -99,6 +115,39 @@ class ErreurConsommation(Exception):
     """Saisie ou fichier refusé : message affiché tel quel."""
 
 
+# ------------------------------------------------------------------ programmes
+# Oreole Santé et MINENE Santé : deux espaces entièrement séparés (demande du 2026-11-19 : « les données d'Oreole Santé et de MINENE Santé
+# doivent être complètement dissociées, même les anomalies »). MINENE = prestations et effectif du garant OREOLEMINENE ; Oreole = tous les
+# autres garants (OREOLE, OREOLE CGA). Chaque lecture des tables (analyses, fiche, anomalies, contrôles, rapports, imports) se limite à un
+# programme, Oreole par défaut : les écrans d'Oreole ne voient jamais MINENE, et l'espace MINENE passe programme=minene.
+GARANT_MINENE = "OREOLEMINENE"
+OREOLE, MINENE = "oreole", "minene"
+LIBELLES_PROGRAMME = {OREOLE: "Oreole Santé", MINENE: "MINENE Santé"}
+
+
+def programme_demande(params):
+    """Programme d'une requête (paramètre programme=minene), Oreole par défaut."""
+    valeur = str(params.get("programme") or "").strip().lower() if hasattr(params, "get") else ""
+    return MINENE if valeur == MINENE else OREOLE
+
+
+def sql_programme(programme, colonne="p.garant"):
+    """Condition SQL d'appartenance d'une prestation ou d'une personne de l'effectif au programme (constante, sans paramètre)."""
+    if programme == MINENE:
+        return f"{colonne} = '{GARANT_MINENE}'"
+    return f"COALESCE({colonne}, '') <> '{GARANT_MINENE}'"
+
+
+def sql_releve_programme(programme, colonne="r.garants"):
+    """Condition SQL d'appartenance d'un relevé importé au programme, d'après la liste de ses garants."""
+    present = f"position('{GARANT_MINENE}' in COALESCE({colonne}, '')) > 0"
+    return present if programme == MINENE else f"NOT ({present})"
+
+
+def programme_du_garant(garant):
+    return MINENE if (garant or "").strip() == GARANT_MINENE else OREOLE
+
+
 # ------------------------------------------------------------------ outils
 def normaliser(texte):
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKD", str(texte or "")).encode("ascii", "ignore").decode("ascii").upper()).strip()
@@ -115,6 +164,11 @@ def lire_date(valeur):
                 return dt.datetime.strptime(valeur.strip()[:10], fmt).date()
             except ValueError:
                 pass
+        # Clôture au mois des états personnalisés (« 01/2026 ») : dernier jour du mois
+        mois = re.fullmatch(r"(\d{1,2})/(\d{4})", valeur.strip())
+        if mois and 1 <= int(mois.group(1)) <= 12:
+            annee, numero = int(mois.group(2)), int(mois.group(1))
+            return dt.date(annee + numero // 12, numero % 12 + 1, 1) - dt.timedelta(days=1)
     return None
 
 
@@ -205,7 +259,8 @@ def _feuilles(contenu):
             except StopIteration:
                 break
             noms = [normaliser(v) for v in ligne]
-            if "NUMERO_PREST" in noms or "MATBENEF" in noms or "MATRICULE_BENEFICIAIRE" in noms or _est_cotisations(noms):
+            if ("NUMERO_PREST" in noms or "NPRESTATIONS" in noms or "MATBENEF" in noms or "MATRICULE_BENEFICIAIRE" in noms
+                    or _est_cotisations(noms)):
                 tete = noms
                 break
         if not tete:
@@ -216,7 +271,7 @@ def _feuilles(contenu):
         # Effectifs des analyses d'OREOLE (BASE UNIFIEE, BASE EFFECTIF PRECEDENT / ACTUEL de l'ANALYSE DES SORTANT) : avec la colonne PERIODE,
         # les lignes EXERCICE PRECEDENT forment l'effectif de référence des mouvements et les lignes EXERCICE ACTUEL l'effectif courant ; une
         # feuille d'effectif nommée « ... PRECEDENT » est l'effectif de référence ; une base de travail (colonne SOURCE) sans PERIODE est ignorée
-        if "NUMERO_PREST" in tete:
+        if "NUMERO_PREST" in tete or "NPRESTATIONS" in tete:
             nature = "PRESTATIONS"
         elif "PERIODE" in tete:
             nature = "EFFECTIF_PERIODES"
@@ -298,7 +353,8 @@ def _lire(contenu):
             cotisations.extend(c for c in lues if normaliser(c["entreprise"]) not in connues)
             feuilles.append({"Feuille": titre, "Nature": nature, "Lignes": len(lues)})
             continue
-        colonnes = COLONNES_PRESTATIONS if nature == "PRESTATIONS" else COLONNES_EFFECTIF
+        etats = nature == "PRESTATIONS" and "NPRESTATIONS" in tete
+        colonnes = (COLONNES_PRESTATIONS_ETATS if etats else COLONNES_PRESTATIONS) if nature == "PRESTATIONS" else COLONNES_EFFECTIF
         # colonne obligatoire : présente sous l'un de ses noms (MATBENEF ou MATRICULE_BENEFICIAIRE...)
         absentes = [nom for nom, (champ, obligatoire) in colonnes.items()
                     if obligatoire and not any(autre in tete for autre, (champ_autre, _o) in colonnes.items() if champ_autre == champ)]
@@ -317,6 +373,12 @@ def _lire(contenu):
                     continue
                 l["beneficiaire"] = l.get("beneficiaire") or l.get("beneficiaire_brut") or ""
                 l["assure"] = l.get("assure") or l.get("assure_brut") or ""
+                if etats:
+                    # Familles de prestations en majuscules sans accent, comme les relevés d'Oreole (« AUXILIAIRES MÉDICAUX ») ;
+                    # base décomptée = réclamé moins les exclusions (colonne absente du format)
+                    l["famille"] = normaliser(l.get("famille"))
+                    l["type_affection"] = normaliser(l.get("type_affection"))
+                    l.setdefault("base_decomptee", l.get("mt_reclame", ZERO) - l.get("exclusion", ZERO))
                 l["date_soins_retenue"] = date_retenue(l.get("date_soins"), l.get("date_cloture"))
                 prestations.setdefault(l["numero_prest"], l)
             else:
@@ -353,8 +415,23 @@ def exercice_du_fichier(nom_fichier, prestations=None):
     return max(annees) if annees else dt.date.today().year
 
 
-def analyser(contenu, cursor, nom_fichier="", exercice=None):
+def verifier_programme(programme, prestations, effectif, precedent, cotisations):
+    """Un fichier ne s'importe que dans l'espace de son programme (un fichier mêlant les deux est refusé partout)."""
+    if programme not in (OREOLE, MINENE):
+        return
+    garants = {p.get("garant", "") for p in prestations.values()} | {e.get("garant", "") for e in (*effectif.values(), *precedent.values())}
+    minene = GARANT_MINENE in garants
+    autres = sorted(g for g in garants - {GARANT_MINENE} if g)
+    if programme == MINENE and (autres or cotisations or (not minene and (prestations or effectif or precedent))):
+        raise ErreurConsommation("Ce fichier ne concerne pas MINENE Santé" + (f" (garant {', '.join(autres)})" if autres else "")
+                                 + " : importez-le depuis l'espace Oreole Santé.")
+    if programme == OREOLE and minene:
+        raise ErreurConsommation(f"Ce fichier contient des données MINENE Santé (garant {GARANT_MINENE}) : importez-le depuis l'espace MINENE Santé.")
+
+
+def analyser(contenu, cursor, nom_fichier="", exercice=None, programme=None):
     prestations, effectif, feuilles, manquantes, cotisations, precedent = _lire(contenu)
+    verifier_programme(programme, prestations, effectif, precedent, cotisations)
     connues, ecarts = set(), 0
     if prestations:
         cursor.execute("SELECT numero_prest, mt_reclame, mt_rembourse FROM lephare_sante_prestation WHERE numero_prest = ANY(%s)", [list(prestations)])
@@ -379,6 +456,8 @@ def analyser(contenu, cursor, nom_fichier="", exercice=None):
 CHAMPS_PRESTATION = ["numero_prest", "date_cloture", "numero_garant", "garant", "souscripteur", "npol", "police", "college", "matricule_beneficiaire", "beneficiaire",
                      "statut", "date_naissance", "matricule_assure", "assure", "centre_prescripteur", "code_centre", "centre_executant", "famille", "acte", "medecin",
                      "date_soins", "date_soins_retenue", "date_reception", "type", "mt_reclame", "base_decomptee", "ticket_moderateur", "exclusion", "depassement", "mt_rembourse"]
+# Détail des états personnalisés (MINENE Santé) : écrit seulement quand la base a ces colonnes (migration production 0223)
+CHAMPS_PRESTATION_DETAIL = ["type_affection", "code_affection", "code_acte", "sexe", "localite_centre"]
 # Personnes ajoutées à l'effectif depuis les contrats Oreole Santé de LE PHARE (consommations_souscriptions.py) : import tracé sous ce nom de
 # fichier, sans date de situation ; il ne date pas l'effectif courant et un effectif du gestionnaire ne fait pas sortir ces personnes
 SOURCE_SOUSCRIPTIONS = "Souscriptions Oreole Santé - LE PHARE"
@@ -386,7 +465,8 @@ SOURCE_SOUSCRIPTIONS = "Souscriptions Oreole Santé - LE PHARE"
 ACTION_DOUBLONS = "consommations.import.doublons"
 CHAMPS_EFFECTIF = ["matricule_beneficiaire", "matricule_assure", "garant", "police", "college", "nom", "prenoms", "statut", "genre", "date_naissance", "date_effet"]
 LONGUEURS = {"garant": 60, "souscripteur": 150, "police": 150, "college": 80, "beneficiaire": 200, "statut": 1, "assure": 200, "centre_prescripteur": 200, "code_centre": 30,
-             "centre_executant": 200, "famille": 80, "acte": 20, "medecin": 200, "type": 5, "nom": 100, "prenoms": 150, "genre": 1}
+             "centre_executant": 200, "famille": 80, "acte": 20, "medecin": 200, "type": 5, "nom": 100, "prenoms": 150, "genre": 1,
+             "type_affection": 80, "code_affection": 20, "code_acte": 30, "sexe": 1, "localite_centre": 80}
 
 
 def _valeur(l, champ):
@@ -394,8 +474,17 @@ def _valeur(l, champ):
     if champ in MONTANTS:
         return v if v is not None else ZERO
     if champ in LONGUEURS:
-        return str(v or "")[:LONGUEURS[champ]].upper() if champ in ("statut", "genre") else str(v or "")[:LONGUEURS[champ]]
+        return str(v or "")[:LONGUEURS[champ]].upper() if champ in ("statut", "genre", "sexe") else str(v or "")[:LONGUEURS[champ]]
     return v
+
+
+def colonnes_detail(cursor):
+    """Colonnes du détail des états personnalisés présentes en base (migration production 0223), dans l'ordre de CHAMPS_PRESTATION_DETAIL."""
+    cursor.execute("""SELECT column_name FROM information_schema.columns
+                      WHERE table_schema = 'public' AND table_name = 'lephare_sante_prestation' AND column_name = ANY(%s)""",
+                   [CHAMPS_PRESTATION_DETAIL])
+    presentes = {c for (c,) in cursor.fetchall()}
+    return [c for c in CHAMPS_PRESTATION_DETAIL if c in presentes]
 
 
 def _situations_disponibles(cursor):
@@ -425,14 +514,14 @@ def _photographier(cursor, id_releve, effectif):
         [[id_releve, m, e.get("matricule_assure"), _valeur(e, "garant"), _valeur(e, "police"), _valeur(e, "statut")] for m, e in effectif.items()])
 
 
-def importer(contenu, nom_fichier, user, situation=None, exercice=None):
+def importer(contenu, nom_fichier, user, situation=None, exercice=None, programme=None):
     """Import idempotent : prestation connue jamais réécrite (écart noté), effectif mis à jour. situation : date de l'effectif, datant les sorties.
     Chaque effectif est aussi gardé à sa date de situation (mouvements de l'effectif du rapport) ; un effectif plus ancien que l'effectif courant
     ne le modifie pas, il sert seulement de référence. Effectif de l'exercice précédent d'une base de travail d'OREOLE : situé au 31/12 de l'année
     précédente. État des cotisations : il remplace celui de son exercice."""
     situation = situation or dt.date.today()
     with transaction.atomic(), connection.cursor() as cursor:
-        resume, prestations, effectif, cotisations, precedent = analyser(contenu, cursor, nom_fichier, exercice)
+        resume, prestations, effectif, cotisations, precedent = analyser(contenu, cursor, nom_fichier, exercice, programme)
         avec_situations = _situations_disponibles(cursor)
         if (effectif or precedent) and not avec_situations:
             raise ErreurConsommation("Base de données à mettre à jour avant d'importer un effectif : migration production 0216 (mouvements de l'effectif).")
@@ -457,10 +546,11 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
                     if p.get(champ, ZERO) != ancienne:
                         cursor.execute("INSERT INTO lephare_sante_prestation_ecart (numero_prest, idreleve, champ, ancienne, nouvelle) VALUES (%s, %s, %s, %s, %s)",
                                        [num, id_releve, champ, str(ancienne), str(p.get(champ, ZERO))])
-            colonnes = ", ".join(CHAMPS_PRESTATION + ["idreleve"])
-            marques = ", ".join(["%s"] * (len(CHAMPS_PRESTATION) + 1))
+            champs = CHAMPS_PRESTATION + colonnes_detail(cursor)
+            colonnes = ", ".join(champs + ["idreleve"])
+            marques = ", ".join(["%s"] * (len(champs) + 1))
             cursor.executemany(f"INSERT INTO lephare_sante_prestation ({colonnes}) VALUES ({marques}) ON CONFLICT (numero_prest) DO NOTHING",
-                               [[_valeur(p, c) for c in CHAMPS_PRESTATION] + [id_releve] for p in prestations.values()])
+                               [[_valeur(p, c) for c in champs] + [id_releve] for p in prestations.values()])
         if effectif:
             _photographier(cursor, id_releve, effectif)
             cursor.execute("""SELECT max(COALESCE(r.situation, r.dateimport::date)) FROM lephare_sante_effectif e
@@ -516,22 +606,32 @@ def importer(contenu, nom_fichier, user, situation=None, exercice=None):
 
 
 # ------------------------------------------------------------------ chargement commun
-def _charger(cursor, condition="TRUE", parametres=()):
+def _charger(cursor, condition="TRUE", parametres=(), programme=OREOLE):
+    """Prestations du programme (Oreole par défaut) et ce que l'effectif du même programme en dit."""
     return _lignes(cursor, f"""
         SELECT p.*, e.statut AS statut_effectif, e.genre, e.date_effet, e.actif AS actif_effectif, e.date_sortie, (e.matricule_beneficiaire IS NOT NULL) AS dans_effectif,
                COALESCE(c.code_bareme, '') AS bareme
         FROM lephare_sante_prestation p
-        LEFT JOIN lephare_sante_effectif e ON e.matricule_beneficiaire = p.matricule_beneficiaire
+        LEFT JOIN lephare_sante_effectif e ON e.matricule_beneficiaire = p.matricule_beneficiaire AND {sql_programme(programme, 'e.garant')}
         LEFT JOIN lephare_sante_college c ON c.college = p.college
-        WHERE {condition}""", list(parametres))
+        WHERE ({condition}) AND {sql_programme(programme)}""", list(parametres))
+
+
+def _programme_des_matricules(cursor, colonne, matricule):
+    """Programme d'un bénéficiaire ou d'une famille, d'après ses prestations, sinon l'effectif (fiche, signaux d'un bénéficiaire)."""
+    cursor.execute(f"""SELECT garant FROM (SELECT garant FROM lephare_sante_prestation WHERE {colonne} = %s
+                                          UNION ALL SELECT garant FROM lephare_sante_effectif WHERE {colonne} = %s) x
+                       WHERE garant IS NOT NULL LIMIT 1""", [matricule, matricule])
+    ligne = cursor.fetchone()
+    return programme_du_garant(ligne[0] if ligne else "")
 
 
 def _baremes(cursor):
     return {b["code"]: b for b in _lignes(cursor, "SELECT * FROM lephare_sante_bareme")}
 
 
-def _exercice(cursor):
-    cursor.execute("SELECT EXTRACT(YEAR FROM MAX(date_cloture))::int FROM lephare_sante_prestation")
+def _exercice(cursor, programme=OREOLE):
+    cursor.execute(f"SELECT EXTRACT(YEAR FROM MAX(date_cloture))::int FROM lephare_sante_prestation p WHERE {sql_programme(programme)}")
     annee = cursor.fetchone()[0]
     return annee or dt.date.today().year
 
@@ -631,8 +731,10 @@ def detecter_fraude(prestations):
 
 
 def fraude(params):
+    """Anomalies d'un seul programme : médianes, doublons et rattachements se jugent sur ses seules prestations."""
+    programme = programme_demande(params)
     with connection.cursor() as cursor:
-        signaux, scores = detecter_fraude(_charger(cursor))
+        signaux, scores = detecter_fraude(_charger(cursor, programme=programme))
         decisions = {d["matricule_beneficiaire"]: d for d in _lignes(cursor, "SELECT * FROM lephare_sante_suspicion")}
     niveau = str(params.get("niveau") or "").strip()
     instruction = str(params.get("instruction") or "").strip().upper()
@@ -656,12 +758,13 @@ def fraude(params):
         resume.append({"Code": code, "Regle": lib, "Poids": poids, "Critere": critere, "Signaux": len(siens), "Beneficiaires": len({s["MatriculeBeneficiaire"] for s in siens}),
                        "Montant": sum(s["Montant"] for s in siens)})
     return {"Regles": resume, "Suspicions": liste[:500], "Total": len(liste), "Niveaux": dict(Counter(x["Niveau"] for x in scores.values())),
-            "Instructions": dict(Counter(decisions[m]["statut"] for m in scores if m in decisions))}
+            "Instructions": dict(Counter(decisions[m]["statut"] for m in scores if m in decisions)), "Programme": programme}
 
 
 def signaux_beneficiaire(matricule):
     with connection.cursor() as cursor:
-        signaux, scores = detecter_fraude(_charger(cursor))
+        programme = _programme_des_matricules(cursor, "matricule_beneficiaire", matricule)
+        signaux, scores = detecter_fraude(_charger(cursor, programme=programme))
     return {"Score": scores.get(matricule), "Signaux": [s for s in signaux if s["MatriculeBeneficiaire"] == matricule]}
 
 
@@ -684,17 +787,20 @@ def instruire(matricule, donnees, user):
 
 
 # ------------------------------------------------------------------ fiche famille
-def rechercher(texte):
+def rechercher(texte, programme=OREOLE):
     texte = str(texte or "").strip()
     if len(texte) < 2:
         return {"Lignes": []}
-    # Recherche sur le nom de tout membre de la famille (sans accent), un matricule ou la police ; la famille est nommée par son assuré principal
+    # Recherche sur le nom de tout membre de la famille (sans accent), un matricule ou la police ; la famille est nommée par son assuré principal.
+    # Personnes du seul programme demandé
     with connection.cursor() as cursor:
         motif = f"%{normaliser(texte)}%"
         lignes = _lignes(cursor, f"""
             WITH x AS (
-                SELECT matricule_assure, matricule_beneficiaire, police, (nom || ' ' || prenoms) AS nom FROM lephare_sante_effectif
-                UNION ALL SELECT matricule_assure, matricule_beneficiaire, police, beneficiaire FROM lephare_sante_prestation),
+                SELECT matricule_assure, matricule_beneficiaire, police, (nom || ' ' || prenoms) AS nom FROM lephare_sante_effectif e
+                WHERE {sql_programme(programme, 'e.garant')}
+                UNION ALL SELECT matricule_assure, matricule_beneficiaire, police, beneficiaire FROM lephare_sante_prestation p
+                WHERE {sql_programme(programme)}),
             trouves AS (
                 SELECT DISTINCT matricule_assure FROM x
                 WHERE CAST(matricule_assure AS text) LIKE %s OR CAST(matricule_beneficiaire AS text) LIKE %s OR {SANS_ACCENT_SQL % 'x.nom'} LIKE %s
@@ -726,17 +832,23 @@ def _garanties(bareme):
     ) if bareme[cle]]
 
 
-def fiche_famille(matricule_assure):
+def fiche_famille(matricule_assure, programme_attendu=None):
     with connection.cursor() as cursor:
+        # Programme de la famille (ses prestations, sinon l'effectif) : la fiche ne s'ouvre que dans l'espace de son programme
+        programme = _programme_des_matricules(cursor, "matricule_assure", matricule_assure)
+        if programme_attendu in (OREOLE, MINENE) and programme != programme_attendu:
+            raise ErreurConsommation(f"Cette famille relève de {LIBELLES_PROGRAMME[programme]} : ouvrez sa fiche depuis cet espace.")
         baremes = _baremes(cursor)
-        exercice = _exercice(cursor)
-        membres = _lignes(cursor, """SELECT e.*, COALESCE(c.code_bareme, '') AS bareme FROM lephare_sante_effectif e LEFT JOIN lephare_sante_college c ON c.college = e.college
-                                     WHERE e.matricule_assure = %s ORDER BY CASE e.statut WHEN 'A' THEN 0 WHEN 'C' THEN 1 ELSE 2 END, e.date_naissance""", [matricule_assure])
-        prestations = _charger(cursor, "p.matricule_assure = %s", [matricule_assure])
+        exercice = _exercice(cursor, programme)
+        membres = _lignes(cursor, f"""SELECT e.*, COALESCE(c.code_bareme, '') AS bareme FROM lephare_sante_effectif e LEFT JOIN lephare_sante_college c ON c.college = e.college
+                                     WHERE e.matricule_assure = %s AND {sql_programme(programme, 'e.garant')}
+                                     ORDER BY CASE e.statut WHEN 'A' THEN 0 WHEN 'C' THEN 1 ELSE 2 END, e.date_naissance""", [matricule_assure])
+        prestations = _charger(cursor, "p.matricule_assure = %s", [matricule_assure], programme)
         if not membres and not prestations:
             raise ErreurConsommation("Aucun assuré principal ni aucune prestation pour ce matricule.")
-        # Fraude sur l'ensemble des relevés : les médianes par acte et les rattachements multiples ne se jugent pas sur une seule famille
-        tous_signaux, tous_scores = detecter_fraude(_charger(cursor))
+        # Anomalies sur l'ensemble des relevés du programme : les médianes par acte et les rattachements multiples ne se jugent pas sur une
+        # seule famille, ni d'un programme à l'autre
+        tous_signaux, tous_scores = detecter_fraude(_charger(cursor, programme=programme))
     matricules = {m["matricule_beneficiaire"] for m in membres} | {p["matricule_beneficiaire"] for p in prestations}
     signaux = [s for s in tous_signaux if s["MatriculeBeneficiaire"] in matricules]
     scores = {m: s for m, s in tous_scores.items() if m in matricules}
@@ -791,7 +903,7 @@ def fiche_famille(matricule_assure):
         "Bareme": code, "LibelleBareme": bareme["libelle"] if bareme else "Barème inconnu : collège sans correspondance",
         "Garanties": _garanties(bareme), "Carences": [{"Famille": "Maternité", "Mois": CARENCES["MATERNITE"]}, {"Famille": "Optique", "Mois": CARENCES["OPTIQUE"]},
                                                       {"Famille": "Autres prestations", "Mois": CARENCE_DEFAUT}],
-        "Exercice": exercice, "Droits": {
+        "Programme": programme, "Exercice": exercice, "Droits": {
             "PlafondAnnuel": _nombre(plafond) if plafond is not None else None, "ConsommeExercice": _nombre(consomme),
             "Taux": float(consomme / plafond) if plafond else None, "Solde": _nombre(plafond - consomme) if plafond is not None else None,
             "Situation": "Barème inconnu" if plafond is None else "Plafond dépassé" if consomme > plafond else "Alerte" if consomme >= SEUIL_PLAFOND * plafond else "Normal",
@@ -829,10 +941,11 @@ def _filtrer(params):
 
 
 def synthese(params):
+    programme = programme_demande(params)
     with connection.cursor() as cursor:
         condition, valeurs = _filtrer(params)
-        prestations = _charger(cursor, condition, valeurs)
-        cond_eff, val_eff = ["actif"], []
+        prestations = _charger(cursor, condition, valeurs, programme)
+        cond_eff, val_eff = ["actif", sql_programme(programme, "garant")], []
         for cle in ("garant", "police"):
             v = str(params.get(cle) or "").strip()
             if v:
@@ -840,9 +953,13 @@ def synthese(params):
                 val_eff.append(v)
         cursor.execute(f"SELECT COUNT(*), COUNT(*) FILTER (WHERE statut = 'A') FROM lephare_sante_effectif WHERE {' AND '.join(cond_eff)}", val_eff)
         effectif, principaux = cursor.fetchone()
-        polices = [l["police"] for l in _lignes(cursor, "SELECT DISTINCT police FROM lephare_sante_prestation UNION SELECT DISTINCT police FROM lephare_sante_effectif ORDER BY 1") if l["police"]]
-        garants = [l["garant"] for l in _lignes(cursor, "SELECT DISTINCT garant FROM lephare_sante_prestation ORDER BY 1") if l["garant"]]
-        releves = _lignes(cursor, "SELECT * FROM lephare_sante_releve ORDER BY idreleve DESC LIMIT 20")
+        polices = [l["police"] for l in _lignes(cursor, f"""SELECT DISTINCT police FROM lephare_sante_prestation p WHERE {sql_programme(programme)}
+                                                           UNION SELECT DISTINCT police FROM lephare_sante_effectif e WHERE {sql_programme(programme, 'e.garant')}
+                                                           ORDER BY 1""") if l["police"]]
+        garants = [l["garant"] for l in _lignes(cursor, f"SELECT DISTINCT garant FROM lephare_sante_prestation p WHERE {sql_programme(programme)} ORDER BY 1")
+                   if l["garant"]]
+        # Imports du seul programme (un état des cotisations, sans garant, relève d'Oreole Santé)
+        releves = _lignes(cursor, f"SELECT * FROM lephare_sante_releve r WHERE {sql_releve_programme(programme)} ORDER BY idreleve DESC LIMIT 20")
     tot = lambda cle: sum((p[cle] for p in prestations), ZERO)  # noqa: E731
     consommants = len({p["matricule_beneficiaire"] for p in prestations})
     rembourse = tot("mt_rembourse")
@@ -882,10 +999,12 @@ def synthese(params):
 
 
 def entreprises(params):
+    programme = programme_demande(params)
     with connection.cursor() as cursor:
         condition, valeurs = _filtrer(params)
-        prestations = _charger(cursor, condition, valeurs)
-        effectif = _lignes(cursor, "SELECT police, statut, COUNT(*) AS n FROM lephare_sante_effectif WHERE actif GROUP BY police, statut")
+        prestations = _charger(cursor, condition, valeurs, programme)
+        effectif = _lignes(cursor, f"""SELECT police, statut, COUNT(*) AS n FROM lephare_sante_effectif e
+                                      WHERE actif AND {sql_programme(programme, 'e.garant')} GROUP BY police, statut""")
     eff = defaultdict(Counter)
     for l in effectif:
         eff[l["police"]][l["statut"]] += l["n"]
@@ -914,10 +1033,11 @@ def entreprises(params):
 
 def plafonds(params):
     """Consommation face aux plafonds : famille (annuel), personne (dentaire annuel, optique), avec taux et solde."""
+    programme = programme_demande(params)
     with connection.cursor() as cursor:
         baremes = _baremes(cursor)
-        exercice = int(params.get("exercice") or _exercice(cursor))
-        prestations = _charger(cursor)
+        exercice = int(params.get("exercice") or _exercice(cursor, programme))
+        prestations = _charger(cursor, programme=programme)
     lignes = []
     familles = defaultdict(lambda: [ZERO, "", "", ""])
     personnes = defaultdict(lambda: {"DENTAIRE": ZERO, "OPTIQUE": ZERO, "statut": "", "bareme": "", "nom": "", "police": "", "assure": None})
@@ -954,15 +1074,17 @@ def plafonds(params):
             "Lignes": [l for l in lignes if not situation or l["Situation"] == situation][:1000]}
 
 
-def controles(code=None):
+def controles(code=None, programme=OREOLE):
     """Anomalies des données, chacune avec sa gravité et son explication (mêmes contrôles que le rapport d'analyse).
-    Distinctes des signaux de fraude, qui visent les comportements et se jugent à l'instruction."""
+    Distinctes des signaux de fraude, qui visent les comportements et se jugent à l'instruction. Un seul programme."""
     with connection.cursor() as cursor:
-        prestations = _charger(cursor)
-        exercice = _exercice(cursor)
-        ecarts = _lignes(cursor, "SELECT * FROM lephare_sante_prestation_ecart ORDER BY idecart DESC LIMIT 200")
-        effectif = _lignes(cursor, "SELECT * FROM lephare_sante_effectif WHERE actif")
-        doublons = doublons_importes(cursor)
+        prestations = _charger(cursor, programme=programme)
+        exercice = _exercice(cursor, programme)
+        ecarts = _lignes(cursor, f"""SELECT * FROM lephare_sante_prestation_ecart
+                                    WHERE numero_prest IN (SELECT numero_prest FROM lephare_sante_prestation p WHERE {sql_programme(programme)})
+                                    ORDER BY idecart DESC LIMIT 200""")
+        effectif = _lignes(cursor, f"SELECT * FROM lephare_sante_effectif e WHERE actif AND {sql_programme(programme, 'e.garant')}")
+        doublons = doublons_importes(cursor, programme=programme)
     anomalies = []
 
     def ajouter(code, gravite, libelle, explication, p=None, matricule=None, police="", montant=None):
@@ -1019,9 +1141,10 @@ def controles(code=None):
             "Lignes": [a for a in anomalies if not code or a["Code"] == code][:2000], "Total": len(anomalies)}
 
 
-def doublons_importes(cursor, garant=""):
+def doublons_importes(cursor, garant="", programme=OREOLE):
     """Matricules en double des fichiers d'effectif d'où viennent les personnes actives (journal d'audit de leur import, importer())."""
-    cursor.execute("SELECT DISTINCT idreleve::text FROM lephare_sante_effectif WHERE actif AND (%s = '' OR garant = %s)", [garant, garant])
+    cursor.execute(f"""SELECT DISTINCT idreleve::text FROM lephare_sante_effectif e
+                       WHERE actif AND (%s = '' OR garant = %s) AND {sql_programme(programme, 'e.garant')}""", [garant, garant])
     releves = [l[0] for l in cursor.fetchall()]
     if not releves:
         return []
@@ -1064,7 +1187,7 @@ def vue_analyse(request):
     def executer():
         contenu, _nom = _fichier(request)
         with connection.cursor() as cursor:
-            return analyser(contenu, cursor, _nom, request.data.get("exercice") or None)[0]
+            return analyser(contenu, cursor, _nom, request.data.get("exercice") or None, programme_demande(request.data))[0]
     return _reponse(executer)
 
 
@@ -1076,7 +1199,7 @@ def vue_import(request):
     def executer():
         contenu, nom = _fichier(request)
         situation = lire_date(request.data.get("situation"))
-        return importer(contenu, nom, request.user, situation, request.data.get("exercice") or None)
+        return importer(contenu, nom, request.user, situation, request.data.get("exercice") or None, programme_demande(request.data))
     return _reponse(executer, code=status.HTTP_201_CREATED)
 
 
@@ -1091,7 +1214,7 @@ def vue_synthese(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_recherche(request):
-    return _reponse(rechercher, request.query_params.get("q"))
+    return _reponse(rechercher, request.query_params.get("q"), programme_demande(request.query_params))
 
 
 @api_view(["GET"])
@@ -1099,7 +1222,7 @@ def vue_recherche(request):
 @permission_classes([permissions.IsAuthenticated])
 def vue_famille(request, matricule):
     def executer():
-        fiche = fiche_famille(matricule)
+        fiche = fiche_famille(matricule, programme_demande(request.query_params) if request.query_params.get("programme") else None)
         # Les signaux de fraude ne se lisent qu'avec le droit de la détection ; le niveau reste masqué aussi
         if not a_le_droit(request.user, "consommations.fraude"):
             fiche["Signaux"] = None
@@ -1127,7 +1250,7 @@ def vue_plafonds(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_controles(request):
-    return _reponse(controles, request.query_params.get("code") or None)
+    return _reponse(controles, request.query_params.get("code") or None, programme_demande(request.query_params))
 
 
 @api_view(["GET"])

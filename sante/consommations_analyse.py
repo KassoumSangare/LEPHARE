@@ -32,7 +32,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 
 from production.renouvellement import AUTHENTIFICATION, _lignes
 
-from .consommations import SEUIL_ALERTE_PROVISION, SEUIL_PLAFOND, STATUTS, _iso, _nombre, _reponse
+from .consommations import OREOLE, SEUIL_ALERTE_PROVISION, SEUIL_PLAFOND, STATUTS, _iso, _nombre, _reponse, sql_programme
 from .consommations_pilotage import MOIS, TRANCHES, _age, _div, _periode, charger, entreprises_a_risque, rapprochement, tranche
 
 ZERO = Decimal("0")
@@ -566,20 +566,24 @@ def analyse(params):
         police = str(params.get("police") or "").strip()
         prestations, effectif = charger(cursor, du, au, garant, police)
         liens, polices = rapprochement(cursor, exercice)
-        garants = [l["garant"] for l in _lignes(cursor, "SELECT DISTINCT garant FROM lephare_sante_prestation ORDER BY 1") if l["garant"]]
+        # Oreole Santé seulement : MINENE Santé a son propre espace (consommations_minene.py)
+        oreole = sql_programme(OREOLE)
+        garants = [l["garant"] for l in _lignes(cursor, f"SELECT DISTINCT garant FROM lephare_sante_prestation p WHERE {oreole} ORDER BY 1") if l["garant"]]
         if garant:
-            polices = [l["police"] for l in _lignes(cursor, """SELECT DISTINCT police FROM lephare_sante_prestation WHERE garant = %s
-                                                               UNION SELECT DISTINCT police FROM lephare_sante_effectif WHERE garant = %s ORDER BY 1""", [garant, garant])
+            polices = [l["police"] for l in _lignes(cursor, f"""SELECT DISTINCT police FROM lephare_sante_prestation p WHERE garant = %s AND {oreole}
+                                                               UNION SELECT DISTINCT police FROM lephare_sante_effectif e WHERE garant = %s
+                                                               AND {sql_programme(OREOLE, 'e.garant')} ORDER BY 1""", [garant, garant])
                        if l["police"]]
         plafonds = plafonds_par_college(cursor)
-        cursor.execute("""SELECT EXTRACT(YEAR FROM date_cloture)::int, EXTRACT(MONTH FROM date_cloture)::int, COUNT(*) FROM lephare_sante_prestation
-                          WHERE date_cloture BETWEEN %s AND %s GROUP BY 1, 2""", [du, au])
+        cursor.execute(f"""SELECT EXTRACT(YEAR FROM date_cloture)::int, EXTRACT(MONTH FROM date_cloture)::int, COUNT(*) FROM lephare_sante_prestation p
+                          WHERE date_cloture BETWEEN %s AND %s AND {oreole} GROUP BY 1, 2""", [du, au])
         actes_du_releve = {(a, m): n for a, m, n in cursor.fetchall()}
         medianes_du_releve = None
         if garant or police:
             # même médiane que _mediane() : percentile_cont 0,5 (moyenne des deux valeurs centrales pour un nombre pair)
-            cursor.execute("""SELECT acte, percentile_cont(0.5) WITHIN GROUP (ORDER BY mt_reclame) FROM lephare_sante_prestation
-                              WHERE date_cloture BETWEEN %s AND %s AND mt_reclame > 0 GROUP BY acte HAVING COUNT(*) >= %s""", [du, au, MIN_ACTES_MEDIANE])
+            cursor.execute(f"""SELECT acte, percentile_cont(0.5) WITHIN GROUP (ORDER BY mt_reclame) FROM lephare_sante_prestation p
+                              WHERE date_cloture BETWEEN %s AND %s AND mt_reclame > 0 AND {oreole} GROUP BY acte HAVING COUNT(*) >= %s""",
+                           [du, au, MIN_ACTES_MEDIANE])
             medianes_du_releve = {acte: Decimal(str(m)) for acte, m in cursor.fetchall()}
     importees = bool(liens)
     if police:

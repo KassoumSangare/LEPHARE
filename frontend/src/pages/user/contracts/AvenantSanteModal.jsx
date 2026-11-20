@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { aLeDroit } from '../../../utils/droits';
-import { ArrowRight, FilePlus2, PencilLine, Plus, Repeat, Trash2, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, FilePlus2, PencilLine, Plus, Repeat, Trash2, UserMinus, UserPlus, Users } from 'lucide-react';
 import { Modal } from '../../../components/common/Modal';
 import { santeApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
@@ -53,6 +53,7 @@ const formuleALaTaille = (formules, idOffre, taille) => {
 const MODES = [
   ['incorporation', UserPlus, 'Incorporer un membre'],
   ['famille', Users, 'Incorporer une famille'],
+  ['sortie', UserMinus, 'Retirer un membre'],
   ['formule', Repeat, 'Changer de formule'],
   ['ecran', PencilLine, 'Autre modification'],
 ];
@@ -88,6 +89,8 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const [idOffre, setIdOffre] = useState(0);
   const [membre, setMembre] = useState(MEMBRE_VIDE);
   const [nouvelleFamille, setNouvelleFamille] = useState(FAMILLE_VIDE);
+  // Retrait : membre qui sort (0 = toute la famille)
+  const [idAffilie, setIdAffilie] = useState(0);
   const [envoi, setEnvoi] = useState(false);
   const surprimes = reglagesMinene().surprimes;
 
@@ -238,6 +241,9 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
     } else if (mode === 'formule') {
       if (!famille) { toastError('Choisissez la famille qui change de formule.'); return; }
       envoiAvenant = { ...envoiAvenant, IdAdherent: famille.IdAdherent, IdOffre: Number(idOffre) || 0 };
+    } else if (mode === 'sortie') {
+      if (!famille) { toastError('Choisissez la famille concernée.'); return; }
+      envoiAvenant = { DateEffet: dateEffet, Sortie: { IdAdherent: famille.IdAdherent, IdAffilie: Number(idAffilie) || 0 } };
     }
     setEnvoi(true);
     try {
@@ -250,6 +256,9 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
         success(`Avenant ${r.NumeroDevis} créé : famille ${r.Famille} incorporée (${pluriel(Number(r.Personnes), 'personne')}`
           + `${r.Formule ? `, ${r.Formule}` : ''}). ${r.MessageMembre ? `${r.MessageMembre} ` : ''}`
           + `Prime de l'avenant : ${fcfa(r.PrimeTtc)} F TTC. Vérifiez-le dans l'écran Santé puis confirmez-le.`);
+      } else if (mode === 'sortie') {
+        success(`Avenant ${r.NumeroDevis} créé : ${r.SortieFamille ? `famille ${r.Famille} retirée` : `${r.Sortie} retiré(e) de la famille ${r.Famille}`}, `
+          + 'sans ristourne. Vérifiez-le dans l\'écran Santé puis confirmez-le.');
       } else if (mode === 'formule') {
         success(`Avenant ${r.NumeroDevis} créé${r.Formule ? ` : la famille ${r.Famille} passe de ${r.FormuleAvant} à ${r.Formule}` : ''}. `
           + 'Vérifiez la composition dans l\'écran Santé puis enregistrez le devis.');
@@ -268,7 +277,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
   const grille = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="medium" title="Incorporation ou changement de formule"
+    <Modal isOpen={isOpen} onClose={onClose} size="medium" title="Incorporation, retrait ou changement de formule"
       subtitle={contrat ? `Police ${contrat.NumeroPolice} - ${contrat.Client || ''}` : undefined}>
       {erreur && <div style={{ color: 'var(--accent-amber)', fontSize: '0.85rem' }}>{erreur}</div>}
       {!erreur && !donnees && <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Lecture du contrat…</div>}
@@ -311,7 +320,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 {champ('Date d\'émission',
                   <input type="date" className="form-control" value={aujourdhui()} readOnly disabled title="Date du jour, non modifiable" />,
                   'Date du jour, non imprimée sur les documents')}
-                {champ(mode === 'incorporation' || mode === 'famille' ? 'Date d\'incorporation *' : 'Date d\'effet de l\'avenant *',
+                {champ(mode === 'incorporation' || mode === 'famille' ? 'Date d\'incorporation *' : mode === 'sortie' ? 'Date de sortie *' : 'Date d\'effet de l\'avenant *',
                   <input type="date" className="form-control" value={dateEffet} min={contrat.DateEffet} max={contrat.DateExpiration}
                     onChange={(e) => setDateEffet(e.target.value)} />,
                   forfaitaire ? 'Au choix dans la période. Tarif forfaitaire : pas de prorata'
@@ -322,13 +331,20 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
               </div>
 
               <div style={grille}>
-                {(mode === 'incorporation' || mode === 'formule') && champ('Famille *',
-                  <select className="form-control" value={idAdherent} onChange={(e) => choisirFamille(e.target.value)}>
+                {(mode === 'incorporation' || mode === 'formule' || mode === 'sortie') && champ('Famille *',
+                  <select className="form-control" value={idAdherent} onChange={(e) => { choisirFamille(e.target.value); setIdAffilie(0); }}>
                     <option value={0}>Choisir la famille</option>
                     {donnees.Familles.map((f) => (
                       <option key={f.IdAdherent} value={f.IdAdherent}>
                         {f.Adherent} - {f.Option || libelleFormule(f)} - {pluriel(Number(f.Personnes), 'personne')}
                       </option>
+                    ))}
+                  </select>)}
+                {mode === 'sortie' && famille && champ('Personne qui sort *',
+                  <select className="form-control" value={idAffilie} onChange={(e) => setIdAffilie(Number(e.target.value))}>
+                    <option value={0}>Toute la famille - {pluriel(Number(famille.Personnes), 'personne')}</option>
+                    {(famille.Membres || []).filter((m) => String(m.Lien).toUpperCase() !== 'A').map((m) => (
+                      <option key={m.IdAffilie} value={m.IdAffilie}>{m.Nom} - {m.Lien === 'C' ? 'conjoint(e)' : 'enfant'}</option>
                     ))}
                   </select>)}
                 {mode === 'formule' && famille && champ('Nouvelle formule',
@@ -585,7 +601,7 @@ export const AvenantSanteModal = ({ isOpen, onClose, idContrat }) => {
                 <button type="button" className="btn btn-primary" onClick={creer} disabled={envoi || (mode === 'incorporation' && Boolean(famille) && !apres)
                   || (mode === 'famille' && Number(nouvelleFamille.IdOffre) > 0 && !formuleRetenue)}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <FilePlus2 size={15} /> {envoi ? 'Création…' : mode === 'incorporation' || mode === 'famille' ? 'Incorporer' : 'Créer l\'avenant'}
+                  <FilePlus2 size={15} /> {envoi ? 'Création…' : mode === 'incorporation' || mode === 'famille' ? 'Incorporer' : mode === 'sortie' ? 'Retirer' : 'Créer l\'avenant'}
                 </button>
               </div>
             </>

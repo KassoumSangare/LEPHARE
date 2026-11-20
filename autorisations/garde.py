@@ -122,7 +122,13 @@ def instantane_contrat_administration(idcontrat):
         .order_by("pk")
         .values()
     )
-    return {"contrat": contrat, "details": details, "garanties": garanties}
+    # Quittance : ses montants suivent les primes recalculées (production/recalcul_contrat.py)
+    quittance = _une_ligne(
+        """SELECT q.idquittance, q.numeroquittance, q.primenette, q.accessoire, q.taxe, q.primettc, q.mt_encaisse, q.encaissee
+           FROM stdquittance q JOIN stdcontrat c ON c.idquittance = q.idquittance WHERE c.idcontrat = %s""",
+        [idcontrat],
+    )
+    return {"contrat": contrat, "details": details, "garanties": garanties, "quittance": quittance}
 
 
 def instantane_contrat_suppression(idcontrat):
@@ -176,6 +182,14 @@ def _banque_creation(request, view):
     """Banque créée depuis la caisse (bouton « + » de la banque émettrice) par qui peut encaisser, sinon depuis
     l'administration (paramétrage général)."""
     return "encaissements.create" if a_le_droit(request.user, "encaissements.create") else "parametrage.update"
+
+
+def _avenant_police(request, view):
+    """Avenant de la police (production/avenants.py) : la résiliation relève du droit d'annulation ; le retrait et le
+    changement d'immatriculation du droit d'avenant."""
+    donnees = _donnees(request)
+    type_avenant = str(donnees.get("Type") or "").upper() if isinstance(donnees, dict) else ""
+    return "contrats.cancel" if type_avenant == "RES" else "contrats.avenant"
 
 
 def _correction_encaissement(request, view):
@@ -374,12 +388,18 @@ REGLES = [
     R("GET", r"minene/devis/\d+/?$", "devis.view"),
     R("POST", r"renouvellement/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"incorporation/(?P<pk>\d+)/?$", "contrats.avenant", objet="contrat", cles=("pk",), instantane=instantane_contrat),
+    # Retrait, résiliation, changement d'immatriculation (production/avenants.py) : préparation, montants, émission
+    R("GET", r"avenants/(document/|historique/)?\d+/?$", "contrats.view"),
+    R("POST", r"avenants/\d+/simulation/?$", "contrats.view", lecture=True),
+    R("POST", r"avenants/(?P<pk>\d+)/?$", _avenant_police, objet="contrat", cles=("pk",), instantane=instantane_contrat),
     R("POST", r"avenant/annulation", "contrats.cancel", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("POST", r"avenant/", "contrats.avenant", objet="contrat", cles=CLES_CONTRAT, instantane=instantane_contrat),
     R("GET", r"contrat/administration/?$", "contrats.admin_update"),
     R("GET", r"contrat/\d+/administration/?$", "contrats.admin_update"),
     R("PATCH", r"contrat/(?P<pk>\d+)/administration/?$", "contrats.admin_update",
       objet="contrat", cles=("pk",), instantane=instantane_contrat_administration),
+    # Montants recalculés montrés avant l'enregistrement : saisies écrites puis annulées, rien n'est gardé
+    R("POST", r"contrat/\d+/administration/simulation/?$", "contrats.admin_update", lecture=True),
     R("POST", r"contrat/(?P<pk>\d+)/attacher_piece_jointe", "contrats.update", objet="contrat", cles=("pk",)),
     R("POST,PUT,PATCH,DELETE", r"contratdetgarantie/", "contrats.update", objet="garantie_contrat", cles=("pk",)),
     R("GET", r"(contrat|contratdetail|garantiecontrat|garantiesouscritecontrat|quittancecontrat|listevehiculecontrat|"

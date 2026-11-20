@@ -26,17 +26,23 @@ from rest_framework import permissions, status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 
+from production.minene_package import SQL_MINENE
 from production.renouvellement import AUTHENTIFICATION, _lignes
 
-from .consommations import CHAMPS_EFFECTIF, SOURCE_SOUSCRIPTIONS, _iso, _nouveau_releve, _valeur
+from .consommations import CHAMPS_EFFECTIF, MINENE, OREOLE, SOURCE_SOUSCRIPTIONS, _iso, _nouveau_releve, _valeur, programme_demande, sql_programme
 
 GARANT_PAR_DEFAUT = "OREOLE"
+# Polices MINENE Santé (demande du 2026-11-19) : leurs personnes entrent aussi dans l'effectif, sous le garant des états du gestionnaire
+GARANT_MINENE = "OREOLEMINENE"
 ID_PRODUIT_SANTE = 5
 
-SQL_PERSONNES = """
+SQL_PERSONNES = f"""
     WITH polices AS (
-        SELECT DISTINCT c.numeropolice FROM lephare_oreole_package p JOIN stdcontrat c ON c.iddevis = p.iddevis_sante
-        WHERE COALESCE(c.idcontratannulation, 0) = 0),
+        SELECT DISTINCT c.numeropolice, '{GARANT_PAR_DEFAUT}' AS garant_defaut FROM lephare_oreole_package p JOIN stdcontrat c ON c.iddevis = p.iddevis_sante
+        WHERE COALESCE(c.idcontratannulation, 0) = 0
+        UNION
+        SELECT DISTINCT c.numeropolice, '{GARANT_MINENE}' FROM stdcontrat c JOIN stddevis d ON d.iddevis = c.iddevis
+        WHERE c.idproduit = 5 AND COALESCE(c.idcontratannulation, 0) = 0 AND {SQL_MINENE}),
     contrats AS (
         SELECT c.idcontrat, c.iddevis, c.numeropolice, c.idclient, c.dateeffet::date AS effet, c.dateexpiration::date AS echeance, a.codeavenant
         FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant JOIN polices po ON po.numeropolice = c.numeropolice
@@ -45,6 +51,7 @@ SQL_PERSONNES = """
         SELECT DISTINCT ON (numeropolice) numeropolice, effet, echeance, idclient FROM contrats WHERE codeavenant IN ('AFN', 'REN')
         ORDER BY numeropolice, effet DESC, idcontrat DESC)
     SELECT k.numeropolice AS police_lephare, k.codeavenant, k.effet AS effet_contrat, b.echeance, b.effet AS debut_periode,
+           (SELECT MIN(po.garant_defaut) FROM polices po WHERE po.numeropolice = k.numeropolice) AS garant_defaut,
            f.idaffilie, TRIM(COALESCE(f.lien, '')) AS lien, TRIM(COALESCE(f.matricule, '')) AS matricule, f.nom, f.prenom, f.sexe,
            f.datenaissance::date AS date_naissance, f.dateadhesion::date AS adhesion, f.datesortie::date AS sortie, COALESCE(f.actif, TRUE) AS actif,
            TRIM(COALESCE(h.matricule, '')) AS matricule_adherent,
@@ -84,6 +91,7 @@ def personnes_souscrites(lignes, effectif, aujourd_hui):
         matricule = _matricule(l["matricule"]) or (_matricule(l["matricule_adherent"]) if lien == "A" else None)
         fiche = {
             "police_lephare": l["police_lephare"], "souscripteur": l["souscripteur"], "nom": (l["nom"] or "").strip(), "prenoms": (l["prenom"] or "").strip(),
+            "garant_defaut": l.get("garant_defaut") or GARANT_PAR_DEFAUT,
             "statut": lien if lien in ("A", "C", "E") else "E", "genre": (l["sexe"] or "").strip().upper()[:1],
             "date_naissance": l["date_naissance"], "date_effet": l["adhesion"] or l["effet_contrat"],
             "matricule_assure": _matricule(l["matricule_adherent"]) or matricule,
@@ -107,7 +115,7 @@ def personnes_souscrites(lignes, effectif, aujourd_hui):
         for m in matricules:
             p = personnes[m]
             p["police"] = attributs["police"] or p["souscripteur"]
-            p["garant"] = attributs["garant"] or GARANT_PAR_DEFAUT
+            p["garant"] = attributs["garant"] or p.get("garant_defaut") or GARANT_PAR_DEFAUT
             p["college"] = attributs["college"]
     return personnes, list(sans_matricule.values())
 
@@ -117,15 +125,18 @@ def _egal(a, b):
     return (a.strip() if isinstance(a, str) else a) == (b.strip() if isinstance(b, str) else b)
 
 
-def _etat(cursor, aujourd_hui=None):
-    """Personnes souscrites, effectif actuel et ce qu'il faudrait écrire. N'écrit rien."""
+def _etat(cursor, aujourd_hui=None, programme=OREOLE):
+    """Personnes souscrites d'un programme (Oreole Santé ou MINENE Santé, jamais les deux), effectif actuel de ce programme et ce qu'il
+    faudrait écrire. N'écrit rien."""
     aujourd_hui = aujourd_hui or dt.date.today()
     cursor.execute("SELECT to_regclass('public.lephare_oreole_package') IS NOT NULL")
     if not cursor.fetchone()[0]:
         return None
-    lignes = _lignes(cursor, SQL_PERSONNES, [ID_PRODUIT_SANTE])
-    effectif = {e["matricule_beneficiaire"]: e for e in _lignes(cursor, """
-        SELECT e.*, (r.fichier = %s) AS de_souscription FROM lephare_sante_effectif e LEFT JOIN lephare_sante_releve r ON r.idreleve = e.idreleve""",
+    minene = programme == MINENE
+    lignes = [l for l in _lignes(cursor, SQL_PERSONNES, [ID_PRODUIT_SANTE]) if (l.get("garant_defaut") == GARANT_MINENE) == minene]
+    effectif = {e["matricule_beneficiaire"]: e for e in _lignes(cursor, f"""
+        SELECT e.*, (r.fichier = %s) AS de_souscription FROM lephare_sante_effectif e LEFT JOIN lephare_sante_releve r ON r.idreleve = e.idreleve
+        WHERE {sql_programme(programme, 'e.garant')}""",
         [SOURCE_SOUSCRIPTIONS])}
     personnes, sans_matricule = personnes_souscrites(lignes, effectif, aujourd_hui)
     a_ajouter, a_mettre_a_jour, connues = [], [], 0
@@ -149,9 +160,9 @@ def _fiche(p):
             "Actif": p["actif"]}
 
 
-def apercu():
+def apercu(programme=OREOLE):
     with connection.cursor() as cursor:
-        etat = _etat(cursor)
+        etat = _etat(cursor, programme=programme)
     if etat is None:
         return {"Disponible": False, "Message": "La branche Oreole Santé n'est pas installée sur cette base (migration production 0205)."}
     par_entreprise = defaultdict(lambda: {"Personnes": 0, "Connues": 0, "Nouvelles": 0})
@@ -168,10 +179,10 @@ def apercu():
     }
 
 
-def ajouter(user):
-    """Ajoute à l'effectif les personnes souscrites qu'il ne connaît pas, met à jour celles ajoutées d'ici. Une transaction."""
+def ajouter(user, programme=OREOLE):
+    """Ajoute à l'effectif les personnes souscrites qu'il ne connaît pas, met à jour celles ajoutées d'ici. Une transaction, un programme."""
     with transaction.atomic(), connection.cursor() as cursor:
-        etat = _etat(cursor)
+        etat = _etat(cursor, programme=programme)
         if etat is None:
             raise ValueError("La branche Oreole Santé n'est pas installée sur cette base (migration production 0205).")
         ecritures = etat["a_ajouter"] + etat["a_mettre_a_jour"]
@@ -200,8 +211,8 @@ def ajouter(user):
 @permission_classes([permissions.IsAuthenticated])
 def vue_souscriptions(request):
     if request.method == "GET":
-        return Response(apercu())
+        return Response(apercu(programme_demande(request.query_params)))
     try:
-        return Response(ajouter(request.user))
+        return Response(ajouter(request.user, programme_demande(request.data)))
     except ValueError as erreur:
         return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)

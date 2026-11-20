@@ -109,9 +109,9 @@ const documentListe = (d) => documentHtml('Liste des adhérents Oreole Santé', 
   <h1>LISTE DES ADHÉRENTS : OREOLE SANTÉ</h1>
   ${enTete(d)}
   <table style="margin-top:8px">
-    <tr><th>N°</th><th>Matricule</th><th>Noms et prénoms</th><th>Date de naissance</th><th class="m">Personnes</th></tr>
-    ${d.Adherents.map((a, i) => `<tr><td>${i + 1}</td><td>${echapper(a.Matricule)}</td><td>${echapper(`${a.Nom} ${a.Prenoms}`.trim())}${(a.Ayants || []).map((x) => `<br /><small>${x.Lien === 'C' ? 'Conjoint' : 'Enfant'} : ${echapper(`${x.Nom} ${x.Prenoms}`.trim())}${x.DateNaissance ? `, ${dateFr(x.DateNaissance)}` : ''}</small>`).join('')}</td><td>${dateFr(a.DateNaissance)}</td><td class="m">${a.Personnes}</td></tr>`).join('')}
-    <tr class="total"><td colspan="4">Total : ${d.Adherents.length} adhérent${d.Adherents.length > 1 ? 's' : ''}</td><td class="m">${d.Adherents.reduce((t, a) => t + (a.Personnes || 1), 0)}</td></tr>
+    <tr><th>N°</th><th>Matricule</th><th>Noms et prénoms</th><th>Date de naissance</th><th class="m">Prime</th></tr>
+    ${d.Adherents.map((a, i) => `<tr><td>${i + 1}</td><td>${echapper(a.Matricule)}</td><td>${echapper(`${a.Nom} ${a.Prenoms}`.trim())}${(a.Ayants || []).map((x) => `<br /><small>${x.Lien === 'C' ? 'Conjoint' : 'Enfant'} : ${echapper(`${x.Nom} ${x.Prenoms}`.trim())}${x.DateNaissance ? `, ${dateFr(x.DateNaissance)}` : ''}</small>`).join('')}</td><td>${dateFr(a.DateNaissance)}</td><td class="m">${montant(a.Cotisation)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="4">Total : ${d.Adherents.length} adhérent${d.Adherents.length > 1 ? 's' : ''}</td><td class="m">${montant(d.Adherents.reduce((t, a) => t + (a.Cotisation || 0), 0))}</td></tr>
   </table>
 `);
 
