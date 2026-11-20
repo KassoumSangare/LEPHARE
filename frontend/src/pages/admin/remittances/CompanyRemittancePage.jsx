@@ -482,23 +482,35 @@ export const CompanyRemittancePage = () => {
     const police = premiere?.NumeroPolice || '';
     return premiere && annee ? `${police.slice(0, 4)} ${mois}${annee.slice(2)} B ····` : 'courtier · MMAA · B · n°';
   };
-  // « Tout cocher » porte sur les lignes affichées (résultat de la recherche)
-  const toutCoche = lignesVisibles.length > 0 && lignesVisibles.every((l) => selection.has(l.IdDetailEncaissement));
-  const basculer = (id) => {
-    if (!compagnie) return;
+  // Toutes les compagnies affichées : un bordereau ne concerne qu'une compagnie, celle de la première prime cochée ; les
+  // primes des autres compagnies restent grisées tant qu'elle est cochée
+  const compagnieCochee = cochees.length ? String(cochees[0].IdCompagnie ?? '') : '';
+  const compagnieBordereau = compagnie || compagnieCochee;
+  const nomBordereau = compagnies.find((c) => String(c.IdCompagnie ?? c.id) === String(compagnieBordereau))?.RaisonSociale || '';
+  const autreCompagnie = (l) => Boolean(!compagnie && compagnieCochee && String(l.IdCompagnie ?? '') !== compagnieCochee);
+  // « Tout cocher » porte sur les lignes affichées (résultat de la recherche) de la compagnie du bordereau
+  const lignesCochables = useMemo(() => {
+    if (compagnie) return lignesVisibles;
+    if (compagnieCochee) return lignesVisibles.filter((l) => String(l.IdCompagnie ?? '') === compagnieCochee);
+    return new Set(lignesVisibles.map((l) => String(l.IdCompagnie ?? ''))).size === 1 ? lignesVisibles : [];
+  }, [compagnie, compagnieCochee, lignesVisibles]);
+  const toutCoche = lignesCochables.length > 0 && lignesCochables.every((l) => selection.has(l.IdDetailEncaissement));
+  const basculer = (l) => {
+    if (autreCompagnie(l)) return;
+    const id = l.IdDetailEncaissement;
     setSelection((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
   const toutBasculer = () => {
-    if (!compagnie) return;
+    if (!lignesCochables.length) return;
     setSelection((s) => {
       const n = new Set(s);
-      lignesVisibles.forEach((l) => (toutCoche ? n.delete(l.IdDetailEncaissement) : n.add(l.IdDetailEncaissement)));
+      lignesCochables.forEach((l) => (toutCoche ? n.delete(l.IdDetailEncaissement) : n.add(l.IdDetailEncaissement)));
       return n;
     });
   };
 
   const emettre = async () => {
-    if (!compagnie) return;
+    if (!compagnieBordereau) return;
     const sansPolice = cochees.filter((l) => !l.PoliceCompagnie).length;
     const details = [
       aReverser.length ? `BORDEREAU DE REVERSEMENT DE PRIME : ${aReverser.length} prime(s), ${fcfa(somme(aReverser, 'ResteAReverser'))} F à reverser par le cabinet` : '',
@@ -508,7 +520,7 @@ export const CompanyRemittancePage = () => {
     ].filter(Boolean);
     const ok = await confirmer({
       titre: aReverser.length && directes.length ? 'Générer deux bordereaux et leurs courriers' : 'Générer le bordereau et son courrier',
-      message: `${nomCompagnie} - bordereau(x) du ${dateFr(dateBordereau)}`,
+      message: `${nomBordereau} - bordereau(x) du ${dateFr(dateBordereau)}`,
       consequences: details.join('\n'),
       confirmer: 'Générer',
       ton: sansPolice ? 'attention' : 'info',
@@ -517,13 +529,13 @@ export const CompanyRemittancePage = () => {
     setEnvoi(true);
     try {
       const resultat = await financeApi.emettreBordereaux({
-        IdCompagnie: Number(compagnie),
+        IdCompagnie: Number(compagnieBordereau),
         DateBordereau: dateBordereau,
         Lignes: cochees.map((l) => l.IdDetailEncaissement),
         Paiement: aReverser.length && paiement.IdMode ? paiement : null,
       });
       const emis = resultat.Bordereaux || [];
-      success(`${emis.length > 1 ? 'Bordereaux' : 'Bordereau'} ${emis.map((b) => `N° ${b.Numero}`).join(' et ')} généré${emis.length > 1 ? 's' : ''} pour ${nomCompagnie}.`);
+      success(`${emis.length > 1 ? 'Bordereaux' : 'Bordereau'} ${emis.map((b) => `N° ${b.Numero}`).join(' et ')} généré${emis.length > 1 ? 's' : ''} pour ${nomBordereau}.`);
       if (emis.some((b) => !b.Direct && !b.Valide)) warning('Bordereau de reversement : saisissez le paiement du cabinet avant d\'imprimer le courrier.');
       setPaiement(paiementVide());
       setOuvert(emis[0] || null);
@@ -598,9 +610,6 @@ export const CompanyRemittancePage = () => {
 
       {onglet === 'a_transmettre' && (
         <div className="glass-panel" style={{ padding: '1rem 1.1rem' }}>
-          {!compagnie && <p style={{ margin: '0 0 0.8rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-            Toutes les compagnies sont affichées pour faciliter la recherche. Choisissez une compagnie pour sélectionner des quittances et émettre un bordereau.
-          </p>}
           {/* Barre d'émission en tête de liste : toujours visible, elle s'éclaire dès qu'une prime est cochée */}
           <div style={{
             position: 'sticky', top: 0, zIndex: 3, marginBottom: '0.9rem', padding: '0.85rem 1rem', borderRadius: 'var(--radius-lg, 10px)',
@@ -614,7 +623,7 @@ export const CompanyRemittancePage = () => {
                 {cochees.length ? (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-                      <strong style={{ fontSize: '0.98rem' }}>{cochees.length} prime{cochees.length > 1 ? 's' : ''} cochée{cochees.length > 1 ? 's' : ''}</strong>
+                      <strong style={{ fontSize: '0.98rem' }}>{cochees.length} prime{cochees.length > 1 ? 's' : ''} cochée{cochees.length > 1 ? 's' : ''}{!compagnie && nomBordereau ? ` - ${nomBordereau}` : ''}</strong>
                       <button type="button" onClick={() => setSelection(new Set())}
                         style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--primary-400, #60a5fa)', fontSize: '0.8rem', textDecoration: 'underline' }}>
                         Tout décocher
@@ -635,7 +644,7 @@ export const CompanyRemittancePage = () => {
                   <span style={{ fontSize: '0.86rem', color: 'var(--text-muted)' }}>
                     {compagnie
                       ? 'Cochez les primes à reverser à la compagnie : le bordereau et son courrier se préparent ici, le numéro est attribué à la génération.'
-                      : 'Choisissez une compagnie pour sélectionner les primes et préparer un bordereau.'}
+                      : 'Cochez les primes à reverser : le bordereau est établi pour la compagnie de la première prime cochée.'}
                   </span>
                 )}
               </div>
@@ -674,7 +683,8 @@ export const CompanyRemittancePage = () => {
             <table className="data-table" style={{ fontSize: '0.82rem' }}>
               <thead>
                 <tr>
-                  <th><input type="checkbox" checked={toutCoche} onChange={toutBasculer} aria-label="Tout cocher" disabled={!compagnie} /></th>
+                  <th><input type="checkbox" checked={toutCoche} onChange={toutBasculer} aria-label="Tout cocher" disabled={!lignesCochables.length}
+                    title={!lignesCochables.length && lignesVisibles.length ? 'Plusieurs compagnies affichées : cochez une prime ou choisissez une compagnie' : undefined} /></th>
                   {!compagnie && <th>Compagnie</th>}
                   <th>Date d'encaissement</th><th>Client / n° de quittance</th><th>Branche</th><th>N° de police / avenant</th>
                   <th>Moyen de paiement du client</th><th>Règlement à l'ordre de</th><th>Statut du paiement</th>
@@ -687,7 +697,8 @@ export const CompanyRemittancePage = () => {
                   const coche = selection.has(l.IdDetailEncaissement);
                   return (
                     <tr key={l.IdDetailEncaissement} style={coche ? { background: 'var(--primary-glow)' } : undefined}>
-                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l.IdDetailEncaissement)} aria-label={`Reverser la quittance ${l.NumeroQuittance}`} disabled={!compagnie} /></td>
+                      <td><input type="checkbox" checked={coche} onChange={() => basculer(l)} aria-label={`Reverser la quittance ${l.NumeroQuittance}`} disabled={autreCompagnie(l)}
+                        title={autreCompagnie(l) ? `Un bordereau ne concerne qu'une compagnie : des primes de ${nomBordereau} sont cochées` : undefined} /></td>
                       {!compagnie && <td>{compagnies.find((c) => String(c.IdCompagnie ?? c.id) === String(l.IdCompagnie))?.RaisonSociale || ''}</td>}
                       <td>{dateFr(l.DateEncaissement)}</td>
                       <td>{l.Client}<div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{l.NumeroQuittance}</div></td>
@@ -710,7 +721,7 @@ export const CompanyRemittancePage = () => {
                 })}
                 {!lignesVisibles.length && (
                   <tr><td colSpan={compagnie ? 11 : 12} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
-                    {chargement ? 'Chargement…' : (lignes.length ? 'Aucune prime ne correspond à la recherche.' : `Aucune prime encaissée à reverser à ${nomCompagnie || 'cette compagnie'}.`)}
+                    {chargement ? 'Chargement…' : (lignes.length ? 'Aucune prime ne correspond à la recherche.' : (nomCompagnie ? `Aucune prime encaissée à reverser à ${nomCompagnie}.` : 'Aucune prime encaissée à reverser.'))}
                   </td></tr>
                 )}
               </tbody>
