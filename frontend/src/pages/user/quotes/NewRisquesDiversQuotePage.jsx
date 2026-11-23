@@ -23,6 +23,7 @@ import { ChampPropose, propositionMontant, propositionTaux, propositionsUsuelles
 import { arrondirMontant, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { Modal } from '../../../components/common/Modal';
 import { confirmer } from '../../../utils/dialogue';
 
@@ -243,6 +244,27 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
   const proposeesGarantie = (id, cle, options) => (saisieManuelle ? propositionsUsuelles(usuelles.Garanties?.[String(id)]?.[cle], options) : []);
   // Devis repris d'URANUS sans ligne de détail en base
   const [avertissementReprise, setAvertissementReprise] = useState('');
+
+  // Saisie d'un nouveau devis RC ou MRP mise en brouillon (registre des devis). Garanties et offre des garanties sont
+  // gardées ensemble : l'étape Garanties ne les recharge pas à la reprise.
+  const brouillon = useBrouillon({
+    type: estRc ? 'DEVIS_RC' : 'DEVIS_MRP', etape: step, setEtape: setStep,
+    champs: {
+      compagnieId: [compagnieId, setCompagnieId], idTarif: [idTarif, setIdTarif], idOffre: [idOffre, setIdOffre], dureeId: [dureeId, setDureeId],
+      termeId: [termeId, setTermeId], dateEffet: [dateEffet, setDateEffet], expirationPersonnalisee: [expirationPersonnalisee, setExpirationPersonnalisee],
+      reduction: [reduction, setReduction], numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie],
+      numeroPoliceConnexe: [numeroPoliceConnexe, setNumeroPoliceConnexe], activite: [activite, setActivite],
+      idDomaineActivite: [idDomaineActivite, setIdDomaineActivite], localisation: [localisation, setLocalisation], dateDebut: [dateDebut, setDateDebut],
+      nombreParticipants: [nombreParticipants, setNombreParticipants], assiettePrime: [assiettePrime, setAssiettePrime], tauxPrime: [tauxPrime, setTauxPrime],
+      capitalDommageCorporel: [capitalDommageCorporel, setCapitalDommageCorporel], capitalIntoxication: [capitalIntoxication, setCapitalIntoxication],
+      capitalDommageMateriel: [capitalDommageMateriel, setCapitalDommageMateriel], garanties: [garanties, setGaranties],
+      offreDesGaranties: [offreDesGaranties, setOffreDesGaranties], primeTarif: [primeTarif, setPrimeTarif], primeNette: [primeNette, setPrimeNette],
+      accessoire: [accessoire, setAccessoire], taxe: [taxe, setTaxe], accessoireManuel: [accessoireManuel, setAccessoireManuel],
+      taxeManuelle: [taxeManuelle, setTaxeManuelle], souscripteur: [souscripteur, setSouscripteur], assureDifferent: [assureDifferent, setAssureDifferent],
+      assureChoisi: [assureChoisi, setAssureChoisi], telephoneAssure: [telephoneAssure, setTelephoneAssure], adresseGeo: [adresseGeo, setAdresseGeo],
+    },
+    libelle: () => [souscripteur?.Nom, activite || localisation].filter(Boolean).join(' - '),
+  });
 
   // -------------------------------------------------------------
   // RÉFÉRENTIELS
@@ -755,6 +777,7 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
         ? `Devis ${infos.libelle} N° ${devisEnregistre?.numerodevis || devisId} modifié.`
         : `Devis ${infos.libelle} N° ${devisEnregistre?.numerodevis || devisId} enregistré.`);
       setCreatedQuote(devisEnregistre || saved);
+      await brouillon.supprimer();
     } catch (err) {
       toastError(`Erreur lors de l'enregistrement du devis ${infos.court} : ${messageErreurApi(err)}`);
     } finally {
@@ -881,6 +904,9 @@ export const NewRisquesDiversQuotePage = ({ produit }) => {
 
       {/* ÉTAPES */}
       <EtapesDevis etapes={ETAPES_RISQUES_DIVERS} etape={step} onAller={allerA} couleur={couleur} />
+      {!editIddevisParam && !idDevisEdite && !policeMineneParam && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={isSubmitting} /></div>
+      )}
 
       {avertissementReprise && (
         <div style={alerte('var(--accent-amber)')}>

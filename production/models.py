@@ -47,6 +47,16 @@ class Brouillon(models.Model):
     TYPES = [
         ("DEVIS_AUTO", "Devis automobile"),
         ("DEVIS_IA", "Devis Individuelle Accidents"),
+        ("DEVIS_SANTE", "Devis Santé"),
+        ("DEVIS_OREOLE", "Devis Oreole Santé"),
+        ("DEVIS_AFA", "Devis Assistance funéraire"),
+        ("DEVIS_MRH", "Devis Multirisque habitation"),
+        ("DEVIS_RC", "Devis Responsabilité civile"),
+        ("DEVIS_MRP", "Devis Multirisque professionnelle"),
+        ("DEVIS_TOUS_DOMMAGES", "Devis Tous dommages"),
+        ("DEVIS_VOYAGE", "Devis Voyage"),
+        ("DEVIS_TRANSPORT", "Devis Transport GUCE"),
+        ("DEVIS_TRANSPORT_HORS_GUCE", "Devis Transport hors GUCE"),
         ("AVENANT", "Modification de contrat"),
     ]
 

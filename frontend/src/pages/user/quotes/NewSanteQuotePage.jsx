@@ -31,6 +31,7 @@ import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevi
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { formulesSante, parametre, reglagesMinene, compagnieParDefaut } from '../../../utils/parametrage';
 import {
   ID_TERME_PAR_DEFAUT,
@@ -276,6 +277,33 @@ export const NewSanteQuotePage = () => {
   const [repartition, setRepartition] = useState(null);
   const [repartitionErreur, setRepartitionErreur] = useState('');
 
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis) : en-tête du contrat, primes saisies et client.
+  // Couvertures, adhérents et affiliés sont déjà écrits sur le devis en cours (idDevis) : la reprise les relit.
+  const brouillon = useBrouillon({
+    type: 'DEVIS_SANTE', etape: step, setEtape: setStep, iddevis: idDevis,
+    champs: {
+      numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie], typeContrat: [typeContrat, setTypeContrat],
+      gestionnaire: [gestionnaire, setGestionnaire], compagnieId: [compagnieId, setCompagnieId], idTarif: [idTarif, setIdTarif],
+      ajustement: [ajustement, setAjustement], taux: [taux, setTaux], termeId: [termeId, setTermeId], dureeId: [dureeId, setDureeId],
+      dateEffet: [dateEffet, setDateEffet], expirationLibre: [expirationLibre, setExpirationLibre], idOffre: [idOffre, setIdOffre],
+      idCollege: [idCollege, setIdCollege], idZone: [idZone, setIdZone], idDevis: [idDevis, setIdDevis], clientId: [clientId, setClientId],
+      rechercheClient: [rechercheClient, setRechercheClient], classerFamilles: [classerFamilles, setClasserFamilles],
+      primesDuFichier: [primesDuFichier, setPrimesDuFichier], primeFamille: [primeFamille, setPrimeFamille], primeAffilie: [primeAffilie, setPrimeAffilie],
+      primeGlobale: [primeGlobale, setPrimeGlobale], montantSurprime: [montantSurprime, setMontantSurprime],
+      accessoireManuel: [accessoireManuel, setAccessoireManuel], avecApporteur: [avecApporteur, setAvecApporteur], choixMinene: [choixMinene, setChoixMinene],
+    },
+    apresReprise: (d) => {
+      if (!Number(d.idDevis)) return;
+      santeApi.lireDevis(Number(d.idDevis))
+        .then((donnees) => {
+          if (donnees?.devis?.confirme) { toastError('Le devis de ce brouillon a déjà été confirmé : supprimez le brouillon.'); return; }
+          appliquerSaisie(donnees);
+        })
+        .catch((err) => toastError(`Couvertures et adhérents du brouillon non relus : ${messageErreurApi(err)}`));
+    },
+    libelle: () => [rechercheClient, `${adherents.length} adhérent${adherents.length > 1 ? 's' : ''}`].filter(Boolean).join(' - '),
+  });
+
   const tarifChoisi = tarifs.find((t) => Number(t.IdTarif) === Number(idTarif));
   const estMinene = String(tarifChoisi?.CodeCategorie || '') === CODE_CATEGORIE_MINENE;
   const estClassique = !estMinene && (Number(idTarif) === ID_TARIF_SANTE_CLASSIQUE || /classique/i.test(tarifChoisi?.LibelleTarif || ''));
@@ -351,7 +379,8 @@ export const NewSanteQuotePage = () => {
       setTypesContrat(types || []);
       setZones(zns || []);
       setLiens(lns || []);
-      if (!editParam) {
+      // Brouillon repris : l'offre commerciale et le type de contrat viennent du brouillon
+      if (!editParam && !searchParams.get('brouillon')) {
         if (trfs?.[0]) setIdTarif(Number(trfs[0].IdTarif));
         if (types?.[0]) setTypeContrat(Number(types[0].id_type_contrat));
       }
@@ -825,6 +854,7 @@ export const NewSanteQuotePage = () => {
     const libelleLies = lies.length ? `, avec ${lies.length > 1 ? 'ses devis MINENE liés' : 'son devis MINENE lié'} (${lies.join(', ')})` : '';
     success(`Devis Santé N° ${res.numero_devis} ${editParam ? 'modifié' : 'enregistré'}${libelleLies}.`);
     if (res.avertissement_minene) warning(res.avertissement_minene);
+    await brouillon.supprimer();
     const devis = await quoteApi.getQuote(res.devis_id).catch(() => null);
     if (devis) setCreatedQuote(devis);
   }, 'Devis Santé non enregistré');
@@ -928,6 +958,7 @@ export const NewSanteQuotePage = () => {
               {e.label}
             </button>
           ))}
+          {!editParam && !lectureSeule && <BoutonBrouillon brouillon={brouillon} disabled={occupe} />}
         </div>
       </div>
 

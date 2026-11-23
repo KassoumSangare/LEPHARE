@@ -243,6 +243,16 @@ class OffreDesLignesDuFichier(SimpleTestCase):
         self.assertEqual((lignes[0]["IdOffre"], lignes[0]["OffreExacte"], lignes[0]["PartIA"], lignes[0]["PartAFA"]), (192, True, 6000, 7500))
         self.assertEqual(lignes[1]["IdOffre"], 192)
 
+    def test_ligne_de_total_sans_libelle_ignoree(self):
+        # Modèle d'effectif du 2026-11-23 : total en bas de colonnes, sans nom ni matricule (3 = nombre d'adhérents sous STATUT)
+        lignes = self._lignes(["1725979", "KOFFI", "Jean", 3, 720000, 6000, 7500], ["1725981", "YAO", "M'bra", 3, 436800, 6000, 7500],
+                              ["2053033", "YAPO", "Hermann", 3, 418600, 6000, 7500], [None, None, None, None, 1575400, 18000, 22500])
+        self.assertEqual([l["Cotisation"] for l in lignes], [720000, 436800, 418600])
+
+    def test_libelle_total_hors_premiere_colonne(self):
+        lignes = self._lignes(["0000001", "A", "Un", 3, 436800, 6000, 7500], [None, "TOTAL", None, None, 436800, 6000, 7500])
+        self.assertEqual(len(lignes), 1)
+
 
 class ReglementCommun(SimpleTestCase):
     QUITTANCES = [

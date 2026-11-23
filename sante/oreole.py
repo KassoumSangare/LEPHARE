@@ -1496,8 +1496,8 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
             indice = colonnes.get(cle)
             return cellules[indice] if indice is not None and indice < len(cellules) else None
 
-        premier = _texte(cellules[0] if cellules else "").upper()
-        if premier.startswith("TOTAL"):
+        # Ligne de total : libellé « TOTAL » dans n'importe quelle colonne (pas seulement la première)
+        if any(isinstance(c, str) and _texte(c).upper().startswith(("TOTAL", "SOUS-TOTAL", "SOUS TOTAL")) for c in cellules):
             break
         if "nomcomplet" in colonnes:
             morceaux = _texte(v("nomcomplet")).split(" ", 1)
@@ -1508,6 +1508,10 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
         if not nom and not prenoms and cotisation_brute in (None, ""):
             continue
         matricule = _texte(v("matricule"))
+        # Ligne sans nom, prénoms ni matricule mais avec des montants : total ou sous-total sans libellé (modèle d'effectif du
+        # 2026-11-23 : 1 575 400 F en bas de colonne lus comme un 4e adhérent, la cotisation à l'écran doublait celle du fichier)
+        if not nom and not prenoms and not matricule:
+            continue
         anomalies_ligne = []
         try:
             cotisation = _montant_fichier(cotisation_brute) or ZERO

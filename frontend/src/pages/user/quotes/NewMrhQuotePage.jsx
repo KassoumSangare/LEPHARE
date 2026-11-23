@@ -14,6 +14,7 @@ import { TermeContratSelect } from '../../../components/common/TermeContratSelec
 import { DureeContratSelect } from '../../../components/common/DureeContratSelect';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { ChampPropose, propositionMontant, propositionsUsuelles } from '../../../components/common/ListePropositions';
 import { ID_TERME_PAR_DEFAUT, dureeSelonTerme, termeEtDureeEnregistres } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
@@ -250,7 +251,8 @@ export const NewMrhQuotePage = () => {
       if (!actif) return;
       const mapped = (cies || []).map((c) => ({ id: Number(c.IdCompagnie || c.id), nom: c.RaisonSociale || c.nom }));
       setCompanies(mapped);
-      if (!editIddevisParam && mapped.length) {
+      // Brouillon repris : la compagnie vient du brouillon
+      if (!editIddevisParam && !searchParams.get('brouillon') && mapped.length) {
         // Compagnie proposée à l'ouverture : Administration > Produits (NSIA à l'origine)
         setCompagnieId((mapped.find((c) => c.id === compagnieParDefaut(ID_PRODUIT_MRH)) || mapped[0]).id);
       }
@@ -386,6 +388,20 @@ export const NewMrhQuotePage = () => {
   const [fichierMaisons, setFichierMaisons] = useState(null);
   const [cleFichierMaisons, setCleFichierMaisons] = useState(0);
   const [importMaisons, setImportMaisons] = useState({ enCours: false, erreurs: [], resume: '' });
+
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis) : contrat, maisons validées, primes et souscripteur.
+  // La maison en cours de saisie (formulaire ouvert) n'est pas gardée : validez-la avant d'enregistrer le brouillon.
+  const brouillon = useBrouillon({
+    type: 'DEVIS_MRH', etape: Math.min(step, 5), setEtape: setStep,
+    champs: {
+      numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie], compagnieId: [compagnieId, setCompagnieId],
+      categorieId: [categorieId, setCategorieId], termeId: [termeId, setTermeId], dureeId: [dureeId, setDureeId], dateEffet: [dateEffet, setDateEffet],
+      customExpiration: [customExpiration, setCustomExpiration], maisons: [maisons, setMaisons], primesParMaison: [primesParMaison, setPrimesParMaison],
+      taxeSaisie: [taxeSaisie, setTaxeSaisie], accessoireSaisi: [accessoireSaisi, setAccessoireSaisi], souscripteur: [souscripteur, setSouscripteur],
+      assureDifferent: [assureDifferent, setAssureDifferent], assureChoisi: [assureChoisi, setAssureChoisi], telephoneAssure: [telephoneAssure, setTelephoneAssure],
+    },
+    libelle: () => [souscripteur?.Nom || souscripteur?.nomcomplet, `${maisons.length} maison${maisons.length > 1 ? 's' : ''}`].filter(Boolean).join(' - '),
+  });
   const telechargerModeleMaisons = async () => {
     try {
       const blob = await mrhApi.modeleImport();
@@ -714,6 +730,7 @@ export const NewMrhQuotePage = () => {
       setIdDevisActuel(devisId);
       setNumeroDevisEdite(res.numero_devis || '');
       setDevisEnregistre({ id: devisId, numero: res.numero_devis, totaux: res.totaux || {} });
+      await brouillon.supprimer();
       try { await chargerRepartition(devisId); } catch { setResume(null); }
       setStep(6);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -827,6 +844,9 @@ export const NewMrhQuotePage = () => {
 
       {/* ÉTAPES */}
       {step <= 5 && <EtapesDevis etapes={ETAPES} etape={step} onAller={allerA} />}
+      {step <= 5 && !idDevisActuel && !editIddevisParam && !incorporation && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={isSubmitting} /></div>
+      )}
 
       {incorporation && (
         <Alerte couleur="var(--primary-500)">

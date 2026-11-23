@@ -8,6 +8,7 @@ import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { DUREES_CONTRAT, ID_DUREE_LIBRE, ID_TERME_AUTRE, ID_TERME_PAR_DEFAUT, termeEtDureeEnregistres, idTermeValide } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
 import { numberToFrenchWords } from '../../../utils/exportUtils';
@@ -161,6 +162,28 @@ export const NewTousDommagesQuotePage = () => {
   const [accessoire, setAccessoire] = useState(0); // 0 : barème de la compagnie
   const [calcul, setCalcul] = useState(null);
   const [calculEnCours, setCalculEnCours] = useState(false);
+
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis). À la reprise, capitaux et rubriques du risque passent
+  // par reprise.current, comme pour un devis rouvert : le chargement de la catégorie les applique au lieu de les remettre à 0.
+  const brouillon = useBrouillon({
+    type: 'DEVIS_TOUS_DOMMAGES',
+    champs: {
+      compagnie: [compagnie, setCompagnie], idTarif: [idTarif, setIdTarif], souscripteur: [souscripteur, setSouscripteur],
+      assureChoisi: [assureChoisi, setAssureChoisi], assureDistinct: [assureDistinct, setAssureDistinct], telephone: [telephone, setTelephone],
+      risque: [risque, setRisque], capitaux: [capitaux, setCapitaux], extras: [extras, setExtras], dateEffet: [dateEffet, setDateEffet],
+      dureeId: [dureeId, setDureeId], termeId: [termeId, setTermeId], expirationPersonnalisee: [expirationPersonnalisee, setExpirationPersonnalisee],
+      numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie], tauxPrime: [tauxPrime, setTauxPrime], reduction: [reduction, setReduction],
+      montantPrime: [montantPrime, setMontantPrime], accessoire: [accessoire, setAccessoire],
+    },
+    apresReprise: (d) => {
+      reprise.current = {
+        garanties: Object.entries(d.capitaux || {}).map(([id, capital]) => ({ IdSousGarantie: Number(id), Capital: capital })),
+        risque: d.risque || {},
+        libelles: Object.fromEntries((d.extras || []).map((x) => [x.IdSousGarantie, x.Libelle])),
+      };
+    },
+    libelle: () => [souscripteur?.Nom, `capital ${Object.values(capitaux).reduce((t, c) => t + (Number(c) || 0), 0).toLocaleString('fr-FR')} F`].filter(Boolean).join(' - '),
+  });
 
   // ---------------------------------------------------------------- catalogue de la compagnie
   useEffect(() => {
@@ -452,6 +475,7 @@ export const NewTousDommagesQuotePage = () => {
       setIdDevisEdite(id);
       setNumeroDevisEdite(res.NumeroDevis || '');
       setTarifDuDevis(Number(idTarif));
+      await brouillon.supprimer();
       let devis = null;
       try {
         devis = await quoteApi.getQuote(id);
@@ -550,6 +574,7 @@ export const NewTousDommagesQuotePage = () => {
               : 'Branche Dommages : Caution, Tous Risques Informatiques, Chantiers, Montage, Bris de Machines, Globale de Banque…'}
           </p>
         </div>
+        {!editParam && !idDevisEdite && <BoutonBrouillon brouillon={brouillon} disabled={enregistrement} />}
         {peut('tarifs.update') && (
           <Link to="/admin/settings/dommages" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <Settings2 size={16} /> Réglages Dommages

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { transportApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { Modal } from '../../../components/common/Modal';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { printBordereauTransport } from '../../../utils/exportUtils';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import {
@@ -225,6 +226,17 @@ export const NewTransportQuotePage = () => {
   const [certificatsOuverts, setCertificatsOuverts] = useState(null);
   const ecranEtroit = useEcranEtroit();
 
+  // Import mis en brouillon (registre des devis) : période et clients rattachés aux noms du fichier. Le fichier Excel
+  // n'est pas gardé : à la reprise, on le choisit de nouveau et l'analyse réapplique les rattachements.
+  const brouillon = useBrouillon({
+    type: 'DEVIS_TRANSPORT',
+    champs: {
+      periodeDuFichier: [periodeDuFichier, setPeriodeDuFichier], mois: [mois, setMois], quinzaine: [quinzaine, setQuinzaine],
+      correspondances: [correspondances, setCorrespondances],
+    },
+    libelle: () => [fichier?.name || 'Bordereau GUCE', `${Object.keys(correspondances).length} client(s) rattaché(s)`].join(' - '),
+  });
+
   const chargerBordereaux = () => {
     setErreurBordereaux('');
     transportApi.getBordereaux()
@@ -273,6 +285,7 @@ export const NewTransportQuotePage = () => {
       const res = await transportApi.importerBordereau(parametres());
       setResultat(res);
       setStep(3);
+      brouillon.supprimer();
       success(`Bordereau du ${dateFr(res.DebutPeriode)} au ${dateFr(res.FinPeriode)} importé : ${res.Contrats.length} contrat(s) généré(s).`);
       chargerBordereaux();
     } catch (err) {
@@ -358,6 +371,12 @@ export const NewTransportQuotePage = () => {
           );
         })}
       </nav>
+      {step < 3 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '0.6rem', marginTop: '-0.5rem', flexWrap: 'wrap' }}>
+          {brouillon.brouillonId && !fichier && <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Brouillon repris : choisissez de nouveau le fichier du bordereau.</span>}
+          <BoutonBrouillon brouillon={brouillon} disabled={importEnCours} />
+        </div>
+      )}
 
       {/* ÉTAPE 1 : FICHIER & PÉRIODE */}
       {step === 1 && (

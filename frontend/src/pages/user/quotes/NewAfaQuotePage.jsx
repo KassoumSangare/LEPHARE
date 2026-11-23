@@ -11,6 +11,7 @@ import { afaApi, contractApi, quoteApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { Champ, FichePersonne, RechercheClient, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../components/common/ParcoursDevis';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { AmountInput } from '../../../components/common/AmountInput';
 import { Modal } from '../../../components/common/Modal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
@@ -116,6 +117,19 @@ export const NewAfaQuotePage = () => {
   const [capitalTous, setCapitalTous] = useState('');
   const [primeTous, setPrimeTous] = useState('');
   const fichierRef = useRef(null);
+
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis) ; un devis rouvert est déjà enregistré
+  const brouillon = useBrouillon({
+    type: 'DEVIS_AFA', etape, setEtape,
+    champs: {
+      idOffre: [idOffre, setIdOffre], idCompagnie: [idCompagnie, setIdCompagnie], souscripteur: [souscripteur, setSouscripteur],
+      mouvement: [mouvement, setMouvement], idContratRenouvele: [idContratRenouvele, setIdContratRenouvele], dateEffet: [dateEffet, setDateEffet],
+      dateExpiration: [dateExpiration, setDateExpiration], mois: [mois, setMois], policeCompagnie: [policeCompagnie, setPoliceCompagnie],
+      accessoire: [accessoire, setAccessoire], assures: [assures, setAssures], cotisants: [cotisants, setCotisants], fichier: [fichier, setFichier],
+      capitalTous: [capitalTous, setCapitalTous], primeTous: [primeTous, setPrimeTous],
+    },
+    libelle: () => [souscripteur?.Nom, `${assures.filter((a) => String(a.Nom || '').trim()).length || cotisants.length} personne(s)`].filter(Boolean).join(' - '),
+  });
 
   // Compagnies rattachées au cabinet (celle proposée pour la Vie d'abord), offres commerciales et polices Vie du souscripteur
   useEffect(() => {
@@ -461,6 +475,7 @@ export const NewAfaQuotePage = () => {
           ? `Incorporation N° ${devis.NumeroDevis} enregistrée : ${devis.Assures.length} personne${devis.Assures.length > 1 ? 's' : ''} ajoutée${devis.Assures.length > 1 ? 's' : ''}, ${fcfa(devis.PrimeTtc)} F. Confirmez-la pour l'ajouter à la police ${policeIncorporation}.`
           : `Devis ${libelleOffre} N° ${devis.NumeroDevis} ${enModification ? 'modifié' : 'enregistré'} : ${devis.Assures.length} assurés, ${fcfa(devis.PrimeTtc)} F.`);
       }
+      await brouillon.supprimer();
       let fiche = null;
       try { fiche = await quoteApi.getQuote(devis.IdDevis); } catch { /* fiche indisponible : retour au registre */ }
       if (fiche) setDevisEnregistre(fiche);
@@ -590,6 +605,9 @@ export const NewAfaQuotePage = () => {
       )}
 
       <EtapesDevis etapes={etapes} etape={etape} onAller={allerA} couleur={COULEUR} />
+      {!idDevisEdite && !idContratARenouveler && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={enregistrement} /></div>
+      )}
 
       <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '999 1 620px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

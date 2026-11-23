@@ -13,6 +13,7 @@ import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { BandeauQuestionnaire, useQuestionnaireDevis } from './QuestionnaireDevis';
 import { AmountInput } from '../../../components/common/AmountInput';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { Champ, RechercheClient, personneDepuisClient } from '../../../components/common/RechercheClient';
 import { numberToFrenchWords } from '../../../utils/exportUtils';
 import { trierParLibelle } from '../../../utils/sortUtils';
@@ -153,6 +154,22 @@ export const NewTransportHorsGucePage = () => {
   const [calculEnCours, setCalculEnCours] = useState(false);
   const [enregistrement, setEnregistrement] = useState(false);
   const [devisEnregistre, setDevisEnregistre] = useState(null);
+
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis). Les étapes de l'assistant comptent depuis 0 :
+  // le brouillon garde le numéro affiché (étape + 1).
+  const brouillon = useBrouillon({
+    type: 'DEVIS_TRANSPORT_HORS_GUCE', etape: etape + 1, setEtape: (n) => setEtape(Math.max(0, Number(n) - 1)),
+    champs: {
+      atteinte: [atteinte, setAtteinte], typePolice: [typePolice, setTypePolice], mode: [mode, setMode], compagnie: [compagnie, setCompagnie],
+      souscripteur: [souscripteur, setSouscripteur], assureDistinct: [assureDistinct, setAssureDistinct], assureChoisi: [assureChoisi, setAssureChoisi],
+      dateEffet: [dateEffet, setDateEffet], dateFin: [dateFin, setDateFin], numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie],
+      marchandise: [marchandise, setMarchandise], trajet: [trajet, setTrajet], vehicules: [vehicules, setVehicules], valeur: [valeur, setValeur],
+      chiffreAffaires: [chiffreAffaires, setChiffreAffaires], base: [base, setBase], extensions: [extensions, setExtensions], taux: [taux, setTaux],
+      franchise: [franchise, setFranchise], accessoireImpose: [accessoireImpose, setAccessoireImpose], accessoire: [accessoire, setAccessoire],
+      exonere: [exonere, setExonere],
+    },
+    libelle: () => [souscripteur?.Nom, marchandise?.nature, [trajet?.depart, trajet?.arrivee].filter(Boolean).join(' → ')].filter(Boolean).join(' - '),
+  });
 
   const periodeAnnuelle = typePolice === 'ANNUELLE' || typePolice === 'ABONNEMENT';
   // Police annuelle ou d'abonnement : un an à partir de la date d'effet ; police au voyage : un mois proposé. Un devis
@@ -403,6 +420,7 @@ export const NewTransportHorsGucePage = () => {
       success(`${idDevisEdite ? 'Devis modifié' : 'Devis enregistré'} : N° ${res.NumeroDevis || id}.`);
       setIdDevisEdite(id);
       setNumeroDevisEdite(res.NumeroDevis || '');
+      await brouillon.supprimer();
       let devis = null;
       try { devis = await quoteApi.getQuote(id); } catch { /* aperçu avec les montants renvoyés */ }
       setDevisEnregistre(devis || {
@@ -559,6 +577,9 @@ export const NewTransportHorsGucePage = () => {
           );
         })}
       </ol>
+      {!editParam && !idDevisEdite && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={enregistrement} /></div>
+      )}
 
       <div className="trp-assistant">
         <section key={etapeCourante.id} className="glass-panel trp-panneau" aria-labelledby="trp-titre-etape">

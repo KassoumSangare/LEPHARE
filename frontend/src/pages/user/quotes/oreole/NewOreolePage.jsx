@@ -8,6 +8,7 @@ import { apporteurApi, oreoleApi } from '../../../../api/endpoints';
 import { useToast } from '../../../../context/ToastContext';
 import { Champ, FichePersonne, RechercheClient, personneDepuisClient } from '../../../../components/common/RechercheClient';
 import { EtapesDevis, ResumeDevis } from '../../../../components/common/ParcoursDevis';
+import { BoutonBrouillon, useBrouillon } from '../../../../utils/brouillons';
 import { AmountInput } from '../../../../components/common/AmountInput';
 import { Modal } from '../../../../components/common/Modal';
 import { QuickAddClientModal } from '../../clients/QuickAddClientModal';
@@ -127,6 +128,22 @@ export default function NewOreolePage() {
   const [package_, setPackage] = useState(null);
   const [emission, setEmission] = useState(-1);
   const [ajoutFamille, setAjoutFamille] = useState('');
+
+  // Saisie d'un nouveau package mise en brouillon (registre des devis). Une fois enregistré, le devis est sur le serveur.
+  // Les clés des lignes sont refaites à la reprise : le compteur repart de zéro à chaque ouverture de l'écran.
+  const brouillon = useBrouillon({
+    type: 'DEVIS_OREOLE', etape, setEtape,
+    champs: {
+      cible: [cible, setCible], souscripteur: [souscripteur, setSouscripteur], dateEffet: [dateEffet, setDateEffet],
+      dateExpiration: [dateExpiration, setDateExpiration], policeCompagnie: [policeCompagnie, setPoliceCompagnie], idOffre: [idOffre, setIdOffre],
+      comparer: [comparer, setComparer], prixFamille: [prixFamille, setPrixFamille], carteAssurance: [carteAssurance, setCarteAssurance],
+      avecIA: [avecIA, setAvecIA], avecAFA: [avecAFA, setAvecAFA], idApporteur: [idApporteur, setIdApporteur],
+      apporteurConvention: [apporteurConvention, setApporteurConvention], apporteurMode: [apporteurMode, setApporteurMode],
+      apporteurValeur: [apporteurValeur, setApporteurValeur], famille: [famille, setFamille],
+      lignes: [lignes, (liste) => setLignes((liste || []).map((l) => ({ ...l, cle: nouvelleCle(), Ayants: (l.Ayants || []).map((a) => ({ ...a, cle: nouvelleCle() })) })))],
+    },
+    libelle: () => [souscripteur?.Nom, `${lignes.length} famille${lignes.length > 1 ? 's' : ''}`].filter(Boolean).join(' - '),
+  });
 
   const incorporation = acte === 'INC';
   const renouvellement = acte === 'REN';
@@ -435,6 +452,7 @@ export default function NewOreolePage() {
         ...charge, IdClient: souscripteur.IdClient, IdDevis: incorporation ? 0 : (package_?.IdDevis || 0), Acte: acte, IdContratBase: idContratBase || devisLu?.IdContratBase || 0,
       });
       setPackage(reponse);
+      brouillon.supprimer();
       success(`Devis ${reponse.NumeroDevis} enregistré : ${fcfa(reponse.Totaux.Cotisation)} F, ${reponse.Adherents.length} famille${reponse.Adherents.length > 1 ? 's' : ''}.`);
       (reponse.Avertissements || []).slice(0, 3).forEach((a) => warning(a));
       return reponse;
@@ -524,6 +542,9 @@ export default function NewOreolePage() {
       </header>
 
       <EtapesDevis etapes={etapes} etape={etape} onAller={allerA} couleur={COULEUR} />
+      {!idEdition && !idContratBase && !package_?.IdDevis && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={enregistrement} /></div>
+      )}
 
       <div style={{ display: 'flex', gap: '1.1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: '999 1 620px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>

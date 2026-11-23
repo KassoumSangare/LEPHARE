@@ -6,6 +6,7 @@ import { useToast } from '../../../context/ToastContext';
 import { ViewQuoteModal } from './ViewQuoteModal';
 import { QuickAddClientModal } from '../clients/QuickAddClientModal';
 import { TermeContratSelect } from '../../../components/common/TermeContratSelect';
+import { BoutonBrouillon, useBrouillon } from '../../../utils/brouillons';
 import { ID_TERME_PAR_DEFAUT, idTermeValide } from '../../../utils/termesContrat';
 import { trierParLibelle } from '../../../utils/sortUtils';
 import { Champ, RechercheClient, FichePersonne, personneDepuisClient } from '../../../components/common/RechercheClient';
@@ -135,6 +136,20 @@ export const NewVoyageQuotePage = () => {
   const [reduction, setReduction] = useState(0);
   const [calcul, setCalcul] = useState(null); // { lignes, cumul } ou { erreur }
   const [calculEnCours, setCalculEnCours] = useState(false);
+
+  // Saisie d'un nouveau devis mise en brouillon (registre des devis)
+  const brouillon = useBrouillon({
+    type: 'DEVIS_VOYAGE', etape: step, setEtape: setStep,
+    champs: {
+      souscripteur: [souscripteur, setSouscripteur], assureDifferent: [assureDifferent, setAssureDifferent], assureChoisi: [assureChoisi, setAssureChoisi],
+      compagnie: [compagnie, setCompagnie], categorie: [categorie, setCategorie], numeroPoliceCompagnie: [numeroPoliceCompagnie, setNumeroPoliceCompagnie],
+      nationalite: [nationalite, setNationalite], paysDestination: [paysDestination, setPaysDestination], referenceContrat: [referenceContrat, setReferenceContrat],
+      numeroAttestation: [numeroAttestation, setNumeroAttestation], numeroPassport: [numeroPassport, setNumeroPassport], schengen: [schengen, setSchengen],
+      dateNaissance: [dateNaissance, setDateNaissance], dateEffet: [dateEffet, setDateEffet], dateExpiration: [dateExpiration, setDateExpiration],
+      termeId: [termeId, setTermeId], offre: [offre, setOffre], reduction: [reduction, setReduction],
+    },
+    libelle: () => [(assureDifferent && assureChoisi?.Nom) || souscripteur?.Nom, numeroPassport && `passeport ${numeroPassport}`].filter(Boolean).join(' - '),
+  });
 
   // ---------------------------------------------------------------- référentiels
   useEffect(() => {
@@ -473,6 +488,7 @@ export const NewVoyageQuotePage = () => {
         : `Devis Voyage N° ${res.NumeroDevis || id} enregistré.`);
       setIdDevisEdite(id);
       setNumeroDevisEdite(res.NumeroDevis || '');
+      await brouillon.supprimer();
       let devis = null;
       try {
         devis = await quoteApi.getQuote(id);
@@ -586,6 +602,9 @@ export const NewVoyageQuotePage = () => {
           );
         })}
       </nav>
+      {!editParam && !idDevisEdite && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}><BoutonBrouillon brouillon={brouillon} disabled={enregistrement} /></div>
+      )}
 
       {avertissementReprise && (
         <div style={styles.alerte('var(--accent-amber)')}>
