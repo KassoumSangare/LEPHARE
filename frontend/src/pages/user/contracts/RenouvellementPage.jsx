@@ -42,7 +42,12 @@ export const RenouvellementPage = () => {
       setValeurs(Object.fromEntries((d.Objets || []).filter((o) => o.ValeurVenaleContrat !== undefined)
         .map((o) => [o.Matricule, o.ValeurVenaleTableau ?? o.ValeurVenaleContrat ?? 0])));
     } catch (err) {
-      setErreur(messageErreurApi(err));
+      const message = messageErreurApi(err);
+      if (message.startsWith('Police Oreole Santé :')) {
+        navigate(`/user/contracts/${id}`, { replace: true });
+        return;
+      }
+      setErreur(message);
     } finally {
       setChargement(false);
     }
