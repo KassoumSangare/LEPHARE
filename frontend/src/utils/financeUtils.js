@@ -140,7 +140,7 @@ export const exporterEtatEncaissements = (etat, filtres, format = 'pdf') => {
     headers: ['Date', 'N° pièce', 'Compagnie', 'Client', 'Quittance', 'Mode', 'Référence', 'Montant', 'Statut', ...(etat.VoirAuteur ? ['Saisi par'] : [])],
     rows: lignes.map((l) => [dateFr(l.DateEncaissement), l.NumeroPiece, l.Compagnie, l.Client, l.NumeroQuittance, l.Mode,
       [l.Reference, l.Banque].filter(Boolean).join(' - '), fcfa(l.Montant), l.LibelleStatut,
-      ...(etat.VoirAuteur ? [l.Operateur || 'Historique repris'] : [])]),
+      ...(etat.VoirAuteur ? [l.Operateur || (l.SaisieLe ? `Sans auteur, pièce entrée le ${dateFr(l.SaisieLe)}` : 'Sans auteur')] : [])]),
     totals: ['TOTAL (hors annulés et impayés)', '', '', '', '', '', '', fcfa(etat.Total.Montant), '', ...(etat.VoirAuteur ? [''] : [])],
   };
   if (format === 'excel') exportToExcel(charge);

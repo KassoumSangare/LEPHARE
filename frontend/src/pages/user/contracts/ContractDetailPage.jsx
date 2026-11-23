@@ -628,7 +628,7 @@ export const ContractDetailPage = () => {
                       <td>{r.HorsCaisse ? 'Encaissé hors caisse' : (r.Mode || '-')}</td>
                       <td className="mono">{r.Reference || '-'}</td>
                       <td className={`droite mono${r.Montant < 0 ? ' negatif' : ''}`}>{Number(r.Montant || 0).toLocaleString('fr-FR')} F</td>
-                      {reglementsPolice.VoirAuteur && <td>{r.EncaissePar || 'Historique repris'}</td>}
+                      {reglementsPolice.VoirAuteur && <td>{r.EncaissePar || (r.SaisieLe ? `Sans auteur, pièce entrée le ${dateLisible(r.SaisieLe)}` : 'Sans auteur')}</td>}
                     </tr>
                   ))}
                 </tbody>

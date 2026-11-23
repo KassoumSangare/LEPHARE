@@ -79,7 +79,7 @@ const CarteReglement = ({ reglement: r }) => {
                 <td>{l.Compagnie}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>{dateFr(l.DateEncaissement)}{l.NumeroPiece && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{l.NumeroPiece}</div>}
                   {/* Envoyé par le serveur seulement avec le droit « Voir qui a encaissé » */}
-                  {l.Operateur !== undefined && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Saisi par {l.Operateur || 'historique repris'}</div>}</td>
+                  {l.Operateur !== undefined && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{l.Operateur ? `Saisi par ${l.Operateur}` : `Sans auteur${l.SaisieLe ? `, pièce entrée le ${dateFr(l.SaisieLe)}` : ''}`}</div>}</td>
                 <td style={{ textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fcfa(l.Montant)} F</td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fcfa(l.ResteDuQuittance)} F</td>
                 <td><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut] || 'emerald'} /></td>

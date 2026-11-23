@@ -43,7 +43,7 @@ def reglements_de_police(cursor, id_contrat, utilisateur):
     auteur = SQL_NOM_COMPTE if voir_auteur else "NULL"
     lignes = _lignes(cursor, f"""
         SELECT de.iddetailencaissement, e.idencaissement, TRIM(e.numeropiece) AS numeropiece, e.dateencaissement::date AS dateencaissement,
-               COALESCE(e.created_at, e.datesaisie) AS datesaisie, TRIM(de.numeroquittance) AS numeroquittance,
+               COALESCE(e.created_at, e.datesaisie) AS datesaisie, e.datesaisie::date AS jour_saisie, TRIM(de.numeroquittance) AS numeroquittance,
                COALESCE(de.montant_encaissement, 0) AS montant, TRIM(COALESCE(m.libellemodepaiement, '')) AS mode,
                {SQL_REFERENCE} AS reference, COALESCE(e.piece_annulee, FALSE) AS annule,
                (SELECT a.codeavenant FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
@@ -81,9 +81,11 @@ def reglements_de_police(cursor, id_contrat, utilisateur):
         } for l in hors_caisse],
         "Reglements": [{
             "IdDetail": l["iddetailencaissement"], "IdEncaissement": l["idencaissement"], "NumeroPiece": l["numeropiece"] or "",
-            "Date": l["dateencaissement"].isoformat() if l["dateencaissement"] else None, "Heure": _heure(l["datesaisie"]),
+            "Date": l["dateencaissement"].isoformat() if l["dateencaissement"] else None, "Heure": _heure(l["datesaisie"]) if l["auteur_connu"] else "",
             "Quittance": l["numeroquittance"] or "", "Avenant": (l["avenant"] or "").strip(), "Montant": float(l["montant"]),
             "Mode": l["mode"], "Reference": l["reference"] or "", "Annule": bool(l["annule"]),
-            **({"EncaissePar": (l["auteur"] or "").strip() if l["auteur_connu"] else ""} if voir_auteur else {}),
+            # Sans auteur : jour où la pièce est entrée en base (02 ou 03/12/2025 pour la reprise de l'ancien logiciel)
+            **({"EncaissePar": (l["auteur"] or "").strip() if l["auteur_connu"] else "",
+                "SaisieLe": None if l["auteur_connu"] or not l["jour_saisie"] else l["jour_saisie"].isoformat()} if voir_auteur else {}),
         } for l in lignes],
     }

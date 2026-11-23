@@ -439,10 +439,14 @@ def recherche_reglements(request):
     except ErreurFinance as erreur:
         return _erreur(erreur)
     resultat["VoirAuteur"] = a_le_droit(request.user, DROIT_AUTEUR_ENCAISSEMENT)
-    if not resultat["VoirAuteur"]:
-        for reglement in resultat["Reglements"]:
-            for ligne in reglement["Lignes"]:
-                ligne.pop("Operateur", None)
+    lignes = [ligne for reglement in resultat["Reglements"] for ligne in reglement["Lignes"]]
+    if resultat["VoirAuteur"]:
+        noms = _operateurs({ligne["IdEncaissement"] for ligne in lignes})
+        for ligne in lignes:
+            ligne["Operateur"], ligne["SaisieLe"] = noms.get(ligne["IdEncaissement"], ("", None))
+    else:
+        for ligne in lignes:
+            ligne.pop("Operateur", None)
     return Response(resultat)
 
 
@@ -462,13 +466,15 @@ DROIT_AUTEUR_ENCAISSEMENT = "encaissements.auteur"
 
 
 def _operateurs(ids_encaissement):
-    """{idencaissement: nom de l'utilisateur qui a saisi la pièce} (adresse si le compte n'a pas de nom)."""
+    """{idencaissement: (nom de l'utilisateur qui a saisi la pièce, jour de saisie si elle n'a pas d'auteur)} ; adresse si
+    le compte n'a pas de nom. Sans auteur : pièce reprise de l'ancien logiciel (entrée en base les 02 et 03/12/2025)."""
     from .encaissements_police import SQL_NOM_COMPTE
 
     if not ids_encaissement:
         return {}
-    return {l["idencaissement"]: l["nom"] for l in _lignes(
-        f"""SELECT e.idencaissement, {SQL_NOM_COMPTE} AS nom FROM stdencaissement e JOIN account_uranususer u ON u.id = e.idutilisateur
+    return {l["idencaissement"]: (l["nom"] or "", None if l["nom"] or not l["jour"] else l["jour"].isoformat()) for l in _lignes(
+        f"""SELECT e.idencaissement, CASE WHEN u.id IS NULL THEN NULL ELSE {SQL_NOM_COMPTE} END AS nom, e.datesaisie::date AS jour
+            FROM stdencaissement e LEFT JOIN account_uranususer u ON u.id = e.idutilisateur
             WHERE e.idencaissement = ANY(%s)""", [list(ids_encaissement)])}
 
 
@@ -499,7 +505,7 @@ def donnees_etat_encaissements(parametres, utilisateur=None):
     if voir_auteur:
         noms = _operateurs({l["IdEncaissement"] for l in lignes})
         for l in lignes:
-            l["Operateur"] = noms.get(l["IdEncaissement"], "")
+            l["Operateur"], l["SaisieLe"] = noms.get(l["IdEncaissement"], ("", None))
 
     def totaux(cle):
         resultat = {}

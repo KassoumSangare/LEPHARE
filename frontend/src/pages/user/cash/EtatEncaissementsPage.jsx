@@ -253,7 +253,7 @@ export const EtatEncaissementsPage = () => {
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: l.Montant < 0 ? 'var(--accent-rose)' : undefined }}>{fcfa(l.Montant)}</td>
                       <td title={l.MotifAnnulation || undefined} style={{ whiteSpace: 'nowrap' }}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
-                      {etat.VoirAuteur && <td style={{ whiteSpace: 'nowrap' }}>{l.Operateur || 'Historique repris'}</td>}
+                      {etat.VoirAuteur && <td style={{ whiteSpace: 'nowrap' }}>{l.Operateur || (l.SaisieLe ? `Sans auteur, pièce entrée le ${dateFr(l.SaisieLe)}` : 'Sans auteur')}</td>}
                       {peutCorriger && (
                         <td>
                           {corrigeable(l) && (

@@ -14,10 +14,10 @@ class CurseurFactice:
         self.requetes = []
         self.reponses = [
             (["numeropolice"], [("1186201250492L",)]),
-            (["iddetailencaissement", "idencaissement", "numeropiece", "dateencaissement", "datesaisie", "numeroquittance", "montant",
+            (["iddetailencaissement", "idencaissement", "numeropiece", "dateencaissement", "datesaisie", "jour_saisie", "numeroquittance", "montant",
               "mode", "reference", "annule", "avenant", "auteur_connu", "auteur"],
-             [(10, 5, "P1", date(2026, 11, 20), datetime(2026, 11, 20, 9, 30), "Q1", 50000, "Espèces", "", False, "AFN", True, "Agent caisse"),
-              (9, 4, "P0", date(2025, 1, 2), datetime(2025, 1, 2), "Q0", 40000, "Chèque", "123", False, "AFN", False, None)]),
+             [(10, 5, "P1", date(2026, 11, 20), datetime(2026, 11, 20, 9, 30), date(2026, 11, 20), "Q1", 50000, "Espèces", "", False, "AFN", True, "Agent caisse"),
+              (9, 4, "P0", date(2025, 1, 2), datetime(2025, 12, 11, 10, 14), date(2025, 12, 3), "Q0", 40000, "Chèque", "123", False, "AFN", False, None)]),
             (["numeroquittance", "dateemission", "ecart", "avenant", "auteur"],
              [("Q1", date(2026, 11, 1), 0, "AFN", None), ("QR", date(2025, 6, 1), 30000, "AFN", "Saisie reprise")]),
         ]
@@ -45,7 +45,7 @@ class ReglementsDePolice(SimpleTestCase):
         self.assertFalse(resultat["VoirAuteur"])
         self.assertNotIn("u.name", requetes[1])
         self.assertNotIn("lephare_reprise", requetes[2])
-        self.assertTrue(all("EncaissePar" not in r for r in resultat["Reglements"] + resultat["HorsCaisse"]))
+        self.assertTrue(all("EncaissePar" not in r and "SaisieLe" not in r for r in resultat["Reglements"] + resultat["HorsCaisse"]))
         self.assertEqual([r["Montant"] for r in resultat["Reglements"]], [50000.0, 40000.0])
 
     def test_avec_le_droit(self):
@@ -55,7 +55,9 @@ class ReglementsDePolice(SimpleTestCase):
         # Historique repris de l'ancien logiciel (décembre 2025) : auteur inconnu, chaîne vide (« Historique repris » à l'écran)
         self.assertEqual([r["EncaissePar"] for r in resultat["Reglements"]], ["Agent caisse", ""])
         self.assertEqual(resultat["Reglements"][0]["Heure"], "09:30")
+        # Pièce sans auteur : pas d'heure (celle de la reprise), jour où elle est entrée en base
         self.assertEqual(resultat["Reglements"][1]["Heure"], "")
+        self.assertEqual([r["SaisieLe"] for r in resultat["Reglements"]], [None, "2025-12-03"])
 
     def test_montant_encaisse_hors_caisse(self):
         resultat, _ = self._lire(True)
