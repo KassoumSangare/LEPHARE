@@ -350,6 +350,9 @@ def _paiement_cabinet(entete, pour_courrier=False):
     if entete["abrege"] == "VIR":
         return (f"le virement {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}" if pour_courrier
                 else f"VIR {banque}N°{entete['numerocheque'] or ''} du {jour} de FCFA {montant}")
+    if entete["abrege"] == "ESP":
+        # Prime reversée en espèces par le cabinet (demande du 2026-11-23) : ni banque ni numéro
+        return f"le règlement en espèces du {jour} de FCFA {montant}" if pour_courrier else f"Espèces du {jour} de FCFA {montant}"
     return f"{'le règlement ' if pour_courrier else ''}{entete['mode'] or ''} du {jour} de FCFA {montant}".strip()
 
 
@@ -565,7 +568,8 @@ def lire_bordereau(id_reversement):
                    for r in vus.values()]
     else:
         cheques = ([{"Texte": _paiement_cabinet(e), "TexteCourrier": _paiement_cabinet(e, pour_courrier=True),
-                     "Libelle": _libelle_instrument(e["abrege"], e["idmodereversement"], e["mode"]), "Especes": False,
+                     # Reversement en espèces : le courrier informe la compagnie du règlement, sans pièce en annexe
+                     "Libelle": _libelle_instrument(e["abrege"], e["idmodereversement"], e["mode"]), "Especes": e["abrege"] == "ESP",
                      "Banque": e["banque"] or "", "Numero": e["numerocheque"] or "", "Date": _iso(e["datereversement"]),
                      "Montant": _nombre(e["montantreversement"])}] if e["valide"] else [])
 
@@ -777,10 +781,10 @@ def bordereaux(request):
                 r = reglements.get(ligne["idencaissement"])
                 nature = RECLAMATION if r and r["ordre"] == "COMPAGNIE" else REVERSEMENT
                 groupes[nature].append((ligne, reste))
-            # Bordereau de reversement : le paiement du cabinet (chèque ou virement) est saisi à la génération
+            # Bordereau de reversement : le paiement du cabinet (chèque, virement ou espèces) est saisi à la génération
             if groupes[REVERSEMENT]:
                 if not paiement.get("IdMode"):
-                    raise ErreurFinance("Bordereau de reversement de prime : saisissez le paiement (chèque ou virement) pour le générer.")
+                    raise ErreurFinance("Bordereau de reversement de prime : saisissez le paiement (chèque, virement ou espèces) pour le générer.")
                 controle_paiement_cabinet(paiement)
             for nature, lignes in groupes.items():
                 if not lignes:

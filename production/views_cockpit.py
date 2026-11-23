@@ -1,7 +1,6 @@
 """
-Cockpit opérationnel (/user/dashboard) : chiffres réels de la base, en un appel, chaque bloc selon les droits de
-l'utilisateur (chiffre d'affaires du cabinet, production, devis, caisse, reversements, commissions, sinistres, suivi
-commercial).
+Cockpit opérationnel (/user/dashboard) : chiffres réels de la base, en un appel ; chaque bloc n'est calculé et envoyé
+qu'avec son droit (« Bloc … » du groupe Cockpit opérationnel d'Administration > Rôles, production/blocs_tableaux.py).
 
 GET /api/cockpit/
 """
@@ -18,6 +17,7 @@ from autorisations.rbac import a_le_droit
 from configuration_api.parametrage import valeur_parametre
 
 from . import chiffre_affaires, views_finance
+from .blocs_tableaux import blocs_cockpit, chiffre_affaires_selon_blocs
 from .reste_encaissement import sql_reste
 from .views_reprise import AUTHENTIFICATION
 
@@ -30,9 +30,6 @@ SINISTRES_CLOS = ("Réglé", "Clôturé", "Rejeté")
 QUESTIONNAIRE_TRAITE = "Devis établi"
 
 CONTRAT_VALIDE = "COALESCE(c.idcontratannulation, 0) = 0"
-# Chiffre d'affaires du cabinet (courtier : commissions et accessoires, production/chiffre_affaires.py) : visible avec l'un
-# de ces droits
-DROITS_CHIFFRE_AFFAIRES = ("commissions.view", "reporting.view")
 # Chiffre d'affaires d'un contrat c (même règle que production/chiffre_affaires.SQL_CHIFFRE_AFFAIRES)
 CA_CONTRAT = ("(COALESCE(NULLIF(c.commissionintermediaire, 'NaN'), 0) "
               "+ COALESCE(NULLIF(c.accessoireintermediaire, 'NaN'), 0))")
@@ -104,8 +101,22 @@ def echeances_polices(cursor, du, au):
     """, [du, au])
 
 
-def _production(cursor, jour, avec_ca=False):
-    """Production de l'exercice ; avec_ca : chiffre d'affaires du cabinet par branche, par échéance et par contrat."""
+def _branches(cursor, jour, avec_ca):
+    """Bloc « Production par branche » : actes et primes TTC émis depuis le 1er janvier ; avec_ca : chiffre d'affaires de
+    chaque branche (droit « Chiffre d'affaires dans les autres blocs »)."""
+    lignes = _lignes(cursor, f"""
+        SELECT c.idproduit, COALESCE(p.libelleproduit, 'Autres') AS branche, COUNT(*) AS nombre, SUM(c.primettc) AS ttc,
+               SUM({CA_CONTRAT}) AS chiffre_affaires
+        FROM stdcontrat c LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
+        WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %s AND %s
+        GROUP BY 1, 2 ORDER BY {'5' if avec_ca else '4'} DESC NULLS LAST, 4 DESC NULLS LAST
+    """, [date(jour.year, 1, 1), jour])
+    return [{"IdProduit": b["idproduit"], "Branche": b["branche"], "Nombre": b["nombre"], "PrimeTtc": _franc(b["ttc"]),
+             **({"ChiffreAffaires": _franc(b["chiffre_affaires"])} if avec_ca else {})} for b in lignes]
+
+
+def _primes_emises(cursor, jour):
+    """Bloc « Primes émises » : depuis le 1er janvier, ce mois-ci, et à la même date de l'an dernier."""
     debut, debut_mois = date(jour.year, 1, 1), jour.replace(day=1)
     debut_n1, jour_n1 = date(jour.year - 1, 1, 1), _meme_jour(jour, jour.year - 1)
     total = _une(cursor, f"""
@@ -120,23 +131,50 @@ def _production(cursor, jour, avec_ca=False):
         FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
         WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %(debut_n1)s AND %(jour)s
     """, {"debut": debut, "jour": jour, "debut_mois": debut_mois, "debut_n1": debut_n1, "jour_n1": jour_n1})
-    branches = _lignes(cursor, f"""
-        SELECT c.idproduit, COALESCE(p.libelleproduit, 'Autres') AS branche, COUNT(*) AS nombre, SUM(c.primettc) AS ttc,
-               SUM({CA_CONTRAT}) AS chiffre_affaires
-        FROM stdcontrat c LEFT JOIN stdproduit p ON p.idproduit = c.idproduit
-        WHERE {CONTRAT_VALIDE} AND c.dateemission::date BETWEEN %s AND %s
-        GROUP BY 1, 2 ORDER BY {'5' if avec_ca else '4'} DESC NULLS LAST, 4 DESC NULLS LAST
-    """, [debut, jour])
-    # Polices en vigueur : période d'affaire nouvelle ou de renouvellement qui couvre le jour, police non résiliée
-    en_vigueur = _une(cursor, f"""
+    return {
+        "Annee": {"Nombre": total["nombre"], "PrimeTtc": _franc(total["ttc"]),
+                  "AffairesNouvelles": total["nouvelles"], "Renouvellements": total["renouvellements"]},
+        "Mois": {"Nombre": total["nombre_mois"], "PrimeTtc": _franc(total["ttc_mois"])},
+        "AnneePrecedente": {"Nombre": total["nombre_n1"], "PrimeTtc": _franc(total["ttc_n1"]), "Au": _iso(jour_n1)},
+    }
+
+
+def _polices_en_vigueur(cursor, jour):
+    """Polices dont la période d'affaire nouvelle ou de renouvellement couvre le jour, police non résiliée."""
+    return _une(cursor, f"""
         SELECT COUNT(DISTINCT c.numeropolice) AS n FROM stdcontrat c JOIN stdavenant a ON a.idavenant = c.idavenant
         WHERE {CONTRAT_VALIDE} AND a.codeavenant IN ('AFN', 'REN') AND %s BETWEEN c.dateeffet::date AND c.dateexpiration::date
           AND NOT EXISTS (SELECT 1 FROM stdcontrat r JOIN stdavenant ra ON ra.idavenant = r.idavenant
                           WHERE r.numeropolice = c.numeropolice AND ra.codeavenant = 'RES'
                             AND COALESCE(r.idcontratannulation, 0) = 0 AND r.dateeffet >= c.dateeffet)
     """, [jour])["n"]
-    # Échéances : échues depuis peu ou à échoir
-    echeances = echeances_polices(cursor, jour - timedelta(days=ECHUS_DEPUIS_JOURS), jour + timedelta(days=ECHEANCE_JOURS))
+
+
+def _echeances_suivies(cursor, jour):
+    """Polices échues depuis moins de ECHUS_DEPUIS_JOURS jours ou à échoir dans les ECHEANCE_JOURS jours."""
+    return echeances_polices(cursor, jour - timedelta(days=ECHUS_DEPUIS_JOURS), jour + timedelta(days=ECHEANCE_JOURS))
+
+
+def _compte_echeances(echeances, jour):
+    return {"Echues": sum(1 for e in echeances if e["dateexpiration"] < jour),
+            "AEchoir": sum(1 for e in echeances if e["dateexpiration"] >= jour)}
+
+
+def _lignes_echeances(echeances, jour, avec_ca):
+    """Bloc « Échéances à suivre » : les plus proches du jour, dans l'ordre des dates ; avec_ca : commission en jeu au
+    renouvellement (celle de la période qui s'achève)."""
+    proches = sorted(sorted(echeances, key=lambda e: abs((e["dateexpiration"] - jour).days))[:LIGNES_LISTE],
+                     key=lambda e: (e["dateexpiration"], e["idcontrat"]))
+    return [{
+        "IdContrat": e["idcontrat"], "NumeroPolice": e["numeropolice"], "Client": e["client"], "Produit": e["produit"],
+        "Compagnie": e["compagnie"], "DateExpiration": _iso(e["dateexpiration"]),
+        "Jours": (e["dateexpiration"] - jour).days, "PrimeTtc": _franc(e["primettc"]), "DevisEnCours": e["devis_en_cours"],
+        **({"ChiffreAffaires": _franc(e["chiffre_affaires"])} if avec_ca else {}),
+    } for e in proches]
+
+
+def _derniers_contrats(cursor, jour, avec_ca):
+    """Bloc « Derniers contrats émis » : avec leur règlement ; avec_ca : commission de chaque contrat."""
     derniers = _lignes(cursor, f"""
         SELECT c.idcontrat, c.numeropolice, c.dateemission::date AS dateemission, c.dateeffet::date AS dateeffet,
                c.dateexpiration::date AS dateexpiration, c.primettc, a.libelleavenant AS avenant,
@@ -158,40 +196,13 @@ def _production(cursor, jour, avec_ca=False):
         LEFT JOIN stdcompagnie co ON co.idcompagnie = c.idcompagnie
         ORDER BY c.dateemission DESC, c.idcontrat DESC
     """, [jour, LIGNES_LISTE])
-    resultat = {
-        "Annee": {"Nombre": total["nombre"], "PrimeTtc": _franc(total["ttc"]),
-                  "AffairesNouvelles": total["nouvelles"], "Renouvellements": total["renouvellements"]},
-        "Mois": {"Nombre": total["nombre_mois"], "PrimeTtc": _franc(total["ttc_mois"])},
-        "AnneePrecedente": {"Nombre": total["nombre_n1"], "PrimeTtc": _franc(total["ttc_n1"]), "Au": _iso(jour_n1)},
-        "ParBranche": [{"IdProduit": b["idproduit"], "Branche": b["branche"], "Nombre": b["nombre"], "PrimeTtc": _franc(b["ttc"]),
-                        **({"ChiffreAffaires": _franc(b["chiffre_affaires"])} if avec_ca else {})}
-                       for b in branches],
-        "PolicesEnVigueur": en_vigueur,
-        "Echeances": {
-            "Echues": sum(1 for e in echeances if e["dateexpiration"] < jour),
-            "AEchoir": sum(1 for e in echeances if e["dateexpiration"] >= jour),
-            "Lignes": [{
-                "IdContrat": e["idcontrat"], "NumeroPolice": e["numeropolice"], "Client": e["client"], "Produit": e["produit"],
-                "Compagnie": e["compagnie"], "DateExpiration": _iso(e["dateexpiration"]),
-                "Jours": (e["dateexpiration"] - jour).days, "PrimeTtc": _franc(e["primettc"]), "DevisEnCours": e["devis_en_cours"],
-                # Commission en jeu au renouvellement (celle de la période qui s'achève)
-                **({"ChiffreAffaires": _franc(e["chiffre_affaires"])} if avec_ca else {}),
-            # Les plus proches du jour, dans l'ordre des dates
-            } for e in sorted(sorted(echeances, key=lambda e: abs((e["dateexpiration"] - jour).days))[:LIGNES_LISTE],
-                              key=lambda e: (e["dateexpiration"], e["idcontrat"]))],
-        },
-        "Derniers": [{
-            "IdContrat": c["idcontrat"], "NumeroPolice": c["numeropolice"], "Client": c["client"], "Produit": c["produit"],
-            "Compagnie": c["compagnie"], "Avenant": c["avenant"], "DateEmission": _iso(c["dateemission"]),
-            "DateEffet": _iso(c["dateeffet"]), "DateExpiration": _iso(c["dateexpiration"]),
-            "PrimeTtc": _franc(c["primettc"]), "Reste": _franc(c["reste"]),
-            **({"ChiffreAffaires": _franc(c["chiffre_affaires"])} if avec_ca else {}),
-        } for c in derniers],
-    }
-    if avec_ca:
-        # Commissions en jeu sur les échéances suivies (période qui s'achève), toutes lignes comprises
-        resultat["Echeances"]["ChiffreAffaires"] = _franc(sum(_franc(e["chiffre_affaires"]) for e in echeances))
-    return resultat
+    return [{
+        "IdContrat": c["idcontrat"], "NumeroPolice": c["numeropolice"], "Client": c["client"], "Produit": c["produit"],
+        "Compagnie": c["compagnie"], "Avenant": c["avenant"], "DateEmission": _iso(c["dateemission"]),
+        "DateEffet": _iso(c["dateeffet"]), "DateExpiration": _iso(c["dateexpiration"]),
+        "PrimeTtc": _franc(c["primettc"]), "Reste": _franc(c["reste"]),
+        **({"ChiffreAffaires": _franc(c["chiffre_affaires"])} if avec_ca else {}),
+    } for c in derniers]
 
 
 def _devis(cursor, jour):
@@ -239,9 +250,10 @@ def _devis(cursor, jour):
     }
 
 
-def _caisse(cursor, jour):
+def _encaisse(cursor, jour):
+    """Bloc « Encaissé » : depuis le 1er janvier et ce mois-ci ; décaissement de prime mal affectée compté en négatif,
+    comme l'état des encaissements."""
     debut, debut_mois = date(jour.year, 1, 1), jour.replace(day=1)
-    # Décaissement de prime mal affectée : compté en négatif, comme l'état des encaissements
     montant = "CASE WHEN UPPER(TRIM(COALESCE(m.abregereglement, ''))) = ANY(%(decaissements)s) THEN -de.montant_encaissement ELSE de.montant_encaissement END"
     encaisse = _une(cursor, f"""
         SELECT COUNT(DISTINCT e.idencaissement) FILTER (WHERE e.dateencaissement::date >= %(debut_mois)s) AS pieces_mois,
@@ -252,7 +264,15 @@ def _caisse(cursor, jour):
         LEFT JOIN stdmodeencaissement m ON m.idmodeencaissement = e.idmodepaiement
         WHERE NOT COALESCE(e.piece_annulee, FALSE) AND e.dateencaissement::date BETWEEN %(debut)s AND %(jour)s
     """, {"debut": debut, "debut_mois": debut_mois, "jour": jour, "decaissements": sorted(views_finance.MODES_DECAISSEMENT)})
-    # Reste à encaisser : même règle que la caisse (quittance du contrat non soldée, reliquat de moins de 5 F compté nul)
+    return {
+        "Mois": {"Pieces": encaisse["pieces_mois"], "Montant": _franc(encaisse["mois"])},
+        "Annee": {"Pieces": encaisse["pieces_annee"], "Montant": _franc(encaisse["annee"])},
+    }
+
+
+def _reste_a_encaisser(cursor, jour):
+    """Bloc « Reste à encaisser » : même règle que la caisse (quittance du contrat non soldée, reliquat de moins de 5 F
+    compté nul)."""
     reste = _une(cursor, f"""
         SELECT COUNT(*) FILTER (WHERE q.dateemission::date >= %(debut)s) AS nombre,
                COALESCE(SUM({sql_reste()}) FILTER (WHERE q.dateemission::date >= %(debut)s), 0) AS montant,
@@ -262,21 +282,19 @@ def _caisse(cursor, jour):
         WHERE {sql_reste()} > 0
           AND EXISTS (SELECT 1 FROM stdcontrat c WHERE c.idquittance = q.idquittance AND c.numeropolice = q.numeropolice
                         AND {CONTRAT_VALIDE})
-    """, {"debut": debut})
+    """, {"debut": date(jour.year, 1, 1)})
+    return {"Nombre": reste["nombre"], "Montant": _franc(reste["montant"]),
+            "NombreAnterieur": reste["nombre_ant"], "MontantAnterieur": _franc(reste["montant_ant"])}
+
+
+def _cheques(cursor, jour):
+    """Chèques à déposer d'ici un mois, dont ceux déjà échus (bloc « À traiter »)."""
     cheques = _une(cursor, """
         SELECT COUNT(*) FILTER (WHERE dateecheance <= %s) AS a_deposer, COUNT(*) FILTER (WHERE dateecheance < %s) AS echus,
                COALESCE(SUM(montantinitial) FILTER (WHERE dateecheance <= %s), 0) AS montant
         FROM stdcheque WHERE statut = 'A_DEPOSER'
     """, [jour + timedelta(days=31), jour, jour + timedelta(days=31)])
-    return {
-        "Mois": {"Pieces": encaisse["pieces_mois"], "Montant": _franc(encaisse["mois"])},
-        "Annee": {"Pieces": encaisse["pieces_annee"], "Montant": _franc(encaisse["annee"])},
-        "ResteAEncaisser": {
-            "Nombre": reste["nombre"], "Montant": _franc(reste["montant"]),
-            "NombreAnterieur": reste["nombre_ant"], "MontantAnterieur": _franc(reste["montant_ant"]),
-        },
-        "Cheques": {"ADeposer": cheques["a_deposer"], "Echus": cheques["echus"], "Montant": _franc(cheques["montant"])},
-    }
+    return {"ADeposer": cheques["a_deposer"], "Echus": cheques["echus"], "Montant": _franc(cheques["montant"])}
 
 
 def _reversements():
@@ -319,32 +337,92 @@ def _chiffre_affaires(cursor, jour, commissions):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def cockpit(request):
+    """Chaque bloc n'est calculé et envoyé qu'avec son droit (Administration > Rôles, groupe « Cockpit opérationnel »,
+    production/blocs_tableaux.py) ; « Blocs » : noms des blocs accordés. Les points du bloc « À traiter » exigent en plus le
+    droit de consulter leur module."""
     jour = timezone.localdate()
     utilisateur = request.user
-    resultat = {"Jour": jour.isoformat(), "Exercice": jour.year}
-    avec_ca = any(a_le_droit(utilisateur, droit) for droit in DROITS_CHIFFRE_AFFAIRES)
-    # Commissions en attente : lues une fois, pour leur tuile et pour le chiffre d'affaires
-    commissions = _commissions(jour) if avec_ca or a_le_droit(utilisateur, "commissions.view") else None
+    blocs = blocs_cockpit(utilisateur)
+    voit = blocs.__contains__
+    avec_ca = voit("commissions_listes")
+    resultat = {"Jour": jour.isoformat(), "Exercice": jour.year, "Blocs": sorted(blocs)}
+    # Calculs partagés par plusieurs blocs : faits une seule fois
+    memoire = {}
+
+    def une_fois(cle, calcul):
+        if cle not in memoire:
+            memoire[cle] = calcul()
+        return memoire[cle]
+
+    def commissions():
+        return une_fois("commissions", lambda: _commissions(jour))
+
+    def reversements():
+        return une_fois("reversements", _reversements)
+
     with connection.cursor() as cursor:
-        if avec_ca:
-            resultat["ChiffreAffaires"] = _chiffre_affaires(cursor, jour, commissions)
-        if a_le_droit(utilisateur, "contrats.view"):
-            resultat["Production"] = _production(cursor, jour, avec_ca)
-        if a_le_droit(utilisateur, "devis.view"):
-            resultat["Devis"] = _devis(cursor, jour)
-        if a_le_droit(utilisateur, "encaissements.view"):
-            resultat["Caisse"] = _caisse(cursor, jour)
-        if a_le_droit(utilisateur, "sinistres.view"):
-            s = _une(cursor, "SELECT COUNT(*) AS n, COALESCE(SUM(montant_reclame), 0) AS m FROM institutionnel_sinistredelegue "
-                             "WHERE statut <> ALL(%s)", [list(SINISTRES_CLOS)])
-            resultat["Sinistres"] = {"Ouverts": s["n"], "MontantReclame": _franc(s["m"])}
-        if a_le_droit(utilisateur, "crm.view"):
-            resultat["Questionnaires"] = {"ATraiter": _une(
-                cursor, "SELECT COUNT(*) AS n FROM lephare_questionnaire_prospect WHERE statut <> %s", [QUESTIONNAIRE_TRAITE])["n"]}
-    if a_le_droit(utilisateur, "reversements.view"):
-        resultat["Reversements"] = _reversements()
-    if a_le_droit(utilisateur, "commissions.view"):
-        resultat["Commissions"] = commissions
+        def echeances():
+            return une_fois("echeances", lambda: _echeances_suivies(cursor, jour))
+
+        def devis():
+            return une_fois("devis", lambda: _devis(cursor, jour))
+
+        if voit("chiffre_affaires") or voit("percu") or voit("reste_a_percevoir"):
+            ca = _chiffre_affaires(cursor, jour, commissions() if voit("reste_a_percevoir") else None)
+            resultat["ChiffreAffaires"] = chiffre_affaires_selon_blocs(ca, blocs)
+            if voit("reste_a_percevoir"):
+                resultat["ChiffreAffaires"]["Reclamations"] = {
+                    "Cumul": commissions()["ReclamationsCumul"], "BordereauxEnAttente": commissions()["BordereauxEnAttente"]}
+        if voit("primes"):
+            resultat["Primes"] = _primes_emises(cursor, jour)
+        if voit("polices"):
+            resultat["Polices"] = {"EnVigueur": _polices_en_vigueur(cursor, jour), **_compte_echeances(echeances(), jour)}
+            if avec_ca:
+                # Commissions en jeu sur les échéances suivies (période qui s'achève), toutes lignes comprises
+                resultat["Polices"]["ChiffreAffaires"] = _franc(sum(_franc(e["chiffre_affaires"]) for e in echeances()))
+        if voit("devis"):
+            resultat["Devis"] = {cle: devis()[cle] for cle in ("EnCours", "PrimeTtcEnCours", "Expires", "ExpiresDepuis")}
+        if voit("transformation"):
+            resultat["Transformation"] = {cle: devis()[cle] for cle in ("EmisAnnee", "ConfirmesAnnee", "TauxTransformation")}
+        if voit("encaisse"):
+            resultat["Encaisse"] = _encaisse(cursor, jour)
+        if voit("reste_a_encaisser"):
+            resultat["ResteAEncaisser"] = _reste_a_encaisser(cursor, jour)
+        if voit("branches"):
+            resultat["ParBranche"] = _branches(cursor, jour, avec_ca)
+        if voit("echeances"):
+            resultat["Echeances"] = {"Lignes": _lignes_echeances(echeances(), jour, avec_ca)}
+        if voit("derniers_devis"):
+            resultat["DerniersDevis"] = devis()["Derniers"]
+        if voit("derniers_contrats"):
+            resultat["DerniersContrats"] = _derniers_contrats(cursor, jour, avec_ca)
+
+        a_traiter = {}
+        if voit("a_traiter"):
+            if a_le_droit(utilisateur, "contrats.view"):
+                a_traiter["Polices"] = _compte_echeances(echeances(), jour)
+            if a_le_droit(utilisateur, "devis.view"):
+                a_traiter["Devis"] = {"Expires": devis()["Expires"], "ExpiresDepuis": devis()["ExpiresDepuis"]}
+            if a_le_droit(utilisateur, "encaissements.view"):
+                a_traiter["Cheques"] = _cheques(cursor, jour)
+            if a_le_droit(utilisateur, "sinistres.view"):
+                s = _une(cursor, "SELECT COUNT(*) AS n, COALESCE(SUM(montant_reclame), 0) AS m FROM institutionnel_sinistredelegue "
+                                 "WHERE statut <> ALL(%s)", [list(SINISTRES_CLOS)])
+                a_traiter["Sinistres"] = {"Ouverts": s["n"], "MontantReclame": _franc(s["m"])}
+            if a_le_droit(utilisateur, "crm.view"):
+                a_traiter["Questionnaires"] = _une(
+                    cursor, "SELECT COUNT(*) AS n FROM lephare_questionnaire_prospect WHERE statut <> %s", [QUESTIONNAIRE_TRAITE])["n"]
+    if voit("a_reverser"):
+        resultat["Reversements"] = reversements()
+    if voit("commissions"):
+        resultat["Commissions"] = {cle: commissions()[cle] for cle in ("AReclamer", "Reclamees", "BordereauxEnAttente")}
+    if voit("a_traiter"):
+        if a_le_droit(utilisateur, "reversements.view"):
+            r = reversements()
+            a_traiter["Reversements"] = {"Montant": r["Montant"], "Nombre": r["Nombre"], "Compagnies": r["Compagnies"]}
+        if a_le_droit(utilisateur, "commissions.view"):
+            a_traiter["CommissionsAReclamer"] = commissions()["AReclamer"]
+        resultat["ATraiter"] = a_traiter
     return Response(resultat)
 
 

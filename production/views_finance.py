@@ -691,16 +691,24 @@ def reversement(request, id_reversement):
     return Response(resultat)
 
 
+# Paiement d'un bordereau de reversement par le cabinet : chèque, virement (demande du 2026-10-21) ou espèces (demande du
+# 2026-11-23) ; la banque ne se saisit que pour un chèque ou un virement
+MODES_PAIEMENT_CABINET = ("CHQ", "VIR", "ESP")
+MODES_PAIEMENT_CABINET_BANQUE = ("CHQ", "VIR")
+
+
 def controle_paiement_cabinet(donnees):
-    """Paiement d'un bordereau de reversement par le cabinet (demande du 2026-10-21) : par chèque ou par virement,
-    banque du cabinet obligatoire, numéro obligatoire pour un chèque. Renvoie le mode de paiement."""
-    id_mode = _entier(donnees.get("IdMode"), "Paiement (chèque ou virement)")
+    """Paiement d'un bordereau de reversement par le cabinet : par chèque, par virement ou en espèces ; banque du cabinet
+    obligatoire pour un chèque ou un virement, numéro obligatoire pour un chèque. Renvoie le mode de paiement."""
+    id_mode = _entier(donnees.get("IdMode"), "Paiement (chèque, virement ou espèces)")
     mode = _lignes(
         "SELECT UPPER(TRIM(COALESCE(abregereglement, ''))) AS abrege, LOWER(COALESCE(libellemodepaiement, '')) AS libelle "
         "FROM stdmodeencaissement WHERE idmodeencaissement = %s", [id_mode])
-    if not mode or mode[0]["abrege"] not in ("CHQ", "VIR") or "compagnie" in mode[0]["libelle"]:
-        raise ErreurFinance("Paiement de la compagnie : par chèque ou par virement.")
-    if _entier(donnees.get("IdBanque"), "Banque", obligatoire=False) <= 1:
+    # « À la compagnie » (chèque du client) et « Espèce PPA » ne sont pas des paiements du cabinet
+    if (not mode or mode[0]["abrege"] not in MODES_PAIEMENT_CABINET
+            or "compagnie" in mode[0]["libelle"] or "ppa" in mode[0]["libelle"]):
+        raise ErreurFinance("Paiement de la compagnie : par chèque, par virement ou en espèces.")
+    if mode[0]["abrege"] in MODES_PAIEMENT_CABINET_BANQUE and _entier(donnees.get("IdBanque"), "Banque", obligatoire=False) <= 1:
         raise ErreurFinance("Banque du cabinet : à renseigner.")
     if mode[0]["abrege"] == "CHQ" and not str(donnees.get("NumeroCheque") or "").strip():
         raise ErreurFinance("N° du chèque : à renseigner.")

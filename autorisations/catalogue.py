@@ -11,6 +11,7 @@ Pour un nouveau module : ajouter ses droits ici et ses routes dans garde.REGLES,
 
 MODULES = [
     ("cockpit", "Cockpit opérationnel"),
+    ("tableau", "Tableau de bord"),
     ("clients", "Clients"),
     ("devis", "Devis et production"),
     ("contrats", "Contrats et avenants"),
@@ -38,8 +39,70 @@ MODULES = [
 # (code, libellé, description, sensible, motif obligatoire à l'installation, séparation des tâches possible)
 DROITS = [
     ("cockpit.view", "Consulter le cockpit opérationnel",
-     "Écran d'accueil de l'espace Production ; chaque bloc de chiffres reste soumis au droit de lecture de son module.",
+     "Écran d'accueil de l'espace Production ; chaque bloc ne s'affiche qu'avec son droit ci-dessous.",
      False, False, False),
+    # Blocs du cockpit (demande du 2026-11-23 : « chaque bloc du cockpit et du tableau de bord visible par un utilisateur
+    # qu'avec des droits ») : un droit par bloc, le serveur n'envoie pas les chiffres d'un bloc non accordé
+    ("cockpit.chiffre_affaires", "Bloc « Chiffre d'affaires »",
+     "Chiffre d'affaires du cabinet depuis le 1er janvier : composition, mois par mois, taux moyen, comparaison avec l'an dernier.",
+     True, False, False),
+    ("cockpit.percu", "Bloc « Perçu »", "Commissions et frais reçus par le cabinet depuis le 1er janvier, dont ce mois-ci.", True, False, False),
+    ("cockpit.reste_a_percevoir", "Bloc « Reste à percevoir »",
+     "Commissions pas encore reçues : en attente du reversement, à réclamer, réclamées non payées.", True, False, False),
+    ("cockpit.commissions_listes", "Chiffre d'affaires dans les autres blocs",
+     "Colonne chiffre d'affaires de la production par branche, commission en jeu des polices et des échéances, commission "
+     "des derniers contrats émis.", True, False, False),
+    ("cockpit.primes", "Bloc « Primes émises »", "Primes TTC émises depuis le 1er janvier et ce mois-ci, comparaison avec l'an dernier.",
+     False, False, False),
+    ("cockpit.polices", "Bloc « Polices en vigueur »",
+     "Polices en vigueur, échéances dans les 30 jours, polices échues depuis moins de 30 jours.", False, False, False),
+    ("cockpit.devis", "Bloc « Devis en cours »", "Devis encore valables, primes proposées, devis expirés.", False, False, False),
+    ("cockpit.transformation", "Bloc « Transformation »", "Devis émis depuis le 1er janvier et part déjà confirmée en contrat.",
+     False, False, False),
+    ("cockpit.encaisse", "Bloc « Encaissé »", "Encaissements depuis le 1er janvier et ce mois-ci.", False, False, False),
+    ("cockpit.reste_a_encaisser", "Bloc « Reste à encaisser »", "Quittances non soldées de l'exercice et des années antérieures.",
+     False, False, False),
+    ("cockpit.a_reverser", "Bloc « À reverser aux compagnies »", "Primes encaissées pas encore reversées aux compagnies.",
+     False, False, False),
+    ("cockpit.commissions", "Bloc « Commissions en attente »", "Commissions à réclamer et réclamées non payées.", False, False, False),
+    ("cockpit.a_traiter", "Bloc « À traiter »",
+     "Points en attente d'une action ; chaque point exige aussi le droit de consulter son module.", False, False, False),
+    ("cockpit.branches", "Bloc « Production par branche »",
+     "Actes et primes TTC émis par branche depuis le 1er janvier.", False, False, False),
+    ("cockpit.echeances", "Bloc « Échéances à suivre »",
+     "Polices échues ou à échoir, sans renouvellement enregistré. Liste de clients : exige aussi « Consulter les contrats ».",
+     False, False, False),
+    ("cockpit.derniers_devis", "Bloc « Derniers devis en cours »",
+     "Liste de clients : exige aussi « Consulter les devis ».", False, False, False),
+    ("cockpit.derniers_contrats", "Bloc « Derniers contrats émis »",
+     "Polices et avenants les plus récents, avec leur règlement. Liste de clients : exige aussi « Consulter les contrats ».",
+     False, False, False),
+
+    # Blocs du tableau de bord (écran ouvert par « Consulter les états »)
+    ("tableau.chiffre_affaires", "Bloc « Chiffre d'affaires »",
+     "Chiffre d'affaires de l'exercice : composition, taux moyen, part des primes, comparaison avec l'exercice précédent.",
+     True, False, False),
+    ("tableau.percu", "Bloc « Perçu »", "Sommes reçues par le cabinet sur l'exercice, par origine.", True, False, False),
+    ("tableau.reste_a_percevoir", "Bloc « Reste à percevoir »",
+     "Commissions de l'exercice pas encore reçues : en attente du reversement, à réclamer, réclamées non payées.", True, False, False),
+    ("tableau.ca_par_mois", "Bloc « Chiffre d'affaires par mois »", "Graphique du chiffre d'affaires et du perçu, mois par mois.",
+     True, False, False),
+    ("tableau.ca_listes", "Chiffre d'affaires dans les autres blocs",
+     "Colonnes chiffre d'affaires et perçu de la synthèse par branche et du tableau par compagnie ; sans ce droit, ces blocs "
+     "ne montrent que les primes et les encaissements.", True, False, False),
+    ("tableau.primes", "Bloc « Primes émises »", "Primes TTC émises sur l'exercice, actes, comparaison avec l'exercice précédent.",
+     False, False, False),
+    ("tableau.encaisse", "Bloc « Encaissé »", "Encaissements de l'exercice, primes de l'exercice et des exercices antérieurs.",
+     False, False, False),
+    ("tableau.recouvrement", "Bloc « Recouvrement des émissions »", "Part des primes émises déjà encaissée, reste à encaisser.",
+     False, False, False),
+    ("tableau.primes_par_mois", "Bloc « Primes et encaissements par mois »", "", False, False, False),
+    ("tableau.alertes", "Bloc « Alertes de conformité »",
+     "Reversements en retard, chèques échus, primes impayées, commissions, dérogations ; chaque alerte exige aussi le droit "
+     "de consulter son module.", False, False, False),
+    ("tableau.compagnies", "Bloc « Par compagnie »", "Primes TTC et actes par compagnie.", False, False, False),
+    ("tableau.branches", "Bloc « Synthèse par branche »",
+     "Actes, primes, encaissements et recouvrement par branche, avec la catégorie CIMA.", False, False, False),
 
     ("clients.view", "Consulter les clients", "Liste, recherche, fiche et dossier 360° des clients.", False, False, False),
     ("clients.create", "Créer un client", "", False, False, False),
@@ -147,10 +210,14 @@ DROITS = [
 ]
 
 TOUS = [d[0] for d in DROITS]
+# Blocs du cockpit et du tableau de bord : tous accordés à l'installation, à retirer ensuite rôle par rôle
+BLOCS_COCKPIT = [d[0] for d in DROITS if d[0].startswith("cockpit.") and d[0] != "cockpit.view"]
+BLOCS_TABLEAU = [d[0] for d in DROITS if d[0].startswith("tableau.")]
+BLOCS_ECRANS = BLOCS_COCKPIT + BLOCS_TABLEAU
 _VUES_METIER = [
     "clients.view", "devis.view", "contrats.view", "encaissements.view", "reversements.view", "commissions.view", "apporteurs.view",
     "sinistres.view", "approbations.view", "crm.view", "documents.view", "reporting.view",
-]
+] + BLOCS_ECRANS
 
 # (code, libellé, description, droits) : composition proposée à l'installation, modifiable ensuite
 ROLES_INITIAUX = [
@@ -177,12 +244,12 @@ ROLES_INITIAUX = [
      ]),
     ("AGENT_SAISIE", "Agent de saisie", "Saisie des clients et des devis ; ne valide pas et ne touche pas aux primes.",
      ["clients.view", "clients.create", "clients.update", "devis.view", "devis.create", "devis.update",
-      "contrats.view", "encaissements.view", "documents.view", "documents.update", "crm.view"]),
+      "contrats.view", "encaissements.view", "documents.view", "documents.update", "crm.view"] + BLOCS_ECRANS),
     ("AGENT_VALIDATION", "Agent de validation", "Contrôle et transformation des devis en contrats.",
-     ["clients.view", "devis.view", "devis.validate", "contrats.view", "approbations.view", "documents.view"]),
+     ["clients.view", "devis.view", "devis.validate", "contrats.view", "approbations.view", "documents.view"] + BLOCS_ECRANS),
     ("CONSULTATION", "Consultation", "Lecture seule de l'activité.",
      ["clients.view", "devis.view", "contrats.view", "encaissements.view", "sinistres.view", "reporting.view",
-      "documents.view"]),
+      "documents.view"] + BLOCS_ECRANS),
 ]
 
 

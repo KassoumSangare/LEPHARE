@@ -2,7 +2,8 @@
 Tableau de bord de la direction (/admin/dashboard) : chiffre d'affaires du cabinet (courtier : commissions et accessoires,
 production/chiffre_affaires.py), primes placées et encaissements sur un exercice, comparés à la même période de
 l'exercice précédent, par mois, par branche et par compagnie, et alertes de conformité à la date du jour. Chiffres réels
-de la base, mêmes règles que le cockpit, la caisse, les reversements et les commissions.
+de la base, mêmes règles que le cockpit, la caisse, les reversements et les commissions. Chaque bloc n'est envoyé qu'avec
+son droit (« Bloc … » du groupe Tableau de bord d'Administration > Rôles, production/blocs_tableaux.py).
 
 GET /api/tableau-de-bord/?exercice=2026 (droit reporting.view)
 """
@@ -19,6 +20,7 @@ from autorisations.rbac import a_le_droit
 from institutionnel.models import ConventionAssureur
 
 from . import chiffre_affaires, views_finance
+from .blocs_tableaux import blocs_tableau, chiffre_affaires_selon_blocs
 from .reste_encaissement import sql_reste
 from .views_cockpit import CONTRAT_VALIDE, _franc, _lignes, _meme_jour, _une
 from .views_reprise import AUTHENTIFICATION
@@ -368,4 +370,65 @@ def tableau_de_bord(request):
     }
     resultat["Situation"] = situation
     resultat["Alertes"] = _alertes(situation)
-    return Response(resultat)
+    return Response(_selon_blocs(resultat, blocs_tableau(request.user), request.user))
+
+
+# Champs du chiffre d'affaires dans les lignes par branche et par compagnie (droit « Chiffre d'affaires dans les autres blocs »)
+CHAMPS_CA_LISTES = ("Commission", "Accessoires", "ChiffreAffaires", "ChiffreAffairesPercu", "TauxCommission", "BaseCommission",
+                    "LibelleBase")
+# Champs de chaque bloc de graphique mensuel et de chaque tuile des encaissements
+CHAMPS_MOIS = {"ca_par_mois": ("ChiffreAffaires", "ChiffreAffairesPrecedent", "Percu"),
+               "primes_par_mois": ("PrimeTtc", "PrimeTtcPrecedent", "Encaisse")}
+CHAMPS_ENCAISSEMENTS = {"encaisse": ("Total", "SurExercice", "SurAnterieurs"),
+                        "recouvrement": ("TauxRecouvrement", "EncaisseSurEmissions", "ResteAEncaisser", "QuittancesImpayees",
+                                         "PrimeEmise")}
+
+
+def _selon_blocs(resultat, blocs, utilisateur):
+    """Réduit la réponse aux blocs accordés (Administration > Rôles, groupe « Tableau de bord », production/blocs_tableaux.py) :
+    rien n'est envoyé au navigateur pour un bloc non accordé. « Blocs » : noms des blocs accordés."""
+    voit = blocs.__contains__
+    ca_listes = voit("ca_listes")
+    situation = resultat.pop("Situation")
+
+    ca = chiffre_affaires_selon_blocs(resultat.pop("ChiffreAffaires"), blocs)
+    if ca is not None:
+        if voit("reste_a_percevoir"):
+            ca["Reclamations"] = {"Cumul": situation["Commissions"]["ReclamationsCumul"]}
+        resultat["ChiffreAffaires"] = ca
+
+    production = resultat.pop("Production")
+    if voit("primes"):
+        production.pop("Commission", None)
+        production["Precedent"].pop("Commission", None)
+        resultat["Production"] = production
+
+    encaissements = resultat.pop("Encaissements")
+    garder = {champ for bloc, champs in CHAMPS_ENCAISSEMENTS.items() if voit(bloc) for champ in champs}
+    if garder:
+        resultat["Encaissements"] = {cle: valeur for cle, valeur in encaissements.items() if cle in garder}
+
+    garder = {"Mois"} | {champ for bloc, champs in CHAMPS_MOIS.items() if voit(bloc) for champ in champs}
+    resultat["ParMois"] = [{cle: valeur for cle, valeur in m.items() if cle in garder} for m in resultat["ParMois"]]
+
+    for cle, bloc, libelle in (("ParBranche", "branches", "Branche"), ("ParCompagnie", "compagnies", "Compagnie")):
+        lignes = resultat[cle] if voit(bloc) else []
+        if not ca_listes:
+            # Sans le chiffre d'affaires : ligne RAFAS (commission seule) et compagnies sans acte retirées, ordre des primes
+            lignes = [l for l in lignes if l.get("Nombre") or l.get("PrimeTtc")]
+            for ligne in lignes:
+                for champ in CHAMPS_CA_LISTES:
+                    ligne.pop(champ, None)
+            lignes.sort(key=lambda l, libelle=libelle: (-(l.get("PrimeTtc") or 0), l.get(libelle) or ""))
+        resultat[cle] = lignes
+
+    alertes = resultat.pop("Alertes")
+    if voit("alertes"):
+        # Chaque alerte exige aussi le droit de consulter son module (elle ouvre son écran)
+        resultat["Alertes"] = [a for a in alertes if a_le_droit(utilisateur, a["Droit"])]
+        # Note sous les alertes : primes à reverser et commissions en attente, selon le droit de consulter leur module
+        resultat["Situation"] = {cle: situation[cle] for cle, droit in (("Reversements", "reversements.view"),
+                                                                        ("Commissions", "commissions.view"))
+                                 if a_le_droit(utilisateur, droit)}
+    resultat["Blocs"] = sorted(blocs)
+    return resultat

@@ -11,6 +11,8 @@ export const francs = (n) => `${Math.round(Number(n) || 0).toLocaleString('fr-FR
 export const nombre = (n) => Number(n || 0).toLocaleString('fr-FR');
 export const pluriel = (n, un, plusieurs) => `${nombre(n)} ${Number(n) > 1 ? plusieurs : un}`;
 export const pourcent = (n) => (n === null || n === undefined ? '-' : `${Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} %`);
+// Heure de la dernière mise à jour des chiffres (en-tête du cockpit et du tableau de bord, relus automatiquement)
+export const heureMaj = (instant) => new Date(instant).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 // Chiffre d'affaires du courtier (production/chiffre_affaires.py). Consigne du 2026-11-16 : dans les documents d'OREOLE, taux de
 // commission OREOLE ASSURANCES ou COURTIER, commission acquise, générée, réelle, à percevoir, frais de courtage, frais

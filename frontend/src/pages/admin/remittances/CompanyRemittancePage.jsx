@@ -19,13 +19,15 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 // - les primes encaissées sont transmises par bordereau numéroté dans la suite d'OREOLE ; le titre dépend de
 //   l'ordre du règlement : à l'ordre de la compagnie, chèque du client transmis tel quel, et espèces (directement,
 //   sans reversement : demande du 2026-10-20) (BORDEREAU DE RECLAMATION DE COMMISSION, « Direct ») ; encaissé par le
-//   cabinet, reversé par son chèque (BORDEREAU DE REVERSEMENT DE PRIME, prime entière, Code CIMA) ; un bordereau
+//   cabinet, reversé par chèque, virement ou espèces (BORDEREAU DE REVERSEMENT DE PRIME, prime entière, Code CIMA) ; un bordereau
 //   porte un ou plusieurs clients ;
 // - chaque bordereau a son courrier de règlement de prime ; la date de décharge (cachet de la compagnie) se saisit
 //   au retour ;
 // - tableau de reversement (COMMI-MOIS) par compagnie : à l'écran et en Excel, une feuille par état.
-// Paiement d'un bordereau de reversement par le cabinet : chèque ou virement seulement (demande du 2026-10-21)
-const MODES_PAIEMENT_CABINET = ['CHQ', 'VIR'];
+// Paiement d'un bordereau de reversement par le cabinet : chèque, virement (demande du 2026-10-21) ou espèces (demande du
+// 2026-11-23), dans cet ordre ; banque du cabinet pour un chèque ou un virement seulement
+const MODES_PAIEMENT_CABINET = ['CHQ', 'VIR', 'ESP'];
+const MODES_AVEC_BANQUE = ['CHQ', 'VIR'];
 const NATURES = {
   RECLAMATION: { libelle: 'Réclamation de commission', court: 'Direct', couleur: 'purple' },
   REVERSEMENT: { libelle: 'Reversement de prime', court: 'Reversement', couleur: 'blue' },
@@ -54,17 +56,24 @@ const PoliceDeduite = ({ ligne }) => (
 );
 
 const abregeMode = (modes, idMode) => String(modes.find((m) => String(m.idmodeencaissement) === String(idMode))?.abregereglement || '').trim().toUpperCase();
-// Paiement complet : chèque ou virement, banque du cabinet, et n° pour un chèque (le serveur fait le même contrôle)
+// Paiement complet : espèces, ou chèque / virement avec la banque du cabinet, et n° pour un chèque (le serveur fait le même
+// contrôle)
 const paiementComplet = (modes, p) => {
   const abrege = abregeMode(modes, p.IdMode);
-  return ['CHQ', 'VIR'].includes(abrege) && Boolean(p.IdBanque) && (abrege !== 'CHQ' || Boolean(String(p.NumeroCheque || '').trim()));
+  if (abrege === 'ESP') return true;
+  return MODES_AVEC_BANQUE.includes(abrege) && Boolean(p.IdBanque) && (abrege !== 'CHQ' || Boolean(String(p.NumeroCheque || '').trim()));
 };
 
 const PaiementCabinet = ({ modes, banques, valeur, onChange }) => {
   const mode = modes.find((m) => String(m.idmodeencaissement) === String(valeur.IdMode));
   const abrege = String(mode?.abregereglement || '').trim().toUpperCase();
   const champ = (cle) => (e) => onChange({ ...valeur, [cle]: e.target.value });
-  // Chèque proposé d'office : les deux seules options sont le chèque et le virement
+  // Espèces : ni banque ni numéro, ceux d'un chèque ou d'un virement saisis avant sont effacés
+  const changerMode = (e) => {
+    const especes = abregeMode(modes, e.target.value) === 'ESP';
+    onChange({ ...valeur, IdMode: e.target.value, ...(especes ? { IdBanque: '', NumeroCheque: '' } : {}) });
+  };
+  // Chèque proposé d'office
   useEffect(() => {
     if (!valeur.IdMode && modes.length) {
       const cheque = modes.find((m) => String(m.abregereglement || '').trim().toUpperCase() === 'CHQ') || modes[0];
@@ -75,11 +84,11 @@ const PaiementCabinet = ({ modes, banques, valeur, onChange }) => {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 250px))', gap: '0.7rem' }}>
       <div className="form-group" style={{ margin: 0 }}>
         <label className="form-label" htmlFor="pc-mode">Paiement</label>
-        <select id="pc-mode" className="form-control" required value={valeur.IdMode} onChange={champ('IdMode')}>
+        <select id="pc-mode" className="form-control" required value={valeur.IdMode} onChange={changerMode}>
           {modes.map((m) => <option key={m.idmodeencaissement} value={m.idmodeencaissement}>{m.libellemodepaiement}</option>)}
         </select>
       </div>
-      {mode && (
+      {mode && MODES_AVEC_BANQUE.includes(abrege) && (
         <>
           <div className="form-group" style={{ margin: 0 }}>
             <label className="form-label" htmlFor="pc-banque">Banque du cabinet</label>
@@ -428,9 +437,12 @@ export const CompanyRemittancePage = () => {
   useEffect(() => {
     settingsApi.getCompanies().then((l) => setCompagnies(Array.isArray(l) ? l : [])).catch(() => {});
     settingsApi.getBanques().then((l) => setBanques(Array.isArray(l) ? l : [])).catch(() => {});
+    // « À la compagnie » (chèque du client) et « Espèce PPA » écartés ; chèque, virement puis espèces
+    const rang = (m) => MODES_PAIEMENT_CABINET.indexOf(String(m.abregereglement || '').trim().toUpperCase());
     settingsApi.getModesEncaissement()
-      .then((l) => setModes((Array.isArray(l) ? l : []).filter((m) => MODES_PAIEMENT_CABINET.includes(String(m.abregereglement || '').trim().toUpperCase())
-        && !/compagnie|ppa/i.test(m.libellemodepaiement || ''))))
+      .then((l) => setModes((Array.isArray(l) ? l : [])
+        .filter((m) => rang(m) >= 0 && !/compagnie|ppa/i.test(m.libellemodepaiement || ''))
+        .sort((a, b) => rang(a) - rang(b))))
       .catch(() => {});
   }, []);
 
@@ -558,7 +570,7 @@ export const CompanyRemittancePage = () => {
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.3rem 0 0', maxWidth: 980 }}>
           Chèque du client à l'ordre de la compagnie, ou prime payée en espèces : directement au bordereau de réclamation de commission (« Direct »), sans reversement par le cabinet.
-          Autre prime encaissée par {nomCabinet()} (chèque à son ordre, virement, paiement mobile) : reversée entière par son chèque avec un bordereau de reversement de prime (Code CIMA : la commission n'est jamais déduite).
+          Autre prime encaissée par {nomCabinet()} (chèque à son ordre, virement, paiement mobile) : reversée entière par chèque, virement ou espèces avec un bordereau de reversement de prime (Code CIMA : la commission n'est jamais déduite).
         </p>
       </div>
 
