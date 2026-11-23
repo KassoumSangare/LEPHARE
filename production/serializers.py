@@ -605,6 +605,21 @@ class TarifEcranSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+class ContratListSerializer(serializers.ListSerializer):
+    """Liste de contrats : les assurés de la page sont lus en une seule requête (voir ContratSerializer.to_representation)."""
+
+    def to_representation(self, data):
+        elements = list(data.all() if isinstance(data, Manager) else data)
+        ids = {c.idassure for c in elements if getattr(c, "idassure", None)}
+        self.child._assures = {
+            a["pk"]: a for a in Client.objects.filter(pk__in=ids).values("pk", "DateNaissance", "CniPat")
+        } if ids else {}
+        try:
+            return [self.child.to_representation(element) for element in elements]
+        finally:
+            self.child._assures = None
+
+
 class ContratSerializer(serializers.ModelSerializer):
     offreboisee = serializers.SerializerMethodField()
     piece_jointe_info = PieceJointeSerializer(
@@ -618,6 +633,7 @@ class ContratSerializer(serializers.ModelSerializer):
         model = Contrat
         fields = "__all__"
         depth = 1
+        list_serializer_class = ContratListSerializer
         read_only_fields = [
             "idcontrat",
             "piece_jointe_info",
@@ -654,14 +670,17 @@ class ContratSerializer(serializers.ModelSerializer):
                     instance.idclient.CniPat
                 )
             if instance.idassure:
-                assure = Client.objects.get(pk=instance)
+                # Assuré (idassure est un entier, pas une clé étrangère) : lu une fois pour toute la liste par
+                # ContratListSerializer. L'ancien Client.objects.get(pk=instance) lançait une requête par contrat
+                # et cherchait le client portant le numéro du contrat.
+                assures = getattr(self, "_assures", None)
+                if assures is not None:
+                    assure = assures.get(instance.idassure)
+                else:
+                    assure = Client.objects.filter(pk=instance.idassure).values("pk", "DateNaissance", "CniPat").first()
                 if assure:
-                    representation["datenaissanceassure"] = (
-                        assure.DateNaissance
-                    )
-                    representation["numeroidentificationassure"] = (
-                        assure.CniPat
-                    )
+                    representation["datenaissanceassure"] = assure["DateNaissance"]
+                    representation["numeroidentificationassure"] = assure["CniPat"]
             if instance.id_police_pegas:
                 representation["numeropolice"] = representation[
                     "id_police_pegas"

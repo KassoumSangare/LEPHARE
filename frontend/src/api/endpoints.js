@@ -825,14 +825,21 @@ export const quoteApi = {
   // GET /api/devis/:id/ (un devis enregistré, au format du registre)
   getQuote: async (id) => normalizeDevis((await apiClient.get(`/devis/${id}/`)).data),
   // Tous les devis d'un filtre (parcourt les pages serveur, plafonnées à 200 lignes)
+  // La première page donne le total : les suivantes partent ensemble, 4 à la fois, au lieu de l'une après l'autre
+  // (registre de 3 000 devis : 15 allers-retours successifs auparavant)
   getAllQuotes: async (params = {}, maxPages = 30) => {
-    const all = [];
-    for (let page = 1; page <= maxPages; page += 1) {
-      const res = await apiClient.get('/devis/', { params: { ...params, page_size: 200, page } });
-      all.push(...extractData(res).map(normalizeDevis));
-      if (!res?.data?.next) break;
+    const taille = 200;
+    const lire = (page) => apiClient.get('/devis/', { params: { ...params, page_size: taille, page }, timeout: 120000 });
+    const premiere = await lire(1);
+    const pages = [extractData(premiere)];
+    const total = Number(premiere?.data?.count ?? 0);
+    const dernierePage = premiere?.data?.next ? Math.min(maxPages, Math.ceil(total / taille)) : 1;
+    const numeros = Array.from({ length: Math.max(0, dernierePage - 1) }, (_, i) => i + 2);
+    for (let i = 0; i < numeros.length; i += 4) {
+      const lot = await Promise.all(numeros.slice(i, i + 4).map(lire));
+      lot.forEach((res) => pages.push(extractData(res)));
     }
-    return all;
+    return pages.flat().map(normalizeDevis);
   },
   // Nombre total de devis pour un filtre donné (pagination serveur : champ `count`)
   getQuotesCount: async (params = {}) => {

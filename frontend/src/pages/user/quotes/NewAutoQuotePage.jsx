@@ -1906,7 +1906,7 @@ export const NewAutoQuotePage = () => {
     const fetchApiData = async () => {
       try {
         const [cls, cies, gnrs, mrqs, crs, usgs, cats, secr, prms, ofrs, sgs, tvs] = await Promise.all([
-          customerApi.getClients().catch(() => []),
+          customerApi.getClients({ leger: 1 }).catch(() => []), // liste de choix : sans l'activité de chaque client
           settingsApi.getCompanies().catch(() => []),
           settingsApi.getGenres().catch(() => []),
           settingsApi.getMarques().catch(() => []),

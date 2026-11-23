@@ -365,7 +365,7 @@ export const NewIaQuotePage = () => {
     let actif = true;
     (async () => {
       const [cls, cies, trfs, profs, quals] = await Promise.all([
-        customerApi.getClients().catch(() => []),
+        customerApi.getClients({ leger: 1 }).catch(() => []), // liste de choix : sans l'activité de chaque client
         settingsApi.getCompanies().catch(() => []),
         iaApi.getTarifs().catch(() => []),
         iaApi.getProfessions().catch(() => []),

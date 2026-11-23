@@ -365,7 +365,7 @@ export const NewSanteQuotePage = () => {
     let actif = true;
     (async () => {
       const [cls, cies, trfs, types, zns, lns] = await Promise.all([
-        customerApi.getClients().catch(() => []),
+        customerApi.getClients({ leger: 1 }).catch(() => []), // liste de choix : sans l'activité de chaque client
         settingsApi.getCompanies().catch(() => []),
         santeApi.getTarifs().catch(() => []),
         santeApi.getTypesContrat().catch(() => []),

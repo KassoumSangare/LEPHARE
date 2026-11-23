@@ -103,6 +103,10 @@ class ClientViewSet(viewsets.ModelViewSet):
             # Le répertoire ne montre pas les fiches archivées (sans contrat, ou doublons regroupés) ;
             # elles restent consultables par leur identifiant (devis, dossier 360°)
             queryset = queryset.exclude(Statut=STATUT_ARCHIVE)
+            # ?leger=1 : liste de choix des écrans de devis (Auto, Santé, IA), sans l'activité commerciale de chaque client.
+            # Les trois sous-requêtes par client (devis, polices, primes) rendaient la liste complète lente à chaque devis.
+            if self.request.query_params.get("leger"):
+                return queryset
         # Répertoire des clients : devis en cours, polices en vigueur et total des primes de
         # chaque client, calculés dans la même requête que la liste (voir activite.py)
         return queryset.annotate(**annotations_activite())
