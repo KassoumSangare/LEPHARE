@@ -194,6 +194,21 @@ export const ContractDetailPage = () => {
   }, [id]);
   const acteOuvert = (code, droit) => Boolean(actesPolice?.[code]?.Possible) && aLeDroit(droit);
 
+  // Règlements de la police (production/encaissements_police.py) ; « Encaissé par » envoyé par le serveur seulement avec
+  // le droit « Voir qui a encaissé » (encaissements.auteur)
+  const [reglementsPolice, setReglementsPolice] = useState(null);
+  useEffect(() => {
+    let actif = true;
+    setReglementsPolice(null);
+    if (!id) return undefined;
+    contractApi.getEncaissementsPolice(id).then((r) => { if (actif) setReglementsPolice(r); }).catch(() => {});
+    return () => { actif = false; };
+  }, [id]);
+  const lignesReglements = reglementsPolice ? [
+    ...(reglementsPolice.HorsCaisse || []).map((h) => ({ ...h, cle: `h-${h.Quittance}`, HorsCaisse: true })),
+    ...(reglementsPolice.Reglements || []).map((r) => ({ ...r, cle: `r-${r.IdDetail}` })),
+  ] : [];
+
   const attestation = attestationsList.find((a) => a.police === contract.numeropolice || a.numeropolice === contract.numeropolice);
 
   return (
@@ -578,6 +593,50 @@ export const ContractDetailPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Règlements de la police : chaque encaissement de ses quittances, et qui l'a saisi avec le droit encaissements.auteur */}
+      {reglementsPolice && (
+        <div className="glass-panel historique-police">
+          <div className="historique-police-entete">
+            <h3 className="title-md">
+              <CreditCard size={18} color="#10b981" />
+              Règlements de la police ({lignesReglements.length})
+            </h3>
+          </div>
+          {lignesReglements.length === 0 ? (
+            <p className="historique-police-vide">Aucun règlement enregistré pour cette police.</p>
+          ) : (
+            <div className="table-wrapper">
+              <table className="data-table historique-police-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Pièce</th>
+                    <th>Quittance</th>
+                    <th>Mode</th>
+                    <th>Référence</th>
+                    <th className="droite">Montant</th>
+                    {reglementsPolice.VoirAuteur && <th>Encaissé par</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignesReglements.map((r) => (
+                    <tr key={r.cle} className={r.Annule ? 'annule' : ''}>
+                      <td>{r.Date ? dateLisible(r.Date) : '-'}{r.Heure ? ` ${r.Heure}` : ''}</td>
+                      <td className="mono">{r.HorsCaisse ? '-' : (r.NumeroPiece || '-')}{r.Annule && <span className="historique-etat"> annulé</span>}</td>
+                      <td className="mono">{r.Quittance || '-'}{r.Avenant ? ` (${r.Avenant})` : ''}</td>
+                      <td>{r.HorsCaisse ? 'Encaissé hors caisse' : (r.Mode || '-')}</td>
+                      <td className="mono">{r.Reference || '-'}</td>
+                      <td className={`droite mono${r.Montant < 0 ? ' negatif' : ''}`}>{Number(r.Montant || 0).toLocaleString('fr-FR')} F</td>
+                      {reglementsPolice.VoirAuteur && <td>{r.EncaissePar || 'Historique repris'}</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ASACI Digital Certificate section (if applicable) */}
       {attestation && (

@@ -1879,6 +1879,8 @@ export const contractApi = {
   getConditionsParticulieres: async (id) => (await apiClient.get(`/contrat/${id}/conditions-particulieres/`)).data,
   // GET /api/contrat/:id/releve-compte/ (quittance du contrat + quittances non soldées du client)
   getReleveCompte: async (id) => (await apiClient.get(`/contrat/${id}/releve-compte/`)).data,
+  // GET /api/contrat/:id/encaissements/ : règlements de la police ; EncaissePar seulement avec le droit encaissements.auteur
+  getEncaissementsPolice: async (id) => (await apiClient.get(`/contrat/${id}/encaissements/`)).data,
   getContractDetail: async (id) => {
     const res = await apiClient.get(`/contrat/${id}/`);
     return normalizeContrat(res.data);

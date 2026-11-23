@@ -269,6 +269,8 @@ REGLES = [
     R("DELETE", r"devis/(?P<iddevis>\d+)/suppression/?$", "devis.delete", objet="devis", cles=("iddevis",),
       instantane=instantane_devis),
     R("GET", r"contrat/\d+/suppression/?$", "contrats.delete"),
+    # Règlements de la police (fiche du contrat) ; le nom de l'auteur exige en plus encaissements.auteur (encaissements_police.py)
+    R("GET", r"contrat/\d+/encaissements/?$", "contrats.view"),
     R("DELETE", r"contrat/(?P<idcontrat>\d+)/suppression/?$", "contrats.delete", objet="contrat", cles=("idcontrat",),
       instantane=instantane_contrat_suppression),
     # ---- devis : transformation en contrat, archivage

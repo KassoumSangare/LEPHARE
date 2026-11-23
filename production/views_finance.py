@@ -38,6 +38,7 @@ from rest_framework.response import Response
 from configuration_api.parametrage import valeur_parametre
 from institutionnel.authentication import KnoxOrDemoTokenAuthentication
 from autorisations.permissions import DroitDeLaRoute
+from autorisations.rbac import a_le_droit
 
 from .reste_encaissement import reste_a_encaisser
 
@@ -386,7 +387,7 @@ def rechercher_reglements(parametres):
     restes = _restes_nets({l["numeroquittance"] for l in brutes})
     complements = {c["idencaissement"]: c for c in _lignes(
         f"""SELECT e.idencaissement, e.idmodepaiement, e.idbanque, {SQL_REFERENCE_REGLEMENT} AS reference, NULLIF(TRIM(e.nomtireurcheque), '') AS emetteur,
-                   u.name AS operateur, e.datecheque, e.datereceptioncheque
+                   COALESCE(NULLIF(TRIM(u.name), ''), NULLIF(TRIM(u.email), ''), 'Compte n° ' || u.id) AS operateur, e.datecheque, e.datereceptioncheque
             FROM stdencaissement e LEFT JOIN account_uranususer u ON u.id = e.idutilisateur WHERE e.idencaissement = ANY(%s)""", [ids])}
     cheques = {c["idencaissement"]: c for c in _lignes(
         """SELECT op.idencaissement, c.montantinitial, c.soldedisponible, c.statut, c.datedepot
@@ -431,25 +432,47 @@ def rechercher_reglements(parametres):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def recherche_reglements(request):
-    """GET /api/finance/encaissements/recherche/?q=&mode=&du=&au= : à quoi a servi un règlement."""
+    """GET /api/finance/encaissements/recherche/?q=&mode=&du=&au= : à quoi a servi un règlement. Qui l'a saisi (Operateur)
+    n'est envoyé qu'avec le droit encaissements.auteur."""
     try:
-        return Response(rechercher_reglements(request.query_params))
+        resultat = rechercher_reglements(request.query_params)
     except ErreurFinance as erreur:
         return _erreur(erreur)
+    resultat["VoirAuteur"] = a_le_droit(request.user, DROIT_AUTEUR_ENCAISSEMENT)
+    if not resultat["VoirAuteur"]:
+        for reglement in resultat["Reglements"]:
+            for ligne in reglement["Lignes"]:
+                ligne.pop("Operateur", None)
+    return Response(resultat)
 
 
 @api_view(["GET"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def etat_encaissements(request):
-    """GET /api/finance/encaissements/?du=&au=&compagnie=&mode=&statut= : état récapitulatif."""
+    """GET /api/finance/encaissements/?du=&au=&compagnie=&mode=&statut= : état récapitulatif ; « Saisi par » (Operateur) de
+    chaque ligne avec le droit encaissements.auteur."""
     try:
-        return Response(donnees_etat_encaissements(request.query_params))
+        return Response(donnees_etat_encaissements(request.query_params, utilisateur=request.user))
     except ErreurFinance as erreur:
         return _erreur(erreur)
 
 
-def donnees_etat_encaissements(parametres):
+DROIT_AUTEUR_ENCAISSEMENT = "encaissements.auteur"
+
+
+def _operateurs(ids_encaissement):
+    """{idencaissement: nom de l'utilisateur qui a saisi la pièce} (adresse si le compte n'a pas de nom)."""
+    from .encaissements_police import SQL_NOM_COMPTE
+
+    if not ids_encaissement:
+        return {}
+    return {l["idencaissement"]: l["nom"] for l in _lignes(
+        f"""SELECT e.idencaissement, {SQL_NOM_COMPTE} AS nom FROM stdencaissement e JOIN account_uranususer u ON u.id = e.idutilisateur
+            WHERE e.idencaissement = ANY(%s)""", [list(ids_encaissement)])}
+
+
+def donnees_etat_encaissements(parametres, utilisateur=None):
     """État des encaissements (écran, bordereau récapitulatif imprimé et Excel) : une ligne par quittance encaissée
     du … au … (date de saisie), filtres compagnie, mode et statut ; annulés et chèques impayés hors totaux."""
     du = _date(parametres.get("du"), "Du", obligatoire=False) or date(date.today().year, 1, 1)
@@ -471,6 +494,12 @@ def donnees_etat_encaissements(parametres):
     statut = parametres.get("statut")
     if statut:
         lignes = [l for l in lignes if l["Statut"] == statut]
+    # Qui a saisi chaque pièce : seulement avec le droit « Voir qui a encaissé » (vide : historique repris de l'ancien logiciel)
+    voir_auteur = utilisateur is not None and a_le_droit(utilisateur, DROIT_AUTEUR_ENCAISSEMENT)
+    if voir_auteur:
+        noms = _operateurs({l["IdEncaissement"] for l in lignes})
+        for l in lignes:
+            l["Operateur"] = noms.get(l["IdEncaissement"], "")
 
     def totaux(cle):
         resultat = {}
@@ -498,6 +527,7 @@ def donnees_etat_encaissements(parametres):
                   "Reverse": sum(l["MontantReverse"] for l in valides),
                   "ResteAReverser": sum(l["ResteAReverser"] for l in valides)},
         "DebutReversements": debut_reversements().isoformat(),
+        "VoirAuteur": voir_auteur,
     }
 
 

@@ -1186,6 +1186,17 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
         with connection.cursor() as cursor:
             return Response(donnees_releve_compte(cursor, contrat.pk), status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"], url_path="encaissements")
+    def encaissements(self, request, pk=None):
+        """Règlements de la police du contrat ; nom de l'utilisateur qui a encaissé avec le droit encaissements.auteur
+        (production/encaissements_police.py)."""
+        from .encaissements_police import reglements_de_police
+
+        contrat = get_object_or_404(Contrat.objects.all(), pk=pk)
+        self.check_object_permissions(request, contrat)
+        with connection.cursor() as cursor:
+            return Response(reglements_de_police(cursor, contrat.pk, request.user), status=status.HTTP_200_OK)
+
     # Portefeuille des Contrats : statut de chaque contrat, une seule définition pour les badges,
     # les onglets et leurs compteurs (_statut_portefeuille). Par ordre de priorité :
     #   annule        annulé par un avenant d'annulation (IdContratAnnulation, règle URANUS)

@@ -136,6 +136,7 @@ DROITS = [
     ("encaissements.view", "Consulter la caisse", "Contrats à encaisser, encaissements, reçus, chèques.", False, False, False),
     ("encaissements.create", "Encaisser une prime", "Encaissement, échéancier de chèques, paiement mobile, demande d'annulation.", False, False, False),
     ("encaissements.cancel", "Annuler un encaissement", "Annulation d'encaissement, décaissement ou suppression d'un chèque.", True, True, False),
+    ("encaissements.auteur", "Voir qui a encaissé", "Nom de l'utilisateur qui a saisi chaque règlement, dans la fiche du contrat.", False, False, False),
 
     ("reversements.view", "Consulter les reversements", "", False, False, False),
     ("reversements.create", "Préparer un reversement", "", False, False, False),
@@ -225,14 +226,14 @@ ROLES_INITIAUX = [
     ("DEVELOPPEUR", "Développeur", "Accès complet pour la maintenance de l'application.", TOUS),
     ("DIRECTION", "Direction", "Vision complète de l'activité (devis, contrats, clients, caisse, états, journal) "
      "et décision sur les demandes d'autorisation ; pas de paramétrage technique.",
-     _VUES_METIER + ["approbations.decider", "audit.view", "users.view", "tarifs.view"]),
+     _VUES_METIER + ["approbations.decider", "audit.view", "users.view", "tarifs.view", "encaissements.auteur"]),
     ("RESPONSABLE", "Responsable", "Contrôle et validation des opérations, sans modifier les tarifs.",
      _VUES_METIER + [
          "devis.validate", "devis.cancel", "devis.primes", "contrats.update", "contrats.avenant", "contrats.cancel",
          "encaissements.cancel", "reversements.create", "reversements.validate", "commissions.validate",
          "commissions.cancel", "apporteurs.rattacher", "apporteurs.payer", "apporteurs.cancel", "sinistres.settle",
          "approbations.decider", "crm.update", "documents.update",
-         "audit.view", "tarifs.view",
+         "audit.view", "tarifs.view", "encaissements.auteur",
      ]),
     ("GESTIONNAIRE", "Gestionnaire", "Production complète (clients, devis, contrats, caisse, sinistres, imports) "
      "sans paramétrage ; attribué aux comptes importés non administrateurs.",

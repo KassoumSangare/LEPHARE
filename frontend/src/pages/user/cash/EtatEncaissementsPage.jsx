@@ -228,6 +228,8 @@ export const EtatEncaissementsPage = () => {
                   <tr>
                     <th>Date de saisie</th><th>N° pièce</th><th>Compagnie</th><th>Client</th><th>Branche</th><th>Quittance</th>
                     <th>Mode</th><th>Référence</th><th style={{ textAlign: 'right' }}>Montant</th><th>Statut</th>
+                    {/* Colonne envoyée par le serveur seulement avec le droit « Voir qui a encaissé » */}
+                    {etat.VoirAuteur && <th>Saisi par</th>}
                     {peutCorriger && <th aria-label="Corriger" />}
                   </tr>
                 </thead>
@@ -251,6 +253,7 @@ export const EtatEncaissementsPage = () => {
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: 700, color: l.Montant < 0 ? 'var(--accent-rose)' : undefined }}>{fcfa(l.Montant)}</td>
                       <td title={l.MotifAnnulation || undefined} style={{ whiteSpace: 'nowrap' }}><StatusBadge label={l.LibelleStatut} color={COULEURS[l.Statut]} /></td>
+                      {etat.VoirAuteur && <td style={{ whiteSpace: 'nowrap' }}>{l.Operateur || 'Historique repris'}</td>}
                       {peutCorriger && (
                         <td>
                           {corrigeable(l) && (
@@ -264,7 +267,7 @@ export const EtatEncaissementsPage = () => {
                     </tr>
                   ))}
                   {!lignesVisibles.length && (
-                    <tr><td colSpan={peutCorriger ? 11 : 10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                    <tr><td colSpan={10 + (peutCorriger ? 1 : 0) + (etat.VoirAuteur ? 1 : 0)} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
                       {etat.Lignes.length ? 'Aucun encaissement ne correspond à la recherche.' : 'Aucun encaissement pour ces critères.'}
                     </td></tr>
                   )}
