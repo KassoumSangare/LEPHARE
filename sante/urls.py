@@ -46,6 +46,7 @@ from .views_devis_sante import (
     modele_import_classique,
     lire_devis_sante,
     continuer_saisie,
+    changer_offre_commerciale_vue,
     supprimer_objet_saisie,
 )
 
@@ -138,6 +139,7 @@ urlpatterns = [
     path(r"devissante/apercu/", apercu_devis_sante_vue, name="apercu_devis_sante"),
     path(r"devissante/<int:iddevis>/", lire_devis_sante, name="lecture_devis_sante"),
     path(r"devissante/<int:iddevis>/continuer/", continuer_saisie, name="continuer_saisie_sante"),
+    path(r"devissante/<int:iddevis>/offre-commerciale/", changer_offre_commerciale_vue, name="offre_commerciale_sante"),
     path(r"devissante/<int:iddevis>/bordereau/", bordereau_primes, name="bordereau_primes_sante"),
     # Contrat : familles et primes de sa période, incorporations comprises (documents du contrat)
     path(r"devissante/contrat/<int:idcontrat>/bordereau/", bordereau_primes_contrat, name="bordereau_primes_contrat_sante"),

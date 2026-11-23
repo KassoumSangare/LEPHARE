@@ -34,8 +34,10 @@ let compteur = 0;
 const nouvelleCle = () => { compteur += 1; return `l${compteur}`; };
 const ligneVide = (base = {}) => ({
   cle: nouvelleCle(), IdClient: 0, IdAdherentBase: 0, Matricule: '', Nom: '', Prenoms: '', DateNaissance: '', Sexe: '', IdOffre: null, Affections: 0, TauxAffection: '', TauxAge: '',
-  SurprimeImposee: 0, CotisationImposee: 0, EnfantsEnPlus: 0, Personnes: 0, Ayants: [], Beneficiaires: '', Anomalies: [], ...base,
+  SurprimeImposee: 0, CotisationImposee: 0, ReductionType: 'M', ReductionValeur: 0, EnfantsEnPlus: 0, Personnes: 0, Ayants: [], Beneficiaires: '', Anomalies: [], ...base,
 });
+// Réduction d'une famille (montant ou pourcentage de sa cotisation hors cartes) : prise sur les frais courtiers, comme une surprime
+const TYPES_REDUCTION = [{ code: 'M', libelle: 'Montant (F)' }, { code: 'P', libelle: 'Pourcentage (%)' }];
 const LIENS = [{ code: 'C', libelle: 'Conjoint' }, { code: 'E', libelle: 'Enfant' }];
 const ayantVide = (lien = 'E') => ({ cle: nouvelleCle(), Lien: lien, Nom: '', Prenoms: '', DateNaissance: '', Sexe: '' });
 const libelleOffre = (o) => `${fcfa(o.Cotisation)} F${!o.PartIA && !o.PartAFA ? ' - Santé seule' : ''}`;
@@ -257,6 +259,7 @@ export default function NewOreolePage() {
       IdClient: l.IdClient || 0, IdAdherentBase: l.IdAdherentBase || 0, Matricule: l.Matricule, Nom: l.Nom, Prenoms: l.Prenoms, DateNaissance: l.DateNaissance, Sexe: l.Sexe,
       IdOffre: l.IdOffre || Number(idOffre) || 0, Affections: l.Affections || 0, TauxAffection: l.TauxAffection === '' ? null : l.TauxAffection, TauxAge: l.TauxAge === '' ? null : l.TauxAge,
       SurprimeImposee: Number(l.SurprimeImposee) || 0, CotisationImposee: Number(l.CotisationImposee) || 0, EnfantsEnPlus: Number(l.EnfantsEnPlus) || 0, Personnes: Number(l.Personnes) || 0,
+      ReductionType: l.ReductionType || 'M', ReductionValeur: Number(l.ReductionValeur) || 0,
       PartIA: l.PartFichier || Number(l.PartIA) > 0 ? l.PartIA : undefined, PartAFA: l.PartFichier || Number(l.PartAFA) > 0 ? l.PartAFA : undefined,
       Ayants: (l.Ayants || []).filter((a) => String(a.Nom).trim() || String(a.Prenoms).trim()).map((a) => ({ Lien: a.Lien, Nom: a.Nom, Prenoms: a.Prenoms, DateNaissance: a.DateNaissance || null, Sexe: a.Sexe })),
       Beneficiaires: l.Beneficiaires,
@@ -297,6 +300,26 @@ export default function NewOreolePage() {
 
   const basculerPerte = (cle, perte) => setCartesPerte((avant) => (perte ? [...new Set([...avant, cle])] : avant.filter((c) => c !== cle)));
 
+  // Réduction d'une famille : type (montant ou pourcentage) et valeur, sur la cotisation hors cartes
+  const champReduction = (ligne) => {
+    const pourcentage = ligne.ReductionType === 'P';
+    const tarif = tarifDe(ligne);
+    return (
+      <Champ label="Réduction" aide={tarif?.MontantReduction ? `${fcfa(tarif.MontantReduction)} F retirés de la cotisation (frais courtiers).` : 'Montant ou pourcentage de la cotisation hors cartes, surprimes comprises.'}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '0.4rem' }}>
+          <select className="form-control" aria-label="Type de réduction" value={ligne.ReductionType || 'M'} disabled={lectureSeule}
+            onChange={(e) => modifierLigne(ligne.cle, { ReductionType: e.target.value, ReductionValeur: 0 })}>
+            {TYPES_REDUCTION.map((t) => <option key={t.code} value={t.code}>{t.libelle}</option>)}
+          </select>
+          {pourcentage
+            ? <input type="number" min="0" max="99" step="0.5" className="form-control" aria-label="Taux de réduction" value={ligne.ReductionValeur || ''} disabled={lectureSeule}
+                onChange={(e) => modifierLigne(ligne.cle, { ReductionValeur: Math.max(0, Math.min(99, Number(e.target.value) || 0)) })} />
+            : <AmountInput value={ligne.ReductionValeur || ''} disabled={lectureSeule} onChange={(v) => modifierLigne(ligne.cle, { ReductionValeur: v })} />}
+        </div>
+      </Champ>
+    );
+  };
+
   const tarifDe = (ligne) => {
     if (!apercu) return null;
     const cleLigne = `${String(ligne.Nom).trim()} ${String(ligne.Prenoms).trim()}`.trim();
@@ -318,7 +341,7 @@ export default function NewOreolePage() {
       Familles: t.Familles || 0, Cotisation: (t.Cotisation || 0) + complementsFamille, PartSante: (t.PartSante || 0) + complementsFamille, PartIA: t.PartIA || 0, PartAFA: t.PartAFA || 0,
       PrimeHt: t.PrimeHt || 0, Accessoires: t.Accessoires || 0, FraisCourtiers: (t.FraisCourtiers || 0) + complementsFamille, HonoraireCabinet: t.HonoraireCabinet || 0,
       HonoraireGestionnaire: t.HonoraireGestionnaire || 0, PartMCI: t.PartMCI || 0, SurprimeAffection: t.SurprimeAffection || 0, SurprimeAge: t.SurprimeAge || 0,
-      MontantEnfants: t.MontantEnfants || 0, MontantCartes: t.MontantCartes || 0,
+      MontantEnfants: t.MontantEnfants || 0, MontantCartes: t.MontantCartes || 0, MontantReduction: t.MontantReduction || 0,
     };
   }, [apercu, lectureSeule, devisLu, complementsFamille]);
 
@@ -593,6 +616,7 @@ export default function NewOreolePage() {
                         {Array.from({ length: (reglages?.AffectionsMax || 3) + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}
                       </select>
                     </Champ>
+                    {champReduction(lignes[0])}
                   </>
                 )}
               </div>
@@ -904,7 +928,7 @@ export default function NewOreolePage() {
         }}
       />
 
-      <Modal isOpen={Boolean(ligneOuverte)} onClose={() => setDetail(null)} title={ligneOuverte ? (`${ligneOuverte.Nom} ${ligneOuverte.Prenoms}`.trim() || 'Adhérent') : ''} subtitle="Surprimes, famille et bénéficiaires" maxWidth={680}>
+      <Modal isOpen={Boolean(ligneOuverte)} onClose={() => setDetail(null)} title={ligneOuverte ? (`${ligneOuverte.Nom} ${ligneOuverte.Prenoms}`.trim() || 'Adhérent') : ''} subtitle="Surprimes, réduction, famille et bénéficiaires" maxWidth={680}>
         {ligneOuverte && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <div style={grille}>
@@ -922,6 +946,7 @@ export default function NewOreolePage() {
                   <Champ label="Cotisation imposée" aide="Montant total du fichier ou de la convention : remplace tout le calcul.">
                     <AmountInput value={ligneOuverte.CotisationImposee || ''} disabled={lectureSeule} onChange={(v) => modifierLigne(ligneOuverte.cle, { CotisationImposee: v })} />
                   </Champ>
+                  {champReduction(ligneOuverte)}
                 </>
               )}
               <Champ label="Enfants en plus" aide={`Au-delà de 4 enfants : ${fcfa(offresParId[ligneOuverte.IdOffre]?.EnfantSupplementaire)} F par enfant.`}>
@@ -956,7 +981,7 @@ export default function NewOreolePage() {
             </div>
             {tarifDe(ligneOuverte) && !ligneOuverte.IdAdherentBase && (
               <div>
-                {[['Cotisation', tarifDe(ligneOuverte).Cotisation], ['Dont surprime d\'affection', tarifDe(ligneOuverte).SurprimeAffection], ['Dont surprime d\'âge', tarifDe(ligneOuverte).SurprimeAge], ['Dont enfants en plus', tarifDe(ligneOuverte).MontantEnfants], ['Part Santé', tarifDe(ligneOuverte).PartSante], ['Part IA', tarifDe(ligneOuverte).PartIA], ['Part AFA', tarifDe(ligneOuverte).PartAFA]]
+                {[['Cotisation', tarifDe(ligneOuverte).Cotisation], ['Dont surprime d\'affection', tarifDe(ligneOuverte).SurprimeAffection], ['Dont surprime d\'âge', tarifDe(ligneOuverte).SurprimeAge], ['Dont enfants en plus', tarifDe(ligneOuverte).MontantEnfants], ...(tarifDe(ligneOuverte).MontantReduction ? [['Dont réduction', -tarifDe(ligneOuverte).MontantReduction]] : []), ['Part Santé', tarifDe(ligneOuverte).PartSante], ['Part IA', tarifDe(ligneOuverte).PartIA], ['Part AFA', tarifDe(ligneOuverte).PartAFA]]
                   .map(([l, v]) => <div key={l} style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>{l}</span><b>{fcfa(v)} F</b></div>)}
               </div>
             )}

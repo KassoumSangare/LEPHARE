@@ -197,6 +197,8 @@ export const NewSanteQuotePage = () => {
   const [choixMinene, setChoixMinene] = useState({ IA: true, RC: true });
   // Devis de renouvellement : taux d'ajustement de l'an dernier (déjà compris dans la prime de base MINENE)
   const [tauxPrecedent, setTauxPrecedent] = useState(null);
+  // Code de l'avenant du devis (REN : renouvellement, offre commerciale MINENE modifiable malgré les couvertures recopiées)
+  const [codeAvenant, setCodeAvenant] = useState('');
   // Devis d'avenant de modification d'un contrat en cours (changement de formule, incorporation) : police, période, prorata
   const [avenantModification, setAvenantModification] = useState(null);
   const [garanties, setGaranties] = useState([]);
@@ -292,6 +294,28 @@ export const NewSanteQuotePage = () => {
     .filter(({ ans }) => ans !== null && ans >= minene.surprimes.age1Debut)
     .map((x) => ({ ...x, taux: x.ans >= minene.surprimes.age2Debut ? minene.surprimes.age2Taux : minene.surprimes.age1Taux })) : [];
   const desactive = Boolean(lectureSeule) || occupe;
+  // Renouvellement MINENE : l'offre commerciale change avec les couvertures recopiées du contrat (formule de même option)
+  const renouvellementMinene = codeAvenant === 'REN' && estMinene && filiales.length > 0 && Boolean(idDevis);
+  const changerOffreCommerciale = async (nouveau) => {
+    if (!renouvellementMinene) {
+      setIdTarif(nouveau);
+      return;
+    }
+    if (Number(nouveau) === Number(idTarif)) return;
+    setOccupe(true);
+    try {
+      const res = await santeApi.changerOffreCommerciale(idDevis, nouveau);
+      setIdTarif(Number(res.IdTarif) || nouveau);
+      const donnees = await recharger();
+      const premiere = donnees?.filiales?.[0];
+      if (premiere) setIdOffre(Number(premiere.idoffresante) || 0);
+      success(res.Message || 'Offre commerciale changée.');
+    } catch (err) {
+      toastError(`Offre commerciale non changée : ${messageErreurApi(err)}`);
+    } finally {
+      setOccupe(false);
+    }
+  };
 
   // Questionnaire prospect (?questionnaire=) : cotation (étendue territoriale) ou bulletin d'adhésion (personnes
   // vérifiées ici, sexe compris, puis importées dans la couverture choisie)
@@ -434,6 +458,7 @@ export const NewSanteQuotePage = () => {
           if (p?.Choix) setChoixMinene({ IA: p.Choix.IA !== false, RC: p.Choix.RC !== false });
         }).catch(() => {});
         setTauxPrecedent(devis.code_avenant === 'REN' && devis.taux_reduction_precedent !== null ? Number(devis.taux_reduction_precedent) : null);
+        setCodeAvenant(String(devis.code_avenant || '').trim());
         setAvenantModification(donnees.avenant || null);
         if (detail) {
           setIdTarif(Number(detail.idtarif) || 0);
@@ -1017,10 +1042,15 @@ export const NewSanteQuotePage = () => {
                 {sortUniqueBy(compagnies, (c) => c.nom).map((c) => <option key={c.id} value={c.id}>{c.nom}</option>)}
               </select>)}
             {champ('Offre Commerciale',
-              <select className="form-control" value={idTarif} onChange={(e) => setIdTarif(Number(e.target.value))} disabled={desactive || filiales.length > 0}>
-                {tarifs.filter((t) => !/oreole/i.test(t.LibelleTarif || '')).map((t) => <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>)}
+              <select className="form-control" value={idTarif} onChange={(e) => changerOffreCommerciale(Number(e.target.value))}
+                disabled={desactive || (filiales.length > 0 && !renouvellementMinene)}>
+                {tarifs
+                  .filter((t) => !/oreole/i.test(t.LibelleTarif || ''))
+                  // Renouvellement MINENE : seules les autres offres MINENE (mêmes formules SOLO, FAMILLE, FAMILLE PLUS)
+                  .filter((t) => !renouvellementMinene || String(t.CodeCategorie || '') === CODE_CATEGORIE_MINENE)
+                  .map((t) => <option key={t.IdTarif} value={t.IdTarif}>{t.LibelleTarif}</option>)}
               </select>,
-              filiales.length > 0
+              filiales.length > 0 && !renouvellementMinene
                 ? 'Couvertures déjà enregistrées : retirez-les pour changer d\'offre commerciale.'
                 : (estMinene ? 'MINENE : prime calculée automatiquement, zone Côte d\'Ivoire.' : undefined))}
             {champ('Ajustement',

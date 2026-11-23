@@ -1131,6 +1131,8 @@ export const santeApi = {
   creerAvenant: async (idContrat, donnees) => (await apiClient.post(`/devissante/avenant/${idContrat}/`, donnees)).data,
   // Un collègue continue une saisie commencée par un autre : elle passe au compte connecté (droit devis.update, tracé au journal)
   continuerSaisie: async (idDevis) => (await apiClient.post(`/devissante/${idDevis}/continuer/`)).data,
+  // Renouvellement MINENE : couvertures du devis passées à la formule de même option d'une autre offre commerciale
+  changerOffreCommerciale: async (idDevis, idTarif) => (await apiClient.post(`/devissante/${idDevis}/offre-commerciale/`, { IdTarif: idTarif })).data,
   // GET /api/tarifparproduit/5 : « Offre commerciale » d'URANUS (catégories Santé)
   getTarifs: async () => extractData(await apiClient.get('/tarifparproduit/5')),
   // GET /api/typecontratsante/ : CONTRAT PARTICULIER, CONTRAT SOCIETE

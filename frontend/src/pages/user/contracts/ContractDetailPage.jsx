@@ -117,8 +117,9 @@ export const ContractDetailPage = () => {
   };
 
   // Oreole Santé : renouvellement et incorporation depuis le bloc de la branche, pour garder les trois polices ensemble
-  const [contratOreole, setContratOreole] = useState(false);
-  const [devisOreole, setDevisOreole] = useState(0);
+  const [detectionOreole, setDetectionOreole] = useState(null);
+  const contratOreole = detectionOreole?.idContrat === String(id) ? detectionOreole.oreole : null;
+  const devisOreole = contratOreole ? detectionOreole.idDevis : 0;
   const [suppressionOuverte, setSuppressionOuverte] = useState(false);
   // IA : incorporation proposée quand le contrat porte plusieurs personnes ; Vie AFA : toujours, hors package Oreole Santé ;
   // MRH : une maison s'ajoute à tout contrat en cours (le serveur en décide)
@@ -211,7 +212,7 @@ export const ContractDetailPage = () => {
 
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           {/* Action Renouveler (Mise en avant) */}
-          {!contratOreole && <button
+          {contratOreole === false && <button
             className="btn"
             style={{
               padding: '0.45rem 0.9rem',
@@ -244,7 +245,7 @@ export const ContractDetailPage = () => {
             </button>
           )}
 
-          {incorporationIa && !contratOreole && (
+          {incorporationIa && contratOreole === false && (
             <button
               className="btn btn-secondary"
               onClick={() => navigate(`/user/contracts/${id}/incorporation`)}
@@ -258,7 +259,7 @@ export const ContractDetailPage = () => {
 
           {/* Santé : avenant de modification réel (incorporation, sortie d'un membre ou d'une famille, changement de
               formule), sante/avenant.py */}
-          {contratSante && !contratOreole && aLeDroit('contrats.avenant') && (
+          {contratSante && contratOreole === false && aLeDroit('contrats.avenant') && (
             <button className="btn btn-secondary" onClick={() => setAvenantSanteOuvert(true)}
               title="Incorporer ou retirer un membre ou une famille, ou changer de formule en cours de contrat, sous la même police"
               style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -307,7 +308,7 @@ export const ContractDetailPage = () => {
         </div>
       </div>
 
-      {id && <BlocOreole idContrat={id} onDetection={(oui, idDevis) => { setContratOreole(oui); setDevisOreole(oui ? idDevis : 0); }} />}
+      {id && <BlocOreole idContrat={id} onDetection={(oui, idDevis) => setDetectionOreole({ idContrat: String(id), oreole: oui, idDevis: oui ? idDevis : 0 })} />}
 
       {id && <BlocApporteursAffaire idContrat={Number(id)} />}
 
@@ -613,7 +614,7 @@ export const ContractDetailPage = () => {
             <FileText size={18} color="#10b981" />
             Historique de la police ({historique.length})
           </h3>
-          {!contratOreole && (
+          {contratOreole === false && (
             <button className="btn btn-secondary" onClick={() => navigate(`/user/contracts/${id}/renouvellement`)}>
               <RefreshCw size={14} />
               <span>Nouveau renouvellement</span>

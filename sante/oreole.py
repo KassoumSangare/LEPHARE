@@ -73,6 +73,7 @@ GARANTIE_SANTE, GARANTIE_SURPRIME_AFFECTION, GARANTIE_SURPRIME_AGE = 98, 99, 167
 TYPE_PARTICULIER, TYPE_SOCIETE = 1, 2
 ACTES = ("AFN", "REN", "INC")
 ENFANTS_COMPRIS = 4
+TYPES_REDUCTION = ("M", "P")  # réduction d'une famille : montant ou pourcentage
 TAILLE_FICHIER_MAX = 8 * 1024 * 1024
 ZERO = Decimal(0)
 # Option de l'effectif (numérotation MCI, contraire aux tarifs) : offre proposée quand la prime ne désigne aucune offre
@@ -226,8 +227,9 @@ def tarifer_adherent(offre, ligne, regles, prix_famille=None, carte=False):
     Cotisation annuelle d'une famille, sans écriture.
 
     offre : cotisation, primeht, accessoires, partia, partafa, enfantsupplementaire (Decimal).
-    ligne : Age, Affections, TauxAffection, TauxAge, SurprimeImposee, CotisationImposee, EnfantsEnPlus, Personnes, PartIA, PartAFA.
-    Un produit lié retiré (part à 0) retire sa part du package. Tout supplément va aux frais courtiers.
+    ligne : Age, Affections, TauxAffection, TauxAge, SurprimeImposee, CotisationImposee, EnfantsEnPlus, Personnes, PartIA, PartAFA,
+            ReductionType (M : montant, P : pourcentage), ReductionValeur.
+    Un produit lié retiré (part à 0) retire sa part du package. Tout supplément, et toute réduction, va aux frais courtiers.
     """
     part_ia = offre["partia"] if ligne.get("PartIA") is None else ligne["PartIA"]
     part_afa = offre["partafa"] if ligne.get("PartAFA") is None else ligne["PartAFA"]
@@ -256,9 +258,11 @@ def tarifer_adherent(offre, ligne, regles, prix_famille=None, carte=False):
     cotisation_imposee = ligne.get("CotisationImposee") or ZERO
     if cotisation_imposee > 0:
         surprime_affection, surprime_age, enfants = ZERO, ZERO, ZERO
-        cotisation = cotisation_imposee + cartes
+        avant_reduction = cotisation_imposee
     else:
-        cotisation = base + surprime_affection + surprime_age + enfants + cartes
+        avant_reduction = base + surprime_affection + surprime_age + enfants
+    reduction = montant_reduction(avant_reduction, ligne.get("ReductionType"), ligne.get("ReductionValeur"))
+    cotisation = avant_reduction - reduction + cartes
 
     cotisation = _franc(cotisation)
     part_sante = cotisation - part_ia - part_afa
@@ -267,9 +271,21 @@ def tarifer_adherent(offre, ligne, regles, prix_famille=None, carte=False):
         "Cotisation": cotisation, "PartSante": part_sante, "PartIA": part_ia, "PartAFA": part_afa,
         "PrimeHt": offre["primeht"], "Accessoires": offre["accessoires"], "FraisCourtiers": frais,
         "SurprimeAffection": _franc(surprime_affection), "SurprimeAge": _franc(surprime_age), "MontantEnfants": _franc(enfants),
-        "MontantCartes": _franc(cartes), "TauxAffection": taux_aff, "TauxAge": taux_ag,
+        "MontantCartes": _franc(cartes), "MontantReduction": _franc(reduction), "TauxAffection": taux_aff, "TauxAge": taux_ag,
         "PrixOffre": offre["cotisation"], "Ecart": cotisation - offre["cotisation"],
     }
+
+
+def montant_reduction(cotisation, type_reduction, valeur):
+    """Réduction accordée à une famille (demande du 2026-11-23) : montant (M) ou pourcentage (P) de sa cotisation hors cartes,
+    surprimes et enfants en plus compris (ou de la cotisation imposée). Comme les surprimes, elle ne touche que les frais
+    courtiers : la prime HT de MCI, l'IA et l'AFA ne changent pas (cotisation sous la part de MCI refusée par _lire_saisie)."""
+    valeur = valeur or ZERO
+    if valeur <= 0 or type_reduction not in TYPES_REDUCTION:
+        return ZERO
+    if type_reduction == "P":
+        return cotisation * min(valeur, Decimal(100)) / 100
+    return min(valeur, cotisation)
 
 
 def _correspondances_liees(offres):
@@ -337,14 +353,22 @@ def _ligne_saisie(rang, brut, offres, regles, effet, correspondances, offre_defa
         surprime = _decimal(brut.get("SurprimeImposee"))
         cotisation_imposee = _decimal(brut.get("CotisationImposee"))
         part_ia_saisie, part_afa_saisie = _optionnel(brut.get("PartIA")), _optionnel(brut.get("PartAFA"))
+        reduction_valeur = _decimal(brut.get("ReductionValeur"))
     except ErreurOreole as erreur:
         erreurs.append(str(erreur))
         affections, taux_affection, taux_age_saisi, surprime, cotisation_imposee = 0, None, None, ZERO, ZERO
-        part_ia_saisie, part_afa_saisie = None, None
+        part_ia_saisie, part_afa_saisie, reduction_valeur = None, None, ZERO
+    reduction_type = _texte(brut.get("ReductionType")).upper()[:1]
+    if reduction_valeur > 0 and reduction_type not in TYPES_REDUCTION:
+        reduction_type = "M"
+    if reduction_valeur <= 0:
+        reduction_type, reduction_valeur = "", ZERO
     if affections < 0 or affections > regles["AffectionsMax"]:
         erreurs.append(f"affections : de 0 à {regles['AffectionsMax']}")
-    if surprime < 0 or cotisation_imposee < 0:
+    if surprime < 0 or cotisation_imposee < 0 or reduction_valeur < 0:
         erreurs.append("montant négatif")
+    if reduction_type == "P" and reduction_valeur >= 100:
+        erreurs.append("réduction : moins de 100 %")
 
     enfants_en_plus = max(_entier(brut.get("EnfantsEnPlus")), enfants_declares - ENFANTS_COMPRIS, 0)
     personnes = max(_entier(brut.get("Personnes")), 1 + len(ayants), 1)
@@ -353,7 +377,7 @@ def _ligne_saisie(rang, brut, offres, regles, effet, correspondances, offre_defa
         "Matricule": _texte(brut.get("Matricule"))[:50], "Nom": nom, "Prenoms": prenoms, "DateNaissance": naissance,
         "Sexe": _texte(brut.get("Sexe"))[:1].upper(), "Age": age, "IdOffre": id_offre, "Affections": affections,
         "TauxAffection": taux_affection, "TauxAge": taux_age_saisi, "SurprimeImposee": surprime, "CotisationImposee": cotisation_imposee,
-        "EnfantsEnPlus": enfants_en_plus, "Personnes": personnes, "Ayants": ayants, "Beneficiaires": _texte(brut.get("Beneficiaires"))[:500],
+        "ReductionType": reduction_type, "ReductionValeur": reduction_valeur, "EnfantsEnPlus": enfants_en_plus, "Personnes": personnes, "Ayants": ayants, "Beneficiaires": _texte(brut.get("Beneficiaires"))[:500],
         "AvecIA": brut.get("AvecIA", True) not in (False, "false", "0", 0), "AvecAFA": brut.get("AvecAFA", True) not in (False, "false", "0", 0),
         "IdOffreIA": None, "CapitalIA": ZERO, "CapitalAFA": ZERO, "PartIA": None, "PartAFA": None,
     }
@@ -462,7 +486,7 @@ def _totaux(lignes, regles):
         "Familles": len(lignes), "Cotisation": somme("Cotisation"), "PartSante": somme("PartSante"), "PartIA": somme("PartIA"),
         "PartAFA": somme("PartAFA"), "PrimeHt": prime_ht, "Accessoires": somme("Accessoires"), "FraisCourtiers": somme("FraisCourtiers"),
         "SurprimeAffection": somme("SurprimeAffection"), "SurprimeAge": somme("SurprimeAge"), "MontantEnfants": somme("MontantEnfants"),
-        "MontantCartes": somme("MontantCartes"), "Ecart": somme("Ecart"),
+        "MontantCartes": somme("MontantCartes"), "MontantReduction": somme("MontantReduction"), "Ecart": somme("Ecart"),
         "HonoraireCabinet": _franc(prime_ht * regles["HonoraireCabinet"] / 100),
         "HonoraireGestionnaire": _franc(prime_ht * regles["HonoraireGestionnaire"] / 100),
         "PartMCI": prime_ht + somme("Accessoires"),
@@ -577,13 +601,15 @@ def _ecrire_adherent(cursor, entete, id_devis, id_filiale, ligne, id_utilisateur
     cursor.execute(
         """INSERT INTO lephare_oreole_adherent (iddevis, idadherent, idclient, idoffre, affections, tauxaffection, tauxage, surprimeimposee,
                cotisationimposee, enfantsenplus, personnes, beneficiaires, cotisation, partsante, partia, partafa, primeht, accessoires, fraiscourtiers,
-               surprimeaffection, surprimeage, montantenfants, montantcartes, idoffreia, capitalia, capitalafa, complement)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               surprimeaffection, surprimeage, montantenfants, montantcartes, idoffreia, capitalia, capitalafa, complement, reductiontype,
+               reductionvaleur, montantreduction)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [id_devis, id_adherent, ligne.get("IdClient") or None, ligne["IdOffre"], ligne["Affections"], ligne["TauxAffection"], ligne["TauxAge"],
          ligne["SurprimeImposee"], ligne["CotisationImposee"], ligne["EnfantsEnPlus"], ligne["Personnes"], ligne["Beneficiaires"], tarif["Cotisation"],
          tarif["PartSante"], tarif["PartIA"], tarif["PartAFA"], tarif["PrimeHt"], tarif["Accessoires"], tarif["FraisCourtiers"],
          tarif["SurprimeAffection"], tarif["SurprimeAge"], tarif["MontantEnfants"], tarif["MontantCartes"], ligne["IdOffreIA"], ligne["CapitalIA"],
-         ligne["CapitalAFA"], tarif["Cotisation"] if complement is None else complement],
+         ligne["CapitalAFA"], tarif["Cotisation"] if complement is None else complement, ligne.get("ReductionType") or "",
+         ligne.get("ReductionValeur") or ZERO, tarif.get("MontantReduction") or ZERO],
     )
     return id_adherent
 
@@ -970,10 +996,10 @@ def _recopier_detail_adherents(cursor, id_devis_source, id_devis, base):
         """
         INSERT INTO lephare_oreole_adherent (iddevis, idadherent, idclient, idoffre, affections, tauxaffection, tauxage, surprimeimposee, cotisationimposee,
             enfantsenplus, personnes, beneficiaires, cotisation, partsante, partia, partafa, primeht, accessoires, fraiscourtiers, surprimeaffection,
-            surprimeage, montantenfants, montantcartes, idoffreia, capitalia, capitalafa, complement)
+            surprimeage, montantenfants, montantcartes, idoffreia, capitalia, capitalafa, complement, reductiontype, reductionvaleur, montantreduction)
         SELECT %s, nouveau.idadherent, s.idclient, s.idoffre, s.affections, s.tauxaffection, s.tauxage, s.surprimeimposee, s.cotisationimposee, s.enfantsenplus,
             s.personnes, s.beneficiaires, s.cotisation, s.partsante, s.partia, s.partafa, s.primeht, s.accessoires, s.fraiscourtiers, s.surprimeaffection,
-            s.surprimeage, s.montantenfants, s.montantcartes, s.idoffreia, s.capitalia, s.capitalafa, 0
+            s.surprimeage, s.montantenfants, s.montantcartes, s.idoffreia, s.capitalia, s.capitalafa, 0, s.reductiontype, s.reductionvaleur, s.montantreduction
         FROM stdadherent nouveau
         JOIN stdadherent ancien ON ancien.iddevis = %s AND UPPER(TRIM(ancien.nom)) = UPPER(TRIM(nouveau.nom))
              AND UPPER(TRIM(COALESCE(ancien.prenom, ''))) = UPPER(TRIM(COALESCE(nouveau.prenom, '')))
@@ -1093,7 +1119,8 @@ def lire(cursor, id_devis):
     adherents = _lignes(cursor, """
         SELECT a.idadherent, a.matricule, a.nom, a.prenom, a.sexe, a.datenaissance, s.idclient, s.idoffre, s.affections, s.tauxaffection, s.tauxage, s.surprimeimposee,
                s.cotisationimposee, s.enfantsenplus, s.personnes, s.beneficiaires, s.cotisation, s.partsante, s.partia, s.partafa, s.primeht, s.accessoires,
-               s.fraiscourtiers, s.surprimeaffection, s.surprimeage, s.montantenfants, s.montantcartes, s.idoffreia, s.capitalia, s.capitalafa, s.complement, o.libelle AS offre
+               s.fraiscourtiers, s.surprimeaffection, s.surprimeage, s.montantenfants, s.montantcartes, s.idoffreia, s.capitalia, s.capitalafa, s.complement,
+               s.reductiontype, s.reductionvaleur, s.montantreduction, o.libelle AS offre
         FROM stdadherent a JOIN lephare_oreole_adherent s ON s.idadherent = a.idadherent LEFT JOIN lephare_oreole_offre o ON o.idoffre = s.idoffre
         WHERE a.iddevis = %s ORDER BY a.idadherent""", [id_devis])
     ayants = _lignes(cursor, """SELECT idadherent, lien, nom, prenom, datenaissance, sexe FROM stdaffilie WHERE iddevis = %s AND lien <> 'A' ORDER BY idaffilie""", [id_devis])
@@ -1110,7 +1137,8 @@ def lire(cursor, id_devis):
         "Beneficiaires": a["beneficiaires"] or "", "Cotisation": _nombre(a["cotisation"]), "PartSante": _nombre(a["partsante"]), "PartIA": _nombre(a["partia"]),
         "PartAFA": _nombre(a["partafa"]), "PrimeHt": _nombre(a["primeht"]), "Accessoires": _nombre(a["accessoires"]), "FraisCourtiers": _nombre(a["fraiscourtiers"]),
         "SurprimeAffection": _nombre(a["surprimeaffection"]), "SurprimeAge": _nombre(a["surprimeage"]), "MontantEnfants": _nombre(a["montantenfants"]),
-        "MontantCartes": _nombre(a["montantcartes"]), "CapitalIA": _nombre(a["capitalia"]), "CapitalAFA": _nombre(a["capitalafa"]), "Complement": _nombre(a["complement"]),
+        "MontantCartes": _nombre(a["montantcartes"]), "ReductionType": (a["reductiontype"] or "").strip(), "ReductionValeur": _nombre(a["reductionvaleur"]),
+        "MontantReduction": _nombre(a["montantreduction"]), "CapitalIA": _nombre(a["capitalia"]), "CapitalAFA": _nombre(a["capitalafa"]), "Complement": _nombre(a["complement"]),
         "Ayants": par_adherent.get(a["idadherent"], []),
     } for a in adherents]
     sante, ia, afa = _etat_devis(cursor, id_devis), _etat_devis(cursor, package["iddevis_ia"]), _etat_devis(cursor, package["iddevis_afa"])
@@ -1399,23 +1427,66 @@ def _entete_feuille(feuille):
     return None, None
 
 
+def _montant_fichier(valeur):
+    """Montant d'une cellule du classeur : nombre, ou texte « 436 800 », « 436.800 », « 436 800 F », « 436 800 FCFA »."""
+    if isinstance(valeur, str):
+        texte = re.sub(r"(?i)\s*(f\s*cfa|cfa|fcfa|f)\s*$", "", valeur.strip())
+        texte = re.sub(r"[\s  ]", "", texte)
+        # Point des milliers (436.800, 1.183.000) : jamais une décimale dans un montant en francs
+        if re.fullmatch(r"\d{1,3}(\.\d{3})+", texte):
+            texte = texte.replace(".", "")
+        valeur = texte
+    return _optionnel(valeur)
+
+
 def _offre_de_ligne(offres, cotisation, part_ia, part_afa, option):
-    """Offre de la prime du fichier : celle du montant et des parts ; sinon l'offre habituelle de son option, avec une cotisation imposée."""
+    """Offre de la prime du fichier : (offre, exacte, mode). Celle du montant et des parts (mode « exacte »), sinon celle du
+    montant (« prix »), sinon l'offre habituelle de son option (« option ») ou l'offre 436 800 (« defaut »), avec une
+    cotisation imposée. _lire_groupe remplace les deux derniers choix par l'offre de la feuille."""
     par_prix = [o for o in offres.values() if o["cible"] == "E" and o["cotisation"] == cotisation]
     for o in par_prix:
         # Part non donnée par le fichier (None) : celle de l'offre convient
         if part_ia in (None, o["partia"]) and part_afa in (None, o["partafa"]):
-            return o, True
+            return o, True, "exacte"
     if par_prix:
-        return par_prix[0], False
+        return par_prix[0], False, "prix"
     code = CODE_PAR_OPTION.get(option)
     for o in offres.values():
         if o["code"] == code:
-            return o, False
+            return o, False, "option"
     for o in offres.values():
         if o["code"] == "E436":
-            return o, False
-    return None, False
+            return o, False, "defaut"
+    return None, False, "defaut"
+
+
+def _offres_de_la_feuille(lignes, offres):
+    """Offre de chaque ligne au montant sans offre (surprime, famille nombreuse, prix négocié) : celle des lignes de la feuille
+    au prix exact d'une offre, de la même option, la plus fréquente (entreprise à 303 600 : ses lignes surprimées restent à
+    303 600 et non à l'offre 436 800 de l'option 3) ; ligne sans option connue : l'offre unique de la feuille."""
+    exactes, toutes = {}, Counter()
+    for l in lignes:
+        if l["_Mode"] == "exacte":
+            exactes.setdefault(l["Option"], Counter())[l["IdOffre"]] += 1
+            toutes[l["IdOffre"]] += 1
+    for l in lignes:
+        if l["_Mode"] not in ("option", "defaut"):
+            continue
+        # Sans ligne exacte de son option : l'offre unique de la feuille, seulement si la ligne ne donne pas d'option connue
+        choix = exactes.get(l["Option"]) or (toutes if len(toutes) == 1 and not CODE_PAR_OPTION.get(l["Option"]) else None)
+        if choix:
+            l["IdOffre"] = choix.most_common(1)[0][0]
+    for l in lignes:
+        offre = offres.get(l["IdOffre"])
+        part_ia, part_afa = l.pop("_PartIA"), l.pop("_PartAFA")
+        l.pop("_Mode")
+        l.update({
+            "Offre": offre["libelle"] if offre else "", "PrixOffre": _nombre(offre["cotisation"]) if offre else 0,
+            # Part IA ou AFA non donnée par le fichier : celle de l'offre retenue
+            "PartIA": _nombre(part_ia if part_ia is not None else (offre["partia"] if offre else ZERO)),
+            "PartAFA": _nombre(part_afa if part_afa is not None else (offre["partafa"] if offre else ZERO)),
+        })
+    return lignes
 
 
 def _lire_groupe(feuille, numero_entete, colonnes, offres):
@@ -1439,7 +1510,7 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
         matricule = _texte(v("matricule"))
         anomalies_ligne = []
         try:
-            cotisation = _decimal(cotisation_brute)
+            cotisation = _montant_fichier(cotisation_brute) or ZERO
         except ErreurOreole:
             cotisation = ZERO
         if cotisation <= 0:
@@ -1447,7 +1518,7 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
         # Part IA ou AFA : colonne absente ou cellule vide = non donnée, la part de l'offre s'applique (un 0 écrit
         # dans le fichier reste un 0). Lue à 0, elle privait les cases « Émettre » de tout effet sur la cotisation.
         try:
-            part_ia, part_afa = _optionnel(v("partia")), _optionnel(v("partafa"))
+            part_ia, part_afa = _montant_fichier(v("partia")), _montant_fichier(v("partafa"))
         except ErreurOreole:
             part_ia, part_afa = None, None
             anomalies_ligne.append("Part IA ou AFA illisible")
@@ -1470,21 +1541,19 @@ def _lire_groupe(feuille, numero_entete, colonnes, offres):
         if matricule:
             matricules[matricule] += 1
         option = _entier(v("option"))
-        offre, exacte = _offre_de_ligne(offres, cotisation, part_ia, part_afa, option)
-        if part_ia is None:
-            part_ia = offre["partia"] if offre else ZERO
-        if part_afa is None:
-            part_afa = offre["partafa"] if offre else ZERO
+        offre, exacte, mode = _offre_de_ligne(offres, cotisation, part_ia, part_afa, option)
         lignes.append({
             "Feuille": feuille.title, "Ligne": numero, "Matricule": matricule, "Nom": nom, "Prenoms": prenoms, "DateNaissance": _iso(naissance), "DateBrute": str(brute or "")[:20],
-            "Sexe": _texte(v("sexe"))[:1].upper(), "Option": option, "Cotisation": _nombre(cotisation), "PartIA": _nombre(part_ia), "PartAFA": _nombre(part_afa),
-            "IdOffre": offre["idoffre"] if offre else None, "Offre": offre["libelle"] if offre else "", "PrixOffre": _nombre(offre["cotisation"]) if offre else 0,
-            "OffreExacte": exacte,
+            "Sexe": _texte(v("sexe"))[:1].upper(), "Option": option, "Cotisation": _nombre(cotisation),
+            # Offre, prix de l'offre et parts IA / AFA complétés par _offres_de_la_feuille
+            "_PartIA": part_ia, "_PartAFA": part_afa, "_Mode": mode,
+            "IdOffre": offre["idoffre"] if offre else None, "OffreExacte": exacte,
             # La cotisation du fichier fait foi, même au prix exact d'une offre : pas de surprime d'âge calculée en plus
             "CotisationImposee": _nombre(cotisation),
             "EnfantsEnPlus": _entier(v("enfants")), "Personnes": _entier(v("personnes")), "Affections": _entier(v("affections")), "Beneficiaires": _texte(v("beneficiaires")),
             "Anomalies": anomalies_ligne,
         })
+    _offres_de_la_feuille(lignes, offres)
     for ligne in lignes:
         if ligne["Matricule"] and matricules[ligne["Matricule"]] > 1:
             ligne["Anomalies"].append("Matricule en double dans cette feuille")

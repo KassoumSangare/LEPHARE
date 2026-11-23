@@ -307,6 +307,9 @@ REGLES = [
     R("POST", r"devissante/apercu/?$", "devis.view", lecture=True),
     # Un collègue continue la saisie d'un autre : la saisie change de propriétaire, droit explicite (avant la règle générale)
     R("POST", r"devissante/(?P<iddevis>\d+)/continuer/?$", "devis.update", objet="devis", cles=("iddevis",), instantane=instantane_devis),
+    # Renouvellement MINENE : changement d'offre commerciale des couvertures du devis (sante/offre_commerciale.py)
+    R("POST", r"devissante/(?P<iddevis>\d+)/offre-commerciale/?$", "devis.update", objet="devis", cles=("iddevis",),
+      instantane=instantane_devis),
     R("POST", r"(devisia/enregistrement/|devisvoyage/enregistrement/|dommages/devis/$|devissante/|garantiesvehiculeflotte/|"
               r"creer-devis-ia-minene/|transformer-sante-en-ia/|consolidationdevis/)",
       _devis_creer_ou_modifier, objet="devis", cles=CLES_DEVIS, instantane=instantane_devis),

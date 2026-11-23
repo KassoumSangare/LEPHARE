@@ -47,6 +47,7 @@ from production.periode_contrat import periode_contrat
 from . import import_classique
 from .avenant import DROIT_DEROGATION_AGE, detail_avenant_modification
 from .models import Adherent, Affilie, FilialeSante
+from .offre_commerciale import ErreurOffreCommerciale, changer_offre_commerciale
 from .serializers import EnregistrementDevisSanteSerializer
 from .utils import (
     enregistrer_adherent_sante,
@@ -833,6 +834,36 @@ def continuer_saisie(request, iddevis):
                 """INSERT INTO stdnumerosaisiesante (datecreation, datemaj, saisieencours, iddevis, idoperateur)
                    VALUES (CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, %s, %s)""", [iddevis, utilisateur])
     return Response({"IdDevis": iddevis, "Message": "Saisie reprise : vous pouvez continuer ce devis."})
+
+
+@api_view(["POST"])
+@authentication_classes(AUTHENTIFICATION)
+@permission_classes([permissions.IsAuthenticated])
+def changer_offre_commerciale_vue(request, iddevis):
+    """
+    POST /api/devissante/<iddevis>/offre-commerciale/ {IdTarif}
+
+    Renouvellement MINENE : les couvertures du devis passent à la formule de même option de l'offre commerciale choisie
+    (sante/offre_commerciale.py). Les primes se recalculent à l'enregistrement du devis. Droit devis.update (garde).
+    """
+    id_tarif = _entier(request.data.get("IdTarif"))
+    if not id_tarif:
+        return Response({"error": "Choisissez l'offre commerciale."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            if est_oreole(cursor, iddevis):
+                raise ErreurOffreCommerciale("Devis Oreole Santé : il se modifie depuis la branche Oreole Santé.")
+            cursor.execute("SELECT 1 FROM stdnumerosaisiesante WHERE iddevis = %s AND idoperateur = %s AND saisieencours",
+                           [iddevis, request.user.id])
+            if not cursor.fetchone():
+                raise ErreurOffreCommerciale("Saisie ouverte par un autre opérateur : continuez-la avant de changer l'offre commerciale.")
+            resultat = changer_offre_commerciale(cursor, request.user.id, iddevis, id_tarif)
+    except ErreurOffreCommerciale as erreur:
+        return Response({"error": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
+    nombre = len(resultat["Couvertures"])
+    resultat["Message"] = (f"Offre commerciale « {resultat['OffreCommerciale']} » : {nombre} couverture{'s' if nombre > 1 else ''} "
+                           f"{'changées' if nombre > 1 else 'changée'}. Enregistrez le devis pour recalculer les primes.")
+    return Response(resultat)
 
 
 @api_view(["GET"])

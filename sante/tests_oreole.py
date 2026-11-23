@@ -77,6 +77,26 @@ class TarifOreole(SimpleTestCase):
         self.assertEqual(t["Cotisation"], 400400)
         self.assertEqual(t["FraisCourtiers"], 400400 - 13500 - 133333)
 
+    def test_reduction_en_pourcentage_sur_la_cotisation_surprimee(self):
+        t = tarifer_adherent(OFFRE_436, {"Age": 40, "Affections": 1, "ReductionType": "P", "ReductionValeur": D(10)}, REGLES)
+        self.assertEqual(t["MontantReduction"], 56784)  # 567 840 x 10 %
+        self.assertEqual(t["Cotisation"], 511056)
+        self.assertEqual((t["PrimeHt"], t["PartIA"], t["PartAFA"]), (123333, 6000, 7500))  # seuls les frais courtiers baissent
+        self.assertEqual(t["FraisCourtiers"], 289967 + 131040 - 56784)
+
+    def test_reduction_en_montant_hors_cartes(self):
+        t = tarifer_adherent(OFFRE_436, {"Age": 40, "Personnes": 3, "ReductionType": "M", "ReductionValeur": D(36800)}, REGLES, carte=True)
+        self.assertEqual(t["MontantReduction"], 36800)
+        self.assertEqual(t["Cotisation"], 400000 + 9000)
+
+    def test_reduction_sur_cotisation_imposee(self):
+        t = tarifer_adherent(OFFRE_436, {"Age": 40, "CotisationImposee": D(400000), "ReductionType": "P", "ReductionValeur": D(5)}, REGLES)
+        self.assertEqual(t["Cotisation"], 380000)
+
+    def test_sans_type_ou_valeur_aucune_reduction(self):
+        self.assertEqual(tarifer_adherent(OFFRE_436, {"Age": 40, "ReductionValeur": D(10)}, REGLES)["Cotisation"], 436800)
+        self.assertEqual(tarifer_adherent(OFFRE_436, {"Age": 40, "ReductionType": "P"}, REGLES)["MontantReduction"], 0)
+
     def test_sante_seule(self):
         t = tarifer_adherent(OFFRE_400, {"Age": 40, "Affections": 1}, REGLES)
         self.assertEqual(t["Cotisation"], 520000)
@@ -175,6 +195,53 @@ class FichierSansPartsLiees(SimpleTestCase):
         # Un 0 écrit dans le fichier reste un 0 : famille sans IA ni AFA, rien à retirer
         self.assertEqual((zero["PartIA"], zero["PartAFA"]), (0, 0))
         self.assertEqual(self._cotisation(zero, AvecIA=False, AvecAFA=False), (575000, 575000, 0, 0))
+
+
+def _offre_entreprise(idoffre, code, cotisation, partia=D(6000), partafa=D(7500)):
+    return {"idoffre": idoffre, "code": code, "cible": "E", "libelle": f"Entreprise {code}", "cotisation": D(cotisation),
+            "partia": partia, "partafa": partafa}
+
+
+class OffreDesLignesDuFichier(SimpleTestCase):
+    """Effectif 2026 : une entreprise à 303 600 garde cette offre pour ses lignes surprimées (option 3 = 436 800 sinon)."""
+    OFFRES = {197: _offre_entreprise(197, "E303", 303600), 192: _offre_entreprise(192, "E436", 436800),
+              199: _offre_entreprise(199, "E575", 575000, D(17000), D(15000))}
+
+    def _lignes(self, *rangees):
+        from openpyxl import Workbook
+
+        from sante.oreole import _entete_feuille, _lire_groupe
+        feuille = Workbook().active
+        feuille.append(["MATRICULE", "NOMS", "PRENOMS", "OPTION", "PRIME TTC SANTE", "PRIME IA", "PRIME AFA"])
+        for rangee in rangees:
+            feuille.append(rangee)
+        numero, colonnes = _entete_feuille(feuille)
+        return _lire_groupe(feuille, numero, colonnes, self.OFFRES)[0]
+
+    def test_ligne_surprimee_garde_l_offre_de_la_feuille(self):
+        lignes = self._lignes(["0000001", "A", "Un", 3, 303600, 6000, 7500], ["0000002", "B", "Deux", 3, 485760, 6000, 7500],
+                              ["0000003", "C", "Trois", 3, 282090, None, None])
+        self.assertEqual([l["IdOffre"] for l in lignes], [197, 197, 197])
+        self.assertEqual([l["OffreExacte"] for l in lignes], [True, False, False])
+        self.assertEqual([l["Cotisation"] for l in lignes], [303600, 485760, 282090])
+        self.assertEqual((lignes[2]["PartIA"], lignes[2]["PartAFA"], lignes[2]["PrixOffre"]), (6000, 7500, 303600))
+        self.assertTrue(all("_Mode" not in l and "_PartIA" not in l for l in lignes))
+
+    def test_sans_ligne_exacte_l_option_decide(self):
+        lignes = self._lignes(["0000001", "A", "Un", 4, 871000, 6000, 15000], ["0000002", "B", "Deux", 3, 500000, 6000, 7500])
+        self.assertEqual([l["IdOffre"] for l in lignes], [199, 192])
+        # Parts du fichier gardées même si l'offre en a d'autres
+        self.assertEqual((lignes[0]["PartIA"], lignes[0]["PartAFA"]), (6000, 15000))
+
+    def test_autre_option_non_rattachee(self):
+        lignes = self._lignes(["0000001", "A", "Un", 3, 303600, 6000, 7500], ["0000002", "B", "Deux", 4, 900000, 17000, 15000])
+        self.assertEqual([l["IdOffre"] for l in lignes], [197, 199])
+
+    def test_montants_ecrits_en_texte(self):
+        lignes = self._lignes(["0000001", "A", "Un", 3, "436.800", "6 000", "7 500 F"], ["0000002", "B", "Deux", 3, "1.183.000 FCFA", None, None])
+        self.assertEqual([l["Cotisation"] for l in lignes], [436800, 1183000])
+        self.assertEqual((lignes[0]["IdOffre"], lignes[0]["OffreExacte"], lignes[0]["PartIA"], lignes[0]["PartAFA"]), (192, True, 6000, 7500))
+        self.assertEqual(lignes[1]["IdOffre"], 192)
 
 
 class ReglementCommun(SimpleTestCase):

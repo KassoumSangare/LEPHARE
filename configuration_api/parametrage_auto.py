@@ -14,7 +14,7 @@ chaque modification inscrite au journal d'audit.
 
 import re
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import DatabaseError, connection, transaction
 from rest_framework import permissions, status
@@ -946,12 +946,72 @@ def chercher_tarif_direct(id_compagnie, id_offre, id_tarif, id_energie, puissanc
     return None, f"Véhicule ou durée ({duree} mois) absents du tarif à lecture directe."
 
 
+ID_SOUS_GARANTIE_RC, ID_SOUS_GARANTIE_FGA, ID_SOUS_GARANTIE_CEDEAO = 1, 2, 3
+
+
+def _lignes_bareme(donnees, taux_reduction, taux_bns):
+    """Lignes du barème (fn_garantie_offre) pour le véhicule de la demande, aux taux donnés (n'écrit rien)."""
+    parametres = parametres_garantie_offre({**donnees, "TauxReduction": str(taux_reduction), "Bns": str(taux_bns)})
+    with tarification_demandee(donnees), transaction.atomic(), connection.cursor() as cursor:
+        cursor.callproc("fn_garantie_offre", parametres)
+        colonnes = [c[0] for c in cursor.description]
+        return [dict(zip(colonnes, l)) for l in cursor.fetchall()]
+
+
+def _primes_nettes_bareme(lignes):
+    """(prime nette hors CEDEAO et FGA, prime nette de la RC) des garanties de l'offre (acquises, toutes à défaut) ;
+    la ligne cumul (idsousgarantie 0) est écartée."""
+    garanties = [l for l in lignes if l["idsousgarantie"]]
+    garanties = [l for l in garanties if l.get("acquise")] or garanties
+    montant = lambda l: Decimal(str(l["primenette"] or 0))  # noqa: E731
+    hors_cedeao = sum((montant(l) for l in garanties
+                       if l["idsousgarantie"] not in (ID_SOUS_GARANTIE_FGA, ID_SOUS_GARANTIE_CEDEAO)), Decimal(0))
+    rc = sum((montant(l) for l in garanties if l["idsousgarantie"] == ID_SOUS_GARANTIE_RC), Decimal(0))
+    return hors_cedeao, rc
+
+
+def coefficients_reductions(donnees):
+    """Effet de la réduction commerciale et du BNS du véhicule sur une grille à lecture directe, dont les montants sont
+    publiés sans eux : (coefficient de la prime nette hors CEDEAO et FGA, coefficient de la RC, qui porte le FGA).
+
+    Chaque coefficient est le rapport des primes nettes du barème (fn_garantie_offre) calculées pour ce véhicule avec et
+    sans ces taux : la grille ne détaille pas ses garanties, le barème les réduit chacune selon les règles de la
+    compagnie (NSIA : réduction commerciale jamais sur la RC, BNS jamais sur la CEDEAO ni la sécurité routière, etc.).
+    (1, 1) sans taux. Lève DatabaseError si le moteur refuse le véhicule."""
+    reduction = _nombre(donnees.get("TauxReduction")) or Decimal(0)
+    bns = _nombre(donnees.get("Bns")) or Decimal(0)
+    if not reduction and not bns:
+        return Decimal(1), Decimal(1)
+    pn_avec, rc_avec = _primes_nettes_bareme(_lignes_bareme(donnees, reduction, bns))
+    pn_sans, rc_sans = _primes_nettes_bareme(_lignes_bareme(donnees, 0, 0))
+    coefficient_pn = pn_avec / pn_sans if pn_sans else (Decimal(100) - bns) / 100
+    coefficient_rc = rc_avec / rc_sans if rc_sans else (Decimal(100) - bns) / 100
+    return coefficient_pn, coefficient_rc
+
+
+def _taux_texte(taux):
+    return f"{_pourcentage_texte(Decimal(taux)).replace('.', ',')} %"
+
+
+def _reductions_texte(bns, reduction):
+    """« BNS 25 % et réduction commerciale 35 % déduits » (vide sans réduction)."""
+    if bns and reduction:
+        return f"BNS {_taux_texte(bns)} et réduction commerciale {_taux_texte(reduction)} déduits"
+    if bns:
+        return f"BNS {_taux_texte(bns)} déduit"
+    return f"réduction commerciale {_taux_texte(reduction)} déduite" if reduction else ""
+
+
 @api_view(["POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def tarif_direct(request):
     """POST /api/auto/tarif-direct/ {demande de /api/offregarantie} : primes du tarif à lecture directe applicable au
-    véhicule (n'écrit rien). {Trouve: false, Motif} si l'offre, la durée ou le véhicule ne relèvent d'aucune grille."""
+    véhicule (n'écrit rien). {Trouve: false, Motif} si l'offre, la durée ou le véhicule ne relèvent d'aucune grille.
+
+    La grille est publiée sans réduction : la réduction commerciale (TauxReduction) et le BNS (Bns) de la demande sont
+    déduits de sa prime nette et de son FGA comme le barème les déduit (coefficients_reductions). La prime annuelle reste
+    celle de la grille (avant réductions, comme la prime annuelle du barème) ; accessoires et CEDEAO ne changent pas."""
     d = request.data
     entier = lambda cle: int(_nombre(d.get(cle)) or 0)  # noqa: E731
     resultat, motif = chercher_tarif_direct(
@@ -963,14 +1023,29 @@ def tarif_direct(request):
     grille, ligne, annuelle = resultat["grille"], resultat["ligne"], resultat["annuelle"]
     compagnie = _lignes("SELECT raisonsociale AS n FROM stdcompagnie WHERE idcompagnie = %s", [grille.IdCompagnie])
     nom_compagnie = (compagnie[0]["n"] or "").strip() if compagnie else ""
+
+    reduction = _nombre(d.get("TauxReduction")) or Decimal(0)
+    bns = _nombre(d.get("Bns")) or Decimal(0)
+    try:
+        coefficient_pn, coefficient_rc = coefficients_reductions(d)
+    except (DatabaseError, KeyError, TypeError, ValueError, InvalidOperation) as erreur:
+        return Response({"Trouve": False, "Motif": f"Réduction commerciale et BNS non calculables : {str(erreur).splitlines()[0]}"})
+    montants = {m: Decimal(str(getattr(ligne, m))) for m in MONTANTS_SAISIS}
+    montants["PrimeNette"] = (montants["PrimeNette"] * coefficient_pn).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    montants["Fga"] = (montants["Fga"] * coefficient_rc).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    reductions = _reductions_texte(bns, reduction)
     return Response({
         "Trouve": True, "IdGrille": grille.id, "Grille": grille.Libelle, "IdLigne": ligne.id, "Tranche": ligne.Libelle,
         "DureeMois": resultat["duree"], "Compagnie": nom_compagnie, "Source": grille.Source,
         "PrimeAnnuelle": float(annuelle.PrimeNette if annuelle else ligne.PrimeNette),
-        **{m: float(getattr(ligne, m)) for m in MONTANTS_TARIF},
+        # Montants de la grille, avant réductions
+        "PrimeNetteGrille": float(ligne.PrimeNette), "FgaGrille": float(ligne.Fga),
+        "TauxReduction": float(reduction), "Bns": float(bns),
+        **{m: float(v) for m, v in montants.items()},
         # Taxe et TTC toujours à la règle, même pour une ligne enregistrée avant (TTC de la compagnie à 1 F près)
-        **{m: float(v) for m, v in _taxe_et_ttc({m: getattr(ligne, m) for m in MONTANTS_SAISIS}).items()},
-        "Message": f"Tarif {nom_compagnie} à lecture directe : {grille.Libelle}, {ligne.Libelle}, {resultat['duree']} mois",
+        **{m: float(v) for m, v in _taxe_et_ttc(montants).items()},
+        "Message": f"Tarif {nom_compagnie} à lecture directe : {grille.Libelle}, {ligne.Libelle}, {resultat['duree']} mois"
+                   + (f", {reductions}" if reductions else ""),
     })
 
 
