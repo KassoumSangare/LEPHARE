@@ -1796,7 +1796,7 @@ export const cockpitApi = {
   lire: async () => (await apiClient.get('/cockpit/')).data,
   // Cloche : devis arrivant à échéance ou échus récemment, selon les droits (production/views_cockpit.alertes)
   alertes: async () => (await apiClient.get('/alertes/')).data,
-  // Tableau de bord de la direction : exercice choisi (production/views_tableau_de_bord.py, droit reporting.view)
+  // Tableau de bord de la direction : exercice choisi (production/views_tableau_de_bord.py, droit tableau.view)
   tableauDeBord: async (exercice) => (await apiClient.get('/tableau-de-bord/', { params: exercice ? { exercice } : {} })).data,
   // Suivi commercial : devis émis et transformés, relances, renouvellements (production/views_suivi_commercial.py, droit crm.view)
   suiviCommercial: async () => (await apiClient.get('/suivi-commercial/')).data,
@@ -1987,7 +1987,19 @@ export const cashApi = {
   getDernierReglementQuittance: async (numeroquittance) =>
     extractData(await apiClient.get('/detailencaissement/', { params: { numeroquittance, page_size: 1 } }))[0] || null,
   // GET /api/cheques/
-  getCheques: async () => extractData(await apiClient.get('/cheques/')),
+  // Tout le portefeuille, page après page : la liste s'arrêtait aux 200 chèques les plus récents (pagination du serveur), les
+  // plus anciens étaient introuvables, même par la recherche de l'écran (constat du 2026-11-24, chèque 8947368)
+  getCheques: async () => {
+    const tous = [];
+    for (let page = 1; page <= 100; page += 1) {
+      const res = await apiClient.get('/cheques/', { params: { page, page_size: 1000 } });
+      const lot = extractData(res);
+      if (!Array.isArray(lot)) return lot;
+      tous.push(...lot);
+      if (!res.data?.next || !lot.length) break;
+    }
+    return tous;
+  },
   // GET /api/cheques/statut/
   getChequeStatus: async (query) => {
     const res = await apiClient.get('/cheques/statut/', { params: query });

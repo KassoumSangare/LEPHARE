@@ -8,6 +8,7 @@ import { ToastProvider } from './context/ToastContext';
 import AppLayout from './components/layout/AppLayout';
 
 import { premierEcranAdmin } from './components/layout/adminMenu';
+import { DROIT_COCKPIT } from './utils/droits';
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const UserDashboard = lazy(() => import('./pages/user/UserDashboard'));
@@ -135,7 +136,8 @@ const premierePageProduction = (peut) => [
 
 const CockpitRoute = ({ children }) => {
   const { peut } = useAuth();
-  if (peut('cockpit.view')) return children;
+  // Droit du cockpit et au moins un de ses blocs : sans bloc, l'écran serait vide
+  if (peut(DROIT_COCKPIT)) return children;
 
   const destination = premierePageProduction(peut);
   if (destination) return <Navigate to={destination} replace />;

@@ -38,6 +38,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { cockpitApi } from '../../api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { formatDate, formatDateLisible } from '../../utils/dateUtils';
+import { DROIT_TABLEAU } from '../../utils/droits';
 import { useActualisationAuto } from '../../utils/useActualisationAuto';
 
 // Cockpit opérationnel : chiffres réels de la base (GET /api/cockpit/). Chaque bloc n'est envoyé par le serveur qu'avec son
@@ -270,7 +271,7 @@ export const UserDashboard = () => {
                     valeur={<Anime valeur={ca.Total} format={francs} />}
                     icone={Coins}
                     couleur="emerald"
-                    vers={isDirectorOrAdmin && peut('reporting.view') ? '/admin/dashboard' : undefined}
+                    vers={isDirectorOrAdmin && peut(DROIT_TABLEAU) ? '/admin/dashboard' : undefined}
                     aide={`${AIDE_CHIFFRE_AFFAIRES} Depuis le 1er janvier.`}
                     evolution={<Evolution actuel={ca.Total} precedent={ca.Precedent} au={ca.AuPrecedent} />}
                   >

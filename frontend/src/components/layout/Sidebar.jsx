@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ADMIN_MENU, entreeActive } from './adminMenu';
 import { moduleOuvert } from '../../utils/parametrage';
+import { DROIT_COCKPIT } from '../../utils/droits';
 import {
   LayoutDashboard,
   ClipboardList,
@@ -94,6 +95,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
   };
   // Pages du sous-menu « Relations Clients » visibles avec les droits de l'utilisateur
   const nombreCrm = [peut('crm.view'), peut('crm.view'), peut('clients.view'), peut('clients.view')].filter(Boolean).length;
+  // Titre de section affiché seulement si l'un de ses onglets l'est
+  const sectionGestion = [DROIT_COCKPIT, ['crm.view', 'clients.view'], 'devis.view', 'contrats.view', 'rafas.view', 'asaci.attestations']
+    .some((droit) => peut(droit));
+  const sectionIndemnisation = ['sinistres.view', 'consommations.view', 'documents.view', 'approbations.view', 'devis.view']
+    .some((droit) => peut(droit));
 
   const handleLinkClick = () => {
     if (window.innerWidth <= 1024 && onClose) {
@@ -224,11 +230,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
              ========================================================================= */
           <>
             {/* 1. GESTION OPÉRATIONNELLE */}
-            <div className="sidebar-section-header">
+            {sectionGestion && <div className="sidebar-section-header">
               <span>Gestion Opérationnelle</span>
-            </div>
+            </div>}
 
-            {peut('cockpit.view') && (
+            {peut(DROIT_COCKPIT) && (
               <NavLink to="/user/dashboard" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
                 <LayoutDashboard size={16} className="nav-icon" />
                 <span>Cockpit Opérationnel</span>
@@ -294,11 +300,11 @@ export const Sidebar = ({ isOpen, onClose }) => {
               <span>RAFAS</span>
             </NavLink>}
 
-            {/* Grisé en attendant l'ouverture des e-attestations */}
-            <span className="sidebar-nav-item disabled" aria-disabled="true" title="Module indisponible pour le moment">
+            {/* Grisé en attendant l'ouverture des e-attestations ; seulement pour qui en aura le droit */}
+            {peut('asaci.attestations') && <span className="sidebar-nav-item disabled" aria-disabled="true" title="Module indisponible pour le moment">
               <Car size={16} className="nav-icon" />
               <span>e-Attestations ASACI Auto</span>
-            </span>
+            </span>}
 
             {/* 3. FINANCE & CAISSE (ART. 13) */}
             {peut('encaissements.view') && <div className="sidebar-section-header">
@@ -342,9 +348,9 @@ export const Sidebar = ({ isOpen, onClose }) => {
             </div>}
 
             {/* 4. INDEMNISATION & GED */}
-            <div className="sidebar-section-header">
+            {sectionIndemnisation && <div className="sidebar-section-header">
               <span>Indemnisation & Pièces</span>
-            </div>
+            </div>}
 
             {peut('sinistres.view') && <NavLink to="/user/claims" className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}>
               <AlertTriangle size={16} className="nav-icon" />

@@ -16,6 +16,8 @@ const texteDe = (noeud) => {
   return '';
 };
 
+const sansAccents = (texte) => String(texte || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
 // Valeur comparable : date JJ/MM/AAAA -> AAAAMMJJ, montant « 1 234 567 FCFA » ou « 35 % » -> nombre
 const MOTIF_DATE = /^(\d{2})[/-](\d{2})[/-](\d{4})/;
 const MOTIF_MONTANT = /^-?[\d\s  ]+([.,]\d+)?\s*(F|FCFA|F CFA|XOF|%)?$/i;
@@ -47,6 +49,9 @@ export const DataTable = ({
   searchPlaceholder = 'Rechercher un élément...',
   itemsPerPage = 10,
   actions,
+  // Texte cherché pour une ligne (facultatif) : la recherche porte alors sur lui, sans tenir compte des accents ni des
+  // majuscules, chaque mot tapé devant s'y trouver
+  texteRecherche,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,6 +60,13 @@ export const DataTable = ({
   // Filter data based on search term (Optimized for speed on large datasets)
   const filteredData = useMemo(() => {
     if (!searchTerm.trim()) return data;
+    if (texteRecherche) {
+      const mots = sansAccents(searchTerm).split(/\s+/).filter(Boolean);
+      return data.filter((row) => {
+        const texte = sansAccents(texteRecherche(row));
+        return mots.every((mot) => texte.includes(mot));
+      });
+    }
     const term = searchTerm.toLowerCase().trim();
     return data.filter((row) => {
       // Prioritize primary searchable columns
@@ -66,7 +78,7 @@ export const DataTable = ({
       if (contact.includes(term)) return true;
       return false;
     });
-  }, [data, searchTerm]);
+  }, [data, searchTerm, texteRecherche]);
 
   const getSortValue = (col, row) => {
     if (col.sortAccessor) return col.sortAccessor(row);

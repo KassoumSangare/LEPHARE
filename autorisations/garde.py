@@ -211,7 +211,7 @@ REGLES = [
     # Alertes de la cloche : chaque bloc selon le droit de lecture de son module (views_cockpit.alertes)
     R("GET", r"alertes/?$", CONNECTE),
     # Tableau de bord de la direction et suivi commercial : chiffres réservés au droit de la page (vérifié aussi dans la vue)
-    R("GET", r"tableau-de-bord/?$", "reporting.view"),
+    R("GET", r"tableau-de-bord/?$", "tableau.view"),
     R("GET", r"suivi-commercial/?$", "crm.view"),
     # Conventions avec les compagnies : primes à reverser et commissions par compagnie, réservées au droit de la page
     R("GET", r"conventions-compagnies/", "parametrage.update"),

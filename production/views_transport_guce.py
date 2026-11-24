@@ -818,6 +818,45 @@ def _enregistrer_certificats(cursor, df, debut, fin, clients):
             )
 
 
+# Commission du cabinet sur les contrats Transport (constat du 2026-11-24 : « certaines commissions dues au cabinet sont à 0 ») :
+# sp_generation_devis_transport_client lit le taux du barème sans l'écrire et sp_generation_contrat_transport ne recopie
+# pas la commission, si bien que tout contrat importé du GUCE sortait à 0 F. Taux du barème de la compagnie à la date
+# d'émission (fn_get_taux_commission_offre, comme sp_confirmation_devis) et commission = prime nette x taux (le Transport
+# n'a ni FGA ni CEDEAO : prime nette = prime HT) ; devis et quittance alignés.
+SQL_COMMISSION_TRANSPORT = """
+    WITH t AS (
+        SELECT c.idcontrat, c.iddevis, c.idquittance,
+               COALESCE(fn_get_taux_commission_offre(c.idproduit, c.idcompagnie,
+                   COALESCE((SELECT MAX(dd.idoffre) FROM stddevisdetail dd WHERE dd.iddevis = c.iddevis), 0),
+                   c.dateemission::date), 0) AS taux
+        FROM stdcontrat c
+        WHERE c.idcontrat = ANY(%s) AND c.idproduit = 6
+    ), contrats AS (
+        UPDATE stdcontrat c SET taux_commission = t.taux, commissionintermediaire = ROUND(COALESCE(c.primenette, 0) * t.taux / 100, 0)
+        FROM t WHERE c.idcontrat = t.idcontrat
+        RETURNING c.idcontrat
+    ), devis AS (
+        UPDATE stddevis d SET commissionintermediaire = ROUND(COALESCE(d.primenette, 0) * t.taux / 100, 0)
+        FROM t WHERE d.iddevis = t.iddevis
+        RETURNING d.iddevis
+    ), quittances AS (
+        UPDATE stdquittance q SET taux_commission = t.taux
+        FROM t WHERE q.idquittance = t.idquittance
+        RETURNING q.idquittance
+    )
+    SELECT (SELECT COUNT(*) FROM contrats)
+"""
+
+
+def poser_commission_transport(cursor, ids_contrats):
+    """Taux et commission du cabinet posés sur ces contrats Transport (SQL_COMMISSION_TRANSPORT). Retour : contrats mis à jour."""
+    ids = [int(i) for i in ids_contrats if i]
+    if not ids:
+        return 0
+    cursor.execute(SQL_COMMISSION_TRANSPORT, [ids])
+    return cursor.fetchone()[0]
+
+
 def _contrats_de_l_import(id_importation):
     with connection.cursor() as cursor:
         cursor.execute(
@@ -887,6 +926,12 @@ def importer_bordereau(request):
                     [historique.id_importation, debut, fin, request.user.id, 0, ""],
                 )
                 _, message = cursor.fetchone()
+                cursor.execute(
+                    """SELECT c.idcontrat FROM stdimportationcertificatdevis i JOIN stdcontrat c ON c.iddevis = i.iddevis
+                       WHERE i.idhistoriqueimportation = %s""",
+                    [historique.id_importation],
+                )
+                poser_commission_transport(cursor, [ligne[0] for ligne in cursor.fetchall()])
             contrats = _contrats_de_l_import(historique.id_importation)
     except Exception as erreur:
         return Response(

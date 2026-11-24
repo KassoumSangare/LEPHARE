@@ -80,6 +80,7 @@ export const ChequeManagementPage = () => {
   const navigate = useNavigate();
   const [versionDecaissements, setVersionDecaissements] = useState(0);
 
+  // Tout le portefeuille (cashApi.getCheques lit toutes les pages du serveur)
   const chargerCheques = async () => {
     setIsLoading(true);
     try {
@@ -87,19 +88,24 @@ export const ChequeManagementPage = () => {
       setCheques((Array.isArray(data) ? data : []).map((ch) => {
         const montant = Number(ch.montant_initial) || 0;
         const solde = Number(ch.solde_disponible) || 0;
+        // Montant affecté = pièces en cours (non annulées) réglées par le chèque
+        const affecte = Number(ch.montant_affecte) || 0;
+        const clientNom = ch.client_nom || ch.clients || '';
         return {
           ...ch,
           id: ch.id_cheque,
           montant,
           solde,
-          affecte: ch.statut === 'A_DEPOSER' ? 0 : montant - solde,
-          // Clés lues par la recherche du DataTable : client puis n° de chèque
-          client_nom: ch.client_nom || ch.clients || '',
-          police: ch.numero_cheque,
+          affecte,
+          // Chèque encaissé dont le solde ne correspond plus aux pièces en cours (annulation faite hors de LE PHARE)
+          libreSelonPieces: ch.statut === 'ENCAISSE' && Math.abs(montant - affecte - solde) > 1 ? montant - affecte : null,
+          client_nom: clientNom,
+          recherche: [ch.numero_cheque, ch.nom_banque, clientNom, ch.quittances_reglees, Math.round(montant), fcfa(montant),
+            statut(ch.statut).libelle, ch.observation].filter(Boolean).join(' '),
         };
       }));
     } catch (err) {
-      console.error('Erreur chargement chèques :', err);
+      toastError(messageErreur(err, 'Le portefeuille des chèques n\'a pas pu être chargé. Réessayez dans un instant.'));
     } finally {
       setIsLoading(false);
     }
@@ -265,7 +271,7 @@ export const ChequeManagementPage = () => {
       const lignes = (Array.isArray(quittances) ? quittances : []).map((q) => {
         const montant = Math.min(Number(q.montant) || 0, aRepartir);
         aRepartir -= montant;
-        return { numero: q.numero_quittance, client: q.client, montant: String(Math.round(montant)) };
+        return { numero: q.numero_quittance, client: q.client, montant: Math.round(montant) };
       });
       const especes = modes.find((m) => natureMode(m).especes);
       setReencaissement({
@@ -330,11 +336,21 @@ export const ChequeManagementPage = () => {
     { header: 'Montant', render: (row) => <strong>{fcfa(row.montant)}</strong> },
     {
       header: 'Affecté / Solde',
-      render: (row) => (row.statut === 'A_DEPOSER' ? '-' : (
-        <span>
-          <span style={{ color: '#34d399' }}>{fcfa(row.affecte)}</span>
-          {' / '}
-          <span style={{ color: row.solde > 0 ? '#fbbf24' : 'var(--text-muted)' }}>{fcfa(row.solde)}</span>
+      sortAccessor: (row) => row.solde,
+      // À déposer : pas encore utilisé ; annulé ou réencaissé : hors service (détail dans la colonne Statut)
+      render: (row) => (row.statut !== 'ENCAISSE' ? '-' : (
+        <span style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+          <span>
+            <span style={{ color: 'var(--accent-emerald)' }}>{fcfa(row.affecte)}</span>
+            {' / '}
+            <span style={{ color: row.solde > 0 ? 'var(--accent-amber)' : 'var(--text-muted)' }}>{fcfa(row.solde)}</span>
+          </span>
+          {row.libreSelonPieces !== null && (
+            <span style={{ fontSize: '0.72rem', color: 'var(--accent-rose)' }}
+              title="Le solde enregistré du chèque ne correspond pas aux pièces encore en cours : une annulation a été faite sans le libérer. La caisse s'en tient au solde enregistré.">
+              À rapprocher : {fcfa(row.libreSelonPieces)} libres d'après les pièces
+            </span>
+          )}
         </span>
       )),
     },
@@ -346,7 +362,7 @@ export const ChequeManagementPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
           <StatusBadge label={statut(row.statut).libelle} color={statut(row.statut).couleur} />
           {row.niveau_alerte && <StatusBadge label={ALERTES[row.niveau_alerte].libelle} color={ALERTES[row.niveau_alerte].couleur} />}
-          {row.statut === 'IMPAYE' && Number(row.montant_reencaisse) > 0 && (
+          {row.statut === 'IMPAYE' && (
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Réencaissé : {fcfa(row.montant_reencaisse)} / {fcfa(row.montant_impaye)}</span>
           )}
           {row.statut !== 'IMPAYE' && row.statut !== 'REENCAISSE' && row.date_decaissement && (
@@ -367,11 +383,12 @@ export const ChequeManagementPage = () => {
               <Search size={13} /> Utilisation
             </Link>
           )}
-          {row.statut === 'ENCAISSE' && Number(row.nombre_operations) > 0 && (
+          {/* Seulement si une pièce en cours a été réglée par ce chèque : sinon le serveur refuse l'annulation */}
+          {row.statut === 'ENCAISSE' && Number(row.operations_actives) > 0 && (
             <button
               type="button"
               className="btn btn-secondary"
-              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', color: '#f87171' }}
+              style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', color: 'var(--accent-rose)' }}
               title="Annuler le chèque (revenu impayé, rejeté, erreur…) : ses encaissements sont contre-passés"
               onClick={() => setDecaissement({ cheque: row, motif: '', date: aujourdhui() })}
             >
@@ -451,7 +468,7 @@ export const ChequeManagementPage = () => {
 
       {vue === 'cheques' && alertes.length > 0 && (
         <div className="glass-panel" style={{ padding: '1rem 1.25rem', border: '1px solid rgba(245, 158, 11, 0.35)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, marginBottom: '0.6rem', color: '#fbbf24' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, marginBottom: '0.6rem', color: 'var(--accent-amber)' }}>
             <BellRing size={18} /> {alertes.length} chèque{alertes.length > 1 ? 's' : ''} à déposer
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.85rem' }}>
@@ -491,7 +508,8 @@ export const ChequeManagementPage = () => {
             {' '}Un chèque de l'échéancier s'encaisse depuis « Encaisser primes » avec son numéro et sa banque.
           </p>
         )}
-        <DataTable columns={columns} data={chequesAffiches} loading={isLoading} searchPlaceholder="Rechercher par client ou n° de chèque..." />
+        <DataTable columns={columns} data={chequesAffiches} loading={isLoading} texteRecherche={(row) => row.recherche}
+          searchPlaceholder="N° de chèque, banque, client, quittance ou montant" />
       </div>}
 
       {/* Échéancier de chèques d'un client */}
@@ -607,7 +625,7 @@ export const ChequeManagementPage = () => {
         {decaissement && (
           <form onSubmit={enregistrerDecaissement}>
             <div style={{ display: 'flex', gap: '0.6rem', padding: '0.85rem', borderRadius: 'var(--radius-md)', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.25)', marginBottom: '1rem', fontSize: '0.85rem' }}>
-              <AlertTriangle size={18} color="#f87171" style={{ flexShrink: 0 }} />
+              <AlertTriangle size={18} color="var(--accent-rose)" style={{ flexShrink: 0 }} />
               <div>
                 Chèque <strong>{decaissement.cheque.numero_cheque}</strong> ({decaissement.cheque.nom_banque}) de {fcfa(decaissement.cheque.montant)}.
                 {' '}Les encaissements qu'il a réglés ({decaissement.cheque.quittances_reglees || '-'}) seront annulés : les quittances redeviennent à encaisser.
@@ -650,12 +668,13 @@ export const ChequeManagementPage = () => {
               {' '}Montant annulé : <strong>{fcfa(reencaissement.cheque.montant_impaye)}</strong>
               {Number(reencaissement.cheque.montant_reencaisse) > 0 && <>, déjà réencaissé : {fcfa(reencaissement.cheque.montant_reencaisse)}</>}.
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            <div style={{ overflowX: 'auto', marginBottom: '1rem' }}>
+            <table style={{ width: '100%', minWidth: 520, borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ color: 'var(--text-muted)', textAlign: 'left' }}>
                   <th style={{ padding: '0.35rem' }}>Quittance</th>
                   <th style={{ padding: '0.35rem' }}>Client</th>
-                  <th style={{ padding: '0.35rem' }}>Montant réencaissé (FCFA)</th>
+                  <th style={{ padding: '0.35rem' }}>Montant réencaissé</th>
                 </tr>
               </thead>
               <tbody>
@@ -663,17 +682,18 @@ export const ChequeManagementPage = () => {
                   <tr key={q.numero}>
                     <td style={{ padding: '0.3rem', fontFamily: 'var(--font-mono)' }}>{q.numero}</td>
                     <td style={{ padding: '0.3rem' }}>{q.client || '-'}</td>
-                    <td style={{ padding: '0.3rem' }}>
-                      <input type="number" className="form-control" min="0" value={q.montant}
-                        onChange={(e) => setReencaissement((prev) => ({
+                    <td style={{ padding: '0.3rem', minWidth: 170 }}>
+                      <AmountInput value={q.montant}
+                        onChange={(v) => setReencaissement((prev) => ({
                           ...prev,
-                          quittances: prev.quittances.map((x, j) => (j === i ? { ...x, montant: e.target.value } : x)),
+                          quittances: prev.quittances.map((x, j) => (j === i ? { ...x, montant: v } : x)),
                         }))} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
             <p style={{ fontSize: '0.85rem', marginBottom: '0.75rem' }}>Total réencaissé : <strong>{fcfa(totalReencaissement)}</strong></p>
 
             <div className="responsive-form-row">

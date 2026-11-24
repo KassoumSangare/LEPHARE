@@ -3,11 +3,13 @@ espèces : règles pures, sans base de données (catalogue, droits et modes de p
 import copy
 import importlib
 from datetime import date
+from types import SimpleNamespace
 from unittest import mock
 
 from django.test import SimpleTestCase
 
-from autorisations.catalogue import BLOCS_COCKPIT, BLOCS_TABLEAU
+from autorisations import rbac
+from autorisations.catalogue import BLOCS_COCKPIT, BLOCS_TABLEAU, TOUS
 from . import blocs_tableaux, views_bordereaux, views_finance, views_tableau_de_bord
 from .blocs_tableaux import chiffre_affaires_selon_blocs
 from .views_tableau_de_bord import _selon_blocs
@@ -197,3 +199,38 @@ class PaiementDuCabinetEnEspeces(SimpleTestCase):
         self.assertEqual(views_bordereaux._paiement_cabinet(copy.copy(entete)), "Espèces du 23/11/2026 de FCFA 150 000")
         self.assertEqual(views_bordereaux._paiement_cabinet(entete, pour_courrier=True),
                          "le règlement en espèces du 23/11/2026 de FCFA 150 000")
+
+
+class OngletsSelonLeProfil(SimpleTestCase):
+    """Onglets du tableau de bord et du guide de l'administration (demande du 2026-11-24, migration autorisations 0018)."""
+
+    def _droits(self, droits_roles, en_base):
+        def filtre(**criteres):
+            resultat = mock.MagicMock()
+            if "code__in" in criteres:
+                resultat.values_list.return_value = [c for c in criteres["code__in"] if c in en_base]
+            else:
+                resultat.values_list.return_value.distinct.return_value = list(droits_roles)
+            return resultat
+
+        utilisateur = SimpleNamespace(is_authenticated=True, is_active=True, expiry_date=None, is_admin=False)
+        rbac._remplacants_en_base.clear()
+        try:
+            with mock.patch("autorisations.models.Droit.objects.filter", side_effect=filtre):
+                return rbac.droits_utilisateur(utilisateur)
+        finally:
+            rbac._remplacants_en_base.clear()
+
+    def test_catalogue(self):
+        self.assertTrue({"tableau.view", "guide.view"} <= set(TOUS))
+        self.assertNotIn("tableau.view", BLOCS_TABLEAU)  # droit de l'écran, pas un bloc
+        self.assertEqual(views_tableau_de_bord.DROIT, "tableau.view")
+
+    def test_avant_la_migration_consulter_les_etats_en_tient_lieu(self):
+        self.assertIn("tableau.view", self._droits({"reporting.view"}, en_base=set()))
+        self.assertNotIn("tableau.view", self._droits({"contrats.view"}, en_base=set()))  # jamais d'accès par défaut
+
+    def test_apres_la_migration_seul_le_role_decide(self):
+        self.assertNotIn("tableau.view", self._droits({"reporting.view"}, en_base={"tableau.view"}))
+        self.assertIn("tableau.view", self._droits({"tableau.view"}, en_base={"tableau.view"}))
+        self.assertNotIn("guide.view", self._droits({"reporting.view", "users.view"}, en_base={"tableau.view", "guide.view"}))

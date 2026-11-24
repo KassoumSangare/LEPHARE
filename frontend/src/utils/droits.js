@@ -11,11 +11,35 @@ export const definirDroits = (liste) => {
   abonnes.forEach((f) => f());
 };
 
-/** Vrai si l'utilisateur a le droit (ou au moins un des droits d'une liste) ; aucune exigence : vrai. */
+/**
+ * Vrai si l'utilisateur a le droit (ou au moins un des droits d'une liste) ; aucune exigence : vrai.
+ * Écran fait de blocs accordés un à un (cockpit, tableau de bord) : { tous: [droits], blocs: 'préfixe.' }, c'est-à-dire
+ * tous ces droits et au moins un droit du préfixe en plus ; sans aucun bloc, l'écran serait vide et son onglet n'est pas
+ * proposé.
+ */
 export const aLeDroit = (exigence) => {
   if (!exigence || (Array.isArray(exigence) && exigence.length === 0)) return true;
+  if (typeof exigence === 'object' && !Array.isArray(exigence)) {
+    const tous = exigence.tous || [];
+    return tous.every((code) => droitsCourants.has(code))
+      && (!exigence.blocs || [...droitsCourants].some((code) => code.startsWith(exigence.blocs) && !tous.includes(code)));
+  }
   const liste = Array.isArray(exigence) ? exigence : [exigence];
   return liste.some((code) => droitsCourants.has(code));
+};
+
+// Onglets du cockpit et du tableau de bord : droit de l'écran et au moins un de ses blocs (Administration > Rôles)
+export const DROIT_COCKPIT = { tous: ['cockpit.view'], blocs: 'cockpit.' };
+export const DROIT_TABLEAU = { tous: ['tableau.view'], blocs: 'tableau.' };
+
+/** Exigence lisible pour l'écran « Accès non autorisé ». */
+export const libelleExigence = (exigence) => {
+  if (!exigence) return '';
+  if (Array.isArray(exigence)) return exigence.join(' ou ');
+  if (typeof exigence === 'object') {
+    return [...(exigence.tous || []), exigence.blocs ? `au moins un bloc ${exigence.blocs}*` : ''].filter(Boolean).join(' et ');
+  }
+  return exigence;
 };
 
 export const surDroits = (rappel) => {

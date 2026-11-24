@@ -5,7 +5,8 @@ l'exercice précédent, par mois, par branche et par compagnie, et alertes de co
 de la base, mêmes règles que le cockpit, la caisse, les reversements et les commissions. Chaque bloc n'est envoyé qu'avec
 son droit (« Bloc … » du groupe Tableau de bord d'Administration > Rôles, production/blocs_tableaux.py).
 
-GET /api/tableau-de-bord/?exercice=2026 (droit reporting.view)
+GET /api/tableau-de-bord/?exercice=2026 (droit tableau.view, « Consulter le tableau de bord », depuis le 2026-11-24 ;
+avant : reporting.view, qui en tient lieu tant que la migration autorisations 0018 n'est pas appliquée)
 """
 from datetime import date, timedelta
 
@@ -25,7 +26,7 @@ from .reste_encaissement import sql_reste
 from .views_cockpit import CONTRAT_VALIDE, _franc, _lignes, _meme_jour, _une
 from .views_reprise import AUTHENTIFICATION
 
-DROIT = "reporting.view"
+DROIT = "tableau.view"
 EXERCICES_PROPOSES = 6
 COMPAGNIES_AFFICHEES = 8
 # Délai de reversement des primes encaissées quand la convention de la compagnie n'en fixe pas
@@ -308,7 +309,7 @@ def _alertes(s):
 @permission_classes([permissions.IsAuthenticated])
 def tableau_de_bord(request):
     if not a_le_droit(request.user, DROIT):
-        return Response({"detail": "Droit « Consulter les états » requis."}, status=status.HTTP_403_FORBIDDEN)
+        return Response({"detail": "Droit « Consulter le tableau de bord » requis."}, status=status.HTTP_403_FORBIDDEN)
     jour = timezone.localdate()
     try:
         exercice = int(request.query_params.get("exercice") or jour.year)

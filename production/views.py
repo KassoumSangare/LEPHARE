@@ -6164,6 +6164,19 @@ class ChequeListView(generics.ListAPIView):
                 "SELECT COUNT(*) FROM stdchequeoperation op WHERE op.idcheque = stdcheque.idcheque",
                 [],
             ),
+            # Pièces en cours (non annulées) réglées par le chèque : montant réellement affecté. Une annulation faite
+            # sous URANUS laissait le solde du chèque à 0 (chèque 1843984) : l'écran signale l'écart avec le solde
+            operations_actives=RawSQL(
+                """SELECT COUNT(*) FROM stdchequeoperation op JOIN stdencaissement e ON e.idencaissement = op.idencaissement
+                   WHERE op.idcheque = stdcheque.idcheque AND NOT COALESCE(e.piece_annulee, FALSE)""",
+                [],
+            ),
+            montant_affecte=RawSQL(
+                """SELECT COALESCE(SUM(op.montantoperation), 0) FROM stdchequeoperation op
+                   JOIN stdencaissement e ON e.idencaissement = op.idencaissement
+                   WHERE op.idcheque = stdcheque.idcheque AND NOT COALESCE(e.piece_annulee, FALSE)""",
+                [],
+            ),
             quittances_reglees=RawSQL(
                 """SELECT string_agg(DISTINCT de.numeroquittance, ', ')
                    FROM stdchequeoperation op

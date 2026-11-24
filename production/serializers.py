@@ -4802,6 +4802,8 @@ class ChequeListeSerializer(ChequeSerializer):
     """
 
     nombre_operations = serializers.IntegerField(read_only=True)
+    operations_actives = serializers.IntegerField(read_only=True)
+    montant_affecte = serializers.DecimalField(max_digits=19, decimal_places=4, read_only=True)
     quittances_reglees = serializers.CharField(read_only=True, allow_null=True)
     clients = serializers.CharField(read_only=True, allow_null=True)
     montant_reencaisse = serializers.DecimalField(
@@ -4816,6 +4818,8 @@ class ChequeListeSerializer(ChequeSerializer):
     class Meta(ChequeSerializer.Meta):
         fields = ChequeSerializer.Meta.fields + [
             "nombre_operations",
+            "operations_actives",
+            "montant_affecte",
             "quittances_reglees",
             "clients",
             "statut",

@@ -4,7 +4,7 @@ from decimal import Decimal as D
 
 from django.test import SimpleTestCase
 
-from .recalcul_contrat import Contexte, calculer, repartir
+from .recalcul_contrat import Contexte, ErreurRecalcul, calculer, repartir
 
 
 def garantie(idgarantie, pn, taxe, pa=None, acquise=True):
@@ -70,10 +70,51 @@ class RecalculAutoTests(SimpleTestCase):
         self.assertEqual(r["contrat"]["accessoireintermediaire"], D(3000))
         self.assertEqual(r["contrat"]["accessoirecompagnie"], D(3000))
 
-    def test_taxe_et_ttc_saisies_recalculees(self):
-        r = calculer(self.ctx, self.avant, {"contrat": {"taxe": D(1), "primettc": D(2)}})
+    def test_taxe_saisie_recalculee(self):
+        r = calculer(self.ctx, self.avant, {"contrat": {"taxe": D(1)}})
         self.assertEqual(r["contrat"]["taxe"], D(9425))
         self.assertEqual(r["contrat"]["primettc"], D(75925))
+
+    def test_ttc_saisie_prime_nette_deduite(self):
+        # (HT + accessoire) + taxe = 90 000 - FGA - CEDEAO : HT + accessoire = 77 293, taxe 11 207
+        r = calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90000), "taxe": D(1)}})
+        c = r["contrat"]
+        self.assertEqual(c["primettc"], D(90000))
+        self.assertEqual(c["taxe"], D(11207))
+        self.assertEqual(c["primenette"], D(73793))
+        g = r["garanties"]
+        self.assertEqual(g[71]["primenette"] + g[72]["primenette"], D(72293))
+        self.assertNotIn(73, g)  # CEDEAO hors répartition
+        self.assertNotIn("avertissements", r)
+
+    def test_ttc_inatteignable_la_plus_proche_au_dessous(self):
+        # 88 501 F hors FGA et CEDEAO : 77 293 donne 88 500, 77 294 donne 88 502
+        r = calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90001)}})
+        self.assertEqual(r["contrat"]["primettc"], D(90000))
+        self.assertIn("90 000 F retenus", r["avertissements"][0])
+
+    def test_ttc_et_autres_saisies(self):
+        r = calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90000), "accessoire": D(6000)}})
+        self.assertEqual(r["contrat"]["primettc"], D(90000))
+        self.assertEqual(r["contrat"]["accessoire"], D(6000))
+        # Garantie saisie gardée : l'écart va aux autres
+        r = calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90000)}, "garanties": {72: {"primenette": D(12000)}}})
+        self.assertEqual(r["garanties"][72]["primenette"], D(12000))
+        self.assertEqual(r["garanties"][71]["primenette"], D(72293 - 12000))
+        self.assertEqual(r["contrat"]["primettc"], D(90000))
+
+    def test_ttc_refusee(self):
+        with self.assertRaisesRegex(ErreurRecalcul, "pas les deux"):
+            calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90000), "primenette": D(70000)}})
+        with self.assertRaisesRegex(ErreurRecalcul, "trop basse"):
+            calculer(self.ctx, self.avant, {"contrat": {"primettc": D(5000)}})
+        with self.assertRaisesRegex(ErreurRecalcul, "Toutes les primes sont saisies"):
+            calculer(self.ctx, self.avant, {"contrat": {"primettc": D(90000)}, "garanties": {
+                71: {"primenette": D(50000)}, 72: {"primenette": D(10000)}}})
+
+    def test_prime_nette_negative_refusee(self):
+        with self.assertRaisesRegex(ErreurRecalcul, "négative"):
+            calculer(self.ctx, self.avant, {"contrat": {"primenette": D(1000)}})
 
     def test_prime_nette_du_contrat_repartie_sur_les_garanties(self):
         r = calculer(self.ctx, self.avant, {"contrat": {"primenette": D(67500)}})
@@ -119,6 +160,14 @@ class RecalculHorsAutoTests(SimpleTestCase):
         self.assertEqual(r["details"][1]["primenette"], D(30000))
         self.assertEqual(r["contrat"]["taxe"], D(3950 + 1450 + 290))
         self.assertEqual(r["contrat"]["primettc"], D(30000 + 2000 + 5690))
+        # TTC saisie avec une garantie saisie : 12 000 + 2 000 + 3 000 + 290 + x + taxe(x) = 30 000, x = 11 100
+        r = calculer(ctx, avant, {"contrat": {"primettc": D(30000)}, "garanties": {11: {"primenette": D(12000)}}})
+        self.assertEqual(r["garanties"][11], {"primenette": D(12000), "primeannuelle": D(12000), "taxe": D(3000)})
+        self.assertEqual(r["garanties"][12]["primenette"], D(11100))
+        self.assertEqual(r["garanties"][12]["taxe"], D(1610))
+        self.assertNotIn(13, r["garanties"])  # non acquise
+        self.assertEqual(r["contrat"]["taxe"], D(3000 + 1610 + 290))
+        self.assertEqual(r["contrat"]["primettc"], D(30000))
 
     def test_taux_enregistre_autre_que_le_bareme_garde(self):
         # Dommages électriques taxés à 25 % à l'émission, 14,5 % au barème des taxes
@@ -181,6 +230,29 @@ class RecalculHorsAutoTests(SimpleTestCase):
         r = calculer(ctx, avant, {"contrat": {"primenette": D(6000)}})
         self.assertEqual((r["details"][1]["primenette"], r["details"][2]["primenette"]), (D(2000), D(4000)))
         self.assertEqual(r["contrat"]["primettc"], D(6000 + 420))
+        # Prime TTC saisie : même répartition
+        r = calculer(ctx, avant, {"contrat": {"primettc": D(6420)}})
+        self.assertEqual((r["details"][1]["primenette"], r["details"][2]["primenette"]), (D(2000), D(4000)))
+        self.assertEqual((r["contrat"]["primenette"], r["contrat"]["taxe"]), (D(6000), D(420)))
+
+    def test_ttc_saisie_contrat_sans_risque(self):
+        ctx = Contexte(idproduit=2, taux_produit=D(10))
+        avant = {"contrat": contrat(primenette=100000, accessoire=5000, taxe=10500, primettc=115500), "details": {}}
+        r = calculer(ctx, avant, {"contrat": {"primettc": D(126500)}})
+        self.assertEqual((r["contrat"]["primenette"], r["contrat"]["taxe"]), (D(110000), D(11500)))
+
+    def test_ttc_saisie_prime_portee_par_l_en_tete_seul(self):
+        # Contrat repris d'URANUS : risque et garanties à 0 F, la prime est sur l'en-tête ; une baisse reste possible
+        ctx = Contexte(idproduit=2, taux_produit=D(10))
+        avant = {
+            "contrat": contrat(primenette=100000, accessoire=5000, taxe=10500, primettc=115500),
+            "details": {1: {"primenette": D(0), "primeannuelle": D(0), "taxeenregistrement": D(0), "fga": D(0),
+                            "garanties": {11: garantie(60, 0, 0)}}},
+        }
+        r = calculer(ctx, avant, {"contrat": {"primettc": D(104500)}})
+        self.assertEqual((r["contrat"]["primenette"], r["contrat"]["taxe"], r["contrat"]["primettc"]),
+                         (D(90000), D(9500), D(104500)))
+        self.assertEqual(r["garanties"], {})
 
     def test_taux_de_commission_seul(self):
         ctx = Contexte(idproduit=2, taux_produit=D("14.5"))

@@ -22,8 +22,14 @@ Toute saisie d'un élément de prime est désormais propagée, de la garantie ju
 - quittance du contrat : mêmes montants (comme sp_maj_manuelle_primes), « encaissée » selon le reste (reliquat < 5 F),
   solde du client corrigé de l'écart de TTC ; refus si la TTC devient inférieure au montant déjà encaissé.
 
-La taxe et la prime TTC ne se saisissent plus : une valeur envoyée est recalculée. Rien n'est recalculé quand aucune prime
-n'est touchée (montants repris d'URANUS gardés tels quels).
+La taxe ne se saisit pas : une valeur envoyée est recalculée. Rien n'est recalculé quand aucune prime n'est touchée
+(montants repris d'URANUS gardés tels quels).
+
+Prime TTC saisie (demande du 2026-11-24 : « je veux pouvoir saisir la prime à la main ») : c'est la cible. La prime nette
+qui y conduit est déduite et répartie sur les garanties acquises dont la prime n'est pas saisie (risques sans garanties :
+sur les risques), la taxe restant à sa règle ; les autres saisies (accessoire, FGA, primes de garanties...) comptent
+d'abord. Quand l'arrondi de la taxe empêche de tomber juste (Automobile : 1 F de saut de temps en temps), la TTC la plus
+proche est retenue, au-dessous à égalité, et signalée. Prime nette et prime TTC du contrat ne se saisissent pas ensemble.
 """
 
 from dataclasses import dataclass, field
@@ -59,6 +65,10 @@ ZERO = Decimal("0")
 
 class ErreurRecalcul(ValueError):
     """Recalcul impossible : rien n'est enregistré."""
+
+
+class PrimeNegative(ErreurRecalcul):
+    """Prime nette répartie qui deviendrait négative."""
 
 
 def _d(valeur):
@@ -216,11 +226,90 @@ def calculer(ctx, avant, saisies):
             valeurs enregistrées avant la saisie (garanties : idgarantie, acquise, primenette, primeannuelle, taxe).
     saisies : {"contrat": {...}, "details": {iddetail: {...}}, "garanties": {idligne: {...}}}, valeurs saisies.
     Retour : {"contrat": {...}, "details": {iddetail: {...}}, "garanties": {idligne: {...}}} des lignes dont un montant
-    change ou a été saisi ; None si aucune prime n'est touchée. Taux de commission seul saisi : la commission seule.
+    change ou a été saisi, plus "avertissements" quand la prime TTC saisie ne tombe pas juste ; None si aucune prime
+    n'est touchée. Taux de commission seul saisi : la commission seule.
     """
     sc = saisies.get("contrat", {})
+    if "primettc" not in sc:
+        return _calculer(ctx, avant, saisies)
+    if "primenette" in sc:
+        raise ErreurRecalcul(
+            "Saisissez la prime nette du contrat ou sa prime TTC, pas les deux : l'une se déduit de l'autre."
+        )
+    cible = _franc(sc["primettc"])
+    if cible <= 0:
+        raise ErreurRecalcul("La prime TTC saisie doit être supérieure à zéro.")
+    saisies = {**saisies, "contrat": {cle: v for cle, v in sc.items() if cle not in ("primettc", "taxe")}}
+    # Autres saisies seules : une saisie impossible garde son propre message
+    resultat = _calculer(ctx, avant, saisies, ZERO)
+    base = (resultat, _d(resultat["contrat"]["primettc"]))
+    essais = {ZERO: base}
+
+    def essai(ajustement):
+        """TTC obtenue avec cet écart de prime nette réparti (None : une prime deviendrait négative)."""
+        if ajustement not in essais:
+            try:
+                resultat = _calculer(ctx, avant, saisies, ajustement)
+                essais[ajustement] = (resultat, _d(resultat["contrat"]["primettc"]))
+            except PrimeNegative:
+                essais[ajustement] = None
+        return essais[ajustement]
+
+    ecart = cible - base[1]
+    # TTC gagnée par franc de prime nette (taxe comprise), mesurée sur l'écart (réduit de moitié tant qu'il rendrait une
+    # prime négative)
+    pente = Decimal(1)
+    sonde = ecart
+    while sonde:
+        mesure = essai(sonde)
+        if mesure is not None:
+            if mesure[1] != base[1]:
+                pente = (mesure[1] - base[1]) / sonde
+            break
+        sonde = Decimal(int(sonde / 2))
+    ajustement, possible = _franc(ecart / pente), ZERO
+    for _ in range(8):
+        trouve = essai(ajustement)
+        if trouve is None:
+            # Au-delà de ce qu'admettent les primes : retour à mi-chemin du dernier essai possible
+            recul = Decimal(int((ajustement - possible) / 2))
+            if not recul:
+                break
+            ajustement = possible + recul
+            continue
+        possible = ajustement
+        if trouve[1] == cible:
+            break
+        ajustement += _franc((cible - trouve[1]) / pente) or (1 if trouve[1] < cible else -1)
+    # Arrondis des taxes : voisins essayés ; la TTC exacte d'abord, sinon la plus proche, au-dessous à égalité
+    if (essai(ajustement) or (None, None))[1] != cible:
+        for voisin in range(-3, 4):
+            essai(ajustement + voisin)
+    valides = [(a, e) for a, e in essais.items() if e is not None]
+    _, (resultat, ttc) = min(valides, key=lambda ae: (abs(ae[1][1] - cible), ae[1][1] > cible, abs(ae[0] - ajustement)))
+    if abs(ttc - cible) > 2:
+        if ttc > cible:
+            raise ErreurRecalcul(
+                f"La prime TTC saisie ({_montant_texte(cible)} F) est trop basse : elle ne couvre pas les accessoires, "
+                "les frais et les primes déjà fixés."
+            )
+        raise ErreurRecalcul(
+            f"La prime TTC saisie ({_montant_texte(cible)} F) ne peut pas être atteinte : {_montant_texte(ttc)} F au plus près."
+        )
+    if ttc != cible:
+        resultat["avertissements"] = [
+            f"La prime TTC saisie ({_montant_texte(cible)} F) ne peut pas tomber juste avec l'arrondi de la taxe : "
+            f"{_montant_texte(ttc)} F retenus."
+        ]
+    return resultat
+
+
+def _calculer(ctx, avant, saisies, ajustement=None):
+    """Calcul de calculer() ; ajustement : écart de prime nette à répartir pour atteindre une prime TTC saisie (None :
+    pas de TTC saisie)."""
+    sc = saisies.get("contrat", {})
     c = avant["contrat"]
-    if not demande_recalcul(saisies):
+    if ajustement is None and not demande_recalcul(saisies):
         if "taux_commission" not in sc:
             return None
         ht = _d(c["primenette"])
@@ -267,24 +356,33 @@ def calculer(ctx, avant, saisies):
     }
     risques_saisis = {iddet for iddet, s in sd.items() if set(s) & set(CHAMPS_DETAIL)}
 
-    def repartir_prime(ecart, risques, libelle):
-        """Prime nette saisie au-dessus des garanties : l'écart est réparti sur les garanties acquises (hors FGA et
-        CEDEAO) des risques, ou sur les risques sans garanties, au prorata de leurs primes."""
+    def unites_de(risques, exclues=frozenset()):
+        """Garanties acquises (hors FGA et CEDEAO, hors garanties exclues) des risques, ou risques sans garanties,
+        avec leurs primes nettes."""
         unites = []
         for iddet in risques:
             det = details[iddet]
             if det["garanties"]:
                 unites += [
                     (("g", idg), _d(garanties[idg]["primenette"])) for idg in det["garanties"]
-                    if garanties[idg]["acquise"] and garanties[idg]["idgarantie"] not in HORS_REPARTITION
+                    if idg not in exclues and garanties[idg]["acquise"]
+                    and garanties[idg]["idgarantie"] not in HORS_REPARTITION
                 ]
             else:
                 unites.append((("r", iddet), primes_libres[iddet]))
+        return unites
+
+    def repartir_prime(ecart, risques, libelle, exclues=frozenset(), vide=None):
+        """Prime nette saisie au-dessus des garanties : l'écart est réparti sur les garanties acquises (hors FGA et
+        CEDEAO, hors garanties exclues) des risques, ou sur les risques sans garanties, au prorata de leurs primes."""
+        unites = unites_de(risques, exclues)
         if not unites:
             raise ErreurRecalcul(
-                f"Aucune garantie acquise sur laquelle répartir la prime nette {libelle} : cochez au moins une garantie."
+                vide or f"Aucune garantie acquise sur laquelle répartir la prime nette {libelle} : cochez au moins une garantie."
             )
         total = sum((p for _, p in unites), ZERO)
+        if total + ecart < 0:
+            raise PrimeNegative(f"La prime nette {libelle} deviendrait négative sur ses garanties.")
         for (nature, ident), nouvelle in repartir(total + ecart, unites).items():
             if nature == "r":
                 primes_libres[ident] = nouvelle
@@ -313,6 +411,22 @@ def calculer(ctx, avant, saisies):
             ecart -= _d(sc["cedeao"]) - _d(c["cedeao"])
         if ecart:
             repartir_prime(ecart, list(details), "du contrat")
+
+    # 3 bis. Prime TTC saisie : écart de prime nette réparti sur les garanties et les risques dont la prime n'est pas
+    # saisie. Garanties et risques tous à 0 F (contrats repris d'URANUS, prime portée par l'en-tête seul) : l'écart porte
+    # sur la prime nette de l'en-tête, comme pour un contrat sans risque
+    entete_seule = not details
+    if ajustement and details:
+        risques_libres = [iddet for iddet in details if "primenette" not in sd.get(iddet, {})]
+        exclues = {idg for idg, s in sg.items() if "primenette" in s}
+        unites = unites_de(risques_libres, exclues)
+        entete_seule = bool(unites) and not any(p for _, p in unites)
+        if not entete_seule:
+            repartir_prime(
+                ajustement, risques_libres, "du contrat", exclues=exclues,
+                vide="Toutes les primes sont saisies : aucune garantie acquise ne peut recevoir l'écart de prime TTC. "
+                     "Rétablissez une prime de garantie ou de risque.",
+            )
 
     # 4. Risques : écarts de leurs garanties acquises
     resultat = {"contrat": {}, "details": {}, "garanties": {}}
@@ -363,20 +477,26 @@ def calculer(ctx, avant, saisies):
     # 5. Contrat
     accessoire = _d(sc["accessoire"]) if "accessoire" in sc else _d(c["accessoire"])
     gestion = _d(sc["accessoiregestionnaire"]) if "accessoiregestionnaire" in sc else _d(c["accessoiregestionnaire"])
+    # Contrat sans risques ou à prime portée par l'en-tête seul : l'écart de prime TTC porte sur sa prime nette
+    sans_risque = ajustement if ajustement and entete_seule else ZERO
     if ctx.auto:
         fga = _d(sc["fga"]) if "fga" in sc else _d(c["fga"]) + ecarts["fga"] + ecarts["fga_garanties"]
         cedeao = _d(sc["cedeao"]) if "cedeao" in sc else _d(c["cedeao"]) + ecarts["cedeao_garanties"]
         ht_avant = _d(c["primenette"]) - _d(c["fga"]) - (_d(c["cedeao"]) if ctx.cedeao_incluse else ZERO)
-        ht = ht_avant + ecarts["primenette"] - ecarts["cedeao_garanties"] - ecarts["fga_garanties"]
+        ht = ht_avant + ecarts["primenette"] - ecarts["cedeao_garanties"] - ecarts["fga_garanties"] + sans_risque
+        if sans_risque and ht < 0:
+            raise PrimeNegative("La prime nette du contrat deviendrait négative.")
         prime_nette = ht + fga + (cedeao if ctx.cedeao_incluse else ZERO)
         taxe = ZERO if ctx.exonere else _franc((ht + accessoire) * ctx.taux_auto / 100)
         ttc = prime_nette + accessoire + taxe + gestion + (ZERO if ctx.cedeao_incluse else cedeao)
     else:
         fga, cedeao = _d(c["fga"]), _d(c["cedeao"])
         if details:
-            prime_nette = _d(c["primenette"]) + ecarts["primenette"]
+            prime_nette = _d(c["primenette"]) + ecarts["primenette"] + sans_risque
         else:
-            prime_nette = _d(sc["primenette"]) if "primenette" in sc else _d(c["primenette"])
+            prime_nette = (_d(sc["primenette"]) if "primenette" in sc else _d(c["primenette"])) + sans_risque
+        if sans_risque and prime_nette < 0:
+            raise PrimeNegative("La prime nette du contrat deviendrait négative.")
         ht_avant, ht = _d(c["primenette"]), prime_nette
         taxe = taxe_contrat_hors_auto(ctx, c, taxes_risques_avant, taxes_risques, prime_nette, accessoire)
         ttc = prime_nette + accessoire + taxe + gestion
@@ -592,6 +712,7 @@ def recalculer(contrat, avant, saisies):
             ctx = contexte_contrat(cursor, contrat, avant, saisies)
             montants = calculer(ctx, avant, saisies)
         if montants:
+            avertissements += montants.get("avertissements", [])
             _ecrire(cursor, contrat.pk, montants)
             for idg, m in montants["garanties"].items():
                 g = next(det["garanties"][idg] for det in avant["details"].values() if idg in det["garanties"])
@@ -617,8 +738,9 @@ def recalculer(contrat, avant, saisies):
                 continue
             recalcules.append(_ligne("contrat", contrat.pk, cle, entete_avant.get(cle), enregistre, sc))
         if prime:
-            lignes, avertissements = _aligner_quittance(cursor, contrat.pk)
+            lignes, alertes = _aligner_quittance(cursor, contrat.pk)
             recalcules += lignes
+            avertissements += alertes
         elif "taux_commission" in sc:
             cursor.execute(
                 "UPDATE stdquittance q SET taux_commission = c.taux_commission FROM stdcontrat c"

@@ -12,6 +12,7 @@ Pour un nouveau module : ajouter ses droits ici et ses routes dans garde.REGLES,
 MODULES = [
     ("cockpit", "Cockpit opérationnel"),
     ("tableau", "Tableau de bord"),
+    ("guide", "Guide de l'administration"),
     ("clients", "Clients"),
     ("devis", "Devis et production"),
     ("contrats", "Contrats et avenants"),
@@ -78,7 +79,12 @@ DROITS = [
      "Polices et avenants les plus récents, avec leur règlement. Liste de clients : exige aussi « Consulter les contrats ».",
      False, False, False),
 
-    # Blocs du tableau de bord (écran ouvert par « Consulter les états »)
+    # Onglet du tableau de bord (demande du 2026-11-24 : « quand un profil n'a pas le droit de voir le tableau de bord il ne
+    # doit pas voir l'onglet ») : avant, l'écran s'ouvrait avec « Consulter les états » ; sans aucun bloc, l'onglet est masqué
+    ("tableau.view", "Consulter le tableau de bord",
+     "Onglet « Tableau de bord » de l'espace Administration ; chaque bloc ne s'affiche qu'avec son droit ci-dessous.",
+     False, False, False),
+    # Blocs du tableau de bord
     ("tableau.chiffre_affaires", "Bloc « Chiffre d'affaires »",
      "Chiffre d'affaires de l'exercice : composition, taux moyen, part des primes, comparaison avec l'exercice précédent.",
      True, False, False),
@@ -103,6 +109,11 @@ DROITS = [
     ("tableau.compagnies", "Bloc « Par compagnie »", "Primes TTC et actes par compagnie.", False, False, False),
     ("tableau.branches", "Bloc « Synthèse par branche »",
      "Actes, primes, encaissements et recouvrement par branche, avec la catégorie CIMA.", False, False, False),
+
+    # Demande du 2026-11-24 : « le guide administratif doit être visible avec droit »
+    ("guide.view", "Consulter le guide de l'administration",
+     "Onglet « Guide de l'administration » : plan de l'espace Administration, limité aux écrans que les droits permettent.",
+     False, False, False),
 
     ("clients.view", "Consulter les clients", "Liste, recherche, fiche et dossier 360° des clients.", False, False, False),
     ("clients.create", "Créer un client", "", False, False, False),
@@ -213,12 +224,16 @@ DROITS = [
 TOUS = [d[0] for d in DROITS]
 # Blocs du cockpit et du tableau de bord : tous accordés à l'installation, à retirer ensuite rôle par rôle
 BLOCS_COCKPIT = [d[0] for d in DROITS if d[0].startswith("cockpit.") and d[0] != "cockpit.view"]
-BLOCS_TABLEAU = [d[0] for d in DROITS if d[0].startswith("tableau.")]
+BLOCS_TABLEAU = [d[0] for d in DROITS if d[0].startswith("tableau.") and d[0] != "tableau.view"]
 BLOCS_ECRANS = BLOCS_COCKPIT + BLOCS_TABLEAU
 _VUES_METIER = [
     "clients.view", "devis.view", "contrats.view", "encaissements.view", "reversements.view", "commissions.view", "apporteurs.view",
-    "sinistres.view", "approbations.view", "crm.view", "documents.view", "reporting.view",
+    "sinistres.view", "approbations.view", "crm.view", "documents.view", "reporting.view", "tableau.view",
 ] + BLOCS_ECRANS
+
+# Droit ajouté au catalogue après coup -> droit qui en tenait lieu : tant que sa migration n'est pas appliquée (code
+# déployé avant `migrate`), qui avait l'ancien droit le garde (autorisations/rbac.py) ; jamais d'accès par défaut
+REMPLACES = {"tableau.view": "reporting.view"}
 
 # (code, libellé, description, droits) : composition proposée à l'installation, modifiable ensuite
 ROLES_INITIAUX = [
@@ -226,7 +241,7 @@ ROLES_INITIAUX = [
     ("DEVELOPPEUR", "Développeur", "Accès complet pour la maintenance de l'application.", TOUS),
     ("DIRECTION", "Direction", "Vision complète de l'activité (devis, contrats, clients, caisse, états, journal) "
      "et décision sur les demandes d'autorisation ; pas de paramétrage technique.",
-     _VUES_METIER + ["approbations.decider", "audit.view", "users.view", "tarifs.view", "encaissements.auteur"]),
+     _VUES_METIER + ["approbations.decider", "audit.view", "users.view", "tarifs.view", "encaissements.auteur", "guide.view"]),
     ("RESPONSABLE", "Responsable", "Contrôle et validation des opérations, sans modifier les tarifs.",
      _VUES_METIER + [
          "devis.validate", "devis.cancel", "devis.primes", "contrats.update", "contrats.avenant", "contrats.cancel",
@@ -250,7 +265,7 @@ ROLES_INITIAUX = [
      ["clients.view", "devis.view", "devis.validate", "contrats.view", "approbations.view", "documents.view"] + BLOCS_ECRANS),
     ("CONSULTATION", "Consultation", "Lecture seule de l'activité.",
      ["clients.view", "devis.view", "contrats.view", "encaissements.view", "sinistres.view", "reporting.view",
-      "documents.view"] + BLOCS_ECRANS),
+      "tableau.view", "documents.view"] + BLOCS_ECRANS),
 ]
 
 

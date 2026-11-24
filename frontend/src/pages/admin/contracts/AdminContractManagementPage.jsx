@@ -180,11 +180,14 @@ const GROUPES_RISQUE = [
 ];
 const COLONNES_GARANTIE = ['acquise', 'capital', 'primeannuelle', 'primenette', 'taxe', 'textefranchise'];
 const EXCLUS = { contrat: ['idcontrat'], detail: ['idcontratdetail', 'idcontrat', 'garanties'], garantie: ['idcontratdetgarantie', 'idcontratdetail'] };
-// Montants que le serveur recalcule à chaque modification d'une prime (production/recalcul_contrat.py) : jamais saisis
-const CALCULES = { contrat: ['taxe', 'primettc'], detail: ['taxeenregistrement'], garantie: ['taxe'] };
+// Montants que le serveur recalcule à chaque modification d'une prime (production/recalcul_contrat.py) : jamais saisis.
+// La prime TTC se saisit : le serveur en déduit la prime nette, répartie sur les garanties
+const CALCULES = { contrat: ['taxe'], detail: ['taxeenregistrement'], garantie: ['taxe'] };
+// Prime nette et prime TTC du contrat : l'une se déduit de l'autre, la dernière saisie l'emporte
+const SAISIES_EXCLUSIVES = { primenette: 'primettc', primettc: 'primenette' };
 // Saisies qui demandent le recalcul des primes, de la garantie jusqu'à la quittance
 const CHAMPS_PRIME = {
-  contrat: ['primenette', 'primeannuelle', 'accessoire', 'accessoiregestionnaire', 'fga', 'cedeao', 'taux_commission'],
+  contrat: ['primenette', 'primettc', 'primeannuelle', 'accessoire', 'accessoiregestionnaire', 'fga', 'cedeao', 'taux_commission'],
   detail: ['primenette', 'primeannuelle', 'fga'],
   garantie: ['acquise', 'primenette', 'primeannuelle', 'idgarantie'],
 };
@@ -595,7 +598,9 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
     [simulation.recalcules],
   );
   const recalculee = (nature, id, cle) => parCle.get(cleRecalcul(nature, id, cle))?.Apres;
-  const ttcRecalculee = recalculee('contrat', contrat?.idcontrat, 'primettc');
+  // TTC retenue : celle du calcul, sinon la saisie
+  const ttcRecalculee = recalculee('contrat', contrat?.idcontrat, 'primettc')
+    ?? (memeValeur('primettc', contrat?.primettc, initial.contrat?.primettc) ? undefined : contrat.primettc);
 
   // Libellé d'une ligne recalculée : contrat, risque, garantie d'un risque ou quittance
   const libellesGaranties = useMemo(() => {
@@ -621,7 +626,12 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
     return () => window.removeEventListener('beforeunload', avertir);
   }, [changements.length]);
 
-  const modifierContrat = (cle, valeur) => setEdition((e) => ({ ...e, contrat: { ...e.contrat, [cle]: valeur } }));
+  const modifierContrat = (cle, valeur) => setEdition((e) => {
+    const suite = { ...e.contrat, [cle]: valeur };
+    const autre = SAISIES_EXCLUSIVES[cle];
+    if (autre) suite[autre] = initial.contrat[autre];
+    return { ...e, contrat: suite };
+  });
   const modifierDetail = (index, cle, valeur) => setEdition((e) => ({
     ...e, details: e.details.map((d, i) => (i === index ? { ...d, [cle]: valeur } : d)),
   }));

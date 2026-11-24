@@ -50,6 +50,7 @@ import {
   Handshake,
 } from 'lucide-react';
 import { BRANCHES, adresseBranche } from '../../utils/branchesProduction';
+import { DROIT_TABLEAU } from '../../utils/droits';
 
 export const ADMIN_MENU = [
   {
@@ -57,8 +58,8 @@ export const ADMIN_MENU = [
     titre: "Vue d'ensemble",
     description: 'Les chiffres du cabinet et le suivi des clients.',
     items: [
-      { to: '/admin/guide', label: "Guide de l'administration", icon: Compass, description: "Le plan de cet espace : ce que contient chaque écran et où trouver un réglage." },
-      { to: '/admin/dashboard', droit: 'reporting.view', label: 'Tableau de bord', icon: LayoutDashboard, description: 'Production, encaissements, résultats et alertes de conformité du cabinet.' },
+      { to: '/admin/guide', droit: 'guide.view', label: "Guide de l'administration", icon: Compass, description: "Le plan de cet espace : ce que contient chaque écran et où trouver un réglage." },
+      { to: '/admin/dashboard', droit: DROIT_TABLEAU, label: 'Tableau de bord', icon: LayoutDashboard, description: 'Production, encaissements, résultats et alertes de conformité du cabinet.' },
       { to: '/user/crm', droit: 'crm.view', label: 'Suivi commercial', icon: TrendingUp, description: 'Devis émis et transformés, relances, renouvellements et prospects, étape par étape.' },
       { to: '/user/crm/questionnaires', droit: 'crm.view', label: 'Questionnaires prospects', icon: ClipboardList, description: 'Questionnaires à faire remplir par le client (Word, Excel) et questionnaires remplis reçus.' },
       { to: '/user/crm/360', droit: 'clients.view', label: 'Fiche client complète', icon: Users, description: "Tout sur un client : devis, contrats, sinistres et paiements." },
@@ -174,10 +175,12 @@ export const ADMIN_MENU = [
   },
 ];
 
-// Premier écran d'administration permis par les droits (peut : fonction de AuthContext)
+// Premier écran d'administration permis par les droits (peut : fonction de AuthContext) ; à défaut le guide ou une page
+// de l'espace Production rangée dans ce menu, sinon le cockpit
 export const premierEcranAdmin = (peut) => {
-  const ecran = ADMIN_MENU.flatMap((g) => g.items).find((i) => i.to.startsWith('/admin') && i.to !== '/admin/guide' && peut(i.droit));
-  return ecran ? ecran.to : '/admin/guide';
+  const permis = ADMIN_MENU.flatMap((g) => g.items).filter((i) => i.menu !== false && peut(i.droit));
+  const ecran = permis.find((i) => i.to.startsWith('/admin') && i.to !== '/admin/guide') || permis[0];
+  return ecran ? ecran.to : '/user/dashboard';
 };
 
 // Un écran est actif si l'adresse courante est la sienne (ou une de ses sous-pages)
