@@ -57,5 +57,7 @@ export const CATALOGUE = [
   },
 ];
 
-// Droits qui ouvrent la section Corrections du menu
-export const DROITS_CORRECTIONS = [...new Set(CATALOGUE.flatMap((d) => d.cas.map((c) => c.droit)))];
+// Section Corrections du menu (2026-11-25 : « l'accès à l'onglet correction doit requérir des droits ») : droit d'accès à la
+// section (« Accéder aux corrections », Administration > Rôles), puis celui de chaque outil
+export const DROIT_CORRECTIONS = 'corrections.view';
+export const avecAccesCorrections = (droit) => ({ tous: [DROIT_CORRECTIONS, droit] });

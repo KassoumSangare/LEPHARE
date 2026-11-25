@@ -11,6 +11,7 @@ import { contractApi } from '../../../api/endpoints';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { exportToPdf } from '../../../utils/exportUtils';
+import { avecAccesCorrections } from '../../../utils/corrections';
 import { useNombreAnime } from '../../../utils/useNombreAnime';
 import {
   AlertCircle, ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, BellRing, Building2, Car, ChevronLeft,
@@ -333,7 +334,8 @@ export const ContractListPage = () => {
   };
 
   const peutRenouveler = peut('contrats.avenant');
-  const peutAdministrerContrats = peut('contrats.admin_update');
+  // Correction d'un contrat : section Corrections de l'administration (droit d'accès à la section et droit de l'outil)
+  const peutAdministrerContrats = peut(avecAccesCorrections('contrats.admin_update'));
 
   return (
     <div className="portefeuille">

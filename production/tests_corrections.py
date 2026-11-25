@@ -198,3 +198,47 @@ class FusionClients(SimpleTestCase):
         self.assertTrue(fusion.vide("email", "aucun"))
         self.assertTrue(fusion.vide("adresse1", " néant ".upper().replace("É", "E")))
         self.assertFalse(fusion.vide("adresse1", "Cocody"))
+
+
+class AccesSectionCorrections(SimpleTestCase):
+    """« L'accès à l'onglet correction doit requérir des droits » : corrections.view, puis le droit de chaque outil."""
+
+    def droit(self, methode, chemin, droits):
+        from autorisations import garde
+
+        regle, _ = garde._regle(garde.REGLES, methode, chemin)
+        if not callable(regle.droit):
+            return regle.droit
+        with mock.patch.object(garde, "a_le_droit", lambda _utilisateur, code: code in droits):
+            return regle.droit(SimpleNamespace(user=None), None)
+
+    def test_centre_et_journal_exigent_l_acces(self):
+        self.assertEqual(self.droit("GET", "corrections/anomalies/", set()), "corrections.view")
+        self.assertEqual(self.droit("GET", "corrections/journal/", set()), "corrections.view")
+
+    def test_outils_exigent_l_acces_puis_leur_droit(self):
+        cas = [("GET", "corrections/clients/doublons/", "clients.merge"), ("POST", "corrections/clients/fusion/", "clients.merge"),
+               ("POST", "corrections/cheques/5/solde/", "encaissements.cancel"),
+               ("POST", "corrections/contrats/9/realignement/", "contrats.admin_update")]
+        for methode, chemin, outil in cas:
+            # L'outil seul ne suffit pas : l'accès à la section est exigé d'abord
+            self.assertEqual(self.droit(methode, chemin, {outil}), "corrections.view", chemin)
+            self.assertEqual(self.droit(methode, chemin, {"corrections.view", outil}), outil, chemin)
+
+    def test_droit_au_catalogue(self):
+        from autorisations import catalogue
+
+        self.assertIn("corrections.view", catalogue.TOUS)
+        self.assertIn("corrections", dict(catalogue.MODULES))
+        # Avant la migration 0020, qui corrigeait les contrats garde l'écran, rangé dans la section
+        self.assertEqual(catalogue.REMPLACES["corrections.view"], "contrats.admin_update")
+
+    def test_vue_refuse_sans_acces(self):
+        from . import corrections
+
+        with mock.patch.object(corrections, "a_le_droit", return_value=False):
+            reponse = corrections._sans_acces(SimpleNamespace(user=None))
+        self.assertEqual(reponse.status_code, 403)
+        self.assertIn("Accéder aux corrections", reponse.data["erreur"])
+        with mock.patch.object(corrections, "a_le_droit", return_value=True):
+            self.assertIsNone(corrections._sans_acces(SimpleNamespace(user=None)))

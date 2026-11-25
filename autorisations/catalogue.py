@@ -28,6 +28,7 @@ MODULES = [
     ("crm", "Suivi commercial"),
     ("documents", "Documents (GED)"),
     ("archives", "Archives"),
+    ("corrections", "Corrections"),
     ("asaci", "Attestations ASACI"),
     ("reporting", "États et reporting"),
     ("tarifs", "Tarifs et barèmes"),
@@ -201,6 +202,12 @@ DROITS = [
 
     ("archives.restore", "Restaurer un élément archivé", "Bouton « Restaurer » de la page Archives : clients, devis, contrats et sinistres.", True, False, False),
 
+    # Section Corrections de l'administration (2026-11-25 : « l'accès à l'onglet correction doit requérir des droits ») : ouvre
+    # la section ; chaque correction exige en plus le droit de son outil (contrats.admin_update, clients.merge, encaissements.cancel)
+    ("corrections.view", "Accéder aux corrections",
+     "Section Corrections de l'administration : centre des corrections (erreurs détectées, outils, journal), correction d'un contrat, "
+     "d'un encaissement, fiches clients en double. Chaque correction exige en plus le droit de son outil.", True, False, False),
+
     ("asaci.attestations", "Gérer les attestations ASACI", "Demande, suivi et mise à jour des attestations.", False, False, False),
 
     ("reporting.view", "Consulter les états", "États CIMA, états de gestion, bordereaux d'émission.", False, False, False),
@@ -236,7 +243,9 @@ _VUES_METIER = [
 
 # Droit ajouté au catalogue après coup -> droit qui en tenait lieu : tant que sa migration n'est pas appliquée (code
 # déployé avant `migrate`), qui avait l'ancien droit le garde (autorisations/rbac.py) ; jamais d'accès par défaut
-REMPLACES = {"tableau.view": "reporting.view", "reversements.cancel": "reversements.validate"}
+REMPLACES = {"tableau.view": "reporting.view", "reversements.cancel": "reversements.validate",
+             # La correction d'un contrat (« Modifier les contrats ») passe dans la section Corrections
+             "corrections.view": "contrats.admin_update"}
 
 # (code, libellé, description, droits) : composition proposée à l'installation, modifiable ensuite
 ROLES_INITIAUX = [

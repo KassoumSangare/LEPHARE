@@ -2,6 +2,9 @@
 Centre des corrections (Administration > Corrections, demande du 2026-11-25 : « en prévoyant les éventuelles erreurs qu'un
 utilisateur peut commettre, repère les erreurs potentielles et prévois un module de correction pour chaque cas dans l'admin »).
 
+Toute route exige d'abord le droit d'accès à la section, corrections.view (« l'accès à l'onglet correction doit requérir des
+droits »), puis le droit de son outil.
+
 - GET corrections/anomalies/ : erreurs de saisie probables trouvées dans les données, chacune avec ce qui permet de la
   corriger. Une détection n'est renvoyée qu'avec le droit de lecture de son domaine ; l'écran propose la correction selon le
   droit qu'elle exige.
@@ -32,6 +35,7 @@ from .renouvellement import AUTHENTIFICATION, _lignes
 
 logger = logging.getLogger(__name__)
 
+DROIT_ACCES = "corrections.view"
 MAX_LIGNES = 100
 MOTIF_MINIMUM = 5
 # Lignes saisies dans l'application (les pièces reprises de l'ancien logiciel n'ont pas d'auteur)
@@ -306,6 +310,13 @@ def _refus(droit, libelle):
     return Response({"erreur": f"Accès refusé : droit « {libelle} » requis ({droit})."}, status=status.HTTP_403_FORBIDDEN)
 
 
+def _sans_acces(request):
+    """Section Corrections : droit d'accès exigé avant celui de chaque outil (aussi contrôlé par la garde)."""
+    if not a_le_droit(request.user, DROIT_ACCES):
+        return _refus(DROIT_ACCES, "Accéder aux corrections")
+    return None
+
+
 def _entier(valeur):
     try:
         return int(str(valeur or "").strip())
@@ -317,6 +328,9 @@ def _entier(valeur):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_anomalies(request):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     return _reponse(anomalies, request.user)
 
 
@@ -324,6 +338,9 @@ def vue_anomalies(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_journal(request):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     if not a_le_droit(request.user, "audit.view"):
         return _refus("audit.view", "Consulter le journal d'audit")
     try:
@@ -337,6 +354,9 @@ def vue_journal(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_doublons_clients(request):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     if not a_le_droit(request.user, "clients.merge"):
         return _refus("clients.merge", "Regrouper des clients")
     return _reponse(doublons_probables)
@@ -346,6 +366,9 @@ def vue_doublons_clients(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_fusion_clients(request):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     if not a_le_droit(request.user, "clients.merge"):
         return _refus("clients.merge", "Regrouper des clients")
     if request.method == "GET":
@@ -367,6 +390,9 @@ def vue_fusion_clients(request):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_solde_cheque(request, id_cheque):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     if not a_le_droit(request.user, "encaissements.cancel"):
         return _refus("encaissements.cancel", "Annuler un encaissement")
     return _reponse(lambda: recalculer_solde_cheque(request, id_cheque, _motif(request)))
@@ -376,6 +402,9 @@ def vue_solde_cheque(request, id_cheque):
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated])
 def vue_realignement_contrat(request, id_contrat):
+    refus = _sans_acces(request)
+    if refus:
+        return refus
     if not a_le_droit(request.user, "contrats.admin_update"):
         return _refus("contrats.admin_update", "Modifier toutes les informations d'un contrat")
     return _reponse(lambda: realigner_contrat(request, id_contrat, _motif(request)))
