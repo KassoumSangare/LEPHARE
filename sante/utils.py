@@ -838,6 +838,8 @@ def _etat_cotisations(cursor, id_devis, familles, lignes, effet, expiration, ttc
 
 
 def apercu_devis_sante(user_id, input_data):
+    from .formules_minene import ErreurFormule, ranger_familles, texte as texte_rangement
+
     """Primes du devis en saisie calculées par sp_creation_devis_sante sans rien enregistrer (point de sauvegarde
     annulé : ni numéro de devis ni montant écrit), avec le détail par famille des devis MINENE. Renvoie
     (message d'erreur de la base, données)."""
@@ -847,6 +849,9 @@ def apercu_devis_sante(user_id, input_data):
         point = transaction.savepoint()
         try:
             with connection.cursor() as cursor:
+                # MINENE : chaque famille dans la formule de sa taille, comme à l'enregistrement (rien n'est gardé : point de
+                # sauvegarde annulé) ; l'écran annonce le passage
+                rangements = ranger_familles(cursor, user_id, id_devis, retirer_vides=False)
                 cursor.execute(SQL_CREATION_DEVIS_SANTE, parametres)
                 cursor.execute(
                     """SELECT primenette, accessoire, taxe, primettc, COALESCE(accessoiregestionnaire, 0),
@@ -866,6 +871,9 @@ def apercu_devis_sante(user_id, input_data):
         except DatabaseError as error:
             transaction.savepoint_rollback(point)
             return message_erreur_base(error), None
+        except ErreurFormule as error:
+            transaction.savepoint_rollback(point)
+            return str(error), None
         transaction.savepoint_rollback(point)
     ajustement = sum(f["Ajustement"] for f in familles)
     return "", {
@@ -877,6 +885,7 @@ def apercu_devis_sante(user_id, input_data):
         "Garanties": garanties,
         "Familles": familles,
         "Avenant": avenant,
+        "Rangements": [texte_rangement(r) for r in rangements],
     }
 
 

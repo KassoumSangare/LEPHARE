@@ -145,7 +145,8 @@ SQL_LIGNES_ENCAISSEMENT = """
            TRIM(cl.nom || ' ' || COALESCE(cl.prenoms, '')) AS client,
            ch.statut AS statutcheque, e.datecheque, e.datereceptioncheque,
            CASE WHEN op.iddevis_sante IS NOT NULL AND COALESCE(q.primettc, 0) > 0
-                THEN LEAST((COALESCE(ct.primenette, 0) + COALESCE(ct.accessoirecompagnie, 0)) / q.primettc, 1) END AS partcompagnie
+                THEN LEAST((COALESCE(ct.primenette, 0) + COALESCE(ct.accessoirecompagnie, 0)) / q.primettc, 1) END AS partcompagnie,
+           op.iddevis_sante IS NOT NULL AS sansreversement
     FROM stddetailencaissement de
     JOIN stdencaissement e ON e.idencaissement = de.idencaissement
     JOIN stdquittance q ON q.numeroquittance = de.numeroquittance
@@ -171,6 +172,7 @@ LIBELLES_STATUT = {
     "DECAISSEMENT": "Décaissement (déduit)",
     "DEDUIT": "Couvert par un décaissement",
     "REPRIS": "Repris d'URANUS",
+    "SANS_REVERSEMENT": "Sans reversement (Oreole Santé)",
 }
 
 # Modes qui sortent de l'argent d'une quittance (enregistrés en positif par la caisse) : leur
@@ -182,9 +184,13 @@ def _est_decaissement(ligne):
     return ligne["abrege"] in MODES_DECAISSEMENT
 
 
-# Oreole Santé : la compagnie ne connaît que sa part (prime HT + accessoires) ; les frais courtiers restent au cabinet, ils
-# ne se reversent pas et ne se réclament pas. {ct} : contrat de la quittance q.
+# Oreole Santé, part Santé (consigne du 2026-11-24) : « Oreole Santé n'est pas géré par un assureur donc pas de reversement
+# de prime ni de réclamation de commission, c'est juste les frais de gestion qui sont facturés par OREOLE ». Comme un régime
+# autofinancé (RAFAS) : MCI est le gestionnaire, pas un assureur ; la cotisation reste au cabinet, qui garde ses honoraires et
+# ses frais courtiers à l'encaissement (chiffre_affaires.lire_percu). L'IA (NSIA) et l'AFA (ALLIANZ CI VIE) du package restent
+# des primes d'assureurs : reversées et commissionnées comme les autres. {ct} : contrat de la quittance q.
 SQL_EST_OREOLE = "EXISTS (SELECT 1 FROM lephare_oreole_package opk WHERE opk.iddevis_sante = {ct}.iddevis)"
+SANS_REVERSEMENT = "cotisation Oreole Santé, gérée sans assureur : elle ne se reverse pas"
 SQL_ACC_COURTIER = "CASE WHEN " + SQL_EST_OREOLE + " THEN 0 ELSE COALESCE({ct}.accessoireintermediaire, 0) END"
 SQL_PART_COMPAGNIE = ("CASE WHEN " + SQL_EST_OREOLE + " AND COALESCE(q.primettc, 0) > 0 "
                       "THEN LEAST((COALESCE({ct}.primenette, 0) + COALESCE({ct}.accessoirecompagnie, 0)) / q.primettc, 1) END")
@@ -198,8 +204,9 @@ def part_compagnie(montant, part):
 
 
 def _a_reverser(ligne):
-    """Part de l'encaissement due à la compagnie : tout, sauf en Oreole Santé où le cabinet garde ses frais courtiers (prime HT +
-    accessoires à MCI, au prorata de l'encaissement)."""
+    """Part de l'encaissement due à la compagnie : tout, sauf la part Santé d'Oreole Santé, qui ne se reverse pas."""
+    if ligne.get("sansreversement"):
+        return ZERO
     return part_compagnie(ligne["montant_encaissement"], ligne.get("partcompagnie"))
 
 
@@ -235,6 +242,9 @@ def _statut_encaissement(ligne, reste_net=None):
         return "IMPAYE" if ligne["statutcheque"] in ("IMPAYE", "REENCAISSE") else "ANNULE"
     if _est_decaissement(ligne):
         return "DECAISSEMENT"
+    if ligne.get("sansreversement"):
+        # Reversée à MCI avant la consigne du 2026-11-24 : le bordereau reste lisible jusqu'à son annulation
+        return "REVERSE" if ligne["montantreverse"] > 0 else "SANS_REVERSEMENT"
     if ligne["montantreverse"] >= _a_reverser(ligne) > 0:
         return "REVERSE"
     if ligne["dateencaissement"] and ligne["dateencaissement"] < debut_reversements() and ligne["montantreverse"] == 0:
@@ -587,8 +597,10 @@ def _entete_reversement(ligne):
 
 
 # Commission due au cabinet sur une ligne de reversement : commission et accessoires du cabinet en entier sur le premier
-# reversement (non annulé) de la quittance, rien sur les suivants
-COMMISSION_DUE = """CASE WHEN {d}.iddetailreversement = (
+# reversement (non annulé) de la quittance, rien sur les suivants ; rien sur la part Santé d'Oreole Santé, dont les honoraires
+# sont gardés à l'encaissement et ne se réclament pas (SQL_EST_OREOLE)
+COMMISSION_DUE = """CASE WHEN """ + SQL_EST_OREOLE + """ THEN 0
+    WHEN {d}.iddetailreversement = (
         SELECT MIN(d1.iddetailreversement) FROM stddetailreversement d1
         JOIN stdreversementcompagnie r1 ON r1.idreversement = d1.idreversement AND NOT COALESCE(r1.pieceannulee, FALSE)
         JOIN stddetailencaissement de1 ON de1.iddetailencaissement = d1.iddetailencaissement
@@ -693,6 +705,8 @@ def reversements(request):
                 raise ErreurFinance(f"L'encaissement de la quittance {ligne['numeroquittance']} est annulé.")
             if _est_decaissement(ligne):
                 raise ErreurFinance(f"La quittance {ligne['numeroquittance']} : un décaissement ne se reverse pas.")
+            if ligne["sansreversement"]:
+                raise ErreurFinance(f"La quittance {ligne['numeroquittance']} : {SANS_REVERSEMENT}.")
             # Reste net : décaissements de la quittance déduits
             reste = restes.get(id_ligne, ZERO)
             if montant > reste:

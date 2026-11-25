@@ -8,6 +8,7 @@ import { aLeDroit } from '../../utils/droits';
 import { printRecuEncaissement } from '../../utils/exportUtils';
 import { Modal } from '../common/Modal';
 import { StatusBadge } from '../common/StatusBadge';
+import { MontantSaisi } from '../common/MontantSaisi';
 import { ChampsReglement, champsReglementApi, natureMode, reglementVide } from './ChampsReglement';
 
 /* =========================================================================
@@ -320,8 +321,8 @@ export const HistoriqueDecaissements = ({ modes, banques, onBanqueCreee, version
                     <td style={{ padding: '0.3rem', fontFamily: 'var(--font-mono)' }}>{q.numero}</td>
                     <td style={{ padding: '0.3rem' }}>{q.client || '-'}</td>
                     <td style={{ padding: '0.3rem' }}>
-                      <input type="number" className="form-control" min="0" aria-label={`Montant réencaissé sur ${q.numero}`} value={q.montant}
-                        onChange={(e) => setReencaissement((prev) => ({ ...prev, quittances: prev.quittances.map((x, j) => (j === i ? { ...x, montant: e.target.value } : x)) }))} />
+                      <MontantSaisi aria-label={`Montant réencaissé sur ${q.numero}`} value={q.montant}
+                        onChange={(n) => setReencaissement((prev) => ({ ...prev, quittances: prev.quittances.map((x, j) => (j === i ? { ...x, montant: n === null ? '' : String(n) } : x)) }))} />
                     </td>
                   </tr>
                 ))}

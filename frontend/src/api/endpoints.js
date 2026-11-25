@@ -1961,6 +1961,10 @@ export const cashApi = {
   getQuittances: async () => extractData(await apiClient.get('/quittance/')),
   // POST /api/enregistrementencaissement (Encaissement groupé ou unitaire selon EncaissementGroupeQuittanceSerializer)
   collectPremium: (data) => apiClient.post('/enregistrementencaissement', data),
+  // Guichet « Encaissement des Primes » (production/caisse_guichet.py) : toutes les quittances à encaisser (sans la limite des
+  // 200 contrats de /api/contrat/), avec ce qui a été réglé aujourd'hui ; chèques du client qui ont encore un solde
+  quittancesAEncaisser: async () => (await apiClient.get('/caisse/a-encaisser/')).data,
+  chequesClient: async (idClient) => (await apiClient.get(`/caisse/clients/${idClient}/cheques/`)).data,
   // GET /api/quittances-cima/
   getQuittancesCima: async () => extractData(await apiClient.get('/quittances-cima/')),
   // POST /api/quittances-cima/
@@ -2171,7 +2175,10 @@ export const financeApi = {
   // POST { IdCompagnie, DateBordereau, Numero, Lignes: [IdDetailEncaissement], Paiement: { IdMode, IdBanque, NumeroCheque, DatePaiement } }
   emettreBordereaux: async (payload) => (await apiClient.post('/finance/bordereaux/', payload)).data,
   dechargeBordereau: async (idReversement, dateDecharge) => (await apiClient.post(`/finance/bordereaux/${idReversement}/decharge/`, { DateDecharge: dateDecharge })).data,
-  annulerBordereau: async (idReversement, motif) => (await apiClient.post(`/finance/bordereaux/${idReversement}/annuler/`, { Motif: motif })).data,
+  // Droit « Annuler un reversement », motif obligatoire : motif saisi dans l'écran, envoyé d'emblée (en-tête X-Motif de la garde)
+  annulerBordereau: async (idReversement, motif) => (await apiClient.post(`/finance/bordereaux/${idReversement}/annuler/`, { Motif: motif }, {
+    headers: { 'X-Motif': encodeURIComponent(motif) }, motifEnvoye: true,
+  })).data,
   // Bordereau récapitulatif de reversement - réclamation de commissions, en Excel (présentation COMMI-MOIS)
   telechargerReclamationExcel: async (idReclamation, nomFichier) => {
     const res = await apiClient.get(`/finance/commissions/reclamations/${idReclamation}/excel/`, { responseType: 'blob', timeout: 120000 });
@@ -2630,4 +2637,20 @@ export const complianceApi = {
   },
   // POST /api/compliance/audit-trail/
   logAudit: (data) => apiClient.post('/compliance/audit-trail/', data),
+};
+
+/* =========================================================================
+   CENTRE DES CORRECTIONS (production/corrections.py, Administration > Corrections)
+   Anomalies détectées selon les droits, journal des corrections, fusion de fiches clients en double, solde d'un chèque
+   recalculé, contrat réaligné avec sa quittance et son devis. Motif aussi en en-tête X-Motif (droits à motif obligatoire).
+   ========================================================================= */
+const avecMotif = (motif) => ({ headers: { 'X-Motif': encodeURIComponent(motif || '') }, motifEnvoye: true });
+export const correctionsApi = {
+  anomalies: async () => (await apiClient.get('/corrections/anomalies/')).data,
+  journal: async (page = 1) => (await apiClient.get('/corrections/journal/', { params: { page } })).data,
+  doublonsClients: async () => (await apiClient.get('/corrections/clients/doublons/')).data,
+  apercuFusion: async (garder, fusionner) => (await apiClient.get('/corrections/clients/fusion/', { params: { garder, fusionner } })).data,
+  fusionnerClients: async (garder, fusionner, motif) => (await apiClient.post('/corrections/clients/fusion/', { garder, fusionner, motif }, avecMotif(motif))).data,
+  recalculerSoldeCheque: async (id, motif) => (await apiClient.post(`/corrections/cheques/${id}/solde/`, { motif }, avecMotif(motif))).data,
+  realignerContrat: async (id, motif) => (await apiClient.post(`/corrections/contrats/${id}/realignement/`, { motif }, avecMotif(motif))).data,
 };

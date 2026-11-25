@@ -152,6 +152,9 @@ DROITS = [
     ("reversements.view", "Consulter les reversements", "", False, False, False),
     ("reversements.create", "Préparer un reversement", "", False, False, False),
     ("reversements.validate", "Valider un reversement", "", True, False, False),
+    # Demande du 2026-11-24 : « permettre l'annulation d'un reversement mais l'annulation se fait avec droit »
+    ("reversements.cancel", "Annuler un reversement",
+     "Annulation d'un bordereau émis par erreur : ses primes redeviennent à reverser.", True, True, False),
 
     ("commissions.view", "Consulter les commissions", "États, tableaux de bord, affaires éligibles.", False, False, False),
     ("commissions.create", "Réclamer une commission", "Réclamations et préparation des paiements de commission.", False, False, False),
@@ -233,7 +236,7 @@ _VUES_METIER = [
 
 # Droit ajouté au catalogue après coup -> droit qui en tenait lieu : tant que sa migration n'est pas appliquée (code
 # déployé avant `migrate`), qui avait l'ancien droit le garde (autorisations/rbac.py) ; jamais d'accès par défaut
-REMPLACES = {"tableau.view": "reporting.view"}
+REMPLACES = {"tableau.view": "reporting.view", "reversements.cancel": "reversements.validate"}
 
 # (code, libellé, description, droits) : composition proposée à l'installation, modifiable ensuite
 ROLES_INITIAUX = [
@@ -245,7 +248,7 @@ ROLES_INITIAUX = [
     ("RESPONSABLE", "Responsable", "Contrôle et validation des opérations, sans modifier les tarifs.",
      _VUES_METIER + [
          "devis.validate", "devis.cancel", "devis.primes", "contrats.update", "contrats.avenant", "contrats.cancel",
-         "encaissements.cancel", "reversements.create", "reversements.validate", "commissions.validate",
+         "encaissements.cancel", "reversements.create", "reversements.validate", "reversements.cancel", "commissions.validate",
          "commissions.cancel", "apporteurs.rattacher", "apporteurs.payer", "apporteurs.cancel", "sinistres.settle",
          "approbations.decider", "crm.update", "documents.update",
          "audit.view", "tarifs.view", "encaissements.auteur",

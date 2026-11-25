@@ -46,6 +46,7 @@ from production.periode_contrat import periode_contrat
 
 from . import import_classique
 from .avenant import DROIT_DEROGATION_AGE, detail_avenant_modification
+from .formules_minene import ErreurFormule, ranger_familles, texte as texte_rangement
 from .models import Adherent, Affilie, FilialeSante
 from .offre_commerciale import ErreurOffreCommerciale, changer_offre_commerciale
 from .serializers import EnregistrementDevisSanteSerializer
@@ -612,6 +613,7 @@ def supprimer_objet_saisie(request):
     if devis.produit_id != ID_PRODUIT_SANTE:
         return Response({"error": "Ce devis n'a pas été produit en Santé !"}, status=status.HTTP_400_BAD_REQUEST)
 
+    rangements = []
     with transaction.atomic():
         if type_objet == "AFF":
             affilie = Affilie.objects.filter(pk=id_objet, devis=id_devis).first()
@@ -622,7 +624,12 @@ def supprimer_objet_saisie(request):
                     {"error": "Cet affilié est un chef de famille : retirez l'adhérent."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            id_adherent = affilie.adherent_id
             affilie.delete()
+            # MINENE : une personne en moins peut ramener la famille dans la formule précédente (FAMILLE PLUS de 3 personnes :
+            # FAMILLE ; FAMILLE d'une personne : SOLO), formules_minene.py
+            with connection.cursor() as cursor:
+                rangements = ranger_familles(cursor, request.user.id, id_devis, id_adherent=id_adherent)
         elif type_objet == "ADH":
             adherent = Adherent.objects.filter(pk=id_objet, devis=id_devis).first()
             if not adherent:
@@ -637,7 +644,8 @@ def supprimer_objet_saisie(request):
             Affilie.objects.filter(Q(adherent__in=adherents) & Q(devis=id_devis)).delete()
             adherents.delete()
             filiale.delete()
-    return Response({"message": "Suppression réalisée avec succès"}, status=status.HTTP_200_OK)
+    return Response({"message": " ".join(["Suppression réalisée avec succès.", *(texte_rangement(r) for r in rangements)]),
+                     "rangements": rangements}, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
@@ -652,6 +660,17 @@ def enregistrer_devis_sante(request):
     devis et écrit le complément Santé. TauxReduction est signé (positif = réduction,
     négatif = majoration). La date d'émission est celle du jour.
     """
+    # MINENE : chaque famille dans la formule de sa taille avant le calcul (une famille saisie dans une couverture trop grande ou
+    # trop petite passe à la formule suivante ou précédente), formules_minene.py ; fait avant _donnees_devis, qui choisit l'offre
+    # du devis parmi ses couvertures
+    rangements = []
+    if _entier(request.data.get("IdDevis")):
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                rangements = ranger_familles(cursor, request.user.id, _entier(request.data.get("IdDevis")))
+        except ErreurFormule as erreur_formule:
+            return Response({"error": str(erreur_formule)}, status=status.HTTP_400_BAD_REQUEST)
+    texte_rangements = "".join(f" {texte_rangement(r)}" for r in rangements)
     data, erreur = _donnees_devis(request)
     if erreur:
         return erreur
@@ -698,8 +717,9 @@ def enregistrer_devis_sante(request):
         {
             "devis_id": devis.iddevis,
             "numero_devis": devis.numerodevis or "",
-            "message": ligne.OutputMessage
+            "message": ligne.OutputMessage + texte_rangements
             + (f" Dérogation à la limite d'âge : {texte_hors_limites}." if hors_limites else "") + avertissement_minene,
+            "rangements": rangements,
             "minene": package_minene,
             "avertissement_minene": avertissement_minene.strip(),
             "totaux": {

@@ -29,8 +29,8 @@ import {
 } from 'lucide-react';
 
 import {
-  AIDE_CHIFFRE_AFFAIRES, Anime, BoutonVoir, cheminDevis, Detail, Evolution, francs, heureMaj, Jauge, MiniBarres, nombre, partsChiffreAffaires, pluriel,
-  pourcent, Repartition, Section, Tuile,
+  AIDE_CHIFFRE_AFFAIRES, aideResteAPercevoir, Anime, BoutonVoir, cheminDevis, Detail, Evolution, francs, heureMaj, Jauge, lignesResteAPercevoir,
+  MiniBarres, nombre, partsChiffreAffaires, pluriel, pourcent, Repartition, Section, Tuile,
 } from '../../components/common/Cockpit';
 import { DataTable } from '../../components/common/DataTable';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -46,7 +46,7 @@ import { useActualisationAuto } from '../../utils/useActualisationAuto';
 // OREOLE est courtier : son chiffre d'affaires, ce sont ses commissions et accessoires, les primes reviennent aux compagnies.
 const SOURCES_PERCU = [
   ['Compagnies', 'Règlements des compagnies'],
-  ['FraisCourtiers', 'Frais courtiers Oreole Santé'],
+  ['FraisCourtiers', 'Honoraires et frais courtiers Oreole Santé'],
   ['Reprises', 'Affaires antérieures'],
   ['Rafas', 'RAFAS'],
 ];
@@ -103,6 +103,9 @@ export const UserDashboard = () => {
   const caListes = (d.Blocs || []).includes('commissions_listes');
   const sourcesPercues = blocPercu ? SOURCES_PERCU.filter(([cle]) => ca.Percu[cle]) : [];
   const tuilesCa = blocCa || blocPercu || blocReste;
+  // Reste à percevoir : ouvre l'écran des reversements, dont il reprend les étapes, sinon l'état des commissions
+  const versReste = !isDirectorOrAdmin ? undefined
+    : (peut('reversements.view') && '/admin/remittances') || (peut('commissions.view') && '/admin/commissions') || undefined;
   const tuilesProduction = Boolean(primes || polices || devis || transformation);
   const tuilesCaisse = Boolean(encaisse || resteAEncaisser || reversements || commissions);
   const aucunBloc = donnees && (d.Blocs || []).length === 0;
@@ -310,23 +313,9 @@ export const UserDashboard = () => {
                     valeur={<Anime valeur={ca.ResteAPercevoir?.Total ?? ca.EnAttente.Total} format={francs} />}
                     icone={HandCoins}
                     couleur="amber"
-                    vers={isDirectorOrAdmin && peut('commissions.view') ? '/admin/commissions' : undefined}
-                    aide={`Commission à percevoir moins commission perçue : chiffre d'affaires ${exercice} pas encore reçu. La commission ne se réclame à la compagnie qu'une fois la prime encaissée et reversée.`}
-                    lignes={[
-                      ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
-                      <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
-                      ca.Reclamations?.Cumul && (
-                        <Detail
-                          libelle={`Réclamations de commission cumulées en ${exercice}, ${pluriel(ca.Reclamations.Cumul.Nombre, 'bordereau', 'bordereaux')}`}
-                          valeur={francs(ca.Reclamations.Cumul.Montant)}
-                        />
-                      ),
-                      <Detail
-                        libelle={`Réclamées non payées${ca.Reclamations?.BordereauxEnAttente ? `, ${pluriel(ca.Reclamations.BordereauxEnAttente, 'bordereau', 'bordereaux')}` : ''}`}
-                        valeur={francs(ca.EnAttente.Reclamees)}
-                      />,
-                      ca.EnAttente.Rafas > 0 && <Detail libelle="RAFAS non réglée" valeur={francs(ca.EnAttente.Rafas)} />,
-                    ]}
+                    vers={versReste}
+                    aide={aideResteAPercevoir(exercice)}
+                    lignes={lignesResteAPercevoir(ca, exercice)}
                   />
                 )}
               </div>

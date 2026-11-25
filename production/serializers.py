@@ -4804,6 +4804,8 @@ class ChequeListeSerializer(ChequeSerializer):
     nombre_operations = serializers.IntegerField(read_only=True)
     operations_actives = serializers.IntegerField(read_only=True)
     montant_affecte = serializers.DecimalField(max_digits=19, decimal_places=4, read_only=True)
+    deja_reverse = serializers.BooleanField(read_only=True)
+    bordereaux_reversement = serializers.CharField(read_only=True, allow_null=True)
     quittances_reglees = serializers.CharField(read_only=True, allow_null=True)
     clients = serializers.CharField(read_only=True, allow_null=True)
     montant_reencaisse = serializers.DecimalField(
@@ -4820,6 +4822,8 @@ class ChequeListeSerializer(ChequeSerializer):
             "nombre_operations",
             "operations_actives",
             "montant_affecte",
+            "deja_reverse",
+            "bordereaux_reversement",
             "quittances_reglees",
             "clients",
             "statut",

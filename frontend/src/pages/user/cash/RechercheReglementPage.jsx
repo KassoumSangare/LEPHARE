@@ -10,7 +10,7 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 
 // Recherche d'un règlement : à quoi a servi un chèque, un virement, des espèces ou tout autre mode de paiement
 // (GET /api/finance/encaissements/recherche/). Chaque règlement revient avec toutes les quittances qu'il a payées.
-const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', ANNULE: 'rose', IMPAYE: 'rose', DECAISSEMENT: 'rose' };
+const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', ANNULE: 'rose', IMPAYE: 'rose', DECAISSEMENT: 'rose', SANS_REVERSEMENT: 'slate' };
 const COULEURS_CHEQUE = { ENCAISSE: 'emerald', REENCAISSE: 'emerald', IMPAYE: 'rose', A_DEPOSER: 'amber' };
 const FILTRES_VIDES = { q: '', mode: '', du: '', au: '' };
 // Listes sans parenthèses : le complément passe après un tiret

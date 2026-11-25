@@ -29,7 +29,11 @@ export const LoginPage = () => {
     setEnvoi(true);
     try {
       await login(email, motDePasse);
-      navigate('/user/dashboard', { replace: true });
+      const destination = params.get('next');
+      const destinationInterne = destination?.startsWith('/')
+        && !destination.startsWith('//')
+        && !destination.includes('\\');
+      navigate(destinationInterne ? destination : '/user/dashboard', { replace: true });
     } catch (err) {
       setErreur(messageErreur(err));
       setMotDePasse('');

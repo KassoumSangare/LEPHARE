@@ -24,7 +24,7 @@ from .views_devis_voyage import (
     lire_devis_voyage,
 )
 from . import apporteurs, decaissements, views_bordereaux, views_cockpit, views_conventions, views_finance, views_reprise
-from . import corrections_encaissement, registre_avenants, ristournes
+from . import caisse_guichet, corrections, corrections_encaissement, registre_avenants, ristournes
 from . import views_suivi_commercial, views_tableau_de_bord
 from . import views_transport_hors_guce as transport_hors_guce
 from . import avenants as avenants_views
@@ -906,6 +906,16 @@ urlpatterns = [
     path("caisse/ristournes/<int:idquittance>/remboursement/", ristournes.remboursement, name="caisse-ristourne-remboursement"),
     path("caisse/ristournes/<int:idquittance>/imputation/", ristournes.imputation, name="caisse-ristourne-imputation"),
     path("caisse/ristournes/reglements/<int:idencaissement>/annulation/", ristournes.annulation, name="caisse-ristourne-annulation"),
+    # Centre des corrections (Administration > Corrections, production/corrections.py)
+    path("corrections/anomalies/", corrections.vue_anomalies, name="corrections-anomalies"),
+    path("corrections/journal/", corrections.vue_journal, name="corrections-journal"),
+    path("corrections/clients/doublons/", corrections.vue_doublons_clients, name="corrections-clients-doublons"),
+    path("corrections/clients/fusion/", corrections.vue_fusion_clients, name="corrections-clients-fusion"),
+    path("corrections/cheques/<int:id_cheque>/solde/", corrections.vue_solde_cheque, name="corrections-cheque-solde"),
+    path("corrections/contrats/<int:id_contrat>/realignement/", corrections.vue_realignement_contrat, name="corrections-contrat-realignement"),
+    # Guichet « Encaissement des Primes » : toutes les quittances à encaisser, chèques du client (production/caisse_guichet.py)
+    path("caisse/a-encaisser/", caisse_guichet.vue_a_encaisser, name="caisse-a-encaisser"),
+    path("caisse/clients/<int:id_client>/cheques/", caisse_guichet.vue_cheques_client, name="caisse-cheques-client"),
     # Correction d'un encaissement saisi par erreur : références, annulation, annulation et réaffectation
     path("caisse/encaissements/du-jour/", corrections_encaissement.vue_du_jour, name="caisse-encaissements-du-jour"),
     path("caisse/encaissements/<int:id_encaissement>/correction/", corrections_encaissement.vue_fiche, name="caisse-encaissement-correction"),

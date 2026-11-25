@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Car, ChevronDown, ChevronLeft,
   ChevronRight, ClipboardCheck, FileText, Loader2, Pencil, RefreshCw, RotateCcw,
@@ -6,6 +7,7 @@ import {
 } from 'lucide-react';
 import { contractApi } from '../../../api/endpoints';
 import { StatusBadge } from '../../../components/common/StatusBadge';
+import { MontantSaisi } from '../../../components/common/MontantSaisi';
 import { SqueletteTableau } from '../../../components/common/Squelette';
 import { FiltreTypeContrat, libellesTypeContrat, parametreFlotte } from '../../../components/common/FiltreTypeContrat';
 import { useToast } from '../../../context/ToastContext';
@@ -191,7 +193,10 @@ const CHAMPS_PRIME = {
   detail: ['primenette', 'primeannuelle', 'fga'],
   garantie: ['acquise', 'primenette', 'primeannuelle', 'idgarantie'],
 };
-const SIMULATION_VIDE = { recalcules: [], avertissements: [], erreur: '', enCours: false };
+// Souscripteur, compagnie, apériteur, n° de police : la correction suit sur la quittance, le devis, les soldes clients et, au
+// choix, les autres mouvements de la police (production/coherence_contrat.py) ; la simulation montre ce qui suivra
+const CHAMPS_LIES = ['idclient', 'idcompagnie', 'idaperiteur', 'numeropolice'];
+const SIMULATION_VIDE = { recalcules: [], propagations: [], avertissements: [], erreur: '', enCours: false };
 const cleRecalcul = (nature, id, cle) => `${nature}-${id}-${cle}`;
 
 const CLES_BOOLS = new Set(['transfere', 'anticipation', 'auteur', 'pc_control', 'cg_control']);
@@ -285,7 +290,11 @@ const ChampSaisie = ({ cle, valeur, onChange, referentiels, compact = false }) =
         onChange={(e) => onChange(e.target.value ? `${e.target.value}:00` : null)} />
     );
   }
-  if (['montant', 'nombre', 'taux', 'client'].includes(def.type)) {
+  // Montants regroupés par milliers pendant la frappe (MontantSaisi), centimes gardés
+  if (def.type === 'montant') {
+    return <MontantSaisi {...commun} value={valeur ?? ''} onChange={(n) => onChange(n === null ? null : n)} />;
+  }
+  if (['nombre', 'taux', 'client'].includes(def.type)) {
     const n = Number(valeur);
     return (
       <input {...commun} type="number" step="any" inputMode="decimal"
@@ -525,6 +534,8 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
   const [motif, setMotif] = useState('');
   const [enregistrement, setEnregistrement] = useState(false);
   const [simulation, setSimulation] = useState(SIMULATION_VIDE);
+  // Souscripteur ou compagnie corrigé : aussi sur les autres mouvements de la police qui portaient l'ancien (coché d'office)
+  const [toutePolice, setToutePolice] = useState(true);
   const numeroSimulation = useRef(0);
 
   const { contexte = {}, referentiels = {} } = edition;
@@ -570,19 +581,26 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
   // Prime touchée : le serveur refait le calcul sur les saisies (écrites puis annulées) et renvoie les montants recalculés,
   // montrés dans les champs et à la vérification ; la réponse d'une saisie dépassée est ignorée
   const primeTouchee = changements.some((c) => CHAMPS_PRIME[c.nature]?.includes(c.cle));
+  const clesTouchees = changements.filter((c) => c.nature === 'contrat' && CHAMPS_LIES.includes(c.cle)).map((c) => c.cle);
+  const partiesTouchees = clesTouchees.some((cle) => cle === 'idclient' || cle === 'idcompagnie');
+  const autresMouvements = Math.max(0, Number(contexte.MouvementsPolice || 1) - 1);
+  const avecPolice = (payload) => ({ ...payload, toute_la_police: partiesTouchees && autresMouvements > 0 && toutePolice });
   useEffect(() => {
     numeroSimulation.current += 1;
     const numero = numeroSimulation.current;
-    if (!primeTouchee) {
+    if (!primeTouchee && !clesTouchees.length) {
       setSimulation(SIMULATION_VIDE);
       return undefined;
     }
     setSimulation((s) => ({ ...s, enCours: true }));
     const minuteur = setTimeout(async () => {
       try {
-        const resultat = await contractApi.simulateAdministrationContract(Number(edition.contrat.idcontrat), construirePayload(edition, initial));
+        const resultat = await contractApi.simulateAdministrationContract(Number(edition.contrat.idcontrat), avecPolice(construirePayload(edition, initial)));
         if (numero === numeroSimulation.current) {
-          setSimulation({ recalcules: resultat.recalcules || [], avertissements: resultat.avertissements || [], erreur: '', enCours: false });
+          setSimulation({
+            recalcules: resultat.recalcules || [], propagations: resultat.propagations || [], avertissements: resultat.avertissements || [],
+            erreur: '', enCours: false,
+          });
         }
       } catch (error) {
         if (numero === numeroSimulation.current) {
@@ -591,7 +609,7 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
       }
     }, 450);
     return () => clearTimeout(minuteur);
-  }, [edition, initial, primeTouchee]);
+  }, [edition, initial, primeTouchee, clesTouchees.length, toutePolice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const parCle = useMemo(
     () => new Map(simulation.recalcules.map((r) => [cleRecalcul(r.Nature, r.Id, r.Champ), r])),
@@ -687,19 +705,20 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
       toastError('Indiquez le motif de la modification (5 caractères au moins).');
       return;
     }
-    const payload = construirePayload(edition, initial);
+    const payload = avecPolice(construirePayload(edition, initial));
     setEnregistrement(true);
     try {
       // Primes recalculées par le serveur (garanties, risques, contrat, quittance) et contrat relu en base : les montants
       // s'affichent tels qu'enregistrés
-      const { recalcules = [], avertissements = [], ...resultat } = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
+      const { recalcules = [], propagations = [], avertissements = [], ...resultat } = await contractApi.updateAdministrationContract(idContrat, payload, motif.trim());
       setInitial(resultat);
       setEdition(resultat);
       setMotif('');
       setOnglet('contrat');
       const pluriel = changements.length > 1 ? 's' : '';
       success(`${changements.length} modification${pluriel} enregistrée${pluriel} et journalisée${pluriel} avec le motif${recalcules.length
-        ? ` ; ${recalcules.length} montant${recalcules.length > 1 ? 's' : ''} recalculé${recalcules.length > 1 ? 's' : ''}` : ''}.`);
+        ? ` ; ${recalcules.length} montant${recalcules.length > 1 ? 's' : ''} recalculé${recalcules.length > 1 ? 's' : ''}` : ''}${propagations.length
+        ? ` ; ${propagations.length} report${propagations.length > 1 ? 's' : ''} sur la quittance, le devis ou la police` : ''}.`);
       avertissements.forEach((texte) => warning(texte));
       onEnregistre();
     } catch (error) {
@@ -904,6 +923,35 @@ const EditeurContrat = ({ donnees, onEnregistre, onFermer }) => {
                   </div>
                 </>
               )}
+              {partiesTouchees && autresMouvements > 0 && (
+                <label className="admin-toute-police">
+                  <input type="checkbox" checked={toutePolice} onChange={(e) => setToutePolice(e.target.checked)} />
+                  Appliquer aussi aux {autresMouvements} autre{autresMouvements > 1 ? 's' : ''} mouvement{autresMouvements > 1 ? 's' : ''} de la police
+                </label>
+              )}
+              {simulation.propagations.length > 0 && (
+                <>
+                  <h3 className="admin-sous-titre">
+                    Suivent la correction · {simulation.propagations.length}
+                    {simulation.enCours && <Loader2 className="spin" size={14} aria-label="Calcul en cours" />}
+                  </h3>
+                  <div className="table-wrapper">
+                    <table className="data-table admin-recap">
+                      <thead><tr><th>Élément</th><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+                      <tbody>
+                        {simulation.propagations.map((p) => (
+                          <tr key={`${p.Element}-${p.Champ}-${p.Apres}`}>
+                            <td>{p.Element}</td>
+                            <td>{p.Champ}</td>
+                            <td className="admin-recap-avant">{p.Avant || '-'}</td>
+                            <td className="admin-recap-apres">{p.Apres || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
               {simulation.erreur && <p className="admin-controle ecart"><AlertTriangle size={14} /> {simulation.erreur}</p>}
               {simulation.avertissements.map((texte) => (
                 <p key={texte} className="admin-controle ecart"><AlertTriangle size={14} /> {texte}</p>
@@ -971,6 +1019,8 @@ export const AdminContractManagementPage = () => {
   const requeteListe = useRef(0);
   const [contratOuvert, setContratOuvert] = useState(null);
   const [ouverture, setOuverture] = useState(null);
+  // Contrat demandé par le centre des corrections (?contrat=<id>) : ouvert dès l'arrivée
+  const [parametres, setParametres] = useSearchParams();
 
   const chargerListe = useCallback(async () => {
     const numero = ++requeteListe.current;
@@ -1024,6 +1074,13 @@ export const AdminContractManagementPage = () => {
       setOuverture(null);
     }
   };
+
+  useEffect(() => {
+    const id = Number(parametres.get('contrat'));
+    if (!id) return;
+    setParametres({}, { replace: true });
+    ouvrirContrat(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalPages = Math.max(1, Math.ceil(liste.count / taille));
   const trier = (cle) => {

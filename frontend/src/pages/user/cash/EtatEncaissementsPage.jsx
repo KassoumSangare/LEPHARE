@@ -15,11 +15,11 @@ import { trierParLibelle } from '../../../utils/sortUtils';
 // encaissée, par compagnie (GET /api/finance/encaissements/). Statut : à reverser, reversé
 // (partiellement ou en entier) à la compagnie, annulé, chèque impayé, repris d'URANUS. Un
 // décaissement (prime mal affectée) est compté en négatif et déduit du reste à reverser de sa quittance.
-const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', ANNULE: 'rose', IMPAYE: 'rose', DECAISSEMENT: 'rose', DEDUIT: 'slate', REPRIS: 'slate' };
+const COULEURS = { A_REVERSER: 'amber', PARTIEL: 'amber', REVERSE: 'emerald', ANNULE: 'rose', IMPAYE: 'rose', DECAISSEMENT: 'rose', DEDUIT: 'slate', REPRIS: 'slate', SANS_REVERSEMENT: 'slate' };
 const STATUTS = [
   ['', 'Tous les statuts'], ['A_REVERSER', 'À reverser'], ['PARTIEL', 'Partiellement reversé'], ['REVERSE', 'Reversé à la compagnie'],
   ['DECAISSEMENT', 'Décaissement'], ['DEDUIT', 'Couvert par un décaissement'],
-  ['ANNULE', 'Annulé'], ['IMPAYE', 'Chèque impayé'], ['REPRIS', 'Importé'],
+  ['ANNULE', 'Annulé'], ['IMPAYE', 'Chèque impayé'], ['REPRIS', 'Importé'], ['SANS_REVERSEMENT', 'Sans reversement (Oreole Santé)'],
 ];
 
 const Carte = ({ libelle, valeur, detail, couleur = 'var(--text-primary)' }) => (

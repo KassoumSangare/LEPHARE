@@ -8,9 +8,12 @@ Une cotisation réunit trois polices liées, saisies une seule fois :
 
 Règles données par OREOLE :
 - Cotisation sans taxe (« il s'agit de cotisations et non de prime ») sur la part Santé. L'IA reste taxée par son offre.
-- Décomposition de la part Santé : prime HT (reversée à MCI) + chargement pour sinistres à payer (frais courtiers dans le code, gardés).
+- Décomposition de la part Santé : prime HT + chargement pour sinistres à payer (frais courtiers dans le code).
   Les accessoires de 10 000 F sont passés au chargement le 2026-11-05 (migration 0211) : le champ reste, à 0.
-  Honoraires 7 % OREOLE (à réclamer) et 11 % MCI, calculés sur la prime HT.
+  Honoraires 7 % OREOLE et 11 % MCI, calculés sur la prime HT.
+- Part Santé gérée sans assureur (consigne du 2026-11-24) : MCI est le gestionnaire, la cotisation n'est pas reversée et aucune
+  commission n'est réclamée ; le cabinet garde ses honoraires et ses frais courtiers à l'encaissement (views_finance.SQL_EST_OREOLE,
+  chiffre_affaires). L'IA (NSIA) et l'AFA (ALLIANZ CI VIE) se reversent et se commissionnent comme toute prime d'assureur.
 - Enregistrement : prime HT en prime nette, accessoires en accessoirecompagnie, frais courtiers en accessoireintermediaire,
   7 % en commissionintermediaire, 11 % en commissiongestionnaire, taxe 0.
 - Surprime d'affection sur la cotisation totale, surprime d'âge sur la part Santé. L'IA et l'AFA ne changent jamais.

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { cashApi } from '../../api/endpoints';
 import { ChoixBanque } from './BanqueModal';
+import { MontantSaisi } from '../common/MontantSaisi';
 import { aujourdhui, dateFr } from '../../utils/financeUtils';
 import { nomCabinet } from '../../utils/parametrage';
 
@@ -38,6 +39,65 @@ export const natureMode = (mode) => {
     aLaCompagnie: /^a la compagnie$/i.test(String(mode?.libellemodepaiement || '').trim()),
     libelleNumero: abrege === 'VIR' ? 'Numéro de virement' : abrege === 'TRT' ? 'Numéro de traite' : 'Numéro du chèque',
   };
+};
+
+// Guichet « Encaissement des Primes » (demande du 2026-11-25) : seuls les modes qui font entrer une prime. Les annulations,
+// contreparties, décaissements et réencaissements de prime mal affectée passent par « Corriger » et le Portefeuille des
+// règlements ; « A la compagnie » se fait par Chèque avec « À l'ordre de : la compagnie » (un seul chemin pour un même cas) ;
+// « CMP Prime / Ristourne » par l'écran des ristournes, qui équilibre la compensation.
+// Quatre modes courants en tuiles, les autres dans « Autre mode ».
+const MODES_PRINCIPAUX = ['ESP', 'CHQ', 'VIR', 'PYM'];
+export const modesGuichet = (listeModes) => {
+  const abrege = (m) => String(m?.abregereglement || '').trim().toUpperCase();
+  const libelle = (m) => String(m?.libellemodepaiement || '').trim();
+  const permis = modesProposes(listeModes).filter((m) => !['RER', 'ANL', 'CPA', 'DMA', 'PMA'].includes(abrege(m))
+    && !/d.caissement|r.encaissement|^a la compagnie$|ristourne/i.test(libelle(m)));
+  const principaux = MODES_PRINCIPAUX
+    .map((code) => permis.filter((m) => abrege(m) === code && !/ppa/i.test(libelle(m)))
+      .sort((a, b) => a.idmodeencaissement - b.idmodeencaissement)[0])
+    .filter(Boolean);
+  return { principaux, autres: permis.filter((m) => !principaux.includes(m)) };
+};
+
+// Chèque déjà au portefeuille, cherché par banque et numéro (GET /api/cheques/statut/) : son montant initial est repris
+// (onMontantInitial) ; vidé si le numéro saisi ne correspond plus à ce chèque. Saisi sous une autre forme (espaces, casse),
+// le serveur le retrouve et son numéro enregistré remplace la saisie (onNumero) : pas de second chèque pour le même papier.
+export const useChequeConnu = ({ actif, idBanque, numero, onMontantInitial, onNumero }) => {
+  const [chequeConnu, setChequeConnu] = useState(null);
+  const montantRepris = useRef(false);
+  useEffect(() => {
+    const texte = (numero || '').trim();
+    if (!actif || !idBanque || texte.length < 3) { setChequeConnu(null); return undefined; }
+    let vivant = true;
+    const minuterie = setTimeout(() => {
+      cashApi.getChequeStatus({ numero_cheque: texte, banque: idBanque })
+        .then((r) => {
+          if (!vivant) return;
+          setChequeConnu(r || null);
+          if (r?.existe) {
+            onMontantInitial(String(Math.round(Number(r.montant_initial) || 0)));
+            montantRepris.current = true;
+            if (onNumero && r.numero_cheque && r.numero_cheque !== texte) onNumero(r.numero_cheque);
+          } else if (montantRepris.current) {
+            onMontantInitial('');
+            montantRepris.current = false;
+          }
+        })
+        .catch(() => { if (vivant) setChequeConnu(null); });
+    }, 350);
+    return () => { vivant = false; clearTimeout(minuterie); };
+  }, [actif, idBanque, numero]); // eslint-disable-line react-hooks/exhaustive-deps
+  return chequeConnu;
+};
+
+// Ce que le chèque peut encore régler : chèque annulé réutilisé = montant initial saisi moins les pièces en cours ; chèque
+// connu = son solde ; nouveau chèque = le montant initial saisi (null tant qu'il n'est pas saisi)
+export const disponibleCheque = (chequeConnu, montantInitialSaisi) => {
+  if (chequeConnu?.existe && chequeConnu.annule) {
+    return (Number(montantInitialSaisi) || Number(chequeConnu.montant_initial) || 0) - (Number(chequeConnu.montant_utilise) || 0);
+  }
+  if (chequeConnu?.existe) return Number(chequeConnu.solde_disponible);
+  return Number(montantInitialSaisi) || null;
 };
 
 // Modes qui contre-passent ou sortent de l'argent : pas de plafond au reste dû (même règle que save_premium_collection)
@@ -116,37 +176,16 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
 
   // Chèque déjà au portefeuille (règlement de plusieurs quittances) : son montant initial est
   // repris et verrouillé, le solde disponible borne le montant encaissé (GET /api/cheques/statut/)
-  const [chequeConnu, setChequeConnu] = useState(null);
-  // Montant initial repris d'un chèque connu : vidé si le numéro saisi ne correspond plus à ce chèque
-  const montantRepris = useRef(false);
-  useEffect(() => {
-    const numero = (valeurs.numero || '').trim();
-    if (!nature.cheque || !valeurs.idBanque || numero.length < 3) { setChequeConnu(null); return undefined; }
-    let actif = true;
-    const minuterie = setTimeout(() => {
-      cashApi.getChequeStatus({ numero_cheque: numero, banque: valeurs.idBanque })
-        .then((r) => {
-          if (!actif) return;
-          setChequeConnu(r || null);
-          if (r?.existe) {
-            onChange('montantInitialCheque', String(Math.round(Number(r.montant_initial) || 0)));
-            montantRepris.current = true;
-          } else if (montantRepris.current) {
-            onChange('montantInitialCheque', '');
-            montantRepris.current = false;
-          }
-        })
-        .catch(() => { if (actif) setChequeConnu(null); });
-    }, 350);
-    return () => { actif = false; clearTimeout(minuterie); };
-  }, [nature.cheque, valeurs.idBanque, valeurs.numero]); // eslint-disable-line react-hooks/exhaustive-deps
+  const chequeConnu = useChequeConnu({
+    actif: nature.cheque, idBanque: valeurs.idBanque, numero: valeurs.numero,
+    onMontantInitial: (montant) => onChange('montantInitialCheque', montant),
+    onNumero: (numero) => onChange('numero', numero),
+  });
 
   // Chèque annulé : réutilisé par cet encaissement (demande du 2026-11-12), avec le montant initial saisi, moins ce que des
   // pièces en cours en utilisent encore
   const chequeAnnule = Boolean(chequeConnu?.existe && chequeConnu.annule);
-  const plafondCheque = chequeAnnule
-    ? (Number(valeurs.montantInitialCheque) || Number(chequeConnu.montant_initial) || 0) - (Number(chequeConnu.montant_utilise) || 0)
-    : (chequeConnu?.existe ? Number(chequeConnu.solde_disponible) : Number(valeurs.montantInitialCheque) || null);
+  const plafondCheque = disponibleCheque(chequeConnu, valeurs.montantInitialCheque);
   const depassementCheque = nature.cheque && plafondCheque !== null && Number(montantAEncaisser) > plafondCheque;
 
   return (
@@ -195,13 +234,11 @@ export const ChampsReglement = ({ modes, banques, valeurs, onChange, montantAEnc
           {nature.cheque && (
             <div className="form-group">
               <label className="form-label">Montant initial du chèque</label>
-              <input
-                type="number"
-                className="form-control"
-                min="0"
+              <MontantSaisi
+                suffixe="F"
                 placeholder="Au 1er usage, sauf chèque de l'échéancier"
                 value={valeurs.montantInitialCheque}
-                onChange={saisie('montantInitialCheque')}
+                onChange={(n) => onChange('montantInitialCheque', n === null ? '' : String(n))}
                 readOnly={Boolean(chequeConnu?.existe && !chequeConnu.montant_modifiable)}
                 title={chequeConnu?.existe && !chequeConnu.montant_modifiable ? 'Montant fixé au premier usage du chèque' : undefined}
               />

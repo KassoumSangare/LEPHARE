@@ -149,7 +149,9 @@ def ristournes_reglees(cursor, id_encaissement=None):
                TRIM(COALESCE(e.motifannulation, '')) AS motifannulation, TRIM(COALESCE(u.name, '')) AS operateur,
                EXISTS (SELECT 1 FROM stddetailencaissement d2 WHERE d2.idencaissement = e.idencaissement
                          AND (COALESCE(d2.montantreglement, 0) > 0
-                              OR EXISTS (SELECT 1 FROM stddetailreversement r WHERE r.iddetailencaissement = d2.iddetailencaissement))) AS reverse,
+                              OR EXISTS (SELECT 1 FROM stddetailreversement r
+                                         JOIN stdreversementcompagnie rc ON rc.idreversement = r.idreversement AND NOT COALESCE(rc.pieceannulee, FALSE)
+                                         WHERE r.iddetailencaissement = d2.iddetailencaissement))) AS reverse,
                e.dateencaissement::date >= date_trunc('year', CURRENT_DATE)::date AS exercice_courant
         FROM stdencaissement e
         LEFT JOIN stdmodeencaissement m ON m.idmodeencaissement = e.idmodepaiement

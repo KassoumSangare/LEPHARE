@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 
 import {
-  AIDE_CHIFFRE_AFFAIRES, Anime, BoutonVoir, Detail, Evolution, francs, heureMaj, Jauge, nombre, partsChiffreAffaires, pluriel, pourcent, Repartition,
-  Section, Segments, SYNONYMES_CHIFFRE_AFFAIRES, Tuile,
+  AIDE_CHIFFRE_AFFAIRES, aideResteAPercevoir, Anime, BoutonVoir, Detail, Evolution, francs, heureMaj, Jauge, lignesResteAPercevoir, nombre,
+  partsChiffreAffaires, pluriel, pourcent, Repartition, Section, Segments, SYNONYMES_CHIFFRE_AFFAIRES, Tuile,
 } from '../../components/common/Cockpit';
 import { GraphiqueMensuel } from '../../components/common/GraphiqueMensuel';
 import { LoadingSpinner } from '../../components/common/LoadingSpinner';
@@ -51,7 +51,7 @@ const ICONES_ALERTE = {
 // Sommes perçues par le cabinet, dans l'ordre de la réponse du serveur
 const SOURCES_PERCU = [
   ['Compagnies', 'Règlements des compagnies'],
-  ['FraisCourtiers', 'Frais courtiers Oreole Santé'],
+  ['FraisCourtiers', 'Honoraires et frais courtiers Oreole Santé'],
   ['Reprises', 'Affaires antérieures'],
   ['Rafas', 'Commission RAFAS'],
 ];
@@ -240,20 +240,9 @@ export const AdminDashboard = () => {
                     valeur={<Anime valeur={ca.ResteAPercevoir?.Total ?? ca.EnAttente.Total} format={francs} />}
                     icone={HandCoins}
                     couleur="amber"
-                    vers={peut('commissions.view') ? '/admin/commissions' : undefined}
-                    aide={`Commission à percevoir moins commission perçue : chiffre d'affaires ${n} pas encore reçu (situation au ${formatDate(d.Jour)}). La commission ne se réclame à la compagnie qu'une fois la prime encaissée et reversée.`}
-                    lignes={[
-                      ca.ResteAPercevoir && <Detail libelle="En attente de l'encaissement ou du reversement des primes" valeur={francs(ca.ResteAPercevoir.AvantReversement)} />,
-                      <Detail libelle="À réclamer aux compagnies" valeur={francs(ca.EnAttente.AReclamer)} />,
-                      ca.Reclamations?.Cumul && (
-                        <Detail
-                          libelle={`Réclamations de commission cumulées en ${n}, ${pluriel(ca.Reclamations.Cumul.Nombre, 'bordereau', 'bordereaux')}`}
-                          valeur={francs(ca.Reclamations.Cumul.Montant)}
-                        />
-                      ),
-                      <Detail libelle="Réclamées, non payées" valeur={francs(ca.EnAttente.Reclamees)} />,
-                      ca.EnAttente.Rafas > 0 && <Detail libelle="RAFAS non réglée" valeur={francs(ca.EnAttente.Rafas)} />,
-                    ]}
+                    vers={(peut('reversements.view') && '/admin/remittances') || (peut('commissions.view') && '/admin/commissions') || undefined}
+                    aide={aideResteAPercevoir(n)}
+                    lignes={lignesResteAPercevoir(ca, n)}
                   />
                 )}
               </div>

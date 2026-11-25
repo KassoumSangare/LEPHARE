@@ -48,8 +48,10 @@ from .views_finance import (
     EcrituresAdministrateur,
     ErreurFinance,
     SQL_ACC_COURTIER,
+    SQL_EST_OREOLE,
     SQL_LIGNES_ENCAISSEMENT,
     SQL_PART_COMPAGNIE,
+    SANS_REVERSEMENT,
     _date,
     _entier,
     _erreur,
@@ -172,6 +174,7 @@ SQL_QUITTANCES = """
            COALESCE(ct.taux_commission, q.taux_commission, 0) AS taux,
            COALESCE(ct.commissionintermediaire, 0) AS commission,
            """ + SQL_ACC_COURTIER.format(ct="ct") + """ AS acccourtier, """ + SQL_PART_COMPAGNIE.format(ct="ct") + """ AS partcompagnie,
+           """ + SQL_EST_OREOLE.format(ct="ct") + """ AS oreole,
            public.fn_lephare_prime_ht(COALESCE(ct.primenette, q.primenette), COALESCE(ct.accessoire, q.accessoire),
                                       COALESCE(ct.taxe, q.taxe), ct.fga, ct.cedeao, COALESCE(ct.primettc, q.primettc),
                                       ct.primeimposee) AS primeht
@@ -274,7 +277,8 @@ SQL_REGLEMENTS = """
            m.libellemodepaiement AS mode, e.dateencaissement::date AS dateencaissement, e.datecheque,
            -- Espèces : transmises directement à la compagnie (réclamation de commission), sans reversement par le
            -- cabinet (demande du 2026-10-20), quel que soit l'ordre saisi auparavant. Package Oreole Santé : l'argent reste au
-           -- cabinet, qui garde ses frais courtiers et reverse à chaque compagnie sa part, quel que soit le mode (décision du 2026-11-05)
+           -- cabinet, qui reverse leur part à NSIA (IA) et ALLIANZ (AFA), quel que soit le mode (décision du 2026-11-05) ; la part
+           -- Santé ne se reverse pas (gérée sans assureur, consigne du 2026-11-24 : views_finance.SQL_EST_OREOLE)
            CASE WHEN pk.package THEN 'CABINET'
                 WHEN e.idmodepaiement = %s OR e.ordrereglement = 'COMPAGNIE'
                      OR UPPER(TRIM(COALESCE(m.abregereglement, ''))) = 'ESP' THEN 'COMPAGNIE' ELSE 'CABINET' END AS ordre,
@@ -575,8 +579,12 @@ def lire_bordereau(id_reversement):
 
     reglages = reglages_compagnie(e["idcompagnie"], e["compagnie"])
     precedents = _bordereaux_precedents(numeros, id_reversement, date_bordereau)
+    with connection.cursor() as cursor:
+        commission_engagee = _commission_engagee(cursor, id_reversement)
     return {
         **entete,
+        # Annulation refusée tant qu'une commission est réclamée ou payée sur ses quittances (annuler_bordereau)
+        "Annulable": not commission_engagee,
         "NomBordereau": reglages["NomBordereau"],
         "Lignes": lignes,
         "Blocs": blocs,
@@ -775,6 +783,8 @@ def bordereaux(request):
                     raise ErreurFinance(f"L'encaissement de la quittance {ligne['numeroquittance']} est annulé.")
                 if _est_decaissement(ligne):
                     raise ErreurFinance(f"La quittance {ligne['numeroquittance']} : un décaissement ne se transmet pas.")
+                if ligne["sansreversement"]:
+                    raise ErreurFinance(f"La quittance {ligne['numeroquittance']} : {SANS_REVERSEMENT}.")
                 reste = restes.get(id_ligne, ZERO)
                 if reste <= 0:
                     raise ErreurFinance(f"La quittance {ligne['numeroquittance']} n'a plus rien à transmettre.")
@@ -866,12 +876,30 @@ def decharge(request, id_reversement):
     return Response(lire_bordereau(id_reversement))
 
 
+COMMISSION_ENGAGEE = "La commission de ce bordereau est déjà réclamée ou payée : annulez d'abord la réclamation."
+
+
+def _commission_engagee(cursor, id_reversement):
+    """Vrai si une réclamation (non annulée) ou un règlement de commission porte sur une quittance du bordereau."""
+    cursor.execute(
+        """
+        SELECT EXISTS (SELECT 1 FROM std_detail_reclamation_commission dx JOIN std_reclamation_commission x ON x.id = dx.reclamation_id
+                       WHERE x.statut <> 'ANNULEE' AND dx.detail_reversement_id IN (SELECT iddetailreversement FROM stddetailreversement WHERE idreversement = %s))
+            OR EXISTS (SELECT 1 FROM std_detail_paiement_commission dp
+                       WHERE NOT dp.est_annule AND dp.detail_reversement_id IN (SELECT iddetailreversement FROM stddetailreversement WHERE idreversement = %s))
+        """,
+        [id_reversement, id_reversement],
+    )
+    return bool(cursor.fetchone()[0])
+
+
 @api_view(["POST"])
 @authentication_classes(AUTHENTIFICATION)
 @permission_classes([permissions.IsAuthenticated, EcrituresAdministrateur])
 def annuler_bordereau(request, id_reversement):
     """POST /api/finance/bordereaux/<idreversement>/annuler/ {Motif} : bordereau émis par erreur. Les primes
-    redeviennent à transmettre ; refusé si une commission a été réclamée ou payée sur ses quittances."""
+    redeviennent à transmettre ; refusé si une commission a été réclamée ou payée sur ses quittances. Droit « Annuler un
+    reversement » (reversements.cancel, garde centrale), motif obligatoire."""
     motif = _texte(request.data.get("Motif"), 255)
     if len(motif) < 5:
         return _erreur("Motif de l'annulation : à préciser.")
@@ -882,18 +910,8 @@ def annuler_bordereau(request, id_reversement):
         )
         if not cursor.fetchone():
             return Response({"error": "Bordereau introuvable ou déjà annulé."}, status=status.HTTP_404_NOT_FOUND)
-        cursor.execute(
-            """
-            SELECT (SELECT COUNT(*) FROM std_detail_reclamation_commission dx JOIN std_reclamation_commission x ON x.id = dx.reclamation_id
-                    WHERE x.statut <> 'ANNULEE' AND dx.detail_reversement_id IN (SELECT iddetailreversement FROM stddetailreversement WHERE idreversement = %s)),
-                   (SELECT COUNT(*) FROM std_detail_paiement_commission dp
-                    WHERE NOT dp.est_annule AND dp.detail_reversement_id IN (SELECT iddetailreversement FROM stddetailreversement WHERE idreversement = %s))
-            """,
-            [id_reversement, id_reversement],
-        )
-        reclamees, payees = cursor.fetchone()
-        if reclamees or payees:
-            return _erreur("La commission de ce bordereau est déjà réclamée ou payée : annulez d'abord la réclamation.")
+        if _commission_engagee(cursor, id_reversement):
+            return _erreur(COMMISSION_ENGAGEE)
         # Primes de nouveau à transmettre : montants reversés retirés des encaissements et des quittances
         cursor.execute(
             """
@@ -998,7 +1016,9 @@ def tableau_reversement(id_compagnie, du, au):
         reverse = sum((rv["Montant"] for rv in reversements.values()), ZERO)
         payes = [c for d in ds for c in commissions.get(d["iddetailreversement"], [])]
         percue = sum((c["montant_commission_paye"] for c in payes), ZERO)
-        a_percevoir = Decimal(q["commission"] or 0) + Decimal(q["acccourtier"] or 0)
+        # Part Santé d'Oreole Santé (consigne du 2026-11-24) : honoraires gardés à l'encaissement, rien à réclamer à la compagnie,
+        # comme l'état des commissions (views_finance.COMMISSION_DUE)
+        a_percevoir = ZERO if q["oreole"] else Decimal(q["commission"] or 0) + Decimal(q["acccourtier"] or 0)
         cheques_commission = OrderedDict()
         for c in payes:
             banque = f"{c['banque']} " if c["banque"] else ""
@@ -1009,7 +1029,9 @@ def tableau_reversement(id_compagnie, du, au):
         observations = []
         if reste > 0:
             observations.append(f"Reste à encaisser : {_f(reste)}")
-        if a_percevoir > 0 and percue >= a_percevoir:
+        if q["oreole"]:
+            observations.append("Oreole Santé : honoraires gardés à l'encaissement")
+        elif a_percevoir > 0 and percue >= a_percevoir:
             observations.append("COMMISSION PERCUE")
         elif percue > 0:
             observations.append("COMMISSION PERCUE EN PARTIE")

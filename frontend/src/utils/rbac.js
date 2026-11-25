@@ -18,7 +18,7 @@ const DROITS_ACTIONS = {
   cash: { view: 'encaissements.view', collect: 'encaissements.create', extourne: 'encaissements.cancel', delete: 'encaissements.cancel' },
   catalog: { view: 'tarifs.view', create: 'tarifs.update', edit: 'tarifs.update', delete: 'tarifs.update' },
   conventions: { view: null, create: 'parametrage.update', edit: 'parametrage.update', delete: 'parametrage.update' },
-  remittances: { view: 'reversements.view', create: 'reversements.create', validate: 'reversements.validate', export: 'reversements.view' },
+  remittances: { view: 'reversements.view', create: 'reversements.create', validate: 'reversements.validate', cancel: 'reversements.cancel', export: 'reversements.view' },
   users: { view: 'users.view', create: 'users.create', edit: 'users.update', delete: 'users.disable', reset_password: 'users.password' },
   leads: { view: 'crm.view', create: 'crm.update', edit: 'crm.update', delete: 'crm.update', convert: 'crm.update' },
 };

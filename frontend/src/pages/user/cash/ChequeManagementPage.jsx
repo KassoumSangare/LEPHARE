@@ -383,13 +383,17 @@ export const ChequeManagementPage = () => {
               <Search size={13} /> Utilisation
             </Link>
           )}
-          {/* Seulement si une pièce en cours a été réglée par ce chèque : sinon le serveur refuse l'annulation */}
+          {/* Seulement si une pièce en cours a été réglée par ce chèque : sinon le serveur refuse l'annulation ; prime déjà
+              reversée à la compagnie : bouton grisé tant que le bordereau n'est pas annulé (Reversements aux compagnies) */}
           {row.statut === 'ENCAISSE' && Number(row.operations_actives) > 0 && (
             <button
               type="button"
               className="btn btn-secondary"
               style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', color: 'var(--accent-rose)' }}
-              title="Annuler le chèque (revenu impayé, rejeté, erreur…) : ses encaissements sont contre-passés"
+              disabled={row.deja_reverse}
+              title={row.deja_reverse
+                ? `Déjà reversé à la compagnie${row.bordereaux_reversement ? ` (bordereau N° ${row.bordereaux_reversement})` : ''} : annulez d'abord le bordereau dans Reversements aux compagnies`
+                : 'Annuler le chèque (revenu impayé, rejeté, erreur…) : ses encaissements sont contre-passés'}
               onClick={() => setDecaissement({ cheque: row, motif: '', date: aujourdhui() })}
             >
               <Ban size={13} /> Annuler

@@ -612,7 +612,7 @@ export default function NewOreolePage() {
               )}
               {!particulier && (
                 <div style={{ ...grille, marginTop: '1rem' }}>
-                  <Champ label="Cotisation négociée par famille" aide={`Vide : ${offre ? fcfa(offre.Cotisation) : 'prix de l\'offre'} F. La majoration va au chargement pour sinistres à payer, la part de MCI ne change pas.`}>
+                  <Champ label="Cotisation négociée par famille" aide={`Vide : ${offre ? fcfa(offre.Cotisation) : 'prix de l\'offre'} F. La majoration va au chargement pour sinistres à payer, la prime HT ne change pas.`}>
                     <AmountInput value={prixFamille} disabled={lectureSeule} onChange={(v) => setPrixFamille(v)} placeholder={offre ? fcfa(offre.Cotisation) : ''} />
                   </Champ>
                 </div>
@@ -859,7 +859,7 @@ export default function NewOreolePage() {
                 <div style={grille}>
                   <div>
                     {[
-                      ['Prime HT, reversée à MCI', totaux.PrimeHt], ...(totaux.Accessoires ? [['Accessoires, reversés à MCI', totaux.Accessoires]] : []), ['Chargement pour sinistres à payer', totaux.FraisCourtiers],
+                      ['Prime HT', totaux.PrimeHt], ...(totaux.Accessoires ? [['Accessoires', totaux.Accessoires]] : []), ['Chargement pour sinistres à payer', totaux.FraisCourtiers],
                       ['Part Santé', totaux.PartSante], [`Honoraires OREOLE ${reglages?.HonoraireCabinet} %`, totaux.HonoraireCabinet], [`Honoraires MCI ${reglages?.HonoraireGestionnaire} %`, totaux.HonoraireGestionnaire],
                     ].map(([l, v]) => <div key={l} style={ligneDetail}><span style={{ color: 'var(--text-muted)' }}>{l}</span><b>{fcfa(v)} F</b></div>)}
                   </div>

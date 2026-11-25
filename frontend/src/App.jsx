@@ -32,6 +32,9 @@ const ContractDetailPage = lazy(() => import('./pages/user/contracts/ContractDet
 const IncorporationFlottePage = lazy(() => import('./pages/user/contracts/IncorporationFlottePage'));
 const AvenantPolicePage = lazy(() => import('./pages/user/contracts/AvenantPolicePage'));
 const AdminContractManagementPage = lazy(() => import('./pages/admin/contracts/AdminContractManagementPage'));
+const CentreCorrectionsPage = lazy(() => import('./pages/admin/corrections/CentreCorrectionsPage'));
+const CorrectionEncaissementsPage = lazy(() => import('./pages/admin/corrections/CorrectionEncaissementsPage'));
+const FusionClientsPage = lazy(() => import('./pages/admin/corrections/FusionClientsPage'));
 const EndorsementPage = lazy(() => import('./pages/user/endorsements/EndorsementPage'));
 const RepriseAffairesPage = lazy(() => import('./pages/user/reprises/RepriseAffairesPage'));
 const OreoleAccueilPage = lazy(() => import('./pages/user/quotes/oreole/OreoleAccueilPage'));
@@ -257,6 +260,10 @@ function App() {
                 <Route path="/admin/guide" element={<AdminRoute><AdminGuidePage /></AdminRoute>} />
                 <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
                 <Route path="/admin/contracts/edit" element={<AdminContractManagementPage />} />
+                {/* Corrections : droits de chaque outil (adminMenu.js, garde du serveur) */}
+                <Route path="/admin/corrections" element={<CentreCorrectionsPage />} />
+                <Route path="/admin/corrections/encaissements" element={<CorrectionEncaissementsPage />} />
+                <Route path="/admin/corrections/clients" element={<FusionClientsPage />} />
                 <Route path="/admin/conventions" element={<AdminRoute><ConventionsEnginePage /></AdminRoute>} />
                 <Route path="/admin/compliance" element={<AdminRoute><ComplianceAuditPage /></AdminRoute>} />
                 <Route path="/admin/reporting/cima" element={<AdminRoute><CimaReportsPage /></AdminRoute>} />

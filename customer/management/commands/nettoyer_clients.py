@@ -17,14 +17,15 @@ réappliquée telle quelle après une nouvelle reprise URANUS (mêmes identifian
 """
 
 import os
-import re
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
 
 from autorisations.journal import journaliser
+# Colonnes qui désignent une fiche client (LIENS), coordonnées reprises (CHAMPS) et valeurs vides : mêmes listes que la fusion
+# manuelle (customer/fusion.py, Administration > Corrections), qui couvre aussi les tables créées depuis (Oreole Santé, AFA, RAFAS)
+from customer.fusion import CHAMPS, LIENS, json_ok, vide
 from customer.models import STATUT_ARCHIVE, ClientNettoyage
 
 FEUILLE = "Correspondance des références"
@@ -34,34 +35,6 @@ DECISIONS = {
     "exclu": ClientNettoyage.EXCLU,
     "à vérifier": ClientNettoyage.A_VERIFIER,
 }
-# Toutes les colonnes qui désignent une fiche client (clés étrangères ou non)
-LIENS = [
-    ("stdcontrat", "idclient"), ("stdcontrat", "idassure"), ("stdcontratdetail", "idassure"),
-    ("stddevis", "idclient"), ("stddevis", "idassure"), ("stdquittance", "idclient"), ("stdcheque", "idclient"),
-    ("stdayantdroitia", "idassure"), ("lephare_sauvegarde_part_ayant_droit_ia", "idassure"),
-    ("stdcertificattransport", "idclienturanus"), ("institutionnel_crminteraction", "client_id"),
-]
-# Coordonnées reprises d'une fiche en double quand la référence ne les a pas
-CHAMPS = ["telephone", "mobile", "fixe", "fax", "email", "adresse1", "adresse2", "idville", "codepostal",
-          "datenaissance", "lieunaissance", "idqualite", "idprofession", "idsecteuractivite", "responsable",
-          "Fonction", "idstatutjuridique"]
-VIDES = {"", "-", ".", "..", "...", "--", "BP", "NONE", "NULL", "0", "00", "TELP", "N/A", "NA", "NEANT", "X"}
-
-
-def vide(champ, valeur):
-    if valeur is None:
-        return True
-    if champ in ("telephone", "mobile", "fixe", "fax"):
-        return len(re.sub(r"\D", "", str(valeur))) < 8
-    if champ == "email":
-        return "@" not in str(valeur)
-    if isinstance(valeur, int):
-        return valeur == 0
-    return isinstance(valeur, str) and valeur.strip().upper() in VIDES
-
-
-def json_ok(valeur):
-    return str(valeur) if isinstance(valeur, Decimal) or hasattr(valeur, "isoformat") else valeur
 
 
 class Command(BaseCommand):

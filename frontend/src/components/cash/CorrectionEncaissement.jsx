@@ -11,6 +11,7 @@ import { resteAEncaisser } from '../../utils/resteEncaissement';
 import { printRecuEncaissement } from '../../utils/exportUtils';
 import { ouvrirApercuImpression } from '../../utils/apercuImpression';
 import { ChoixBanque } from './BanqueModal';
+import { MontantSaisi } from '../common/MontantSaisi';
 import { ChampsReglement, champsReglementApi, modesProposes } from './ChampsReglement';
 
 /* =========================================================================
@@ -288,7 +289,8 @@ export const CorrectionEncaissement = ({ idEncaissement, onClose, onCorrige }) =
                 )}
                 {cheque && fiche.Cheque && (
                   <Champ libelle="Montant initial du chèque" avant={fcfa(fiche.Cheque.MontantInitial)} modifie={modifies.includes('montant_initial_cheque')}>
-                    <input {...champ('montant_initial_cheque')} type="number" min="1" step="any" />
+                    <MontantSaisi suffixe="F" value={refs?.montant_initial_cheque ?? ''}
+                      onChange={(n) => setRefs((r) => ({ ...r, montant_initial_cheque: n === null ? '' : String(n) }))} />
                   </Champ>
                 )}
                 {cheque && (
@@ -370,8 +372,8 @@ export const CorrectionEncaissement = ({ idEncaissement, onClose, onCorrige }) =
                 <>
                   <div className="correction-grille">
                     <Champ libelle="Montant à encaisser (FCFA)">
-                      <input className="form-control" type="number" min="1" step="any" max={cible.reste} value={montant}
-                        aria-invalid={montantInvalide} onChange={(e) => setMontant(e.target.value)} />
+                      <MontantSaisi suffixe="F" value={montant} aria-invalid={montantInvalide}
+                        onChange={(n) => setMontant(n === null ? '' : String(n))} />
                     </Champ>
                   </div>
                   {montantInvalide && <p className="correction-alerte" style={{ margin: 0 }}>Le montant doit être positif et ne pas dépasser {fcfa(cible.reste)} F.</p>}

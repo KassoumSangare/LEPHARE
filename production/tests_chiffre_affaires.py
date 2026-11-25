@@ -5,7 +5,7 @@ from datetime import date
 from django.test import SimpleTestCase
 
 from . import views_finance
-from .chiffre_affaires import assembler
+from .chiffre_affaires import assembler, ventiler_reste
 
 EN_COURS = {"debut": date(2026, 1, 1), "au": date(2026, 11, 12), "debut_n1": date(2025, 1, 1), "au_n1": date(2025, 11, 12)}
 CLOS = {"debut": date(2025, 1, 1), "au": date(2025, 12, 31), "debut_n1": date(2024, 1, 1), "au_n1": date(2024, 12, 31)}
@@ -77,19 +77,65 @@ class ChiffreAffairesPercu(SimpleTestCase):
         self.assertEqual((ca["Apporteurs"]["Total"], ca["Net"]), (75_000, 225_000))
 
 
+def quittance(ca, exercice=True, encaisse=0, lephare=None, reverse=0, paye=0, payee=0, reclamations=(), oreole=False,
+              reprise=False, ttc=0, direct=0):
+    """Ligne de chiffre_affaires.lire_reste : commission de la quittance et où en est sa prime, situation au jour."""
+    return {"ca": ca, "exercice": exercice, "oreole": oreole, "reprise_percue": reprise, "primettc": ttc, "encaisse": encaisse,
+            "encaisse_lephare": encaisse if lephare is None else lephare, "encaisse_direct": direct, "reverse": reverse, "reverse_paye": paye,
+            "payee": payee, "reclamations": list(reclamations)}
+
+
 class ResteAPercevoir(SimpleTestCase):
-    """Synonymes (2026-11-16) : commission à percevoir - commission perçue = solde ; réclamable seulement après le reversement."""
+    """Demande du 2026-11-24 : le cadre reprend l'écran Reversements aux compagnies, la commission rangée à l'étape où attend sa
+    prime ; chiffre d'affaires de la période = déjà perçu sur ses actes + reste à percevoir."""
 
-    def test_solde_du_chiffre_d_affaires(self):
-        actes = [acte(2026, 3, 100_000, 20_000)]
-        ca = assembler(EN_COURS, actes, [percu("Compagnies", date(2026, 4, 1), 30_000)], SANS_RAFAS, SANS_APPORTEUR,
-                       en_attente={"AReclamer": 50_000, "Reclamees": 10_000})
-        self.assertEqual(ca["ResteAPercevoir"], {"Total": 90_000, "Reclamable": 60_000, "AvantReversement": 30_000})
+    LIGNES = [
+        quittance(10_000),                                                              # prime à encaisser
+        quittance(20_000, encaisse=100_000),                                            # encaissée, à reverser
+        quittance(15_000, encaisse=100_000, direct=100_000),                            # payée à la compagnie : réclamation directe
+        quittance(12_000, encaisse=100_000, direct=40_000),                             # en partie au cabinet : à reverser
+        quittance(30_000, encaisse=100_000, reverse=100_000),                           # bordereau émis, paiement à saisir
+        quittance(40_000, encaisse=100_000, reverse=40_000, paye=40_000),               # acompte reversé : commission due
+        quittance(50_000, encaisse=100_000, reverse=100_000, paye=100_000, payee=20_000, reclamations=[7]),
+        quittance(60_000, encaisse=200_000, reverse=200_000, paye=200_000, payee=60_000, reclamations=[8]),  # payée
+        quittance(70_000, encaisse=300_000, lephare=0),                                 # encaissée sous URANUS
+        quittance(80_000, oreole=True, ttc=1_000_000, encaisse=250_000),                # Oreole Santé : 1/4 gardé
+        quittance(5_000, reprise=True),                                                 # reprise, commission perçue
+        quittance(9_000, exercice=False, encaisse=50_000),                              # antérieur à reverser
+        quittance(4_000, exercice=False, encaisse=50_000, reverse=50_000, paye=50_000),  # antérieur à réclamer
+        quittance(3_000, exercice=False, encaisse=50_000, lephare=0),                   # antérieur sous URANUS : à part
+    ]
+    RAFAS = {"Lignes": [], "NonReglee": 9_999, "Periode": {"NombreNonReglee": 1, "NonReglee": 6_500, "Reglee": 1_000}}
 
-    def test_solde_jamais_negatif(self):
-        ca = assembler(EN_COURS, [acte(2026, 3, 10_000)], [percu("Compagnies", date(2026, 4, 1), 25_000)], SANS_RAFAS, SANS_APPORTEUR,
-                       en_attente={"AReclamer": 5_000, "Reclamees": 0})
-        self.assertEqual(ca["ResteAPercevoir"], {"Total": 0, "Reclamable": 0, "AvantReversement": 0})
+    def test_etapes_de_la_prime(self):
+        r = ventiler_reste(self.LIGNES, self.RAFAS)
+        self.assertEqual(r["AEncaisser"], {"Nombre": 2, "Montant": 70_000})  # 10 000 + 3/4 des 80 000 d'Oreole Santé
+        self.assertEqual(r["AReverser"], {"Nombre": 2, "Montant": 32_000})
+        self.assertEqual(r["ADirect"], {"Nombre": 1, "Montant": 15_000})
+        self.assertEqual(r["BordereauxAPayer"], {"Nombre": 1, "Montant": 30_000})
+        self.assertEqual(r["AReclamer"], {"Nombre": 1, "Montant": 40_000})
+        self.assertEqual(r["Reclamees"], {"Nombre": 1, "Montant": 30_000, "Bordereaux": 1})  # bordereau 8 payé en entier
+        self.assertEqual(r["EncaisseesUranus"], {"Nombre": 1, "Montant": 70_000})
+        self.assertEqual(r["Rafas"], {"Nombre": 1, "Montant": 6_500})
+        self.assertEqual(r["Total"], 293_500)
+        self.assertEqual(r["DejaPercu"], 106_000)  # 20 000 + 60 000 payés, 20 000 Oreole Santé, 5 000 reprise, 1 000 RAFAS
+
+    def test_chiffre_d_affaires_egal_au_percu_plus_le_reste(self):
+        actes = [acte(2026, 3, sum(l["ca"] for l in self.LIGNES if l["exercice"]))]
+        rafas = {**self.RAFAS, "Lignes": [{"sens": "emis", "jour": date(2026, 5, 2), "nombre": 2, "montant": 7_500, "base": 0}]}
+        ca = assembler(EN_COURS, actes, [], rafas, SANS_APPORTEUR, en_attente={}, reste=self.LIGNES)
+        self.assertEqual(ca["ResteAPercevoir"]["DejaPercu"] + ca["ResteAPercevoir"]["Total"], ca["Total"])
+
+    def test_anterieurs_hors_total(self):
+        r = ventiler_reste(self.LIGNES)
+        self.assertEqual(r["Anterieurs"]["Nombre"], 2)
+        self.assertEqual(r["Anterieurs"]["Montant"], 13_000)
+        self.assertEqual((r["Anterieurs"]["AReverser"]["Montant"], r["Anterieurs"]["AReclamer"]["Montant"]), (9_000, 4_000))
+        self.assertEqual(r["Rafas"], {"Nombre": 0, "Montant": 0})
+
+    def test_sans_lecture_du_reste(self):
+        ca = assembler(EN_COURS, [acte(2026, 3, 10_000)], [], SANS_RAFAS, SANS_APPORTEUR)
+        self.assertNotIn("ResteAPercevoir", ca)
 
 
 def ligne_commission(id_reclamation, date_reclamation, due, payee=0):

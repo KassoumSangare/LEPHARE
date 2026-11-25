@@ -3,17 +3,20 @@ espèces : règles pures, sans base de données (catalogue, droits et modes de p
 import copy
 import importlib
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
 from django.test import SimpleTestCase
 
-from autorisations import rbac
-from autorisations.catalogue import BLOCS_COCKPIT, BLOCS_TABLEAU, TOUS
+from autorisations import garde, rbac
+from autorisations.catalogue import BLOCS_COCKPIT, BLOCS_TABLEAU, DROITS, ROLES_INITIAUX, TOUS
 from . import blocs_tableaux, views_bordereaux, views_finance, views_tableau_de_bord
 from .blocs_tableaux import chiffre_affaires_selon_blocs
+from .decaissements import SQL_REVERSE, refus_reverse
 from .views_tableau_de_bord import _selon_blocs
 
+ZERO = Decimal(0)
 TOUS_TABLEAU = frozenset(c.split(".", 1)[1] for c in BLOCS_TABLEAU)
 CA = {"Total": 44, "Commissions": 40, "Accessoires": 4, "Rafas": 0, "Nombre": 3, "TauxMoyen": 20.0, "Precedent": 30,
       "Apporteurs": {"Total": 0}, "Net": 44, "PartDesPrimes": 14.7, "Percu": {"Total": 9}, "PercuPrecedent": 0,
@@ -234,3 +237,109 @@ class OngletsSelonLeProfil(SimpleTestCase):
         self.assertNotIn("tableau.view", self._droits({"reporting.view"}, en_base={"tableau.view"}))
         self.assertIn("tableau.view", self._droits({"tableau.view"}, en_base={"tableau.view"}))
         self.assertNotIn("guide.view", self._droits({"reporting.view", "users.view"}, en_base={"tableau.view", "guide.view"}))
+
+
+class OreoleSanteSansReversement(SimpleTestCase):
+    """Part Santé d'Oreole Santé gérée sans assureur (consigne du 2026-11-24) : ni reversée ni réclamée, honoraires et frais
+    courtiers gardés à l'encaissement ; IA et AFA du package reversées comme toute prime d'assureur."""
+
+    def ligne(self, **valeurs):
+        return {"annulee": False, "abrege": "CHQ", "statutcheque": None, "montant_encaissement": Decimal("100000"),
+                "montantreverse": ZERO, "partcompagnie": None, "sansreversement": False, "dateencaissement": date(2026, 11, 2),
+                **valeurs}
+
+    def test_part_sante_ni_reversee_ni_proposee(self):
+        sante = self.ligne(sansreversement=True, partcompagnie=Decimal("0.42"))
+        self.assertEqual(views_finance._a_reverser(sante), ZERO)
+        with mock.patch.object(views_finance, "debut_reversements", return_value=date(2025, 12, 1)):
+            self.assertEqual(views_finance._statut_encaissement(sante, ZERO), "SANS_REVERSEMENT")
+            # Reversée à MCI avant la consigne : reste « Reversé » jusqu'à l'annulation de son bordereau
+            self.assertEqual(views_finance._statut_encaissement(dict(sante, montantreverse=Decimal("42000")), ZERO), "REVERSE")
+            # IA ou AFA du package, toute autre prime : à reverser en entier
+            autre = self.ligne()
+            self.assertEqual(views_finance._a_reverser(autre), Decimal("100000"))
+            self.assertEqual(views_finance._statut_encaissement(autre, Decimal("100000")), "A_REVERSER")
+
+    def test_aucune_commission_a_reclamer(self):
+        self.assertTrue(views_finance.COMMISSION_DUE.startswith("CASE WHEN EXISTS (SELECT 1 FROM lephare_oreole_package"))
+        self.assertIn("opk.iddevis_sante = ct.iddevis", views_finance.COMMISSION_DUE.format(d="d", de="de", ct="ct"))
+
+    def test_honoraires_percus_a_l_encaissement(self):
+        curseur = mock.MagicMock()
+        curseur.description = [("idproduit",), ("idcompagnie",), ("jour",), ("montant",)]
+        curseur.fetchall.return_value = []
+        curseur.fetchone.return_value = (True,)
+        p = {"debut": date(2026, 1, 1), "au": date(2026, 11, 24), "debut_n1": date(2025, 1, 1), "au_n1": date(2025, 11, 24)}
+        from . import chiffre_affaires
+        chiffre_affaires.lire_percu(curseur, p)
+        requetes = " ".join(str(appel.args[0]) for appel in curseur.execute.call_args_list)
+        self.assertIn("c.accessoireintermediaire", requetes)
+        self.assertIn("c.commissionintermediaire", requetes)
+
+    def _suivi(self, oreole):
+        """Tableau « Suivi des primes et commissions » d'une quittance reversée (bordereau payé), sans base de données."""
+        detail = {"iddetailreversement": 1, "idreversement": 5, "montantreverse": Decimal("7200000"), "idencaissement": 9,
+                  "numeroquittance": "Q1", "datebordereau": date(2026, 11, 10), "datedecharge": None, "numero": "B1",
+                  "nature": views_bordereaux.REVERSEMENT, "datereversement": date(2026, 11, 10),
+                  "montantreversement": Decimal("7200000"), "valide": True, "numerocheque": "123", "mode": "Chèque",
+                  "abrege": "CHQ", "banque": None}
+        q = {"idquittance": 1, "numeroquittance": "Q1", "idcontrat": 2, "client": "CLIENT", "idproduit": 5, "libelleproduit": "SANTE",
+             "numeropolice": "P1", "policecompagnie": None, "avenantcompagnie": None, "avenant": None, "dateeffet": None,
+             "dateexpiration": None, "primeht": Decimal("7200000"), "primettc": Decimal("7200000"), "partcompagnie": None,
+             "acccourtier": ZERO, "taux": Decimal("7"), "commission": Decimal("504000"), "oreole": oreole}
+        with mock.patch.object(views_bordereaux, "_lignes", side_effect=[[detail], []]), \
+                mock.patch.object(views_bordereaux, "_quittances", return_value={"Q1": q}), \
+                mock.patch.object(views_bordereaux, "_reglements", return_value={}):
+            return views_bordereaux.tableau_reversement(29, date(2026, 1, 1), date(2026, 12, 31))[0]
+
+    def test_suivi_sans_commission_a_percevoir(self):
+        # Cotisation reversée à MCI avant la consigne : rien à percevoir de la compagnie, comme l'état des commissions
+        ligne = self._suivi(oreole=True)
+        self.assertEqual((ligne["CommissionAPercevoir"], ligne["SoldeCommission"]), (0, 0))
+        self.assertIn("honoraires gardés à l'encaissement", ligne["Observation"])
+        # Toute autre prime reversée : commission à percevoir de la compagnie
+        self.assertEqual(self._suivi(oreole=False)["SoldeCommission"], 504000)
+
+
+class AnnulationDUnReversement(SimpleTestCase):
+    """Annulation d'un bordereau de reversement avec le droit dédié « Annuler un reversement » (demande du 2026-11-24,
+    migration autorisations 0019)."""
+
+    _droits = OngletsSelonLeProfil._droits
+
+    def test_catalogue(self):
+        droit = next(d for d in DROITS if d[0] == "reversements.cancel")
+        _, libelle, _, sensible, motif, _ = droit
+        self.assertEqual(libelle, "Annuler un reversement")
+        self.assertTrue(sensible)
+        self.assertTrue(motif)  # motif obligatoire, exigé par la garde (en-tête X-Motif)
+        self.assertIn("reversements.cancel", {r[0]: r[3] for r in ROLES_INITIAUX}["RESPONSABLE"])
+
+    def test_route_d_annulation(self):
+        regle, _ = garde._regle(garde.REGLES, "POST", "finance/bordereaux/12/annuler/")
+        self.assertEqual(regle.droit, "reversements.cancel")
+        # Valider (payer) un bordereau reste un droit à part
+        regle, _ = garde._regle(garde.REGLES, "POST", "finance/reversements/12/valider/")
+        self.assertEqual(regle.droit, "reversements.validate")
+
+    def test_avant_la_migration_valider_en_tient_lieu(self):
+        self.assertIn("reversements.cancel", self._droits({"reversements.validate"}, en_base=set()))
+        self.assertNotIn("reversements.cancel", self._droits({"reversements.create"}, en_base=set()))
+
+    def test_refus_d_annuler_un_encaissement_reverse(self):
+        curseur = mock.MagicMock()
+        curseur.fetchall.return_value = [("11861126B0004",)]
+        self.assertEqual(
+            refus_reverse(curseur, [750], "Ce chèque"),
+            "Ce chèque a réglé une prime déjà reversée à la compagnie (bordereau N° 11861126B0004) : annulez d'abord ce "
+            "bordereau dans Reversements aux compagnies.")
+        # Bordereau annulé : la requête ne le renvoie plus, plus rien n'est reversé
+        curseur.fetchall.return_value = []
+        curseur.fetchone.return_value = (False,)
+        self.assertEqual(refus_reverse(curseur, [750], "Ce chèque"), "")
+        self.assertIn("NOT COALESCE(rc.pieceannulee, FALSE)", SQL_REVERSE)
+
+    def test_apres_la_migration_seul_le_role_decide(self):
+        en_base = {"tableau.view", "reversements.cancel"}
+        self.assertNotIn("reversements.cancel", self._droits({"reversements.validate"}, en_base=en_base))
+        self.assertIn("reversements.cancel", self._droits({"reversements.cancel"}, en_base=en_base))

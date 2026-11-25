@@ -6,7 +6,8 @@ paiement mobile annulé, espèces rendues au client, erreur de caisse, compensat
 Décaisser un règlement = contre-passer son encaissement par sp_annulation_encaissement (ligne négative, quittances de nouveau à encaisser,
 solde du client rétabli), avec un motif et une date, puis le réencaisser plus tard s'il y a lieu, comme un chèque impayé.
 Ne se décaissent pas :
-- un règlement déjà reversé à la compagnie (la procédure le refuse aussi) : annuler d'abord le bordereau de reversement ;
+- un règlement déjà reversé à la compagnie (la procédure le refuse aussi) : annuler d'abord le bordereau de reversement (un
+  bordereau annulé ne bloque plus, 2026-11-24) ;
 - un chèque du portefeuille : il se décaisse par « Impayé », qui traite toutes les quittances du chèque ensemble ;
 - une contre-passation (annulation, contrepartie d'annulation, décaissement de prime mal affectée) : elle sort déjà de l'argent.
 Le montant réencaissé se lit sur les encaissements liés non annulés : un réencaissement annulé ne compte plus.
@@ -36,7 +37,10 @@ MAX_LIGNES = 300
 # Référence du règlement : numéro du chèque, du virement ou de la traite, bordereau d'espèces, reçu de l'opérateur, compensation, transaction
 SQL_REFERENCE = """COALESCE(NULLIF(TRIM(e.numerocheque), ''), NULLIF(TRIM(e.numerobordereau), ''), NULLIF(TRIM(e.numerorecuoperateur), ''),
     NULLIF(TRIM(e.compte_compensation), ''), e.referencetransaction::text, '')"""
+# Reversé à la compagnie : bordereau en cours, ou montant reversé hors bordereau (reprises d'URANUS). Un bordereau annulé
+# (Reversements aux compagnies, droit « Annuler un reversement ») ne compte plus (sp_annulation_encaissement v3, 0231)
 SQL_REVERSE = """(EXISTS (SELECT 1 FROM stddetailreversement r JOIN stddetailencaissement d2 ON d2.iddetailencaissement = r.iddetailencaissement
+                         JOIN stdreversementcompagnie rc ON rc.idreversement = r.idreversement AND NOT COALESCE(rc.pieceannulee, FALSE)
                          WHERE d2.idencaissement = e.idencaissement)
                  OR EXISTS (SELECT 1 FROM stddetailencaissement d3 WHERE d3.idencaissement = e.idencaissement AND COALESCE(d3.montantreglement, 0) > 0))"""
 SQL_CHEQUE = "EXISTS (SELECT 1 FROM stdchequeoperation op WHERE op.idencaissement = e.idencaissement)"
@@ -44,6 +48,38 @@ SQL_CHEQUE = "EXISTS (SELECT 1 FROM stdchequeoperation op WHERE op.idencaissemen
 
 class ErreurDecaissement(Exception):
     """Saisie refusée : message affiché tel quel."""
+
+
+def refus_reverse(cursor, ids_encaissement, sujet="Ce règlement"):
+    """Refus d'annuler des encaissements dont une prime est reversée à la compagnie (même règle que
+    sp_annulation_encaissement), avec le n° du bordereau à annuler d'abord ; chaîne vide sinon."""
+    ids = [i for i in ids_encaissement if i]
+    if not ids:
+        return ""
+    cursor.execute(
+        """
+        SELECT COALESCE(NULLIF(TRIM(b.numero), ''), TRIM(r.numeroreversement)) AS numero
+        FROM stddetailreversement d
+        JOIN stdreversementcompagnie r ON r.idreversement = d.idreversement AND NOT COALESCE(r.pieceannulee, FALSE)
+        LEFT JOIN lephare_bordereau_reversement b ON b.idreversement = r.idreversement
+        JOIN stddetailencaissement de ON de.iddetailencaissement = d.iddetailencaissement
+        WHERE de.idencaissement = ANY(%s)
+        GROUP BY 1 ORDER BY 1
+        """,
+        [ids],
+    )
+    numeros = [n for (n,) in cursor.fetchall() if n]
+    if numeros:
+        bordereaux = f"bordereau{'x' if len(numeros) > 1 else ''} N° {', '.join(numeros)}"
+        return (f"{sujet} a réglé une prime déjà reversée à la compagnie ({bordereaux}) : annulez d'abord "
+                f"{'ces bordereaux' if len(numeros) > 1 else 'ce bordereau'} dans Reversements aux compagnies.")
+    cursor.execute(
+        "SELECT EXISTS (SELECT 1 FROM stddetailencaissement WHERE idencaissement = ANY(%s) AND COALESCE(montantreglement, 0) > 0)",
+        [ids],
+    )
+    if cursor.fetchone()[0]:
+        return f"{sujet} a réglé une prime déjà reversée à la compagnie : annulez d'abord le bordereau de reversement."
+    return ""
 
 
 def _nombre(valeur):

@@ -8,6 +8,7 @@ import { Modal } from '../../../components/common/Modal';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { useToast } from '../../../context/ToastContext';
 import { confirmer, saisirTexte } from '../../../utils/dialogue';
+import { aLeDroit } from '../../../utils/droits';
 import {
   aujourdhui, correspondRecherche as correspond, dateFr, fcfa, messageErreurApi, recentsDabord,
 } from '../../../utils/financeUtils';
@@ -127,6 +128,8 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
   if (!bordereau) return null;
   const b = bordereau;
   const aPayer = !b.Direct && !b.Valide;
+  // Annulation : droit « Annuler un reversement » ; refusée par le serveur tant que la commission est réclamée ou payée
+  const peutAnnuler = aLeDroit('reversements.cancel');
 
   const action = async (fn, message) => {
     setEnvoi(true);
@@ -148,9 +151,12 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
   }, `Paiement du bordereau N° ${b.Numero} enregistré.`);
   const enregistrerDecharge = () => action(() => financeApi.dechargeBordereau(b.IdReversement, decharge || null), 'Date de décharge enregistrée.');
   const annuler = async () => {
+    const quittances = `${b.NombreQuittances} quittance${b.NombreQuittances > 1 ? 's' : ''}`;
     const motif = await saisirTexte({
       titre: `Annuler le bordereau N° ${b.Numero || b.NumeroReversement}`,
-      message: 'Les primes redeviennent à transmettre. Indiquez le motif (au moins 5 caractères).',
+      message: b.Direct || !b.Valide
+        ? `Les ${quittances} redeviennent à reverser. Indiquez le motif (au moins 5 caractères).`
+        : `Les ${quittances} redeviennent à reverser ; le paiement enregistré (${b.Paiement}) est annulé avec le bordereau. Indiquez le motif (au moins 5 caractères).`,
       minimum: 5, maximum: 255, confirmer: 'Annuler le bordereau', ton: 'danger',
     });
     if (!motif) return;
@@ -233,9 +239,13 @@ const BordereauModal = ({ bordereau, modes, banques, onClose, onChange }) => {
           </>
         )}
         <span style={{ flex: 1 }} />
-        <button type="button" className="btn btn-secondary" onClick={annuler} disabled={envoi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-rose)' }}>
-          <XCircle size={15} /> Annuler le bordereau
-        </button>
+        {peutAnnuler && (
+          <button type="button" className="btn btn-secondary" onClick={annuler} disabled={envoi || b.Annulable === false}
+            title={b.Annulable === false ? 'Commission déjà réclamée ou payée : annulez d\'abord la réclamation' : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--accent-rose)' }}>
+            <XCircle size={15} /> Annuler le bordereau
+          </button>
+        )}
         <button type="button" className="btn btn-secondary" onClick={courrier} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <Mail size={15} /> Imprimer le courrier
         </button>

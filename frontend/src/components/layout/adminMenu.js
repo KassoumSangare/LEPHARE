@@ -48,8 +48,10 @@ import {
   Link2,
   LayoutGrid,
   Handshake,
+  Wrench,
 } from 'lucide-react';
 import { BRANCHES, adresseBranche } from '../../utils/branchesProduction';
+import { DROITS_CORRECTIONS } from '../../utils/corrections';
 import { DROIT_TABLEAU } from '../../utils/droits';
 
 export const ADMIN_MENU = [
@@ -74,11 +76,14 @@ export const ADMIN_MENU = [
     ],
   },
   {
-    id: 'contrats',
-    titre: 'Contrats',
-    description: 'Consultation et correction exceptionnelle des contrats, risques et garanties.',
+    id: 'corrections',
+    titre: 'Corrections',
+    description: "Les erreurs de saisie repérées dans les données et l'outil qui corrige chacune, avec motif et trace au journal.",
     items: [
-      { to: '/admin/contracts/edit', droit: 'contrats.admin_update', label: 'Modifier les contrats', icon: FileSignature, description: 'Rechercher un contrat et modifier ses informations, ses risques/véhicules et ses garanties. Chaque changement est justifié et journalisé.' },
+      { to: '/admin/corrections', droit: DROITS_CORRECTIONS, label: 'Centre des corrections', icon: Wrench, description: "Erreurs probables trouvées dans les données (doublons, encaissements saisis deux fois, chèques au solde faux, contrats en désaccord avec leur quittance…), l'outil qui corrige chaque erreur possible et le journal des corrections." },
+      { to: '/admin/contracts/edit', droit: 'contrats.admin_update', label: 'Corriger un contrat', icon: FileSignature, description: "Informations, risques/véhicules et garanties d'un contrat ; primes recalculées jusqu'à la quittance ; souscripteur, compagnie et n° de police reportés sur la quittance, le devis, les soldes et, au choix, toute la police." },
+      { to: '/admin/corrections/encaissements', droit: 'encaissements.cancel', label: 'Corriger un encaissement', icon: Receipt, description: "Tout encaissement, quelle que soit sa date : références, annulation et réaffectation, doublon." },
+      { to: '/admin/corrections/clients', droit: 'clients.merge', label: 'Fiches clients en double', icon: Users, description: "Comparer deux fiches puis fusionner : contrats, devis, quittances et chèques passent sur la fiche gardée, l'autre est archivée." },
     ],
   },
   {

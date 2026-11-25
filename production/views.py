@@ -118,6 +118,7 @@ from .database import (
     save_quotation_voyage,
     unarchive_quote,
 )
+from .decaissements import SQL_REVERSE
 from .exceltopostgresql import export_excel
 from . import pieces_jointes
 from .import_assures import import_ia_insured, insert_new_assure
@@ -1539,7 +1540,12 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 [[i for i in ids_assures if i]],
             )
             noms = {str(i): nom for i, nom in cursor.fetchall()}
+            # Mouvements de la police (affaire nouvelle, avenants, renouvellements) : un souscripteur ou une compagnie corrigé
+            # peut l'être sur toute la police (coherence_contrat.propager)
+            cursor.execute("SELECT COUNT(*) FROM stdcontrat WHERE numeropolice = %s", [contrat.numeropolice])
+            mouvements_police = cursor.fetchone()[0]
         return {
+            "MouvementsPolice": mouvements_police,
             "Client": client or "", "Assure": assure or "", "Compagnie": compagnie or "", "Aperiteur": aperiteur or "",
             "IdProduit": id_produit, "Produit": produit or "", "CodeMouvement": code_avenant or "", "Mouvement": avenant or "",
             "Intermediaire": intermediaire or "", "NumeroDevis": numero_devis or "", "Annule": bool(annule),
@@ -1630,6 +1636,7 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
     def _enregistrer_administration(self, contrat, payload, simulation=False):
         """Saisies de l'écran d'administration écrites telles quelles, puis primes recalculées de la garantie jusqu'à
         la quittance (recalcul_contrat.py) ; en simulation, tout est annulé."""
+        from .coherence_contrat import ErreurCoherence, cles_contrat, propager
         from .recalcul_contrat import ErreurRecalcul, etat_contrat, recalculer
 
         if (
@@ -1730,6 +1737,10 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
             },
         }
         avant = etat_contrat(contrat, saisies)
+        # Souscripteur, compagnie et n° de police d'avant : la correction est reportée sur la quittance, le devis, les soldes et,
+        # avec « toute la police », les autres mouvements (coherence_contrat.py)
+        cles_avant = cles_contrat(contrat)
+        toute_la_police = bool(payload.get("toute_la_police"))
         try:
             with transaction.atomic():
                 contrat_enregistre = contrat_serializer.save()
@@ -1752,9 +1763,14 @@ class ContratViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet):
                 # Le contrat est relu en base : ses déclencheurs fixent aussi le partage des accessoires réglé pour la
                 # compagnie et la commission sur la prime HT (trg_lephare_commission_courtier).
                 resultat = recalculer(contrat_enregistre, avant, saisies)
+                with connection.cursor() as cursor:
+                    coherence = propager(cursor, contrat_enregistre, cles_avant, toute_la_police,
+                                         saisis=set(contrat_serializer.validated_data))
+                resultat["propagations"] = coherence["propagations"]
+                resultat["avertissements"] = [*(resultat.get("avertissements") or []), *coherence["avertissements"]]
                 if simulation:
                     transaction.set_rollback(True)
-        except ErreurRecalcul as erreur:
+        except (ErreurRecalcul, ErreurCoherence) as erreur:
             return Response({"detail": str(erreur)}, status=status.HTTP_400_BAD_REQUEST)
         if simulation:
             return Response(resultat, status=status.HTTP_200_OK)
@@ -6119,6 +6135,17 @@ class CheckChequeStatusView(APIView):
             cheque = Cheque.objects.select_related("banque").filter(
                 numero_cheque=request.query_params.get("numero_cheque"), banque_id=request.query_params.get("banque")
             ).first()
+            # Même chèque saisi autrement (« ba1974814 » pour « BA 1974814 ») : retrouvé sans espaces, tirets ni casse, et
+            # l'écran reprend le numéro enregistré (numero_cheque), au lieu de créer un second chèque (2026-11-25)
+            cle = re.sub(r"[^0-9A-Z]", "", str(request.query_params.get("numero_cheque") or "").upper())
+            if not cheque and cle and str(request.query_params.get("banque") or "").isdigit():
+                cheque = (
+                    Cheque.objects.select_related("banque")
+                    .filter(banque_id=int(request.query_params["banque"]))
+                    .annotate(cle_numero=RawSQL("REGEXP_REPLACE(UPPER(stdcheque.numerocheque), '[^0-9A-Z]', '', 'g')", []))
+                    .filter(cle_numero=cle)
+                    .first()
+                )
 
         if not cheque:
             return Response({"existe": False})
@@ -6175,6 +6202,24 @@ class ChequeListView(generics.ListAPIView):
                 """SELECT COALESCE(SUM(op.montantoperation), 0) FROM stdchequeoperation op
                    JOIN stdencaissement e ON e.idencaissement = op.idencaissement
                    WHERE op.idcheque = stdcheque.idcheque AND NOT COALESCE(e.piece_annulee, FALSE)""",
+                [],
+            ),
+            # Prime réglée par le chèque déjà reversée à la compagnie : le chèque ne s'annule qu'après l'annulation du
+            # bordereau (Reversements aux compagnies) ; un bordereau annulé ne compte plus (decaissements.SQL_REVERSE)
+            deja_reverse=RawSQL(
+                f"""SELECT EXISTS (SELECT 1 FROM stdchequeoperation op JOIN stdencaissement e ON e.idencaissement = op.idencaissement
+                   WHERE op.idcheque = stdcheque.idcheque AND NOT COALESCE(e.piece_annulee, FALSE) AND {SQL_REVERSE})""",
+                [],
+            ),
+            bordereaux_reversement=RawSQL(
+                """SELECT string_agg(DISTINCT COALESCE(NULLIF(TRIM(b.numero), ''), TRIM(r.numeroreversement)), ', ')
+                   FROM stdchequeoperation op
+                   JOIN stdencaissement e ON e.idencaissement = op.idencaissement AND NOT COALESCE(e.piece_annulee, FALSE)
+                   JOIN stddetailencaissement de ON de.idencaissement = e.idencaissement
+                   JOIN stddetailreversement d ON d.iddetailencaissement = de.iddetailencaissement
+                   JOIN stdreversementcompagnie r ON r.idreversement = d.idreversement AND NOT COALESCE(r.pieceannulee, FALSE)
+                   LEFT JOIN lephare_bordereau_reversement b ON b.idreversement = r.idreversement
+                   WHERE op.idcheque = stdcheque.idcheque""",
                 [],
             ),
             quittances_reglees=RawSQL(

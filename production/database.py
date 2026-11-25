@@ -3081,6 +3081,14 @@ def decaisser_cheque_impaye(user, id_cheque, motif, date_decaissement):
             raise ValidationError(
                 "Aucun encaissement en cours n'a été réglé par ce chèque."
             )
+        # Prime déjà reversée : message clair avec le n° du bordereau à annuler d'abord, au lieu de l'erreur brute de la
+        # procédure (« Encaissement déjà reversé. Annulation impossible. »)
+        from .decaissements import refus_reverse
+
+        with connection.cursor() as cursor:
+            refus = refus_reverse(cursor, [e.idencaissement for e in encaissements], "Ce chèque")
+        if refus:
+            raise ValidationError(refus)
         montant = Decimal("0")
         for encaissement in encaissements:
             with connection.cursor() as cursor:

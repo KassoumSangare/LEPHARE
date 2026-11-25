@@ -1,16 +1,35 @@
 """
 Configuration des URLs principales du projet
 """
+from urllib.parse import urlencode, urlsplit, urlunsplit
+
 from django.contrib import admin
 from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+from django.shortcuts import redirect
 
 from core.fichiers import servir_media
 from core.views import etat_serveur
 
 
+def connexion_lephare(request):
+    origine = urlsplit(request.build_absolute_uri("/"))
+    hote = origine.hostname
+    if ":" in hote:
+        hote = f"[{hote}]"
+
+    requete = {}
+    destination = request.GET.get("next", "")
+    if destination.startswith("/") and not destination.startswith("//") and "\\" not in destination:
+        requete["next"] = destination
+
+    url = urlunsplit((origine.scheme, f"{hote}:3000", "/login", urlencode(requete), ""))
+    return redirect(url)
+
+
 urlpatterns = [
+    path("admin/login/", connexion_lephare, name="connexion_lephare"),
     path("admin/", admin.site.urls),
     path("api/etat-serveur/", etat_serveur),
     path("api/", include("account.urls")),

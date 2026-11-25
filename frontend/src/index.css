@@ -3490,6 +3490,9 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 .cockpit-detail { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; }
 .cockpit-detail .libelle { flex: 1; min-width: 0; }
 .cockpit-detail strong { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Sous-ligne d'une étape (ex. : part des exercices antérieurs, hors total) */
+.cockpit-detail.secondaire { padding-left: 0.9rem; font-size: 0.72rem; }
+.cockpit-detail.secondaire strong { color: var(--text-muted); font-weight: 500; }
 
 /* Chiffres clés sous l'indicateur principal */
 .cockpit-chiffres-cles {
@@ -4804,4 +4807,304 @@ button.portefeuille-police:hover, button.portefeuille-client:hover { text-decora
 @media (prefers-reduced-motion: reduce) {
   .correction-volet, .correction-proposition, .correction-resultat, .caisse-du-jour-ligne { animation: none; }
   .correction-carte:hover:not(:disabled) { transform: none; }
+}
+
+/* =========================================================================
+   Guichet « Encaissement des Primes » (components/cash/GuichetEncaissement.jsx, 2026-11-25) :
+   client, quittances, règlement, vérification, reçu
+   ========================================================================= */
+.guichet { display: flex; flex-direction: column; gap: 1.1rem; }
+.guichet-titre { margin: 0; font-size: 1.15rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.01em; }
+.guichet-sous-titre { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
+.guichet-muet { color: var(--text-muted); font-size: 0.8rem; }
+.guichet-volet { display: flex; flex-direction: column; gap: 0.9rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+
+/* étapes */
+.guichet-etapes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+.guichet-etapes li { position: relative; min-width: 0; }
+.guichet-etapes li + li::before { content: ""; position: absolute; left: -0.5rem; top: 1.05rem; width: 0.5rem; height: 2px; background: var(--border-subtle); }
+.guichet-etapes li.faite + li::before { background: var(--accent-emerald); }
+.guichet-etapes button { width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.6rem; border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle); background: transparent; color: var(--text-muted); font: inherit; text-align: left; cursor: default;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease; }
+.guichet-etapes li.faite button { cursor: pointer; color: var(--text-secondary); }
+.guichet-etapes li.faite button:hover { border-color: var(--accent-emerald); background: color-mix(in srgb, var(--accent-emerald) 7%, transparent); }
+.guichet-etapes li.active button { border-color: var(--primary-500); color: var(--text-primary); background: color-mix(in srgb, var(--primary-500) 8%, transparent); }
+.guichet-etape-num { flex: none; display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; font-weight: 800; font-size: 0.8rem;
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); }
+.guichet-etapes li.active .guichet-etape-num { background: var(--primary-600); border-color: var(--primary-600); color: #fff; }
+.guichet-etapes li.faite .guichet-etape-num { background: var(--accent-emerald); border-color: var(--accent-emerald); color: #fff; }
+.guichet-etape-texte { display: flex; flex-direction: column; min-width: 0; font-size: 0.84rem; font-weight: 700; }
+.guichet-etape-texte small { font-weight: 500; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 1. client */
+.guichet-recherche { position: relative; display: flex; align-items: center; }
+.guichet-recherche > svg { position: absolute; left: 0.9rem; color: var(--text-muted); pointer-events: none; }
+.guichet-recherche input { width: 100%; padding: 0.85rem 1rem 0.85rem 2.6rem; font: inherit; font-size: 1rem; color: var(--text-primary);
+  background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+.guichet-recherche input:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 22%, transparent); }
+.guichet-clients { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 0.6rem; }
+.guichet-client { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 0.75rem; padding: 0.75rem 0.85rem; text-align: left;
+  font: inherit; color: var(--text-primary); cursor: pointer; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface);
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.guichet-client:hover, .guichet-client:focus-visible { border-color: var(--primary-500); transform: translateY(-1px); box-shadow: 0 6px 16px color-mix(in srgb, var(--primary-500) 14%, transparent); outline: none; }
+.guichet-client.cible { border-color: color-mix(in srgb, var(--accent-emerald) 55%, transparent); }
+.guichet-avatar { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; font-weight: 800; font-size: 0.85rem;
+  color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 13%, transparent); }
+.guichet-avatar.grand { width: 3rem; height: 3rem; font-size: 1rem; }
+.guichet-client-identite { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.guichet-client-identite strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guichet-client-identite > span:not(.guichet-muet) { display: flex; gap: 0.7rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-secondary); }
+.guichet-client-identite > span > span { display: inline-flex; align-items: center; gap: 0.25rem; }
+.guichet-client-identite .guichet-muet { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.74rem; }
+.guichet-client-reste { display: flex; flex-direction: column; align-items: flex-end; font-size: 0.75rem; color: var(--text-muted); }
+.guichet-client-reste strong { font-size: 0.95rem; color: var(--accent-rose); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.guichet-fleche { color: var(--text-muted); }
+.guichet-vide { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 1.2rem; border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-subtle); color: var(--text-secondary); font-size: 0.88rem; grid-column: 1 / -1; }
+.guichet-vide.erreur { color: var(--accent-rose); border-color: color-mix(in srgb, var(--accent-rose) 40%, transparent); }
+
+/* 2. quittances */
+.guichet-carte-client { display: flex; align-items: center; gap: 0.85rem; padding: 0.8rem 1rem; border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--primary-500) 6%, var(--bg-surface)); border: 1px solid color-mix(in srgb, var(--primary-500) 25%, transparent); }
+.guichet-carte-client > div { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.guichet-carte-client strong { font-size: 1.05rem; }
+.guichet-entete-liste { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.guichet-quittances { display: flex; flex-direction: column; gap: 0.5rem; }
+.guichet-quittance { border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); transition: border-color 0.18s ease, background 0.18s ease; }
+.guichet-quittance.cochee { border-color: var(--primary-500); background: color-mix(in srgb, var(--primary-500) 5%, var(--bg-surface)); }
+.guichet-quittance.en-erreur { border-color: var(--accent-rose); }
+.guichet-quittance-tete { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; padding: 0.75rem 0.9rem; cursor: pointer; }
+.guichet-quittance-tete input[type="checkbox"] { width: 1.15rem; height: 1.15rem; accent-color: var(--primary-600); cursor: pointer; }
+.guichet-quittance-ident { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; font-size: 0.84rem; color: var(--text-secondary); }
+.guichet-quittance-ident strong { color: var(--text-primary); font-family: var(--font-mono); font-size: 0.88rem; }
+.guichet-quittance-ident > span:last-child { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.guichet-quittance-chiffres { display: flex; flex-direction: column; align-items: flex-end; text-align: right; gap: 0.15rem; }
+.guichet-quittance-chiffres strong { color: var(--accent-rose); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.guichet-package { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.9rem 0.6rem 2.8rem; font-size: 0.8rem; color: var(--text-secondary); }
+.guichet-alerte-ligne { display: flex; align-items: center; gap: 0.4rem; margin: 0 0.9rem 0.6rem 2.8rem; padding: 0.35rem 0.6rem; border-radius: var(--radius-md);
+  font-size: 0.8rem; font-weight: 600; color: var(--accent-amber); background: color-mix(in srgb, var(--accent-amber) 10%, transparent); }
+.guichet-quittance-montant { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem 0.9rem; padding: 0.6rem 0.9rem 0.75rem 2.8rem;
+  border-top: 1px dashed var(--border-subtle); font-size: 0.84rem; animation: mouvement-fondu 0.2s ease-out both; }
+.guichet-quittance-montant label { font-weight: 700; color: var(--text-secondary); }
+.guichet-montant { position: relative; width: min(100%, 210px); }
+.guichet-montant input { padding-right: 1.9rem; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.guichet-montant > span { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.8rem; pointer-events: none; }
+.guichet-erreur { color: var(--accent-rose); font-weight: 700; }
+.guichet-acompte { color: var(--accent-amber); font-weight: 700; }
+.guichet-solde { display: inline-flex; align-items: center; gap: 0.2rem; color: var(--accent-emerald); font-weight: 700; }
+.guichet-barre { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.75rem 0.9rem; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); font-size: 0.9rem; }
+.guichet-barre strong { font-size: 1.05rem; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+/* 3. règlement */
+.guichet-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 0.55rem; align-items: stretch; }
+.guichet-mode { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; min-height: 4.6rem; padding: 0.7rem;
+  font: inherit; font-weight: 700; font-size: 0.86rem; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle); background: var(--bg-surface); transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease; }
+.guichet-mode:hover { border-color: var(--primary-500); color: var(--text-primary); transform: translateY(-1px); }
+.guichet-mode.choisi { border-color: var(--primary-500); color: var(--text-primary); background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-surface));
+  box-shadow: 0 0 0 1px var(--primary-500) inset; }
+.guichet-mode.choisi svg { color: var(--primary-500); }
+.guichet-mode-autre { min-height: 4.6rem; font-weight: 600; }
+.guichet-mode-autre.choisi { border-color: var(--primary-500); box-shadow: 0 0 0 1px var(--primary-500) inset; }
+.guichet-champs { display: flex; flex-direction: column; gap: 0.2rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.guichet-reference { font-family: var(--font-mono); letter-spacing: 0.02em; }
+.guichet-fixe { display: flex; align-items: center; gap: 0.4rem; min-height: 2.5rem; padding: 0 0.75rem; border-radius: var(--radius-md); font-weight: 700;
+  border: 1px solid var(--border-subtle); background: var(--bg-surface-elevated); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.guichet-cheques-client { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.6rem; }
+.guichet-cheques-client > div { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.guichet-puce { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; padding: 0.4rem 0.7rem; border-radius: 999px; font: inherit; font-size: 0.8rem;
+  font-weight: 600; cursor: pointer; color: var(--text-secondary); border: 1px solid var(--border-subtle); background: var(--bg-surface);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.guichet-puce small { font-weight: 500; color: var(--text-muted); }
+.guichet-puce:hover, .guichet-puce.choisie { border-color: var(--accent-emerald); color: var(--text-primary); background: color-mix(in srgb, var(--accent-emerald) 8%, transparent); }
+.guichet-info-cheque, .guichet-couverture { display: flex; align-items: center; gap: 0.4rem; margin: -0.3rem 0 0.7rem; font-size: 0.82rem; color: var(--text-secondary); }
+.guichet-info-cheque.annule { color: var(--primary-500); font-weight: 600; }
+.guichet-couverture { font-weight: 600; color: var(--accent-emerald); }
+.guichet-couverture.insuffisant { color: var(--accent-rose); }
+.guichet-ordre { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; max-width: 520px; }
+.guichet-ordre button { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.6rem 0.8rem; font: inherit; font-weight: 700;
+  font-size: 0.86rem; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--bg-surface);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.guichet-ordre button:hover:not(:disabled) { border-color: var(--primary-500); color: var(--text-primary); }
+.guichet-ordre button.choisi { border-color: var(--primary-500); color: var(--text-primary); background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-surface));
+  box-shadow: 0 0 0 1px var(--primary-500) inset; }
+.guichet-ordre button:disabled { cursor: not-allowed; opacity: 0.55; }
+/* Quittance réglée en totalité ou par acompte (prime payée en plusieurs fois) */
+.guichet-paiement { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-md); background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); }
+.guichet-paiement button { padding: 0.35rem 0.75rem; border: 0; border-radius: 6px; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+  color: var(--text-secondary); background: transparent; font-variant-numeric: tabular-nums; transition: background 0.15s ease, color 0.15s ease; }
+.guichet-paiement button:hover { color: var(--text-primary); }
+.guichet-paiement button.choisi { color: #fff; background: var(--primary-600); box-shadow: var(--shadow-sm); }
+.guichet-ordre button.choisi:disabled { opacity: 1; }
+.guichet-erreurs { margin: 0; padding: 0.65rem 0.9rem 0.65rem 2rem; border-radius: var(--radius-md); font-size: 0.84rem; line-height: 1.6; font-weight: 600;
+  color: var(--accent-rose); background: color-mix(in srgb, var(--accent-rose) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent-rose) 30%, transparent);
+  animation: mouvement-fondu 0.2s ease-out both; }
+
+/* 4. vérification */
+.guichet-recap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem 1.4rem; padding: 1rem 1.1rem; border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.guichet-recap-montant { display: flex; flex-direction: column; justify-content: center; gap: 0.2rem; padding: 0.9rem 1rem; border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-emerald) 9%, transparent); border: 1px solid color-mix(in srgb, var(--accent-emerald) 30%, transparent);
+  font-size: 0.84rem; color: var(--text-secondary); }
+.guichet-recap-montant strong { font-size: 1.9rem; font-weight: 900; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.guichet-recap-details { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.86rem; }
+.guichet-recap-details > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px dashed var(--border-subtle); }
+.guichet-recap-details dt { color: var(--text-muted); }
+.guichet-recap-details dd { margin: 0; font-weight: 700; color: var(--text-primary); }
+.guichet-recap-table { grid-column: 1 / -1; width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.guichet-recap-table th { text-align: left; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted);
+  padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-subtle); }
+.guichet-recap-table td { padding: 0.5rem; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.guichet-recap-table .nombre { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.guichet-alertes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.guichet-alertes li { display: flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.7rem; border-radius: var(--radius-md); font-size: 0.84rem;
+  color: var(--text-secondary); background: color-mix(in srgb, var(--accent-amber) 9%, transparent); border: 1px solid color-mix(in srgb, var(--accent-amber) 28%, transparent); }
+.guichet-alertes li svg { flex: none; color: var(--accent-amber); }
+.guichet-doublon { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.7rem 0.9rem; border-radius: var(--radius-md); font-size: 0.86rem;
+  border: 1px solid color-mix(in srgb, var(--accent-rose) 40%, transparent); background: color-mix(in srgb, var(--accent-rose) 7%, transparent); }
+.guichet-doublon > div { display: flex; gap: 0.45rem; align-items: flex-start; color: var(--accent-rose); font-weight: 700; }
+.guichet-doublon > div svg { flex: none; margin-top: 0.1rem; }
+.guichet-valider { font-size: 0.95rem; padding: 0.65rem 1.1rem; }
+
+/* reçu */
+.guichet-termine { align-items: center; text-align: center; padding: 1.2rem 0.5rem; animation: mouvement-zoom 0.3s ease-out both; }
+.guichet-termine-icone { color: var(--accent-emerald); }
+.guichet-termine-montant { font-size: 2.1rem; font-weight: 900; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.guichet-termine-quittances { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; color: var(--text-secondary); }
+.guichet-termine-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; margin-top: 0.4rem; }
+
+@media (max-width: 760px) {
+  .guichet-etapes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .guichet-etapes li + li::before { display: none; }
+  .guichet-client { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .guichet-fleche { display: none; }
+  .guichet-quittance-tete { grid-template-columns: auto minmax(0, 1fr); }
+  .guichet-quittance-chiffres { grid-column: 2; align-items: flex-start; text-align: left; }
+  .guichet-package, .guichet-quittance-montant { padding-left: 0.9rem; }
+  .guichet-alerte-ligne { margin-left: 0.9rem; }
+  .guichet-recap { grid-template-columns: 1fr; }
+  .guichet-recap-details > div { grid-template-columns: 1fr; gap: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guichet-volet, .guichet-client, .guichet-champs, .guichet-quittance-montant, .guichet-erreurs, .guichet-termine { animation: none; }
+  .guichet-client:hover, .guichet-mode:hover { transform: none; }
+}
+
+/* =========================================================================
+   Corrections (Administration > Corrections : pages/admin/corrections/, 2026-11-25)
+   ========================================================================= */
+.corr-page { display: flex; flex-direction: column; gap: 1.2rem; }
+.corr-entete { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+.corr-entete > div { flex: 1; min-width: 240px; }
+.corr-entete h1 { margin: 0; }
+.corr-entete p { margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.875rem; }
+.corr-entete-icone { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; color: var(--primary-500);
+  background: color-mix(in srgb, var(--primary-500) 13%, transparent); border: 1px solid color-mix(in srgb, var(--primary-500) 25%, transparent); }
+.corr-muet { color: var(--text-muted); font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+.corr-erreur { display: flex; align-items: center; gap: 0.45rem; margin: 0; padding: 0.6rem 0.8rem; border-radius: var(--radius-md); font-weight: 600; font-size: 0.86rem;
+  color: var(--accent-rose); background: color-mix(in srgb, var(--accent-rose) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent-rose) 30%, transparent); }
+
+/* À corriger */
+.corr-anomalies { display: flex; flex-direction: column; gap: 0.6rem; }
+.corr-carte { border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); overflow: hidden;
+  animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.corr-carte.a-corriger { border-left: 3px solid var(--accent-amber); }
+.corr-carte.juste { border-left: 3px solid var(--accent-emerald); }
+.corr-carte-tete { width: 100%; display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto auto; align-items: center; gap: 0.9rem;
+  padding: 0.8rem 1rem; font: inherit; text-align: left; color: var(--text-primary); background: transparent; border: 0; cursor: pointer; }
+.corr-carte-tete:disabled { cursor: default; }
+.corr-carte-tete:hover:not(:disabled) { background: var(--bg-surface-hover); }
+.corr-domaine { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.corr-carte-titre { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.corr-carte-titre span { font-size: 0.8rem; color: var(--text-secondary); }
+.corr-compte { min-width: 2.2rem; padding: 0.2rem 0.6rem; border-radius: 999px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--accent-amber); background: color-mix(in srgb, var(--accent-amber) 13%, transparent); }
+.corr-compte.juste { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 600; font-size: 0.8rem; color: var(--accent-emerald);
+  background: color-mix(in srgb, var(--accent-emerald) 10%, transparent); }
+.corr-compte.erreur { color: var(--accent-rose); background: color-mix(in srgb, var(--accent-rose) 10%, transparent); }
+.corr-chevron { color: var(--text-muted); transition: transform 0.18s ease; }
+.corr-carte-tete[aria-expanded="true"] .corr-chevron { transform: rotate(180deg); }
+.corr-lignes { list-style: none; margin: 0; padding: 0 1rem 0.6rem; display: flex; flex-direction: column; animation: mouvement-fondu 0.2s ease-out both; }
+.corr-ligne { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; padding: 0.55rem 0; border-top: 1px dashed var(--border-subtle); }
+.corr-ligne > div:first-child { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; font-size: 0.86rem; }
+.corr-ligne > div:first-child span { color: var(--text-secondary); font-size: 0.8rem; }
+.corr-ligne-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.corr-ligne-actions .btn { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+
+/* Erreurs et outils */
+.corr-catalogue { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 0.9rem; }
+.corr-groupe { padding: 0.9rem 1rem; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.corr-groupe h2 { margin: 0 0 0.4rem; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.corr-groupe ul { list-style: none; margin: 0; padding: 0; }
+.corr-cas { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.55rem 0; border-top: 1px dashed var(--border-subtle); }
+.corr-cas:first-child { border-top: 0; }
+.corr-cas > div { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; font-size: 0.86rem; }
+.corr-cas > div span { color: var(--text-secondary); font-size: 0.8rem; }
+.corr-cas .btn { flex: none; padding: 0.3rem 0.65rem; font-size: 0.78rem; white-space: nowrap; }
+
+/* Journal, recherche */
+.corr-journal { padding: 1rem 1.2rem; }
+.corr-pagination { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; margin-top: 0.7rem; }
+.corr-pagination > span { margin-right: auto; }
+.corr-recherche { display: flex; align-items: center; gap: 0.6rem; padding: 0.7rem 1rem; }
+.corr-recherche > svg { color: var(--text-muted); flex: none; }
+.corr-recherche input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 1rem; color: var(--text-primary); outline: none; }
+.corr-effacer { display: grid; place-items: center; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; }
+
+/* Fiches clients en double */
+.fusion-grille { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.fusion-groupes { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.9rem; max-height: 75vh; overflow-y: auto; }
+.fusion-groupes ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.fusion-filtre { display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.6rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated); color: var(--text-muted); }
+.fusion-filtre input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--text-primary); outline: none; }
+.fusion-groupe { padding: 0.6rem 0.7rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.fusion-groupe-tete { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.86rem; }
+.fusion-groupe-fiche { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-top: 0.4rem; font-size: 0.8rem; color: var(--text-secondary); }
+.fusion-groupe-fiche > span { display: flex; flex-direction: column; min-width: 0; }
+.fusion-groupe-fiche small { color: var(--text-muted); }
+.fusion-groupe-fiche .btn { padding: 0.25rem 0.55rem; font-size: 0.75rem; flex: none; }
+.fusion-comparaison { display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.fusion-choix { display: flex; align-items: flex-end; gap: 0.7rem; flex-wrap: wrap; padding: 0.8rem 1rem; }
+.fusion-choix label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+.fusion-choix input { width: 10rem; }
+.fusion-apercu { display: flex; flex-direction: column; gap: 0.8rem; padding: 1rem; animation: mouvement-apparait var(--mouvement-normal) var(--courbe-entree) backwards; }
+.fusion-fiches { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0.7rem; align-items: stretch; }
+.fusion-fiche { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.85rem 0.95rem; border-radius: var(--radius-lg); border: 1px solid var(--border-subtle); background: var(--bg-surface); min-width: 0; }
+.fusion-fiche.gardee { border-color: color-mix(in srgb, var(--accent-emerald) 55%, transparent); }
+.fusion-fiche.fusionnee { border-style: dashed; }
+.fusion-role { font-size: 0.7rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.fusion-fiche.gardee .fusion-role { color: var(--accent-emerald); }
+.fusion-fiche dl { margin: 0.2rem 0 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.8rem; }
+.fusion-fiche dl > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 0.4rem; }
+.fusion-fiche dt { color: var(--text-muted); }
+.fusion-fiche dd { margin: 0; overflow-wrap: anywhere; }
+.fusion-rattachements { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; margin-top: 0.3rem; padding-top: 0.4rem; border-top: 1px dashed var(--border-subtle); font-size: 0.78rem; color: var(--text-secondary); }
+.fusion-inverser { align-self: center; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; cursor: pointer;
+  color: var(--text-secondary); background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); transition: transform 0.2s ease, color 0.2s ease; }
+.fusion-inverser:hover { color: var(--primary-500); transform: rotate(180deg); }
+.fusion-actions { display: flex; justify-content: flex-end; }
+.fusion-bilan { display: flex; gap: 0.8rem; align-items: flex-start; padding: 0.9rem 1rem; color: var(--text-primary); animation: mouvement-zoom 0.3s ease-out both; }
+.fusion-bilan > svg { color: var(--accent-emerald); flex: none; }
+.fusion-bilan > div { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.fusion-bilan > div span { color: var(--text-secondary); }
+.fusion-vide { padding: 1.5rem; justify-content: center; border: 1px dashed var(--border-subtle); border-radius: var(--radius-lg); }
+
+/* Corriger un contrat : correction reportée sur toute la police */
+.admin-toute-police { display: flex; align-items: center; gap: 0.5rem; margin: 0.8rem 0 0.2rem; padding: 0.55rem 0.75rem; border-radius: var(--radius-md); font-size: 0.86rem;
+  font-weight: 600; cursor: pointer; background: color-mix(in srgb, var(--primary-500) 7%, transparent); border: 1px solid color-mix(in srgb, var(--primary-500) 25%, transparent); }
+
+@media (max-width: 900px) {
+  .fusion-grille { grid-template-columns: 1fr; }
+  .fusion-fiches { grid-template-columns: 1fr; }
+  .fusion-inverser { justify-self: center; transform: rotate(90deg); }
+  .corr-carte-tete { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .corr-domaine { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .corr-carte, .corr-lignes, .fusion-apercu, .fusion-bilan { animation: none; }
+  .fusion-inverser:hover { transform: none; }
 }

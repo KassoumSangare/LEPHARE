@@ -103,13 +103,48 @@ export const Tuile = ({
 };
 
 // Ligne libellé / montant d'une tuile ; serie : pastille de la série (1, 2, 3) quand la ligne en reprend une
-export const Detail = ({ libelle, valeur, serie }) => (
-  <div className="cockpit-detail">
+export const Detail = ({ libelle, valeur, serie, secondaire }) => (
+  <div className={`cockpit-detail${secondaire ? ' secondaire' : ''}`}>
     {serie && <span className={`cockpit-cle serie-${serie}`} aria-hidden="true" />}
     <span className="libelle">{libelle}</span>
     <strong>{valeur}</strong>
   </div>
 );
+
+// Cadre « Reste à percevoir » du cockpit et du tableau de bord (production/chiffre_affaires.py, ventiler_reste) : commission des
+// actes de l'exercice pas encore reçue, selon où en est la prime. Demande du 2026-11-24 (« difficile à comprendre, trop
+// d'info ») : quatre lignes courtes qui font le total, sans nombre de quittances ni exercices antérieurs ; RAFAS et URANUS
+// seulement s'ils ont un montant ; le cumul des réclamations en retrait, sous les réclamées
+export const aideResteAPercevoir = (exercice) => (
+  `Commission ${exercice} pas encore reçue, selon où en est la prime : pas encore encaissée, encaissée mais pas encore reversée `
+  + 'à la compagnie, reversée avec la commission à réclamer, réclamée mais pas encore payée.'
+);
+
+export const lignesResteAPercevoir = (ca, exercice) => {
+  const r = ca?.ResteAPercevoir;
+  const cumul = ca?.Reclamations?.Cumul && (
+    <Detail secondaire libelle={`Total réclamé en ${exercice}`} valeur={francs(ca.Reclamations.Cumul.Montant)} />
+  );
+  if (!r?.AEncaisser) {
+    // Réponse d'un serveur pas encore à jour : commissions en attente seulement
+    return ca?.EnAttente ? [
+      <Detail libelle="Commissions à réclamer" valeur={francs(ca.EnAttente.AReclamer)} />,
+      <Detail libelle="Réclamées, pas encore payées" valeur={francs(ca.EnAttente.Reclamees)} />,
+      cumul,
+    ] : [];
+  }
+  const montant = (...cles) => cles.reduce((s, cle) => s + (r[cle]?.Montant || 0), 0);
+  return [
+    <Detail libelle="Primes pas encore encaissées" valeur={francs(montant('AEncaisser'))} />,
+    // Onglets « Quittances à reverser » et bordereaux « À payer à la compagnie » de l'écran des reversements
+    <Detail libelle="Primes encaissées à reverser" valeur={francs(montant('AReverser', 'ADirect', 'BordereauxAPayer'))} />,
+    <Detail libelle="Commissions à réclamer" valeur={francs(montant('AReclamer'))} />,
+    <Detail libelle="Réclamées, pas encore payées" valeur={francs(montant('Reclamees'))} />,
+    cumul,
+    montant('EncaisseesUranus') !== 0 && <Detail libelle="Encaissées dans URANUS" valeur={francs(montant('EncaisseesUranus'))} />,
+    montant('Rafas') !== 0 && <Detail libelle="RAFAS non réglée" valeur={francs(montant('Rafas'))} />,
+  ];
+};
 
 // Évolution par rapport à la même date de l'an dernier : pastille fléchée + libellé, jamais la couleur seule
 export const Evolution = ({ actuel, precedent, au }) => {

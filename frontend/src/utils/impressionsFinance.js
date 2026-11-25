@@ -76,10 +76,13 @@ const STYLES_BORDEREAU = `
   .brd-cheques b { font-size: 9.5pt; margin-left: 4mm; }
 `;
 
+// Largeurs en % (demande du 2026-11-24 : « augmenter la cellule du tableau ») : nom du client et n° de police élargis (le nom
+// tenait sur 4 lignes, le n° de police débordait) ; montants à 9 chiffres sur une ligne ; place prise sur Avt, Taux et les
+// trois colonnes toujours à 0
 const COLONNES_BORDEREAU = [
-  ['Nom du client', 9], ['Assurance', 7.4], ['N°Police', 8.4], ['Avt', 3.4], ['Effet', 6], ['Expiration', 6.4],
-  ['Prime HT', 6.2], ['Prime TTC', 6.2], ['Encaissement', 7.6], ['Acc. Courtier', 5.4], ['Taux com.(%)', 5],
-  ['Commission', 7], ['Frais gestion', 5], ['Com. Déduite', 5], ['Acc. déduits', 5], ['Montant Reversé', 6.6],
+  ['Nom du client', 12], ['Assurance', 6.8], ['N°Police', 9.4], ['Avt', 2.8], ['Effet', 6.2], ['Expiration', 6.2],
+  ['Prime HT', 6.8], ['Prime TTC', 6.8], ['Encaissement', 7.1], ['Acc. Courtier', 5.6], ['Taux com.(%)', 4],
+  ['Commission', 6.8], ['Frais gestion', 4.2], ['Com. Déduite', 4.2], ['Acc. déduits', 4.2], ['Montant Reversé', 6.9],
 ];
 
 const celluleReverse = (b, montant) => (b.Direct ? 'Direct' : f(montant));
@@ -88,7 +91,7 @@ const celluleReverse = (b, montant) => (b.Direct ? 'Direct' : f(montant));
 // le titre du bloc « Primes en arriéré » (demande du 2026-10-21)
 const ligneBordereau = (b, l) => `<tr>
     <td class="client">${e(l.Client)}${l.Soldee || b.Direct ? '' : `<span class="petit">Reste dû : ${f(l.ResteDu)}</span>`}</td>
-    <td>${e(l.Assurance)}</td><td>${e(l.PoliceCompagnie || l.NumeroPolice)}</td><td>${e(l.Avenant)}</td>
+    <td class="texte">${e(l.Assurance)}</td><td class="police">${e(l.PoliceCompagnie || l.NumeroPolice)}</td><td>${e(l.Avenant)}</td>
     <td>${jma(l.DateEffet)}</td><td>${jma(l.DateExpiration)}</td>
     <td>${f(l.PrimeHT)}</td><td>${f(l.PrimeTtc)}</td><td>${f(l.Encaissement)}</td><td>${f(l.AccCourtier)}</td>
     <td>${taux(l.Taux)}</td><td>${f(l.Commission)}</td><td>0</td><td>0</td><td>0</td><td>${celluleReverse(b, l.MontantReverse)}</td>
@@ -130,16 +133,32 @@ export const construireBordereau = (b) => {
     </div>
     <table class="brd-table">
       <colgroup>${COLONNES_BORDEREAU.map(([, l]) => `<col style="width:${l}%" />`).join('')}</colgroup>
-      <tr>${COLONNES_BORDEREAU.map(([t]) => `<th>${e(t)}</th>`).join('')}</tr>
+      <thead><tr>${COLONNES_BORDEREAU.map(([t]) => `<th>${e(t)}</th>`).join('')}</tr></thead>
+      <tbody>
       ${corps}
       ${ligneTotal(b, 'TOTAL', b.Totaux || {})}
+      </tbody>
     </table>
     <div class="brd-signatures"><span>POUR ${e(nomCabinet().toUpperCase())}</span><span>POUR ${e(b.NomBordereau || b.Compagnie)}</span></div>
     ${cheques ? `<div class="brd-cheques">${cheques}</div>` : ''}
   </div>`;
 };
 
-export const imprimerBordereau = (b) => ecrire(`Bordereau ${b.Numero || b.NumeroReversement}`, STYLES_BORDEREAU, construireBordereau(b), true);
+// Bordereau de reversement de prime (et de réclamation, même gabarit) : cellules agrandies (demande du 2026-11-24) ; les
+// états qui reprennent STYLES_BORDEREAU (récapitulatifs) ne changent pas
+const STYLES_BORDEREAU_PRIME = `${STYLES_BORDEREAU}
+  .brd { padding: 6mm 5mm 6mm; font-size: 8.8pt; }
+  .brd-table th { padding: 2.6mm 0.6mm; font-size: 8pt; }
+  .brd-table td { padding: 2.8mm 0.9mm; white-space: nowrap; }
+  .brd-table td.client, .brd-table td.texte, .brd-table tr.bloc td { white-space: normal; }
+  .brd-table td.police { white-space: normal; overflow-wrap: anywhere; }
+  .brd-table thead { display: table-header-group; }
+  .brd-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .brd-table td.client { font-size: 9pt; }
+  .brd-table .petit { font-size: 7.6pt; }
+`;
+
+export const imprimerBordereau = (b) => ecrire(`Bordereau ${b.Numero || b.NumeroReversement}`, STYLES_BORDEREAU_PRIME, construireBordereau(b), true);
 
 /* ------------------------------------------------------------------ courriers */
 const STYLES_COURRIER = `

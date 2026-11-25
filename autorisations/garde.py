@@ -430,6 +430,18 @@ REGLES = [
     R("POST", r"caisse/encaissements/(?P<id_encaissement>\d+)/correction/(references|annulation)/?$", _correction_encaissement,
       objet="encaissement", cles=("id_encaissement",)),
     R("GET", r"caisse/encaissements/(du-jour|\d+/correction)/?$", "encaissements.view"),
+    # Guichet « Encaissement des Primes » (production/caisse_guichet.py) : quittances à encaisser, chèques du client
+    R("GET", r"caisse/(a-encaisser|clients/\d+/cheques)/?$", "encaissements.view"),
+    # ---- centre des corrections (production/corrections.py) : anomalies selon les droits de lecture (filtrées par la vue),
+    # journal des corrections, fusion de fiches clients, solde d'un chèque, contrat réaligné avec sa quittance et son devis
+    R("GET", r"corrections/anomalies/?$", CONNECTE),
+    R("GET", r"corrections/journal/?$", "audit.view"),
+    R("GET", r"corrections/clients/(doublons|fusion)/?$", "clients.merge"),
+    R("POST", r"corrections/clients/fusion/?$", "clients.merge", objet="client", cles=("garder",)),
+    R("POST", r"corrections/cheques/(?P<id_cheque>\d+)/solde/?$", "encaissements.cancel", objet="cheque", cles=("id_cheque",),
+      action="corrections.cheque_solde"),
+    R("POST", r"corrections/contrats/(?P<id_contrat>\d+)/realignement/?$", "contrats.admin_update", objet="contrat",
+      cles=("id_contrat",), action="corrections.contrat_realignement"),
     R("DELETE", r"cheques/(?P<id_cheque>\d+)/", "encaissements.cancel", objet="cheque", cles=("id_cheque",)),
     R("PUT,PATCH,DELETE", r"encaissement/(?P<pk>\d+)", "encaissements.cancel", objet="encaissement", cles=("pk",)),
     R("POST", r"(enregistrementencaissement|cheques/echeancier/|initiationpaiementmobile|quittances-cima/$|encaissement/$|"
@@ -443,8 +455,8 @@ REGLES = [
     # ---- reversements
     # Bordereaux et courriers au modèle d'OREOLE (production/views_bordereaux.py) : émission (un bordereau de
     # réclamation est payé d'office, chèques du client transmis), décharge, ordre d'un règlement, police de la
-    # compagnie ; annulation d'un bordereau = droit de validation
-    R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/annuler/", "reversements.validate", objet="reversement",
+    # compagnie ; annulation d'un bordereau = droit dédié « Annuler un reversement », motif obligatoire (2026-11-24)
+    R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/annuler/", "reversements.cancel", objet="reversement",
       cles=("id_reversement",)),
     R("POST", r"finance/bordereaux/(?P<id_reversement>\d+)/decharge/", "reversements.create", objet="reversement",
       cles=("id_reversement",)),

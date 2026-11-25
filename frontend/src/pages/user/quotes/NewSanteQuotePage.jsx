@@ -1642,6 +1642,13 @@ export const NewSanteQuotePage = () => {
                   ];
                   return (
                   <>
+                    {/* MINENE : famille hors de la tranche de sa formule, rangée dans la formule de sa taille à l'enregistrement */}
+                    {apercu.Rangements?.length > 0 && (
+                      <div role="status" style={{ marginBottom: '0.6rem', padding: '0.5rem 0.7rem', borderRadius: 'var(--radius-md)', fontSize: '0.8rem', fontWeight: 600,
+                        color: 'var(--text-primary)', background: 'color-mix(in srgb, var(--primary-500) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--primary-500) 30%, transparent)' }}>
+                        {apercu.Rangements.map((texte) => <div key={texte}>{texte}</div>)}
+                      </div>
+                    )}
                     {apercu.Familles?.length > 0 && (
                       <div className="table-wrapper" style={{ overflowX: 'auto' }}>
                         <table className="table" style={{ width: '100%', fontSize: '0.8rem' }}>
